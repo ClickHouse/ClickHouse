@@ -358,6 +358,7 @@ public:
 
         DeltaIterator begin() const;
         DeltaIterator end() const;
+        size_t size() const;
         bool empty() const;
         const KeeperStorageBase::Delta & front() const;
     };

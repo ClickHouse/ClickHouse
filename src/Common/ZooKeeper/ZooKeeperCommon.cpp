@@ -955,14 +955,27 @@ OpNum ZooKeeperMultiRequest::getOpNum() const
     return is_write ? OpNum::Multi : OpNum::MultiRead;
 }
 
+ZooKeeperMultiRequest::ZooKeeperMultiRequest(const MultiRequest & base, const ACLs & default_acls)
+    : MultiRequest(base)
+{
+    setRequests(base.requests, default_acls);
+}
+
 ZooKeeperMultiRequest::ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls)
-    : ZooKeeperMultiRequest(std::span{generic_requests}, default_acls)
-{}
+{
+    setRequests(generic_requests, default_acls);
+}
 
 ZooKeeperMultiRequest::ZooKeeperMultiRequest(std::span<const Coordination::RequestPtr> generic_requests, const ACLs & default_acls)
 {
+    setRequests(generic_requests, default_acls);
+}
+
+void ZooKeeperMultiRequest::setRequests(std::span<const Coordination::RequestPtr> generic_requests, const ACLs & default_acls)
+{
     /// Convert nested Requests to ZooKeeperRequests.
     /// Note that deep copy is required to avoid modifying path in presence of chroot prefix.
+    requests.clear();
     requests.reserve(generic_requests.size());
 
     using enum OperationType;
@@ -999,7 +1012,7 @@ ZooKeeperMultiRequest::ZooKeeperMultiRequest(std::span<const Coordination::Reque
         else if (const auto * concrete_request_multi = dynamic_cast<const ZooKeeperMultiRequest *>(generic_request.get()))
         {
             checkOperationType(Write);
-            requests.push_back(std::make_shared<ZooKeeperMultiRequest>(*concrete_request_multi));
+            requests.push_back(std::make_shared<ZooKeeperMultiRequest>(*concrete_request_multi, default_acls));
         }
         else if (const auto * concrete_request_get = dynamic_cast<const ZooKeeperGetRequest *>(generic_request.get()))
         {
@@ -1153,20 +1166,18 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
             response = std::make_shared<ZooKeeperErrorResponse>();
 
         if (op_error != Error::ZOK)
-        {
             response->error = op_error;
-
-            /// Set error for whole transaction.
-            /// If some operations fail, ZK send global error as zero and then send details about each operation.
-            /// It will set error code for first failed operation and it will set special "runtime inconsistency" code for other operations.
-            if (error == Error::ZOK && op_error != Error::ZRUNTIMEINCONSISTENCY)
-                error = op_error;
-        }
 
         if (op_error == Error::ZOK || op_num == OpNum::Error)
             dynamic_cast<ZooKeeperResponse &>(*response).readImpl(in);
 
         response->zxid = zxid;
+
+        /// Set error for whole transaction.
+        /// If some operations fail, ZK send global error as zero and then send details about each operation.
+        /// It will set error code for first failed operation and it will set special "runtime inconsistency" code for other operations.
+        if (error == Error::ZOK && response->error != Error::ZRUNTIMEINCONSISTENCY)
+            error = response->error;
     }
 
     /// Footer.

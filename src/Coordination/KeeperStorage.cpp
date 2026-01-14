@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <concepts>
 #include <iterator>
+#include <memory>
 #include <shared_mutex>
 #include <base/defines.h>
 
@@ -582,6 +583,7 @@ struct ErrorDelta
 
 struct FailedMultiDelta
 {
+    int32_t multi_nesting;
     std::vector<Coordination::Error> error_codes;
     Coordination::Error global_error{Coordination::Error::ZOK};
 };
@@ -636,6 +638,11 @@ KeeperStorageBase::DeltaIterator KeeperStorageBase::DeltaRange::begin() const
 KeeperStorageBase::DeltaIterator KeeperStorageBase::DeltaRange::end() const
 {
     return end_it;
+}
+
+size_t KeeperStorageBase::DeltaRange::size() const
+{
+    return std::distance(begin_it, end_it);
 }
 
 bool KeeperStorageBase::DeltaRange::empty() const
@@ -3077,7 +3084,8 @@ std::list<KeeperStorageBase::Delta> preprocess(
                 for (size_t j = i + 1; j < subrequests.size(); ++j)
                     response_errors.push_back(Coordination::Error::ZRUNTIMEINCONSISTENCY);
 
-                return {KeeperStorageBase::Delta{zxid, FailedMultiDelta{std::move(response_errors), error}}};
+                chassert(response_errors.size() == subrequests.size());
+                return {KeeperStorageBase::Delta{zxid, FailedMultiDelta{multi_nesting, std::move(response_errors), error}}};
             }
             else if (zk_request.getOpNum() == Coordination::OpNum::NonAtomicMulti)
             {
@@ -3153,18 +3161,17 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
 
     // the deltas will have at least SubDeltaEnd or FailedMultiDelta
     chassert(!deltas.empty());
-    if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation))
+    if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation); failed_multi && failed_multi->multi_nesting == multi_nesting)
     {
+        chassert(deltas.size() == 1);
+        chassert(zk_request.atomic);
+        chassert(failed_multi->error_codes.size() == subrequests.size());
+
         for (size_t i = 0; i < subrequests.size(); ++i)
         {
             response->responses.push_back(std::make_shared<Coordination::ZooKeeperErrorResponse>());
             response->responses[i]->error = failed_multi->error_codes[i];
         }
-
-        /// Let's set error only if it is submulti because root multi should always have ZOK as status
-        /// to be able to correctly deserialized on client side.
-        if (multi_nesting > 1)
-            response->error = failed_multi->global_error;
 
         return response;
     }
@@ -3177,7 +3184,6 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
             [&](const auto & subrequest) { return process(subrequest, storage, std::move(subdeltas), session_id); }));
     }
 
-    response->error = Coordination::Error::ZOK;
     return response;
 }
 
@@ -3215,8 +3221,12 @@ std::pair<KeeperResponsesForSessions, Int64> processWatches(
 
     KeeperResponsesForSessions result;
 
-    if (deltas.empty() || std::get_if<FailedMultiDelta>(&deltas.front().operation))
+    if (deltas.empty())
         return {result, 0};
+
+    if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation))
+        if (failed_multi->multi_nesting == multi_nesting)
+            return {result, 0};
 
     const auto & subrequests = zk_request.requests;
     Int64 total_removed_watches = 0;
@@ -3651,7 +3661,7 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
                 std::vector<Coordination::Error> response_errors;
                 response_errors.resize(multi_request.requests.size(), Coordination::Error::ZOK);
                 new_deltas.emplace_back(
-                    new_last_zxid, FailedMultiDelta{std::move(response_errors), Coordination::Error::ZNOAUTH});
+                    new_last_zxid, FailedMultiDelta{/*multi_nesting=*/1, std::move(response_errors), Coordination::Error::ZNOAUTH});
             }
             else
             {

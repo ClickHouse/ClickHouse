@@ -711,6 +711,7 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
     OpNum getOpNum() const override;
     ZooKeeperMultiRequest() = default;
 
+    ZooKeeperMultiRequest(const MultiRequest & base, const ACLs & default_acls);
     ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls);
     ZooKeeperMultiRequest(std::span<const Coordination::RequestPtr> generic_requests, const ACLs & default_acls);
 
@@ -739,6 +740,7 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
 
 private:
     void checkOperationType(OperationType type);
+    void setRequests(std::span<const Coordination::RequestPtr> generic_requests, const ACLs & default_acls);
 };
 
 struct ZooKeeperMultiResponse : MultiResponse, ZooKeeperResponse

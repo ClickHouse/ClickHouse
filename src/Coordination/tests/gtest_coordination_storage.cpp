@@ -1276,8 +1276,15 @@ TYPED_TEST(CoordinationTest, TestNestedMulti)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
 
-        const auto & multi_response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*responses[0].response);
-        for (const auto & op_response : multi_response.responses)
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = nested_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        for (const auto & op_response : multi_response->responses)
             ASSERT_EQ(op_response->error, Coordination::Error::ZOK);
 
         ASSERT_TRUE(exists("/s1/A1"));
@@ -1313,8 +1320,15 @@ TYPED_TEST(CoordinationTest, TestNestedMulti)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
 
-        const auto & multi_response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*responses[0].response);
-        for (const auto & op_response : multi_response.responses)
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = nested_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        for (const auto & op_response : multi_response->responses)
             ASSERT_EQ(op_response->error, Coordination::Error::ZOK);
 
         ASSERT_TRUE(exists("/s2/A1"));
@@ -1344,10 +1358,17 @@ TYPED_TEST(CoordinationTest, TestNestedMulti)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
 
-        const auto & multi_response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*responses[0].response);
-        ASSERT_EQ(multi_response.responses[0]->error, Error::ZOK);
-        ASSERT_EQ(multi_response.responses[1]->error, Error::ZNONODE);
-        ASSERT_EQ(multi_response.responses[2]->error, Error::ZRUNTIMEINCONSISTENCY);
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = nested_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        ASSERT_EQ(multi_response->responses[0]->error, Error::ZOK);
+        ASSERT_EQ(multi_response->responses[1]->error, Error::ZNONODE);
+        ASSERT_EQ(multi_response->responses[2]->error, Error::ZRUNTIMEINCONSISTENCY);
 
         ASSERT_FALSE(exists("/s3/A1"));
         ASSERT_FALSE(exists("/s3/A2"));
@@ -1376,11 +1397,11 @@ TYPED_TEST(CoordinationTest, TestNestedMulti)
         };
         auto nested_multi = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
 
-        WriteBufferFromOwnString out;
-        nested_multi->write(out, /*use_xid_64=*/false);
+        WriteBufferFromOwnString req_out;
+        nested_multi->write(req_out, /*use_xid_64=*/false);
 
-        ReadBufferFromOwnString in(out.str());
-        auto request = Coordination::ZooKeeperMultiRequest::read(in);
+        ReadBufferFromOwnString req_in(req_out.str());
+        auto request = Coordination::ZooKeeperMultiRequest::read(req_in);
 
         int create_zxid = ++zxid;
         storage.preprocessRequest(request, 1, 0, create_zxid);
@@ -1388,8 +1409,15 @@ TYPED_TEST(CoordinationTest, TestNestedMulti)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
 
-        const auto & multi_response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*responses[0].response);
-        for (const auto & op_response : multi_response.responses)
+        WriteBufferFromOwnString resp_out;
+        responses[0].response->writeImpl(resp_out);
+
+        ReadBufferFromOwnString resp_in(resp_out.str());
+        auto read_response = nested_multi->makeResponse();
+        read_response->readImpl(resp_in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        for (const auto & op_response : multi_response->responses)
             ASSERT_EQ(op_response->error, Coordination::Error::ZOK);
 
         ASSERT_TRUE(exists("/s4/A1"));
@@ -1444,12 +1472,19 @@ TYPED_TEST(CoordinationTest, TestNonAtomicMulti)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
 
-        const auto & multi_response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*responses[0].response);
-        ASSERT_EQ(multi_response.responses.size(), 4);
-        ASSERT_EQ(multi_response.responses[0]->error, Coordination::Error::ZOK);
-        ASSERT_EQ(multi_response.responses[1]->error, Coordination::Error::ZNONODE);
-        ASSERT_EQ(multi_response.responses[2]->error, Coordination::Error::ZOK);
-        ASSERT_EQ(multi_response.responses[3]->error, Coordination::Error::ZOK);
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = non_atomic_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        ASSERT_EQ(multi_response->responses.size(), 4);
+        ASSERT_EQ(multi_response->responses[0]->error, Coordination::Error::ZOK);
+        ASSERT_EQ(multi_response->responses[1]->error, Coordination::Error::ZNONODE);
+        ASSERT_EQ(multi_response->responses[2]->error, Coordination::Error::ZOK);
+        ASSERT_EQ(multi_response->responses[3]->error, Coordination::Error::ZOK);
 
         ASSERT_TRUE(exists("/s1/A1"));
         ASSERT_TRUE(exists("/s1/A2"));
@@ -1480,11 +1515,18 @@ TYPED_TEST(CoordinationTest, TestNonAtomicMulti)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
 
-        const auto & multi_response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*responses[0].response);
-        ASSERT_EQ(multi_response.responses.size(), 3);
-        ASSERT_EQ(multi_response.responses[0]->error, Coordination::Error::ZOK);
-        ASSERT_EQ(multi_response.responses[1]->error, Coordination::Error::ZNONODE);
-        ASSERT_EQ(multi_response.responses[2]->error, Coordination::Error::ZOK);
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = non_atomic_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        ASSERT_EQ(multi_response->responses.size(), 3);
+        ASSERT_EQ(multi_response->responses[0]->error, Coordination::Error::ZOK);
+        ASSERT_EQ(multi_response->responses[1]->error, Coordination::Error::ZNONODE);
+        ASSERT_EQ(multi_response->responses[2]->error, Coordination::Error::ZOK);
 
         ASSERT_TRUE(exists("/s2/A1"));
         ASSERT_TRUE(exists("/s2/A2"));
@@ -1526,15 +1568,40 @@ TYPED_TEST(CoordinationTest, TestNonAtomicMulti)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Error::ZOK);
 
-        const auto & multi_response = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*responses[0].response);
-        ASSERT_EQ(multi_response.responses.size(), 7);
-        ASSERT_EQ(multi_response.responses[0]->error, Coordination::Error::ZOK);
-        ASSERT_EQ(multi_response.responses[1]->error, Coordination::Error::ZOK);
-        ASSERT_EQ(multi_response.responses[2]->error, Coordination::Error::ZOK);
-        ASSERT_EQ(multi_response.responses[3]->error, Coordination::Error::ZOK);
-        ASSERT_EQ(multi_response.responses[4]->error, Coordination::Error::ZNODEEXISTS);
-        ASSERT_EQ(multi_response.responses[5]->error, Coordination::Error::ZOK);
-        ASSERT_EQ(multi_response.responses[6]->error, Coordination::Error::ZNODEEXISTS);
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = non_atomic_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        ASSERT_EQ(multi_response->error, Error::ZNODEEXISTS);
+        ASSERT_EQ(multi_response->responses.size(), 7);
+        ASSERT_EQ(multi_response->responses[0]->error, Coordination::Error::ZOK);
+        ASSERT_EQ(multi_response->responses[1]->error, Coordination::Error::ZOK);
+        {
+            const auto subrequest = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(multi_response->responses[2]);
+            ASSERT_EQ(subrequest->error, Coordination::Error::ZNODEEXISTS);
+            ASSERT_EQ(subrequest->responses[0]->error, Coordination::Error::ZOK);
+            ASSERT_EQ(subrequest->responses[1]->error, Coordination::Error::ZNODEEXISTS);
+            ASSERT_EQ(subrequest->responses[2]->error, Coordination::Error::ZOK);
+        }
+        ASSERT_EQ(multi_response->responses[3]->error, Coordination::Error::ZOK);
+        {
+            const auto subrequest = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(multi_response->responses[4]);
+            ASSERT_EQ(subrequest->error, Coordination::Error::ZNODEEXISTS);
+            ASSERT_EQ(subrequest->responses[0]->error, Coordination::Error::ZOK);
+            ASSERT_EQ(subrequest->responses[1]->error, Coordination::Error::ZNODEEXISTS);
+            ASSERT_EQ(subrequest->responses[2]->error, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+        }
+        ASSERT_EQ(multi_response->responses[5]->error, Coordination::Error::ZOK);
+        {
+            const auto subrequest = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(multi_response->responses[6]);
+            ASSERT_EQ(subrequest->error, Coordination::Error::ZNODEEXISTS);
+            ASSERT_EQ(subrequest->responses[0]->error, Coordination::Error::ZOK);
+            ASSERT_EQ(subrequest->responses[1]->error, Coordination::Error::ZNODEEXISTS);
+        }
 
         ASSERT_TRUE(exists("/s3/A"));
         ASSERT_TRUE(exists("/s3/B"));
@@ -1593,29 +1660,126 @@ TYPED_TEST(CoordinationTest, TestNonAtomicMulti)
         /// Commit tx2
         int tx2_zxid = ++zxid;
         storage.preprocessRequest(tx2, 1, 0, tx2_zxid);
-        auto tx_2_response = storage.processRequest(tx2, 1, tx2_zxid);
-        const auto & tx_2_responses = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*tx_2_response[0].response).responses;
+        auto tx_2_process = storage.processRequest(tx2, 1, tx2_zxid);
+        const auto tx_2_response = [&]()
+        {
+            WriteBufferFromOwnString out;
+            tx_2_process[0].response->writeImpl(out);
+
+            ReadBufferFromOwnString in(out.str());
+            auto read_response = tx2->makeResponse();
+            read_response->readImpl(in);
+
+            return std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        }();
 
         /// Commit tx1
         int tx1_zxid = ++zxid;
         storage.preprocessRequest(tx1, 1, 0, tx1_zxid);
-        auto tx_1_response = storage.processRequest(tx1, 1, tx1_zxid);
-        const auto & tx_1_responses = dynamic_cast<Coordination::ZooKeeperMultiResponse &>(*tx_1_response[0].response).responses;
+        auto tx_1_process = storage.processRequest(tx1, 1, tx1_zxid);
+        const auto tx_1_response = [&]()
+        {
+            WriteBufferFromOwnString out;
+            tx_1_process[0].response->writeImpl(out);
 
-        ASSERT_EQ(tx_2_response[0].response->error, Error::ZOK);
-        ASSERT_EQ(tx_1_response[0].response->error, Error::ZOK);
+            ReadBufferFromOwnString in(out.str());
+            auto read_response = tx1->makeResponse();
+            read_response->readImpl(in);
 
-        ASSERT_EQ(tx_2_responses.size(), 1);
-        ASSERT_EQ(tx_2_responses[0]->error, Error::ZOK);
+            return std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        }();
 
-        ASSERT_EQ(tx_1_responses.size(), 3);
-        ASSERT_EQ(tx_1_responses[0]->error, Error::ZOK);
-        ASSERT_EQ(tx_1_responses[1]->error, Error::ZNODEEXISTS);
-        ASSERT_EQ(tx_1_responses[2]->error, Error::ZOK);
+        ASSERT_EQ(tx_2_response->error, Error::ZOK);
+        ASSERT_EQ(tx_1_response->error, Error::ZNODEEXISTS);
+
+        ASSERT_EQ(tx_2_response->responses.size(), 1);
+        ASSERT_EQ(tx_2_response->responses[0]->error, Error::ZOK);
+
+        ASSERT_EQ(tx_1_response->responses.size(), 3);
+        ASSERT_EQ(tx_1_response->responses[0]->error, Error::ZOK);
+        ASSERT_EQ(tx_1_response->responses[1]->error, Error::ZNODEEXISTS);
+        ASSERT_EQ(tx_1_response->responses[2]->error, Error::ZOK);
 
         ASSERT_TRUE(exists("/lock-service/1"));
         ASSERT_TRUE(exists("/lock-service/2"));
         ASSERT_TRUE(exists("/lock-service/3"));
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestNonAtomicNestedFirstError)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int32_t zxid = 0;
+
+    const auto exists = [&](const String & path)
+    {
+        int new_zxid = ++zxid;
+
+        const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
+        exists_request->path = path;
+
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(exists_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Coordination::Error::ZOK;
+    };
+
+    {
+        SCOPED_TRACE("NonAtomicMulti First Nested Error");
+
+        const Coordination::Requests create_ops{
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeSetRequest("non-existing", "data", -1),
+                zkutil::makeCreateRequest("/B", "data", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/A", "data", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+        };
+        const auto non_atomic_multi = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+        non_atomic_multi->atomic = false;
+
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(non_atomic_multi, 1, 0, create_zxid);
+        auto responses = storage.processRequest(non_atomic_multi, 1, create_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = non_atomic_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        ASSERT_EQ(multi_response->error, Error::ZNONODE);
+        ASSERT_EQ(multi_response->responses.size(), 2);
+        {
+            const auto subrequest = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(multi_response->responses[0]);
+            ASSERT_EQ(subrequest->error, Coordination::Error::ZNONODE);
+            ASSERT_EQ(subrequest->responses.size(), 2);
+            ASSERT_EQ(subrequest->responses[0]->error, Coordination::Error::ZNONODE);
+            ASSERT_EQ(subrequest->responses[1]->error, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+        }
+        {
+            const auto subrequest = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(multi_response->responses[1]);
+            ASSERT_EQ(subrequest->error, Coordination::Error::ZOK);
+            ASSERT_EQ(subrequest->responses.size(), 1);
+            ASSERT_EQ(subrequest->responses[0]->error, Coordination::Error::ZOK);
+        }
+
+        ASSERT_TRUE(exists("/A"));
+        ASSERT_FALSE(exists("/B"));
     }
 }
 
