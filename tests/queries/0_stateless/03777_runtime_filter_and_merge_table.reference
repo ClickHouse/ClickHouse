@@ -9,7 +9,7 @@ Expression ((Project names + Projection))
             Filter
               ReadFromMergeTree (default.foo1)
         Expression (Right Pre Join Actions)
-          BuildRuntimeFilter (Build runtime join filter on __table2.Val (_runtime_filter_UNIQ_ID_0))
+          BuildRuntimeFilter (Build runtime join filter on __table2.Val)
             Expression (Change column names to column identifiers)
               ReadFromMemoryStorage
 =================================================

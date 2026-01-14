@@ -15,7 +15,7 @@ CREATE TABLE foo_merge as foo ENGINE=Merge(currentDatabase(), '^foo');
 CREATE TABLE t2 (Id Int32, Val Int64, X UInt256) Engine=Memory;
 INSERT INTO t2 values (4, 3, 4);
 
-SELECT REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID') FROM (
+SELECT explain FROM (
 EXPLAIN
 SELECT count()
 FROM foo_merge JOIN t2 USING Val
