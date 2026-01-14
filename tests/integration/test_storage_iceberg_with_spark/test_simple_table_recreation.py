@@ -83,14 +83,14 @@ def test_simple_table_recreation(started_cluster_iceberg_with_spark, storage_typ
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
     # Query the second data
-    initial_count = int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
-    initial_sum = float(instance.query(f"SELECT sum(value) FROM {TABLE_NAME}"))
-    initial_names = instance.query(f"SELECT name FROM {TABLE_NAME} ORDER BY id").strip()
+    final_count = int(instance.query(f"SELECT count() FROM {TABLE_NAME}"))
+    final_sum = float(instance.query(f"SELECT sum(value) FROM {TABLE_NAME}"))
+    final_names = instance.query(f"SELECT name FROM {TABLE_NAME} ORDER BY id").strip()
 
     # Verify initial state
-    assert initial_count == 3
-    assert initial_sum == 601.5
-    assert initial_names == "Alice\nBob\nCharlie"
+    assert final_count == 3
+    assert final_sum == 601.5
+    assert final_names == "Alice\nBob\nCharlie"
 
     print(f"✓ Successfully tested table recreation for {TABLE_NAME}")
     print(f"  Initial count: {initial_count}, Final count: {final_count}")
