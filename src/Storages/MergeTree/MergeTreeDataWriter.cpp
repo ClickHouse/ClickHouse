@@ -175,6 +175,8 @@ void updateTTL(
         subquery->buildSetInplace(context);
 
     auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
+    /// In some cases block can contain Sparse columns (for example, during direct deserialization into Sparse in input formats).
+    ttl_column = ttl_column->convertToFullColumnIfSparse();
 
     if (const ColumnUInt16 * column_date = typeid_cast<const ColumnUInt16 *>(ttl_column.get()))
     {
