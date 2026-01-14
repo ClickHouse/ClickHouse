@@ -1679,7 +1679,6 @@ void Planner::buildQueryPlanIfNeeded()
 void Planner::buildPlanForUnionNode()
 {
     const auto & union_node = query_tree->as<UnionNode &>();
-std::cout << "\033[1;31m" << "+++ JOO buildPlanForUnionNode\n" << union_node.dumpTree() << "\n\033[0m" << std::endl;
     auto union_mode = union_node.getUnionMode();
     if (union_mode == SelectUnionMode::UNION_DEFAULT || union_mode == SelectUnionMode::EXCEPT_DEFAULT
         || union_mode == SelectUnionMode::INTERSECT_DEFAULT)
@@ -1779,7 +1778,6 @@ void Planner::buildPlanForQueryNode()
 
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
-std::cout << "\033[1;31m" << "+++ JOO buildPlanForQueryNode\n" << query_node.dumpTree() << "\n\033[0m" << std::endl;
     if (query_node.hasWhere())
     {
         auto condition_constant = tryExtractConstantFromConditionNode(query_node.getWhere());
