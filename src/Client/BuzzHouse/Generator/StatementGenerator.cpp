@@ -4285,12 +4285,6 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
     {
         generateSettingValues(rg, serverSettings, st->mutable_setting_values());
     }
-    if (fc.truncate_output || rg.nextSmallNumber() < 3)
-    {
-        st->set_format(
-            fc.truncate_output ? OutFormat::OUT_Null
-                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
-    }
 }
 
 std::optional<String> StatementGenerator::backupOrRestoreObject(BackupRestoreObject * bro, const SQLObject obj, const SQLBase & b)

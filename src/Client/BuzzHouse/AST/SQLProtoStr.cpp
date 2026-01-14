@@ -5521,11 +5521,6 @@ CONV_FN(ShowStatement, sh)
         ret += " SETTINGS ";
         SettingValuesToString(ret, sh.setting_values());
     }
-    if (sh.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(sh.format()).substr(4);
-    }
 }
 
 CONV_FN(SQLQueryInner, query)

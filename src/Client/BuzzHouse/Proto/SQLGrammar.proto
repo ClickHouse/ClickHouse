@@ -4346,7 +4346,6 @@ message ShowStatement {
         bool merges = 23;
     }
     optional SettingValues setting_values = 24;
-    optional OutFormat format = 25;
 }
 
 message SQLQueryInner {
