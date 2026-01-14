@@ -274,14 +274,25 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             info=info,
         )
 
+    print(f"Start [{job_name}], workflow [{workflow.name}]")
+    files = []
+    env = _Environment.get()
+
+    # Ensure the local repository has full history (not a shallow clone).
+    # Some Praktika features require complete git metadata, such as:
+    # - all authors who contributed to the PR
+    # - the original commit messages before GitHub's ephemeral merge commit
+    results = [
+        Result.from_commands_run(
+            name="repo unshallow",
+            command=f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
+        )
+    ]
+
     if workflow.enable_report:
         print("Push pending CI report")
         HtmlRunnerHooks.push_pending_ci_report(workflow)
 
-    print(f"Start [{job_name}], workflow [{workflow.name}]")
-    results = []
-    files = []
-    env = _Environment.get()
     _ = RunConfig(
         name=workflow.name,
         digest_jobs={},
@@ -294,21 +305,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         filtered_jobs={},
         custom_data={},
     ).dump()
-
-    if env.PR_NUMBER > 0:
-        # refresh PR data
-        title, body, labels = GH.get_pr_title_body_labels()
-        if title:
-            if title != env.PR_TITLE:
-                print("PR title has been changed")
-                env.PR_TITLE = title
-            if env.PR_BODY != body:
-                print("PR body has been changed")
-                env.PR_BODY = body
-            if env.PR_LABELS != labels:
-                print("PR labels have been changed")
-                env.PR_LABELS = labels
-            env.dump()
 
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
@@ -500,9 +496,48 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
+    # refresh PR data
+    if env.PR_NUMBER > 0:
+        title, body, labels = GH.get_pr_title_body_labels()
+        if title:
+            if title != env.PR_TITLE:
+                print("PR title has been changed")
+                env.PR_TITLE = title
+            if env.PR_BODY != body:
+                print("PR body has been changed")
+                env.PR_BODY = body
+            if env.PR_LABELS != labels:
+                print("PR labels have been changed")
+                env.PR_LABELS = labels
+            env.dump()
+
+    if workflow.enable_slack_feed:
+        if env.PR_NUMBER:
+            commit_authors = set()
+            try:
+                # Get commit author emails from git log (repo is unshallowed)
+                commits_emails = Shell.get_output(
+                    f"git log --format='%ae' origin/{env.BASE_BRANCH}..{env.SHA}",
+                    verbose=True,
+                ).strip()
+                if commits_emails:
+                    # Validate emails contain @ symbol
+                    commit_authors = set(
+                        email
+                        for email in commits_emails.split("\n")
+                        if email and "@" in email and "+" not in email
+                    )
+            except Exception as e:
+                print(f"WARNING: Failed to extract commit authors from git: {e}")
+            print(f"Found {len(commit_authors)} commit authors")
+            if commit_authors:
+                env.COMMIT_AUTHORS = list(commit_authors)
+                env.JOB_KV_DATA["commit_authors"] = list(commit_authors)
+                env.dump()
+
     print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
-    env.JOB_KV_DATA["workflow_config"] = dataclasses.asdict(workflow_config)
+    env.WORKFLOW_CONFIG = dataclasses.asdict(workflow_config)
     env.dump()
 
     if results[-1].is_ok() and workflow.enable_report:

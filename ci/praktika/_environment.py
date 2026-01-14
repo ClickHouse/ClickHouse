@@ -46,6 +46,7 @@ class _Environment(MetaClasses.Serializable):
     WORKFLOW_STATUS_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     JOB_KV_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     COMMIT_AUTHORS: List[str] = dataclasses.field(default_factory=list)
+    WORKFLOW_CONFIG: Optional[Dict[str, Any]] = None
     name = "environment"
 
     @classmethod
@@ -101,25 +102,6 @@ class _Environment(MetaClasses.Serializable):
                 EVENT_TIME = github_event.get("pull_request", {}).get(
                     "updated_at", None
                 )
-                # Extract commit author emails using GitHub API (works with shallow repos) #FIXME
-                commit_authors = set()
-                try:
-                    commits_json = Shell.get_output(
-                        f"gh api repos/{REPOSITORY}/pulls/{PR_NUMBER}/commits --jq '.[].commit.author.email'",
-                        verbose=True,
-                    ).strip()
-                    if commits_json:
-                        # Validate emails contain @ symbol
-                        commit_authors = set(
-                            email
-                            for email in commits_json.split("\n")
-                            if email and "@" in email
-                        )
-                except Exception as e:
-                    print(
-                        f"Warning: Failed to extract commit authors from GitHub API: {e}"
-                    )
-                COMMIT_AUTHORS = list(commit_authors)
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
@@ -188,15 +170,9 @@ class _Environment(MetaClasses.Serializable):
             else:
                 assert False, "TODO: not supported"
 
-            if os.environ.get("DISABLE_CI_MERGE_COMMIT", "0") == "1":
-                COMMIT_MESSAGE = Shell.get_output(
-                    f"git log -1 --pretty=%s {SHA}", verbose=True
-                )
-            else:
-                COMMIT_MESSAGE = Shell.get_output(
-                    f"gh api repos/{REPOSITORY}/commits/{SHA} --jq '.commit.message'",
-                    verbose=True,
-                )
+            COMMIT_MESSAGE = Shell.get_output(
+                f"git log -1 --pretty=%s {SHA}", verbose=True
+            )
 
             INSTANCE_TYPE = (
                 os.getenv("INSTANCE_TYPE", None)
@@ -264,6 +240,7 @@ class _Environment(MetaClasses.Serializable):
             },
             WORKFLOW_JOB_DATA=WORKFLOW_JOB_DATA,
             WORKFLOW_STATUS_DATA=WORKFLOW_STATUS_DATA,
+            WORKFLOW_CONFIG=None,
         )
 
     @classmethod
@@ -278,6 +255,19 @@ class _Environment(MetaClasses.Serializable):
             obj["PARAMETER"] = _to_object(obj["PARAMETER"])
         return cls(**obj)
 
+    @classmethod
+    def from_workflow_data(cls) -> "_Environment":
+        assert Path(
+            Settings.WORKFLOW_STATUS_FILE
+        ).is_file(), f"File not found: {Settings.WORKFLOW_STATUS_FILE}"
+        with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+            workflow_status_data = json.load(f)
+        # Access the config job data and parse the JSON string in "data" field
+        config_job_data = workflow_status_data.get(Settings.CI_CONFIG_JOB_NAME, {})
+        data_str = config_job_data.get("outputs", {}).get("data", "{}")
+        env_dict = json.loads(data_str) if isinstance(data_str, str) else data_str
+        return cls.from_dict(env_dict)
+
     def add_info(self, info):
         self.REPORT_INFO.append(info)
         self.dump()
@@ -287,8 +277,7 @@ class _Environment(MetaClasses.Serializable):
         if Path(cls.file_name_static()).is_file():
             return cls.from_fs("environment")
         else:
-            print("WARNING: Environment: get from env")
-            env = cls.from_env()
+            env = cls.from_workflow_data()
             env.dump()
             return env
 

@@ -237,19 +237,8 @@ class Info:
         self.env.JOB_KV_DATA[key] = value
         self.env.dump()
 
-    def get_kv_data(self, key=None, source_job="config_workflow"):
-        if Utils.normalize_string(self.env.JOB_NAME) == Utils.normalize_string(
-            source_job
-        ):
-            kv_data = self.env.JOB_KV_DATA
-        else:
-            kv_data = json.loads(
-                self.env.WORKFLOW_STATUS_DATA.get(
-                    Utils.normalize_string(source_job), {}
-                )
-                .get("outputs", {})
-                .get("data", {})
-            )
+    def get_kv_data(self, key=None):
+        kv_data = self.env.JOB_KV_DATA
         if key:
             return kv_data.get(key, None)
         return kv_data
