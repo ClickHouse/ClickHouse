@@ -777,10 +777,14 @@ def main():
         sys.exit(0)
 
     if Shell.check(
-        f"gh pr view {pr_number} --json isDraft --jq '.isDraft' | grep -q true"
+        f"gh pr view {pr_number} --json isDraft --jq '.isDraft' --repo ClickHouse/ClickHouse | grep -q true"
     ):
         if UserPrompt.confirm(f"It's a draft PR. Do you want to undraft it?"):
-            Shell.check(f"gh pr ready {pr_number}", strict=True, verbose=True)
+            Shell.check(
+                f"gh pr ready {pr_number} --repo ClickHouse/ClickHouse",
+                strict=True,
+                verbose=True,
+            )
         else:
             sys.exit(0)
 
@@ -789,7 +793,7 @@ def main():
         mergeable_check_status, sha=head_sha
     )
 
-    if Shell.check(f"gh pr merge {pr_number} --auto"):
+    if Shell.check(f"gh pr merge {pr_number} --auto --repo ClickHouse/ClickHouse"):
         # Check if PR was successfully added to the merge queue
         # uncomment/fix if GH misses became regular
         # merge_status = Shell.check(
