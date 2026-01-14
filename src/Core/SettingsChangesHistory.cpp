@@ -63,7 +63,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_qbit_type", false, true, "QBit was moved to Beta"},
             {"enable_qbit_type", false, true, "QBit was moved to Beta. Added an alias for setting 'allow_experimental_qbit_type'."},
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
-            {"use_sparse_lightweight_representation_of_primary_key_for_index_analysis", false, false, "New setting"},
+            {"use_sparse_lightweight_representation_of_primary_key_for_index_analysis", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
