@@ -33,11 +33,6 @@ class Info:
         """
         return self.env.LINKED_PR_NUMBER
 
-    def set_parent_pr_number(self, pr_number):
-        self.env.JOB_KV_DATA["parent_pr_number"] = pr_number
-        self.env.dump()
-        return self
-
     @property
     def workflow_name(self):
         return self.env.WORKFLOW_NAME
@@ -61,10 +56,6 @@ class Info:
     @property
     def pr_title(self):
         return self.env.PR_TITLE
-
-    @property
-    def updated_at(self):
-        return self.env.EVENT_TIME
 
     @property
     def pr_url(self):
@@ -103,24 +94,12 @@ class Info:
         return self.env.FORK_NAME
 
     @property
-    def commit_message(self):
-        return self.env.COMMIT_MESSAGE
-
-    @property
     def user_name(self):
         return self.env.USER_LOGIN
 
     @property
-    def commit_authors(self):
-        return self.env.COMMIT_AUTHORS or []
-
-    @property
     def run_url(self):
         return self.env.RUN_URL
-
-    @property
-    def run_id(self):
-        return self.env.RUN_ID
 
     @property
     def pr_labels(self):
@@ -162,9 +141,6 @@ class Info:
             self.workflow = _get_workflows(self.env.WORKFLOW_NAME)[0]
         return self.workflow.get_secret(name)
 
-    def get_job_url(self):
-        return f"{self.env.RUN_URL}/job/{self.env.WORKFLOW_JOB_DATA['check_run_id']}"
-
     def get_job_report_url(self, latest=False):
         url = self.get_report_url(latest=latest)
         return url + f"&name_1={urllib.parse.quote(self.env.JOB_NAME, safe='')}"
@@ -202,25 +178,6 @@ class Info:
         return res
 
     @staticmethod
-    def get_specific_report_url_static(pr_number, branch, sha, job_name, workflow_name):
-        from .settings import Settings
-
-        if pr_number:
-            ref_param = f"PR={pr_number}"
-        else:
-            assert branch
-            ref_param = f"REF={branch}"
-        path = Settings.HTML_S3_PATH
-        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
-            if bucket in path:
-                path = path.replace(bucket, endpoint)
-                break
-        res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?{ref_param}&sha={sha}&name_0={urllib.parse.quote(workflow_name, safe='')}"
-        if job_name:
-            res += f"&name_1={urllib.parse.quote(job_name, safe='')}"
-        return res
-
-    @staticmethod
     def get_workflow_input_value(input_name) -> Optional[str]:
         from .settings import _Settings
 
@@ -244,9 +201,7 @@ class Info:
             kv_data = self.env.JOB_KV_DATA
         else:
             kv_data = json.loads(
-                self.env.WORKFLOW_STATUS_DATA.get(
-                    Utils.normalize_string(source_job), {}
-                )
+                self.env.WORKFLOW_DATA.get(Utils.normalize_string(source_job), {})
                 .get("outputs", {})
                 .get("data", {})
             )

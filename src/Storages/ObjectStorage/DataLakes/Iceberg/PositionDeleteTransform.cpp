@@ -21,7 +21,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
-#include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB::Setting
@@ -74,8 +73,8 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             continue;
 
         auto object_path = position_deletes_object.file_path;
-        auto object_metadata = object_storage->getObjectMetadata(object_path, /*with_tags=*/ false);
-        auto object_info = RelativePathWithMetadata{object_path, object_metadata};
+        auto object_metadata = object_storage->getObjectMetadata(object_path);
+        auto object_info = std::make_shared<ObjectInfo>(object_path, object_metadata);
 
 
         String format = position_deletes_object.file_format;
@@ -84,7 +83,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         Block initial_header;
         {
-            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(object_info, object_storage, context, log);
+            std::unique_ptr<ReadBuffer> read_buf_schema = createReadBuffer(*object_info, object_storage, context, log);
             auto schema_reader = FormatFactory::instance().getSchemaReader(format, *read_buf_schema, context);
             auto columns_with_names = schema_reader->readSchema();
             ColumnsWithTypeAndName initial_header_data;
@@ -97,7 +96,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
         CompressionMethod compression_method = chooseCompressionMethod(object_path, "auto");
 
-        delete_read_buffers.push_back(createReadBuffer(object_info, object_storage, context, log));
+        delete_read_buffers.push_back(createReadBuffer(*object_info, object_storage, context, log));
 
         auto syntax_result = TreeRewriter(context).analyze(where_ast, initial_header.getNamesAndTypesList());
         ExpressionAnalyzer analyzer(where_ast, syntax_result, context);
@@ -140,7 +139,51 @@ size_t IcebergPositionDeleteTransform::getColumnIndex(const std::shared_ptr<IInp
 
 void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 {
-    DeletionVectorTransform::transform(chunk, bitmap);
+    size_t num_rows = chunk.getNumRows();
+    IColumn::Filter delete_vector(num_rows, true);
+    size_t num_rows_after_filtration = num_rows;
+
+    auto chunk_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
+    if (!chunk_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ChunkInfoRowNumbers does not exist");
+
+    size_t row_num_offset = chunk_info->row_num_offset;
+    auto & applied_filter = chunk_info->applied_filter;
+    size_t num_indices = applied_filter.has_value() ? applied_filter->size() : num_rows;
+    size_t idx_in_chunk = 0;
+    for (size_t i = 0; i < num_indices; i++)
+    {
+        if (!applied_filter.has_value() || applied_filter.value()[i])
+        {
+            size_t row_idx = row_num_offset + i;
+            if (bitmap.rb_contains(row_idx))
+            {
+                delete_vector[idx_in_chunk] = false;
+
+                /// If we already have a _row_number-indexed filter vector, update it in place.
+                if (applied_filter.has_value())
+                    applied_filter.value()[i] = false;
+
+                num_rows_after_filtration--;
+            }
+            idx_in_chunk += 1;
+        }
+    }
+    chassert(idx_in_chunk == num_rows);
+
+    if (num_rows_after_filtration == num_rows)
+        return;
+
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = column->filter(delete_vector, -1);
+
+    /// If it's the first filtering we do on this Chunk (i.e. its _row_number-s were consecutive),
+    /// assign its applied_filter.
+    if (!applied_filter.has_value())
+        applied_filter.emplace(std::move(delete_vector));
+
+    chunk.setColumns(std::move(columns), num_rows_after_filtration);
 }
 
 void IcebergBitmapPositionDeleteTransform::initialize()

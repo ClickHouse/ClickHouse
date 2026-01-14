@@ -63,7 +63,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsMilliseconds heart_beat_interval_ms;
     extern const CoordinationSettingsMilliseconds leadership_expiry_ms;
     extern const CoordinationSettingsUInt64 max_requests_append_size;
-    extern const CoordinationSettingsUInt64 max_requests_append_bytes_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
     extern const CoordinationSettingsUInt64 raft_limits_reconnect_limit;
@@ -477,7 +476,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds() * 2, "operation_timeout_ms", log);
     params.max_append_size_
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::max_requests_append_size], "max_requests_append_size", log);
-    params.max_append_size_bytes_ = coordination_settings[CoordinationSetting::max_requests_append_bytes_size];
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
@@ -655,6 +653,11 @@ void KeeperServer::shutdown()
     state_machine->shutdownStorage();
 }
 
+namespace
+{
+
+
+}
 
 void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
 {
@@ -1121,15 +1124,8 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         if (ptr->get_priority() == update->priority)
             return Accepted;
 
-        raft_instance->set_priority_v2(update->id, update->priority);
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/ true);
         return Accepted;
-    }
-    if (const auto * transfer_leader = std::get_if<TransferLeadership>(&action))
-    {
-        if (raft_instance->request_leadership(transfer_leader->target_server_id))
-            return Accepted;
-        else
-            return Declined;
     }
     std::unreachable();
 }
@@ -1203,7 +1199,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
     }
     else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {
-        raft_instance->set_priority_v2(update->id, update->priority);
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
         return;
     }
 
@@ -1307,11 +1303,6 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
-}
-
-int64_t KeeperServer::getLeaderID() const
-{
-    return raft_instance->get_leader();
 }
 
 void KeeperServer::yieldLeadership()

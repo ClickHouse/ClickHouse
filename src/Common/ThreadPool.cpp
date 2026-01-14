@@ -103,7 +103,7 @@ public:
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
     /// Call stacks of all jobs' schedulings leading to this one
-    std::vector<FramePointers> frame_pointers;
+    std::vector<StackTrace::FramePointers> frame_pointers;
     bool enable_job_stack_trace = false;
     Stopwatch job_create_time;
 
@@ -141,6 +141,7 @@ public:
     }
 };
 
+static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_)
@@ -698,7 +699,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
     while (true)
     {
         /// This is inside the loop to also reset previous thread names set inside the jobs.
-        setThreadName(DB::ThreadName::DEFAULT_THREAD_POOL);
+        setThreadName(DEFAULT_THREAD_NAME);
 
         /// Get a job from the queue.
         std::optional<JobWithPriority> job_data;
@@ -822,10 +823,10 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             {
                 /// Use the thread name as operation name so that the tracing log will be more clear.
                 /// The thread name is usually set in jobs, we can only get the name after the job finishes
-                auto thread_name = DB::getThreadName();
-                if (thread_name != DB::ThreadName::UNKNOWN && thread_name != DB::ThreadName::DEFAULT_THREAD_POOL)
+                std::string thread_name = getThreadName();
+                if (!thread_name.empty() && thread_name != DEFAULT_THREAD_NAME)
                 {
-                    thread_trace_context.root_span.operation_name = DB::toString(thread_name);
+                    thread_trace_context.root_span.operation_name = thread_name;
                 }
                 else
                 {
