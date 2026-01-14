@@ -181,6 +181,8 @@ namespace Setting
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64Auto insert_quorum;
+    extern const SettingsBool automatic_fill_on_cluster_mode;
+    extern const SettingsString cluster_for_automatic_fill_mode;
 }
 
 namespace ServerSetting
@@ -1360,6 +1362,23 @@ static BlockIO executeQueryImpl(
                 throw Exception(
                     ErrorCodes::INVALID_TRANSACTION,
                     "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
+        }
+
+        if (settings[Setting::automatic_fill_on_cluster_mode]
+            && !settings[Setting::cluster_for_automatic_fill_mode].toString().empty()
+            && context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        {
+            if (auto * query_with_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(out_ast.get()))
+            {
+                if (query_with_on_cluster->cluster.empty())
+                {
+                    query_with_on_cluster->cluster = settings[Setting::cluster_for_automatic_fill_mode].toString();
+                    query_for_logging = out_ast->formatForLogging(log_queries_cut_to_length);
+                    normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+
+                    context->setSetting("ignore_on_cluster_for_replicated_database", true);
+                }
+            }
         }
 
         /// There is an option of probabilistic logging of queries.
