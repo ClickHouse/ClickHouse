@@ -12,7 +12,7 @@ namespace ErrorCodes
 }
 
 PlanSquashingTransform::    PlanSquashingTransform(
-        SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes, 
+        SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes,
         size_t max_block_size_rows, size_t max_block_size_bytes, bool squash_with_strict_limits)
     : ExceptionKeepingTransform(header_, header_, false)
     , squashing(header_, min_block_size_rows, min_block_size_bytes,
@@ -40,9 +40,6 @@ PlanSquashingTransform::GenerateResult PlanSquashingTransform::onGenerate()
 
 bool PlanSquashingTransform::canGenerate()
 {
-    /// TODO: use handy interface of squashing to check if in the queue
-    /// and in the accumulated we have enough data to generate an output
-    /// transfer generate to onGenerate() function
     return squashing.canGenerate();
 }
 

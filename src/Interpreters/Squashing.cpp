@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 Squashing::Squashing(SharedHeader header_, size_t min_block_size_rows_, size_t min_block_size_bytes_,
                      size_t max_block_size_rows_, size_t max_block_size_bytes_, bool squash_with_strict_limits_)
-    : header(header_) 
+    : header(header_)
     , min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
     , max_block_size_rows(max_block_size_rows_)
@@ -31,7 +31,19 @@ Squashing::Squashing(SharedHeader header_, size_t min_block_size_rows_, size_t m
 Chunk Squashing::flush()
 {
     // Move all remaining pending data to accumulated (ignore thresholds)
+
     chassert(!accumulated);
+
+    /// In strict limits mode, the front chunk may be partially consumed (offset_first > 0).
+    /// Consume the remaining portion before pulling whole chunks.
+    /// In non-strict mode, chunks are never partially consumed, so we skip directly to pulling.
+    if (squash_with_strict_limits && !pending.empty() && pending.peekFront().getNumRows() != 0)
+    {
+        size_t rows = pending.peekFront().getNumRows();
+        size_t bytes = pending.peekFront().bytes();
+        auto result = pending.consumeUpTo(rows, bytes);
+        accumulated.append(std::move(result.chunk), result.rows, result.bytes);
+    }
 
     while (!pending.empty())
     {
@@ -39,15 +51,12 @@ Chunk Squashing::flush()
         {
             pending.dropFront();
             continue;
-        }  
+        }
 
-        size_t rows = squash_with_strict_limits ? pending.peekFront().getNumRows() : 0;
-        size_t bytes = squash_with_strict_limits ? pending.peekFront().bytes() : 0;
-        auto result = pending.consumeUpTo(rows, bytes);
-
-        accumulated.append(std::move(result.chunk), result.rows, result.bytes);
+        auto result = pending.pullFront();
+        accumulated.append(std::move(result));
     }
-    
+
     if (!accumulated)
         return {};
 
@@ -86,8 +95,6 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
 
     auto result = [](std::vector<Chunk> && input_chunks_) -> Chunk
     {
-        /// TODO: We might need to change this behavior in case we are squashing with two mins
-        /// because we cannot move the whole block if there is an offset and lenght that specify only a part of it
         if (input_chunks_.size() == 1)
             /// this is just optimization, no logic changes
             return std::move(input_chunks_.front());
@@ -108,15 +115,9 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
     return result;
 }
 
-Chunk Squashing::addAndGenerate(Chunk && input_chunk, bool flush_if_enough_size)
-{
-    add(std::move(input_chunk));
-    return generate(flush_if_enough_size);
-}
-
 void Squashing::add(Chunk && input_chunk)
 {
-    pending.push(std::move(input_chunk));  
+    pending.push(std::move(input_chunk));
 }
 
 bool Squashing::canGenerate()
@@ -137,26 +138,17 @@ Chunk Squashing::generate(bool flush_if_enough_size)
 }
 
 Chunk Squashing::generateUsingStrictBounds()
-{ 
-    /// 1. Until the accumulated is larger the both mins continue getting the reference to the first chunk in the queue
-    ///     Check what offset and lenght do we need to add it to accounted
-    ///     if the lenght is equal to 0, then break
-    ///     add the chunk to the accumulated with specified offset and lenght
-    ///     if the offset and lenght do not exhaust the chunk break
-    ///     otherwise pop it from the queue
-    while(!pending.empty())
+{
+    /// Consumes partial chunks if needed to respect max limits
+    while (!pending.empty())
     {
-        /// The behavior before, when add and generate were one action
-        /// made the function exit early when an empty block was added
-        /// However, now we might want just to skip such a block,
-        /// because if user added a number of chunks, and only one of them
-        /// is empty, they still probably want the rest of added to be processed 
         if (pending.peekFront().getNumRows() == 0)
         {
             pending.dropFront();
             continue;
         }
 
+        /// Calculate remaining capacity until max limits
         size_t remaining_rows = max_block_size_rows;
         if (remaining_rows)
             remaining_rows -= accumulated.getRows();
@@ -181,7 +173,7 @@ Chunk Squashing::generateUsingStrictBounds()
 
 Chunk Squashing::generateUsingOneMinBound(bool flush_if_enough_size)
 {
-    while(!pending.empty())
+    while (!pending.empty())
     {
         auto input_chunk = pending.pullFront();
 
@@ -233,7 +225,7 @@ Chunk Squashing::convertToChunk()
     size_t total_rows = accumulated.getRows();
     info->chunks = accumulated.extract();
 
-    // It is imortant that chunk is not empty, it has to have columns even if they are empty
+    // It is important that chunk is not empty, it has to have columns even if they are empty
     // Sometimes there are could be no columns in header but not empty rows in chunks
     // That happens when we intend to add defaults for the missing columns after
     auto aggr_chunk = Chunk(header->getColumns(), 0);
@@ -397,13 +389,14 @@ std::pair<size_t, size_t> Squashing::PendingQueue::calculateConsumable(size_t ma
     double bytes_per_row = static_cast<double>(total_bytes_front) / static_cast<double>(total_rows_front);
     size_t available_rows = total_rows_front - offset_first;
 
+    /// No limits: return entire available front chunk
     if (max_rows == 0 && max_bytes == 0)
         return {available_rows, available_rows * bytes_per_row};
 
     size_t rows_to_take = available_rows;
 
     if (max_rows != 0)
-        rows_to_take = std::min( max_rows, rows_to_take);
+        rows_to_take = std::min(max_rows, rows_to_take);
 
     if (max_bytes != 0)
     {
@@ -415,7 +408,7 @@ std::pair<size_t, size_t> Squashing::PendingQueue::calculateConsumable(size_t ma
 
         rows_to_take = std::min(rows_by_bytes, rows_to_take);
     }
-    
+
     auto bytes_to_take = static_cast<size_t>(rows_to_take * bytes_per_row);
 
     return {rows_to_take, bytes_to_take};
@@ -425,14 +418,14 @@ static Chunk sliceChunk(const Chunk & chunk, size_t offset, size_t length)
 {
     if (!chunk.getChunkInfos().empty())
     {
-        /// If there is information in chunk, as in DeduplicationInfo,
+        /// If there is information in chunk, like in DeduplicationInfo,
         /// this might brake the logic of algorithm, leading to erroneous behavior of the program
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunks for slicing in Squashing must have no additional information.");
     }
 
     Columns sliced_columns;
     sliced_columns.reserve(chunk.getNumColumns());
-    for(const auto & col : chunk.getColumns())
+    for (const auto & col : chunk.getColumns())
     {
         auto sliced_col = col->cut(offset, length);
         sliced_columns.push_back(std::move(sliced_col));
@@ -446,6 +439,9 @@ static Chunk sliceChunk(const Chunk & chunk, size_t offset, size_t length)
 
 Squashing::PendingQueue::ConsumeResult Squashing::PendingQueue::consumeUpTo(size_t max_rows, size_t max_bytes)
 {
+    /// Consume up to max_rows/max_bytes from the front chunk, respecting offset_first.
+    /// May return a partial chunk if limits are hit or offset is non-zero.
+
     auto [rows_to_take, bytes_to_take] = calculateConsumable(max_rows, max_bytes);
 
     Chunk & front = chunks.front();
@@ -458,6 +454,7 @@ Squashing::PendingQueue::ConsumeResult Squashing::PendingQueue::consumeUpTo(size
 
     if (exhaust_chunk && offset_first == 0)
     {
+        /// Optimization: take the whole chunk without slicing
         result_chunk = std::move(front);
         chunks.pop_front();
     }

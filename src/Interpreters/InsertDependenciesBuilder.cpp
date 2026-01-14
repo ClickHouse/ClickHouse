@@ -95,7 +95,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool squash_insert_with_strict_limits;
+    extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -694,10 +694,10 @@ private:
         pipeline.addTransform(std::make_shared<SquashingTransform>(
             pipeline.getSharedHeader(),
             settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes], 
-            settings[Setting::max_insert_block_size], 
-            settings[Setting::max_insert_block_size_bytes], 
-            settings[Setting::squash_insert_with_strict_limits])
+            settings[Setting::min_insert_block_size_bytes],
+            settings[Setting::max_insert_block_size],
+            settings[Setting::max_insert_block_size_bytes],
+            settings[Setting::use_strict_insert_block_limits])
         );
 
         pipeline.addTransform(std::make_shared<RestoreChunkInfosTransform>(std::move(chunk_infos), pipeline.getSharedHeader()));
@@ -851,7 +851,7 @@ std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllS
                         table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
                         table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
                         settings[Setting::max_insert_block_size], settings[Setting::max_insert_block_size_bytes],
-                        settings[Setting::squash_insert_with_strict_limits]));
+                        settings[Setting::use_strict_insert_block_limits]));
 
                 if (squashing_context.num_squashing_transforms > 1)
                 {

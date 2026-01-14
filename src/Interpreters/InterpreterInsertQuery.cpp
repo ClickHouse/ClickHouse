@@ -72,7 +72,7 @@ namespace Setting
     extern const SettingsBoolAuto insert_select_deduplicate;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
-    extern const SettingsBool squash_insert_with_strict_limits;
+    extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
@@ -480,7 +480,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         context);
 
     const auto & settings = context->getSettingsRef();
-    bool squash_with_strict_limits = settings[Setting::squash_insert_with_strict_limits];
+    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits];
 
     if (!squash_with_strict_limits)
     {
@@ -773,7 +773,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     auto chains = insert_dependencies->createChainWithDependenciesForAllStreams();
     chassert(chains.size() == 1);
     auto chain = std::move(chains.front());
-    bool squash_with_strict_limits = settings[Setting::squash_insert_with_strict_limits];
+    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits];
 
     if (squash_with_strict_limits)
     {
@@ -797,8 +797,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         auto planing = std::make_shared<PlanSquashingTransform>(
             chain.getInputSharedHeader(),
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL, 
-            settings[Setting::max_insert_block_size], settings[Setting::max_insert_block_size_bytes], 
+            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
+            settings[Setting::max_insert_block_size], settings[Setting::max_insert_block_size_bytes],
             squash_with_strict_limits);
         chain.addSource(std::move(planing));
     }

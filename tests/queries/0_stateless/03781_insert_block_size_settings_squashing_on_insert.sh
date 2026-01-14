@@ -30,7 +30,7 @@ $CH client \
     --max_insert_block_size_bytes=0 \
     --min_insert_block_size_rows=1 \
     --min_insert_block_size_bytes=0 \
-    --squash_insert_with_strict_limits=1 \
+    --use_strict_insert_block_limits=1 \
     -q "INSERT INTO test_native_max_rows FORMAT Native"
 
 $CH client -q "SELECT number FROM numbers(100) FORMAT Native" | \
@@ -39,7 +39,7 @@ $CH client \
     --max_insert_block_size_bytes=163 \
     --min_insert_block_size_rows=0 \
     --min_insert_block_size_bytes=0 \
-    --squash_insert_with_strict_limits=1 \
+    --use_strict_insert_block_limits=1 \
     -q "INSERT INTO test_native_max_bytes FORMAT Native"
 
 $CH client --max_block_size=10 -q "SELECT number FROM numbers(100) FORMAT Native" | \
@@ -48,7 +48,7 @@ $CH client \
     --max_insert_block_size_bytes=0 \
     --min_insert_block_size_rows=33 \
     --min_insert_block_size_bytes=8 \
-    --squash_insert_with_strict_limits=1 \
+    --use_strict_insert_block_limits=1 \
     -q "INSERT INTO test_native_min_squash FORMAT Native"
 
 
@@ -58,7 +58,7 @@ $CH client \
     --max_insert_block_size_bytes=0 \
     --min_insert_block_size_rows=0 \
     --min_insert_block_size_bytes=0 \
-    --squash_insert_with_strict_limits=1 \
+    --use_strict_insert_block_limits=1 \
     -q "INSERT INTO test_parquet_max_rows FORMAT Parquet"
 
 $CH client -q "SYSTEM FLUSH LOGS query_log, part_log;"
