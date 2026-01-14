@@ -393,44 +393,44 @@ bool IdentifierResolver::tryBindIdentifierToJoinUsingColumn(const IdentifierLook
   */
 QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
-    if (scope.column_name_to_column_node.empty() || !identifier_lookup.isExpressionLookup())
+    if (!scope.table_expression_data_for_alias_resolution || !identifier_lookup.isExpressionLookup())
         return {};
 
     const bool use_case_insensitive = scope.context
         && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
         && !identifier_lookup.is_double_quoted;
 
-    auto find_in_map = [&](const std::string & key) -> decltype(scope.column_name_to_column_node.find(key))
-    {
-        if (use_case_insensitive)
-        {
-            for (auto iter = scope.column_name_to_column_node.begin(); iter != scope.column_name_to_column_node.end(); ++iter)
-            {
-                if (Poco::icompare(iter->first, key) == 0)
-                    return iter;
-            }
-            return scope.column_name_to_column_node.end();
-        }
-        return scope.column_name_to_column_node.find(key);
-    };
-
     const auto & identifier = identifier_lookup.identifier;
-    auto it = find_in_map(identifier.getFullName());
-    bool full_column_name_match = it != scope.column_name_to_column_node.end();
+    auto identifier_full_name = identifier.getFullName();
 
-    if (!full_column_name_match)
+    auto & column_name_to_column_node = scope.table_expression_data_for_alias_resolution->column_name_to_column_node;
+
+    /// Case-insensitive lookup if enabled
+    if (use_case_insensitive)
     {
-        it = find_in_map(identifier_lookup.identifier[0]);
-        if (it == scope.column_name_to_column_node.end())
-            return {};
+        auto it = scope.table_expression_data_for_alias_resolution->findColumnCaseInsensitive(
+            identifier_full_name, scope.scope_node->formatASTForErrorMessage());
+        if (it != column_name_to_column_node.end())
+            return it->second;
+    }
+    else
+    {
+        auto it = column_name_to_column_node.find(identifier_full_name);
+        if (it != column_name_to_column_node.end())
+            return it->second;
     }
 
-    QueryTreeNodePtr result = it->second;
+    /// Check if it's a subcolumn
+    if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(
+            identifier_full_name, use_case_insensitive, scope.scope_node->formatASTForErrorMessage()))
+    {
+        if (scope.table_expression_data_for_alias_resolution->supports_subcolumns)
+            return std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
 
-    if (!full_column_name_match && identifier.isCompound())
-        return tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope);
+        return wrapExpressionNodeInSubcolumn(subcolumn_info->column_node, String(subcolumn_info->subcolumn_name), scope.context);
+    }
 
-    return result;
+    return {};
 }
 
 bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLookup & identifier_lookup,
