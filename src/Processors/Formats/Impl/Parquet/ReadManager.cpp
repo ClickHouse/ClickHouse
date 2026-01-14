@@ -302,7 +302,7 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                 .row_subgroup_idx = row_subgroup_idx,
                 .column_idx = UINT64_MAX});
 
-        ReadStage prev_stage = row_subgroup.stage.exchange(stage, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+        row_subgroup.stage.exchange(stage, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         row_subgroup.stage_tasks_remaining.store(add_tasks.size(), std::memory_order_relaxed);
         setTasksToSchedule(row_group_idx, stage, std::move(add_tasks), diff);
 
