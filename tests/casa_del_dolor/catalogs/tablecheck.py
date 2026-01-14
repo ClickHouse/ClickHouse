@@ -18,7 +18,7 @@ from pyspark.sql.types import (
 )
 
 from .laketables import SparkTable, LakeFormat
-from integration.helpers.client import Client
+from tests.integration.helpers.client import Client
 
 
 class SparkAndClickHouseCheck:

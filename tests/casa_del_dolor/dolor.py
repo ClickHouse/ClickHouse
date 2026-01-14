@@ -15,7 +15,7 @@ import sys
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-from integration.helpers.cluster import ZOOKEEPER_CONTAINERS
+from tests.integration.helpers.cluster import ZOOKEEPER_CONTAINERS
 from sparkserver import (
     get_unique_free_ports,
     create_spark_http_server,
@@ -26,16 +26,16 @@ from sparkserver import (
 os.environ["WORKER_FREE_PORTS"] = " ".join([str(p) for p in get_unique_free_ports(50)])
 
 from environment import set_environment_variables
-from integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from integration.helpers.postgres_utility import get_postgres_conn
-from integration.helpers.s3_tools import (
+from tests.integration.helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from tests.integration.helpers.postgres_utility import get_postgres_conn
+from tests.integration.helpers.s3_tools import (
     AzureUploader,
     LocalUploader,
     S3Uploader,
     LocalDownloader,
     prepare_s3_bucket,
 )
-from integration.helpers.config_cluster import minio_access_key, minio_secret_key
+from tests.integration.helpers.config_cluster import minio_access_key, minio_secret_key
 from generators import Generator, BuzzHouseGenerator
 from leaks import ElOracloDeLeaks
 from oracles import ElOraculoDeTablas

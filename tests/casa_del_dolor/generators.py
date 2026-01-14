@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Optional
 
 from environment import set_environment_variables
-from integration.helpers.client import CommandRequest
-from integration.helpers.cluster import ClickHouseInstance
-from integration.helpers.config_cluster import (
+from tests.integration.helpers.client import CommandRequest
+from tests.integration.helpers.cluster import ClickHouseInstance
+from tests.integration.helpers.config_cluster import (
     pg_pass,
     mysql_pass,
     mongo_pass,

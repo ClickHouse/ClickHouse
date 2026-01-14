@@ -8,7 +8,7 @@ import time
 import threading
 
 from pathlib import Path
-from integration.helpers.client import Client
+from tests.integration.helpers.client import Client
 from pyiceberg.catalog import load_catalog
 from .kafkatest import KafkaHandler
 from .laketables import (
