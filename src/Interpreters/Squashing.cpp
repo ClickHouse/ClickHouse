@@ -445,6 +445,7 @@ Squashing::PendingQueue::ConsumeResult Squashing::PendingQueue::consumeUpTo(size
 
     Chunk & front = chunks.front();
     size_t rows_in_front = front.getNumRows();
+    chassert(rows_in_front);
     size_t available_rows = rows_in_front - offset_first;
     chassert(available_rows >= rows_to_take);
     bool exhaust_chunk = (available_rows == rows_to_take);
