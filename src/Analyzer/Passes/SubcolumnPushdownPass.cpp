@@ -82,7 +82,7 @@ public:
                 auto & func_args = get_subcolumn_func->getArguments().getNodes();
                 func_args.push_back(proj_column->clone());
                 func_args.push_back(std::make_shared<ConstantNode>(subcolumn_name));
-                
+
                 auto func = FunctionFactory::instance().get("getSubcolumn", getContext());
                 get_subcolumn_func->resolveAsFunction(func->build(get_subcolumn_func->getArgumentColumns()));
                 new_proj_node = get_subcolumn_func;
