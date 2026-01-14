@@ -67,6 +67,9 @@ MESSAGES_TO_RETRY = [
     "is already started to be removing by another replica right now",
     # This is from LSan, and it indicates its own internal problem:
     "Unable to get registers from thread",
+    # Next two can be caused by a flaky tmp FS; normally fine upon retry; details at #93451
+    "No such file or directory",
+    "Permission denied",
 ]
 
 IGNORED_SANITIZER_ERRORS = [
