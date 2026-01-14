@@ -1,5 +1,6 @@
 import argparse
 import os
+import secrets
 import subprocess
 import time
 from pathlib import Path
@@ -8,6 +9,7 @@ from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
+from buzzhouse_job import generate_buzz_config
 
 repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
@@ -180,19 +182,34 @@ def main():
         print(f"Setting environment variable {key} to {value}")
         os.environ[key] = value
 
+    temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
+    workspace_path = temp_dir / "workspace"
+    buzzconfig = workspace_path / "fuzz.json"
+    # Generate BuzzHouse config
+    generate_buzz_config(buzzconfig)
+
+    session_seed = secrets.randbits(64)
+    print(f"Using seed {session_seed} for La Casa del Dolor")
+
     test_results = [
         Result.from_commands_run(
             name="dolor",
-            command=f"python3 ./tests/casa_del_dolor/dolor.py --generator=buzzhouse \
+            command=f"python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzhouse \
                 --server-config=./ci/tmp/config/config.xml \
                 --user-config=./ci/tmp/config/users.xml \
                 --client-binary={clickhouse_path} \
                 --server-binaries={clickhouse_path} \
-                --client-config=./ci/tmp/config/server.json \
-                --server-settings-prob=0 --change-server-version-prob=100 --replica-values=1,2\
-                --shard-values=1,1 --log-path=./ci/tmp/dolor.log\
-                --add-remote-server-settings-prob=0 --number-servers=1,2\
-                --add-disk-settings-prob=99 --number-disks=1,3 --add-filesystem-caches-prob=0 --number-caches=1,1 --time-between-shutdowns=10,180 --restart-clickhouse-prob=75 --compare-table-dump-prob=0 --set-locales-prob=100 --set-timezones-prob=0 --keeper-settings-prob=0 --mem-limit=16g --set-shared-mergetree-disk",
+                --client-config={buzzconfig} \
+                --log-path=./ci/tmp/dolor.log \
+                --timeout=30 --server-settings-prob=0 \
+                --kill-server-prob=50 --without-monitoring \
+                --replica-values=1 --shard-values=1 \
+                --add-remote-server-settings-prob=0 \
+                --add-disk-settings-prob=99 --number-disks=1,3 --add-policy-settings-prob=80\
+                --add-filesystem-caches-prob=80 -number-caches=1,1 \
+                --time-between-shutdowns=180,180 --restart-clickhouse-prob=75 \
+                --compare-table-dump-prob=0 --set-locales-prob=80 --set-timezones-prob=80 \
+                --keeper-settings-prob=0 --mem-limit=16g --set-shared-mergetree-disk",
         )
     ]
 

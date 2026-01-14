@@ -1,20 +1,14 @@
 #!/usr/bin/env python3
 import json
 import random
+import secrets
 from pathlib import Path
 
 from ci.jobs.ast_fuzzer_job import run_fuzz_job
-from ci.praktika.info import Info
 from ci.praktika.utils import Utils
 
 
-def main():
-    temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
-    workspace_path = temp_dir / "workspace"
-    buzz_config_file = workspace_path / "fuzz.json"
-
-    workspace_path.mkdir(parents=True, exist_ok=True)
-
+def generate_buzz_config(buzz_config_file: Path):
     # Sometimes disallow SQL types to reduce number of combinations
     disabled_types_str = ""
     if random.randint(1, 2) == 1:
@@ -126,7 +120,7 @@ def main():
     min_string_length = random.randint(0, 100)
     max_string_length = min_string_length + (10 if allow_hardcoded_inserts else 1000)
     buzz_config = {
-        "seed": random.randint(1, 18446744073709551615),
+        "seed": secrets.randbits(64),
         "max_depth": random.randint(2, 6),
         "max_width": random.randint(2, 8),
         "max_databases": random.randint(2, 5),
@@ -235,6 +229,13 @@ def main():
     }
     with open(buzz_config_file, "w") as outfile:
         outfile.write(json.dumps(buzz_config))
+
+
+def main():
+    temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
+    workspace_path = temp_dir / "workspace"
+    workspace_path.mkdir(parents=True, exist_ok=True)
+    generate_buzz_config(workspace_path / "fuzz.json")
 
     run_fuzz_job("BuzzHouse")
 
