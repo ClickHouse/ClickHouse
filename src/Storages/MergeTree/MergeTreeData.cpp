@@ -8605,14 +8605,8 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 
         auto callback = [&](const auto & substream_path)
         {
-            String stream_name;
             auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
-
-            if (settings[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_name.size() > settings[MergeTreeSetting::max_file_name_length])
-                stream_name = sipHash128String(full_stream_name);
-            else
-                stream_name = full_stream_name;
-
+            String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
             column_streams.emplace(stream_name, full_stream_name);
         };
 
@@ -10532,5 +10526,14 @@ void decrementMutationsCounters(MutationCounters & mutation_counters, const Muta
 {
     updateMutationsCounters(mutation_counters, commands, -1);
 }
+
+String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSettings & storage_settings, const IDataPartStorage * data_part_storage)
+{
+    if ((data_part_storage && data_part_storage->isCaseInsensitive()) || (storage_settings[MergeTreeSetting::replace_long_file_name_to_hash] && file_name.size() > storage_settings[MergeTreeSetting::max_file_name_length]))
+        return sipHash128String(file_name);
+
+    return file_name;
+}
+
 
 }
