@@ -1363,184 +1363,186 @@ void StatementGenerator::addWhereSide(RandomGenerator & rg, const std::vector<Gr
 void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr)
 {
     const GroupCol & gcol = rg.pickRandomly(available_cols);
-    const uint32_t noption = rg.nextLargeNumber();
 
-    if (noption < 751)
+    std::fill(predMask.begin(), predMask.end(), true);
+    predGen.setEnabled(predMask);
+    switch (static_cast<PredOp>(predGen.nextOp())) /// drifts over time
     {
-        /// Binary expr
-        Expr * lexpr = nullptr;
-        Expr * rexpr = nullptr;
-        std::uniform_int_distribution<uint32_t> op_range(
-            1, static_cast<uint32_t>(rg.nextMediumNumber() < 98 ? BinaryOperator::BINOP_LEEQGR : BinaryOperator_MAX));
-        const auto & op = rg.nextSmallNumber() < 7 ? BinaryOperator::BINOP_EQ : static_cast<BinaryOperator>(op_range(rg.generator));
+        case PredOp::BinaryExpr: {
+            /// Binary expr
+            Expr * lexpr = nullptr;
+            Expr * rexpr = nullptr;
+            std::uniform_int_distribution<uint32_t> op_range(
+                1, static_cast<uint32_t>(rg.nextMediumNumber() < 98 ? BinaryOperator::BINOP_LEEQGR : BinaryOperator_MAX));
+            const auto & op = rg.nextSmallNumber() < 7 ? BinaryOperator::BINOP_EQ : static_cast<BinaryOperator>(op_range(rg.generator));
 
-        if (rg.nextSmallNumber() < 9)
-        {
-            BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+            if (rg.nextSmallNumber() < 9)
+            {
+                BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
 
-            bexpr->set_op(op);
-            lexpr = bexpr->mutable_lhs();
-            rexpr = bexpr->mutable_rhs();
-        }
-        else
-        {
-            /// Sometimes do the function call instead
-            SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+                bexpr->set_op(op);
+                lexpr = bexpr->mutable_lhs();
+                rexpr = bexpr->mutable_rhs();
+            }
+            else
+            {
+                /// Sometimes do the function call instead
+                SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
 
-            sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
-            lexpr = sfc->add_args()->mutable_expr();
-            rexpr = sfc->add_args()->mutable_expr();
+                sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
+                lexpr = sfc->add_args()->mutable_expr();
+                rexpr = sfc->add_args()->mutable_expr();
+            }
+            if (rg.nextSmallNumber() < 9)
+            {
+                refColumn(rg, gcol, lexpr);
+                addWhereSide(rg, available_cols, rexpr);
+            }
+            else
+            {
+                addWhereSide(rg, available_cols, lexpr);
+                refColumn(rg, gcol, rexpr);
+            }
         }
-        if (rg.nextSmallNumber() < 9)
-        {
-            refColumn(rg, gcol, lexpr);
-            addWhereSide(rg, available_cols, rexpr);
-        }
-        else
-        {
-            addWhereSide(rg, available_cols, lexpr);
-            refColumn(rg, gcol, rexpr);
-        }
-    }
-    else if (noption < 851)
-    {
-        /// Between expr
-        const uint32_t noption2 = rg.nextMediumNumber();
-        ExprBetween * bexpr = expr->mutable_comp_expr()->mutable_expr_between();
-        Expr * expr1 = bexpr->mutable_expr1();
-        Expr * expr2 = bexpr->mutable_expr2();
-        Expr * expr3 = bexpr->mutable_expr3();
+        break;
+        case PredOp::BetweenExpr: {
+            /// Between expr
+            const uint32_t noption2 = rg.nextMediumNumber();
+            ExprBetween * bexpr = expr->mutable_comp_expr()->mutable_expr_between();
+            Expr * expr1 = bexpr->mutable_expr1();
+            Expr * expr2 = bexpr->mutable_expr2();
+            Expr * expr3 = bexpr->mutable_expr3();
 
-        bexpr->set_paren(rg.nextMediumNumber() < 96);
-        bexpr->set_not_(rg.nextBool());
-        if (noption2 < 34)
-        {
+            bexpr->set_paren(rg.nextMediumNumber() < 96);
+            bexpr->set_not_(rg.nextBool());
+            if (noption2 < 34)
+            {
+                refColumn(rg, gcol, expr1);
+                addWhereSide(rg, available_cols, expr2);
+                addWhereSide(rg, available_cols, expr3);
+            }
+            else if (noption2 < 68)
+            {
+                addWhereSide(rg, available_cols, expr1);
+                refColumn(rg, gcol, expr2);
+                addWhereSide(rg, available_cols, expr3);
+            }
+            else
+            {
+                addWhereSide(rg, available_cols, expr1);
+                addWhereSide(rg, available_cols, expr2);
+                refColumn(rg, gcol, expr3);
+            }
+        }
+        break;
+        case PredOp::UnaryExpr: {
+            /// Is null expr
+            Expr * isexpr = nullptr;
+
+            if (rg.nextSmallNumber() < 8)
+            {
+                ExprNullTests * enull = expr->mutable_comp_expr()->mutable_expr_null_tests();
+
+                enull->set_not_(rg.nextBool());
+                isexpr = enull->mutable_expr();
+            }
+            else
+            {
+                /// Sometimes do the function call instead
+                SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+                static const auto & nullFuncs
+                    = {SQLFunc::FUNCisNull, SQLFunc::FUNCisNullable, SQLFunc::FUNCisNotNull, SQLFunc::FUNCisZeroOrNull};
+
+                sfc->mutable_func()->set_catalog_func(rg.pickRandomly(nullFuncs));
+                isexpr = sfc->add_args()->mutable_expr();
+            }
+            refColumn(rg, gcol, isexpr);
+        }
+        break;
+        case PredOp::LikeExpr: {
+            /// Like expr
+            Expr * expr1 = nullptr;
+            Expr * expr2 = nullptr;
+
+            if (rg.nextSmallNumber() < 8)
+            {
+                ExprLike * elike = expr->mutable_comp_expr()->mutable_expr_like();
+                std::uniform_int_distribution<uint32_t> like_range(1, static_cast<uint32_t>(ExprLike::PossibleKeywords_MAX));
+
+                elike->set_keyword(static_cast<ExprLike_PossibleKeywords>(like_range(rg.generator)));
+                elike->set_not_(rg.nextBool());
+                expr1 = elike->mutable_expr1();
+                expr2 = elike->mutable_expr2();
+            }
+            else
+            {
+                /// Sometimes do the function call instead
+                SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+                static const auto & likeFuncs
+                    = {SQLFunc::FUNClike, SQLFunc::FUNCnotLike, SQLFunc::FUNCilike, SQLFunc::FUNCnotILike, SQLFunc::FUNCmatch};
+
+                sfc->mutable_func()->set_catalog_func(rg.pickRandomly(likeFuncs));
+                expr1 = sfc->add_args()->mutable_expr();
+                expr2 = sfc->add_args()->mutable_expr();
+            }
             refColumn(rg, gcol, expr1);
-            addWhereSide(rg, available_cols, expr2);
-            addWhereSide(rg, available_cols, expr3);
-        }
-        else if (noption2 < 68)
-        {
-            addWhereSide(rg, available_cols, expr1);
-            refColumn(rg, gcol, expr2);
-            addWhereSide(rg, available_cols, expr3);
-        }
-        else
-        {
-            addWhereSide(rg, available_cols, expr1);
-            addWhereSide(rg, available_cols, expr2);
-            refColumn(rg, gcol, expr3);
-        }
-    }
-    else if (noption < 901)
-    {
-        /// Is null expr
-        Expr * isexpr = nullptr;
-
-        if (rg.nextSmallNumber() < 8)
-        {
-            ExprNullTests * enull = expr->mutable_comp_expr()->mutable_expr_null_tests();
-
-            enull->set_not_(rg.nextBool());
-            isexpr = enull->mutable_expr();
-        }
-        else
-        {
-            /// Sometimes do the function call instead
-            SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-            static const auto & nullFuncs
-                = {SQLFunc::FUNCisNull, SQLFunc::FUNCisNullable, SQLFunc::FUNCisNotNull, SQLFunc::FUNCisZeroOrNull};
-
-            sfc->mutable_func()->set_catalog_func(rg.pickRandomly(nullFuncs));
-            isexpr = sfc->add_args()->mutable_expr();
-        }
-        refColumn(rg, gcol, isexpr);
-    }
-    else if (noption < 931)
-    {
-        /// Like expr
-        Expr * expr1 = nullptr;
-        Expr * expr2 = nullptr;
-
-        if (rg.nextSmallNumber() < 8)
-        {
-            ExprLike * elike = expr->mutable_comp_expr()->mutable_expr_like();
-            std::uniform_int_distribution<uint32_t> like_range(1, static_cast<uint32_t>(ExprLike::PossibleKeywords_MAX));
-
-            elike->set_keyword(static_cast<ExprLike_PossibleKeywords>(like_range(rg.generator)));
-            elike->set_not_(rg.nextBool());
-            expr1 = elike->mutable_expr1();
-            expr2 = elike->mutable_expr2();
-        }
-        else
-        {
-            /// Sometimes do the function call instead
-            SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-            static const auto & likeFuncs
-                = {SQLFunc::FUNClike, SQLFunc::FUNCnotLike, SQLFunc::FUNCilike, SQLFunc::FUNCnotILike, SQLFunc::FUNCmatch};
-
-            sfc->mutable_func()->set_catalog_func(rg.pickRandomly(likeFuncs));
-            expr1 = sfc->add_args()->mutable_expr();
-            expr2 = sfc->add_args()->mutable_expr();
-        }
-        refColumn(rg, gcol, expr1);
-        if (rg.nextBool())
-        {
-            generateLikeExpr(rg, expr2);
-        }
-        else
-        {
-            addWhereSide(rg, available_cols, expr2);
-        }
-    }
-    else if (noption < 961)
-    {
-        /// Search expr
-        refColumn(rg, gcol, generatePartialSearchExpr(rg, expr));
-    }
-    else if (noption < 991)
-    {
-        /// In expr
-        Expr * expr1 = nullptr;
-
-        if (rg.nextSmallNumber() < 8)
-        {
-            ExprIn * ein = expr->mutable_comp_expr()->mutable_expr_in();
-
-            ein->set_not_(rg.nextBool());
-            ein->set_global(rg.nextBool());
-            expr1 = ein->mutable_expr()->mutable_expr();
             if (rg.nextBool())
             {
-                ExprList * elist = rg.nextBool() ? ein->mutable_tuple() : ein->mutable_array();
-                const uint32_t nclauses = rg.nextSmallNumber();
+                generateLikeExpr(rg, expr2);
+            }
+            else
+            {
+                addWhereSide(rg, available_cols, expr2);
+            }
+        }
+        break;
+        case PredOp::SearchExpr: {
+            /// Search expr
+            refColumn(rg, gcol, generatePartialSearchExpr(rg, expr));
+        }
+        break;
+        case PredOp::InExpr: {
+            /// In expr
+            Expr * expr1 = nullptr;
 
-                for (uint32_t i = 0; i < nclauses; i++)
+            if (rg.nextSmallNumber() < 8)
+            {
+                ExprIn * ein = expr->mutable_comp_expr()->mutable_expr_in();
+
+                ein->set_not_(rg.nextBool());
+                ein->set_global(rg.nextBool());
+                expr1 = ein->mutable_expr()->mutable_expr();
+                if (rg.nextBool())
                 {
-                    addWhereSide(rg, available_cols, elist->mutable_expr());
+                    ExprList * elist = rg.nextBool() ? ein->mutable_tuple() : ein->mutable_array();
+                    const uint32_t nclauses = rg.nextSmallNumber();
+
+                    for (uint32_t i = 0; i < nclauses; i++)
+                    {
+                        addWhereSide(rg, available_cols, elist->mutable_expr());
+                    }
+                }
+                else
+                {
+                    addWhereSide(rg, available_cols, ein->mutable_single_expr());
                 }
             }
             else
             {
-                addWhereSide(rg, available_cols, ein->mutable_single_expr());
-            }
-        }
-        else
-        {
-            /// Sometimes do the function call instead
-            SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-            static const auto & inFuncs = {SQLFunc::FUNCin, SQLFunc::FUNCnotIn, SQLFunc::FUNCglobalIn, SQLFunc::FUNCglobalNotIn};
+                /// Sometimes do the function call instead
+                SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+                static const auto & inFuncs = {SQLFunc::FUNCin, SQLFunc::FUNCnotIn, SQLFunc::FUNCglobalIn, SQLFunc::FUNCglobalNotIn};
 
-            sfc->mutable_func()->set_catalog_func(rg.pickRandomly(inFuncs));
-            expr1 = sfc->add_args()->mutable_expr();
-            addWhereSide(rg, available_cols, sfc->add_args()->mutable_expr());
+                sfc->mutable_func()->set_catalog_func(rg.pickRandomly(inFuncs));
+                expr1 = sfc->add_args()->mutable_expr();
+                addWhereSide(rg, available_cols, sfc->add_args()->mutable_expr());
+            }
+            refColumn(rg, gcol, expr1);
         }
-        refColumn(rg, gcol, expr1);
-    }
-    else
-    {
-        /// Any predicate
-        generatePredicate(rg, expr);
+        break;
+        default:
+            /// Any predicate
+            generatePredicate(rg, expr);
     }
 }
 
