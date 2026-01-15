@@ -60,11 +60,6 @@ void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
-
-    /// provides correct caching with case-insensitivity
-    state.update(quote_styles.size());
-    for (auto style : quote_styles)
-        state.update(static_cast<uint8_t>(style));
 }
 
 QueryTreeNodePtr IdentifierNode::cloneImpl() const
