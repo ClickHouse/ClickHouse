@@ -128,8 +128,8 @@ void GlobalSubqueriesMatcher::Data::addExternalStorage(ASTPtr & ast, const Names
 
     auto interpreter = interpretSubquery(subquery_or_table_name, getContext(), subquery_depth, required_columns);
 
-    Block sample = interpreter->getSampleBlock();
-    NamesAndTypesList columns = sample.getNamesAndTypesList();
+    auto sample = interpreter->getSampleBlock();
+    NamesAndTypesList columns = sample->getNamesAndTypesList();
 
     auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
         getContext(),

@@ -12,9 +12,9 @@
 
 #include <bech32.h>
 
+
 namespace
 {
-
 /** Max length of Bech32 or Bech32m encoding is 90 chars, this includes:
  *
  *      HRP: 1 - 83 human readable characters, 'bc' or 'tb' for a SegWit address
@@ -80,8 +80,6 @@ bool convertbits(bech32_data & out, const bech32_data & in)
 
 void finalizeRow(DB::ColumnString::Offsets & offsets, char *& pos, const char * const begin, const size_t i)
 {
-    *pos = '\0';
-    ++pos;
     offsets[i] = pos - begin;
 }
 
@@ -240,17 +238,13 @@ private:
         ColumnString::Offsets & out_offsets = out_col->getOffsets();
 
         out_offsets.resize(input_rows_count);
-        out_vec.resize((max_address_len + 1 /* trailing 0 */) * input_rows_count);
+        out_vec.resize(max_address_len * input_rows_count);
 
         char * out_begin = reinterpret_cast<char *>(out_vec.data());
         char * out_pos = out_begin;
 
         size_t human_readable_part_prev_offset = 0;
         size_t data_prev_offset = 0;
-
-        /// In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
-        size_t human_readable_part_zero_offset = human_readable_part_width == 0 ? 1 : 0;
-        size_t data_zero_offset = data_width == 0 ? 1 : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -263,8 +257,8 @@ private:
 
             /// max encodable data to stay within 90-char limit on Bech32 output
             /// human_readable_part must be at least 1 character and no more than 83
-            auto data_len = data_new_offset - data_prev_offset - data_zero_offset;
-            auto human_readable_part_len = human_readable_part_new_offset - human_readable_part_prev_offset - human_readable_part_zero_offset;
+            auto data_len = data_new_offset - data_prev_offset;
+            auto human_readable_part_len = human_readable_part_new_offset - human_readable_part_prev_offset;
             if (data_len > max_data_len || human_readable_part_len > max_human_readable_part_len || human_readable_part_len < 1)
             {
                 finalizeRow(out_offsets, out_pos, out_begin, i);
@@ -276,15 +270,16 @@ private:
 
             std::string human_readable_part(
                 reinterpret_cast<const char *>(&human_readable_part_vec[human_readable_part_prev_offset]),
-                reinterpret_cast<const char *>(&human_readable_part_vec[human_readable_part_new_offset - human_readable_part_zero_offset]));
+                reinterpret_cast<const char *>(&human_readable_part_vec[human_readable_part_new_offset]));
 
             bech32_data input(
                 reinterpret_cast<const uint8_t *>(&data_vec[data_prev_offset]),
-                reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset - data_zero_offset]));
+                reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset]));
 
             uint8_t witness_version = have_witness_version ? witness_version_col->getUInt(i) : default_witness_version;
 
             bech32_data input_5bit;
+            input_5bit.push_back(witness_version);
             convertbits<8, 5, true>(input_5bit, input); /// squash input from 8-bit -> 5-bit bytes
             std::string address = bech32::encode(human_readable_part, input_5bit, witness_version > 0 ? bech32::Encoding::BECH32M : bech32::Encoding::BECH32);
 
@@ -392,8 +387,8 @@ private:
         human_readable_part_offsets.resize(input_rows_count);
         data_offsets.resize(input_rows_count);
 
-        human_readable_part_vec.resize((max_human_readable_part_len + 1 /* trailing 0 */) * input_rows_count);
-        data_vec.resize((max_data_len + 1 /* trailing 0 */) * input_rows_count);
+        human_readable_part_vec.resize(max_human_readable_part_len * input_rows_count);
+        data_vec.resize(max_data_len * input_rows_count);
 
         char * human_readable_part_begin = reinterpret_cast<char *>(human_readable_part_vec.data());
         char * human_readable_part_pos = human_readable_part_begin;
@@ -403,21 +398,16 @@ private:
 
         size_t prev_offset = 0;
 
-        /// In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
-        size_t trailing_zero_offset = col_width == 0 ? 1 : 0;
-
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t new_offset = col_width == 0 ? (*in_offsets)[i] : prev_offset + col_width;
 
             /// NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
             while (col_width > 0 && in_vec[new_offset - 1] == 0 && new_offset > prev_offset)
-            {
                 --new_offset;
-            }
 
             /// enforce char limit
-            if ((new_offset - prev_offset - trailing_zero_offset) > max_address_len)
+            if (new_offset - prev_offset > max_address_len)
             {
                 finalizeRow(human_readable_part_offsets, human_readable_part_pos, human_readable_part_begin, i);
                 finalizeRow(data_offsets, data_pos, data_begin, i);
@@ -428,13 +418,13 @@ private:
 
             std::string input(
                 reinterpret_cast<const char *>(&in_vec[prev_offset]),
-                reinterpret_cast<const char *>(&in_vec[new_offset - trailing_zero_offset]));
+                reinterpret_cast<const char *>(&in_vec[new_offset]));
 
             const auto dec = bech32::decode(input);
 
             bech32_data data_8bit;
             if (dec.encoding == bech32::Encoding::INVALID
-                || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin(), dec.data.end()))
+                || !convertbits<5, 8, false>(data_8bit, bech32_data(dec.data.begin() + 1 /*first val is witver*/, dec.data.end()))
                 || data_8bit.empty())
             {
                 finalizeRow(human_readable_part_offsets, human_readable_part_pos, human_readable_part_begin, i);
@@ -480,8 +470,76 @@ private:
 
 REGISTER_FUNCTION(Bech32Repr)
 {
-    factory.registerFunction<EncodeToBech32Representation>();
-    factory.registerFunction<DecodeFromBech32Representation>();
+    FunctionDocumentation::Description bech32Encode_description = R"(
+Encodes a binary data string, along with a human-readable part (HRP), using the [Bech32 or Bech32m](https://en.bitcoin.it/wiki/Bech32) algorithms.
+
+:::note
+When using the [`FixedString`](../data-types/fixedstring.md) data type, if a value does not fully fill the row it is padded with null characters.
+While the `bech32Encode` function will handle this automatically for the hrp argument, for the data argument the values must not be padded.
+For this reason it is not recommended to use the [`FixedString`](../data-types/fixedstring.md) data type for your data values unless you are
+certain that they are all the same length and ensure that your `FixedString` column is set to that length as well.
+:::
+    )";
+    FunctionDocumentation::Syntax bech32Encode_syntax = "bech32Encode(hrp, data[, witver])";
+    FunctionDocumentation::Arguments bech32Encode_arguments = {
+        {"hrp", "A String of `1 - 83` lowercase characters specifying the \"human-readable part\" of the code. Usually 'bc' or 'tb'.", {"String", "FixedString"}},
+        {"data", "A String of binary data to encode.", {"String", "FixedString"}},
+        {"witver", "Optional. The witness version (default = 1). An `UInt*` specifying the version of the algorithm to run. `0` for Bech32 and `1` or greater for Bech32m.", {"UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue bech32Encode_returned_value = {"Returns a Bech32 address string, consisting of the human-readable part, a separator character which is always '1', and a data part. The length of the string will never exceed 90 characters. If the algorithm cannot generate a valid address from the input, it will return an empty string.", {"String"}};
+    FunctionDocumentation::Examples bech32Encode_examples = {
+        {
+            "Default Bech32m",
+            R"(
+-- When no witness version is supplied, the default is 1, the updated Bech32m algorithm.
+SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
+            )",
+            "bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq"
+        },
+        {
+            "Bech32 algorithm",
+            R"(
+-- A witness version of 0 will result in a different address string.
+SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
+            )",
+            "bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z"
+        },
+        {
+            "Custom HRP",
+            R"(
+-- While 'bc' (Mainnet) and 'tb' (Testnet) are the only allowed hrp values for the
+-- SegWit address format, Bech32 allows any hrp that satisfies the above requirements.
+SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10)
+            )",
+            "abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4"
+        }
+    };
+    FunctionDocumentation::IntroducedIn bech32Encode_introduced_in = {25, 6};
+    FunctionDocumentation::Category bech32Encode_category = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation bech32Encode_documentation = {bech32Encode_description, bech32Encode_syntax, bech32Encode_arguments, {}, bech32Encode_returned_value, bech32Encode_examples, bech32Encode_introduced_in, bech32Encode_category};
+
+    FunctionDocumentation::Description bech32Decode_description = R"(
+Decodes a Bech32 address string generated by either the bech32 or bech32m algorithms.
+
+:::note
+Unlike the encode function, `Bech32Decode` will automatically handle padded FixedStrings.
+:::
+    )";
+    FunctionDocumentation::Syntax bech32Decode_syntax = "bech32Decode(address)";
+    FunctionDocumentation::Arguments bech32Decode_arguments = {
+        {"address", "A Bech32 string to decode.", {"String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue bech32Decode_returned_value = {"Returns a tuple consisting of `(hrp, data)` that was used to encode the string. The data is in binary format.", {"Tuple(String, String)"}};
+    FunctionDocumentation::Examples bech32Decode_examples = {
+        {"Decode address", "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)", "bc   751E76E8199196D454941C45D1B3A323F1433BD6"},
+        {"Testnet address", "SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)", "tb   751E76E8199196D454941C45D1B3A323F1433BD6"}
+    };
+    FunctionDocumentation::IntroducedIn bech32Decode_introduced_in = {25, 6};
+    FunctionDocumentation::Category bech32Decode_category = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation bech32Decode_documentation = {bech32Decode_description, bech32Decode_syntax, bech32Decode_arguments, {}, bech32Decode_returned_value, bech32Decode_examples, bech32Decode_introduced_in, bech32Decode_category};
+
+    factory.registerFunction<EncodeToBech32Representation>(bech32Encode_documentation);
+    factory.registerFunction<DecodeFromBech32Representation>(bech32Decode_documentation);
 }
 
 }

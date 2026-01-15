@@ -5,6 +5,7 @@ sidebar_label: 'IPv6'
 sidebar_position: 30
 slug: /sql-reference/data-types/ipv6
 title: 'IPv6'
+doc_type: 'reference'
 ---
 
 ## IPv6 {#ipv6}
@@ -71,7 +72,6 @@ SELECT toIPv4('127.0.0.1') = toIPv6('::ffff:127.0.0.1');
 │                                                       1 │
 └─────────────────────────────────────────────────────────┘
 ```
-
 
 **See Also**
 

@@ -29,6 +29,7 @@ namespace Setting
 {
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_allow_materialized_views;
 }
 
 namespace ErrorCodes
@@ -39,7 +40,19 @@ namespace ErrorCodes
 
 static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context [[maybe_unused]])
 {
-    const auto & storage = table_node.getStorage();
+    auto storage = table_node.getStorage();
+    const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get());
+    if (mv)
+    {
+        if (!context->getSettingsRef()[Setting::parallel_replicas_allow_materialized_views])
+            return false;
+
+        // address refreshable MVs separately, currently leads to logical error
+        if (mv->isRefreshable())
+            return false;
+
+        storage = mv->getTargetTable();
+    }
 
     if (!storage->isMergeTree() && !typeid_cast<const StorageDummy *>(storage.get()))
         return false;
@@ -59,7 +72,7 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
 /// subquery has only LEFT / RIGHT / ALL INNER JOIN (or none), and left / right part is MergeTree table or subquery candidate as well.
 ///
 /// Additional checks are required, so we return many candidates. The innermost subquery is on top.
-std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
+std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
     std::vector<const QueryNode *> res;
 
@@ -116,9 +129,13 @@ std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTr
                 const auto join_kind = join_node.getKind();
                 const auto join_strictness = join_node.getStrictness();
 
+                /// Do not apply for non-leftmost RIGHT JOIN
+                std::unordered_set<QueryTreeNodeType> supported_table_expression_types = {QueryTreeNodeType::TABLE, QueryTreeNodeType::QUERY, QueryTreeNodeType::UNION};
+
                 if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                     query_tree_node = join_node.getLeftTableExpression().get();
-                else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny)
+                else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny
+                    && supported_table_expression_types.contains(join_node.getLeftTableExpression()->getNodeType()))
                     query_tree_node = join_node.getRightTableExpression().get();
                 else
                     return {};
@@ -271,7 +288,7 @@ const QueryNode * findQueryForParallelReplicas(
             {
                 const auto * join = typeid_cast<JoinStep *>(step);
                 const auto * join_logical = typeid_cast<JoinStepLogical *>(step);
-                if (join_logical && join_logical->hasPreparedJoinStorage())
+                if (join_logical && typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get()))
                     /// JoinStepLogical with prepared storage is converted to FilledJoinStep, not regular JoinStep.
                     join_logical = nullptr;
 
@@ -320,7 +337,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     if (!context->canUseParallelReplicasOnInitiator())
         return nullptr;
 
-    auto stack = getSupportingParallelReplicasQuery(query_tree_node.get(), context);
+    auto stack = getSupportingParallelReplicasQueries(query_tree_node.get(), context);
     /// Empty stack means that storage does not support parallel replicas.
     if (stack.empty())
         return nullptr;
@@ -345,7 +362,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     /// We updated a query_tree with dummy storages, and mapping is using updated_query_tree now.
     /// But QueryNode result should be taken from initial query tree.
     /// So that we build a list of candidates again, and call findQueryForParallelReplicas for it.
-    auto new_stack = getSupportingParallelReplicasQuery(updated_query_tree.get(), context);
+    auto new_stack = getSupportingParallelReplicasQueries(updated_query_tree.get(), context);
     const auto & mapping = planner.getQueryNodeToPlanStepMapping();
     const auto * res = findQueryForParallelReplicas(new_stack, mapping, context->getSettingsRef());
 
@@ -430,7 +447,7 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
                 const auto join_kind = join_node.getKind();
                 const auto join_strictness = join_node.getStrictness();
 
-                if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner and join_strictness == JoinStrictness::All))
+                if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                 {
                     query_tree_node = join_node.getLeftTableExpression().get();
                     join_nodes.push(join_node.getRightTableExpression().get());
@@ -490,14 +507,14 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
 
     QueryTreeNodePtr modified_query_tree = query_node.clone();
 
-    Block initial_header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+    auto initial_header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
     ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree);
 
-    Block header = InterpreterSelectQueryAnalyzer::getSampleBlock(
+    auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
     const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
@@ -516,9 +533,13 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
         nullptr);
 
     auto converting = ActionsDAG::makeConvertingActions(
-        header.getColumnsWithTypeAndName(),
-        initial_header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Position);
+        header->getColumnsWithTypeAndName(),
+        initial_header->getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Position,
+        context,
+        false /*ignore_constant_values*/,
+        false /*add_cast_columns*/,
+        nullptr /*new_names*/);
 
     /// initial_header is a header expected by initial query.
     /// header is a header which is returned by the follower.

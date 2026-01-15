@@ -1,0 +1,21 @@
+NaN comparison
+0
+7
+0
+7
+2
+5
+MinMax index should skip all granules for column = NaN comparison
+Description: minmax GRANULARITY 1
+Parts: 0/1
+Granules: 0/1
+Description: minmax GRANULARITY 1
+Parts: 0/1
+Granules: 0/1
+MinMax index should use all granules for column <> NaN comparison
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 1/1
+Description: minmax GRANULARITY 1
+Parts: 1/1
+Granules: 1/1

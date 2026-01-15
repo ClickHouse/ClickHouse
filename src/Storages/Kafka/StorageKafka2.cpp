@@ -1,16 +1,17 @@
 #include <Storages/Kafka/StorageKafka2.h>
 
 #include <Columns/IColumn.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/DeadLetterQueue.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -37,6 +38,8 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/UniqueLock.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
@@ -55,12 +58,9 @@
 #include <librdkafka/rdkafka.h>
 #include <pcg-random/pcg_random.hpp>
 
-#include <filesystem>
-#include <string>
-
 namespace CurrentMetrics
 {
-// TODO: Add proper metrics, similar to old StorageKafka
+extern const Metric KafkaConsumersInUse;
 extern const Metric KafkaBackgroundReads;
 extern const Metric KafkaWrites;
 }
@@ -72,6 +72,7 @@ extern const Event KafkaMessagesRead;
 extern const Event KafkaMessagesFailed;
 extern const Event KafkaRowsRead;
 extern const Event KafkaWrites;
+extern const Event KafkaMVNotReady;
 }
 
 
@@ -80,7 +81,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 output_format_avro_rows_in_file;
     extern const SettingsMilliseconds stream_flush_interval_ms;
     extern const SettingsMilliseconds stream_poll_timeout_ms;
@@ -93,6 +94,7 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_broker_list;
     extern const KafkaSettingsString kafka_client_id;
     extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
+    extern const KafkaSettingsMilliseconds kafka_consumer_reschedule_ms;
     extern const KafkaSettingsString kafka_format;
     extern const KafkaSettingsString kafka_group_name;
     extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
@@ -104,6 +106,7 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
     extern const KafkaSettingsString kafka_replica_name;
     extern const KafkaSettingsString kafka_schema;
+    extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
 }
@@ -123,7 +126,6 @@ extern const int REPLICA_IS_ALREADY_ACTIVE;
 namespace
 {
 constexpr auto MAX_FAILED_POLL_ATTEMPTS = 10;
-constexpr auto TMP_LOCKS_REFRESH_POLLS = 15;
 }
 
 StorageKafka2::StorageKafka2(
@@ -153,16 +155,17 @@ StorageKafka2::StorageKafka2(
     , schema_name(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_schema].value, macros_info))
     , num_consumers((*kafka_settings)[KafkaSetting::kafka_num_consumers].value)
     , log(getLogger("StorageKafka2 (" + table_id_.getNameForLogs() + ")"))
-    , semaphore(0, static_cast<int>(num_consumers))
     , settings_adjustments(StorageKafkaUtils::createSettingsAdjustments(*kafka_settings, schema_name))
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
     , collection_name(collection_name_)
     , active_node_identifier(toString(ServerUUID::get()))
 {
+    kafka_settings->sanityCheck(getContext());
     if ((*kafka_settings)[KafkaSetting::kafka_num_consumers] > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
-    if ((*kafka_settings)[KafkaSetting::kafka_handle_error_mode] == StreamingHandleErrorMode::STREAM)
+    if (auto mode = getHandleKafkaErrorMode();
+        mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
     {
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_num] = 0;
         (*kafka_settings)[KafkaSetting::input_format_allow_errors_ratio] = 0;
@@ -171,12 +174,12 @@ StorageKafka2::StorageKafka2(
     storage_metadata.setColumns(columns_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(StorageKafkaUtils::createVirtuals((*kafka_settings)[KafkaSetting::kafka_handle_error_mode]));
+    setVirtuals(StorageKafkaUtils::createVirtuals(getHandleKafkaErrorMode()));
 
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getMessageBrokerSchedulePool().createTask(log->name(), [this, i] { threadFunc(i); });
+        auto task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), log->name(), [this, i] { threadFunc(i); });
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
@@ -186,7 +189,7 @@ StorageKafka2::StorageKafka2(
     if (!first_replica)
         createReplica();
 
-    activating_task = getContext()->getSchedulePool().createTask(log->name() + "(activating task)", [this]() { activateAndReschedule(); });
+    activating_task = getContext()->getSchedulePool().createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
     activating_task->deactivate();
 }
 
@@ -321,8 +324,9 @@ void StorageKafka2::activateAndReschedule()
 
     /// It would be ideal to introduce a setting for this
     constexpr static size_t check_period_ms = 60000;
-    /// In case of any exceptions we want to rerun the this task as fast as possible but we also don't want to keep retrying immediately
-    /// in a close loop (as fast as tasks can be processed), so we'll retry in between 100 and 10000 ms
+    /// In case of any exceptions we want to rerun the this task as fast as possible but we also don't want to keep
+    /// retrying immediately in a close loop (as fast as tasks can be processed), so we'll retry in between 100 and
+    /// 10000 ms
     const size_t backoff_ms = 100 * ((consecutive_activate_failures + 1) * (consecutive_activate_failures + 2)) / 2;
     const size_t next_failure_retry_ms = std::min(size_t{10000}, backoff_ms);
 
@@ -394,7 +398,7 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 
     const Settings & settings = getContext()->getSettingsRef();
     size_t poll_timeout = settings[Setting::stream_poll_timeout_ms].totalMilliseconds();
-    const auto & header = metadata_snapshot->getSampleBlockNonMaterialized();
+    auto header = metadata_snapshot->getSampleBlockNonMaterialized();
 
     auto producer = std::make_unique<KafkaProducer>(
         std::make_shared<cppkafka::Producer>(conf), topics[0], std::chrono::milliseconds(poll_timeout), shutdown_called, header);
@@ -405,22 +409,26 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
-    return std::make_shared<MessageQueueSink>(header, getFormatName(), max_rows, std::move(producer), getName(), modified_context);
+    return std::make_shared<MessageQueueSink>(std::make_shared<const Block>(std::move(header)), getFormatName(), max_rows, std::move(producer), getName(), modified_context);
 }
 
 void StorageKafka2::startup()
 {
-    for (size_t i = 0; i < num_consumers; ++i)
+    const auto replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
     {
-        try
+        std::lock_guard lock(consumers_mutex);
+        for (size_t i = 0; i < num_consumers; ++i)
         {
-            consumers.push_back(ConsumerAndAssignmentInfo{.consumer = createConsumer(i), .keeper = getZooKeeper()});
-            LOG_DEBUG(log, "Created #{} consumer", num_created_consumers);
-            ++num_created_consumers;
-        }
-        catch (const cppkafka::Exception &)
-        {
-            tryLogCurrentException(log);
+            try
+            {
+                consumers.push_back(
+                    std::make_shared<KeeperHandlingConsumer>(createKafkaConsumer(i), getZooKeeper(), fs_keeper_path, replica_name, i, log));
+                ++num_created_consumers;
+            }
+            catch (const cppkafka::Exception &)
+            {
+                tryLogCurrentException(log);
+            }
         }
     }
     activating_task->activateAndSchedule();
@@ -433,7 +441,7 @@ void StorageKafka2::shutdown(bool)
     activating_task->deactivate();
     partialShutdown();
     LOG_TRACE(log, "Closing consumers");
-    consumers.clear();
+    cleanConsumers();
     LOG_TRACE(log, "Consumers closed");
 }
 
@@ -442,22 +450,15 @@ void StorageKafka2::drop()
     dropReplica();
 }
 
-KafkaConsumer2Ptr StorageKafka2::createConsumer(size_t consumer_number)
+KafkaConsumer2Ptr StorageKafka2::createKafkaConsumer(size_t consumer_number)
 {
-    // Create a consumer and subscribe to topics
-    auto consumer_impl = std::make_shared<cppkafka::Consumer>(getConsumerConfiguration(consumer_number));
-    consumer_impl->set_destroy_flags(RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE);
-
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
     chassert((thread_per_consumer || num_consumers == 1) && "StorageKafka2 cannot handle multiple consumers on a single thread");
     auto & stream_cancelled = tasks[consumer_number]->stream_cancelled;
-    return std::make_shared<KafkaConsumer2>(
-        consumer_impl, log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics);
-
+    return std::make_shared<KafkaConsumer2>(log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics, getSchemaRegistrySkipBytes());
 }
 
-
-cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_number)
+cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_sink)
 {
     KafkaConfigLoader::ConsumerConfigParams params{
         {getContext()->getConfigRef(), collection_name, topics, log},
@@ -467,7 +468,7 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
         consumer_number,
         client_id,
         getMaxBlockSize()};
-    auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params);
+    auto kafka_config = KafkaConfigLoader::getConsumerConfiguration(*this, params, std::move(exception_sink));
     // It is disabled, because in case of no materialized views are attached, it can cause live memory leak. To enable it, a similar cleanup mechanism must be introduced as for StorageKafka.
     kafka_config.set("statistics.interval.ms", "0");
     // Making more frequent updates, now 1 min
@@ -504,20 +505,9 @@ size_t StorageKafka2::getPollTimeoutMillisecond() const
                                                          : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
 }
 
-namespace
+size_t StorageKafka2::getSchemaRegistrySkipBytes() const
 {
-const std::string lock_file_name{"lock"};
-const std::string commit_file_name{"committed"};
-const std::string intent_file_name{"intention"};
-
-std::optional<int64_t> getNumber(zkutil::ZooKeeper & keeper, const fs::path & path)
-{
-    std::string result;
-    if (!keeper.tryGet(path, result))
-        return std::nullopt;
-
-    return DB::parse<int64_t>(result);
-}
+    return (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value;
 }
 
 bool StorageKafka2::createTableIfNotExists()
@@ -582,7 +572,7 @@ bool StorageKafka2::createTableIfNotExists()
             ops.emplace_back(zkutil::makeCreateRequest(partitions_path, "", zkutil::CreateMode::Persistent));
         }
 
-        // Save all locked partitions
+        // Create the path for topic partition locks
         const auto topic_partition_locks_path = fs_keeper_path / "topic_partition_locks";
         ops.emplace_back(zkutil::makeCreateRequest(topic_partition_locks_path, "", zkutil::CreateMode::Persistent));
 
@@ -665,8 +655,8 @@ bool StorageKafka2::removeTableNodesFromZooKeeper(zkutil::ZooKeeperPtr keeper_to
 void StorageKafka2::createReplica()
 {
     LOG_INFO(log, "Creating replica {}", replica_path);
-    // TODO: This can cause issues if a new table is created with the same path. To make this work, we should store some metadata
-    // about the table to be able to identify that the same table is created, not a new one.
+    // TODO: This can cause issues if a new table is created with the same path. To make this work, we should store some
+    // metadata about the table to be able to identify that the same table is created, not a new one.
     const auto code = keeper->tryCreate(replica_path, "", zkutil::CreateMode::Persistent);
 
     switch (code)
@@ -710,20 +700,19 @@ void StorageKafka2::dropReplica()
 
     LOG_INFO(log, "{} is the last replica, will remove table", replica_path);
 
-    /** At this moment, another replica can be created and we cannot remove the table.
-      * Try to remove /replicas node first. If we successfully removed it,
-      * it guarantees that we are the only replica that proceed to remove the table
-      * and no new replicas can be created after that moment (it requires the existence of /replicas node).
-      * and table cannot be recreated with new /replicas node on another servers while we are removing data,
-      * because table creation is executed in single transaction that will conflict with remaining nodes.
+    /** At this moment, another replica can be created and we cannot remove the table. Try to remove /replicas node
+      * first. If we successfully removed it, it guarantees that we are the only replica that proceed to remove the
+      * table and no new replicas can be created after that moment (it requires the existence of /replicas node). and
+      * table cannot be recreated with new /replicas node on another servers while we are removing data, because table
+      * creation is executed in single transaction that will conflict with remaining nodes.
       */
 
     /// Node /dropped works like a lock that protects from concurrent removal of old table and creation of new table.
-    /// But recursive removal may fail in the middle of operation leaving some garbage in zookeeper_path, so
-    /// we remove it on table creation if there is /dropped node. Creating thread may remove /dropped node created by
-    /// removing thread, and it causes race condition if removing thread is not finished yet.
-    /// To avoid this we also create ephemeral child before starting recursive removal.
-    /// (The existence of child node does not allow to remove parent node).
+    /// But recursive removal may fail in the middle of operation leaving some garbage in zookeeper_path, so we remove
+    /// it on table creation if there is /dropped node. Creating thread may remove /dropped node created by removing
+    /// thread, and it causes race condition if removing thread is not finished yet. To avoid this we also create
+    /// ephemeral child before starting recursive removal. (The existence of child node does not allow to remove parent
+    /// node).
     Coordination::Requests ops;
     Coordination::Responses responses;
     String drop_lock_path = fs_keeper_path / "dropped" / "lock";
@@ -752,269 +741,12 @@ void StorageKafka2::dropReplica()
     }
 }
 
-
-// We go through all the topic partitions, count the number of live replicas,
-// and see which partitions are already locked by other replicas
-std::pair<StorageKafka2::TopicPartitionSet, StorageKafka2::ActiveReplicasInfo> StorageKafka2::getLockedTopicPartitions(zkutil::ZooKeeper & keeper_to_use)
-{
-    LOG_TRACE(log, "Starting to lookup replica's state");
-    StorageKafka2::TopicPartitionSet locked_partitions;
-    auto lock_nodes = keeper_to_use.getChildren(keeper_path + "/topic_partition_locks");
-    std::unordered_set<String> replicas_with_lock;
-
-    for (const auto & lock_name : lock_nodes)
-    {
-        replicas_with_lock.insert(keeper_to_use.get(keeper_path + "/topic_partition_locks/" + lock_name));
-        auto base = lock_name.substr(0, lock_name.size() - 5); // drop ".lock"
-        auto sep  = base.rfind('_');
-        if (sep == String::npos)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Topic partition lock path {} is not in correct format.", lock_name);
-
-        String topic = base.substr(0, sep);
-        Int32  partition = parse<Int32>(base.substr(sep + 1));
-        TopicPartition topic_partition
-        {
-            .topic = topic,
-            .partition_id = partition,
-            .offset = KafkaConsumer2::INVALID_OFFSET
-        };
-
-        locked_partitions.insert(topic_partition);
-    }
-
-    Strings already_locked_partitions_str;
-    already_locked_partitions_str.reserve(locked_partitions.size());
-    for (const auto & already_locks : locked_partitions)
-        already_locked_partitions_str.push_back(fmt::format("[{}:{}]", already_locks.topic, already_locks.partition_id));
-    LOG_INFO(
-        log,
-        "Already locked topic partitions are [{}]",
-        boost::algorithm::join(already_locked_partitions_str, ", ")
-    );
-
-    const auto replicas_count = keeper_to_use.getChildren(keeper_path + "/replicas").size();
-    LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total", replicas_with_lock.size(), replicas_count);
-    const auto has_replica_without_locks = replicas_with_lock.size() < replicas_count;
-    return {locked_partitions, ActiveReplicasInfo{replicas_count, has_replica_without_locks}};
-}
-
-std::pair<StorageKafka2::TopicPartitions, StorageKafka2::ActiveReplicasInfo> StorageKafka2::getAvailableTopicPartitions(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & all_topic_partitions)
-{
-    const auto get_locked_partitions_res = getLockedTopicPartitions(keeper_to_use);
-    const auto & already_locked_partitions = get_locked_partitions_res.first;
-    TopicPartitions available_topic_partitions;
-    available_topic_partitions.reserve(all_topic_partitions.size());
-    for (const auto & partition : all_topic_partitions)
-    {
-        if (!already_locked_partitions.contains(partition))
-            available_topic_partitions.push_back(partition);
-    }
-    Strings available_topic_partitions_str;
-    available_topic_partitions_str.reserve(available_topic_partitions.size());
-    for (const auto & available_partition : available_topic_partitions)
-        available_topic_partitions_str.push_back(fmt::format("[{}:{}]", available_partition.topic, available_partition.partition_id));
-    LOG_INFO(
-        log,
-        "Topic partitions [{}] are available to lock",
-        boost::algorithm::join(available_topic_partitions_str, ", ")
-    );
-
-    return {available_topic_partitions, get_locked_partitions_res.second};
-}
-
-std::optional<StorageKafka2::LockedTopicPartitionInfo> StorageKafka2::createLocksInfoIfFree(zkutil::ZooKeeper & keeper_to_use, const TopicPartition& partition_to_lock)
-{
-    const auto topic_partition_path = getTopicPartitionPath(partition_to_lock);
-    const auto lock_file_path = getTopicPartitionLockPath(partition_to_lock);
-    keeper_to_use.createAncestors(lock_file_path);
-    try
-    {
-        using zkutil::EphemeralNodeHolder;
-        LockedTopicPartitionInfo lock_info{
-            EphemeralNodeHolder::create(lock_file_path, keeper_to_use, (*kafka_settings)[KafkaSetting::kafka_replica_name].value),
-            getNumber(keeper_to_use, topic_partition_path / commit_file_name),
-            getNumber(keeper_to_use, topic_partition_path / intent_file_name)};
-
-        LOG_TRACE(
-            log,
-            "Locked topic partition: {}:{} at offset {} with intent size {}, offset present: {}, intent size present: {}",
-            partition_to_lock.topic,
-            partition_to_lock.partition_id,
-            lock_info.committed_offset.value_or(0),
-            lock_info.intent_size.value_or(0),
-            lock_info.committed_offset.has_value(),
-            lock_info.intent_size.has_value());
-
-        return lock_info;
-    }
-    catch (const Coordination::Exception & e)
-    {
-        if (e.code == Coordination::Error::ZNODEEXISTS)
-        {
-            LOG_TRACE(
-                log,
-                "Skipping lock for topic partition {}:{} because it already exists",
-                partition_to_lock.topic, partition_to_lock.partition_id);
-            return std::nullopt;
-        }
-        throw;
-    }
-}
-
-void StorageKafka2::lockTemporaryLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & available_topic_partitions, TopicPartitionLocks & tmp_locks, size_t & tmp_locks_quota, const bool has_replica_without_locks)
-{
-    /// There are no available topic partitions, so drop the quota to 0
-    if (available_topic_partitions.empty())
-    {
-        LOG_TRACE(log, "There are no available topic partitions to lock");
-        tmp_locks_quota = 0;
-        return;
-    }
-    LOG_TRACE(log, "Starting to lock temporary locks");
-
-    /// We have some temporary lock quota, but there is at least one replica without locks, let's drop the quote to give the other replica a chance to lock some partitions
-    if (tmp_locks_quota > 0 && has_replica_without_locks)
-    {
-        LOG_TRACE(log, "There is at least one consumer without locks, won't lock any temporary locks this round");
-        tmp_locks_quota = 0;
-        return;
-    }
-
-    /// We have some temporary lock quota, but it is greater than the number of available topic partitions,
-    /// so we will reduce the quota to give other replicas a chance to lock some partitions
-    if (tmp_locks_quota > 0 && tmp_locks_quota <= available_topic_partitions.size())
-    {
-
-        LOG_TRACE(log, "Reducing temporary locks to give other replicas a chance to lock some partitions");
-        tmp_locks_quota = std::min(tmp_locks_quota - 1, available_topic_partitions.size() - 1);
-    }
-    else
-    {
-        tmp_locks_quota = std::min(available_topic_partitions.size(), tmp_locks_quota + 1);
-    }
-    LOG_INFO(log, "The replica can take {} temporary locks in the current round", tmp_locks_quota);
-
-    if (tmp_locks_quota == 0)
-        return;
-
-    auto available_topic_partitions_copy = available_topic_partitions;
-    pcg64 generator(randomSeed());
-    std::shuffle(available_topic_partitions_copy.begin(), available_topic_partitions_copy.end(), generator);
-
-    for (const auto & tp : available_topic_partitions)
-    {
-        if (tmp_locks.size() >= tmp_locks_quota)
-            break;
-        auto maybe_lock = createLocksInfoIfFree(keeper_to_use, tp);
-        if (!maybe_lock.has_value())
-            continue;
-        tmp_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
-    }
-}
-
-// If the number of locks on a replica is greater than it can hold, then we first release the partitions that we can no longer hold.
-// Otherwise, we try to lock free partitions one by one.
-void StorageKafka2::updatePermanentLocks(zkutil::ZooKeeper & keeper_to_use, const TopicPartitions & available_topic_partitions, TopicPartitionLocks & permanent_locks, const size_t topic_partitions_count, const size_t active_replica_count)
-{
-    LOG_TRACE(log, "Starting to update permanent locks");
-    chassert(active_replica_count > 0 && "There should be at least one active replica, because we are active");
-    size_t can_lock_partitions = std::max<size_t>(topic_partitions_count / static_cast<size_t>(active_replica_count), 1);
-
-    LOG_TRACE(log, "The replica can have {} permanent locks after the current round", can_lock_partitions);
-
-    if (can_lock_partitions == permanent_locks.size())
-    {
-        LOG_TRACE(log, "The number of permanent locks is equal to the number of locks that can be taken, will not update them");
-        return;
-    }
-
-    if (can_lock_partitions < permanent_locks.size())
-    {
-        LOG_TRACE(log, "Will release the extra {} topic partition locks", permanent_locks.size() - can_lock_partitions);
-        size_t need_to_unlock = permanent_locks.size() - can_lock_partitions;
-        auto permanent_locks_it = permanent_locks.begin();
-        for (size_t i = 0; i < need_to_unlock && permanent_locks_it != permanent_locks.end(); ++i)
-        {
-            LOG_TEST(log, "Releasing topic partition lock for [{}:{}] at offset",
-                permanent_locks_it->first.topic, permanent_locks_it->first.partition_id);
-            permanent_locks_it = permanent_locks.erase(permanent_locks_it);
-        }
-    }
-    else
-    {
-        size_t need_to_lock = can_lock_partitions - permanent_locks.size();
-        LOG_TRACE(log, "Will try to lock {} topic partitions", need_to_lock);
-        auto tp_it = available_topic_partitions.begin();
-        for (size_t i = 0; i < need_to_lock && tp_it != available_topic_partitions.end();)
-        {
-            const auto &tp = *tp_it;
-            ++tp_it;
-            auto maybe_lock = createLocksInfoIfFree(keeper_to_use, tp);
-            if (!maybe_lock.has_value())
-                continue;
-            permanent_locks.emplace(TopicPartition(tp), std::move(*maybe_lock));
-            ++i;
-        }
-    }
-}
-
-void StorageKafka2::saveTopicPartitionInfo(zkutil::ZooKeeper & keeper_to_use, const std::filesystem::path & keeper_path_to_data, const String & data)
-{
-    Coordination::Requests ops;
-    keeper_to_use.checkExistsAndGetCreateAncestorsOps(keeper_path_to_data, ops);
-    if (keeper_to_use.exists(keeper_path_to_data))
-        ops.emplace_back(zkutil::makeSetRequest(keeper_path_to_data, data, -1));
-    else
-        ops.emplace_back(zkutil::makeCreateRequest(keeper_path_to_data, data, zkutil::CreateMode::Persistent));
-
-    Coordination::Responses responses;
-    const auto code = keeper_to_use.tryMulti(ops, responses);
-    if (code != Coordination::Error::ZOK)
-        zkutil::KeeperMultiException::check(code, ops, responses);
-}
-
-void StorageKafka2::saveCommittedOffset(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition)
-{
-    const auto partition_prefix = getTopicPartitionPath(topic_partition);
-    saveTopicPartitionInfo(keeper_to_use, partition_prefix / commit_file_name, toString(topic_partition.offset));
-    // This is best effort, if it fails we will try to remove in the next round
-    keeper_to_use.tryRemove(partition_prefix / intent_file_name, -1);
-    LOG_TEST(
-        log, "Saved offset {} for topic-partition [{}:{}]", topic_partition.offset, topic_partition.topic, topic_partition.partition_id);
-}
-
-void StorageKafka2::saveIntent(zkutil::ZooKeeper & keeper_to_use, const TopicPartition & topic_partition, int64_t intent)
-{
-    if (intent <= 0)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Intent for topic-partition [{}:{}] must be greater than 0, but got {}",
-            topic_partition.topic,
-            topic_partition.partition_id,
-            intent);
-
-    LOG_TEST(
-        log,
-        "Saving intent of {} for topic-partition [{}:{}] at offset {}",
-        intent,
-        topic_partition.topic,
-        topic_partition.partition_id,
-        topic_partition.offset);
-
-    const auto partition_prefix = getTopicPartitionPath(topic_partition);
-    saveTopicPartitionInfo(keeper_to_use, partition_prefix / intent_file_name, toString(intent));
-}
-
-
-StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
-    KafkaConsumer2 & consumer,
-    const TopicPartition & topic_partition,
-    std::optional<int64_t> message_count,
-    Stopwatch & total_stopwatch,
+std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
+    KeeperHandlingConsumer & consumer,
+    const Stopwatch & watch,
     const ContextPtr & modified_context)
 {
     LOG_TEST(log, "Polling consumer");
-    PolledBatchInfo batch_info;
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
     Block non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized());
     auto virtual_header = getVirtualsHeader();
@@ -1024,42 +756,68 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     // otherwise external iteration will reuse that and logic will became even more fuzzy
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
 
-    auto put_error_to_stream = (*kafka_settings)[KafkaSetting::kafka_handle_error_mode] == StreamingHandleErrorMode::STREAM;
-
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        getFormatName(), empty_buf, non_virtual_header, modified_context, getMaxBlockSize(), std::nullopt, 1);
+        getFormatName(),
+        empty_buf,
+        non_virtual_header,
+        modified_context,
+        getMaxBlockSize(),
+        std::nullopt,
+        FormatParserSharedResources::singleThreaded(modified_context->getSettingsRef()));
 
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
-    size_t intent_size = 0;
     size_t failed_poll_attempts = 0;
+    bool is_dead_letter = false;
+
+    // Dirty hack to "pass" MessageInfo to the on_error lambda by reference. current_msg_info is captured in both
+    // `on_error` and `msg_sink` lambdas. It is assigned in `msg_sink` in order to pass the necessary information to
+    // `on_error` in case of an exception happens. Doing the same through a member variable would be worse, because then
+    // we would need to think about multiple threads.
+    const KeeperHandlingConsumer::MessageInfo * current_msg_info = nullptr;
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         ProfileEvents::increment(ProfileEvents::KafkaMessagesFailed);
 
-        if (put_error_to_stream)
+        switch (getHandleKafkaErrorMode())
         {
-            exception_message = e.message();
-            for (size_t i = 0; i < result_columns.size(); ++i)
+            case StreamingHandleErrorMode::STREAM:
             {
-                // We could already push some rows to result_columns before exception, we need to fix it.
-                result_columns[i]->rollback(*checkpoints[i]);
+                exception_message = e.message();
+                for (size_t i = 0; i < result_columns.size(); ++i)
+                {
+                    // We could already push some rows to result_columns before exception, we need to fix it.
+                    result_columns[i]->rollback(*checkpoints[i]);
 
-                // all data columns will get default value in case of error
-                result_columns[i]->insertDefault();
+                    // all data columns will get default value in case of error
+                    result_columns[i]->insertDefault();
+                }
+                return 1;
             }
+            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            {
+                exception_message = e.message();
+                for (size_t i = 0; i < result_columns.size(); ++i)
+                {
+                    // We could already push some rows to result_columns before exception, we need to fix it.
+                    result_columns[i]->rollback(*checkpoints[i]);
+                }
 
-            return 1;
+                is_dead_letter = true;
+                return 0;
+            }
+            case StreamingHandleErrorMode::DEFAULT:
+            {
+                e.addMessage(
+                    "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
+                    current_msg_info->currentTopic(),
+                    current_msg_info->currentPartition(),
+                    current_msg_info->currentOffset());
+                throw std::move(e);
+            }
         }
-
-        e.addMessage(
-            "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
-            consumer.currentTopic(),
-            consumer.currentPartition(),
-            consumer.currentOffset());
-        throw std::move(e);
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
@@ -1069,11 +827,11 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         ? (*kafka_settings)[KafkaSetting::kafka_flush_interval_ms]
         : getContext()->getSettingsRef()[Setting::stream_flush_interval_ms];
 
-    const auto check_time_limit = [&max_execution_time, &total_stopwatch]()
+    const auto check_time_limit = [&max_execution_time, &watch]()
     {
         if (max_execution_time != 0)
         {
-            auto elapsed_ns = total_stopwatch.elapsed();
+            auto elapsed_ns = watch.elapsed();
 
             if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
                 return false;
@@ -1082,22 +840,24 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         return true;
     };
 
-    while (true)
+    KeeperHandlingConsumer::MessageSinkFunction msg_sink = [&](ReadBufferPtr buf, const KeeperHandlingConsumer::MessageInfo & msg_info, bool has_more_polled_messages, bool stalled) mutable
     {
         size_t new_rows = 0;
         exception_message.reset();
-        if (auto buf = consumer.consume(topic_partition, message_count))
+
+        is_dead_letter = false;
+        if (buf)
         {
-            ++intent_size;
+            current_msg_info = &msg_info;
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
             new_rows = executor.execute(*buf);
         }
 
-        if (new_rows)
+        if (new_rows || is_dead_letter)
         {
             ProfileEvents::increment(ProfileEvents::KafkaRowsRead, new_rows);
 
-            const auto & header_list = consumer.currentHeaderList();
+            const auto & header_list = msg_info.currentHeaderList();
 
             Array headers_names;
             Array headers_values;
@@ -1115,13 +875,13 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
 
             for (size_t i = 0; i < new_rows; ++i)
             {
-                virtual_columns[0]->insert(consumer.currentTopic());
-                virtual_columns[1]->insert(consumer.currentKey());
-                virtual_columns[2]->insert(consumer.currentOffset());
-                virtual_columns[3]->insert(consumer.currentPartition());
+                virtual_columns[0]->insert(msg_info.currentTopic());
+                virtual_columns[1]->insert(msg_info.currentKey());
+                virtual_columns[2]->insert(msg_info.currentOffset());
+                virtual_columns[3]->insert(msg_info.currentPartition());
 
 
-                auto timestamp_raw = consumer.currentTimestamp();
+                auto timestamp_raw = msg_info.currentTimestamp();
                 if (timestamp_raw)
                 {
                     auto ts = timestamp_raw->get_timestamp();
@@ -1136,11 +896,12 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 }
                 virtual_columns[6]->insert(headers_names);
                 virtual_columns[7]->insert(headers_values);
-                if (put_error_to_stream)
+
+                if (getHandleKafkaErrorMode() == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
-                        virtual_columns[8]->insert(consumer.currentPayload());
+                        virtual_columns[8]->insert(msg_info.currentPayload());
                         virtual_columns[9]->insert(*exception_message);
                     }
                     else
@@ -1151,27 +912,53 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 }
             }
 
+            if (is_dead_letter)
+            {
+                assert(exception_message);
+                const auto time_now = std::chrono::system_clock::now();
+                auto storage_id = getStorageID();
+
+                auto dead_letter_queue = getContext()->getDeadLetterQueue();
+                if (!dead_letter_queue)
+                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
+                else
+                    dead_letter_queue->add(
+                        DeadLetterQueueElement{
+                            .table_engine = DeadLetterQueueElement::StreamType::Kafka,
+                            .event_time = timeInSeconds(time_now),
+                            .event_time_microseconds = timeInMicroseconds(time_now),
+                            .database = storage_id.database_name,
+                            .table = storage_id.table_name,
+                            .raw_message = msg_info.currentPayload(),
+                            .error = exception_message.value(),
+                            .details = DeadLetterQueueElement::KafkaDetails{
+                                .topic_name = msg_info.currentTopic(),
+                                .partition = msg_info.currentPartition(),
+                                .offset = msg_info.currentPartition(),
+                                .key = msg_info.currentKey()}});
+            }
+
             total_rows = total_rows + new_rows;
-            batch_info.last_offset = consumer.currentOffset();
         }
-        else if (consumer.isStalled())
+        else if (stalled)
         {
             ++failed_poll_attempts;
         }
         else
         {
             // We came here in case of tombstone (or sometimes zero-length) messages, and it is not something abnormal
-            // TODO: it seems like in case of put_error_to_stream=true we may need to process those differently
-            // currently we just skip them with note in logs.
+            // TODO: it seems like in case of StreamingHandleErrorMode::STREAM or DEAD_LETTER_QUEUE
+            //  we may need to process those differently
+            //  currently we just skip them with note in logs.
             LOG_DEBUG(
                 log,
                 "Parsing of message (topic: {}, partition: {}, offset: {}) return no rows.",
-                consumer.currentTopic(),
-                consumer.currentPartition(),
-                consumer.currentOffset());
+                msg_info.currentTopic(),
+                msg_info.currentPartition(),
+                msg_info.currentOffset());
         }
 
-        if (!consumer.hasMorePolledMessages()
+        if (!has_more_polled_messages
             && (total_rows >= getMaxBlockSize() || !check_time_limit() || failed_poll_attempts >= MAX_FAILED_POLL_ATTEMPTS))
         {
             LOG_TRACE(
@@ -1179,11 +966,15 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 "Stopped collecting message for current batch. There are {} failed polled attempts, {} total rows",
                 failed_poll_attempts,
                 total_rows);
-            break;
+            return true;
         }
-    }
+        return false;
+    };
 
-    if (total_rows == 0)
+    auto maybe_guard = consumer.poll(msg_sink);
+
+    // Return empty optional if the consumer was unable to poll any messages or the transformation of those messages resulted in no rows
+    if (!maybe_guard.has_value() || total_rows == 0)
         return {};
 
     /// MATERIALIZED columns can be added here, but I think
@@ -1199,16 +990,16 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     for (const auto & column : virtual_block.getColumnsWithTypeAndName())
         result_block.insert(column);
 
-    batch_info.blocks.emplace_back(std::move(result_block));
-    batch_info.intent_size = intent_size;
-    return batch_info;
+    BlocksList blocks;
+    blocks.emplace_back(std::move(result_block));
+    return BlocksAndGuard{std::move(blocks), std::move(*maybe_guard)};
 }
 
 void StorageKafka2::threadFunc(size_t idx)
 {
     chassert(idx < tasks.size());
     auto task = tasks[idx];
-    std::optional<StallReason> maybe_stall_reason;
+    std::optional<StallKind> maybe_stall_reason;
     try
     {
         auto table_id = getStorageID();
@@ -1223,14 +1014,20 @@ void StorageKafka2::threadFunc(size_t idx)
             {
                 maybe_stall_reason.reset();
                 if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                {
+                    ProfileEvents::increment(ProfileEvents::KafkaMVNotReady);
                     break;
+                }
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
                 // Exit the loop & reschedule if some stream stalled
                 if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
                 {
-                    LOG_TRACE(log, "Stream stalled.");
+                    LOG_TRACE(
+                        log,
+                        "Stream stalled. Rescheduling in {} ms",
+                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
                     break;
                 }
 
@@ -1238,7 +1035,10 @@ void StorageKafka2::threadFunc(size_t idx)
                 auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
                 if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
                 {
-                    LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
+                    LOG_TRACE(
+                        log,
+                        "Thread work duration limit exceeded. Rescheduling in {} ms",
+                        (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds());
                     break;
                 }
             }
@@ -1251,19 +1051,19 @@ void StorageKafka2::threadFunc(size_t idx)
 
     if (!task->stream_cancelled)
     {
-        // Keeper related problems should be solved relatively fast, it makes sense wait less time
-        if (maybe_stall_reason.has_value()
-            && (*maybe_stall_reason == StallReason::KeeperSessionEnded || *maybe_stall_reason == StallReason::CouldNotAcquireLocks || *maybe_stall_reason == StallReason::NoMetadata))
-            task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS / 10);
+        UInt64 kafka_consumer_reschedule_ms = (*kafka_settings)[KafkaSetting::kafka_consumer_reschedule_ms].totalMilliseconds();
+        if (maybe_stall_reason.has_value() && *maybe_stall_reason == StallKind::ShortStall)
+            task->holder->scheduleAfter(kafka_consumer_reschedule_ms / 10);
         else
-            task->holder->scheduleAfter(KAFKA_RESCHEDULE_MS);
+            task->holder->scheduleAfter(kafka_consumer_reschedule_ms);
     }
 }
 
-std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t idx)
+std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
 {
-    // This function is written assuming that each consumer has their own thread. This means once this is changed, this function should be revisited.
-    // The return values should be revisited, as stalling all consumers because of a single one stalled is not a good idea.
+    // This function is written assuming that each consumer has their own thread. This means once this is changed, this
+    // function should be revisited. The return values should be revisited, as stalling all consumers because of a
+    // single one stalled is not a good idea.
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
@@ -1272,75 +1072,32 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaBackgroundReads};
     ProfileEvents::increment(ProfileEvents::KafkaBackgroundReads);
 
-    auto & consumer_info = consumers[idx];
-    consumer_info.watch.restart();
-    auto & consumer = consumer_info.consumer;
-    LOG_TRACE(log, "Polling consumer {} for events", idx);
-    consumer->pollEvents();
+    auto consumer = acquireConsumer(idx);
+
+    SCOPE_EXIT({ releaseConsumer(std::move(consumer)); });
+
+    Stopwatch watch{CLOCK_MONOTONIC_COARSE};
 
     try
     {
-        if (consumer_info.permanent_locks.empty() || consumer_info.poll_count >= TMP_LOCKS_REFRESH_POLLS)
-        {
-            consumer_info.topic_partitions.clear();
+        if (consumer->needsNewKeeper())
+            consumer->setKeeper(getZooKeeperAndAssertActive());
 
-            consumer_info.consume_from_topic_partition_index = 0;
+        if (const auto cannot_poll_reason = consumer->prepareToPoll(); cannot_poll_reason.has_value())
+            return getStallKind(*cannot_poll_reason);
 
-            if (consumer_info.keeper->expired())
-            {
-                consumer_info.keeper = getZooKeeperAndAssertActive();
-                LOG_TEST(log, "Got new zookeeper");
-            }
-
-            auto all_topic_partitions = consumer->getAllTopicPartitions();
-            if (all_topic_partitions.empty())
-            {
-                LOG_DEBUG(log, "Couldn't get list of all topic partitions");
-                return StallReason::NoMetadata;
-            }
-
-            // Clear temporary locks to give a chance to lock them as permanent locks and to make it possible to gather available topic partitions only once.
-            consumer_info.tmp_locks.clear();
-            const auto [available_topic_partitions, active_replicas_info] = getAvailableTopicPartitions(*consumer_info.keeper, all_topic_partitions);
-            updatePermanentLocks(*consumer_info.keeper, available_topic_partitions, consumer_info.permanent_locks, all_topic_partitions.size(), active_replicas_info.active_replica_count);
-            lockTemporaryLocks(*consumer_info.keeper, available_topic_partitions, consumer_info.tmp_locks, consumer_info.tmp_locks_quota, active_replicas_info.has_replica_without_locks);
-            consumer_info.poll_count = 0;
-
-            // Now we always have some assignment
-            consumer_info.topic_partitions.clear();
-            consumer_info.topic_partitions.reserve(consumer_info.permanent_locks.size() + consumer_info.tmp_locks.size());
-            auto update_topic_partitions = [&](const auto & locks)
-            {
-                for (const auto & [topic_partition, info] : locks)
-                {
-                    TopicPartition copy = topic_partition;
-                    if (info.committed_offset.has_value())
-                        copy.offset = *info.committed_offset;
-                    consumer_info.topic_partitions.push_back(std::move(copy));
-                }
-            };
-            update_topic_partitions(consumer_info.permanent_locks);
-            update_topic_partitions(consumer_info.tmp_locks);
-            consumer->updateOffsets(consumer_info.topic_partitions);
-        }
-
-        if (consumer_info.topic_partitions.empty())
-        {
-            LOG_TRACE(log, "Consumer {} has assignment, but has no partitions, probably because there are more consumers in the consumer group than partitions.", idx);
-            return StallReason::NoPartitions;
-        }
         LOG_TRACE(log, "Trying to consume from consumer {}", idx);
-        const auto maybe_rows = streamFromConsumer(consumer_info);
+        const auto maybe_rows = streamFromConsumer(*consumer, watch);
         if (maybe_rows.has_value())
         {
-            const auto milliseconds = consumer_info.watch.elapsedMilliseconds();
+            const auto milliseconds = watch.elapsedMilliseconds();
             LOG_DEBUG(
-                log, "Pushing {} rows to {} took {} ms.", formatReadableQuantity(*maybe_rows), table_id.getNameForLogs(), milliseconds);
+                log, "Pushing {} rows took {} ms.", formatReadableQuantity(*maybe_rows), milliseconds);
         }
         else
         {
             LOG_DEBUG(log, "Couldn't stream any messages");
-            return StallReason::NoMessages;
+            return StallKind::LongStall;
         }
     }
     catch (const zkutil::KeeperException & e)
@@ -1348,10 +1105,9 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
         if (Coordination::isHardwareError(e.code))
         {
             LOG_INFO(log, "Cleaning up topic-partitions locks because of exception: {}", e.displayText());
-            consumer_info.tmp_locks.clear();
-            consumer_info.permanent_locks.clear();
             activating_task->schedule();
-            return StallReason::KeeperSessionEnded;
+            // Keeper sessions should be restored fast, so let's try to poll again sooner
+            return StallKind::ShortStall;
         }
 
         throw;
@@ -1359,77 +1115,118 @@ std::optional<StorageKafka2::StallReason> StorageKafka2::streamToViews(size_t id
     return {};
 }
 
+StorageKafka2::KeeperHandlingConsumerPtr StorageKafka2::acquireConsumer(size_t idx)
+{
+    std::lock_guard lock{consumers_mutex};
+    if (idx >= consumers.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid consumer index: {}, number of consumers is {}", idx, consumers.size());
 
-std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInfo & consumer_info)
+    auto consumer = consumers[idx];
+    const auto created_consumer = consumer->startUsing([&](IKafkaExceptionInfoSinkPtr exception_sink)
+                                                       { return getConsumerConfiguration(idx, std::move(exception_sink)); });
+
+    if (created_consumer)
+        LOG_TRACE(log, "Created #{} consumer", idx);
+
+    CurrentMetrics::add(CurrentMetrics::KafkaConsumersInUse);
+
+    return consumer;
+}
+
+void StorageKafka2::releaseConsumer(KeeperHandlingConsumerPtr && consumer_ptr)
+{
+    std::lock_guard lock{consumers_mutex};
+    consumer_ptr->stopUsing();
+    cv.notify_one();
+    CurrentMetrics::sub(CurrentMetrics::KafkaConsumersInUse);
+}
+
+void StorageKafka2::cleanConsumers()
+{
+    /// We need to clear the cppkafka::Consumer separately from KafkaConsumer2, since cppkafka::Consumer holds a
+    /// weak_ptr to the KafkaConsumer2 (for logging and stat callback). So if we destroy cppkafka::Consumer in
+    /// KafkaConsumer2 destructor, then due to librdkafka will call the logging again from destructor, it will lead to a
+    /// deadlock. Maybe we could do this in the destructor of KeeperHandlingConsumer, thus avoid this not obvious logic
+    /// here, but this version is "battle tested" by our CI as we have the very similar, if not the same approach in the
+    /// old StorageKafka. Let's go with this now, later on we can improve it.
+    std::vector<CppKafkaConsumerPtr> cpp_consumers_to_close;
+    {
+        UniqueLock lock(consumers_mutex);
+        /// Wait until all consumers will be released
+        /// Clang Thread Safety Analysis doesn't understand std::condition_variable::wait and std::unique_lock
+        cv.wait(
+            lock.getUnderlyingLock(),
+            [&, this]() TSA_NO_THREAD_SAFETY_ANALYSIS
+            {
+                auto it = std::find_if(consumers.begin(), consumers.end(), [](const auto & ptr) { return ptr->isInUse(); });
+                return it == consumers.end();
+            });
+
+        for (const auto & consumer : consumers)
+        {
+            if (!consumer->hasConsumer())
+                continue;
+            cpp_consumers_to_close.push_back(consumer->moveConsumer());
+        }
+    }
+
+    cpp_consumers_to_close.clear();
+
+    std::lock_guard lock(consumers_mutex);
+    consumers.clear();
+}
+
+std::optional<size_t> StorageKafka2::streamFromConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch)
 {
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = getStorageID();
 
-    auto kafka_context = Context::createCopy(getContext());
-    kafka_context->makeQueryContext();
-    kafka_context->applySettingsChanges(settings_adjustments);
+    auto modified_context = Context::createCopy(getContext());
+    modified_context->makeQueryContext();
+    modified_context->applySettingsChanges(settings_adjustments);
 
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
-        kafka_context,
+        modified_context,
         /* allow_materialized */ false,
         /* no_squash */ true,
         /* no_destination */ true,
         /* async_insert */ false);
     auto block_io = interpreter.execute();
 
-    auto & topic_partition = consumer_info.topic_partitions[consumer_info.consume_from_topic_partition_index];
-    LOG_TRACE(
-        log,
-        "Will fetch {}:{} (consume_from_topic_partition_index is {})",
-        topic_partition.topic,
-        topic_partition.partition_id,
-        consumer_info.consume_from_topic_partition_index);
-    consumer_info.consume_from_topic_partition_index
-        = (consumer_info.consume_from_topic_partition_index + 1) % consumer_info.topic_partitions.size();
+    auto maybe_blocks_and_guard = pollConsumer(consumer, watch, modified_context);
 
-    bool needs_offset_reset = true;
-    SCOPE_EXIT({
-        if (!needs_offset_reset)
-            return;
-        consumer_info.consumer->updateOffsets(consumer_info.topic_partitions);
-    });
-
-    auto & keeper_to_use = *consumer_info.keeper;
-
-    // Change temporary locks every TMP_LOCKS_REFRESH_POLLS calls (or whenever permanent_locks_changed is set)
-    // This keeps batchy work from sitting too long on the same partitions and smoothly hands off load over time.
-    ++consumer_info.poll_count;
-
-    auto * lock_info = consumer_info.findTopicPartitionLock(topic_partition);
-    auto [blocks, intent_size, last_read_offset] = pollConsumer(
-        *consumer_info.consumer, topic_partition, lock_info->intent_size, consumer_info.watch, kafka_context);
-
-    if (blocks.empty())
+    if (!maybe_blocks_and_guard.has_value() || maybe_blocks_and_guard->blocks.empty())
     {
-        LOG_TRACE(log, "Didn't get any messages");
-        needs_offset_reset = false;
+        if (maybe_blocks_and_guard.has_value())
+        {
+            LOG_TRACE(log, "No rows to insert");
+            maybe_blocks_and_guard->guard.commit();
+        }
+        else
+        {
+            LOG_TRACE(log, "Didn't get any messages");
+        }
         block_io.onCancelOrConnectionLoss();
         return std::nullopt;
     }
 
+    auto [blocks, offset_guard] = std::move(*maybe_blocks_and_guard);
+
     auto converting_dag = ActionsDAG::makeConvertingActions(
         blocks.front().cloneEmpty().getColumnsWithTypeAndName(),
         block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        modified_context);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
 
     for (auto & block : blocks)
         converting_actions->execute(block);
 
-    // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
-    // It will be cancelled on underlying layer (kafka buffer)
-    lock_info->intent_size = intent_size;
-    saveIntent(keeper_to_use, topic_partition, *lock_info->intent_size);
     std::atomic_size_t rows = 0;
     {
         block_io.pipeline.complete(Pipe{std::make_shared<BlocksListSource>(std::move(blocks))});
@@ -1438,12 +1235,7 @@ std::optional<size_t> StorageKafka2::streamFromConsumer(ConsumerAndAssignmentInf
         CompletedPipelineExecutor executor(block_io.pipeline);
         executor.execute();
     }
-    lock_info->committed_offset = last_read_offset + 1;
-    topic_partition.offset = last_read_offset + 1;
-    saveCommittedOffset(keeper_to_use, topic_partition);
-    consumer_info.consumer->commit(topic_partition);
-    lock_info->intent_size.reset();
-    needs_offset_reset = false;
+    offset_guard.commit();
 
     return rows;
 }
@@ -1482,15 +1274,17 @@ zkutil::ZooKeeperPtr StorageKafka2::getZooKeeperIfTableShutDown() const
     return new_zookeeper;
 }
 
-fs::path StorageKafka2::getTopicPartitionPath(const TopicPartition & topic_partition)
+StorageKafka2::StallKind StorageKafka2::getStallKind(const KeeperHandlingConsumer::CannotPollReason & reason)
 {
-    return fs_keeper_path / "topics" / topic_partition.topic / "partitions" / std::to_string(topic_partition.partition_id);
+    /// Keeper session should be restored fast, therefore we don't want to stall the stream for too long because of that.
+    switch (reason)
+    {
+        case KeeperHandlingConsumer::CannotPollReason::NoPartitions:
+            [[fallthrough]];
+        case KeeperHandlingConsumer::CannotPollReason::NoMetadata:
+            return StallKind::LongStall;
+        case KeeperHandlingConsumer::CannotPollReason::KeeperSessionEnded:
+            return StallKind::ShortStall;
+    }
 }
-
-fs::path StorageKafka2::getTopicPartitionLockPath(const TopicPartition & topic_partition)
-{
-    auto topic_partition_name = fmt::format("{}_{}.{}", topic_partition.topic, topic_partition.partition_id, lock_file_name);
-    return fs_keeper_path / "topic_partition_locks" / topic_partition_name;
-}
-
 }

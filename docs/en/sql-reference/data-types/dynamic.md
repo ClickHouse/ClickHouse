@@ -5,6 +5,7 @@ sidebar_label: 'Dynamic'
 sidebar_position: 62
 slug: /sql-reference/data-types/dynamic
 title: 'Dynamic'
+doc_type: 'guide'
 ---
 
 # Dynamic
@@ -53,7 +54,7 @@ SELECT 'Hello, World!'::Dynamic AS d, dynamicType(d);
 Using CAST from `Variant` column:
 
 ```sql
-SET enable_variant_type = 1, use_variant_as_common_type = 1;
+SET use_variant_as_common_type = 1;
 SELECT multiIf((number % 3) = 0, number, (number % 3) = 1, range(number + 1), NULL)::Dynamic AS d, dynamicType(d) FROM numbers(3)
 ```
 
@@ -64,7 +65,6 @@ SELECT multiIf((number % 3) = 0, number, (number % 3) = 1, range(number + 1), NU
 │ ᴺᵁᴸᴸ  │ None           │
 └───────┴────────────────┘
 ```
-
 
 ## Reading Dynamic nested types as subcolumns {#reading-dynamic-nested-types-as-subcolumns}
 
@@ -448,7 +448,6 @@ If function cannot be executed on some type inside `Dynamic` column, the excepti
 INSERT INTO test VALUES (42), (43), ('str_1');
 SELECT d, dynamicType(d) FROM test;
 ```
-
 
 ```text
 ┌─d─────┬─dynamicType(d)─┐

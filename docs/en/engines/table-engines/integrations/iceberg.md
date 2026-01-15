@@ -4,10 +4,11 @@ description: 'This engine provides a read-only integration with existing Apache 
 sidebar_label: 'Iceberg'
 sidebar_position: 90
 slug: /engines/table-engines/integrations/iceberg
-title: 'Iceberg Table Engine'
+title: 'Iceberg table engine'
+doc_type: 'reference'
 ---
 
-# Iceberg Table Engine {#iceberg-table-engine}
+# Iceberg table engine {#iceberg-table-engine}
 
 :::warning 
 We recommend using the [Iceberg Table Function](/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
@@ -19,7 +20,7 @@ For optimal compatibility, we suggest using the Iceberg Table Function while we 
 
 This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
-## Create Table {#create-table}
+## Create table {#create-table}
 
 Note that the Iceberg table must already exist in the storage, this command does not take DDL parameters to create a new table.
 
@@ -73,7 +74,7 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 Table engine `Iceberg` is an alias to `IcebergS3` now.
 
-## Schema Evolution {#schema-evolution}
+## Schema evolution {#schema-evolution}
 At the moment, with the help of CH, you can read iceberg tables, the schema of which has changed over time. We currently support reading tables where columns have been added and removed, and their order has changed. You can also change a column where a value is required to one where NULL is allowed. Additionally, we support permitted type casting for simple types, namely:  
 * int -> long
 * float -> double
@@ -83,14 +84,21 @@ Currently, it is not possible to change nested structures or the types of elemen
 
 To read a table where the schema has changed after its creation with dynamic schema inference, set allow_dynamic_metadata_for_data_lakes = true when creating the table.
 
-## Partition Pruning {#partition-pruning}
+## Partition pruning {#partition-pruning}
 
 ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. To enable partition pruning, set `use_iceberg_partition_pruning = 1`. For more information about iceberg partition pruning address https://iceberg.apache.org/spec/#partitioning
 
-
-## Time Travel {#time-travel}
+## Time travel {#time-travel}
 
 ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
+
+## Processing of tables with deleted rows {#deleted-rows}
+
+Currently, only Iceberg tables with [position deletes](https://iceberg.apache.org/spec/#position-delete-files) are supported. 
+
+The following deletion methods are **not supported**:
+- [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
+- [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
 ### Basic usage {#basic-usage}
  ```sql
@@ -108,8 +116,8 @@ Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` p
 ### Important considerations {#important-considerations}
 
 - **Snapshots** are typically created when:
-    - New data is written to the table
-    - Some kind of data compaction is performed
+  - New data is written to the table
+  - Some kind of data compaction is performed
 
 - **Schema changes typically don't create snapshots** - This leads to important behaviors when using time travel with tables that have undergone schema evolution.
 
@@ -117,7 +125,7 @@ Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` p
 
 All scenarios are written in Spark because CH doesn't support writing to Iceberg tables yet.
 
-#### Scenario 1: Schema Changes Without New Snapshots {#scenario-1}
+#### Scenario 1: Schema changes without new snapshots {#scenario-1}
 
 Consider this sequence of operations:
 
@@ -154,8 +162,6 @@ Consider this sequence of operations:
 +------------+------------+
 |           1|        Mars|
 +------------+------------+
-
-
   SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
 
 +------------+------------+
@@ -179,11 +185,9 @@ Query results at different timestamps:
 - At ts1 & ts2: Only the original two columns appear
 - At ts3: All three columns appear, with NULL for the price of the first row
 
-#### Scenario 2:  Historical vs. Current Schema Differences {#scenario-2}
-
+#### Scenario 2: Historical vs. current schema differences {#scenario-2}
 
 A time travel query at a current moment might show a different schema than the current table:
-
 
 ```sql
 -- Create a table
@@ -214,8 +218,6 @@ A time travel query at a current moment might show a different schema than the c
 
 -- Query the table at a current moment
   SELECT * FROM spark_catalog.db.time_travel_example_2;
-
-
     +------------+------------+-----+
     |order_number|product_code|price|
     +------------+------------+-----+
@@ -225,7 +227,7 @@ A time travel query at a current moment might show a different schema than the c
 
 This happens because `ALTER TABLE` doesn't create a new snapshot but for the current table Spark takes value of `schema_id` from the latest metadata file, not a snapshot.
 
-#### Scenario 3:  Historical vs. Current Schema Differences {#scenario-3}
+#### Scenario 3: Historical vs. current schema differences {#scenario-3}
 
 The second one is that while doing time travel you can't get state of table before any data was written to it:
 
@@ -244,27 +246,25 @@ The second one is that while doing time travel you can't get state of table befo
   SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
 ```
 
-
 In Clickhouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with Clickhouse Select queries and it will work the same way.
 
-## Metadata File Resolution {#metadata-file-resolution}
+## Metadata file resolution {#metadata-file-resolution}
 When using the `Iceberg` table engine in ClickHouse, the system needs to locate the correct metadata.json file that describes the Iceberg table structure. Here's how this resolution process works:
 
-### Candidates search (in Priority Order) {#candidate-search}
+### Candidates search {#candidate-search}
 
 1. **Direct Path Specification**:
-   * If you set `iceberg_metadata_file_path`, the system will use this exact path by combining it with the Iceberg table directory path.
-   * When this setting is provided, all other resolution settings are ignored.
-
+* If you set `iceberg_metadata_file_path`, the system will use this exact path by combining it with the Iceberg table directory path.
+* When this setting is provided, all other resolution settings are ignored.
 2. **Table UUID Matching**:
-   * If `iceberg_metadata_table_uuid` is specified, the system will:
-     * Look only at `.metadata.json` files in the `metadata` directory
-     * Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
+* If `iceberg_metadata_table_uuid` is specified, the system will:
+  * Look only at `.metadata.json` files in the `metadata` directory
+  * Filter for files containing a `table-uuid` field matching your specified UUID (case-insensitive)
 
 3. **Default Search**:
-   * If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
+* If neither of the above settings are provided, all `.metadata.json` files in the `metadata` directory become candidates
 
-### Selecting the Most Recent File {#most-recent-file}
+### Selecting the most recent file {#most-recent-file}
 
 After identifying candidate files using the above rules, the system determines which one is the most recent:
 

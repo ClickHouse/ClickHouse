@@ -7,15 +7,18 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTViewTargets.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Analyzer/Utils.h>
 
 
 namespace DB
@@ -50,6 +53,18 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             ASTPtr names = create_user_query->names;
             visitChildren(names);
         }
+        else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get());
+                 create_query && create_query->targets && create_query->targets->hasTableASTWithQueryParams(ViewTarget::To))
+        {
+            auto to_table_ast = create_query->targets->getTableASTWithQueryParams(ViewTarget::To);
+
+            visit(to_table_ast);
+
+            create_query->targets->setTableID(ViewTarget::To, to_table_ast->as<ASTTableIdentifier>()->getTableId());
+            create_query->targets->resetTableASTWithQueryParams(ViewTarget::To);
+
+            visitChildren(ast);
+        }
         else
             visitChildren(ast);
     }
@@ -79,6 +94,28 @@ const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
 
     ++num_replaced_parameters;
     return search->second;
+}
+
+namespace
+{
+
+/// Return true if we cannot use cast from Field for this type and need to use cast from String
+bool needCastFromString(const DataTypePtr & type)
+{
+    if (type->getCustomSerialization())
+        return true;
+
+    bool result = false;
+    auto check = [&](const IDataType & t)
+    {
+        result |= isVariant(t) || isDynamic(t) || isObject(t);
+    };
+
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
 }
 
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
@@ -115,12 +152,19 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
             value, type_name, ast_param.name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
 
     Field literal;
-    /// If data type has custom serialization, we should use CAST from String,
-    /// because CAST from field may not work correctly (for example for type IPv6).
-    if (data_type->getCustomSerialization())
-        literal = value;
+
+    /// For some data types we should use CAST from String,
+    /// because CAST from field may not work correctly (for example for type IPv6, JSON, Dynamic, etc).
+    if (needCastFromString(data_type))
+    {
+        WriteBufferFromOwnString value_buf;
+        serialization->serializeText(temp_column, 0, value_buf, format_settings);
+        literal = value_buf.str();
+    }
     else
+    {
         literal = temp_column[0];
+    }
 
     /// If it's a String, substitute it in the form of a string literal without CAST
     /// to enable substitutions in simple queries that don't support expressions
@@ -171,6 +215,6 @@ void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
         return;
 
     if (ast_with_alias->parametrised_alias)
-        setAlias(ast, getParamValue((*ast_with_alias->parametrised_alias)->name));
+        setAlias(ast, getParamValue(ast_with_alias->parametrised_alias->name));
 }
 }

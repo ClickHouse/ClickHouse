@@ -51,7 +51,6 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
         case TypeIndex::Float64:
         case TypeIndex::BFloat16:
         case TypeIndex::Nullable:
-        case TypeIndex::ObjectDeprecated:
         case TypeIndex::Object:
         case TypeIndex::Variant:
         case TypeIndex::Dynamic:
@@ -847,7 +846,7 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
             [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
     }
 
-    return {std::move(result_layers), std::move(borders)};
+    return {std::move(result_layers), std::move(borders), in_reverse_order};
 }
 
 
@@ -947,6 +946,14 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
     for (size_t part_index = 0; part_index < ranges_in_data_parts.size(); ++part_index)
     {
         const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
+
+        /// The optimization's logic needs the final mark to get the primary key upper bound of this part.
+        /// The final mark may not be written under some situations e.g index_granularity_bytes = 0.
+        if (!index_granularity->hasFinalMark())
+        {
+            return skip_and_return_all_part_ranges();
+        }
+
         for (const auto & range : ranges_in_data_parts[part_index].ranges)
         {
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
@@ -985,16 +992,18 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         {
             continue; /// early exit, intersection infeasible in this part
         }
-
-        auto candidates_start = index_access.findLeftmostMarkGreaterThanValueInRange(part_index, selected_lower_bound.value, MarkRange{0, index_granularity->getMarksCountWithoutFinal() + 1}, false);
+        /// The selected lower bound could be 'fqrst' and granule PK ranges could be -
+        ///      abcde,...,fcedr, ffagj, fqrst, fqrst, fqrst, ghyrw ....
+        /// candidates_start needs to point to granule starting at "ffagj"
+        auto candidates_start = index_access.findRightmostMarkLessThanValueInRange(part_index, selected_lower_bound.value, MarkRange{0, index_granularity->getMarksCountWithoutFinal() + 1}, false);
         if (!candidates_start)
-            continue; /// no intersection possible in this part
-        if (candidates_start.value() > 0)
-            candidates_start = candidates_start.value() - 1;
+            candidates_start = 0;
 
         auto candidates_end = index_access.findLeftmostMarkGreaterThanValueInRange(part_index, selected_upper_bound.value, MarkRange{0, index_granularity->getMarksCountWithoutFinal() + 1}, false);
         if (!candidates_end)
             candidates_end = index_granularity->getMarksCountWithoutFinal();
+        if (candidates_end != 0) /// Come back by 1 because we are now 1 past the upper bound or at the final mark
+            candidates_end = candidates_end.value() - 1;
 
         for (auto range_begin = candidates_start.value(); range_begin <= candidates_end.value(); range_begin++)
         {
@@ -1116,7 +1125,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     {
         auto pipe = in_order_reading_step_getter(ranges);
 
-        pipe.addSimpleTransform([sorting_expr](const Block & header)
+        pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
         {
             return std::make_shared<ExpressionTransform>(header, sorting_expr);
         });
@@ -1166,8 +1175,9 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
-    auto split_ranges = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
-    result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, in_reverse_order, context);
+    auto split_ranges = splitIntersectingPartsRangesIntoLayers(
+        intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
+    result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
     return result;
 }
 
@@ -1175,10 +1185,9 @@ Pipes readByLayers(
     SplitPartsByRanges split_ranges,
     const KeyDescription & primary_key,
     ReadingInOrderStepGetter && step_getter,
-    bool in_reverse_order,
     ContextPtr context)
 {
-    auto && [layers, borders] = std::move(split_ranges);
+    auto && [layers, borders, in_reverse_order] = std::move(split_ranges);
     auto filters = buildFilters(primary_key, borders, in_reverse_order);
     Pipes merging_pipes(layers.size());
 
@@ -1203,7 +1212,7 @@ Pipes readByLayers(
                                                   i ? ::toString(borders[i - 1]) : "-inf",
                                                   i < borders.size() ? ::toString(borders[i]) : "+inf");
         merging_pipes[i].addSimpleTransform(
-            [&](const Block & header)
+            [&](const SharedHeader & header)
             {
                 auto step = std::make_shared<FilterSortedStreamByRange>(header, expression_actions, filter_function->getColumnName(), true);
                 step->setDescription(description);

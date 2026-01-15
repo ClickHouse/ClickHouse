@@ -1,12 +1,12 @@
 -- Test that detaching and attaching parts with a text index works
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 
 CREATE TABLE tab
 (
     key UInt64,
     str String,
-    INDEX inv_idx str TYPE text(tokenizer = 'default') GRANULARITY 1
+    INDEX inv_idx str TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY key;

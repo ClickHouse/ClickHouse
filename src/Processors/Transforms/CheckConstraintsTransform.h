@@ -24,7 +24,7 @@ class CheckConstraintsTransform final : public ExceptionKeepingTransform
 public:
     CheckConstraintsTransform(
             const StorageID & table_,
-            const Block & header,
+            SharedHeader header,
             const ConstraintsDescription & constraints_,
             ContextPtr context_);
 

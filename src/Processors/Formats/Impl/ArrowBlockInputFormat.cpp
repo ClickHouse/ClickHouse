@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
+ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_)
     : IInputFormat(header_, &in_)
     , stream(stream_)
     , block_missing_values(getPort().getHeader().columns())
@@ -130,7 +130,7 @@ const BlockMissingValues * ArrowBlockInputFormat::getMissingValues() const
 static std::shared_ptr<arrow::RecordBatchReader> createStreamReader(ReadBuffer & in)
 {
     auto options = arrow::ipc::IpcReadOptions::Defaults();
-    options.memory_pool = ArrowMemoryPool::instance();
+    options.memory_pool = arrow::default_memory_pool();
     auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in), options);
     if (!stream_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
@@ -145,7 +145,7 @@ static std::shared_ptr<arrow::ipc::RecordBatchFileReader> createFileReader(ReadB
         return nullptr;
 
     auto options = arrow::ipc::IpcReadOptions::Defaults();
-    options.memory_pool = ArrowMemoryPool::instance();
+    options.memory_pool = arrow::default_memory_pool();
     auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(arrow_file, options);
     if (!file_reader_status.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
@@ -174,6 +174,8 @@ void ArrowBlockInputFormat::prepareReader()
         getPort().getHeader(),
         "Arrow",
         format_settings,
+        std::nullopt,
+        std::nullopt,
         format_settings.arrow.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
@@ -254,7 +256,7 @@ void registerInputFormatArrow(FormatFactory & factory)
            const RowInputFormatParams & /* params */,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), false, format_settings);
         });
     factory.markFormatSupportsSubsetOfColumns("Arrow");
     factory.registerInputFormat(
@@ -264,7 +266,7 @@ void registerInputFormatArrow(FormatFactory & factory)
            const RowInputFormatParams & /* params */,
            const FormatSettings & format_settings)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, true, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, std::make_shared<const Block>(sample), true, format_settings);
         });
 }
 

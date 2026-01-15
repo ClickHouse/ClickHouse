@@ -3,6 +3,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 
+#include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -178,6 +179,19 @@ bool DataTypeAggregateFunction::strictEquals(const DataTypePtr & lhs_state_type,
             return false;
 
     return true;
+}
+
+void DataTypeAggregateFunction::updateHashImpl(SipHash & hash) const
+{
+    hash.update(getFunctionName());
+    hash.update(parameters.size());
+    for (const auto & param : parameters)
+        hash.update(param.getType());
+    hash.update(argument_types.size());
+    for (const auto & arg_type : argument_types)
+        arg_type->updateHash(hash);
+    if (version)
+        hash.update(*version);
 }
 
 bool DataTypeAggregateFunction::equals(const IDataType & rhs) const

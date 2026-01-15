@@ -8,7 +8,7 @@ namespace DB
 class ReadFromTableStep : public ISourceStep
 {
 public:
-    ReadFromTableStep(Block header, String table_name_, TableExpressionModifiers table_expression_modifiers_);
+    ReadFromTableStep(SharedHeader header, String table_name_, TableExpressionModifiers table_expression_modifiers_);
 
     String getName() const override { return "ReadFromTable"; }
 
@@ -20,6 +20,7 @@ public:
     const String & getTable() const { return table_name; }
     TableExpressionModifiers getTableExpressionModifiers() const { return table_expression_modifiers; }
 
+    QueryPlanStepPtr clone() const override;
 private:
     String table_name;
     TableExpressionModifiers table_expression_modifiers;

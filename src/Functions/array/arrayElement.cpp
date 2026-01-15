@@ -16,7 +16,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/castTypeToEither.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -181,8 +181,6 @@ private:
     template <typename Matcher>
     static void
     executeMatchConstKeyToIndex(size_t num_rows, size_t num_values, PaddedPODArray<UInt64> & matched_idxs, const Matcher & matcher);
-
-    ContextPtr context;
 };
 
 
@@ -681,7 +679,6 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        ColumnString::Chars zero_buf(16, '\0'); /// Needs 15 extra bytes for memcpySmallAllowReadWriteOverflow15
         std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
@@ -710,9 +707,6 @@ struct ArrayElementStringImpl
             }
             else
             {
-                /// Insert an empty row.
-                total_result_bytes += 1;
-                selected_bufs.emplace_back(zero_buf.data(), 1);
                 result_offsets[i] = total_result_bytes;
                 builder.update();
             }
@@ -744,7 +738,6 @@ struct ArrayElementStringImpl
         size_t size = offsets.size();
         result_offsets.resize(size);
 
-        ColumnString::Chars zero_buf(16, '\0'); /// Needs 15 extra bytes for memcpySmallAllowReadWriteOverflow15
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
@@ -779,11 +772,7 @@ struct ArrayElementStringImpl
             }
             else
             {
-                /// Insert empty string
-                total_result_bytes += 1;
-                selected_bufs.emplace_back(zero_buf.data(), 1);
                 result_offsets[i] = total_result_bytes;
-
                 builder.update();
             }
 
@@ -1662,7 +1651,7 @@ struct MatcherString
     {
         auto data_ref = data.getDataAt(row_data);
         auto index_ref = index.getDataAt(row_index);
-        return memequalSmallAllowOverflow15(index_ref.data, index_ref.size, data_ref.data, data_ref.size);
+        return memequalSmallAllowOverflow15(index_ref.data(), index_ref.size(), data_ref.data(), data_ref.size());
     }
 };
 
@@ -1675,7 +1664,7 @@ struct MatcherStringConst
     bool match(size_t row_data, size_t /* row_index */) const
     {
         auto data_ref = data.getDataAt(row_data);
-        return index.size() == data_ref.size && memcmp(index.data(), data_ref.data, data_ref.size) == 0;
+        return index.size() == data_ref.size() && memcmp(index.data(), data_ref.data(), data_ref.size()) == 0;
     }
 };
 
@@ -2229,7 +2218,7 @@ Operator `[n]` provides the same functionality.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Zero>>(documentation);
 
@@ -2255,7 +2244,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     };
     FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};
     FunctionDocumentation::Category category_null = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, returned_value_null, examples_null, introduced_in_null, category_null};
+    FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, {}, returned_value_null, examples_null, introduced_in_null, category_null};
 
     factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(documentation_null);
 }

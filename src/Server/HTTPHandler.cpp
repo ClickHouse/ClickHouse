@@ -1,5 +1,6 @@
 #include <Server/HTTPHandler.h>
 
+#include <Access/AccessControl.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/ExternalTable.h>
@@ -9,6 +10,7 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
+#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -20,6 +22,7 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
@@ -28,13 +31,13 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>
 #include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
+#include <Server/HTTP/deferHTTP100Continue.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
@@ -153,8 +156,8 @@ HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::Abstr
 
 
 HTTPHandler::HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_)
-    : server(server_)
-    , log(getLogger(name))
+    : log(getLogger(name))
+    , server(server_)
     , default_settings(server.context()->getSettingsRef())
     , http_response_headers_override(http_response_headers_override_)
     , connection_config(connection_config_)
@@ -264,16 +267,17 @@ void HTTPHandler::processQuery(
         if (reserved_param_names.contains(name))
             return true;
 
-        /// For external data we also want settings.
         if (has_external_data)
         {
-            /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
-            /// It is a bug and ambiguity with `date_time_input_format` and `low_cardinality_allow_in_native_format` formats/settings.
+            /// For external data we have unspecified parameters which literally are {'<temp_table_name>_format', '<temp_table_name>_types', '<temp_table_name>_structure'}.
+            /// That parameters are not supposed to be used in the query as a settings. They have to be skipped.
+            /// But we could not just skip all parameters with suffixes '_format', '_types', '_structure',
+            /// because some of them are used in the query as a settings, like 'date_time_input_format',
             static const Names reserved_param_suffixes = {"_format", "_types", "_structure"};
             for (const String & suffix : reserved_param_suffixes)
             {
                 if (endsWith(name, suffix))
-                    return true;
+                    return (!context->getAccessControl().isSettingNameAllowed(name));
             }
         }
 
@@ -333,7 +337,6 @@ void HTTPHandler::processQuery(
     if (!params.has("http_wait_end_of_query"))
         wait_end_of_query = params.getParsedLast<bool>("wait_end_of_query", wait_end_of_query);
 
-
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
@@ -382,7 +385,7 @@ void HTTPHandler::processQuery(
             auto tmp_data = server.context()->getTempDataOnDisk();
             cascade_buffers_lazy.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
             {
-                return std::make_unique<TemporaryDataBuffer>(tmp_data.get());
+                return std::make_unique<TemporaryDataBuffer>(tmp_data);
             });
         }
         else
@@ -413,10 +416,14 @@ void HTTPHandler::processQuery(
     /// Request body can be compressed using algorithm specified in the Content-Encoding header.
     String http_request_compression_method_str = request.get("Content-Encoding", "");
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
+    /// TODO check
+    /// input stream are hold inside in_post instance
     auto in_post = wrapReadBufferWithCompressionMethod(
-        wrapReadBufferReference(request.getStream()),
+        wrapReadBufferPointer(request.getStream()),
         chooseCompressionMethod({}, http_request_compression_method_str),
         zstd_window_log_max);
+    LOG_DEBUG(getLogger("HTTPServerRequest"), "creating in_post id {}", size_t(in_post.get()));
+
 
     /// The data can also be compressed using incompatible internal algorithm. This is indicated by
     /// 'decompress' query parameter.
@@ -424,11 +431,13 @@ void HTTPHandler::processQuery(
     bool is_in_post_compressed = false;
     if (params.getParsedLast<bool>("decompress", false))
     {
-        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(*in_post, /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
+        in_post_maybe_compressed = std::make_unique<CompressedReadBuffer>(std::move(in_post), /* allow_different_codecs_ = */ false, /* external_data_ = */ true);
         is_in_post_compressed = true;
     }
     else
+    {
         in_post_maybe_compressed = std::move(in_post);
+    }
 
     /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
     /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
@@ -465,9 +474,9 @@ void HTTPHandler::processQuery(
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
     /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
-    append_callback([&used_output](const Progress & progress)
+    append_callback([&used_output, &context](const Progress & progress)
     {
-        used_output.out_holder->onProgress(progress);
+        used_output.out_holder->onProgress(progress, context);
     });
 
     if (settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])
@@ -482,7 +491,16 @@ void HTTPHandler::processQuery(
     }
 
     customizeContext(request, context, *in_post_maybe_compressed);
-    std::unique_ptr<ReadBuffer> in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
+    std::unique_ptr<ReadBuffer> in;
+    if (has_external_data)
+    {
+        in = std::move(in_param);
+        in_post_maybe_compressed.reset();
+    }
+    else
+    {
+        in = std::make_unique<ConcatReadBuffer>(std::move(in_param), std::move(in_post_maybe_compressed));
+    }
 
     applyHTTPResponseHeaders(response, http_response_headers_override);
 
@@ -499,6 +517,12 @@ void HTTPHandler::processQuery(
 
         if (details.timezone)
             response.add("X-ClickHouse-Timezone", *details.timezone);
+
+        if (details.query_cache_entry_created_at)
+            response.add("Age", std::to_string(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - *details.query_cache_entry_created_at).count()));
+
+        if (details.query_cache_entry_expires_at)
+            response.add("Expires", std::format("{:%a, %d %b %Y %H:%M:%S} GMT", *details.query_cache_entry_expires_at));
 
         for (const auto & [name, value] : details.additional_headers)
             response.set(name, value);
@@ -567,16 +591,29 @@ void HTTPHandler::processQuery(
         used_output.finalize();
     };
 
+    /// Create callback to defer HTTP 100 Continue response to after quota checks
+    HTTPContinueCallback http_continue_callback = {};
+    if (shouldDeferHTTP100Continue(request))
+    {
+        http_continue_callback = [&request, &response]()
+        {
+            if (request.getExpectContinue() && response.getStatus() == HTTPResponse::HTTP_OK)
+            {
+                response.sendContinue();
+            }
+        };
+    }
+
     executeQuery(
-        *in,
+        std::move(in),
         *used_output.out_maybe_delayed_and_compressed,
-        /* allow_into_outfile = */ false,
         context,
         set_query_result,
         QueryFlags{},
         {},
         handle_exception_in_output_format,
-        query_finish_callback);
+        query_finish_callback,
+        http_continue_callback);
 }
 
 bool HTTPHandler::trySendExceptionToClient(
@@ -641,7 +678,7 @@ catch (...)
 
 void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
-    setThreadName("HTTPHandler");
+    DB::setThreadName(ThreadName::HTTP_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });
@@ -693,7 +730,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
-        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code");
+        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())
@@ -734,7 +771,8 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /** If exception is received from remote server, then stack trace is embedded in message.
           * If exception is thrown on local server, then stack trace is in separate field.
           */
-        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
+        const bool include_version = session && session->sessionContext();
+        ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace, include_version);
         auto error_sent = trySendExceptionToClient(status.code, status.message, request, response, used_output);
 
         used_output.cancel();
@@ -800,7 +838,8 @@ std::string DynamicQueryHandler::getQuery(HTTPServerRequest & request, HTMLForm 
     /// Support for "external data for query processing".
     /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     ExternalTablesHandler handler(context, params);
-    params.load(request, request.getStream(), handler);
+    auto input_stream = request.getStream();
+    params.load(request, *input_stream, handler);
 
     std::string full_query;
     /// Params are of both form params POST and uri (GET params)
@@ -907,7 +946,8 @@ std::string PredefinedQueryHandler::getQuery(HTTPServerRequest & request, HTMLFo
     {
         /// Support for "external data for query processing".
         ExternalTablesHandler handler(context, params);
-        params.load(request, request.getStream(), handler);
+        auto input_stream = request.getStream();
+        params.load(request, *input_stream, handler);
     }
 
     return predefined_query;
@@ -1066,13 +1106,17 @@ void HTTPHandler::Output::pushDelayedResults() const
         if (auto * write_buf_concrete = dynamic_cast<TemporaryDataBuffer *>(write_buf.get()))
         {
             if (auto reread_buf = write_buf_concrete->read())
+            {
                 read_buffers.emplace_back(std::move(reread_buf));
+            }
         }
 
         if (auto * write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
         {
             if (auto reread_buf = write_buf_concrete->tryGetReadBuffer())
+            {
                 read_buffers.emplace_back(std::move(reread_buf));
+            }
         }
     }
 

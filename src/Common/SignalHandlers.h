@@ -35,10 +35,6 @@ void terminateRequestedSignalHandler(int sig, siginfo_t *, void *);
 
 void childSignalHandler(int sig, siginfo_t * info, void *);
 
-/** Handler for "fault" or diagnostic signals. Send data about fault to separate thread to write into log.
-  */
-void signalHandler(int sig, siginfo_t * info, void * context);
-
 
 /** To use with std::set_terminate.
   * Collects slightly more info than __gnu_cxx::__verbose_terminate_handler,
@@ -65,7 +61,6 @@ class SignalListener : public Poco::Runnable
 public:
     static constexpr int StdTerminate = -1;
     static constexpr int StopThread = -2;
-    static constexpr int SanitizerTrap = -3;
 
     explicit SignalListener(BaseDaemon * daemon_, LoggerPtr log_);
     void run() override;
@@ -82,7 +77,7 @@ private:
         const siginfo_t & info,
         ucontext_t * context,
         const StackTrace & stack_trace,
-        const std::vector<StackTrace::FramePointers> & thread_frame_pointers,
+        const std::vector<FramePointers> & thread_frame_pointers,
         UInt32 thread_num,
         DB::ThreadStatus * thread_ptr) const;
 };
@@ -102,7 +97,7 @@ struct HandledSignals
 
     void addSignalHandler(const std::vector<int> & signals, signal_function handler, bool register_signal);
 
-    void reset();
+    void reset(bool close_pipe = true);
 
     static HandledSignals & instance();
 };

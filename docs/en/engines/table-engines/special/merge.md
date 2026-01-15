@@ -4,31 +4,32 @@ description: 'The `Merge` engine (not to be confused with `MergeTree`) does not 
 sidebar_label: 'Merge'
 sidebar_position: 30
 slug: /engines/table-engines/special/merge
-title: 'Merge Table Engine'
+title: 'Merge table engine'
+doc_type: 'reference'
 ---
 
-# Merge Table Engine
+# Merge table engine
 
 The `Merge` engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.
 
 Reading is automatically parallelized. Writing to a table is not supported. When reading, the indexes of tables that are actually being read are used, if they exist.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
-## Engine Parameters {#engine-parameters}
+## Engine parameters {#engine-parameters}
 
-### db_name {#db_name}
+### `db_name` {#db_name}
 
 `db_name` — Possible values:
     - database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
-### tables_regexp {#tables_regexp}
+### `tables_regexp` {#tables_regexp}
 
 `tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
 
@@ -57,12 +58,28 @@ CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
 Let's say you have an old table `WatchLog_old` and decided to change partitioning without moving data to a new table `WatchLog_new`, and you need to see data from both tables.
 
 ```sql
-CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64)
-    ENGINE=MergeTree(date, (UserId, EventType), 8192);
+CREATE TABLE WatchLog_old(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+ORDER BY (date, UserId, EventType);
+
 INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
 
-CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64)
-    ENGINE=MergeTree PARTITION BY date ORDER BY (UserId, EventType) SETTINGS index_granularity=8192;
+CREATE TABLE WatchLog_new(
+    date Date,
+    UserId Int64,
+    EventType String,
+    Cnt UInt64
+)
+ENGINE=MergeTree
+PARTITION BY date
+ORDER BY (UserId, EventType)
+SETTINGS index_granularity=8192;
+
 INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
 
 CREATE TABLE WatchLog AS WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
@@ -79,11 +96,13 @@ SELECT * FROM WatchLog;
 └────────────┴────────┴───────────┴─────┘
 ```
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
-- `_table` — Contains the name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
+- `_table` — The name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
 
-    You can set the constant conditions on `_table` in the `WHERE/PREWHERE` clause (for example, `WHERE _table='xyz'`). In this case the read operation is performed only for that tables where the condition on `_table` is satisfied, so the `_table` column acts as an index.
+    If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
+
+- `_database` — Contains the name of the database from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
 
 **See Also**
 

@@ -334,16 +334,16 @@ typedef uint64_t uintmax_t;
 /* #undef ARCHIVE_XATTR_LINUX */
 
 /* Version number of bsdcpio */
-#define BSDCPIO_VERSION_STRING "3.7.4"
+#define BSDCPIO_VERSION_STRING "3.9.0"
 
 /* Version number of bsdtar */
-#define BSDTAR_VERSION_STRING "3.7.4"
+#define BSDTAR_VERSION_STRING "3.9.0"
 
 /* Version number of bsdcat */
-#define BSDCAT_VERSION_STRING "3.7.4"
+#define BSDCAT_VERSION_STRING "3.9.0"
 
 /* Version number of bsdunzip */
-#define BSDUNZIP_VERSION_STRING "3.7.4"
+#define BSDUNZIP_VERSION_STRING "3.9.0"
 
 /* Define to 1 if you have the `acl_create_entry' function. */
 /* #undef HAVE_ACL_CREATE_ENTRY */
@@ -404,6 +404,12 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you have the `chroot' function. */
 #define HAVE_CHROOT 1
+
+/* Define to 1 if you have the `closefrom' function. */
+/* #undef HAVE_CLOSEFROM */
+
+/* Define to 1 if you have the `close_range' function. */
+/* #undef HAVE_CLOSE_RANGE */
 
 /* Define to 1 if you have the <copyfile.h> header file. */
 /* #undef HAVE_COPYFILE_H */

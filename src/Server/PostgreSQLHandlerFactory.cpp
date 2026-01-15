@@ -8,6 +8,7 @@ namespace DB
 
 PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(
     IServer & server_,
+    bool secure_required_,
 #if USE_SSL
     const std::string & conf_name_,
 #endif
@@ -20,6 +21,7 @@ PostgreSQLHandlerFactory::PostgreSQLHandlerFactory(
 #if USE_SSL
     , conf_name(conf_name_)
 #endif
+    , secure_required(secure_required_)
 {
     auth_methods =
     {
@@ -35,9 +37,9 @@ Poco::Net::TCPServerConnection * PostgreSQLHandlerFactory::createConnection(cons
     LOG_TRACE(log, "PostgreSQL connection. Id: {}. Address: {}", connection_id, socket.peerAddress().toString());
 
 #if USE_SSL
-    return new PostgreSQLHandler(socket, conf_name, server, tcp_server, ssl_enabled, connection_id, auth_methods, read_event, write_event);
+    return new PostgreSQLHandler(socket, conf_name, server, tcp_server, ssl_enabled, secure_required, connection_id, auth_methods, read_event, write_event);
 #else
-    return new PostgreSQLHandler(socket, server, tcp_server, ssl_enabled, connection_id, auth_methods, read_event, write_event);
+    return new PostgreSQLHandler(socket, server, tcp_server, ssl_enabled, secure_required, connection_id, auth_methods, read_event, write_event);
 #endif
 }
 

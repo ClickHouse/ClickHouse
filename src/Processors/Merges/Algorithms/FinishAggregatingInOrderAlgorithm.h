@@ -3,7 +3,7 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/SortDescription.h>
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Common/ThreadPool.h>
 
 namespace DB
@@ -38,7 +38,7 @@ class FinishAggregatingInOrderAlgorithm final : public IMergingAlgorithm
 {
 public:
     FinishAggregatingInOrderAlgorithm(
-        const Block & header_,
+        SharedHeader header_,
         size_t num_inputs_,
         AggregatingTransformParamsPtr params_,
         const SortDescription & description_,
@@ -78,7 +78,6 @@ private:
         bool isValid() const { return current_row < num_rows; }
     };
 
-    Block header;
     size_t num_inputs;
     AggregatingTransformParamsPtr params;
     SortDescriptionWithPositions description;

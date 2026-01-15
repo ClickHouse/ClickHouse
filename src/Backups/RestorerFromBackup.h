@@ -138,7 +138,7 @@ protected:
     void setStage(const String & new_stage, const String & message = "");
 
     /// Schedule a task from the thread pool and start executing it.
-    void schedule(std::function<void()> && task_, const char * thread_name_);
+    void schedule(std::function<void()> && task_, ThreadName thread_name_);
 
     /// Returns the number of currently scheduled or executing tasks.
     size_t getNumFutures() const;

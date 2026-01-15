@@ -35,7 +35,7 @@ protected:
       * with_types - in the second line the header with column names
       */
     RowInputFormatWithNamesAndTypes(
-        const Block & header_,
+        SharedHeader header_,
         ReadBuffer & in_,
         const Params & params_,
         bool is_binary_,

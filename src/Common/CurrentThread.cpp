@@ -163,6 +163,56 @@ ResourceLink CurrentThread::getWriteResourceLink()
     return current_thread->write_resource_link;
 }
 
+void CurrentThread::attachReadThrottler(const ThrottlerPtr & throttler)
+{
+    if (unlikely(!current_thread))
+        return;
+    if (current_thread->read_throttler)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} has been already attached to read throttler", std::to_string(getThreadId()));
+    current_thread->read_throttler = throttler;
+}
+
+void CurrentThread::detachReadThrottler()
+{
+    if (unlikely(!current_thread))
+        return;
+    if (!current_thread->read_throttler)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} has not been attached to read throttler", std::to_string(getThreadId()));
+    current_thread->read_throttler.reset();
+}
+
+ThrottlerPtr CurrentThread::getReadThrottler()
+{
+    if (unlikely(!current_thread))
+        return {};
+    return current_thread->read_throttler;
+}
+
+void CurrentThread::attachWriteThrottler(const ThrottlerPtr & throttler)
+{
+    if (unlikely(!current_thread))
+        return;
+    if (current_thread->write_throttler)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} has been already attached to write throttler", std::to_string(getThreadId()));
+    current_thread->write_throttler = throttler;
+}
+
+void CurrentThread::detachWriteThrottler()
+{
+    if (unlikely(!current_thread))
+        return;
+    if (!current_thread->write_throttler)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread #{} has not been attached to write throttler", std::to_string(getThreadId()));
+    current_thread->write_throttler.reset();
+}
+
+ThrottlerPtr CurrentThread::getWriteThrottler()
+{
+    if (unlikely(!current_thread))
+        return {};
+    return current_thread->write_throttler;
+}
+
 MemoryTracker * CurrentThread::getUserMemoryTracker()
 {
     if (unlikely(!current_thread))

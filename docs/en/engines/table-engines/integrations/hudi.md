@@ -4,14 +4,15 @@ description: 'This engine provides a read-only integration with existing Apache 
 sidebar_label: 'Hudi'
 sidebar_position: 86
 slug: /engines/table-engines/integrations/hudi
-title: 'Hudi Table Engine'
+title: 'Hudi table engine'
+doc_type: 'reference'
 ---
 
-# Hudi Table Engine
+# Hudi table engine
 
 This engine provides a read-only integration with existing Apache [Hudi](https://hudi.apache.org/) tables in Amazon S3.
 
-## Create Table {#create-table}
+## Create table {#create-table}
 
 Note that the Hudi table must already exist in S3, this command does not take DDL parameters to create a new table.
 

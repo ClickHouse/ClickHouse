@@ -6,6 +6,7 @@ keywords: ['Null', 'format']
 output_format: true
 slug: /interfaces/formats/Null
 title: 'Null'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -22,9 +23,9 @@ and when using the command-line client, data is transmitted to the client.
 The `Null` format can be useful for performance testing.
 :::
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Reading Data {#reading-data}
+### Reading data {#reading-data}
 
 Consider a table `football` with the following data:
 
@@ -64,4 +65,4 @@ The query will process the data, but will not output anything.
 0 rows in set. Elapsed: 0.154 sec.
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}

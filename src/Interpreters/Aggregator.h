@@ -10,6 +10,7 @@
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
+#include <Common/Logger.h>
 #include <Common/ThreadPool.h>
 #include <Common/filesystemHelpers.h>
 
@@ -52,6 +53,9 @@ struct GroupingSetsParams
 };
 
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
+
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -117,6 +121,10 @@ public:
         const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
 
+        bool enable_producing_buckets_out_of_order_in_aggregation = true;
+
+        bool serialize_string_with_zero_byte = false;
+
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
         Params(
@@ -139,7 +147,9 @@ public:
             bool only_merge_, // true for projections
             bool optimize_group_by_constant_keys_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
-            const StatsCollectingParams & stats_collecting_params_);
+            const StatsCollectingParams & stats_collecting_params_,
+            bool enable_producing_buckets_out_of_order_in_aggregation_,
+            bool serialize_string_with_zero_byte_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -148,7 +158,8 @@ public:
             bool overflow_row_,
             size_t max_threads_,
             size_t max_block_size_,
-            float min_hit_rate_to_use_consecutive_keys_optimization_);
+            float min_hit_rate_to_use_consecutive_keys_optimization_,
+            bool serialize_string_with_zero_byte_);
 
         Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
         {
@@ -174,6 +185,8 @@ public:
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
+
+    const Params & getParams() const { return params; }
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
     bool executeOnBlock(const Block & block,
@@ -279,12 +292,16 @@ public:
     /// Get data structure of the result.
     Block getHeader(bool final) const;
 
+    /// Part of automatic parallel replicas implementation.
+    size_t estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const;
+
 private:
 
     friend struct AggregatedDataVariants;
     friend class ConvertingAggregatedToChunksTransform;
     friend class ConvertingAggregatedToChunksSource;
     friend class ConvertingAggregatedToChunksWithMergingSource;
+    friend class ConvertingAggregatedToChunksWithMergingSourceForFixedHashMap;
     friend class AggregatingInOrderTransform;
 
     /// Data structure of source blocks.
@@ -411,7 +428,7 @@ private:
         size_t row_begin,
         size_t row_end,
         AggregateFunctionInstruction * aggregate_instructions,
-        const std::unique_ptr<AggregateDataPtr[]> & places,
+        AggregateDataPtr * places,
         size_t key_start,
         bool has_only_one_value_since_last_reset,
         bool all_keys_are_const,
@@ -432,6 +449,13 @@ private:
         Method & method,
         TemporaryBlockStreamHolder & out) const;
 
+    /// Parameters for parallel merge workers for single level.
+    struct ParallelMergeWorker
+    {
+        UInt32 worker_id;
+        UInt32 total_worker;
+    };
+
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataNullKey(
@@ -442,7 +466,8 @@ private:
     /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataImpl(
-        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch, std::atomic<bool> & is_cancelled)
+        Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
         const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
@@ -467,6 +492,29 @@ private:
     template <typename Method>
     void mergeSingleLevelDataImpl(
         ManyAggregatedDataVariants & non_empty_data, std::atomic<bool> & is_cancelled) const;
+
+    /// Disable min-max optimization for fixed-size hash tables to avoid race conditions.
+    void disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVariants & data_variants) const;
+
+    template <typename Method>
+    void mergeSingleLevelDataImplFixedMap(
+        ManyAggregatedDataVariants & non_empty_data,
+        Arena * arena,
+        UInt32 worker_id,
+        UInt32 total_worker,
+        std::atomic<bool> & is_cancelled) const;
+
+    /// Non-template wrapper that handles type switch internally
+    void mergeSingleLevelDataImplFixedMap(
+        ManyAggregatedDataVariants & non_empty_data,
+        Arena * arena,
+        UInt32 worker_id,
+        UInt32 total_worker,
+        std::atomic<bool> & is_cancelled) const;
+
+    /// Set data_variants[1..last] aggregator as nullptr to ensure aggregator destruction only invoked in data_variants[0]'s destructor.
+    /// Used for single level merge.
+    void resetAggregatorExceptFirst(ManyAggregatedDataVariants & data_variants) const;
 
     template <bool return_single_block>
     using ConvertToBlockRes = std::conditional_t<return_single_block, Block, BlocksList>;
@@ -517,7 +565,8 @@ private:
         Arena * arena,
         bool final,
         Int32 bucket,
-        std::atomic<bool> & is_cancelled) const;
+        std::atomic<bool> & is_cancelled,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
@@ -608,6 +657,12 @@ private:
       * - sets the variable no_more_keys to true.
       */
     bool checkLimits(size_t result_size, bool & no_more_keys) const;
+
+    void ensureLimitsFixedMapMerge(AggregatedDataVariantsPtr data) const;
+
+    /// Check if data variants use fixed-size hash tables (key8/key16) suitable for parallel merge
+    /// at single level.
+    bool isTypeFixedSize(const ManyAggregatedDataVariants & data_variants) const;
 
     void prepareAggregateInstructions(
         Columns columns,

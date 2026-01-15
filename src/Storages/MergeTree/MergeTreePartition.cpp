@@ -230,11 +230,11 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
         }
     }
 
-    String result;
-
     if (are_all_integral)
     {
+        String result;
         FieldVisitorToString to_string_visitor;
+
         for (size_t i = 0; i < value.size(); ++i)
         {
             if (i > 0)
@@ -259,15 +259,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     for (const Field & field : value)
         applyVisitor(hashing_visitor, field);
 
-    const auto hash_data = getSipHash128AsArray(hash);
-    const auto hash_size = hash_data.size();
-    result.resize(hash_size * 2);
-    for (size_t i = 0; i < hash_size; ++i)
-        if constexpr (std::endian::native == std::endian::big)
-            writeHexByteLowercase(hash_data[hash_size - 1 - i], &result[2 * i]);
-        else
-            writeHexByteLowercase(hash_data[i], &result[2 * i]);
-    return result;
+    return getSipHash128AsHexString(hash);
 }
 
 std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partition_id, const Block & partition_key_sample)
@@ -364,12 +356,7 @@ void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, Wri
     size_t key_size = partition_key_sample.columns();
 
     // In some cases we create empty parts and then value is empty.
-    if (value.empty())
-    {
-        writeCString("tuple()", out);
-        return;
-    }
-    if (key_size == 0)
+    if (key_size == 0 || value.empty())
     {
         writeCString("tuple()", out);
     }
@@ -435,7 +422,7 @@ std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const
 {
-    if (!partition_key_sample)
+    if (partition_key_sample.empty())
         return nullptr;
 
     auto out = data_part_storage.writeFile("partition.dat", 4096, settings);

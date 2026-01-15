@@ -106,6 +106,7 @@ public:
                     new_arguments[0] = std::move(if_arguments_nodes[2]);
 
                 auto not_function = std::make_shared<FunctionNode>("not");
+                not_function->markAsOperator();
                 auto & not_function_arguments = not_function->getArguments().getNodes();
                 not_function_arguments.push_back(std::move(if_arguments_nodes[0]));
                 not_function->resolveAsFunction(

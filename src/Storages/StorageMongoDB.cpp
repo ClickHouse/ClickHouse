@@ -59,6 +59,8 @@ namespace Setting
     extern const SettingsBool mongodb_throw_on_unsupported_query;
 }
 
+static constexpr const char * MONGODB_RESERVED_CHARS = "!?#/'\",;:$&()[]*+=@";
+
 void MongoDBConfiguration::checkHosts(const ContextPtr & context) const
 {
     // Because domain records will be resolved inside the driver, we can't check resolved IPs for our restrictions.
@@ -103,8 +105,16 @@ Pipe StorageMongoDB::read(
 
     auto options = mongocxx::options::find{};
 
-    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, buildMongoDBQuery(context, options, query_info, sample_block),
-        std::move(options), sample_block, max_block_size));
+    bsoncxx::document::view_or_value mongo_query = buildMongoDBQuery(context, options, query_info, sample_block);
+    return Pipe(std::make_shared<MongoDBSource>(*configuration.uri, configuration.collection, mongo_query,
+        std::move(options), std::make_shared<const Block>(std::move(sample_block)), max_block_size));
+}
+
+static String encodeString(const String & str)
+{
+    String encoded;
+    Poco::URI::encode(str, MONGODB_RESERVED_CHARS, encoded);
+    return encoded;
 }
 
 static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, ASTs engine_args, ContextPtr context, bool allow_excessive_path_in_host)
@@ -123,10 +133,12 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
                 "host", "port", "user", "password", "database", "collection"}, {"options", "oid_columns"});
             String user = named_collection->get<String>("user");
             String auth_string;
-            String escaped_password;
-            Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
             if (!user.empty())
-                auth_string = fmt::format("{}:{}@", user, escaped_password);
+            {
+                String escaped_user = encodeString(user);
+                String escaped_password = encodeString(named_collection->get<String>("password"));
+                auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
+            }
             configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                           auth_string,
                                                           named_collection->get<String>("host"),
@@ -153,10 +165,12 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
 
             String user = checkAndGetLiteralArgument<String>(engine_args[3], "user");
             String auth_string;
-            String escaped_password;
-            Poco::URI::encode(checkAndGetLiteralArgument<String>(engine_args[4], "password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
             if (!user.empty())
-                auth_string = fmt::format("{}:{}@", user, escaped_password);
+            {
+                String escaped_user = encodeString(user);
+                String escaped_password = encodeString(checkAndGetLiteralArgument<String>(engine_args[4], "password"));
+                auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
+            }
 
             auto host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
             auto database_name = checkAndGetLiteralArgument<String>(engine_args[1], "database");
@@ -606,7 +620,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             args.comment);
     },
     {
-        .source_access_type = AccessType::MONGO,
+        .source_access_type = AccessTypeObjects::Source::MONGO,
     });
 }
 

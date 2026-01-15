@@ -17,7 +17,7 @@ class CountingTransform final : public ExceptionKeepingTransform
 {
 public:
     explicit CountingTransform(
-        const Block & header,
+        SharedHeader header,
         std::shared_ptr<const EnabledQuota> quota_ = nullptr)
         : ExceptionKeepingTransform(header, header)
         , quota(std::move(quota_)) {}

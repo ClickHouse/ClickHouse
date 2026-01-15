@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
+#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -22,9 +23,11 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+
 
 namespace zkutil
 {
@@ -68,6 +71,8 @@ enum class DataPartRemovalState : uint8_t
 };
 
 /// Description of the data part.
+/// Warning: `IStorage` must outlive all its `IMergeTreeDataPart`s. Whenever you hold a
+///          MergeTreeDataPartPtr you must also hold the corresponding StoragePtr.
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>, public DataPartStorageHolder
 {
 public:
@@ -87,6 +92,7 @@ public:
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
+        const MergeTreeSettings & storage_settings,
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
@@ -97,10 +103,10 @@ public:
     virtual bool isStoredOnRemoteDisk() const = 0;
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
 
-
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name) const;
+    const ColumnSizeByName & getColumnSizes() const;
 
     virtual std::optional<time_t> getColumnModificationTime(const String & column_name) const = 0;
 
@@ -131,9 +137,9 @@ public:
     String getTypeName() const { return getType().toString(); }
 
     /// We could have separate method like setMetadata, but it's much more convenient to set it up with columns
-    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t metadata_version_);
+    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
-    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_) { columns_substreams = columns_substreams_; }
+    void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
 
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
@@ -141,8 +147,8 @@ public:
     void writeMetadataVersion(ContextPtr local_context, int32_t metadata_version, bool sync);
 
     const NamesAndTypesList & getColumns() const { return columns; }
-    const ColumnsDescription & getColumnsDescription() const { return columns_description; }
-    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return columns_description_with_collected_nested; }
+    const ColumnsDescription & getColumnsDescription() const { return *columns_description; }
+    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return *columns_description_with_collected_nested; }
     const ColumnsSubstreams & getColumnsSubstreams() const { return columns_substreams; }
     StorageMetadataPtr getMetadataSnapshot() const;
 
@@ -163,6 +169,7 @@ public:
     void remove();
 
     ColumnsStatistics loadStatistics() const;
+    Estimates getEstimates() const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load various metadata into memory: checksums from checksums.txt, index if required, etc.
@@ -215,7 +222,10 @@ public:
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
     UInt128 getPartBlockIDHash() const;
-    String getNewPartBlockID(std::string_view token) const;
+    String getNewPartBlockID() const;
+
+    /// Returns true if it's a zero level part.
+    bool isZeroLevel() const { return info.min_block == info.max_block; }
 
     void setName(const String & new_name);
 
@@ -237,12 +247,14 @@ public:
     std::optional<size_t> existing_rows_count;
 
     time_t modification_time = 0;
+
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
     /// If true, the destructor will delete the directory with the part.
     /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
+    std::atomic<bool> is_removed = false;
 
     /// This type and the field remove_tmp_policy is used as a hint
     /// to help avoid communication with keeper when temporary part is deleting.
@@ -352,9 +364,9 @@ public:
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
-        static void appendFiles(const MergeTreeData & data, Strings & files);
+        static void appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage);
         /// For Store
-        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_);
+        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
         /// For Load
         static String getFileColumnName(const String & column_name, const Checksums & checksums_);
     };
@@ -383,6 +395,8 @@ public:
     IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
     void moveIndexToCache(PrimaryIndexCache & index_cache);
     void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
+
+    void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
     void setIndex(Columns index_columns);
     void unloadIndex();
@@ -439,7 +453,7 @@ public:
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample = std::nullopt) const;
+    void calculateColumnsAndSecondaryIndicesSizesOnDisk() const;
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
@@ -449,6 +463,9 @@ public:
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
+    void setSourcePartsSet(SourcePartsSetForPatch source_parts_set_) { source_parts_set = std::move(source_parts_set_); }
+    const SourcePartsSetForPatch & getSourcePartsSet() const { return source_parts_set; }
+
     /// Check if the part is in the `/moving` directory
     bool isMovingPart() const;
 
@@ -457,7 +474,8 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder getProjectionPartBuilder(const String & projection_name, bool is_temp_projection = false);
+    MergeTreeDataPartBuilder
+    getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
@@ -519,6 +537,9 @@ public:
     /// really don't need to remove data from remote FS and need only decrement
     /// reference counter locally.
     static constexpr auto FILE_FOR_REFERENCES_CHECK = "checksums.txt";
+
+    /// File that contains list of substreams in order of serialization/deserialization for each column.
+    static constexpr auto COLUMNS_SUBSTREAMS_FILE_NAME = "columns_substreams.txt";
 
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
@@ -583,6 +604,7 @@ public:
 
     static std::optional<String> getStreamNameOrHash(
         const String & name,
+        const String & extension,
         const IMergeTreeDataPart::Checksums & checksums);
 
     static std::optional<String> getStreamNameOrHash(
@@ -593,28 +615,36 @@ public:
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
-        const Checksums & checksums_);
+        const String & extension,
+        const Checksums & checksums_,
+        const MergeTreeSettingsPtr & settings);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
-        const Checksums & checksums_);
+        const String & extension,
+        const Checksums & checksums_,
+        const MergeTreeSettingsPtr & settings);
 
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const IDataPartStorage & storage_);
+        const IDataPartStorage & storage_,
+        const MergeTreeSettingsPtr & settings);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
-        const IDataPartStorage & storage_);
+        const IDataPartStorage & storage_,
+        const MergeTreeSettingsPtr & settings);
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 
     mutable std::atomic<time_t> last_removal_attempt_time = 0;
+
+    void removeIfNeeded();
 
 protected:
     /// Primary key (correspond to primary.idx file).
@@ -647,7 +677,6 @@ protected:
     NamesAndTypesList columns;
 
     /// List of substreams in order of serialization/deserialization for each column.
-    /// Used only in Compact parts.
     ColumnsSubstreams columns_substreams;
 
     const Type part_type;
@@ -658,11 +687,12 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    void removeIfNeeded();
+    /// Set of source parts for patch parts. Empty for regular parts.
+    SourcePartsSetForPatch source_parts_set;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
-    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const = 0;
+    virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
     std::optional<String> getRelativePathForDetachedPart(const String & prefix, bool broken) const;
 
@@ -678,7 +708,7 @@ protected:
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
 
-    void initializeIndexGranularityInfo();
+    void initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings);
 
     virtual void doCheckConsistency(bool require_part_metadata) const;
 
@@ -690,27 +720,31 @@ private:
     NameToNumber column_name_to_position;
 
     /// Map from name of column to its serialization info.
-    SerializationInfoByName serialization_infos;
+    SerializationInfoByName serialization_infos{{}};
 
     /// Serializations for every columns and subcolumns by their names.
     SerializationByName serializations;
 
     /// Columns description for more convenient access
     /// to columns by name and getting subcolumns.
-    ColumnsDescription columns_description;
+    std::shared_ptr<const ColumnsDescription> columns_description;
 
     /// The same as above but after call of Nested::collect().
     /// It is used while reading from wide parts.
-    ColumnsDescription columns_description_with_collected_nested;
+    std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
+
+    /// Small state of finalized statistics for suitable statistics types.
+    /// Lazily initialized on a first access.
+    mutable std::mutex estimates_mutex;
+    mutable std::optional<Estimates> estimates;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
-
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require, bool load_metadata_version);
 
-    /// Reads columns substreams from columns_substreams.txt (only in Compact parts).
+    /// Reads columns substreams from columns_substreams.txt.
     void loadColumnsSubstreams();
 
     /// Loads marks index granularity into memory
@@ -736,7 +770,7 @@ private:
 
     void loadPartitionAndMinMaxIndex();
 
-    void calculateColumnsSizesOnDisk(std::optional<Block> columns_sample = std::nullopt) const;
+    void calculateColumnsSizesOnDisk() const;
 
     void calculateSecondaryIndicesSizesOnDisk() const;
 
@@ -744,6 +778,7 @@ private:
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
+    void loadSourcePartsSet();
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
     void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;
@@ -762,6 +797,9 @@ private:
 
     /// Returns the name of projection for projection part, empty string for regular part.
     String getProjectionName() const;
+
+    /// Returns the name of the part state as a string.
+    String stateToString() const;
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;

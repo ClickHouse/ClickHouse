@@ -45,8 +45,20 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
     , coordination_settings(std::move(coordination_settings_))
 {
     /// enable by default some feature flags
-    feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
-    feature_flags.enableFeatureFlag(KeeperFeatureFlag::MULTI_READ);
+    static constexpr std::array enabled_by_default_feature_flags
+    {
+        KeeperFeatureFlag::FILTERED_LIST,
+        KeeperFeatureFlag::MULTI_READ,
+        KeeperFeatureFlag::CHECK_NOT_EXISTS,
+        KeeperFeatureFlag::CREATE_IF_NOT_EXISTS,
+        KeeperFeatureFlag::REMOVE_RECURSIVE,
+        KeeperFeatureFlag::MULTI_WATCHES,
+        KeeperFeatureFlag::PERSISTENT_WATCHES,
+    };
+
+    for (const auto feature_flag : enabled_by_default_feature_flags)
+        feature_flags.enableFeatureFlag(feature_flag);
+
     system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
 
     /// for older clients, the default is equivalent to WITH_MULTI_READ version
@@ -623,6 +635,16 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS);
         case Coordination::OpNum::RemoveRecursive:
             return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
+        case Coordination::OpNum::CheckStat:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
+        case Coordination::OpNum::Create2:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_STATS);
+        case Coordination::OpNum::SetWatch:
+        case Coordination::OpNum::SetWatch2:
+        case Coordination::OpNum::AddWatch:
+        case Coordination::OpNum::CheckWatch:
+        case Coordination::OpNum::RemoveWatch:
+            return feature_flags.isEnabled(KeeperFeatureFlag::PERSISTENT_WATCHES);
         case Coordination::OpNum::Close:
         case Coordination::OpNum::Error:
         case Coordination::OpNum::Create:
@@ -675,6 +697,16 @@ bool KeeperContext::waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms
 
     wait_commit_upto_idx.reset();
     return success;
+}
+
+bool KeeperContext::shouldLogRequests() const
+{
+    return log_requests.load(std::memory_order_relaxed);
+}
+
+void KeeperContext::setLogRequests(bool log_requests_)
+{
+    log_requests.store(log_requests_, std::memory_order_relaxed);
 }
 
 }

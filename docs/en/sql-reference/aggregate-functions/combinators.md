@@ -4,9 +4,10 @@ sidebar_label: 'Combinators'
 sidebar_position: 37
 slug: /sql-reference/aggregate-functions/combinators
 title: 'Aggregate Function Combinators'
+doc_type: 'reference'
 ---
 
-# Aggregate Function Combinators
+# Aggregate function combinators
 
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
@@ -106,8 +107,8 @@ Please notice, that -MapState is not an invariant for the same data due to the f
 To work with these states, use:
 
 - [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
-- [finalizeAggregation](/sql-reference/functions/other-functions#finalizeaggregation) function.
-- [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
+- [finalizeAggregation](/sql-reference/functions/other-functions#finalizeAggregation) function.
+- [runningAccumulate](../../sql-reference/functions/other-functions.md#runningAccumulate) function.
 - [-Merge](#-merge) combinator.
 - [-MergeState](#-mergestate) combinator.
 

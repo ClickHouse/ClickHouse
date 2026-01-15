@@ -5,12 +5,15 @@ description: 'The `ExternalDistributed` engine allows to perform `SELECT` querie
 sidebar_label: 'ExternalDistributed'
 sidebar_position: 55
 slug: /engines/table-engines/integrations/ExternalDistributed
-title: 'ExternalDistributed'
+title: 'ExternalDistributed table engine'
+doc_type: 'reference'
 ---
+
+# ExternalDistributed table engine
 
 The `ExternalDistributed` engine allows to perform `SELECT` queries on data that is stored on a remote servers MySQL or PostgreSQL. Accepts [MySQL](../../../engines/table-engines/integrations/mysql.md) or [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md) engines as an argument so sharding is possible.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -26,7 +29,7 @@ See a detailed description of the [CREATE TABLE](/sql-reference/statements/creat
 The table structure can differ from the original table structure:
 
 - Column names should be the same as in the original table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the original table. ClickHouse tries to [cast](/sql-reference/functions/type-conversion-functions#cast) values to the ClickHouse data types.
+- Column types may differ from those in the original table. ClickHouse tries to [cast](/sql-reference/functions/type-conversion-functions#CAST) values to the ClickHouse data types.
 
 **Engine Parameters**
 
@@ -37,7 +40,7 @@ The table structure can differ from the original table structure:
 - `user` — User name.
 - `password` — User password.
 
-## Implementation Details {#implementation-details}
+## Implementation details {#implementation-details}
 
 Supports multiple replicas that must be listed by `|` and shards must be listed by `,`. For example:
 

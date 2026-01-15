@@ -26,20 +26,23 @@ $CLICKHOUSE_CLIENT --query "SELECT current_size > 0 FROM system.filesystem_cache
 config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/storage_conf.xml
 
 new_max_size=$($CLICKHOUSE_CLIENT --query "SELECT multiply(max_size, 3) FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
-sed -i "s|<max_size>$prev_max_size<\/max_size>|<max_size>$new_max_size<\/max_size>|"  $config_path
+sed -i "s|<max_size>$prev_max_size<\/max_size>|<max_size>$new_max_size<\/max_size>|" $config_path
 
-function select {
-    while true; do
-        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null"
+TIMEOUT=5
+
+function select_func {
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
+        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null SETTINGS filesystem_cache_segments_batch_size=1, max_read_buffer_size_remote_fs=50000"
     done
 }
 
-export -f select
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
 
 $CLICKHOUSE_CLIENT -m --query "
 SET send_logs_level='error';
@@ -50,12 +53,11 @@ wait
 
 sed -i "s|<max_size>$new_max_size<\/max_size>|<max_size>$prev_max_size<\/max_size>|"  $config_path
 
-export -f select
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
-timeout 5 bash -c select 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
+select_func 2>/dev/null &
 
 $CLICKHOUSE_CLIENT -m --query "
 SET send_logs_level='error';

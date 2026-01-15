@@ -2,7 +2,7 @@
 #include <Server/TCPServer.h>
 
 #if USE_GRPC
-#include <Server/GRPCServer.h>
+#include <Server/IGRPCServer.h>
 #endif
 
 
@@ -44,7 +44,7 @@ ProtocolServerAdapter::ProtocolServerAdapter(
 class ProtocolServerAdapter::GRPCServerAdapterImpl : public Impl
 {
 public:
-    explicit GRPCServerAdapterImpl(std::unique_ptr<GRPCServer> grpc_server_) : grpc_server(std::move(grpc_server_)) {}
+    explicit GRPCServerAdapterImpl(std::unique_ptr<IGRPCServer> grpc_server_) : grpc_server(std::move(grpc_server_)) {}
     ~GRPCServerAdapterImpl() override = default;
 
     void start() override { grpc_server->start(); }
@@ -60,7 +60,7 @@ public:
     size_t refusedConnections() const override { return 0; }
 
 private:
-    std::unique_ptr<GRPCServer> grpc_server;
+    std::unique_ptr<IGRPCServer> grpc_server;
     bool is_stopping = false;
 };
 
@@ -68,7 +68,7 @@ ProtocolServerAdapter::ProtocolServerAdapter(
     const std::string & listen_host_,
     const char * port_name_,
     const std::string & description_,
-    std::unique_ptr<GRPCServer> grpc_server_,
+    std::unique_ptr<IGRPCServer> grpc_server_,
     bool supports_runtime_reconfiguration_)
     : listen_host(listen_host_)
     , port_name(port_name_)

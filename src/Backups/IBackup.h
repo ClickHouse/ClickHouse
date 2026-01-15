@@ -112,7 +112,7 @@ public:
 
     /// Reads an entry from the backup.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const = 0;
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const SizeAndChecksum & size_and_checksum) const = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Copies a file from the backup to a specified destination disk. Returns the number of bytes written.
     virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const = 0;
@@ -135,6 +135,9 @@ public:
 
     /// Try to remove all files copied to the backup. Could be used after setIsCorrupted().
     virtual bool tryRemoveAllFiles() noexcept = 0;
+
+    /// Try to remove all files of a directory from original object storage.
+    virtual bool tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

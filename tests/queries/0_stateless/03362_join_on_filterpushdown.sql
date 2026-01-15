@@ -67,7 +67,7 @@ FORMAT Null
 SETTINGS log_comment = '03362_join_on_filterpushdown_full'
 ;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     if(ProfileEvents['JoinProbeTableRowCount'] == 100, 'ok', 'fail: ' || toString(ProfileEvents['JoinProbeTableRowCount'])),

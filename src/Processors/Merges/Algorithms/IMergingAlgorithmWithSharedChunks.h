@@ -2,7 +2,7 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 
@@ -13,7 +13,7 @@ class IMergingAlgorithmWithSharedChunks : public IMergingAlgorithm
 {
 public:
     IMergingAlgorithmWithSharedChunks(
-        Block header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs, std::unique_ptr<MergedData> merged_data_);
+        SharedHeader header_, size_t num_inputs, SortDescription description_, WriteBuffer * out_row_sources_buf_, size_t max_row_refs, std::unique_ptr<MergedData> merged_data_);
 
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
@@ -23,7 +23,7 @@ public:
     size_t prev_unequal_column = 0;
 
 private:
-    Block header;
+    SharedHeader header;
     SortDescription description;
 
     /// Allocator must be destroyed after source_chunks.

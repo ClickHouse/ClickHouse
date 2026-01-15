@@ -49,6 +49,8 @@
  */
 #define JEMALLOC_USE_CXX_THROW
 
+#define JEMALLOC_CONFIG_ENV
+
 #ifdef _MSC_VER
 #  ifdef _WIN64
 #    define LG_SIZEOF_PTR_WIN 3

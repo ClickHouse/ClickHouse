@@ -31,8 +31,6 @@ namespace
     constexpr Int64 END_OF_VARINT = -1;
     constexpr Int64 END_OF_GROUP = -2;
     constexpr Int64 END_OF_FILE = -3;
-
-    Int64 decodeZigZag(UInt64 n) { return static_cast<Int64>((n >> 1) ^ (~(n & 1) + 1)); }
 }
 
 

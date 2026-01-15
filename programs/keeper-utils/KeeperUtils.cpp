@@ -1,7 +1,9 @@
 #include <iostream>
+#include <unordered_map>
 #include <Columns/IColumn.h>
 #include <Coordination/Changelog.h>
 #include <Coordination/CoordinationSettings.h>
+#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
@@ -56,44 +58,57 @@ uint64_t getSnapshotPathUpToLogIdx(const String & snapshot_path)
 {
     std::filesystem::path path(snapshot_path);
     std::string filename = path.stem();
-    Strings name_parts;
+    std::vector<std::string_view> name_parts;
     splitInto<'_', '.'>(name_parts, filename);
     return parse<uint64_t>(name_parts[1]);
 }
 
-void analyzeSnapshot(const std::string & snapshot_path)
+void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool with_node_stats, size_t subtrees_limit)
 {
     try
     {
-        auto disk = std::make_shared<DiskLocal>("SnapshotDisk", snapshot_path);
         auto keeper_context = std::make_shared<KeeperContext>(true, std::make_shared<CoordinationSettings>());
-        keeper_context->setSnapshotDisk(disk);
-
-        // Get list of all files in the snapshot directory
-        std::vector<std::string> snapshot_files;
-        disk->listFiles(snapshot_path, snapshot_files);
-
-        // Filter for snapshot files (snapshot_*.bin or snapshot_*.bin.zstd)
         std::vector<std::string> snapshot_paths;
-        for (const auto & file : snapshot_files)
+        bool specific_snapshot_defined = false;
+        if (snapshot_path.ends_with(".bin") || snapshot_path.ends_with(".bin.zstd"))
         {
-            if (file.starts_with("snapshot_") && (file.ends_with(".bin") || file.ends_with(".bin.zstd")))
-                snapshot_paths.push_back(file);
+            specific_snapshot_defined = true;
+            snapshot_paths.push_back(snapshot_path);
+            std::filesystem::path normalized_path = std::filesystem::weakly_canonical(snapshot_path).parent_path();
+            auto disk = std::make_shared<DiskLocal>("SnapshotDisk", normalized_path.string());
+            keeper_context->setSnapshotDisk(disk);
+        }
+        else
+        {
+            auto disk = std::make_shared<DiskLocal>("SnapshotDisk", snapshot_path);
+            keeper_context->setSnapshotDisk(disk);
+
+            // Get list of all files in the snapshot directory
+            std::vector<std::string> snapshot_files;
+            disk->listFiles(snapshot_path, snapshot_files);
+
+            // Filter for snapshot files (snapshot_*.bin or snapshot_*.bin.zstd);
+            for (const auto & file : snapshot_files)
+            {
+                if (file.starts_with("snapshot_") && (file.ends_with(".bin") || file.ends_with(".bin.zstd")))
+                    snapshot_paths.push_back(file);
+            }
+
+            if (snapshot_paths.empty())
+                throw DB::Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "No snapshot files found in {}", snapshot_path);
+
+            // Sort snapshots by their index (newest first)
+            std::sort(snapshot_paths.begin(), snapshot_paths.end(), std::greater<>());
+
+            std::cout << "Found " << snapshot_paths.size() << " snapshots in " << snapshot_path << ":\n\n";
         }
 
-        if (snapshot_paths.empty())
-            throw DB::Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "No snapshot files found in {}", snapshot_path);
-
-        // Sort snapshots by their index (newest first)
-        std::sort(snapshot_paths.begin(), snapshot_paths.end(), std::greater<>());
-
-        std::cout << "Found " << snapshot_paths.size() << " snapshots in " << snapshot_path << ":\n\n";
 
         for (const auto & snapshot_file : snapshot_paths)
         {
             try
             {
-                std::string full_path = std::filesystem::path(snapshot_path) / snapshot_file;
+                std::string full_path = specific_snapshot_defined ? snapshot_path : (std::filesystem::path(snapshot_path) / snapshot_file).generic_string();
                 std::cout << "=== Snapshot: " << snapshot_file << " ===\n";
 
                 // Create a snapshot manager for each snapshot
@@ -105,24 +120,89 @@ void analyzeSnapshot(const std::string & snapshot_path)
                     500   // storage_tick_time
                 );
 
-                auto result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(getSnapshotPathUpToLogIdx(full_path)));
+                auto result = snapshot_manager.deserializeSnapshotFromBuffer(
+                    snapshot_manager.deserializeSnapshotBufferFromDisk(getSnapshotPathUpToLogIdx(full_path)),
+                    full_storage);
+
                 if (!result.storage)
                 {
                     std::cerr << "  Warning: Failed to load snapshot data\n\n";
                     continue;
                 }
 
-                // const auto & storage = *result.storage;
                 const auto & snapshot_meta = result.snapshot_meta;
 
-                std::cout << fmt::format("  Last committed log index: {}\n"
-                                        "  Last committed log term: {}\n"
-                                        "  Number of nodes: {}\n"
-                                        "  Digest: {}\n",
-                                        snapshot_meta->get_last_log_idx(),
-                                        snapshot_meta->get_last_log_term(),
-                                        result.storage->getNodesCount(),
-                                        result.storage->getNodesDigest(/*committed=*/true, /*lock_transaction_mutex=*/false).value) << std::endl;
+                if (full_storage)
+                {
+                    std::cout << fmt::format(
+                        "  Last committed log index: {}\n"
+                        "  Last committed log term: {}\n"
+                        "  Number of nodes: {}\n"
+                        "  Digest: {}\n",
+                        snapshot_meta->get_last_log_idx(),
+                        snapshot_meta->get_last_log_term(),
+                        result.storage->getNodesCount(),
+                        result.storage->getNodesDigest(/*committed=*/true, /*lock_transaction_mutex=*/false).value)
+                        << std::endl;
+                }
+                else
+                {
+                    std::cout << fmt::format(
+                        "  Last committed log index: {}\n"
+                        "  Last committed log term: {}\n"
+                        "  Number of paths: {}\n",
+                        snapshot_meta->get_last_log_idx(),
+                        snapshot_meta->get_last_log_term(),
+                        result.paths.size())
+                        << std::endl;
+
+                    if (with_node_stats)
+                    {
+                        std::cout << "Finding biggest subtrees... " << std::endl;
+                        std::unordered_map<std::string_view, size_t> subtree_sizes;
+                        for (const auto & path : result.paths)
+                        {
+                            if (path == "/")
+                                continue;
+
+                            std::string_view current_path = path;
+                            while (true)
+                            {
+                                auto parent = parentNodePath(current_path);
+                                if (parent == "/") // We are at the root
+                                    break;
+
+                                subtree_sizes[parent]++;
+                                current_path = parent;
+                            }
+                        }
+
+                        using NodeCount = std::pair<size_t, std::string_view>;
+                        auto cmp = [](const NodeCount & a, const NodeCount & b) { return a.first > b.first; };
+                        std::priority_queue<NodeCount, std::vector<NodeCount>, decltype(cmp)> pq(cmp);
+
+                        for (const auto & [node_path, count] : subtree_sizes)
+                        {
+                            pq.emplace(count, node_path);
+                            if (pq.size() > subtrees_limit)
+                                pq.pop();
+                        }
+
+                        std::vector<NodeCount> top_nodes;
+                        while (!pq.empty())
+                        {
+                            top_nodes.push_back(pq.top());
+                            pq.pop();
+                        }
+                        std::reverse(top_nodes.begin(), top_nodes.end());
+
+                        std::cout << fmt::format("  Top {} biggest subtrees:\n", subtrees_limit);
+                        for (const auto & node : top_nodes)
+                        {
+                            std::cout << fmt::format("    {}: {} descendants\n", node.second, node.first);
+                        }
+                    }
+                }
             }
             catch (const DB::Exception & e)
             {
@@ -395,9 +475,9 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             for (const auto & child : value.getChildren())
             {
                 if (key == "/")
-                    keys.push(key + child.toString());
+                    keys.push(fmt::format("/{}", child));
                 else
-                    keys.push(key + "/" + child.toString());
+                    keys.push(fmt::format("{}/{}", key, child));
             }
         }
     };
@@ -543,6 +623,7 @@ auto op_num_enum = std::make_shared<DataTypeEnum16>(DataTypeEnum16::Values
     {"CheckNotExists", static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
     {"CreateIfNotExists", static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
     {"RemoveRecursive", static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},
+    {"CheckStat", static_cast<Int16>(Coordination::OpNum::CheckStat)},
 });
 }
 
@@ -1014,7 +1095,11 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
             po::options_description analyzer_options("Snapshot analyzer options");
             analyzer_options.add_options()
                 ("help,h", "Show help message")
-                ("snapshot-path", po::value<std::string>()->required(), "Path to snapshots directory");
+                ("snapshot-path", po::value<std::string>()->required(), "Path to snapshots directory")
+                ("full-storage", po::bool_switch()->default_value(false), "Load full storage from snapshot")
+                ("with-node-stats", po::bool_switch()->default_value(false), "Calculate and show subtree statistics")
+                ("subtrees-limit", po::value<std::size_t>()->default_value(10), "Show top N subtrees")
+            ;
 
             try
             {
@@ -1032,7 +1117,9 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                               << "Options:\n"
                               << analyzer_options << "\n"
                               << "Example:\n"
-                              << "  clickhouse-keeper-utils snapshot-analyzer --snapshot-path /path/to/snapshots\n";
+                              << "  clickhouse-keeper-utils snapshot-analyzer --snapshot-path /path/to/snapshots\n"
+                              << "  clickhouse-keeper-utils snapshot-analyzer --snapshot-path /path/to/snapshots --full-storage\n"
+                              << "  clickhouse-keeper-utils snapshot-analyzer --snapshot-path /path/to/snapshots --with-node-stats\n";
                     return 0;
                 }
 
@@ -1041,7 +1128,11 @@ int mainEntryClickHouseKeeperUtils(int argc, char ** argv)
                 po::store(po::command_line_parser(subcommand_args).options(analyzer_options).run(), analyzer_vm);
                 po::notify(analyzer_vm);
 
-                analyzeSnapshot(analyzer_vm["snapshot-path"].as<std::string>());
+                analyzeSnapshot(
+                    analyzer_vm["snapshot-path"].as<std::string>(),
+                    analyzer_vm["full-storage"].as<bool>(),
+                    analyzer_vm["with-node-stats"].as<bool>(),
+                    analyzer_vm["subtrees-limit"].as<size_t>());
                 return 0;
             }
             catch (const std::exception & e)

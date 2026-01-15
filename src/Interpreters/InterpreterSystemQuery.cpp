@@ -1,18 +1,24 @@
 #include <algorithm>
 #include <csignal>
 #include <filesystem>
+#include <variant>
 #include <unistd.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Access/ContextAccess.h>
 #include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
+#include <Columns/ColumnString.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Databases/enableAllExperimentalSettings.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
+#include <IO/SharedThreadPools.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -25,12 +31,14 @@
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/FilesystemCacheLog.h>
+#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryThreadLog.h>
@@ -40,12 +48,19 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
+#include <Interpreters/DeltaMetadataLog.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InstrumentationManager.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/Freeze.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -60,6 +75,7 @@
 #include <Storages/StorageURL.h>
 #include <Storages/System/StorageSystemFilesystemCache.h>
 #include <base/coverage.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/ActionLock.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
@@ -109,6 +125,9 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsSetOperationMode union_default_mode;
 }
 
 namespace ServerSetting
@@ -128,6 +147,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace ActionLocks
@@ -143,7 +163,6 @@ namespace ActionLocks
     extern const StorageActionBlockType Cleanup;
     extern const StorageActionBlockType ViewRefresh;
 }
-
 
 namespace
 {
@@ -239,7 +258,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     }
     else
     {
-        for (auto & elem : DatabaseCatalog::instance().getDatabases())
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             startStopActionInDatabase(action_type, start, elem.first, elem.second, getContext(), log);
         }
@@ -356,6 +375,7 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::SYNC_FILE_CACHE:
         {
+            getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILE_CACHE);
             LOG_DEBUG(log, "Will perform 'sync' syscall (it can take time).");
             sync();
             break;
@@ -417,6 +437,24 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
             system_context->clearVectorSimilarityIndexCache();
             break;
+        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_DICTIONARY_CACHE);
+            system_context->clearTextIndexDictionaryBlockCache();
+            break;
+        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
+            system_context->clearTextIndexHeaderCache();
+            break;
+        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE);
+            system_context->clearTextIndexPostingsCache();
+            break;
+        case Type::DROP_TEXT_INDEX_CACHES:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
+            system_context->clearTextIndexDictionaryBlockCache();
+            system_context->clearTextIndexHeaderCache();
+            system_context->clearTextIndexPostingsCache();
+            break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
@@ -458,8 +496,7 @@ BlockIO InterpreterSystemQuery::execute()
 
             if (query.filesystem_cache_name.empty())
             {
-                auto caches = FileCacheFactory::instance().getAll();
-                for (const auto & [_, cache_data] : caches)
+                for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
                 {
                     if (!cache_data->cache->isInitialized())
                         continue;
@@ -520,11 +557,10 @@ BlockIO InterpreterSystemQuery::execute()
 
             if (query.filesystem_cache_name.empty())
             {
-                auto caches = FileCacheFactory::instance().getAll();
-                for (const auto & [cache_name, cache_data] : caches)
+                for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
                 {
                     auto file_segments = cache_data->cache->sync();
-                    fill_data(cache_name, cache_data->cache, file_segments);
+                    fill_data(cache_data->cache->getName(), cache_data->cache, file_segments);
                 }
             }
             else
@@ -535,13 +571,19 @@ BlockIO InterpreterSystemQuery::execute()
             }
 
             size_t num_rows = res_columns[0]->size();
-            auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+            auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
             result.pipeline = QueryPipeline(std::move(source));
             break;
         }
         case Type::DROP_DISK_METADATA_CACHE:
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
+
+            auto metadata = getContext()->getDisk(query.disk)->getMetadataStorage();
+            if (metadata)
+                metadata->dropCache();
+
+            break;
         }
         case Type::DROP_PAGE_CACHE:
         {
@@ -662,9 +704,13 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->getEmbeddedDictionaries().reload();
             break;
         case Type::RELOAD_CONFIG:
+        {
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated("SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
             system_context->reloadConfig();
             break;
+        }
         case Type::RELOAD_USERS:
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
@@ -675,6 +721,12 @@ BlockIO InterpreterSystemQuery::execute()
             auto * asynchronous_metrics = system_context->getAsynchronousMetrics();
             if (asynchronous_metrics)
                 asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
+            break;
+        }
+        case Type::RECONNECT_ZOOKEEPER:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RECONNECT_ZOOKEEPER);
+            system_context->reconnectZooKeeper("triggered via SYSTEM RECONNECT ZOOKEEPER command");
             break;
         }
         case Type::STOP_MERGES:
@@ -794,6 +846,9 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RESTORE_REPLICA:
             restoreReplica();
             break;
+        case Type::RESTORE_DATABASE_REPLICA:
+            restoreDatabaseReplica(query);
+            break;
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
             break;
@@ -803,17 +858,25 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(true, query.logs);
+            system_logs.flush(query.tables);
             break;
         }
         case Type::STOP_LISTEN:
+        {
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated("SYSTEM STOP LISTEN query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
             getContext()->stopServers(query.server_type);
             break;
+        }
         case Type::START_LISTEN:
+        {
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated("SYSTEM START LISTEN query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
             getContext()->startServers(query.server_type);
             break;
+        }
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE);
@@ -822,7 +885,11 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
 
-            queue->flushAll();
+            std::vector<StorageID> tables;
+            for (const auto & [database, table]: query.tables)
+                tables.push_back(getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
+
+            queue->flush(tables);
             break;
         }
         case Type::STOP_THREAD_FUZZER:
@@ -842,6 +909,7 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
+#if USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
@@ -857,11 +925,35 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            LOG_TRACE(log, "Waiting for failpoint {}", query.fail_point_name);
-            FailPointInjection::pauseFailPoint(query.fail_point_name);
-            LOG_TRACE(log, "Finished waiting for failpoint {}", query.fail_point_name);
+            if (query.fail_point_action == ASTSystemQuery::FailPointAction::PAUSE)
+            {
+                LOG_TRACE(log, "Waiting for failpoint {} to pause", query.fail_point_name);
+                FailPointInjection::waitForPause(query.fail_point_name);
+                LOG_TRACE(log, "Failpoint {} has paused", query.fail_point_name);
+            }
+            else
+            {
+                LOG_TRACE(log, "Waiting for failpoint {} to resume", query.fail_point_name);
+                FailPointInjection::waitForResume(query.fail_point_name);
+                LOG_TRACE(log, "Failpoint {} has resumed", query.fail_point_name);
+            }
+
             break;
         }
+        case Type::NOTIFY_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            LOG_TRACE(log, "Notifying failpoint {}", query.fail_point_name);
+            FailPointInjection::notifyFailPoint(query.fail_point_name);
+            break;
+        }
+#else // USE_LIBFIU
+        case Type::ENABLE_FAILPOINT:
+        case Type::DISABLE_FAILPOINT:
+        case Type::WAIT_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support");
+#endif // USE_LIBFIU
         case Type::RESET_COVERAGE:
         {
             getContext()->checkAccess(AccessType::SYSTEM);
@@ -877,30 +969,53 @@ BlockIO InterpreterSystemQuery::execute()
             unloadPrimaryKeys();
             break;
         }
-
+#if USE_XRAY
+        case Type::INSTRUMENT_ADD:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_ADD);
+            instrumentWithXRay(true, query);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_REMOVE);
+            instrumentWithXRay(false, query);
+            break;
+        }
+#else
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without XRay support");
+#endif
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            purgeJemallocArenas();
+            Jemalloc::purgeArenas();
             break;
         }
         case Type::JEMALLOC_ENABLE_PROFILE:
         {
-            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            setJemallocProfileActive(true);
-            break;
-        }
-        case Type::JEMALLOC_DISABLE_PROFILE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            setJemallocProfileActive(false);
-            break;
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Queries for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler' or "
+                "enable it per query using setting 'jemalloc_enable_profiler'");
         }
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            flushJemallocProfile("/tmp/jemalloc_clickhouse");
+            auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
+            /// TODO: Next step - provide system.jemalloc_profile table, that will provide all the info inside ClickHouse
+            Jemalloc::symbolizeHeapProfile(filename, filename + ".symbolized");
+            filename += ".symbolized";
+            auto col = ColumnString::create();
+            col->insertData(filename.data(), filename.size());
+            Columns columns;
+            columns.emplace_back(std::move(col));
+            Chunk chunk(std::move(columns), 1);
+            SharedHeader header = std::make_shared<Block>(Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "filename")});
+            auto filename_source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
+            result.pipeline = QueryPipeline(filename_source);
             break;
         }
 #else
@@ -937,6 +1052,24 @@ void InterpreterSystemQuery::restoreReplica()
             settings[Setting::keeper_retry_max_backoff_ms],
             getContext()->getProcessListElementSafe()},
         false);
+}
+
+void InterpreterSystemQuery::restoreDatabaseReplica(ASTSystemQuery & query)
+{
+    const String database_name = query.getDatabase();
+    getContext()->checkAccess(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, database_name);
+
+    const auto db_ptr = DatabaseCatalog::instance().getDatabase(database_name);
+
+    auto* replicated_db = dynamic_cast<DatabaseReplicated*>(db_ptr.get());
+    if (!replicated_db)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database {} is not Replicated", database_name);
+    }
+
+    replicated_db->restoreDatabaseMetadataInKeeper(getContext());
+
+    LOG_TRACE(log, "Replicated database {} was restored.", database_name);
 }
 
 StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
@@ -1039,9 +1172,19 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     auto access = getContext()->getAccess();
     bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_RESTART_REPLICA);
+    bool show_tables_is_granted_globally = access->isGranted(AccessType::SHOW_TABLES);
 
-    for (auto & elem : catalog.getDatabases())
+    for (auto & elem : catalog.getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
+        if (elem.second->isExternal())
+            continue;
+
+        if (!access_is_granted_globally && !show_tables_is_granted_globally && !access->isGranted(AccessType::SHOW_TABLES, elem.first))
+        {
+            LOG_INFO(log, "Access {} denied, skipping {}", "SHOW TABLES", elem.first);
+            continue;
+        }
+
         for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(it->table().get()))
@@ -1080,20 +1223,19 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, table_id);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
-        if (!dropReplicaImpl(query, table))
+        if (!dropStorageReplica(query.replica, table))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
     }
     else if (query.database)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
-        for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
-            dropReplicaImpl(query, iterator->table());
+        dropStorageReplicasFromDatabase(query.replica, database);
         LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
     }
     else if (query.is_drop_whole_replica)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -1121,10 +1263,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
-            for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
-            {
-                dropReplicaImpl(query, iterator->table());
-            }
+            dropStorageReplicasFromDatabase(query.replica, database);
             LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
     }
@@ -1134,22 +1273,20 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
 
         /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases())
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
                 {
-                    ReplicatedTableStatus status;
-                    storage_replicated->getStatus(status);
-                    if (status.replica_path == remote_replica_path)
+                    if (storage_replicated->getReplicaPath() == remote_replica_path)
                         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                                         "There is a local table {}, which has the same table path in ZooKeeper. "
                                         "Please check the path in query. "
                                         "If you want to drop replica "
                                         "of this table, use `DROP TABLE` "
-                                        "or `SYSTEM DROP REPLICA 'name' FROM db.table`",
+                                        "or `SYSTEM DROP REPLICA 'name' FROM TABLE db.table`",
                                         storage_replicated->getStorageID().getNameForLogs());
                 }
             }
@@ -1176,25 +1313,252 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid query");
 }
 
-bool InterpreterSystemQuery::dropReplicaImpl(ASTSystemQuery & query, const StoragePtr & table)
+bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, const StoragePtr & storage)
 {
-    auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
+    auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(storage.get());
     if (!storage_replicated)
         return false;
 
-    ReplicatedTableStatus status;
-    storage_replicated->getStatus(status);
+    const auto & replica_name = storage_replicated->getReplicaName();
 
     /// Do not allow to drop local replicas and active remote replicas
-    if (query.replica == status.zookeeper_info.replica_name)
+    if (query_replica == replica_name)
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                         "We can't drop local replica, please use `DROP TABLE` if you want "
                         "to clean the data and drop this replica");
 
-    storage_replicated->dropReplica(query.replica, log);
-    LOG_TRACE(log, "Dropped replica {} of {}", query.replica, table->getStorageID().getNameForLogs());
+    storage_replicated->dropReplica(query_replica, log);
+    LOG_TRACE(log, "Dropped replica {} of {}", query_replica, storage->getStorageID().getNameForLogs());
 
     return true;
+}
+
+void InterpreterSystemQuery::dropStorageReplicasFromDatabase(const String & query_replica, DatabasePtr database)
+{
+    for (auto iterator = database->getLightweightTablesIterator(getContext()); iterator->isValid(); iterator->next())
+        dropStorageReplica(query_replica, iterator->table());
+
+    LOG_TRACE(log, "Dropped storage replica from {} of database {}", query_replica, backQuoteIfNeed(database->getDatabaseName()));
+}
+
+DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
+    const String & zookeeper_path, const String & full_replica_name, const String & restoring_database_name)
+{
+    auto zookeeper = getContext()->getZooKeeper();
+
+    String metadata_path = zookeeper_path + "/metadata";
+    if (!zookeeper->exists(metadata_path))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database metadata keeper path does not exists: '{}'", metadata_path);
+
+    if (zookeeper->getChildren(metadata_path).empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database replicas keeper path is empty: '{}", metadata_path);
+
+    String replica_path = zookeeper_path + "/replicas/" + full_replica_name;
+    if (!zookeeper->exists(replica_path))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database replica keeper path does not exists: '{}", replica_path);
+
+    Strings escaped_table_names;
+    escaped_table_names = zookeeper->getChildren(zookeeper_path + "/metadata");
+
+    std::vector<String> paths_to_fetch;
+    paths_to_fetch.reserve(escaped_table_names.size());
+
+    for (const auto & table : escaped_table_names)
+        paths_to_fetch.push_back(zookeeper_path + "/metadata/" + table);
+
+    auto table_metadata = zookeeper->tryGet(paths_to_fetch);
+    std::map<String, String> table_name_to_metadata;
+    for (size_t i = 0; i < escaped_table_names.size(); ++i)
+    {
+        auto & res = table_metadata[i];
+        if (res.error != Coordination::Error::ZOK)
+            throw zkutil::KeeperException::fromPath(res.error, fs::path(zookeeper_path) / "metadata");
+
+        table_name_to_metadata.emplace(unescapeForFileName(escaped_table_names[i]), std::move(res.data));
+    }
+    String create_query = fmt::format("CREATE DATABASE `{}` ENGINE=Atomic", restoring_database_name);
+
+    auto create_ctx = Context::createCopy(Context::getGlobalContextInstance());
+    create_ctx->makeQueryContext();
+    create_ctx->setCurrentQueryId({});
+    executeQuery(create_query, create_ctx, QueryFlags{.internal = true});
+
+    TablesDependencyGraph tables_dependencies("Memory (" + restoring_database_name + ")");
+    LOG_TEST(log, "table_name_to_metadata size={}", table_name_to_metadata.size());
+
+    for (const auto & [table_name, create_table_query] : table_name_to_metadata)
+    {
+        /// Note that table_name could contain a dot inside (e.g. .inner.1234-1234-1234-1234)
+        /// And QualifiedTableName::parseFromString doesn't handle this.
+        auto qualified_name = QualifiedTableName{.database = restoring_database_name, .table = table_name};
+        auto query_ast = DatabaseReplicated::parseQueryFromMetadataInZooKeeper(
+            getContext(),
+            /*database_name_=*/restoring_database_name,
+            /*zookeeper_path_=*/zookeeper_path,
+            /*node_name=*/table_name,
+            /*query=*/create_table_query);
+        LOG_TEST(
+            log, "table_name {}, create_table_query: {}, query_ast: {}", table_name, create_table_query, query_ast->formatForLogging());
+
+        const ASTCreateQuery * create_query_ast = query_ast->as<ASTCreateQuery>();
+        chassert(create_query_ast);
+
+        if (create_query_ast->is_materialized_view)
+        {
+            LOG_TRACE(log, "Table {} is a materialized view, skip restoring", table_name);
+            continue;
+        }
+
+        if (!create_query_ast->storage)
+        {
+            LOG_TRACE(log, "No storage defined in table create statement: {}, '{}', skip restoring", table_name, create_table_query);
+            continue;
+        }
+        if (!create_query_ast->storage->engine)
+        {
+            LOG_TRACE(log, "No engine defined in create statement: {}, '{}', skip restoring", table_name, create_table_query);
+            continue;
+        }
+
+        const String & engine_name = create_query_ast->storage->engine->name;
+        if (!engine_name.starts_with("Replicated") || !engine_name.ends_with("MergeTree"))
+        {
+            LOG_TRACE(log, "Engine of the table '{}' is not ReplicatedMergeTree: '{}', skip restoring", table_name, engine_name);
+            continue;
+        }
+
+        tables_dependencies.addDependencies(
+            qualified_name,
+            getDependenciesFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ast, getContext()->getCurrentDatabase())
+                .dependencies);
+    }
+
+    auto make_create_context = [this, &restoring_database_name]()
+    {
+        auto query_context = Context::createCopy(getContext());
+        query_context->makeQueryContext();
+        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        query_context->setCurrentDatabase(restoring_database_name);
+        query_context->setCurrentQueryId("");
+
+        /// We will execute some CREATE queries for recovery (not ATTACH queries),
+        /// so we need to allow experimental features that can be used in a CREATE query
+        enableAllExperimentalSettings(query_context);
+
+        /// We apply the flatten_nested setting after writing the CREATE query to the DDL log,
+        /// but before writing metadata to ZooKeeper. So we have to apply the setting on secondary replicas, but not in recovery mode.
+        /// Set it to false, so it will do nothing on recovery. The metadata in ZooKeeper should be used as is.
+        /// Same for data_type_default_nullable.
+        query_context->setSetting("flatten_nested", false);
+        query_context->setSetting("data_type_default_nullable", false);
+
+        return query_context;
+    };
+
+    auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
+    for (const auto & tables_to_create : tables_to_create_by_level)
+    {
+        for (const auto & storage_id : tables_to_create)
+        {
+            auto table_name = storage_id.getTableName();
+
+            auto metadata_it = table_name_to_metadata.find(table_name);
+            if (metadata_it == table_name_to_metadata.end())
+            {
+                /// getTablesSortedByDependency() may return some not existing tables or tables from other databases
+                LOG_WARNING(
+                    log,
+                    "Got table name {} when resolving table dependencies, "
+                    "but database {} does not have metadata for that table. Ignoring it",
+                    storage_id.getNameForLogs(),
+                    restoring_database_name);
+                continue;
+            }
+            const auto & create_query_string = metadata_it->second;
+            auto query_ast = DatabaseReplicated::parseQueryFromMetadataInZooKeeper(
+                getContext(),
+                /*database_name_=*/restoring_database_name,
+                /*zookeeper_path_=*/zookeeper_path,
+                /*node_name=*/table_name,
+                /*query=*/create_query_string);
+            auto create_query_context = make_create_context();
+
+            NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
+
+            LOG_INFO(log, "Restoring {}", query_ast->formatForLogging());
+            InterpreterCreateQuery(query_ast, create_query_context).execute();
+        }
+    }
+    LOG_INFO(log, "All tables are restored successfully");
+
+    auto database = DatabaseCatalog::instance().getDatabase(restoring_database_name);
+    chassert(database);
+    return database;
+}
+
+std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_)
+{
+    auto metadata_dir_path = DatabaseCatalog::getMetadataDirPath();
+    auto default_db_disk = getContext()->getDatabaseDisk();
+    for (const auto it = default_db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
+    {
+        auto sub_path = fs::path(it->path());
+        if (!default_db_disk->existsFile(sub_path))
+            continue;
+
+        String db_name = sub_path.filename().string();
+        if (sub_path.extension() == ".sql")
+            db_name = sub_path.stem();
+
+        auto buf = default_db_disk->readFile(sub_path, getContext()->getReadSettings());
+        std::string query;
+        readStringUntilEOF(query, *buf);
+        ParserCreateQuery parser;
+        auto ast = parseQuery(
+            parser,
+            query,
+            "",
+            0,
+            getContext()->getSettingsRef()[Setting::max_parser_depth],
+            getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
+
+        const auto * create_ast = ast->as<ASTCreateQuery>();
+        auto * engine_define = create_ast->storage;
+        if (!engine_define)
+            continue;
+        const ASTFunction * engine = engine_define->engine;
+        if (!engine || engine->name != "Replicated")
+            continue;
+
+        auto & arguments = engine->arguments->children;
+        if (!engine->arguments || engine->arguments->children.size() != 3)
+            continue;
+
+        String engine_zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
+        String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
+        String replica_name = safeGetLiteralValue<String>(arguments[2], "Replicated");
+
+        Macros::MacroExpansionInfo info;
+        engine_zookeeper_path = getContext()->getMacros()->expand(engine_zookeeper_path, info);
+
+        info.level = 0;
+        shard_name = getContext()->getMacros()->expand(shard_name, info);
+
+        info.level = 0;
+        replica_name = getContext()->getMacros()->expand(replica_name, info);
+
+        if (engine_zookeeper_path != query_.replica_zk_path)
+            continue;
+
+        String full_replica_name
+            = query_.shard.empty() ? query_.replica : DatabaseReplicated::getFullReplicaName(query_.shard, query_.replica);
+        if (DatabaseReplicated::getFullReplicaName(shard_name, replica_name) != full_replica_name)
+            continue;
+
+        return db_name;
+    }
+    return std::nullopt;
 }
 
 void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
@@ -1202,13 +1566,15 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     if (query.replica.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name is empty");
 
-    auto check_not_local_replica = [](const DatabaseReplicated * replicated, const ASTSystemQuery & query_)
+    const String full_replica_name
+        = query.shard.empty() ? query.replica : DatabaseReplicated::getFullReplicaName(query.shard, query.replica);
+    const fs::path & query_replica_zk_path = fs::path(query.replica_zk_path);
+    auto check_not_local_replica
+        = [](const DatabaseReplicated * replicated, const String & full_replica_name_, const fs::path & query_replica_zk_path_)
     {
-        if (!query_.replica_zk_path.empty() && fs::path(replicated->getZooKeeperPath()) != fs::path(query_.replica_zk_path))
+        if (!query_replica_zk_path_.empty() && fs::path(replicated->getZooKeeperPath()) != query_replica_zk_path_)
             return;
-        String full_replica_name = query_.shard.empty() ? query_.replica
-                                                        : DatabaseReplicated::getFullReplicaName(query_.shard, query_.replica);
-        if (replicated->getFullReplicaName() != full_replica_name)
+        if (replicated->getFullReplicaName() != full_replica_name_)
             return;
 
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "There is a local database {}, which has the same path in ZooKeeper "
@@ -1222,7 +1588,9 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
         if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
         {
-            check_not_local_replica(replicated, query);
+            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
+            if (query.with_tables)
+                dropStorageReplicasFromDatabase(query.replica, database);
             DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ true);
         }
         else
@@ -1231,7 +1599,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     }
     else if (query.is_drop_whole_replica)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
@@ -1247,7 +1615,9 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 continue;
             }
 
-            check_not_local_replica(replicated, query);
+            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
+            if (query.with_tables)
+                dropStorageReplicasFromDatabase(query.replica, database);
             DatabaseReplicated::dropReplica(replicated, replicated->getZooKeeperPath(), query.shard, query.replica, /*throw_if_noop*/ false);
             LOG_TRACE(log, "Dropped replica {} of Replicated database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
@@ -1257,9 +1627,39 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
 
         /// This check is actually redundant, but it may prevent from some user mistakes
-        for (auto & elem : DatabaseCatalog::instance().getDatabases())
+        for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
-                check_not_local_replica(replicated, query);
+                check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
+
+        if (query.with_tables)
+        {
+            auto detached_database_name = getDetachedDatabaseFromKeeperPath(query);
+            if (detached_database_name)
+                throw Exception(
+                    ErrorCodes::TABLE_WAS_NOT_DROPPED,
+                    "There is a detached database {}, which has the same path in ZooKeeper "
+                    "and the same replica name. Please check the path in query. "
+                    "If you want to drop replica of this database, reattach it with `ATTACH DATABASE`, then drop it with `DROP DATABASE`",
+                    *detached_database_name);
+
+            String restoring_database_name = RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX + getRandomASCIIString(32);
+            SCOPE_EXIT({
+                auto drop_ctx = Context::createCopy(Context::getGlobalContextInstance());
+                drop_ctx->makeQueryContext();
+                drop_ctx->setCurrentQueryId(toString(UUIDHelpers::generateV4()));
+                String drop_query = fmt::format("DROP DATABASE IF EXISTS `{}` SYNC", restoring_database_name);
+                executeQuery(drop_query, drop_ctx);
+            });
+            auto database = restoreDatabaseFromKeeperPath(
+                /*zookeeper_path=*/query.replica_zk_path,
+                /*full_replica_name=*/full_replica_name,
+                /*restoring_database_name=*/restoring_database_name);
+            if (database)
+            {
+                dropStorageReplicasFromDatabase(query.replica, database);
+                database.reset();
+            }
+        }
 
         DatabaseReplicated::dropReplica(nullptr, query.replica_zk_path, query.shard, query.replica, /*throw_if_noop*/ true);
         LOG_INFO(log, "Dropped replica {} of Replicated database with path {}", query.replica, query.replica_zk_path);
@@ -1292,8 +1692,11 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
         if (!storage_replicated->waitForProcessingQueue(sync_timeout, sync_replica_mode, src_replicas))
         {
             LOG_ERROR(log, "SYNC REPLICA {}: Timed out.", table_id_.getNameForLogs());
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "SYNC REPLICA {}: command timed out. " \
-                    "See the 'receive_timeout' setting", table_id_.getNameForLogs());
+            throw Exception(
+                ErrorCodes::TIMEOUT_EXCEEDED,
+                "SYNC REPLICA {}: command timed out. "
+                "See the 'receive_timeout' setting",
+                table_id_.getNameForLogs());
         }
         LOG_TRACE(log, "SYNC REPLICA {}: OK", table_id_.getNameForLogs());
     }
@@ -1375,7 +1778,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
         LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
 
-        for (auto & database : DatabaseCatalog::instance().getDatabases())
+        for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
@@ -1387,6 +1790,82 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         }
     }
 }
+
+#if USE_XRAY
+void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
+{
+    /// query.handler_name -- handler to be set for the function
+    /// query.function_name -- name of the function to be patched - rename in query to function name
+    /// query.entry_type -- entry type: None, Entry or Exit
+    /// query.parameters -- parameters for the handler. should be one of the following: string, int, float
+    try
+    {
+        if (add)
+        {
+            InstrumentationManager::instance().patchFunction(getContext(), query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_entry_type, query.instrumentation_parameters);
+        }
+        else
+        {
+            if (!query.instrumentation_subquery.empty())
+            {
+                auto subquery_context = Context::createCopy(getContext());
+                subquery_context->makeQueryContext();
+                subquery_context->setCurrentQueryId({});
+                auto [_, block_io] = executeQuery(query.instrumentation_subquery, subquery_context, QueryFlags{ .internal = true });
+
+                if (!block_io.pipeline.initialized())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to execute subquery");
+
+                PullingPipelineExecutor executor(block_io.pipeline);
+                Block block;
+
+                while (executor.pull(block))
+                {
+                    if (block.columns() != 1)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected only one column as result of the subquery, but {} were found", block.columns());
+
+                    const auto & column_with_type = block.getByPosition(0);
+                    const auto & column = column_with_type.column;
+                    if (!isUInt(column_with_type.type))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected non-UInt column as result of the subquery: {}", column_with_type.type);
+
+                    for (size_t i = 0; i < column->size(); ++i)
+                    {
+                        UInt64 id = column->getUInt(i);
+                        InstrumentationManager::instance().unpatchFunction(id);
+                    }
+                }
+            }
+            else
+            {
+                InstrumentationManager::instance().unpatchFunction(query.instrumentation_point.value());
+            }
+        }
+    }
+    catch (const DB::Exception & e)
+    {
+        String id;
+        if (query.instrumentation_point.has_value())
+        {
+            if (std::holds_alternative<Instrumentation::All>(query.instrumentation_point.value()))
+                id = " and ALL ids";
+            else if (std::holds_alternative<String>(query.instrumentation_point.value()))
+                id = fmt::format(" and ids with function_name containing '{}'", std::get<String>(query.instrumentation_point.value()));
+            else
+                id = fmt::format(" and id '{}'", std::get<UInt64>(query.instrumentation_point.value()));
+        }
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Failed to instrument function '{}' with handler '{}', entry type '{}'{}: {}",
+            query.instrumentation_function_name,
+            query.instrumentation_handler_name,
+            Instrumentation::entryTypeToString(query.instrumentation_entry_type),
+            id,
+            e.what());
+    }
+}
+#endif
 
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
@@ -1526,8 +2005,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
+        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::DROP_TEXT_INDEX_CACHES:
         case Type::DROP_FILESYSTEM_CACHE:
-        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
         case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_PAGE_CACHE:
@@ -1572,6 +2054,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS);
+            break;
+        }
+        case Type::RECONNECT_ZOOKEEPER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RECONNECT_ZOOKEEPER);
             break;
         }
         case Type::STOP_MERGES:
@@ -1712,6 +2199,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.getDatabase(), query.getTable());
             break;
         }
+        case Type::RESTORE_DATABASE_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESTORE_DATABASE_REPLICA, query.getDatabase());
+            break;
+        }
         case Type::SYNC_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_SYNC_REPLICA, query.getDatabase(), query.getTable());
@@ -1820,10 +2312,21 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::BACKUP);
             break;
         }
+        case Type::INSTRUMENT_ADD:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_ADD);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
+            break;
+        }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
         case Type::UNKNOWN:

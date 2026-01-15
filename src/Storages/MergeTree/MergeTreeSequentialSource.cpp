@@ -14,6 +14,11 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
+#include <Storages/MergeTree/MergeTreeReadersChain.h>
+#include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -25,6 +30,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
+    extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
 }
 
 namespace MergeTreeSetting
@@ -42,7 +53,7 @@ class MergeTreeSequentialSource : public ISource
 {
 public:
     MergeTreeSequentialSource(
-        Block result_header,
+        SharedHeader result_header,
         MergeTreeSequentialSourceType type,
         const MergeTreeData & storage_,
         StorageSnapshotPtr storage_snapshot_,
@@ -70,10 +81,12 @@ private:
     LoggerPtr log = getLogger("MergeTreeSequentialSource");
 
     MarkRanges mark_ranges;
+    std::vector<MarkRanges> patch_ranges;
     std::shared_ptr<MarkCache> mark_cache;
 
     MergeTreeReadTask::Readers readers;
     MergeTreeReadersChain readers_chain;
+    PatchJoinCachePtr patch_join_cache;
 
     /// Should read using direct IO
     bool read_with_direct_io;
@@ -89,7 +102,7 @@ private:
 };
 
 MergeTreeSequentialSource::MergeTreeSequentialSource(
-    Block result_header,
+    SharedHeader result_header,
     MergeTreeSequentialSourceType type,
     const MergeTreeData & storage_,
     StorageSnapshotPtr storage_snapshot_,
@@ -120,9 +133,23 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     /// is only used in background merges.
     addTotalRowsApprox(data_part->rows_count);
 
+    if (!read_task_info->patch_parts.empty())
+    {
+        size_t merge_tree_min_read_task_size = storage.getContext()->getSettingsRef()[Setting::merge_tree_min_read_task_size];
+        RangesInPatchParts ranges_in_patch_parts(merge_tree_min_read_task_size);
+
+        ranges_in_patch_parts.addPart(data_part, read_task_info->patch_parts, mark_ranges);
+        ranges_in_patch_parts.optimize();
+
+        patch_ranges = ranges_in_patch_parts.getRanges(data_part, read_task_info->patch_parts, mark_ranges);
+        patch_join_cache = std::make_shared<PatchJoinCache>(storage.getContext()->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]);
+        patch_join_cache->init(ranges_in_patch_parts);
+    }
+
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
     read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+        = read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
@@ -144,21 +171,15 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             break;
     }
 
-    MergeTreeReaderSettings reader_settings =
-    {
-        .read_settings = read_settings,
-        .save_marks_in_cache = false,
-        .can_read_part_without_marks = true,
-    };
-
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
-        .reader_settings = reader_settings,
+        .patch_join_cache = patch_join_cache.get(),
+        .reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings)),
         .storage_snapshot = storage_snapshot,
     };
 
-    readers = MergeTreeReadTask::createReaders(read_task_info, extras, mark_ranges);
+    readers = MergeTreeReadTask::createReaders(read_task_info, extras, mark_ranges, patch_ranges);
 
     if (!readers.prewhere.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sequential source doesn't support PREWHERE");
@@ -167,8 +188,9 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         readers.main->prefetchBeginOfRange(Priority{});
 
     auto counters = std::make_shared<ReadStepPerformanceCounters>();
+
     MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true);
-    readers_chain = MergeTreeReadersChain{{std::move(range_reader)}};
+    readers_chain = MergeTreeReadersChain{{std::move(range_reader)}, readers.patches};
 
     updateRowsToRead(0);
 }
@@ -193,7 +215,7 @@ try
     if (isCancelled())
         return {};
 
-    auto read_result = readers_chain.read(current_rows_to_read, mark_ranges);
+    auto read_result = readers_chain.read(current_rows_to_read, mark_ranges, patch_ranges);
     if (!read_result.num_rows)
         return {};
 
@@ -297,23 +319,39 @@ Pipe createMergeTreeSequentialSource(
     info->const_virtual_fields.emplace("_part_starting_offset", info->part_starting_offset_in_query);
 
     /// The part might have some rows masked by lightweight deletes
-    const bool need_to_filter_deleted_rows = apply_deleted_mask && info->hasLightweightDelete();
+    bool has_lightweight_delete = info->data_part->hasLightweightDelete() || info->alter_conversions->hasLightweightDelete();
+    const bool need_to_filter_deleted_rows = apply_deleted_mask && has_lightweight_delete && !info->data_part->info.isPatch();
     const bool has_filter_column = std::ranges::find(columns_to_read, RowExistsColumn::name) != columns_to_read.end();
 
-    PrewhereExprSteps mutation_steps;
     if (need_to_filter_deleted_rows)
     {
         if (!has_filter_column)
             columns_to_read.push_back(RowExistsColumn::name);
 
-        mutation_steps.push_back(createLightweightDeleteStep(!has_filter_column));
+        info->mutation_steps.push_back(createLightweightDeleteStep(!has_filter_column));
     }
 
-    auto result_header = storage_snapshot->getSampleBlockForColumns(columns_to_read);
+    auto result_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(columns_to_read));
     LoadedMergeTreeDataPartInfoForReader info_for_reader(info->data_part, info->alter_conversions);
 
-    info->task_columns = getReadTaskColumnsForMerge(info_for_reader, storage_snapshot, columns_to_read, mutation_steps);
+    info->task_columns = getReadTaskColumnsForMerge(info_for_reader, storage_snapshot, columns_to_read, info->mutation_steps);
     info->task_columns.moveAllColumnsFromPrewhere();
+
+    if (info->alter_conversions->hasPatches())
+    {
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals().withSubcolumns();
+        auto all_read_columns = info->task_columns.getAllColumnNames();
+        auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
+        info->patch_parts = info->alter_conversions->getPatchesForColumns(all_read_columns_list, need_to_filter_deleted_rows);
+
+        addPatchPartsColumns(
+            info->task_columns,
+            storage_snapshot,
+            options,
+            info->patch_parts,
+            all_read_columns,
+            need_to_filter_deleted_rows);
+    }
 
     auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
         std::move(result_header),
@@ -330,7 +368,7 @@ Pipe createMergeTreeSequentialSource(
     /// Add filtering step that discards deleted rows
     if (need_to_filter_deleted_rows)
     {
-        pipe.addSimpleTransform([filtered_rows_count, has_filter_column](const Block & header)
+        pipe.addSimpleTransform([filtered_rows_count, has_filter_column](const SharedHeader & header)
         {
             return std::make_shared<FilterTransform>(
                 header, nullptr, RowExistsColumn::name, !has_filter_column, false, filtered_rows_count);
@@ -363,7 +401,7 @@ public:
         bool prefetch_,
         ContextPtr context_,
         LoggerPtr log_)
-        : ISourceStep(storage_snapshot_->getSampleBlockForColumns(columns_to_read_))
+        : ISourceStep(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns_to_read_)))
         , type(type_)
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
@@ -409,7 +447,7 @@ public:
 
             if (mark_ranges && mark_ranges->empty())
             {
-                pipeline.init(Pipe(std::make_unique<NullSource>(*output_header)));
+                pipeline.init(Pipe(std::make_unique<NullSource>(output_header)));
                 return;
             }
         }

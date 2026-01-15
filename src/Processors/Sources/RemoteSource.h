@@ -48,7 +48,6 @@ protected:
 private:
     std::atomic_bool was_query_sent = false;
     bool need_drain = false;
-    bool executor_finished = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;
     RowsBeforeStepCounterPtr rows_before_limit;
@@ -101,7 +100,7 @@ private:
 struct UnmarshallBlocksTransform : ISimpleTransform
 {
 public:
-    explicit UnmarshallBlocksTransform(const Block & header_)
+    explicit UnmarshallBlocksTransform(SharedHeader header_)
         : ISimpleTransform(header_, header_, false)
     {
     }

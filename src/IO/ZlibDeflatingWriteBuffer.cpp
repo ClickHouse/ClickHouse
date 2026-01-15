@@ -44,11 +44,11 @@ void ZlibDeflatingWriteBuffer::nextImpl()
 
 ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
 {
-    /// It is OK to call deflateEnd() twice (one from the finalizeAfter() that does the proper error checking)
+    /// It is OK to call deflateEnd() twice (one from the finalFlushAfter() that does the proper error checking)
     deflateEnd(&zstr);
 }
 
-void ZlibDeflatingWriteBuffer::finalizeBefore()
+void ZlibDeflatingWriteBuffer::finalFlushBefore()
 {
     next();
 
@@ -90,7 +90,7 @@ void ZlibDeflatingWriteBuffer::finalizeBefore()
     }
 }
 
-void ZlibDeflatingWriteBuffer::finalizeAfter()
+void ZlibDeflatingWriteBuffer::finalFlushAfter()
 {
     try
     {

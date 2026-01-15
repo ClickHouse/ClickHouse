@@ -30,10 +30,10 @@ Positions: 4 0 1 2
       Actions: INPUT : 0 -> n.null UInt8 : 0
                ALIAS n.null : 0 -> __table1.n.null UInt8 : 1
       Positions: 0 1
-0	\N	(0,0)	{"a":"0","b":"0"}
-1	\N	(1,1)	{"a":"1","b":"1"}
-2	\N	(2,2)	{"a":"2","b":"2"}
-3	\N	(3,3)	{"a":"3","b":"3"}
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}
 Expression ((Project names + Projection))
 Actions: INPUT : 0 -> __table1.x UInt64 : 0
          INPUT : 1 -> __table1.n Nullable(UInt32) : 1
@@ -61,10 +61,10 @@ Positions: 4 0 1 2
     ReadType: Default
     Parts: 1
     Granules: 3
-0	\N	(0,0)	{"a":"0","b":"0"}
-1	\N	(1,1)	{"a":"1","b":"1"}
-2	\N	(2,2)	{"a":"2","b":"2"}
-3	\N	(3,3)	{"a":"3","b":"3"}
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}
 Expression ((Project names + Projection))
 Actions: INPUT : 0 -> __table1.x UInt64 : 0
          INPUT : 1 -> __table1.n Nullable(UInt32) : 1
@@ -98,10 +98,10 @@ Positions: 4 0 1 2
                COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
                FUNCTION less(t.a : 0, 4_UInt8 :: 1) -> less(__table1.t.a, 4_UInt8) UInt8 : 2
       Positions: 0 2
-0	\N	(0,0)	{"a":"0","b":"0"}
-1	\N	(1,1)	{"a":"1","b":"1"}
-2	\N	(2,2)	{"a":"2","b":"2"}
-3	\N	(3,3)	{"a":"3","b":"3"}
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}
 Expression ((Project names + Projection))
 Actions: INPUT : 0 -> __table1.x UInt64 : 0
          INPUT : 1 -> __table1.n Nullable(UInt32) : 1
@@ -130,10 +130,10 @@ Positions: 4 0 1 2
     ReadType: Default
     Parts: 1
     Granules: 3
-0	\N	(0,0)	{"a":"0","b":"0"}
-1	\N	(1,1)	{"a":"1","b":"1"}
-2	\N	(2,2)	{"a":"2","b":"2"}
-3	\N	(3,3)	{"a":"3","b":"3"}
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}
 Expression ((Project names + Projection))
 Actions: INPUT : 0 -> __table1.x UInt64 : 0
          INPUT : 1 -> __table1.n Nullable(UInt32) : 1
@@ -169,10 +169,10 @@ Positions: 4 0 1 2
                FUNCTION CAST(json.a : 0, \'Int64\'_String :: 1) -> CAST(__table1.json.a, \'Int64\'_String) Int64 : 3
                FUNCTION less(CAST(__table1.json.a, \'Int64\'_String) :: 3, 4_UInt8 :: 2) -> less(CAST(__table1.json.a, \'Int64\'_String), 4_UInt8) UInt8 : 1
       Positions: 0 1
-0	\N	(0,0)	{"a":"0","b":"0"}
-1	\N	(1,1)	{"a":"1","b":"1"}
-2	\N	(2,2)	{"a":"2","b":"2"}
-3	\N	(3,3)	{"a":"3","b":"3"}
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}
 Expression ((Project names + Projection))
 Actions: INPUT : 0 -> __table1.x UInt64 : 0
          INPUT : 1 -> __table1.n Nullable(UInt32) : 1
@@ -203,7 +203,7 @@ Positions: 4 0 1 2
     ReadType: Default
     Parts: 1
     Granules: 3
-0	\N	(0,0)	{"a":"0","b":"0"}
-1	\N	(1,1)	{"a":"1","b":"1"}
-2	\N	(2,2)	{"a":"2","b":"2"}
-3	\N	(3,3)	{"a":"3","b":"3"}
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}

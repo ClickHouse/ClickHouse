@@ -6,7 +6,7 @@
 namespace DB
 {
 
-ExtremesTransform::ExtremesTransform(const Block & header)
+ExtremesTransform::ExtremesTransform(SharedHeader header)
     : ISimpleTransform(header, header, true)
 {
     /// Port for Extremes.

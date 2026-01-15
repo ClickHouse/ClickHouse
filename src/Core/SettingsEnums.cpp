@@ -1,7 +1,8 @@
 #include <Access/Common/SQLSecurityDefs.h>
-#include <Common/Exception.h>
 #include <Core/SettingsEnums.h>
 #include <base/EnumReflection.h>
+#include <Common/Exception.h>
+#include <Formats/FormatSettings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -56,6 +57,11 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
+
+
+IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
+    {{"greedy",             JoinOrderAlgorithm::GREEDY},
+     {"dpsize",             JoinOrderAlgorithm::DPSIZE}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -116,6 +122,11 @@ IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
 
+IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"state", FormatSettings::AggregateFunctionInputFormat::State},
+    {"value", FormatSettings::AggregateFunctionInputFormat::Value},
+    {"array", FormatSettings::AggregateFunctionInputFormat::Array}})
+
 IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_AUTO_ENUM(LogQueriesType, ErrorCodes::BAD_ARGUMENTS)
@@ -148,7 +159,8 @@ IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(StreamingHandleErrorMode, ErrorCodes::BAD_ARGUMENTS,
     {{"default",      StreamingHandleErrorMode::DEFAULT},
-     {"stream",       StreamingHandleErrorMode::STREAM}})
+     {"stream",       StreamingHandleErrorMode::STREAM},
+     {"dead_letter_queue", StreamingHandleErrorMode::DEAD_LETTER_QUEUE}})
 
 IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
@@ -175,7 +187,8 @@ IMPLEMENT_SETTING_ENUM(MsgPackUUIDRepresentation, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
     {{"clickhouse", Dialect::clickhouse},
      {"kusto", Dialect::kusto},
-     {"prql", Dialect::prql}})
+     {"prql", Dialect::prql},
+     {"promql", Dialect::promql}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -206,6 +219,12 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
      {"throw", DeduplicateMergeProjectionMode::THROW},
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
+
+IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", AlterColumnSecondaryIndexMode::THROW},
+     {"drop", AlterColumnSecondaryIndexMode::DROP},
+     {"rebuild", AlterColumnSecondaryIndexMode::REBUILD},
+     {"compatibility", AlterColumnSecondaryIndexMode::COMPATIBILITY}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasMode, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", ParallelReplicasMode::AUTO},
@@ -248,7 +267,9 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                        {{"keep", ObjectStorageQueueAction::KEEP},
-                        {"delete", ObjectStorageQueueAction::DELETE}})
+                        {"delete", ObjectStorageQueueAction::DELETE},
+                        {"move", ObjectStorageQueueAction::MOVE},
+                        {"tag", ObjectStorageQueueAction::TAG}})
 
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
@@ -303,7 +324,9 @@ IMPLEMENT_SETTING_ENUM(
     {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
-     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
+     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
+     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -326,4 +349,81 @@ IMPLEMENT_SETTING_ENUM(
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeSerializationInfoVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"basic", MergeTreeSerializationInfoVersion::BASIC},
+     {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeStringSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"single_stream", MergeTreeStringSerializationVersion::SINGLE_STREAM},
+     {"with_size_stream", MergeTreeStringSerializationVersion::WITH_SIZE_STREAM}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeNullableSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"basic", MergeTreeNullableSerializationVersion::BASIC},
+     {"allow_sparse", MergeTreeNullableSerializationVersion::ALLOW_SPARSE}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeObjectSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreeObjectSerializationVersion::V1},
+     {"v2", MergeTreeObjectSerializationVersion::V2},
+     {"v3", MergeTreeObjectSerializationVersion::V3}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeObjectSharedDataSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"map", MergeTreeObjectSharedDataSerializationVersion::MAP},
+     {"map_with_buckets", MergeTreeObjectSharedDataSerializationVersion::MAP_WITH_BUCKETS},
+     {"advanced", MergeTreeObjectSharedDataSerializationVersion::ADVANCED}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeDynamicSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreeDynamicSerializationVersion::V1},
+     {"v2", MergeTreeDynamicSerializationVersion::V2},
+     {"v3", MergeTreeDynamicSerializationVersion::V3}})
+
+IMPLEMENT_SETTING_ENUM(
+    SearchOrphanedPartsDisks,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"any", SearchOrphanedPartsDisks::ANY},
+     {"local", SearchOrphanedPartsDisks::LOCAL},
+     {"none", SearchOrphanedPartsDisks::NONE}})
+
+IMPLEMENT_SETTING_ENUM(
+    DecorrelationJoinKind,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"left", DecorrelationJoinKind::LEFT},
+     {"right", DecorrelationJoinKind::RIGHT}})
+
+IMPLEMENT_SETTING_ENUM(
+    IcebergMetadataLogLevel,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"none", IcebergMetadataLogLevel::None},
+     {"metadata", IcebergMetadataLogLevel::Metadata},
+     {"manifest_list_metadata", IcebergMetadataLogLevel::ManifestListMetadata},
+     {"manifest_list_entry", IcebergMetadataLogLevel::ManifestListEntry},
+     {"manifest_file_metadata", IcebergMetadataLogLevel::ManifestFileMetadata},
+     {"manifest_file_entry", IcebergMetadataLogLevel::ManifestFileEntry}})
+
+IMPLEMENT_SETTING_ENUM(
+    ObjectStorageGranularityLevel,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"file", ObjectStorageGranularityLevel::FILE},
+    {"bucket", ObjectStorageGranularityLevel::BUCKET}})
+
+IMPLEMENT_SETTING_ENUM(ArrowFlightDescriptorType, ErrorCodes::BAD_ARGUMENTS,
+    {{"path", ArrowFlightDescriptorType::Path},
+     {"command", ArrowFlightDescriptorType::Command}})
+
+IMPLEMENT_SETTING_ENUM(DeduplicateInsertSelectMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"enable_when_possible", DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE},
+     {"force_enable", DeduplicateInsertSelectMode::FORCE_ENABLE},
+     {"disable", DeduplicateInsertSelectMode::DISABLE},
+     {"enable_even_for_bad_queries", DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES}})
 }

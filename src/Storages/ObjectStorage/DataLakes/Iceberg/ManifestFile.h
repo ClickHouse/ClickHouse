@@ -5,15 +5,14 @@
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Core/Field.h>
 
 #include <cstdint>
-#include <variant>
 
-namespace Iceberg
+namespace DB::Iceberg
 {
 
 enum class ManifestEntryStatus : uint8_t
@@ -26,14 +25,18 @@ enum class ManifestEntryStatus : uint8_t
 enum class FileContentType : uint8_t
 {
     DATA = 0,
-    POSITION_DELETES = 1,
-    EQUALITY_DELETES = 2,
+    POSITION_DELETE = 1,
+    EQUALITY_DELETE = 2
 };
 
-struct DataFileEntry
+
+enum class ManifestFileContentType
 {
-    String file_name;
+    DATA = 0,
+    DELETE = 1
 };
+
+String FileContentTypeToString(FileContentType type);
 
 struct ColumnInfo
 {
@@ -43,18 +46,76 @@ struct ColumnInfo
     std::optional<DB::Range> hyperrectangle;
 };
 
-using FileEntry = std::variant<DataFileEntry>; // In the future we will add PositionalDeleteFileEntry and EqualityDeleteFileEntry here
+struct PartitionSpecsEntry
+{
+    Int32 source_id;
+    String transform_name;
+    String partition_name;
+};
+using PartitionSpecification = std::vector<PartitionSpecsEntry>;
 
 /// Description of Data file in manifest file
-struct ManifestFileEntry
+struct ManifestFileEntry : public boost::noncopyable
 {
+    // It's the original string in the Iceberg metadata
+    String file_path_key;
+    // It's a processed file path to be used by Object Storage
+    String file_path;
+    Int64 row_number;
+
     ManifestEntryStatus status;
     Int64 added_sequence_number;
 
-    FileEntry file;
+    Int64 snapshot_id;
+    Int32 schema_id;
+
     DB::Row partition_key_value;
+    PartitionSpecification common_partition_specification;
     std::unordered_map<Int32, ColumnInfo> columns_infos;
+
+    String file_format;
+    std::optional<String> reference_data_file_path; // For position delete files only.
+    std::optional<std::vector<Int32>> equality_ids;
+
+    /// Data file is sorted with this sort_order_id (can be read from metadata.json)
+    std::optional<Int32> sort_order_id;
+
+    String dumpDeletesMatchingInfo() const;
+
+    ManifestFileEntry(
+        const String& file_path_key_,
+        const String& file_path_,
+        Int64 row_number_,
+        ManifestEntryStatus status_,
+        Int64 added_sequence_number_,
+        Int64 snapshot_id_,
+        Int64 schema_id_,
+        DB::Row& partition_key_value_,
+        PartitionSpecification& common_partition_specification_,
+        std::unordered_map<Int32, ColumnInfo>& columns_infos_,
+        const String& file_format_,
+        std::optional<String> reference_data_file_path_,
+        std::optional<std::vector<Int32>> equality_ids_,
+        std::optional<Int32> sort_order_id_)
+        : file_path_key(file_path_key_)
+        , file_path(file_path_)
+        , row_number(row_number_)
+        , status(status_)
+        , added_sequence_number(added_sequence_number_)
+        , snapshot_id(snapshot_id_)
+        , schema_id(schema_id_)
+        , partition_key_value(std::move(partition_key_value_))
+        , common_partition_specification(common_partition_specification_)
+        , columns_infos(std::move(columns_infos_))
+        , file_format(file_format_)
+        , reference_data_file_path(reference_data_file_path_)
+        , equality_ids(std::move(equality_ids_))
+        , sort_order_id(sort_order_id_)
+    {
+    }
 };
+
+using ManifestFileEntryPtr = std::shared_ptr<const ManifestFileEntry>;
 
 /**
  * Manifest file has the following format: '/iceberg_data/db/table_name/metadata/c87bfec7-d36c-4075-ad04-600b6b0f2020-m0.avro'
@@ -82,51 +143,66 @@ struct ManifestFileEntry
  * └────────┴─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
  */
 
-class ManifestFileContent
+class ManifestFileContent : public boost::noncopyable
 {
 public:
     explicit ManifestFileContent(
         const AvroForIcebergDeserializer & manifest_file_deserializer,
+        const String & manifest_file_name,
         Int32 format_version_,
         const String & common_path,
-        Int32 schema_id_,
-        Poco::JSON::Object::Ptr schema_object_,
-        const DB::IcebergSchemaProcessor & schema_processor,
+        IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
+        Int64 inherited_snapshot_id,
         const std::string & table_location,
-        DB::ContextPtr context);
+        DB::ContextPtr context,
+        const String & path_to_manifest_file_);
 
-    const std::vector<ManifestFileEntry> & getFiles() const;
-    Int32 getSchemaId() const;
+    const std::vector<ManifestFileEntryPtr> & getFilesWithoutDeleted(FileContentType content_type) const;
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
-    Poco::JSON::Object::Ptr getSchemaObject() const { return schema_object; }
     /// Get size in bytes of how much memory one instance of this ManifestFileContent class takes.
     /// Used for in-memory caches size accounting.
     size_t getSizeInMemory() const;
 
     /// Fields with rows count in manifest files are optional
     /// they can be absent.
-    std::optional<Int64> getRowsCountInAllDataFilesExcludingDeleted() const;
-    std::optional<Int64> getBytesCountInAllDataFiles() const;
+    std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
+    std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
     bool hasBoundsInfoInManifests() const;
     const std::set<Int32> & getColumnsIDsWithBounds() const;
+    const String & getPathToManifestFile() const { return path_to_manifest_file; }
+
+    bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
+
+    ManifestFileContent(ManifestFileContent &&) = delete;
+    ManifestFileContent & operator=(ManifestFileContent &&) = delete;
+
 private:
 
-    Int32 schema_id;
-    Poco::JSON::Object::Ptr schema_object;
+    PartitionSpecification common_partition_specification;
+    void sortManifestEntriesBySchemaId(std::vector<ManifestFileEntryPtr> & files);
+
     std::optional<DB::KeyDescription> partition_key_description;
     // Size - number of files
-    std::vector<ManifestFileEntry> files;
+    std::vector<ManifestFileEntryPtr> data_files_without_deleted;
+    // Partition level deletes files
+    std::vector<ManifestFileEntryPtr> position_deletes_files_without_deleted;
+    std::vector<ManifestFileEntryPtr> equality_deletes_files;
 
     std::set<Int32> column_ids_which_have_bounds;
-
+    String path_to_manifest_file;
 };
 
-using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
+using ManifestFilePtr = std::shared_ptr<ManifestFileContent>;
 
+bool operator<(const PartitionSpecification & lhs, const PartitionSpecification & rhs);
+bool operator<(const DB::Row & lhs, const DB::Row & rhs);
+
+
+std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestFileEntryPtr & rhs);
 }
 
 #endif

@@ -1,6 +1,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/Chain.h>
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -153,9 +154,19 @@ const Block & Chain::getInputHeader() const
     return getInputPort().getHeader();
 }
 
+const SharedHeader & Chain::getInputSharedHeader() const
+{
+    return getInputPort().getSharedHeader();
+}
+
 const Block & Chain::getOutputHeader() const
 {
     return getOutputPort().getHeader();
+}
+
+const SharedHeader & Chain::getOutputSharedHeader() const
+{
+    return getOutputPort().getSharedHeader();
 }
 
 void Chain::reset()

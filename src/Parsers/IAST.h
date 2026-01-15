@@ -163,7 +163,7 @@ public:
         if (field == nullptr)
             return;
 
-        auto * child = children.begin();
+        auto child = children.begin();
         while (child != children.end())
         {
             if (child->get() == field)
@@ -195,7 +195,6 @@ public:
     struct FormatSettings
     {
         bool one_line;
-        bool hilite;
         IdentifierQuotingRule identifier_quoting_rule;
         IdentifierQuotingStyle identifier_quoting_style;
         bool show_secrets; /// Show secret parts of the AST (e.g. passwords, encryption keys).
@@ -206,7 +205,6 @@ public:
 
         explicit FormatSettings(
             bool one_line_,
-            bool hilite_ = false,
             IdentifierQuotingRule identifier_quoting_rule_ = IdentifierQuotingRule::WhenNecessary,
             IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks,
             bool show_secrets_ = true,
@@ -214,7 +212,6 @@ public:
             bool print_pretty_type_names_ = false,
             bool enforce_strict_identifier_format_ = false)
             : one_line(one_line_)
-            , hilite(hilite_)
             , identifier_quoting_rule(identifier_quoting_rule_)
             , identifier_quoting_style(identifier_quoting_style_)
             , show_secrets(show_secrets_)
@@ -251,9 +248,11 @@ public:
         bool surround_each_list_element_with_parens = false;
         bool ignore_printed_asts_with_alias = false; /// Ignore FormatState::printed_asts_with_alias
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
+        bool allow_moving_operators_before_parens = true; /// Allow moving operators like "-" before parents: (-...) -> -(...)
         size_t list_element_index = 0;
         std::string create_engine_name;
         const IAST * current_select = nullptr;
+        const IAST * current_function = nullptr;  /// Pointer to the function whose arguments are being formatted
     };
 
     void format(WriteBuffer & ostr, const FormatSettings & settings) const
@@ -339,19 +338,11 @@ public:
         SetTransactionSnapshot,
         AsyncInsertFlush,
         ParallelWithQuery,
+        Copy,
     };
 
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
-
-    /// For syntax highlighting.
-    static const char * hilite_keyword;
-    static const char * hilite_identifier;
-    static const char * hilite_function;
-    static const char * hilite_operator;
-    static const char * hilite_alias;
-    static const char * hilite_substitution;
-    static const char * hilite_none;
 
 protected:
     virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

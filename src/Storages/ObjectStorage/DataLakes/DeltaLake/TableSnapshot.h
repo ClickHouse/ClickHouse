@@ -25,18 +25,19 @@ namespace DeltaLake
 class TableSnapshot
 {
 public:
-    using ConfigurationWeakPtr = DB::StorageObjectStorage::ConfigurationObserverPtr;
+    static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
 
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,
+        DB::ContextPtr context_,
         LoggerPtr log_);
 
     /// Get snapshot version.
     size_t getVersion() const;
 
     /// Update snapshot to latest version.
-    bool update();
+    void update(const DB::ContextPtr & context);
 
     /// Iterate over DeltaLake data files.
     DB::ObjectIterator iterate(
@@ -56,6 +57,7 @@ public:
     const DB::Names & getPartitionColumns() const;
     const DB::NameToNameMap & getPhysicalNamesMap() const;
 
+    DB::ObjectStoragePtr getObjectStorage() const { return object_storage; }
 private:
     class Iterator;
     using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
@@ -66,10 +68,21 @@ private:
     const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
 
-    mutable KernelExternEngine engine;
-    mutable KernelSnapshot snapshot;
-    mutable KernelScan scan;
-    mutable size_t snapshot_version;
+    bool enable_expression_visitor_logging;
+    bool throw_on_engine_visitor_error;
+    bool enable_engine_predicate;
+    std::optional<size_t> snapshot_version_to_read;
+
+    struct KernelSnapshotState : private boost::noncopyable
+    {
+        KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_);
+
+        KernelExternEngine engine;
+        KernelSnapshot snapshot;
+        KernelScan scan;
+        size_t snapshot_version;
+    };
+    mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
 
     using TableSchema = DB::NamesAndTypesList;
     using ReadSchema = DB::NamesAndTypesList;
@@ -81,9 +94,8 @@ private:
 
     void initSnapshot() const;
     void initSnapshotImpl() const;
+    void updateSettings(const DB::ContextPtr & context);
 };
-
-/// TODO; Enable event tracing in DeltaKernel.
 
 }
 

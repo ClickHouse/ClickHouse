@@ -78,10 +78,10 @@ SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), 
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value)
 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id)
 ORDER BY ALL;
-0	UInt16	0	UInt16		String	3	UInt16	Join_2_Value_3	String
 0	UInt16	0	UInt16	Join_1_Value_0	String	0	UInt16	Join_2_Value_0	String
 1	UInt16	1	UInt16	Join_1_Value_1	String	1	UInt16	Join_2_Value_1	String
 2	UInt16	2	UInt16	Join_1_Value_2	String	0	UInt16		String
+3	UInt16	0	UInt16		String	3	UInt16	Join_2_Value_3	String
 SELECT '--';
 --
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
@@ -172,9 +172,9 @@ SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), 
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value), t3.id AS t3_id, toTypeName(t3_id), t3.value AS t3_value, toTypeName(t3_value)
 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
 ORDER BY ALL;
-0	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
+4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
 SELECT '--';
 --
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
@@ -265,10 +265,10 @@ SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), 
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value), t3.id AS t3_id, toTypeName(t3_id), t3.value AS t3_value, toTypeName(t3_value)
 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
 ORDER BY ALL;
-0	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 2	UInt64	2	UInt64	Join_1_Value_2	String	0	UInt64		String	0	UInt64		String
+4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
 SELECT '--';
 --
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
@@ -361,10 +361,10 @@ SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), 
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value), t3.id AS t3_id, toTypeName(t3_id), t3.value AS t3_value, toTypeName(t3_value)
 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
 ORDER BY ALL;
-0	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 3	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64		String
+4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
 SELECT '--';
 --
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
@@ -388,7 +388,6 @@ SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), 
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value), t3.id AS t3_id, toTypeName(t3_id), t3.value AS t3_value, toTypeName(t3_value)
 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id)
 ORDER BY ALL;
-0	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64	Join_3_Value_0	String
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 SELECT '--';
@@ -410,10 +409,10 @@ SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), 
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value), t3.id AS t3_id, toTypeName(t3_id), t3.value AS t3_value, toTypeName(t3_value)
 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id)
 ORDER BY ALL;
-0	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64	Join_3_Value_0	String
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 2	UInt64	2	UInt64	Join_1_Value_2	String	0	UInt64		String	0	UInt64		String
+3	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64		String
 SELECT '--';
 --
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)
@@ -437,7 +436,6 @@ SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), 
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value), t3.id AS t3_id, toTypeName(t3_id), t3.value AS t3_value, toTypeName(t3_value)
 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id)
 ORDER BY ALL;
-0	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64	Join_3_Value_0	String
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
@@ -462,11 +460,11 @@ SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), 
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value), t3.id AS t3_id, toTypeName(t3_id), t3.value AS t3_value, toTypeName(t3_value)
 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id)
 ORDER BY ALL;
-0	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
-0	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64	Join_3_Value_0	String
 0	UInt64	0	UInt64	Join_1_Value_0	String	0	UInt64	Join_2_Value_0	String	0	UInt64	Join_3_Value_0	String
 1	UInt64	1	UInt64	Join_1_Value_1	String	1	UInt64	Join_2_Value_1	String	1	UInt64	Join_3_Value_1	String
 2	UInt64	2	UInt64	Join_1_Value_2	String	0	UInt64		String	0	UInt64		String
+3	UInt64	0	UInt64		String	3	UInt64	Join_2_Value_3	String	0	UInt64		String
+4	UInt64	0	UInt64		String	0	UInt64		String	4	UInt64	Join_3_Value_4	String
 SELECT '--';
 --
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value), t3.value AS t3_value, toTypeName(t3_value)

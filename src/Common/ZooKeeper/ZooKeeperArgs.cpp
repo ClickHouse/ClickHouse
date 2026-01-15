@@ -274,10 +274,12 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
             config.keys(config_name + "." + key, path_acls_keys);
             for (const auto & path_key : path_acls_keys)
             {
-                String path = config.getString(config_name + "." + key + "." + path_key + ".path");
-                String scheme = config.getString(config_name + "." + key + "." + path_key + ".scheme");
-                String id = config.getString(config_name + "." + key + "." + path_key + ".id");
-                String permissions_str = config.getString(config_name + "." + key + "." + path_key + ".permissions");
+                std::string full_path_key = fmt::format("{}.{}.{}", config_name, key, path_key);
+                String path = config.getString(full_path_key + ".path");
+                String scheme = config.getString(full_path_key + ".scheme");
+                String id = config.getString(full_path_key + ".id");
+                String permissions_str = config.getString(full_path_key + ".permissions");
+                bool apply_to_children = config.getBool(full_path_key + ".apply_to_children", false);
 
                 int32_t permissions = 0;
 
@@ -308,7 +310,7 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
                 acl.id = id;
                 acl.permissions = permissions;
 
-                path_acls[path] = std::move(acl);
+                path_acls[path] = {.acl = std::move(acl), .apply_to_children = apply_to_children};
             }
         }
         else

@@ -9,6 +9,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 #include <fmt/ranges.h>
 
@@ -177,7 +178,9 @@ std::optional<std::string> getCgroupsV1Path()
     return {default_cgroups_mount / "memory"};
 }
 
-std::pair<std::string, ICgroupsReader::CgroupsVersion> getCgroupsPath()
+}
+
+std::pair<std::string, ICgroupsReader::CgroupsVersion> ICgroupsReader::getCgroupsPath()
 {
     auto v2_path = getCgroupsV2PathContainingFile("memory.current");
     if (v2_path.has_value())
@@ -188,8 +191,6 @@ std::pair<std::string, ICgroupsReader::CgroupsVersion> getCgroupsPath()
         return {*v1_path, ICgroupsReader::CgroupsVersion::V1};
 
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot find cgroups v1 or v2 current memory file");
-}
-
 }
 
 std::shared_ptr<ICgroupsReader> ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion version, const std::filesystem::path & cgroup_path)
@@ -222,12 +223,24 @@ std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
 /// - reading from cgroups' pseudo-files (fastest and most accurate)
 /// - reading jemalloc's resident stat (doesn't take into account allocations that didn't use jemalloc)
 /// Also, different tick rates are used because not all options are equally fast
-MemoryWorker::MemoryWorker(uint64_t period_ms_, bool correct_tracker_, bool use_cgroup, std::shared_ptr<PageCache> page_cache_)
+MemoryWorker::MemoryWorker(
+    uint64_t period_ms_,
+    [[maybe_unused]] double purge_dirty_pages_threshold_ratio_,
+    bool correct_tracker_,
+    bool use_cgroup,
+    std::shared_ptr<PageCache> page_cache_)
     : log(getLogger("MemoryWorker"))
     , period_ms(period_ms_)
     , correct_tracker(correct_tracker_)
     , page_cache(page_cache_)
 {
+#if USE_JEMALLOC
+    purge_dirty_pages_threshold_ratio = purge_dirty_pages_threshold_ratio_;
+    page_size = pagesize_mib.getValue();
+#else
+    purge_dirty_pages_threshold_ratio = 0;
+#endif
+
     if (use_cgroup)
     {
 #if defined(OS_LINUX)
@@ -235,7 +248,7 @@ MemoryWorker::MemoryWorker(uint64_t period_ms_, bool correct_tracker_, bool use_
         {
             static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
 
-            const auto [cgroup_path, version] = getCgroupsPath();
+            const auto [cgroup_path, version] = ICgroupsReader::getCgroupsPath();
             LOG_INFO(
                 getLogger("CgroupsReader"),
                 "Will create cgroup reader from '{}' (cgroups version: {})",
@@ -275,11 +288,17 @@ void MemoryWorker::start()
     if (source == MemoryUsageSource::None)
         return;
 
+    const std::string purge_dirty_pages_info = purge_dirty_pages_threshold_ratio > 0
+        ? fmt::format("enabled (threshold ratio: {}, page size: {})", purge_dirty_pages_threshold_ratio, page_size)
+        : "disabled";
+
     LOG_INFO(
-        getLogger("MemoryWorker"),
-        "Starting background memory thread with period of {}ms, using {} as source",
+        log,
+        "Starting background memory thread with period of {}ms, using {} as source, purging dirty pages {}",
         period_ms,
-        sourceToString(source));
+        sourceToString(source),
+        purge_dirty_pages_info);
+
     background_thread = ThreadFromGlobalPool([this] { backgroundThread(); });
 }
 
@@ -303,6 +322,7 @@ uint64_t MemoryWorker::getMemoryUsage()
             return cgroups_reader != nullptr ? cgroups_reader->readMemoryUsage() : 0;
         case MemoryUsageSource::Jemalloc:
 #if USE_JEMALLOC
+            epoch_mib.setValue(0);
             return resident_mib.getValue();
 #else
             return 0;
@@ -314,9 +334,12 @@ uint64_t MemoryWorker::getMemoryUsage()
 
 void MemoryWorker::backgroundThread()
 {
+    DB::setThreadName(ThreadName::MEMORY_WORKER);
+
     std::chrono::milliseconds chrono_period_ms{period_ms};
     [[maybe_unused]] bool first_run = true;
     std::unique_lock lock(mutex);
+
     while (true)
     {
         cv.wait_for(lock, chrono_period_ms, [this] { return shutdown; });
@@ -325,11 +348,6 @@ void MemoryWorker::backgroundThread()
 
         Stopwatch total_watch;
 
-#if USE_JEMALLOC
-        if (source == MemoryUsageSource::Jemalloc)
-            epoch_mib.setValue(0);
-#endif
-
         Int64 resident = getMemoryUsage();
         MemoryTracker::updateRSS(resident);
 
@@ -337,7 +355,14 @@ void MemoryWorker::backgroundThread()
             page_cache->autoResize(std::max(resident, total_memory_tracker.get()), total_memory_tracker.getHardLimit());
 
 #if USE_JEMALLOC
-        if (resident > total_memory_tracker.getHardLimit())
+
+        const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
+
+        const bool needs_purge = resident > memory_tracker_limit
+            || (purge_dirty_pages_threshold_ratio > 0
+                && pdirty_mib.getValue() * page_size > memory_tracker_limit * purge_dirty_pages_threshold_ratio);
+
+        if (needs_purge)
         {
             Stopwatch purge_watch;
             purge_mib.run();
@@ -350,19 +375,9 @@ void MemoryWorker::backgroundThread()
         ///  - MemoryTracker stores a negative value
         ///  - `correct_tracker` is set to true
         if (unlikely(first_run || total_memory_tracker.get() < 0))
-        {
-            if (source != MemoryUsageSource::Jemalloc)
-                epoch_mib.setValue(0);
-
-            MemoryTracker::updateAllocated(allocated_mib.getValue(), /*log_change=*/true);
-        }
+            MemoryTracker::updateAllocated(resident, /*log_change=*/true);
         else if (correct_tracker)
-        {
-            if (source != MemoryUsageSource::Jemalloc)
-                epoch_mib.setValue(0);
-
-            MemoryTracker::updateAllocated(allocated_mib.getValue(), /*log_change=*/false);
-        }
+            MemoryTracker::updateAllocated(resident, /*log_change=*/false);
 #else
         /// we don't update in the first run if we don't have jemalloc
         /// because we can only use resident memory information
@@ -371,7 +386,6 @@ void MemoryWorker::backgroundThread()
         /// before MemoryTracker initialization
         if (unlikely(total_memory_tracker.get() < 0) || correct_tracker)
             MemoryTracker::updateAllocated(resident, /*log_change=*/false);
-
 #endif
 
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);

@@ -122,7 +122,9 @@ struct LogFileSettings
     uint64_t max_size = 0;
     uint64_t overallocate_size = 0;
     uint64_t latest_logs_cache_size_threshold = 0;
+    uint64_t latest_logs_cache_entry_count_threshold = 0;
     uint64_t commit_logs_cache_size_threshold = 0;
+    uint64_t commit_logs_cache_entry_count_threshold = 0;
 };
 
 struct FlushSettings
@@ -207,7 +209,7 @@ struct LogEntryStorage
 
     void refreshCache();
 
-    LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end) const;
+    LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end, int64_t max_size_bytes = 0) const;
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
@@ -229,7 +231,7 @@ private:
 
     struct InMemoryCache
     {
-        explicit InMemoryCache(size_t size_threshold_);
+        explicit InMemoryCache(size_t size_threshold_, size_t count_threshold_);
 
         void addEntry(uint64_t index, size_t size, CacheEntry log_entry);
         void addEntry(IndexToCacheEntryNode && node);
@@ -254,6 +256,8 @@ private:
         bool hasSpaceAvailable(size_t log_entry_size) const;
         void clear();
 
+        bool hasUnlimitedSpace() const;
+
         /// Mapping log_id -> log_entry
         mutable IndexToCacheEntry cache;
         size_t cache_size = 0;
@@ -261,6 +265,7 @@ private:
         size_t max_index_in_cache = 0;
 
         const size_t size_threshold;
+        const size_t count_threshold;
     };
 
     InMemoryCache latest_logs_cache;
@@ -356,8 +361,8 @@ public:
     /// Get entry with latest config in logstore
     LogEntryPtr getLatestConfigChange() const;
 
-    /// Return log entries between [start, end)
-    LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index);
+    /// Return log entries between [start, end) with optional byte size limit
+    LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index, int64_t max_size_bytes = 0);
 
     /// Return entry at position index
     LogEntryPtr entryAt(uint64_t index) const;
@@ -415,8 +420,10 @@ private:
 
     void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
 
-    /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
+    /// Remove all changelogs from disk with start_index bigger than remove_after_log_start_index
     void removeAllLogsAfter(uint64_t remove_after_log_start_index);
+    /// Remove all changelogs from disk with start index smaller than remove_before_log_start_index
+    void removeAllLogFilesBefore(uint64_t remove_before_log_start_index);
     /// Remove all logs from disk
     void removeAllLogs();
     /// Init writer for existing log with some entries already written
