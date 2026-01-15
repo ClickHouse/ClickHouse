@@ -75,7 +75,7 @@ struct IdentifierLookup
             return is_part_double_quoted[index];
         return false;
     }
-    
+
     /// used for expression lookups (table.column), the last part is the column name that
     /// looked up in the column map, so its quote style determines case sensitivity
     bool isLastPartDoubleQuoted() const
