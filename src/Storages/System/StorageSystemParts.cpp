@@ -139,6 +139,8 @@ Name of the data part. The part naming structure can be used to determine many a
 
         {"last_removal_attempt_time",                   std::make_shared<DataTypeDateTime>(), "The last time the server tried to delete this part."},
         {"removal_state",                               std::make_shared<DataTypeString>(), "The current state of part removal process."},
+
+        {"files",                                       std::make_shared<DataTypeUInt64>(), "The number of files in the data part."},
     }
     )
 {
@@ -371,6 +373,9 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(static_cast<UInt64>(part->last_removal_attempt_time.load(std::memory_order_relaxed)));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(getRemovalStateDescription(part->removal_state.load(std::memory_order_relaxed)));
+
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->checksums.files.size());
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread
