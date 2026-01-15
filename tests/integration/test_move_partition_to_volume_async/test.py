@@ -20,7 +20,7 @@ CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs"
 
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8086")
+    yield start_s3_mock(cluster, "broken_s3", "8083")
 
 
 @pytest.fixture(scope="function")
@@ -42,7 +42,7 @@ def cluster():
 
         cluster.start()
 
-        start_s3_mock(cluster, "broken_s3", "8086")
+        start_s3_mock(cluster, "broken_s3", "8083")
 
         for _, node in cluster.instances.items():
             node.stop_clickhouse()

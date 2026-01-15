@@ -94,7 +94,6 @@ private:
     void makeBackupEntriesForTablesDefs();
     void makeBackupEntriesForTablesData();
     void makeBackupEntriesForTableData(const QualifiedTableName & table_name);
-    bool shouldBackupTableData(const QualifiedTableName & table_name, const StoragePtr & storage) const;
 
     void addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry);
 
@@ -164,7 +163,6 @@ private:
         std::filesystem::path data_path_in_backup;
         std::optional<String> replicated_table_zk_path;
         std::optional<ASTs> partitions;
-        bool should_backup_data = true;
     };
 
     String current_stage;

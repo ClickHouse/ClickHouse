@@ -3,7 +3,6 @@ description: 'TCP connection limits.'
 sidebar_label: 'TCP connection limits'
 slug: /operations/settings/tcp-connection-limits
 title: 'TCP connection limits'
-doc_type: 'reference'
 ---
 
 # TCP connection limits

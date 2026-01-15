@@ -3,7 +3,6 @@ services:
     image: clickhouse/arrowflight-server-test:${DOCKER_ARROWFLIGHT_SERVER_TAG:-latest}
     ports:
       - "5005:5005"
-      - "5006:5006"
+    command: ["python", "flight_server.py"]
     stop_signal: SIGINT
     stop_grace_period: 5s
-    cpus: 3
