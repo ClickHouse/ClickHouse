@@ -82,6 +82,9 @@ INSERT INTO AMBIGDB.t VALUES (2);
 SET case_insensitive_names = 'standard';
 -- This should fail with AMBIGUOUS_IDENTIFIER
 SELECT * FROM ambigdb.t; -- { serverError AMBIGUOUS_IDENTIFIER }
+-- This should ALSO fail with AMBIGUOUS_IDENTIFIER even though exact match exists
+SELECT * FROM AmbigDB.t; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT * FROM AMBIGDB.t; -- { serverError AMBIGUOUS_IDENTIFIER }
 
 -- Double-quoted avoids ambiguity - selects from specific database
 SELECT '--- Double-quoted avoids ambiguity ---';
@@ -96,11 +99,21 @@ SELECT '--- Table ambiguity detection ---';
 DROP TABLE IF EXISTS AmbigTable;
 DROP TABLE IF EXISTS AMBIGTABLE;
 CREATE TABLE AmbigTable (x UInt8) ENGINE = Memory;
+INSERT INTO AmbigTable VALUES (1);
 CREATE TABLE AMBIGTABLE (x UInt8) ENGINE = Memory;
+INSERT INTO AMBIGTABLE VALUES (2);
 
 SET case_insensitive_names = 'standard';
 -- This should fail with AMBIGUOUS_IDENTIFIER
 SELECT * FROM ambigtable; -- { serverError AMBIGUOUS_IDENTIFIER }
+-- This should ALSO fail even though exact match exists
+SELECT * FROM AmbigTable; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT * FROM AMBIGTABLE; -- { serverError AMBIGUOUS_IDENTIFIER }
+
+-- Double-quoted avoids ambiguity
+SELECT '--- Double-quoted table avoids ambiguity ---';
+SELECT * FROM "AmbigTable";
+SELECT * FROM "AMBIGTABLE";
 
 DROP TABLE IF EXISTS AmbigTable;
 DROP TABLE IF EXISTS AMBIGTABLE;

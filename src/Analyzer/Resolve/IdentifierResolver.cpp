@@ -176,7 +176,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
         table_name = table_identifier[0];
     }
 
-    /// Case-insensitive resolution for database name (if not double-quoted)
+    /// Case-insensitive resolution for database name (if not double-quoted and under setting)
     if (database_name_case_insensitive && !database_name.empty())
     {
         String resolved_db = DatabaseCatalog::instance().tryResolveDatabaseNameCaseInsensitive(database_name);
@@ -184,7 +184,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
             database_name = resolved_db;
     }
 
-    /// Case-insensitive resolution for table name (if not double-quoted)
+    /// Case-insensitive resolution for table name (if not double-quoted and under setting)
     if (table_name_case_insensitive)
     {
         String effective_db = database_name.empty() ? context->getCurrentDatabase() : database_name;
@@ -420,7 +420,6 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 
     auto & column_name_to_column_node = scope.table_expression_data_for_alias_resolution->column_name_to_column_node;
 
-    /// Case-insensitive lookup if enabled
     if (use_case_insensitive)
     {
         auto it = scope.table_expression_data_for_alias_resolution->findColumnCaseInsensitive(

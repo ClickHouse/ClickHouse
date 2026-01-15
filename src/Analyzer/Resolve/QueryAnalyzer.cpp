@@ -1028,7 +1028,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
     if (use_case_insensitive)
     {
-        /// SQL Standard mode with unquoted identifier: case-insensitive
+        /// case-insensitive for SQL-standard mode with unquoted identifier
         std::vector<std::string> ambiguous_aliases;
         it = scope.aliases.findCaseInsensitive(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME, &ambiguous_aliases);
         if (!ambiguous_aliases.empty())
@@ -1095,7 +1095,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         IdentifierLookup alias_identifier_lookup{identifier, identifier_lookup.lookup_context};
         if (alias_node->hasOriginalAST())
             alias_identifier_lookup.original_ast_node = alias_node->getOriginalAST();
-        /// Propagate quote style from the original lookup to maintain case-sensitivity behavior
+        /// Propagate quote style from the original lookup for case-sensitivity
         alias_identifier_lookup.is_part_double_quoted = identifier_lookup.is_part_double_quoted;
         auto lookup_result = tryResolveIdentifier(alias_identifier_lookup, *scope_to_resolve_alias_expression, identifier_resolve_context);
 

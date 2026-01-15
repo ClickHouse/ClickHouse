@@ -42,3 +42,6 @@
 1
 2
 --- Table ambiguity detection ---
+--- Double-quoted table avoids ambiguity ---
+1
+2

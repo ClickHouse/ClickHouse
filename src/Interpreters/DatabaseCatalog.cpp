@@ -854,9 +854,6 @@ String DatabaseCatalog::tryResolveDatabaseNameCaseInsensitive(std::string_view d
     assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
 
-    if (databases.contains(database_name))
-        return String(database_name);
-
     /// use precomputed map for lookup
     String lowercase_name = Poco::toLower(String(database_name));
     auto it = lowercase_db_to_original_names.find(lowercase_name);

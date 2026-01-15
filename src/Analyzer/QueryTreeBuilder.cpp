@@ -919,7 +919,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 else
                     table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier);
 
-                /// Preserve quote styles for SQL standard case-sensitivity
                 table_identifier_node->setQuoteStyles(table_identifier_typed.getQuoteStyles());
 
                 table_identifier_node->setAlias(table_identifier_typed.tryGetAlias());

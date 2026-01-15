@@ -53,10 +53,6 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 
 String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, ContextPtr context) const
 {
-    /// first try exact match
-    if (tryGetTable(name, context))
-        return name;
-
     /// then try case-insensitive match
     String found_name;
     for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())

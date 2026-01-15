@@ -217,7 +217,6 @@ struct IdentifierResolveScope
     /// Add an expression argument *with case-insensitive index*
     void addExpressionArgument(const std::string & name, QueryTreeNodePtr node);
 
-    /// Returns iterator to expression_argument_name_to_node or end() if not found
     /// can do optional case-insensitive lookup, in this case throws exception if multiple matches exist
     std::unordered_map<std::string, QueryTreeNodePtr>::iterator
     findExpressionArgument(const std::string & name, bool case_insensitive);
