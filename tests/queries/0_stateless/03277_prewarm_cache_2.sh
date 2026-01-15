@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-random-merge-tree-settings
+# add_minmax_index_for_numeric_columns=0: Would open more files
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,7 +20,8 @@ $CLICKHOUSE_CLIENT --query "
         prewarm_mark_cache = 1,
         max_cleanup_delay_period = 1,
         cleanup_delay_period = 1,
-        min_bytes_to_prewarm_caches = 30000;
+        min_bytes_to_prewarm_caches = 30000,
+        add_minmax_index_for_numeric_columns=0;
 
     SYSTEM DROP MARK CACHE;
     SYSTEM DROP INDEX MARK CACHE;
