@@ -1383,37 +1383,11 @@ Possible values:
 - 2 — Enables `force_optimize_skip_unused_shards` up to the second level.
 )", 0) \
     \
-    DECLARE(Bool, input_format_parallel_parsing, true, R"(
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TabSeparated (TSV)](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-)", 0) \
     DECLARE(NonZeroUInt64, min_chunk_bytes_for_parallel_parsing, (10 * 1024 * 1024), R"(
 - Type: unsigned int
 - Default value: 1 MiB
 
 The minimum chunk size in bytes, which each thread will parse in parallel.
-)", 0) \
-    DECLARE(Bool, output_format_parallel_formatting, true, R"(
-Enables or disables parallel formatting of data formats. Supported only for [TSV](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-)", 0) \
-    DECLARE(UInt64, output_format_compression_level, 3, R"(
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
-
-Possible values: from `1` to `22`
-)", 0) \
-    DECLARE(UInt64, output_format_compression_zstd_window_log, 0, R"(
-Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
-
-Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
 )", 0) \
     DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, true, R"(
 Allows to output columns with special serialization kinds like Sparse and Replicated without converting them to full column representation.
@@ -3134,6 +3108,12 @@ Possible values:
 source data ran out.
 )", 0) \
     \
+    DECLARE(Bool, exact_rows_before_limit, false, R"(
+When enabled, ClickHouse will provide exact value for rows_before_limit_at_least statistic, but with the cost that the data before limit will have to be read completely
+)", 0) \
+    DECLARE(Bool, rows_before_aggregation, false, R"(
+When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
+)", 0) \
     DECLARE(UInt64, max_rows_in_join, 0, R"(
 Limits the number of rows in the hash table that is used when joining tables.
 
@@ -3263,6 +3243,9 @@ Possible values:
  Legacy value, please don't use anymore.
  Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
 
+)", 0) \
+    DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
+Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
 )", 0) \
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
 Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
@@ -3638,6 +3621,18 @@ To disable the collection of a single query, set `query_metric_log_interval` to 
 
 Default value: -1
     )", 0) \
+    DECLARE(Bool, regexp_dict_allow_hyperscan, true, R"(
+Allow regexp_tree dictionary using Hyperscan library.
+)", 0) \
+    DECLARE(Bool, regexp_dict_flag_case_insensitive, false, R"(
+Use case-insensitive matching for a regexp_tree dictionary. Can be overridden in individual expressions with (?i) and (?-i).
+)", 0) \
+    DECLARE(Bool, regexp_dict_flag_dotall, false, R"(
+Allow '.' to match newline characters for a regexp_tree dictionary.
+)", 0) \
+    DECLARE(Bool, dictionary_use_async_executor, false, R"(
+Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
+)", 0) \
     DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
 Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \
