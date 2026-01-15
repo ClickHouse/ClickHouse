@@ -1974,7 +1974,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     }
 
     /// Skip the 'SYSTEM ENABLE FAILPOINT' query itself
-    if (!ast->as<ASTSystemQuery>())
+    if (ast && !ast->as<ASTSystemQuery>())
     {
         fiu_do_on(FailPoints::terminate_with_exception,
         {
