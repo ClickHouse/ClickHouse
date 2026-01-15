@@ -31,7 +31,6 @@ Squashing::Squashing(SharedHeader header_, size_t min_block_size_rows_, size_t m
 Chunk Squashing::flush()
 {
     // Move all remaining pending data to accumulated (ignore thresholds)
-    chassert(!accumulated);
 
     /// In strict limits mode, the front chunk may be partially consumed (offset_first > 0).
     /// Consume the remaining portion before pulling whole chunks.

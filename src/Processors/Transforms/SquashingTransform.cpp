@@ -27,6 +27,8 @@ void SquashingTransform::onConsume(Chunk chunk)
 
 SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 {
+    cur_chunk = Squashing::squash(squashing.generate(), getInputPort().getSharedHeader());
+
     GenerateResult res;
     res.chunk = std::move(cur_chunk);
     res.is_done = true;
@@ -35,8 +37,8 @@ SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 
 bool SquashingTransform::canGenerate()
 {
-    cur_chunk = Squashing::squash(squashing.generate(), getInputPort().getSharedHeader());
-    return bool(cur_chunk);
+
+    return squashing.canGenerate();
 }
 
 void SquashingTransform::onFinish()
