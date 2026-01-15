@@ -103,11 +103,11 @@ struct DecimalOpHelpers
 
         while (max_index >= idx)
         {
-            result.push_back(temp / divisor);
+            result.push_back(static_cast<UInt8>(temp / divisor));
             temp = (temp % divisor) * 10 + number[idx];
             ++idx;
         }
-        result.push_back(temp / divisor);
+        result.push_back(static_cast<UInt8>(temp / divisor));
 
         return result;
     }
@@ -118,14 +118,14 @@ struct DecimalOpHelpers
         if (x >= 10)
             result = toDigits(x / 10);
 
-        result.push_back(x % 10);
+        result.push_back(static_cast<UInt8>(x % 10));
         return result;
     }
 
     static UInt256 fromDigits(const std::vector<UInt8> & digits)
     {
         Int256 result = 0;
-        Int256 scale = 0;
+        UInt32 scale = 0;
         for (auto i = digits.rbegin(); i != digits.rend(); ++i)
         {
             result += DecimalUtils::scaleMultiplier<Decimal256>(scale) * (*i);

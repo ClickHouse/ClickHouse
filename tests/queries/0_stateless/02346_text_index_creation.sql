@@ -336,14 +336,6 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 
-CREATE TABLE tab
-(
-    str String,
-    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', bloom_filter_false_positive_rate = '1024')
-)
-ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
-
 SELECT 'Test dictionary_block_size argument.';
 
 SELECT '-- dictionary_block_size must be a positive integer.';
@@ -500,7 +492,7 @@ ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab
 (
     str String,
-    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', bloom_filter_false_positive_rate = 0.5, bloom_filter_false_positive_rate = 0.5)
+    INDEX idx str TYPE text(tokenizer = 'splitByNonAlpha', dictionary_block_frontcoding_compression = 1, dictionary_block_frontcoding_compression = 1)
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }

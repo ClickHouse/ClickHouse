@@ -233,12 +233,7 @@ void QueryOracle::dumpTableContent(
     }
     if (test_content)
     {
-        if (!sel->has_setting_values())
-        {
-            const auto * news = sel->mutable_setting_values();
-            UNUSED(news);
-        }
-        finishSettings(&const_cast<SettingValues &>(sel->setting_values()));
+        finishSettings(sel->mutable_setting_values());
     }
     ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
     const auto err = std::filesystem::remove(qcfile);
@@ -277,6 +272,7 @@ void QueryOracle::dumpTableContent(
 void QueryOracle::generateExportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq2)
 {
+    SettingValues * svs = nullptr;
     Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
     Expr * expr = ff->mutable_structure();
@@ -331,16 +327,22 @@ void QueryOracle::generateExportQuery(
     if (rg.nextSmallNumber() < 10)
     {
         const auto & settings = can_test_oracle_result ? serverSettings : formatSettings;
-        gen.generateSettingValues(rg, settings, ins->mutable_setting_values());
-        const SettingValues & svs = ins->setting_values();
 
-        for (int i = 0; i < (svs.other_values_size() + 1) && can_test_oracle_result; i++)
+        svs = ins->mutable_setting_values();
+        gen.generateSettingValues(rg, settings, svs);
+        for (int i = 0; i < (svs->other_values_size() + 1) && can_test_oracle_result; i++)
         {
-            const SetValue & osv = i == 0 ? svs.set_value() : svs.other_values(i - 1);
+            const SetValue & osv = i == 0 ? svs->set_value() : svs->other_values(i - 1);
             const CHSetting & ochs = settings.at(osv.property());
 
             can_test_oracle_result &= !ochs.changes_behavior;
         }
+    }
+    if (can_test_oracle_result)
+    {
+        /// Ensure deleted mask and patch parts are applied
+        svs = svs ? svs : ins->mutable_setting_values();
+        finishSettings(svs);
     }
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -554,7 +556,6 @@ void QueryOracle::dumpOracleIntermediateSteps(
 void QueryOracle::generateImportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const
 {
-    SettingValues * svs = nullptr;
     Insert * nins = sq4.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
@@ -581,22 +582,27 @@ void QueryOracle::generateImportQuery(
     if (!can_test_oracle_result && rg.nextSmallNumber() < 10)
     {
         /// If can't test success, swap settings sometimes
-        svs = nins->mutable_setting_values();
-        gen.generateSettingValues(rg, formatSettings, svs);
+        gen.generateSettingValues(rg, formatSettings, nins->mutable_setting_values());
     }
     else if (oins.has_setting_values())
     {
-        svs = nins->mutable_setting_values();
+        SettingValues * svs = nins->mutable_setting_values();
+
         svs->CopyFrom(oins.setting_values());
     }
     if (can_test_oracle_result && inf == InFormat::IN_CSV)
     {
-        svs = svs ? svs : nins->mutable_setting_values();
+        SettingValues * svs = nins->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
         /// The oracle expects to read all the lines from the file
         sv->set_property("input_format_csv_detect_header");
         sv->set_value("0");
+    }
+    if (can_test_oracle_result)
+    {
+        /// Ensure deleted mask and patch parts are applied
+        finishSettings(nins->mutable_setting_values());
     }
 }
 
@@ -819,28 +825,21 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
     }
+    SettingValues * svs = sel->mutable_setting_values();
 
-    if (!sel->has_setting_values())
-    {
-        const auto * news = sel->mutable_setting_values();
-        UNUSED(news);
-    }
-    SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
-
-    finishSettings(&svs);
+    finishSettings(svs);
     if (measure_performance)
     {
         /// Add tag to find query later on
-        SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
-
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
         sv->set_property("log_comment");
         sv->set_value("'measure_performance'");
     }
     else if (indexes)
     {
         /// These settings are relevant to show index information
-        SetValue * sv2 = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
-        SetValue * sv3 = svs.add_other_values();
+        SetValue * sv2 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+        SetValue * sv3 = svs->add_other_values();
 
         sv2->set_property("use_query_condition_cache");
         sv2->set_value("0");
