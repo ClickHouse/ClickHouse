@@ -227,7 +227,7 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.05}, /// RandomTableUDF
               {0.01, 0.05} /// MergeIndexAnalyzeUDF
           }})))
-    , SQLMask(static_cast<size_t>(SqlOp::ShowStatement) + 1, true)
+    , SQLMask(static_cast<size_t>(SQLOp::ShowStatement) + 1, true)
     , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
     , expMask(static_cast<size_t>(ExpOp::StarExpr) + 1, true)
     , predMask(static_cast<size_t>(PredOp::OtherExpr) + 1, true)
@@ -4685,115 +4685,115 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     const bool has_views = collectionHas<SQLView>(attached_views);
     const bool has_dictionaries = collectionHas<SQLDictionary>(attached_dictionaries);
 
-    SQLMask[static_cast<size_t>(SqlOp::CreateTable)] = static_cast<uint32_t>(tables.size()) < this->fc.max_tables;
-    SQLMask[static_cast<size_t>(SqlOp::CreateView)] = static_cast<uint32_t>(views.size()) < this->fc.max_views;
-    SQLMask[static_cast<size_t>(SqlOp::Drop)] = !in_parallel
+    SQLMask[static_cast<size_t>(SQLOp::CreateTable)] = static_cast<uint32_t>(tables.size()) < this->fc.max_tables;
+    SQLMask[static_cast<size_t>(SQLOp::CreateView)] = static_cast<uint32_t>(views.size()) < this->fc.max_views;
+    SQLMask[static_cast<size_t>(SQLOp::Drop)] = !in_parallel
         && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
             || collectionCount<SQLDictionary>(attached_dictionaries) > 3
             || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3);
-    SQLMask[static_cast<size_t>(SqlOp::Insert)] = has_tables;
-    SQLMask[static_cast<size_t>(SqlOp::LightDelete)] = has_mergeable_mt;
-    SQLMask[static_cast<size_t>(SqlOp::Truncate)] = has_databases || has_tables;
-    SQLMask[static_cast<size_t>(SqlOp::OptimizeTable)] = has_tables;
-    SQLMask[static_cast<size_t>(SqlOp::CheckTable)] = has_tables;
-    SQLMask[static_cast<size_t>(SqlOp::DescTable)] = !in_parallel;
-    SQLMask[static_cast<size_t>(SqlOp::Exchange)] = !in_parallel
+    SQLMask[static_cast<size_t>(SQLOp::Insert)] = has_tables;
+    SQLMask[static_cast<size_t>(SQLOp::LightDelete)] = has_mergeable_mt;
+    SQLMask[static_cast<size_t>(SQLOp::Truncate)] = has_databases || has_tables;
+    SQLMask[static_cast<size_t>(SQLOp::OptimizeTable)] = has_tables;
+    SQLMask[static_cast<size_t>(SQLOp::CheckTable)] = has_tables;
+    SQLMask[static_cast<size_t>(SQLOp::DescTable)] = !in_parallel;
+    SQLMask[static_cast<size_t>(SQLOp::Exchange)] = !in_parallel
         && (collectionCount<SQLTable>(exchange_table_lambda) > 1 || collectionCount<SQLView>(attached_views) > 1
             || collectionCount<SQLDictionary>(attached_dictionaries) > 1);
-    SQLMask[static_cast<size_t>(SqlOp::Alter)] = has_tables || has_views || has_databases;
-    /// SQLMask[static_cast<size_t>(SqlOp::SetValues)] = true;
-    SQLMask[static_cast<size_t>(SqlOp::Attach)] = !in_parallel
+    SQLMask[static_cast<size_t>(SQLOp::Alter)] = has_tables || has_views || has_databases;
+    /// SQLMask[static_cast<size_t>(SQLOp::SetValues)] = true;
+    SQLMask[static_cast<size_t>(SQLOp::Attach)] = !in_parallel
         && (collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)
             || collectionHas<SQLDictionary>(detached_dictionaries) || collectionHas<std::shared_ptr<SQLDatabase>>(detached_databases));
-    SQLMask[static_cast<size_t>(SqlOp::Detach)] = !in_parallel
+    SQLMask[static_cast<size_t>(SQLOp::Detach)] = !in_parallel
         && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
             || collectionCount<SQLDictionary>(attached_dictionaries) > 3
             || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
-    SQLMask[static_cast<size_t>(SqlOp::CreateDatabase)] = static_cast<uint32_t>(databases.size()) < this->fc.max_databases;
-    SQLMask[static_cast<size_t>(SqlOp::CreateFunction)] = static_cast<uint32_t>(functions.size()) < this->fc.max_functions;
-    /// SQLMask[static_cast<size_t>(SqlOp::SystemStmt)] = true;
-    /// SQLMask[static_cast<size_t>(SqlOp::BackupOrRestore)] = true;
-    SQLMask[static_cast<size_t>(SqlOp::CreateDictionary)] = static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries;
-    SQLMask[static_cast<size_t>(SqlOp::Rename)]
+    SQLMask[static_cast<size_t>(SQLOp::CreateDatabase)] = static_cast<uint32_t>(databases.size()) < this->fc.max_databases;
+    SQLMask[static_cast<size_t>(SQLOp::CreateFunction)] = static_cast<uint32_t>(functions.size()) < this->fc.max_functions;
+    /// SQLMask[static_cast<size_t>(SQLOp::SystemStmt)] = true;
+    /// SQLMask[static_cast<size_t>(SQLOp::BackupOrRestore)] = true;
+    SQLMask[static_cast<size_t>(SQLOp::CreateDictionary)] = static_cast<uint32_t>(dictionaries.size()) < this->fc.max_dictionaries;
+    SQLMask[static_cast<size_t>(SQLOp::Rename)]
         = !in_parallel && (collectionHas<SQLTable>(exchange_table_lambda) || has_views || has_dictionaries || has_databases);
-    SQLMask[static_cast<size_t>(SqlOp::LightUpdate)] = has_mergeable_mt;
-    SQLMask[static_cast<size_t>(SqlOp::SelectQuery)] = !in_parallel;
-    /// SQLMask[static_cast<size_t>(SqlOp::Kill)] = true;
-    SQLMask[static_cast<size_t>(SqlOp::ShowStatement)] = !in_parallel;
+    SQLMask[static_cast<size_t>(SQLOp::LightUpdate)] = has_mergeable_mt;
+    SQLMask[static_cast<size_t>(SQLOp::SelectQuery)] = !in_parallel;
+    /// SQLMask[static_cast<size_t>(SQLOp::Kill)] = true;
+    SQLMask[static_cast<size_t>(SQLOp::ShowStatement)] = !in_parallel;
     SQLGen.setEnabled(SQLMask);
 
-    switch (static_cast<SqlOp>(SQLGen.nextOp())) /// drifts over time
+    switch (static_cast<SQLOp>(SQLGen.nextOp())) /// drifts over time
     {
-        case SqlOp::CreateTable:
+        case SQLOp::CreateTable:
             generateNextCreateTable(rg, in_parallel, sq->mutable_create_table());
             break;
-        case SqlOp::CreateView:
+        case SQLOp::CreateView:
             generateNextCreateView(rg, sq->mutable_create_view());
             break;
-        case SqlOp::Drop:
+        case SQLOp::Drop:
             generateNextDrop(rg, sq->mutable_drop());
             break;
-        case SqlOp::Insert:
+        case SQLOp::Insert:
             generateNextInsert(rg, in_parallel, sq->mutable_insert());
             break;
-        case SqlOp::LightDelete:
+        case SQLOp::LightDelete:
             generateNextUpdateOrDelete<LightDelete>(rg, sq->mutable_del());
             break;
-        case SqlOp::Truncate:
+        case SQLOp::Truncate:
             generateNextTruncate(rg, sq->mutable_trunc());
             break;
-        case SqlOp::OptimizeTable:
+        case SQLOp::OptimizeTable:
             generateNextOptimizeTable(rg, sq->mutable_opt());
             break;
-        case SqlOp::CheckTable:
+        case SQLOp::CheckTable:
             generateNextCheckTable(rg, sq->mutable_check());
             break;
-        case SqlOp::DescTable:
+        case SQLOp::DescTable:
             generateNextDescTable(rg, sq->mutable_desc());
             break;
-        case SqlOp::Exchange:
+        case SQLOp::Exchange:
             generateNextExchange(rg, sq->mutable_exchange());
             break;
-        case SqlOp::Alter:
+        case SQLOp::Alter:
             generateAlter(rg, in_parallel, sq->mutable_alter());
             break;
-        case SqlOp::SetValues:
+        case SQLOp::SetValues:
             generateSettingValues(rg, serverSettings, sq->mutable_setting_values());
             break;
-        case SqlOp::Attach:
+        case SQLOp::Attach:
             generateAttach(rg, sq->mutable_attach());
             break;
-        case SqlOp::Detach:
+        case SQLOp::Detach:
             generateDetach(rg, sq->mutable_detach());
             break;
-        case SqlOp::CreateDatabase:
+        case SQLOp::CreateDatabase:
             generateNextCreateDatabase(rg, sq->mutable_create_database());
             break;
-        case SqlOp::CreateFunction:
+        case SQLOp::CreateFunction:
             generateNextCreateFunction(rg, sq->mutable_create_function());
             break;
-        case SqlOp::SystemStmt:
+        case SQLOp::SystemStmt:
             generateNextSystemStatement(rg, true, sq->mutable_system_cmd());
             break;
-        case SqlOp::BackupOrRestore:
+        case SQLOp::BackupOrRestore:
             generateNextBackupOrRestore(rg, sq->mutable_backup_restore());
             break;
-        case SqlOp::CreateDictionary:
+        case SQLOp::CreateDictionary:
             generateNextCreateDictionary(rg, sq->mutable_create_dictionary());
             break;
-        case SqlOp::Rename:
+        case SQLOp::Rename:
             generateNextRename(rg, sq->mutable_rename());
             break;
-        case SqlOp::LightUpdate:
+        case SQLOp::LightUpdate:
             generateNextUpdateOrDelete<LightUpdate>(rg, sq->mutable_upt());
             break;
-        case SqlOp::SelectQuery:
+        case SQLOp::SelectQuery:
             generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
             break;
-        case SqlOp::Kill:
+        case SQLOp::Kill:
             generateNextKill(rg, sq->mutable_kill());
             break;
-        case SqlOp::ShowStatement:
+        case SQLOp::ShowStatement:
             generateNextShowStatement(rg, sq->mutable_show());
             break;
     }

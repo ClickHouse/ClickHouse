@@ -192,7 +192,7 @@ private:
     void setAllowEngineUDF(const bool value) { allow_engine_udf = value; }
     void resetAliasCounter() { aliases_counter = 0; }
 
-    enum class SqlOp
+    enum class SQLOp
     {
         CreateTable = 0,
         CreateView,
