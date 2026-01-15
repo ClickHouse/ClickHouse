@@ -5,6 +5,9 @@
 SET use_skip_indexes_on_data_read = 0;
 SET use_query_condition_cache = 0;
 
+-- Statistics pruning would filter parts before skip index, affecting EXPLAIN output
+SET allow_statistics_optimize = 0;
+
 DROP TABLE IF EXISTS t_lightweight_mut_3;
 
 SET mutations_sync = 0;

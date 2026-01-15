@@ -58,4 +58,12 @@ WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT cou
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning FINAL WHERE value = 1050) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM test_stats_pruning FINAL WHERE value = 1050;
 
+-- Float64 precision corner case
+INSERT INTO test_stats_pruning SELECT '2025-01-15', 9007199254740992 + number, number, number, 'e', number FROM numbers(10);
+
+-- Query for id = 2^53 + 1, which cannot be precisely represented in Float64, should NOT prune this part
+WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE id = 9007199254740993) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
+SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE id = 9007199254740993) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
+SELECT count() FROM test_stats_pruning WHERE id = 9007199254740993;
+
 DROP TABLE test_stats_pruning;

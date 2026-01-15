@@ -1,3 +1,6 @@
+-- Statistics pruning would filter parts before skip index, affecting EXPLAIN output
+SET allow_statistics_optimize = 0;
+
 DROP TABLE IF EXISTS data_02771;
 
 CREATE TABLE data_02771

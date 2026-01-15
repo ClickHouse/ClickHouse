@@ -175,3 +175,31 @@ Expression ((Project names + Projection))
             Granules: 4/4
           Ranges: 4
 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_pruning)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 5/5
+            Granules: 5/5
+          Partition
+            Condition: true
+            Parts: 5/5
+            Granules: 5/5
+          Statistics
+            Keys:
+              id
+            Parts: 1/5
+            Granules: 1/5
+          PrimaryKey
+            Keys:
+              id
+            Condition: (id in [9007199254740993, 9007199254740993])
+            Parts: 1/1
+            Granules: 1/1
+            Search Algorithm: binary search
+          Ranges: 1
+1

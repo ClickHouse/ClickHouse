@@ -5,6 +5,9 @@ SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injectio
 SET parallel_replicas_index_analysis_only_on_coordinator = 0;
 SET use_skip_indexes_on_data_read = 0;
 
+-- Statistics pruning would change the amount of rows read and affect max_rows_to_read validation
+SET allow_statistics_optimize = 0;
+
 DROP TABLE IF EXISTS minmax_compact;
 
 CREATE TABLE minmax_compact
