@@ -9,11 +9,15 @@ import time
 import helpers.keeper_utils as ku
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 
+from multiprocessing.dummy import Pool
+
 cluster = ClickHouseCluster(__file__)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
 nodes = [
-    cluster.add_instance(f"node{i}", main_configs=[f"configs/keeper{i}.xml"])
+    cluster.add_instance(
+        f"node{i}", main_configs=[f"configs/keeper{i}.xml"], stay_alive=True
+    )
     for i in range(1, 6)
 ]
 node1, node2, node3, node4, node5 = nodes
@@ -42,11 +46,38 @@ def create_client(node: ClickHouseInstance):
     )
 
 
+def start_clickhouse(node):
+    node.start_clickhouse()
+
+
+def setup_nodes(cluster):
+    for node in nodes:
+        node.stop_clickhouse()
+
+    p = Pool(len(nodes))
+    waiters = []
+    for node in nodes:
+        node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/log"])
+        node.exec_in_container(
+            ["rm", "-rf", "/var/lib/clickhouse/coordination/snapshots"]
+        )
+        node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/state"])
+
+        waiters.append(p.apply_async(start_clickhouse, (node,)))
+
+    for waiter in waiters:
+        waiter.wait()
+
+    ku.wait_nodes(cluster, nodes)
+
+
 def test_reconfig_remove_2_and_leader(started_cluster):
     """
     Remove 2 followers from a cluster of 5. Remove leader from 3 nodes.
     """
     global zk1, zk2, zk3, zk4, zk5
+
+    setup_nodes(started_cluster)
 
     zk1 = create_client(node1)
     config = ku.get_config_str(zk1)
@@ -117,7 +148,10 @@ def test_reconfig_remove_2_and_leader(started_cluster):
     zk2.stop()
 
     for i in range(100):
-        if any("leader" in ku.send_4lw_cmd(cluster, node, f"mntr") for node in [node2, node3]):
+        if any(
+            "leader" in ku.send_4lw_cmd(cluster, node, f"mntr")
+            for node in [node2, node3]
+        ):
             break
         time.sleep(1)
     else:
