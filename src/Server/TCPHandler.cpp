@@ -121,7 +121,6 @@ namespace Setting
     extern const SettingsMilliseconds sleep_after_receiving_query_ms;
     extern const SettingsMilliseconds sleep_in_send_data_ms;
     extern const SettingsMilliseconds sleep_in_send_tables_status_ms;
-    extern const SettingsBool throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert;
     extern const SettingsUInt64 unknown_packet_in_send_data;
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
@@ -1289,21 +1288,6 @@ void TCPHandler::processInsertQuery(QueryState & state)
 
     if (insert_queue && async_insert_enabled && !insert_query.select)
     {
-        /// Let's agree on terminology and say that a mini-INSERT is an asynchronous INSERT
-        /// which typically contains not a lot of data inside and a big-INSERT in an INSERT
-        /// which was formed by concatenating several mini-INSERTs together.
-        /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
-        /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
-        /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
-        /// The process of forming such blocks is not deteministic so each time we retry mini-INSERTs the resulting
-        /// block may be concatenated differently.
-        /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
-        if (settings[Setting::throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert]
-            && settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Deduplication in dependent materialized view cannot work together with async inserts. "\
-                    "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
-
         auto result = processAsyncInsertQuery(state, *insert_queue);
         if (result.status == AsynchronousInsertQueue::PushResult::OK)
         {
