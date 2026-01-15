@@ -9,8 +9,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
-
-
 namespace DB
 {
 namespace ErrorCodes

@@ -8,8 +8,6 @@
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <Parsers/ASTLiteral.h>
 
-
-
 namespace DB
 {
 

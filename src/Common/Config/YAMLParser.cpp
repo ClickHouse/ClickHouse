@@ -3,8 +3,6 @@
 
 #if USE_YAML_CPP
 
-
-
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/NodeList.h>
 #include <Poco/DOM/Element.h>

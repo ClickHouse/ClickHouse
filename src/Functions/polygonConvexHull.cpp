@@ -1,8 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
 
-
-
 #include <memory>
 
 namespace DB

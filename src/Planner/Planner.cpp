@@ -15,8 +15,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
-
-
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
