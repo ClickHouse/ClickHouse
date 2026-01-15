@@ -1544,24 +1544,51 @@ void FileCache::loadMetadataImpl()
             ++key_prefix_it;
         }
     };
+
+    std::vector<FileSegmentKeyType> key_types_to_load{FileSegmentKeyType::Data,FileSegmentKeyType::System};
+    if (!use_split_cache)
+        key_types_to_load.push_back(FileSegmentKeyType::General);
+
     auto get_keys_dir_to_process = [
-        &, key_prefix_it = fs::directory_iterator{metadata.getBaseDirectory()}, get_key_mutex = std::mutex()]
-        () mutable -> std::optional<fs::path>
+        &,
+        key_prefix_it = fs::directory_iterator{},
+        key_type_index = 0ull,
+        origin = getCommonOrigin(),
+        get_key_mutex = std::mutex()]
+        () mutable -> std::optional<std::pair<fs::path, OriginInfo>>
     {
         std::lock_guard lk(get_key_mutex);
+
         while (true)
         {
             if (key_prefix_it == fs::directory_iterator())
-                return std::nullopt;
-
-            auto path = key_prefix_it->path();
-            if (key_prefix_it->is_directory())
             {
-                key_prefix_it++;
-                return path;
+                if (key_type_index == key_types_to_load.size())
+                    return std::nullopt;
+
+                auto type = key_types_to_load[key_type_index];
+                auto dir_path = fs::path(metadata.getBaseDirectory()).append(getKeyTypePrefix(type));
+                origin.segment_type = type;
+                key_type_index++;
+
+                if (!fs::exists(dir_path))
+                    continue;
+                key_prefix_it = fs::directory_iterator{dir_path};
+                continue;
             }
 
-            if (key_prefix_it->path().filename() != "status")
+            auto path = key_prefix_it->path();
+
+            if (key_prefix_it->is_directory() &&
+                key_prefix_it->path().filename().string() != getKeyTypePrefix(FileSegmentKeyType::Data) &&
+                key_prefix_it->path().filename().string() != getKeyTypePrefix(FileSegmentKeyType::System)
+            )
+            {
+                key_prefix_it++;
+                return std::pair{path, origin};
+            }
+
+            if (!key_prefix_it->is_directory() && key_prefix_it->path().filename() != "status")
             {
                 LOG_WARNING(log, "Unexpected file {} (not a directory), will skip it", path.string());
             }
@@ -1603,8 +1630,9 @@ void FileCache::loadMetadataImpl()
                             if (!result.has_value())
                                 return;
 
-                            path = result.value();
-                            origin = getCommonOrigin();
+                            path = result.value().first;
+                            origin = result.value().second;
+                            LOG_TEST(log, "Loading cache keys from {}", path.c_str());
                         }
 
                         loadMetadataForKeys(path, origin);
@@ -1644,177 +1672,144 @@ void FileCache::loadMetadataImpl()
     assertCacheCorrectness();
 }
 
-void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo & origin_tmp)
+void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo & origin)
 {
-    if (fs::directory_iterator{keys_dir} == fs::directory_iterator{})
+    fs::directory_iterator key_it{keys_dir};
+    if (key_it == fs::directory_iterator{})
     {
         LOG_DEBUG(log, "Removing empty key prefix directory: {}", keys_dir.string());
         fs::remove(keys_dir);
         return;
     }
+
     UInt64 offset = 0;
     UInt64 size = 0;
-
-    auto load_metadata_for_directory = [this, &offset, &size](const fs::path& directory, const OriginInfo& origin)
+    for (; key_it != fs::directory_iterator(); key_it++)
     {
-        for (auto key_it = fs::directory_iterator{directory} ; key_it != fs::directory_iterator(); key_it++)
+        const fs::path key_directory = key_it->path();
+
+        if (!key_it->is_directory())
         {
-            const fs::path key_directory = key_it->path();
+            LOG_DEBUG(
+                log,
+                "Unexpected file: {} (not a directory). Expected a directory",
+                key_directory.string());
+            continue;
+        }
 
-            if (!key_it->is_directory())
+        if (fs::directory_iterator{key_directory} == fs::directory_iterator{})
+        {
+            LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
+            fs::remove(key_directory);
+            continue;
+        }
+
+        const auto key = Key::fromKeyString(key_directory.filename().string());
+        auto key_metadata = metadata.getKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, origin, /* is_initial_load */true);
+
+        for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
+        {
+            auto offset_with_suffix = offset_it->path().filename().string();
+            auto delim_pos = offset_with_suffix.find('_');
+            bool parsed;
+            FileSegmentKind segment_kind = FileSegmentKind::Regular;
+
+            if (delim_pos == std::string::npos)
+                parsed = tryParse<UInt64>(offset, offset_with_suffix);
+            else
             {
-                LOG_DEBUG(
-                    log,
-                    "Unexpected file: {} (not a directory). Expected a directory",
-                    key_directory.string());
-                continue;
-            }
-
-            if (fs::directory_iterator{key_directory} == fs::directory_iterator{})
-            {
-                LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
-                fs::remove(key_directory);
-                continue;
-            }
-
-            if (key_directory.filename().string() == "_data" ||  key_directory.filename().string() == "_system")
-            {
-                continue;
-            }
-
-            const auto key = Key::fromKeyString(key_directory.filename().string());
-            auto key_metadata = metadata.getKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, origin, /* is_initial_load */true);
-            for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
-            {
-                auto offset_with_suffix = offset_it->path().filename().string();
-                auto delim_pos = offset_with_suffix.find('_');
-                bool parsed;
-                FileSegmentKind segment_kind = FileSegmentKind::Regular;
-
-                if (delim_pos == std::string::npos)
-                    parsed = tryParse<UInt64>(offset, offset_with_suffix);
-                else
+                parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
+                if (offset_with_suffix.substr(delim_pos+1) == "persistent")
                 {
-                    parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
-                    if (offset_with_suffix.substr(delim_pos+1) == "persistent")
-                    {
-                        /// For compatibility. Persistent files are no longer supported.
-                        fs::remove(offset_it->path());
-                        continue;
-                    }
-                    if (offset_with_suffix.substr(delim_pos+1) == "temporary")
-                    {
-                        fs::remove(offset_it->path());
-                        continue;
-                    }
+                    /// For compatibility. Persistent files are no longer supported.
+                    fs::remove(offset_it->path());
+                    continue;
                 }
-
-                if (!parsed)
-                {
-                    LOG_WARNING(log, "Unexpected file: {}", offset_it->path().string());
-                    continue; /// Or just remove? Some unexpected file.
-                }
-
-                size = offset_it->file_size();
-                if (!size)
+                if (offset_with_suffix.substr(delim_pos+1) == "temporary")
                 {
                     fs::remove(offset_it->path());
                     continue;
                 }
+            }
 
-                bool limits_satisfied;
-                IFileCachePriority::IteratorPtr cache_it;
-                size_t size_limit = 0;
+            if (!parsed)
+            {
+                LOG_WARNING(log, "Unexpected file: {}", offset_it->path().string());
+                continue; /// Or just remove? Some unexpected file.
+            }
 
+            size = offset_it->file_size();
+            if (!size)
+            {
+                fs::remove(offset_it->path());
+                continue;
+            }
+
+            bool limits_satisfied;
+            IFileCachePriority::IteratorPtr cache_it;
+            size_t size_limit = 0;
+
+            {
+                auto lock = lockCache();
+                size_limit = main_priority->getSizeLimit(lock);
+
+                limits_satisfied = main_priority->canFit(size, 1, lock, origin, nullptr, true);
+                if (limits_satisfied)
+                    cache_it = main_priority->add(key_metadata, offset, size, origin, lock, /* best_effort */true);
+
+                /// TODO: we can get rid of this lockCache() if we first load everything in parallel
+                /// without any mutual lock between loading threads, and only after do removeOverflow().
+                /// This will be better because overflow here may
+                /// happen only if cache configuration changed and max_size because less than it was.
+            }
+
+            if (limits_satisfied)
+            {
+                bool inserted = false;
+                try
                 {
-                    auto lock = lockCache();
-                    size_limit = main_priority->getSizeLimit(lock);
+                    auto file_segment = std::make_shared<FileSegment>(key, offset, size,
+                                                                      FileSegment::State::DOWNLOADED,
+                                                                      CreateFileSegmentSettings(segment_kind),
+                                                                      false,
+                                                                      this,
+                                                                      key_metadata,
+                                                                      cache_it);
 
-                    limits_satisfied = main_priority->canFit(size, 1, lock, origin, nullptr, true);
-                    if (limits_satisfied)
-                        cache_it = main_priority->add(key_metadata, offset, size, origin, lock, /* best_effort */true);
-
-                    /// TODO: we can get rid of this lockCache() if we first load everything in parallel
-                    /// without any mutual lock between loading threads, and only after do removeOverflow().
-                    /// This will be better because overflow here may
-                    /// happen only if cache configuration changed and max_size because less than it was.
+                    inserted = key_metadata->emplaceUnlocked(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(__PRETTY_FUNCTION__);
+                    chassert(false);
                 }
 
-                if (limits_satisfied)
+                if (inserted)
                 {
-                    bool inserted = false;
-                    try
-                    {
-                        auto file_segment = std::make_shared<FileSegment>(key, offset, size,
-                                                                        FileSegment::State::DOWNLOADED,
-                                                                        CreateFileSegmentSettings(segment_kind),
-                                                                        false,
-                                                                        this,
-                                                                        key_metadata,
-                                                                        cache_it);
-
-                        inserted = key_metadata->emplaceUnlocked(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(__PRETTY_FUNCTION__);
-                        chassert(false);
-                    }
-
-                    if (inserted)
-                    {
-                        LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, offset, size, offset_it->path().string());
-                    }
-                    else
-                    {
-                        cache_it->remove(lockCache());
-                        fs::remove(offset_it->path());
-                        chassert(false);
-                    }
+                    LOG_TEST(log, "Added file segment {}:{} (size: {}) with path: {}", key, offset, size, offset_it->path().string());
                 }
                 else
                 {
-                    LOG_WARNING(
-                        log,
-                        "Cache capacity changed (max size: {}), "
-                        "cached file `{}` does not fit in cache anymore (size: {})",
-                        size_limit, offset_it->path().string(), size);
-
+                    cache_it->remove(lockCache());
                     fs::remove(offset_it->path());
+                    chassert(false);
                 }
             }
-
-            if (key_metadata->sizeUnlocked() == 0)
+            else
             {
-                metadata.removeKey(key, false, false, getInternalOrigin().user_id);
+                LOG_WARNING(
+                    log,
+                    "Cache capacity changed (max size: {}), "
+                    "cached file `{}` does not fit in cache anymore (size: {})",
+                    size_limit, offset_it->path().string(), size);
+
+                fs::remove(offset_it->path());
             }
         }
-    };
 
-    std::vector<std::tuple<FileSegmentKeyType, bool>> key_types_to_load =
-    {
-        {FileSegmentKeyType::Data, true},
-        {FileSegmentKeyType::System, true},
-        {FileSegmentKeyType::General, !use_split_cache},
-    };
-
-    for (const auto [type, need_to_load] : key_types_to_load)
-    {
-        // Maybe remove to do not keeping junk.
-        if (!need_to_load)
-            continue;
-        auto data_key = keys_dir;
-        data_key.append(getKeyTypePrefix(type));
-        LOG_DEBUG(log, "Load cache from {}", data_key.c_str());
-
-        if (fs::exists(data_key))
+        if (key_metadata->sizeUnlocked() == 0)
         {
-            auto origin_with_type = origin_tmp;
-            origin_with_type.segment_type = type;
-            if (need_to_load)
-            {
-                load_metadata_for_directory(data_key, origin_with_type);
-            }
+            metadata.removeKey(key, false, false, origin.user_id);
         }
     }
 }

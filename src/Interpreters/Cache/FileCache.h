@@ -298,7 +298,7 @@ private:
 
     void loadMetadata();
     void loadMetadataImpl();
-    void loadMetadataForKeys(const std::filesystem::path & keys_dir, const UserInfo & user);
+    void loadMetadataForKeys(const std::filesystem::path & keys_dir, const OriginInfo & origin);
 
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit
