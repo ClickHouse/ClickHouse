@@ -1483,7 +1483,15 @@ void StatementGenerator::generateEngineDetails(
     if (te->has_engine() && (b.isRocksEngine() || b.isRedisEngine() || b.isKeeperMapEngine() || b.isMaterializedPostgreSQLEngine())
         && add_pkey && !entries.empty())
     {
-        colRefOrExpression(rg, rel, b, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
+        if (b.isRocksEngine() && rg.nextBool())
+        {
+            /// RocksDB allows more than one pkey column
+            generateTableKey(rg, rel, b, false, te->mutable_primary_key());
+        }
+        else
+        {
+            colRefOrExpression(rg, rel, b, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
+        }
     }
     if (te->has_engine() && b.has_order_by)
     {
