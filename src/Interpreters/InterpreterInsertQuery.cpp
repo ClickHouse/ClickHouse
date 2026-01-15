@@ -443,6 +443,37 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     if (select_streams != 1)
         pipeline.resize(1);
 
+    bool should_squash = shouldAddSquashingForStorage(table, context) && !no_squash && !async_insert;
+    if (should_squash)
+    {
+        pipeline.addSimpleTransform(
+            [&](const SharedHeader & in_header) -> ProcessorPtr
+            {
+                return std::make_shared<PlanSquashingTransform>(
+                    in_header,
+                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
+                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
+            });
+    }
+
+    pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+    {
+        return std::make_shared<DeduplicationToken::AddTokenInfoTransform>(in_header);
+    });
+
+    if (!settings[Setting::insert_deduplication_token].value.empty())
+    {
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<DeduplicationToken::SetUserTokenTransform>(settings[Setting::insert_deduplication_token].value, in_header);
+        });
+
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<DeduplicationToken::SetSourceBlockNumberTransform>(in_header);
+        });
+    }
+
     auto deduplicate_insert_select = [&] () -> bool
     {
         switch (context->getSettingsRef()[Setting::deduplicate_insert_select].value)
