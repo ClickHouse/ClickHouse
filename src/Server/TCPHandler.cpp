@@ -561,6 +561,9 @@ void TCPHandler::runImpl()
             thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
             thread_trace_context->root_span.addAttribute("client.version", query_state->query_context->getClientInfo().getVersionStr());
 
+            /// Fatal error callback can be called at any time, including when we already destroyed TCPHandler object that created the callback.
+            /// To avoid accessing invalid memory, we capture all needed fields by value.
+            /// If TCPHandler object is already destroyed, we don't need to send logs so we capture shared_ptrs as weak_ptrs.
             query_scope.emplace(
                 query_state->query_context,
                 /* fatal_error_callback */

@@ -252,7 +252,7 @@ private:
 
     /// `callback_mutex` protects using `out` (WriteBuffer), `in` (ReadBuffer) and other members concurrent inside callbacks.
     /// All the methods which are run inside callbacks are marked with TSA_REQUIRES.
-    std::shared_ptr<std::mutex> callback_mutex;
+    std::shared_ptr<std::mutex> callback_mutex = std::make_shared<std::mutex>();
 
     /// Last block input parameters are saved to be able to receive unexpected data packet sent after exception.
     LastBlockInputParameters last_block_in;
