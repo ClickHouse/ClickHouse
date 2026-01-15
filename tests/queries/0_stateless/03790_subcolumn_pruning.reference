@@ -4,9 +4,15 @@ cte
 1
 subquery
 1
+view
+1
+view_system_table
+0
 no_full_tuple_direct
 1
 no_full_tuple_cte
 1
 no_full_tuple_subquery
+1
+no_full_tuple_view
 1

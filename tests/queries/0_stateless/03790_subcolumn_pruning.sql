@@ -31,6 +31,21 @@ SELECT count() > 0 FROM (
     SELECT tup.a FROM (SELECT * FROM test_subcolumn_pruning)
 ) WHERE explain LIKE '%tup.a String%';
 
+-- VIEW with SELECT * should also read only tup.a (table supports optimization)
+DROP VIEW IF EXISTS test_view_pruning;
+CREATE VIEW test_view_pruning AS SELECT * FROM test_subcolumn_pruning;
+SELECT 'view';
+SELECT count() > 0 FROM (
+    EXPLAIN header=1
+    SELECT tup.a FROM test_view_pruning
+) WHERE explain LIKE '%tup.a String%';
+
+-- VIEW over system table (doesn't support subcolumn optimization) should still work
+DROP VIEW IF EXISTS test_view_system;
+CREATE VIEW test_view_system AS SELECT * FROM system.one;
+SELECT 'view_system_table';
+SELECT dummy IS NULL FROM test_view_system; -- Should work without error (dummy is not nullable but query should execute)
+
 -- Verify the full Tuple is NOT being read (would show "tup Tuple")
 SELECT 'no_full_tuple_direct';
 SELECT count() == 0 FROM (EXPLAIN header=1 SELECT tup.a FROM test_subcolumn_pruning)
@@ -49,4 +64,12 @@ SELECT count() == 0 FROM (
     SELECT tup.a FROM (SELECT * FROM test_subcolumn_pruning)
 ) WHERE explain LIKE '%tup Tuple%';
 
+SELECT 'no_full_tuple_view';
+SELECT count() == 0 FROM (
+    EXPLAIN header=1
+    SELECT tup.a FROM test_view_pruning
+) WHERE explain LIKE '%tup Tuple%';
+
+DROP VIEW test_view_pruning;
+DROP VIEW test_view_system;
 DROP TABLE test_subcolumn_pruning;

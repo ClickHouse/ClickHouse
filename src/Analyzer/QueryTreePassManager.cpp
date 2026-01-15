@@ -264,17 +264,16 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<QueryAnalysisPass>(only_analyze));
     manager.addPass(std::make_unique<GroupingFunctionsResolvePass>());
     manager.addPass(std::make_unique<AutoFinalOnQueryPass>());
+
     /// This pass should be run for the secondary queries
     /// to ensure that the only required columns are read from VIEWs on the shards.
     manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
-    /// Push subcolumn access into subqueries to enable subcolumn pruning.
-    /// Runs after RemoveUnusedProjectionColumnsPass.
-    manager.addPass(std::make_unique<SubcolumnPushdownPass>());
 
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
-    /// Run SubcolumnPushdownPass again after FunctionToSubcolumnsPass to handle
-    /// newly created subcolumn accesses (e.g., .null from isNull() conversion).
+    
+    /// Push subcolumn access into subqueries to enable subcolumn pruning.
+    /// Must run after FunctionToSubcolumnsPass which creates getSubcolumn calls.
     manager.addPass(std::make_unique<SubcolumnPushdownPass>());
 
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
