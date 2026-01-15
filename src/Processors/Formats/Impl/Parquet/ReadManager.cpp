@@ -8,6 +8,7 @@
 
 #include <mutex>
 #include <shared_mutex>
+#include <thread>
 #include <unordered_set>
 
 namespace DB::ErrorCodes
@@ -72,7 +73,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     /// E.g. if the budget was shared among all stages, maybe PrewhereData could run far ahead and
     /// eat all memory, and MainData would have to execute in one thread to minimize memory usage.
     double sum = 0;
-    stages[size_t(ReadStage::ColumnData)].memory_target_fraction = 0;
+    //stages[size_t(ReadStage::ColumnData)].memory_target_fraction *= 10;
     stages[size_t(ReadStage::NotStarted)].memory_target_fraction = 0;
     stages[size_t(ReadStage::Deliver)].memory_target_fraction = 0;
     for (const Stage & stage : stages)
@@ -378,7 +379,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
                     delivery_queue.push(Task {.stage = ReadStage::Deliver, .row_group_idx = row_group_idx, .row_subgroup_idx = row_subgroup_idx});
                 }
 
-                size_t prev = row_group.next_subgroup_for_step[0].exchange(row_subgroup_idx + 1);
+                size_t prev = row_group.next_subgroup_for_step[step_idx].exchange(row_subgroup_idx + 1);
                 chassert(prev == row_subgroup_idx);
                 advanced_ptr = prev + 1;
                 delivery_cv.notify_one();
@@ -431,7 +432,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
                 break;
             }
 
-            size_t prev = row_group.next_subgroup_for_step[0].exchange(main_ptr + 1);
+            size_t prev = row_group.next_subgroup_for_step[row_group_idx].exchange(main_ptr + 1);
             chassert(prev == main_ptr);
             main_ptr += 1;
             advanced_ptr = main_ptr;
@@ -513,7 +514,9 @@ void ReadManager::flushMemoryUsageDiff(MemoryUsageDiff && diff)
             continue;
         }
         if (d != 0)
+        {
             stages[i].memory_usage.fetch_add(d, std::memory_order_relaxed);
+        }
 
         bool should_schedule = (diff.stages_to_schedule & (1ul << i)) != 0;
         if (!should_schedule && d < 0)
@@ -646,9 +649,11 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                     prefetches.push_back(&b.prefetch);
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
+            {
                 prefetches.push_back(&column.column_index_prefetch);
                 prefetches.push_back(&column.offset_index_prefetch);
                 break;
+            }
             case ReadStage::OffsetIndex:
                 prefetches.push_back(&column.offset_index_prefetch);
                 break;
@@ -665,13 +670,19 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 /// rows, we likely won't hit that 1 MB). But AFAICT parquet metadata doesn't have
                 /// enough information for that (there's no page encoding in offset/column indexes).
                 if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
+                {
                     prefetches.push_back(&column.dictionary_page_prefetch);
+                }
 
                 if (column.data_pages.empty())
+                {
                     prefetches.push_back(&column.data_pages_prefetch);
+                }
 
                 double bytes_per_row = reader.estimateColumnMemoryBytesPerRow(column, row_group, reader.primitive_columns.at(task.column_idx));
                 size_t column_memory = size_t(bytes_per_row * row_subgroup.filter.rows_pass);
+                if (subchunk.column_and_offsets_memory)
+                    subchunk.column_and_offsets_memory.reset(&diff);
                 subchunk.column_and_offsets_memory = MemoryUsageToken(column_memory, &diff);
                 break;
             }
@@ -686,6 +697,9 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
     if (task.stage == ReadStage::ColumnData && is_first_in_group)
     {
         RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
+        /// If we're reusing filter.memory for a new step (multistage prewhere), free the old memory first.
+        if (row_subgroup.filter.memory)
+            row_subgroup.filter.memory.reset(&diff);
         row_subgroup.filter.memory = MemoryUsageToken(row_subgroup.filter.rows_total, &diff);
     }
 
@@ -777,7 +791,9 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
                 {
                     if (!reader.decodeDictionaryPage(column, column_info))
+                    {
                         column.dictionary_page_prefetch.reset(&diff);
+                    }
                 }
                 size_t prev_page_idx = column.data_pages_idx;
 
@@ -788,7 +804,9 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                     row_group, row_subgroup);
 
                 for (size_t i = prev_page_idx; i < column.data_pages_idx; ++i)
+                {
                     column.data_pages.at(i).prefetch.reset(&diff);
+                }
                 break;
             }
             case ReadStage::NotStarted:
