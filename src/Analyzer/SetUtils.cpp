@@ -91,28 +91,120 @@ std::optional<Field> convertFieldToTypeCheckEnum(
 /// Tuple: (1, 2, 3) or ((1, 2), (3, 4), (5, 6), (7, 8)) or (NULL, NULL)
 template <typename Collection>
 ColumnsWithTypeAndName createBlockFromCollection(
-    const Collection & rhs_collection,
-    const DataTypes & rhs_types,
-    const DataTypes & lhs_unpacked_types,
-    bool lhs_is_nullable,
-    GetSetElementParams params)
+    const Collection & rhs_collection, const DataTypes & rhs_types, const DataTypes & lhs_unpacked_types, GetSetElementParams params)
 {
     chassert(rhs_collection.size() == rhs_types.size());
 
     size_t num_elements = lhs_unpacked_types.size();
 
-    /// Fast path
+    /// Fast path: single key column (lhs_unpacked_types.size() == 1)
+    /// Special-case `Nullable(Tuple(...))`; otherwise generic scalar conversion
     if (num_elements == 1)
     {
-        MutableColumnPtr column = lhs_unpacked_types[0]->createColumn();
+        const auto & lhs_type = lhs_unpacked_types[0];
+        MutableColumnPtr column = lhs_type->createColumn();
         column->reserve(rhs_collection.size());
 
+        /// For `Nullable(Tuple(...))` we process tuple values element-by-element:
+        /// - to correctly skip unknown enum literals when `validate_enum_literals_in_operators = 0`
+        /// - to implement `transform_null_in = 0` semantics for NULLs inside tuple elements (skip such tuple values)
+        ///
+        /// Example:
+        /// - CAST((NULL, 42) AS Nullable(Tuple(Nullable(UInt32), Nullable(UInt32)))) IN ((NULL, 42)) SETTINGS transform_null_in = 0
+        ///   set elements: {} (tuple literal is skipped, because it has NULL element)
+        const auto * lhs_nullable = typeid_cast<const DataTypeNullable *>(lhs_type.get());
+        const auto * lhs_tuple = lhs_nullable ? typeid_cast<const DataTypeTuple *>(lhs_nullable->getNestedType().get()) : nullptr;
+
+        /// Nullable(Tuple(...)) case
+        if (lhs_tuple)
+        {
+            chassert(lhs_nullable);
+            const auto & lhs_tuple_element_types = lhs_tuple->getElements();
+
+            for (size_t collection_index = 0; collection_index < rhs_collection.size(); ++collection_index)
+            {
+                const auto & rhs_element = rhs_collection[collection_index];
+
+                /// The NULL can be of any type but that's okay
+                if (rhs_element.isNull())
+                {
+                    if (params.transform_null_in)
+                        column->insert(Null{});
+                    continue;
+                }
+
+                if (rhs_element.getType() != Field::Types::Tuple)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Invalid type in set. Expected tuple, got {}", rhs_element.getTypeName());
+
+                const auto & rhs_element_as_tuple = rhs_element.template safeGet<Tuple>();
+                const size_t tuple_size = rhs_element_as_tuple.size();
+
+                if (tuple_size != lhs_tuple_element_types.size())
+                    throw Exception(
+                        ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                        "Incorrect size of tuple in set: {} instead of {}",
+                        tuple_size,
+                        lhs_tuple_element_types.size());
+
+                const DataTypePtr & rhs_element_type = rhs_types[collection_index];
+
+                const DataTypeTuple * rhs_tuple_type = nullptr;
+                if (const auto * rhs_nullable_type = typeid_cast<const DataTypeNullable *>(rhs_element_type.get()))
+                    rhs_tuple_type = typeid_cast<const DataTypeTuple *>(rhs_nullable_type->getNestedType().get());
+                else
+                    rhs_tuple_type = typeid_cast<const DataTypeTuple *>(rhs_element_type.get());
+
+                if (!rhs_tuple_type)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected Tuple or Nullable(Tuple) type");
+
+                const DataTypes & rhs_tuple_element_types = rhs_tuple_type->getElements();
+
+                Tuple converted_tuple;
+                converted_tuple.reserve(tuple_size);
+
+                bool skip_tuple_value = false;
+                for (size_t i = 0; i < tuple_size; ++i)
+                {
+                    auto converted_field = convertFieldToTypeCheckEnum(
+                        rhs_element_as_tuple[i],
+                        *rhs_tuple_element_types[i],
+                        *lhs_tuple_element_types[i],
+                        params.forbid_unknown_enum_values);
+
+                    if (!converted_field)
+                    {
+                        skip_tuple_value = true;
+                        break;
+                    }
+
+                    bool need_insert_null = params.transform_null_in && lhs_tuple_element_types[i]->isNullable();
+                    if (converted_field->isNull() && !need_insert_null)
+                    {
+                        skip_tuple_value = true;
+                        break;
+                    }
+
+                    converted_tuple.emplace_back(std::move(*converted_field));
+                }
+
+                if (!skip_tuple_value)
+                    column->insert(converted_tuple);
+            }
+
+            ColumnsWithTypeAndName res(1);
+            res[0].type = lhs_type;
+            res[0].column = std::move(column);
+            return res;
+        }
+
+        /// Generic single-key column (all cases except `Nullable(Tuple(...))`, e.g. T / Nullable(T) / Tuple() / Tuple(T))
         for (size_t collection_index = 0; collection_index < rhs_collection.size(); ++collection_index)
         {
             const auto & rhs_element = rhs_collection[collection_index];
 
-            auto field = convertFieldToTypeCheckEnum(
-                rhs_element, *rhs_types[collection_index], *lhs_unpacked_types[0], params.forbid_unknown_enum_values);
+            auto field
+                = convertFieldToTypeCheckEnum(rhs_element, *rhs_types[collection_index], *lhs_type, params.forbid_unknown_enum_values);
 
             bool need_insert_null = params.transform_null_in && column->isNullable();
             if (field && (!field->isNull() || need_insert_null))
@@ -120,29 +212,10 @@ ColumnsWithTypeAndName createBlockFromCollection(
         }
 
         ColumnsWithTypeAndName res(1);
-        res[0].type = lhs_unpacked_types[0];
+        res[0].type = lhs_type;
         res[0].column = std::move(column);
         return res;
     }
-
-    /// If lhs is Nullable(Tuple), then since we cast RHS elements to lhs types, we must wrap the final Tuple column into Nullable.
-    const bool construct_nullable_tuple_column_later = lhs_is_nullable;
-
-    /// Skip: if conversion failed between lhs_tuple and rhs_element and does not raise
-    ///       exception (like unknown enum value and `validate_enum_literals_in_operators = 0`)
-    /// InsertNull: if rhs_element is NULL
-    /// InsertValue: if conversion succeeded
-
-    enum class RowAction : UInt8
-    {
-        Skip,
-        InsertNull,
-        InsertValue,
-    };
-
-    std::vector<RowAction> row_actions;
-    if (construct_nullable_tuple_column_later)
-        row_actions.assign(rhs_collection.size(), RowAction::Skip);
 
     MutableColumns columns(num_elements);
     for (size_t i = 0; i < num_elements; ++i)
@@ -159,9 +232,6 @@ ColumnsWithTypeAndName createBlockFromCollection(
 
         if (rhs_element.isNull())
         {
-            if (construct_nullable_tuple_column_later)
-                row_actions[collection_index] = RowAction::InsertNull;
-
             continue;
         }
 
@@ -216,84 +286,16 @@ ColumnsWithTypeAndName createBlockFromCollection(
         {
             for (i = 0; i < tuple_size; ++i)
                 columns[i]->insert(converted_rhs_element_unpacked[i]);
-
-            if (construct_nullable_tuple_column_later)
-                row_actions[collection_index] = RowAction::InsertValue;
         }
     }
 
-    if (!construct_nullable_tuple_column_later)
+    ColumnsWithTypeAndName res(num_elements);
+    for (size_t i = 0; i < num_elements; ++i)
     {
-        ColumnsWithTypeAndName res(num_elements);
-        for (size_t i = 0; i < num_elements; ++i)
-        {
-            res[i].type = lhs_unpacked_types[i];
-            res[i].column = std::move(columns[i]);
-        }
-
-        return res;
+        res[i].type = lhs_unpacked_types[i];
+        res[i].column = std::move(columns[i]);
     }
 
-#ifndef NDEBUG
-    if (construct_nullable_tuple_column_later)
-    {
-        chassert(!row_actions.empty());
-        chassert(row_actions.size() == rhs_collection.size());
-    }
-
-    if (construct_nullable_tuple_column_later && !columns.empty())
-    {
-        const auto rows_in_columns = columns.front()->size();
-        for (size_t i = 1; i < num_elements; ++i)
-            chassert(columns[i]->size() == rows_in_columns);
-    }
-#endif
-
-    /// If we are here, then it means that lhs is Nullable(Tuple(..)) and we have NULLs in the rhs collection
-    DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(lhs_unpacked_types);
-    DataTypePtr nullable_tuple_type = std::make_shared<DataTypeNullable>(tuple_type);
-    MutableColumnPtr nullable_tuple_column = nullable_tuple_type->createColumn();
-    nullable_tuple_column->reserve(rhs_collection.size());
-
-    auto & column_nullable = assert_cast<ColumnNullable &>(*nullable_tuple_column);
-    auto & nested_tuple_column = assert_cast<ColumnTuple &>(column_nullable.getNestedColumn());
-    auto & null_map = column_nullable.getNullMapColumn();
-
-    /// Track current position in the pre-built columns so that elements are in the same order in the final column as in rhs_collection
-    size_t non_null_pos = 0;
-
-    for (size_t collection_index = 0; collection_index < rhs_collection.size(); ++collection_index)
-    {
-        switch (row_actions[collection_index])
-        {
-            case RowAction::InsertNull: {
-                nested_tuple_column.insertDefault();
-                null_map.getData().push_back(1);
-                break;
-            }
-
-            case RowAction::InsertValue: {
-                chassert(non_null_pos < columns.front()->size());
-                for (size_t i = 0; i < num_elements; ++i)
-                    nested_tuple_column.getColumn(i).insertFrom(*columns[i], non_null_pos);
-
-                null_map.insertDefault();
-                ++non_null_pos;
-                break;
-            }
-
-            case RowAction::Skip: {
-                /// No row for this rhs element (conversion failure, or NULL that shouldn't be transformed).
-                break;
-            }
-        }
-    }
-
-    chassert(non_null_pos == columns.front()->size());
-
-    ColumnsWithTypeAndName res(1);
-    res[0].type = nullable_tuple_type;
-    res[0].column = std::move(nullable_tuple_column);
     return res;
 }
 
@@ -349,16 +351,23 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
 {
     DataTypes lhs_unpacked_types = {lhs_expression_type};
 
+    /// Unpack `Tuple(...)` into tuple elements.
+    /// For `Nullable(Tuple(...))` we keep it as a single value and handle it in createBlockFromCollection() fast-path.
     bool lhs_is_tuple = false;
-    /// Unpack if Tuple or Nullable(Tuple) and Tuple has more than 1 element
     const auto * lhs_nullable_type = typeid_cast<const DataTypeNullable *>(lhs_expression_type.get());
-    if (const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(lhs_nullable_type ? lhs_nullable_type->getNestedType().get() : lhs_expression_type.get()))
+    const auto * lhs_tuple_type
+        = typeid_cast<const DataTypeTuple *>(lhs_nullable_type ? lhs_nullable_type->getNestedType().get() : lhs_expression_type.get());
+
+    if (lhs_tuple_type)
     {
         lhs_is_tuple = true;
-        /// Do not unpack if empty tuple or single element tuple
-        if (lhs_tuple_type->getElements().size() > 1)
+
+        /// Do not unpack empty tuple or single element tuple.
+        /// Do not unpack `Nullable(Tuple(...))` because in the end we build a single `Nullable(Tuple(...))` column anyway.
+        if (!lhs_nullable_type && lhs_tuple_type->getElements().size() > 1)
             lhs_unpacked_types = lhs_tuple_type->getElements();
     }
+
     bool lhs_is_nullable = (lhs_nullable_type != nullptr);
 
     for (auto & lhs_element_type : lhs_unpacked_types)
@@ -367,14 +376,27 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
             lhs_element_type = set_element_low_cardinality_type->getDictionaryType();
     }
 
-    const size_t num_elements = lhs_unpacked_types.size();
+    /// If we didn't unpack `Nullable(Tuple(...))`, we still need to remove `LowCardinality` from tuple elements
+    /// to match the behavior of the unpacked path.
+    if (lhs_tuple_type && lhs_nullable_type && lhs_tuple_type->getElements().size() > 1)
+    {
+        DataTypes nested_tuple_element_types = lhs_tuple_type->getElements();
+        for (auto & element_type : nested_tuple_element_types)
+        {
+            if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
+                element_type = low_cardinality_type->getDictionaryType();
+        }
+
+        DataTypePtr nested_tuple_type = std::make_shared<DataTypeTuple>(nested_tuple_element_types);
+        lhs_unpacked_types = {std::make_shared<DataTypeNullable>(nested_tuple_type)};
+    }
 
     auto build_from_array = [&](const Field & rhs_value, const DataTypePtr & type)
     {
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
         const auto & rhs_array = rhs_value.safeGet<Array>();
         DataTypes rhs_types(rhs_array.size(), array_type->getNestedType());
-        return createBlockFromCollection(rhs_array, rhs_types, lhs_unpacked_types, lhs_is_nullable, params);
+        return createBlockFromCollection(rhs_array, rhs_types, lhs_unpacked_types, params);
     };
 
     auto build_from_tuple = [&](const Field & rhs_value, const DataTypePtr & type)
@@ -382,13 +404,13 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
         const auto & rhs_tuple = rhs_value.safeGet<Tuple>();
         const auto & rhs_types = tuple_type->getElements();
-        return createBlockFromCollection(rhs_tuple, rhs_types, lhs_unpacked_types, lhs_is_nullable, params);
+        return createBlockFromCollection(rhs_tuple, rhs_types, lhs_unpacked_types, params);
     };
 
     auto build_from_single_value = [&](const Field & rhs_value, const DataTypePtr & type)
     {
         /// Maybe we can inline without this lambda? But this way it's more readable.
-        return createBlockFromCollection(Array{rhs_value}, DataTypes{type}, lhs_unpacked_types, lhs_is_nullable, params);
+        return createBlockFromCollection(Array{rhs_value}, DataTypes{type}, lhs_unpacked_types, params);
     };
 
     auto append_set_elements = [](ColumnsWithTypeAndName & destination, const ColumnsWithTypeAndName & source)
@@ -482,12 +504,12 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
                 /// when it can be cast to the LHS tuple type (so both interpretations are supported)
                 /// Example: tuple(NULL, NULL)::Nullable(Tuple(Nullable(UInt32), Nullable(UInt32))) IN (NULL, NULL) SETTINGS transform_null_in = 1
                 /// For `Nullable(Tuple(...)) IN (NULL, NULL)` also add a tuple-literal interpretation `(NULL, NULL)` when possible
-                if (lhs_is_nullable && rhs_tuple_all_null && rhs_tuple.size() == num_elements)
+                if (lhs_is_nullable && rhs_tuple_all_null && rhs_tuple.size() == lhs_tuple_type->getElements().size())
                 {
                     /// Tuple literal `(NULL, NULL)` is representable only if all tuple elements are Nullable,
                     /// otherwise it would require NULL -> non-nullable conversion (e.g. `Nullable(Tuple(Int64, Int64))`).
                     bool all_tuple_elements_nullable = params.transform_null_in;
-                    for (const auto & element_type : lhs_unpacked_types)
+                    for (const auto & element_type : lhs_tuple_type->getElements())
                     {
                         if (!element_type->isNullable())
                         {
