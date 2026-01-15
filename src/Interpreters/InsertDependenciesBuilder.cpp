@@ -596,6 +596,8 @@ private:
         ///  but it will contain single block (that is INSERT-ed into main table).
         /// InterpreterSelectQuery will do processing of alias columns.
         auto local_context = Context::createCopy(context);
+        /// Avoid sharing query_context, since it can be accessed from multiple threads
+        local_context->setQueryContext(std::const_pointer_cast<Context>(context));
 
         local_context->addViewSource(std::make_shared<StorageValues>(
             source_id,
