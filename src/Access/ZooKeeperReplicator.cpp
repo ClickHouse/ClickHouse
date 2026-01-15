@@ -10,10 +10,8 @@
 #include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <base/range.h>
 #include <base/sleep.h>
-
 
 namespace
 {
@@ -415,7 +413,7 @@ bool ZooKeeperReplicator::updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper
 void ZooKeeperReplicator::runWatchingThread()
 {
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Started watching thread");
-    DB::setThreadName(ThreadName::ZOOKEEPER_ACL_WATCHER);
+    setThreadName("ZooACLWatch");
 
     while (watching)
     {

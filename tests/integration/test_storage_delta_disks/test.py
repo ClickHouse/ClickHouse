@@ -39,7 +39,7 @@ cluster = ClickHouseCluster(__file__, with_spark=True)
 
 def get_spark():
     builder = (
-        pyspark.sql.SparkSession.builder.appName("test_storage_delta_disks")
+        pyspark.sql.SparkSession.builder.appName("spark_test")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config(
             "spark.sql.catalog.spark_catalog",
@@ -54,7 +54,7 @@ def get_spark():
         .master("local")
     )
 
-    return builder.getOrCreate()
+    return builder.master("local").getOrCreate()
 
 
 def generate_cluster_def(common_path, port, azure_container):

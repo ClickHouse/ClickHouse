@@ -12,7 +12,7 @@ The `CHECK TABLE` query in ClickHouse is used to perform a validation check on a
 Particularly it compares actual file sizes with the expected values which are stored on the server. If the file sizes do not match the stored values, it means the data is corrupted. This can be caused, for example, by a system crash during query execution.
 
 :::warning
-The `CHECK TABLE` query may read all the data in the table and hold some resources, making it resource-intensive.
+The `CHECK TABLE`` query may read all the data in the table and hold some resources, making it resource-intensive.
 Consider the potential impact on performance and resource utilization before executing this query.
 This query will not improve performance of the system and you should not execute it if you are not sure of what you are doing.
 :::
@@ -30,10 +30,10 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 - `part_name`: (Optional) If you want to check a specific part in the table, you can add string literal to specify a part name.
 - `FORMAT format`: (Optional) Allows you to specify the output format of the result.
 - `SETTINGS`: (Optional) Allows additional settings.
-  - (Optional): [check_query_single_value_result](../../operations/settings/settings#check_query_single_value_result): This setting controls if the output is detailed (`0`) or summarized (`1`).
+  - **`check_query_single_value_result`**: (Optional) This setting allows you to toggle between a detailed result (`0`) or a summarized result (`1`).
   - Other settings can be applied as well. If you don't require a deterministic order for the results, you can set max_threads to a value greater than one to speed up the query.
 
-The query response depends on the value of the `check_query_single_value_result` setting.
+The query response depends on the value of contains `check_query_single_value_result` setting.
 In case of `check_query_single_value_result = 1` only `result` column with a single row is returned. Value inside this row is `1` if the integrity check is passed and `0` if data is corrupted.
 
 With `check_query_single_value_result = 0` the query returns the following columns:
