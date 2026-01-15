@@ -87,6 +87,29 @@ SELECT cosineDistance((1, 2), (2, 3, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUM
 SELECT LpNorm((1, 2, 3)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT max2(1, 2, -1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
+SELECT '-- Test excess arguments for binary tuple operators';
+SELECT tuplePlus((1, 2), (3, 4), 5); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tupleMinus((1, 2), (3, 4), 5); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tupleMultiply((1, 2), (3, 4), 5); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tupleDivide((1, 2), (3, 4), 5); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- Test wrong type (non-tuple) for binary tuple operators';
+SELECT tuplePlus(1, (3, 4)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT tupleMinus((1, 2), 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- Test excess arguments for unary tuple operator';
+SELECT tupleNegate((1, 2), (3, 4)); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- Test wrong type for unary tuple operator';
+SELECT tupleNegate(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT '-- Test excess arguments for tuple-by-number operators';
+SELECT tupleMultiplyByNumber((1, 2), 3, 4); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT tupleDivideByNumber((1, 2), 3, 4); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+SELECT '-- Test wrong type (non-tuple) for tuple-by-number operators';
+SELECT tupleMultiplyByNumber(5, 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 SELECT LpNorm((1, 2, 3), materialize(4.)); -- { serverError ILLEGAL_COLUMN }
 
 SELECT tuple(*, 1) + tuple(2, *) FROM numbers(3);
