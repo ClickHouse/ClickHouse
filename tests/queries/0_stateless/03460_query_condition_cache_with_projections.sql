@@ -2,6 +2,8 @@
 -- Tag no-parallel: Messes with internal cache
 -- add_minmax_index_for_numeric_columns=0: Would use indices instead of the projections that we want to test
 
+SET allow_statistics_optimize = 0; -- Prevent auto_statistics_types from pruning parts before query condition cache
+
 -- { echo ON }
 
 set enable_analyzer = 1;
