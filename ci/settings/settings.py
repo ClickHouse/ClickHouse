@@ -63,7 +63,7 @@ READY_FOR_MERGE_CUSTOM_STATUS_NAME = "Mergeable Check"
 CI_DB_READ_USER = "play"
 CI_DB_READ_URL = "https://play.clickhouse.com"
 
-EVENTS_S3_PATH = "clickhouse-test-reports-private/events"
+EVENT_FEED_S3_PATH = "clickhouse-test-reports-private/slack_feed"
 CLOUD_INFRASTRUCTURE_CONFIG_PATH = "./ci/infra/cloud.py"
 AWS_REGION = "us-east-1"
 
