@@ -1926,7 +1926,9 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
 
     if (response)
     {
-        response->fillLogElements(elems, 0);
+        size_t idx = 0;
+        response->fillLogElements(elems, idx);
+        chassert(idx + 1 == elems.size());
         log_type = ZooKeeperLogElement::RESPONSE;
     }
 

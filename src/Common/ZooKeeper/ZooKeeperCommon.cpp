@@ -1411,23 +1411,23 @@ void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
 }
 
 
-void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
+void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t & idx) const
 {
     auto & elem =  elems[idx];
     assert(!elem.xid || elem.xid == xid);
     elem.xid = xid;
     int32_t response_op = tryGetOpNum();
 
-    [[maybe_unused]] const bool is_filtered_list = elem.op_num == static_cast<int32_t>(Coordination::OpNum::FilteredList)
-        && response_op == static_cast<int32_t>(Coordination::OpNum::List);
-    assert(!elem.op_num || elem.op_num == response_op || is_filtered_list || response_op < 0);
+    [[maybe_unused]] const bool is_filtered_list = elem.op_num == static_cast<int32_t>(Coordination::OpNum::FilteredList) && response_op == static_cast<int32_t>(Coordination::OpNum::List);
+    [[maybe_unused]] const bool is_non_atomic_multi = elem.op_num == static_cast<int32_t>(Coordination::OpNum::NonAtomicMulti) && response_op == static_cast<int32_t>(Coordination::OpNum::Multi);
+    assert(!elem.op_num || elem.op_num == response_op || is_filtered_list || is_non_atomic_multi || response_op < 0);
     elem.op_num = response_op;
 
     elem.zxid = zxid;
     elem.error = static_cast<Int32>(error);
 }
 
-void ZooKeeperWatchResponse::fillLogElements(LogElements & elems, size_t idx) const
+void ZooKeeperWatchResponse::fillLogElements(LogElements & elems, size_t & idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
@@ -1436,28 +1436,28 @@ void ZooKeeperWatchResponse::fillLogElements(LogElements & elems, size_t idx) co
     elem.path = path;
 }
 
-void ZooKeeperCreateResponse::fillLogElements(LogElements & elems, size_t idx) const
+void ZooKeeperCreateResponse::fillLogElements(LogElements & elems, size_t & idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.path_created = path_created;
 }
 
-void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) const
+void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t & idx) const
 {
     Coordination::ZooKeeperCreateResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.path_created = path_created;
 }
 
-void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
+void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t & idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.stat = stat;
 }
 
-void ZooKeeperGetResponse::fillLogElements(LogElements & elems, size_t idx) const
+void ZooKeeperGetResponse::fillLogElements(LogElements & elems, size_t & idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
@@ -1465,14 +1465,14 @@ void ZooKeeperGetResponse::fillLogElements(LogElements & elems, size_t idx) cons
     elem.stat = stat;
 }
 
-void ZooKeeperSetResponse::fillLogElements(LogElements & elems, size_t idx) const
+void ZooKeeperSetResponse::fillLogElements(LogElements & elems, size_t & idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.stat = stat;
 }
 
-void ZooKeeperListResponse::fillLogElements(LogElements & elems, size_t idx) const
+void ZooKeeperListResponse::fillLogElements(LogElements & elems, size_t & idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
@@ -1480,10 +1480,8 @@ void ZooKeeperListResponse::fillLogElements(LogElements & elems, size_t idx) con
     elem.children = names;
 }
 
-void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t idx) const
+void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t & idx) const
 {
-    assert(idx == 0);
-    assert(elems.size() == responses.size() + 1);
     ZooKeeperResponse::fillLogElements(elems, idx);
     for (const auto & response : responses)
     {
