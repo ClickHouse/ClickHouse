@@ -1,9 +1,10 @@
+-- add_minmax_index_for_numeric_columns=0: Would use the index and not the projection that we want to test
 drop table if exists t;
 
 -- Statistics-based part pruning can skip parts, causing force_optimize_projection to fail.
 SET allow_statistics_optimize = 0;
 
-create table t (i int, j int) engine MergeTree order by i;
+create table t (i int, j int) engine MergeTree order by i settings add_minmax_index_for_numeric_columns=0;
 
 insert into t values (1, 2);
 

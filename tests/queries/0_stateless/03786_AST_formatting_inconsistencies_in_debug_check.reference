@@ -1,0 +1,23 @@
+SELECT
+    [1] AS foo,
+    [1] IN (foo)
+SELECT
+    [isNaN(1)] AS foo,
+    [1] IN (foo)
+SELECT
+    -((-c1) AS a2),
+    NOT (-a2)
+FROM tab
+SELECT
+    (
+        SELECT [1, 2, 3]
+    ) AS a1,
+    [5] IN (a1)
+SELECT
+    (
+        SELECT 1
+    ) AS a1,
+    NOT a1
+SELECT
+    tuple(1, 'a') AS a1,
+    tuple(1, 'a') IN (a1)
