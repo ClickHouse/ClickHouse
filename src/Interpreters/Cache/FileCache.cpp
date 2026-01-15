@@ -1602,6 +1602,9 @@ void FileCache::loadMetadataImpl()
 
     LOG_INFO(log, "Loading filesystem cache with {} threads from {}", load_metadata_threads, metadata.getBaseDirectory());
 
+    if (write_cache_per_user_directory && use_split_cache)
+        LOG_WARNING(log, "use_split_cache currently unsupported with write_cache_per_user_directory. Will ignore use_split_cache.");
+
     for (size_t i = 0; i < load_metadata_threads; ++i)
     {
         try
