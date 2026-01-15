@@ -63,6 +63,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_qbit_type", false, true, "QBit was moved to Beta"},
             {"enable_qbit_type", false, true, "QBit was moved to Beta. Added an alias for setting 'allow_experimental_qbit_type'."},
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
+            {"default_dictionary_database", "", "", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -109,7 +110,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"insert_select_deduplicate", Field{"auto"}, Field{"auto"}, "New setting"},
             {"output_format_pretty_named_tuples_as_json", false, true, "New setting to control whether named tuples in Pretty format are output as JSON objects"},
             {"deduplicate_insert_select", "enable_even_for_bad_queries", "enable_even_for_bad_queries", "New setting, replace insert_select_deduplicate"},
-            {"default_dictionary_database", "", "", "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
