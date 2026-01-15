@@ -1579,6 +1579,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_sparse_lightweight_representation_of_primary_key_for_index_analysis, true, R"(
+Use a sparse lightweight representation of primary key values during primary key index analysis in MergeTree tables.
+
+When enabled, during index analysis ClickHouse avoids materializing primary key columns that are not needed to evaluate the filter predicate.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, force_primary_key, false, R"(
 Disables query execution if indexing by the primary key is not possible.
 

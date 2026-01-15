@@ -80,6 +80,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
+    extern const SettingsBool use_sparse_lightweight_representation_of_primary_key_for_index_analysis;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -1585,8 +1586,28 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     size_t used_key_size = num_key_columns;
 
-    std::vector<ColumnValueRef> index_left_refs(used_key_size);
-    std::vector<ColumnValueRef> index_right_refs(used_key_size);
+    const bool use_sparse_pk_representation = settings[Setting::use_sparse_lightweight_representation_of_primary_key_for_index_analysis];
+
+    /// If there are no monotonic functions, there is no need to save block reference.
+    /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
+    const bool has_monotonic_functions_chain = key_condition.hasMonotonicFunctionsChain();
+    std::vector<FieldRef> index_left;
+    std::vector<FieldRef> index_right;
+
+    std::vector<ColumnValueRef> index_left_refs;
+    std::vector<ColumnValueRef> index_right_refs;
+
+    if (use_sparse_pk_representation)
+    {
+        index_left_refs.resize(used_key_size);
+        index_right_refs.resize(used_key_size);
+    }
+    else
+    {
+        /// NOTE Creating temporary Field objects to pass to KeyCondition.
+        index_left.resize(used_key_size);
+        index_right.resize(used_key_size);
+    }
 
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
@@ -1598,49 +1619,111 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         auto check_key_condition = [&]()
         {
-            auto set_key = [&](size_t row, size_t column, ColumnValueRef & out, ColumnValueRef::Special missing_special)
+            if (use_sparse_pk_representation)
             {
-                const auto * col = (*index_columns)[column].column.get();
-                if (!col)
+                auto set_key = [&](size_t row, size_t column, ColumnValueRef & out, ColumnValueRef::Special missing_special)
                 {
-                    out = (missing_special == ColumnValueRef::Special::NegativeInfinity) ? ColumnValueRef::negativeInfinity()
-                                                                                        : ColumnValueRef::positiveInfinity();
-                    return;
+                    const auto * col = (*index_columns)[column].column.get();
+                    if (!col)
+                    {
+                        out = (missing_special == ColumnValueRef::Special::NegativeInfinity) ? ColumnValueRef::negativeInfinity()
+                                                                                             : ColumnValueRef::positiveInfinity();
+                        return;
+                    }
+
+                    if (col->isNullAt(row))
+                    {
+                        out = ColumnValueRef::positiveInfinity();
+                        return;
+                    }
+
+                    out = ColumnValueRef::normal(col, row);
+                };
+
+                if (range.end == marks_count)
+                {
+                    for (size_t i = 0; i < used_key_size; ++i)
+                    {
+                        auto & left = reverse_flags[i] ? index_right_refs[i] : index_left_refs[i];
+                        auto & right = reverse_flags[i] ? index_left_refs[i] : index_right_refs[i];
+
+                        set_key(range.begin, i, left, ColumnValueRef::Special::NegativeInfinity);
+                        right = ColumnValueRef::positiveInfinity();
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < used_key_size; ++i)
+                    {
+                        auto & left = reverse_flags[i] ? index_right_refs[i] : index_left_refs[i];
+                        auto & right = reverse_flags[i] ? index_left_refs[i] : index_right_refs[i];
+
+                        set_key(range.begin, i, left, ColumnValueRef::Special::NegativeInfinity);
+                        set_key(range.end, i, right, ColumnValueRef::Special::PositiveInfinity);
+                    }
                 }
 
-                if (col->isNullAt(row))
-                {
-                    out = ColumnValueRef::positiveInfinity();
-                    return;
-                }
-
-                out = ColumnValueRef::normal(col, row);
-            };
+                return key_condition.checkInRange(
+                    used_key_size, index_columns.get(), index_left_refs.data(), index_right_refs.data(), key_types, initial_mask);
+            }
 
             if (range.end == marks_count)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right_refs[i] : index_left_refs[i];
-                    auto & right = reverse_flags[i] ? index_left_refs[i] : index_right_refs[i];
+                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
+                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
+                    if ((*index_columns)[i].column)
+                    {
+                        if (has_monotonic_functions_chain)
+                            left = {index_columns.get(), range.begin, i};
+                        else
+                            (*index_columns)[i].column->get(range.begin, left);
 
-                    set_key(range.begin, i, left, ColumnValueRef::Special::NegativeInfinity);
-                    right = ColumnValueRef::positiveInfinity();
+                        // NULL_LAST
+                        if (left.isNull())
+                            left = POSITIVE_INFINITY;
+                    }
+                    else
+                        left = NEGATIVE_INFINITY;
+
+                    right = POSITIVE_INFINITY;
                 }
             }
             else
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right_refs[i] : index_left_refs[i];
-                    auto & right = reverse_flags[i] ? index_left_refs[i] : index_right_refs[i];
+                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
+                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
+                    if ((*index_columns)[i].column)
+                    {
+                        if (has_monotonic_functions_chain)
+                        {
+                            left = {index_columns.get(), range.begin, i};
+                            right = {index_columns.get(), range.end, i};
+                        }
+                        else
+                        {
+                            (*index_columns)[i].column->get(range.begin, left);
+                            (*index_columns)[i].column->get(range.end, right);
+                        }
 
-                    set_key(range.begin, i, left, ColumnValueRef::Special::NegativeInfinity);
-                    set_key(range.end, i, right, ColumnValueRef::Special::PositiveInfinity);
+                        // NULL_LAST
+                        if (left.isNull())
+                            left = POSITIVE_INFINITY;
+                        if (right.isNull())
+                            right = POSITIVE_INFINITY;
+                    }
+                    else
+                    {
+                        /// If the PK column was not loaded in memory - exclude it from the analysis.
+                        left = NEGATIVE_INFINITY;
+                        right = POSITIVE_INFINITY;
+                    }
                 }
             }
-
-            return key_condition.checkInRange(used_key_size, index_columns.get(), index_left_refs.data(), index_right_refs.data(), key_types, initial_mask);
+            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
         };
 
         auto check_part_offset_condition = [&]()
