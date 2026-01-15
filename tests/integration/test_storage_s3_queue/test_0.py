@@ -401,7 +401,7 @@ def test_move_after_processing(started_cluster, engine_name, move_to):
         assert moved_count == files_num, f"moved blob count mismatch: {moved_count} != {files_num}"
 
         blob_count = count_azurite_blobs(started_cluster, src_container, files_path)
-    assert blob_count == 0, f"blobs left: {blob_count}"
+        assert blob_count == 0, f"blobs left: {blob_count}"
 
 
 @pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
