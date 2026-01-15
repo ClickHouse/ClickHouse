@@ -53,7 +53,34 @@ Where the parameters in the syntax above are defined as:
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                   |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                           |               |
 
-## Creating JSON {#creating-json}
+## When to use the `JSON` Type {#when-to-use-json-type}
+
+The `JSON` type is designed for querying, filtering, and aggregating specific fields within JSON objects that have dynamic or unpredictable structures. It achieves this by splitting JSON objects into separate sub-columns, which dramatically reduces data read and speeds up queries on selected fields compared to alternatives like `Map` or parsing strings.
+
+**However, this comes with important trade-offs:**
+
+- Slower `INSERT`s - Splitting JSON into sub-columns, performing type inference, and managing flexible storage structures makes inserts slower compared to storing JSON as a simple `String` column.
+- Slower when reading entire objects - If you need to retrieve complete JSON documents (rather than specific fields), the `JSON` type is slower than reading from a `String` column. The overhead of reconstructing objects from separate sub-columns provides no benefit when you're not doing field-level queries.
+- Storage overhead - Maintaining separate sub-columns adds structural overhead compared to storing JSON as a single string value.
+
+### Use the `JSON` type when: {#use-json-type}
+
+- Your data has a dynamic or unpredictable structure with varying keys across documents
+- Field types or schemas change over time or vary between records
+- You need to query, filter, or aggregate on specific paths within JSON objects whose structure you cannot predict upfront
+- Your use case involves semi-structured data like logs, events, or user-generated content with inconsistent schemas
+
+### Use a `String` column (or structured types) when: {#use-string-type}
+- Your data structure is known and consistent - in this case, use normal columns, `Tuple`, `Array`, `Dynamic`, or `Variant` types instead
+- `JSON` documents are treated as opaque blobs that are only stored and retrieved in their entirety without field-level analysis
+- You don't need to query or filter on individual JSON fields within the database
+- The `JSON` is simply a transport/storage format, not analyzed within ClickHouse
+
+:::tip
+If `JSON` is an opaque document that is not analyzed inside the database, and only stored and retrieved back, it should be stored as a `String` field. The `JSON` type's benefits only materialize when you need to efficiently query, filter, or aggregate on specific fields within dynamic `JSON` structures.
+:::
+
+## Creating `JSON` {#creating-json}
 
 In this section we'll take a look at the various ways that you can create `JSON`.
 
