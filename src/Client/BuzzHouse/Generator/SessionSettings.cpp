@@ -704,6 +704,15 @@ std::unordered_map<String, CHSetting> serverSettings = {
          },
          {},
          false)},
+    {"deduplicate_insert_select",
+     CHSetting(
+        [](RandomGenerator & rg, FuzzConfig &)
+        {
+            static const DB::Strings & choices = {"enable_when_possible", "force_enable", "disable", "enable_even_for_bad_queries"};
+            return rg.pickRandomly(choices);
+        },
+        {},
+        false)},
     {"insert_distributed_one_random_shard", trueOrFalseSettingNoOracle},
     {"insert_null_as_default", trueOrFalseSettingNoOracle},
     {"insert_quorum",
