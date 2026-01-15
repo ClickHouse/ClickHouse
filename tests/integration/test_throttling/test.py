@@ -33,7 +33,7 @@ def elapsed(node, query, **kwargs):
     ret = node.query(query, query_id=query_id, **kwargs)
 
     # Flush logs to ensure the query appears in system.query_log
-    node.query("SYSTEM FLUSH LOGS")
+    node.query("SYSTEM FLUSH LOGS query_log")
 
     # Get the server-side query duration from system.query_log using the query_id
     duration_result = node.query(
