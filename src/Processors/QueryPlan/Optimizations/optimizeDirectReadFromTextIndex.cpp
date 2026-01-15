@@ -17,7 +17,6 @@ namespace DB::QueryPlanOptimizations
 namespace
 {
 
-using IndexConditionsMap = absl::flat_hash_map<String, const MergeTreeIndexWithCondition *>;
 using NodesReplacementMap = absl::flat_hash_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
 
 String getNameWithoutAliases(const ActionsDAG::Node * node)
@@ -106,8 +105,8 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
 }
 
 /// Helper function.
-/// Collects index conditions from the given ReadFromMergeTree step and stores them in index_conditions.
-void collectTextIndexConditions(const ReadFromMergeTree * read_from_merge_tree_step, IndexConditionsMap & text_index_conditions)
+/// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
+void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
 {
     const auto & indexes = read_from_merge_tree_step->getIndexes();
     if (!indexes || indexes->skip_indexes.useful_indices.empty())
@@ -128,13 +127,20 @@ void collectTextIndexConditions(const ReadFromMergeTree * read_from_merge_tree_s
             /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
             /// TODO: support partial read from text index with fallback to the brute-force
             /// search for parts where index is not materialized.
-            bool has_index_in_all_parts = std::ranges::all_of(unique_parts, [&](const auto & part)
+            size_t num_materialized_parts = std::ranges::count_if(unique_parts, [&](const auto & part)
             {
                 return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName());
             });
 
-            if (has_index_in_all_parts)
-                text_index_conditions[index.index->index.name] = &index;
+            /// No part is materialized. We cannot use the optimization.
+            if (num_materialized_parts == 0)
+                continue;
+
+            const bool is_fully_materialized = num_materialized_parts == unique_parts.size();
+            text_index_read_infos[index.index->index.name] = {
+                .index = &index,
+                .is_fully_materialied = is_fully_materialized
+            };
         }
     }
 }
@@ -161,9 +167,9 @@ void collectTextIndexConditions(const ReadFromMergeTree * read_from_merge_tree_s
 class FullTextMatchingFunctionDAGReplacer
 {
 public:
-    FullTextMatchingFunctionDAGReplacer(ActionsDAG & actions_dag_, const IndexConditionsMap & index_conditions_)
+    FullTextMatchingFunctionDAGReplacer(ActionsDAG & actions_dag_, const TextIndexReadInfos & text_index_read_infos_)
         : actions_dag(actions_dag_)
-        , index_conditions(index_conditions_)
+        , text_index_read_infos(text_index_read_infos_)
     {
     }
 
@@ -233,7 +239,7 @@ private:
     };
 
     ActionsDAG & actions_dag;
-    IndexConditionsMap index_conditions;
+    TextIndexReadInfos text_index_read_infos;
 
     /// Attempts to add a new node with the replacement virtual column.
     /// Returns the pair of (index name, virtual column name) if the replacement is successful.
@@ -260,9 +266,9 @@ private:
         std::vector<SelectedCondition> selected_conditions;
         bool has_exact_search = false;
 
-        for (const auto & [index_name, index] : index_conditions)
+        for (const auto & [index_name, info] : text_index_read_infos)
         {
-            auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*index->condition);
+            auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*info.index->condition);
             const auto & index_header = text_index_condition.getHeader();
 
             /// Do not optimize if there are multiple text indexes set for the same expression.
@@ -337,10 +343,10 @@ private:
 const ActionsDAG::Node * applyTextIndexDirectReadToDAG(
     ReadFromMergeTree * read_from_merge_tree_step,
     ActionsDAG & filter_dag,
-    const IndexConditionsMap & text_index_conditions,
+    const TextIndexReadInfos & text_index_read_infos,
     const String & filter_column_name)
 {
-    FullTextMatchingFunctionDAGReplacer replacer(filter_dag, text_index_conditions);
+    FullTextMatchingFunctionDAGReplacer replacer(filter_dag, text_index_read_infos);
     auto result = replacer.replace(read_from_merge_tree_step->getContext(), filter_column_name);
 
     if (result.added_columns.empty())
@@ -349,9 +355,16 @@ const ActionsDAG::Node * applyTextIndexDirectReadToDAG(
     auto logger = getLogger("optimizeDirectReadFromTextIndex");
     LOG_DEBUG(logger, "{}", optimizationInfoToString(result.added_columns, result.removed_columns));
 
+    /// Log partially materialized text indexes
+    for (const auto & [index_name, info] : text_index_read_infos)
+    {
+        if (!info.is_fully_materialied)
+            LOG_DEBUG(logger, "Text index '{}' is not fully materialized.", index_name);
+    }
+
     const auto & indexes = read_from_merge_tree_step->getIndexes();
     bool is_final = read_from_merge_tree_step->isQueryWithFinal();
-    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, result.added_columns, result.removed_columns, is_final);
+    read_from_merge_tree_step->createReadTasksForTextIndex(text_index_read_infos, indexes->skip_indexes, result.added_columns, result.removed_columns, is_final);
     return result.filter_node;
 }
 
@@ -382,9 +395,9 @@ void optimizeWhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes 
     if (!read_from_merge_tree_step)
         return;
 
-    IndexConditionsMap index_conditions;
-    collectTextIndexConditions(read_from_merge_tree_step, index_conditions);
-    if (index_conditions.empty())
+    TextIndexReadInfos text_index_read_infos;
+    collectTextIndexReadInfos(read_from_merge_tree_step, text_index_read_infos);
+    if (text_index_read_infos.empty())
         return;
 
     QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
@@ -393,7 +406,7 @@ void optimizeWhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes 
         return;
 
     ActionsDAG & filter_dag = filter_step->getExpression();
-    const auto * result_filter_node = applyTextIndexDirectReadToDAG(read_from_merge_tree_step, filter_dag, index_conditions, filter_step->getFilterColumnName());
+    const auto * result_filter_node = applyTextIndexDirectReadToDAG(read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName());
 
     if (!result_filter_node)
         return;
@@ -420,9 +433,9 @@ bool optimizePrewhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nod
     if (!read_from_merge_tree_step)
         return false;
 
-    IndexConditionsMap index_conditions;
-    collectTextIndexConditions(read_from_merge_tree_step, index_conditions);
-    if (index_conditions.empty())
+    TextIndexReadInfos text_index_read_infos;
+    collectTextIndexReadInfos(read_from_merge_tree_step, text_index_read_infos);
+    if (text_index_read_infos.empty())
         return false;
 
     auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo();
@@ -431,7 +444,7 @@ bool optimizePrewhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nod
 
     read_from_merge_tree_step->updatePrewhereInfo({});
     auto cloned_prewhere_info = prewhere_info->clone();
-    const auto * result_filter_node = applyTextIndexDirectReadToDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, index_conditions, cloned_prewhere_info.prewhere_column_name);
+    const auto * result_filter_node = applyTextIndexDirectReadToDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, text_index_read_infos, cloned_prewhere_info.prewhere_column_name);
 
     if (!result_filter_node)
     {

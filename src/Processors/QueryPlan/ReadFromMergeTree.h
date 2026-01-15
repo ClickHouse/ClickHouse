@@ -85,6 +85,13 @@ struct TopKFilterInfo
     TopKThresholdTrackerPtr threshold_tracker;
 };
 
+struct TextIndexReadInfo
+{
+    const MergeTreeIndexWithCondition * index;
+    bool is_fully_materialied;
+};
+using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
@@ -351,7 +358,7 @@ public:
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
+    void createReadTasksForTextIndex(const TextIndexReadInfos & text_index_read_infos, const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
