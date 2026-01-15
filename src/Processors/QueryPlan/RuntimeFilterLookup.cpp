@@ -112,7 +112,11 @@ void ExactContainsRuntimeFilter::finishInsert()
     Base::finishInsert();
 
     if (isFull())
-        setFullyDisabled(); /// Some keys were dropped so we cannot filter by partial set of keys
+    {
+        /// Some keys were dropped so we cannot filter by partial set of keys
+        setFullyDisabled();
+        releaseExactValues();
+    }
 }
 
 void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
