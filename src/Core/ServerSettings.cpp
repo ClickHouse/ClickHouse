@@ -52,6 +52,7 @@ namespace
 
 // clang-format off
 
+/// Settings without path are top-level server settings (no nesting).
 #define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
@@ -1466,6 +1467,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     ```
     )", 0)
 
+/// Settings with a path are server settings with at least one layer of nesting that have a fixed structure (no lists, lists, enumerations, repetitions, ...).
 #define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
     DECLARE(UInt64, query_cache_max_size_in_bytes, 1073741824, R"(The maximum cache size in bytes. 0 means the query cache is disabled.)", 0, "query_cache.max_size_in_bytes") \
     DECLARE(UInt64, query_cache_max_entries, 1024, R"(The maximum number of SELECT query results stored in the cache.)", 0, "query_cache.max_entries") \

@@ -37,7 +37,7 @@ class Server : public BaseDaemon, public IServer
 public:
     using ServerApplication::run;
 
-    // Please register settings in ServerSettings instead of accessing the config directly if possible.
+    // Please register settings in ServerSettings.cpp instead of accessing the config directly if possible.
     Poco::Util::LayeredConfiguration & config() const override
     {
         return BaseDaemon::config();
