@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <random>
 #include <vector>
 
@@ -22,29 +23,25 @@ struct ProbabilityBounds
 struct ProbabilityConfig
 {
     ProbabilityStrategy strategy = ProbabilityStrategy::BoundedRealism;
-    uint64_t seed;
+    std::optional<uint64_t> seed;
 
-    /// Balanced skew control
     double balanced_max_ratio = 6.0;
     int balanced_resample_attempts = 20;
 
-    std::vector<ProbabilityBounds> bounds{}; /// used by Bounded + Drifting
+    std::vector<ProbabilityBounds> bounds; /// used by Bounded + Drifting
 
     /// Drifting controls
     uint64_t drift_every_n_ops = 500;
     double drift_strength = 0.10; /// ±10%
 
     /// Runtime enablement default (all enabled)
-    std::vector<bool> enabled = [this]
-    {
-        std::vector<bool> v(bounds.size(), true);
-        return v;
-    }();
+    std::vector<bool> enabled;
 
-    ProbabilityConfig(const ProbabilityStrategy & ps, const uint64_t & s, const std::vector<ProbabilityBounds> & b_)
+    ProbabilityConfig(const ProbabilityStrategy & ps, const std::optional<uint64_t> & s, const std::vector<ProbabilityBounds> & b)
         : strategy(ps)
         , seed(s)
-        , bounds(b_)
+        , bounds(b)
+        , enabled(bounds.size(), true)
     {
     }
 };
@@ -54,19 +51,7 @@ class ProbabilityGenerator
 public:
     const size_t nvalues;
 
-    explicit ProbabilityGenerator(ProbabilityConfig _cfg)
-        : nvalues(_cfg.bounds.size())
-        , cfg(std::move(_cfg))
-        , seed_used(cfg.seed)
-        , cdf(nvalues, 0.0)
-        , enabled_values(cfg.enabled)
-    {
-        rng.seed(seed_used);
-        ensureAtLeastOneEnabled(enabled_values);
-        probabilities = generateInitial();
-        applyEnabledMaskAndRenorm(probabilities);
-        buildCdf();
-    }
+    explicit ProbabilityGenerator(ProbabilityConfig _cfg);
 
     uint64_t seedUsed() const;
     ProbabilityStrategy strategy() const;

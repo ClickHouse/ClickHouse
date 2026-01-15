@@ -6,6 +6,28 @@
 namespace BuzzHouse
 {
 
+ProbabilityGenerator::ProbabilityGenerator(ProbabilityConfig _cfg)
+    : nvalues(_cfg.bounds.size())
+    , cfg(std::move(_cfg))
+    , cdf(nvalues, 0.0)
+    , enabled_values(cfg.enabled)
+{
+    if (cfg.seed.has_value())
+    {
+        seed_used = *cfg.seed;
+    }
+    else
+    {
+        std::random_device rd;
+        seed_used = (static_cast<uint64_t>(rd()) << 32) ^ static_cast<uint64_t>(rd());
+    }
+    rng.seed(seed_used);
+    ensureAtLeastOneEnabled(enabled_values);
+    probabilities = generateInitial();
+    applyEnabledMaskAndRenorm(probabilities);
+    buildCdf();
+}
+
 uint64_t ProbabilityGenerator::seedUsed() const
 {
     return seed_used;
