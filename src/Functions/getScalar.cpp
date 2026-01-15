@@ -58,17 +58,17 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} accepts one const string argument", getName());
         auto scalar_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
         ContextPtr query_context = getContext()->hasQueryContext() ? getContext()->getQueryContext() : getContext();
-        scalar = query_context->getScalar(scalar_name).getByPosition(0);
-        return scalar.type;
+        return query_context->getScalar(scalar_name).getByPosition(0).type;
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        /// We fetch the scalar from the context using the hash argument.
+        auto scalar_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
+        ContextPtr query_context = getContext()->hasQueryContext() ? getContext()->getQueryContext() : getContext();
+        auto scalar = query_context->getScalar(scalar_name).getByPosition(0);
         return ColumnConst::create(scalar.column, input_rows_count);
     }
-
-private:
-    mutable ColumnWithTypeAndName scalar;
 };
 
 

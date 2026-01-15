@@ -265,6 +265,21 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         block = materializeBlock(block);
         size_t columns = block.columns();
 
+        /// Validate that the actual column type matches the declared type.
+        /// This can fail if the storage returns a column with the wrong type,
+        /// e.g., when selecting a virtual column that the storage doesn't properly implement.
+        for (size_t i = 0; i < columns; ++i)
+        {
+            const auto & col = block.getByPosition(i);
+            auto expected_column = col.type->createColumn();
+            if (col.column->getDataType() != expected_column->getDataType())
+            {
+                throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY,
+                    "Scalar subquery returned column '{}' with incorrect type: expected {}, got {}",
+                    col.name, col.type->getName(), col.column->getFamilyName());
+            }
+        }
+
         if (columns == 1)
         {
             auto & column = block.getByPosition(0);
