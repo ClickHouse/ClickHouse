@@ -495,12 +495,6 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
             if (typed_paths.contains(path_with_type->path))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found duplicated path with type: {}", path_with_type->path);
 
-            for (const auto & [path, _] : typed_paths)
-            {
-                if (path.starts_with(path_with_type->path + ".") || path_with_type->path.starts_with(path + "."))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found incompatible typed paths: {} and {}. One of them is a prefix of the other", path, path_with_type->path);
-            }
-
             typed_paths.emplace(path_with_type->path, data_type);
         }
         else if (object_type_argument->skip_path)
