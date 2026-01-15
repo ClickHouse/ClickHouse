@@ -90,6 +90,7 @@ void insertDeltaRowToLogTable(
             .query_id = local_context->getCurrentQueryId(),
             .table_path = table_path,
             .file_path = file_path,
-            .metadata_content = row});
+            .metadata_content = row,
+            .log_marker = {}});
 }
 }

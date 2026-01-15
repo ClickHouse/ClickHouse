@@ -94,6 +94,7 @@ void AggregatedZooKeeperLog::stepFunction(TimePoint current_time)
             .count = entry_stats.count,
             .errors = std::move(entry_stats.errors),
             .total_latency_microseconds = entry_stats.total_latency_microseconds,
+            .log_marker = {},
         };
         add(std::move(element));
     }

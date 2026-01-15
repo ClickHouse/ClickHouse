@@ -83,6 +83,8 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
 
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "ProfileEvents that measure different metrics for this thread. The description of them could be found in the table system.events."},
+
+        {"log_marker", std::make_shared<DataTypeString>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -137,6 +139,8 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
     {
         columns[i++]->insertDefault();
     }
+
+    columns[i++]->insertData(log_marker.data(), log_marker.size());
 }
 
 }

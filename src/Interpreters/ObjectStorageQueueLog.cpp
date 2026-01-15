@@ -42,6 +42,7 @@ ColumnsDescription ObjectStorageQueueLogElement::getColumnsDescription()
         {"commit_time", std::make_shared<DataTypeDateTime>(), "Time of committing file in keeper (as either failed or processed)"},
         {"transaction_start_time", std::make_shared<DataTypeDateTime>(), "Time when the whole processing transaction started"},
         {"get_object_time_ms", std::make_shared<DataTypeUInt64>(), "Time which took us to find the object in s3"},
+        {"log_marker", std::make_shared<DataTypeString>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -74,6 +75,8 @@ void ObjectStorageQueueLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(commit_time);
     columns[i++]->insert(transaction_start_time);
     columns[i++]->insert(get_object_time_ms);
+
+    columns[i++]->insertData(log_marker.data(), log_marker.size());
 }
 
 }

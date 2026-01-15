@@ -27,6 +27,8 @@ void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(event_time_microseconds);
     columns[column_idx++]->insert(metric_name);
     columns[column_idx++]->insert(value);
+
+    columns[column_idx++]->insertData(log_marker.data(), log_marker.size());
 }
 
 
@@ -70,6 +72,12 @@ ColumnsDescription TransposedMetricLogElement::getColumnsDescription()
             std::make_shared<DataTypeInt64>(),
             parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
             "Metric value."
+        },
+        {
+            "log_marker",
+            std::make_shared<DataTypeString>(),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Optional unique marker for log entries that were flushed together."
         }
     };
 }

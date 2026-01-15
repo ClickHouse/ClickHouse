@@ -45,6 +45,7 @@ ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Profile events collected while reading this file segment"},
         {"read_buffer_id", std::make_shared<DataTypeString>(), "Internal implementation read buffer id"},
         {"user_id", std::make_shared<DataTypeString>(), "User id of the user which created the file segment"},
+        {"log_marker", std::make_shared<DataTypeString>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -79,6 +80,8 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(read_buffer_id);
     columns[i++]->insert(user_id);
+
+    columns[i++]->insertData(log_marker.data(), log_marker.size());
 }
 
 }

@@ -81,6 +81,7 @@ namespace FailPoints
 
 namespace ServerSetting
 {
+    extern const ServerSettingsBool enable_system_log_marker;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
 }
 
@@ -672,6 +673,23 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
+
+        /// Generate log_marker if the setting is enabled and the column exists in the block
+        bool enable_log_marker = getContext()->getServerSettings()[ServerSetting::enable_system_log_marker];
+        if (enable_log_marker && block.has("log_marker"))
+        {
+            String marker_str = toString(UUIDHelpers::generateV4());
+            const size_t marker_idx = block.getPositionByName("log_marker");
+
+            /// Create a new String column with the same marker value for all rows
+            auto marker_col = ColumnString::create();
+            marker_col->reserve(to_flush.size());
+            for (size_t i = 0; i < to_flush.size(); ++i)
+                marker_col->insertData(marker_str.data(), marker_str.size());
+
+            /// Overwrite the marker column that was created by appendToBlock
+            columns[marker_idx] = std::move(marker_col);
+        }
 
         block.setColumns(std::move(columns));
         prepare_insert_data_to_block = stopwatch.elapsedMilliseconds();

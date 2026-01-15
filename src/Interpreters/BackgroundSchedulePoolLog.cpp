@@ -35,6 +35,8 @@ ColumnsDescription BackgroundSchedulePoolLogElement::getColumnsDescription()
 
         {"error", std::make_shared<DataTypeUInt16>(), "The error code of the occurred exception."},
         {"exception", std::make_shared<DataTypeString>(), "Text message of the occurred error."},
+
+        {"log_marker", std::make_shared<DataTypeString>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -62,6 +64,8 @@ void BackgroundSchedulePoolLogElement::appendToBlock(MutableColumns & columns) c
 
     columns[i++]->insert(error);
     columns[i++]->insert(exception);
+
+    columns[i++]->insertData(log_marker.data(), log_marker.size());
 }
 
 }

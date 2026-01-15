@@ -35,6 +35,8 @@ ColumnsDescription MetricLogElement::getColumnsDescription()
         result.add({std::move(name), std::make_shared<DataTypeInt64>(), std::string(comment)});
     }
 
+    result.add({"log_marker", std::make_shared<DataTypeString>(), "Optional unique marker for log entries that were flushed together."});
+
     return result;
 }
 
@@ -53,6 +55,8 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
         columns[column_idx++]->insert(current_metrics[i].toUnderType());
+
+    columns[column_idx++]->insertData(log_marker.data(), log_marker.size());
 }
 
 void MetricLog::stepFunction(const std::chrono::system_clock::time_point current_time)

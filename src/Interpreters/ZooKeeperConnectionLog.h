@@ -30,6 +30,8 @@ struct ZooKeeperConnectionLogElement
     String availability_zone;
     String reason;
 
+    String log_marker;
+
     static std::string name() { return "ZooKeeperConnectionLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }

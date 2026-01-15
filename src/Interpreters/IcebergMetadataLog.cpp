@@ -121,6 +121,7 @@ void insertRowToLogTable(
             .file_path = file_path,
             .metadata_content = row,
             .row_in_file = row_in_file,
-            .pruning_status = pruning_status});
+            .pruning_status = pruning_status,
+            .log_marker = {}});
 }
 }

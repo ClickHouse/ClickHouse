@@ -14,6 +14,8 @@ struct DeltaMetadataLogElement
     String file_path;
     String metadata_content;
 
+    String log_marker;
+
     static std::string name() { return "DeltaMetadataLog"; }
 
     static ColumnsDescription getColumnsDescription();

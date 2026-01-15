@@ -39,6 +39,8 @@ struct TransactionsInfoLogElement
     StorageID table = StorageID::createEmpty();
     String part_name;
 
+    String log_marker;
+
     static std::string name() { return "TransactionsInfoLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }
