@@ -41,6 +41,7 @@ namespace Setting
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsBool enable_positional_arguments;
 }
 
 namespace ErrorCodes
@@ -102,6 +103,9 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
 
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
+  *
+  * In addition, in the case of a view, positional arguments must be
+  * resolved only after the view has been expanded.
   */
 ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot)
 {
@@ -110,6 +114,8 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::max_result_rows] = 0;
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
+    view_settings[Setting::enable_positional_arguments] = true;
+
     view_context->setSettings(view_settings);
     return view_context;
 }
