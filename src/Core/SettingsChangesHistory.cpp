@@ -57,7 +57,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_bloom_filter_max_ratio_of_set_bits", 0.7, 0.7, "New setting"},
             {"use_primary_key", true, true, "New setting controlling whether MergeTree uses the primary key for granule-level pruning."},
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
-            {"use_hash_table_stats_for_join_reordering", true, false, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."},
+            {"use_hash_table_stats_for_join_reordering", true, true, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
