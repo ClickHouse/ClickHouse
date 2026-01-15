@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace Setting
@@ -310,7 +311,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 break;
 
             if (i == num_tries - 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to take alter setting lock");
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Failed to take alter setting lock after 5 seconds");
 
             sleepForMilliseconds(50);
         }
@@ -401,8 +402,7 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
             const auto value = change.value.safeGet<UInt64>();
             if (table_metadata.buckets == value)
             {
-                LOG_TRACE(log, "Setting `buckets` already equals {}. "
-                        "Will do nothing", value);
+                LOG_TRACE(log, "Setting `buckets` already equals {}. Will do nothing", value);
                 continue;
             }
             if (table_metadata.buckets > 1)
@@ -438,9 +438,12 @@ void ObjectStorageQueueMetadata::migrateToBucketsInKeeper(size_t value)
 {
     chassert(table_metadata.buckets == 0 || table_metadata.buckets == 1);
     chassert(buckets_num == 1, "Buckets: " + toString(buckets_num));
+
+    LOG_TRACE(log, "Changing buckets value from {} to {}", table_metadata.buckets.load(), value);
+
     ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(zookeeper_path, value, /* prev_value */table_metadata.buckets);
-    buckets_num = value;
     table_metadata.buckets = value;
+    buckets_num = table_metadata.getBucketsNum();
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
@@ -621,7 +624,7 @@ namespace
             return buf.str();
         }
 
-        static Info deserialize(const std::string & str)
+        static Info deserialize(std::string_view str)
         {
             ReadBufferFromString buf(str);
             Info info;
@@ -682,7 +685,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
             bool registry_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (registry_exists)
             {
-                Strings registered;
+                std::vector<std::string_view> registered;
                 splitInto<','>(registered, registry_str);
 
                 if (zk_retries.isRetry() && registered.size() == 1 && (Info::deserialize(registered[0]) == self))
@@ -695,7 +698,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
 
                 created_new_metadata = false;
 
-                for (const auto & elem : registered)
+                for (auto elem : registered)
                 {
                     if (elem.empty())
                         continue;
@@ -838,7 +841,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 return;
             }
 
-            Strings registered;
+            std::vector<std::string_view> registered;
             splitInto<','>(registered, registry_str);
 
             bool found = false;
