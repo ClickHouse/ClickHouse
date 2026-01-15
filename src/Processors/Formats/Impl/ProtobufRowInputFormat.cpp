@@ -46,7 +46,7 @@ void ProtobufRowInputFormat::createReaderAndSerializer()
 
 void ProtobufRowInputFormat::destroyReaderAndSerializer()
 {
-    serializer.reset();
+    serializer = nullptr;
     reader.reset();
 }
 
@@ -174,6 +174,7 @@ void registerProtobufSchemaReader(FormatFactory & factory)
     });
 
     for (const auto & name : {"Protobuf", "ProtobufSingle"})
+    {
         factory.registerAdditionalInfoForSchemaCacheGetter(
             name,
             [](const FormatSettings & settings)
@@ -183,6 +184,7 @@ void registerProtobufSchemaReader(FormatFactory & factory)
                     settings.schema.format_schema,
                     settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference);
             });
+    }
 }
 
 }

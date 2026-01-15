@@ -19,6 +19,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/FileSegment.h>
+#include <Interpreters/Cache/EvictionCandidates.h>
 #include <Interpreters/Cache/SLRUFileCachePriority.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -750,7 +751,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 cv.wait(lock, [&]{ return lets_start_download; });
             }
 
-            holder.reset();
+            holder = nullptr;
             other_1.join();
             ASSERT_TRUE(file_segment->state() == DB::FileSegment::State::DOWNLOADED);
         }
@@ -1065,7 +1066,7 @@ try
 
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
-        some_data_holder.reset();
+        some_data_holder = nullptr;
 
         stream->write(generateBlock(2000));
 
@@ -1499,4 +1500,109 @@ TEST_F(FileCacheTest, FileCacheGetOrSet)
         auto holder = cache.getOrSet(key, 0, 25, /* file_size */20, {}, 0, user, /* boundary_alignment */30);
         assertEqual(holder, { Range(0, 19) }, { State::EMPTY });
     }
+}
+
+TEST_F(FileCacheTest, ContinueEvictionPos)
+{
+    ServerUUID::setRandomForUnitTests();
+
+    size_t max_size = 50;
+    size_t max_elements = 3;
+
+    LRUFileCachePriority priority(max_size, max_elements);
+
+    std::string cache_path = std::filesystem::path(caches_dir) / "test_eviction_pos";
+    CacheMetadata cache_metadata(cache_path, 0, 0, false);
+
+    auto key = DB::FileCacheKey::fromPath("evict_key");
+    auto user = FileCache::getCommonUser();
+
+    CachePriorityGuard cache_guard;
+    auto cache_lock = cache_guard.lock();
+    auto key_metadata = std::make_shared<KeyMetadata>(key, user, &cache_metadata);
+
+    auto add_file_segment = [&](size_t offset, size_t size)
+    {
+        auto it = priority.add(key_metadata, offset, size, user, cache_lock);
+        auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, user);
+
+        if (std::filesystem::exists(path))
+            std::filesystem::remove(path);
+
+        std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+        std::string data(size, '0');
+        WriteBufferFromFile wb(path, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+        DB::writeString(data, wb);
+        wb.finalize();
+
+        auto file_segment = std::make_shared<FileSegment>(
+            key, offset, size, FileSegment::State::DOWNLOADED,
+            CreateFileSegmentSettings{}, false, nullptr, key_metadata, it);
+
+        LockedKey(key_metadata).emplace(offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment)));
+        return it;
+    };
+
+    auto get_file_segment = [&](size_t offset)
+    {
+        return LockedKey(key_metadata).getByOffset(offset)->file_segment;
+    };
+
+    auto it1 = add_file_segment(0, 10);
+    auto it2 = add_file_segment(10, 10);
+
+    ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
+    ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
+
+    FileCacheReserveStat stat;
+    auto evicted = std::make_unique<EvictionCandidates>();
+    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, false, user.user_id, cache_lock);
+
+    ASSERT_EQ(evicted->size(), 0); /// Nothing is evicted.
+    ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
+    ASSERT_EQ(priority.getEvictionPos(), 2); /// queue.end()
+
+    auto it3 = add_file_segment(20, 10);
+
+    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
+    ASSERT_EQ(priority.getEvictionPos(), 3); /// queue.end()
+
+    evicted = std::make_unique<EvictionCandidates>();
+    stat = {};
+    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, user.user_id, cache_lock);
+
+    ASSERT_EQ(evicted->size(), 1);
+    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
+    ASSERT_EQ(priority.getEvictionPos(), 0); /// queue.begin()
+
+    evicted->evict();
+    evicted->finalize(nullptr, cache_lock);
+    evicted.reset();
+    ASSERT_EQ(priority.getElementsCount(cache_lock), 2);
+    ASSERT_EQ(priority.getEvictionPos(), 0); /// still queue.begin(), but it2
+
+    /// Make fs2 (it2) non-evictable.
+    auto fs2 = get_file_segment(10);
+    ASSERT_EQ(it2->getEntry()->offset, fs2->offset());
+    /// Make fs3 (it3) non-evictable.
+    auto fs3 = get_file_segment(20);
+    ASSERT_EQ(it3->getEntry()->offset, fs3->offset());
+
+    auto it4 = add_file_segment(30, 10);
+    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
+    ASSERT_EQ(priority.getEvictionPos(), 0);
+
+    evicted = std::make_unique<EvictionCandidates>();
+    stat = {};
+    priority.collectCandidatesForEviction(10, 1, stat, *evicted, nullptr, true, user.user_id, cache_lock);
+
+    ASSERT_EQ(evicted->size(), 1);
+    ASSERT_EQ(priority.getElementsCount(cache_lock), 3);
+    ASSERT_EQ(priority.getEvictionPos(), 2); /// Last element in the queue.
+
+    fs2.reset();
+    fs3.reset();
+
+    priority.resetEvictionPos(cache_lock);
+    ASSERT_EQ(priority.getEvictionPos(), 3); /// queue.end()
 }

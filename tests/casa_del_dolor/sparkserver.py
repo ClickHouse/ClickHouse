@@ -9,9 +9,8 @@ import time
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-sys.path.append("..")
 from integration.helpers.cluster import is_port_free
-from httpserver import DolorHTTPServer
+from utils.httpserver import DolorHTTPServer
 from catalogs.datalakes import SparkHandler
 
 
@@ -34,20 +33,21 @@ def create_spark_http_server(
     def datalakehandler(path, data, headers, attachment):
         res = False
         state = random.getstate()
+        saved_exception = None
+
         try:
             random.seed(data["seed"])
             if path == "/sparkdatabase":
                 res = attachment.create_lake_database(cluster, data)
             elif path == "/sparktable":
                 res = attachment.create_lake_table(cluster, data)
-            elif path in ("/sparkupdate", "/sparkcheck"):
-                res = attachment.update_or_check_table(
-                    cluster, data, path == "/sparkupdate"
-                )
-            random.setstate(state)
-        except:
-            random.setstate(state)
-            raise
+            elif path == "/sparkupdate":
+                res = attachment.update_or_check_table(cluster, data)
+        except Exception as e:
+            saved_exception = e
+        random.setstate(state)
+        if saved_exception is not None:
+            raise saved_exception
         return res
 
     catalog_server = DolorHTTPServer(

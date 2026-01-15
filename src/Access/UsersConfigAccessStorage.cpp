@@ -82,11 +82,11 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
     {
         UsersConfigParser parser{access_control};
         auto allowed_profile_ids = UsersConfigParser::getAllowedIDs(config, "profiles", AccessEntityType::SETTINGS_PROFILE);
-        auto allowed_role_ids = UsersConfigParser::getAllowedIDs(config, "roles", AccessEntityType::ROLE);
+        auto role_ids_from_users_config = UsersConfigParser::getAllowedIDs(config, "roles", AccessEntityType::ROLE);
 
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
 
-        for (const auto & entity : parser.parseUsers(config, allowed_profile_ids, allowed_role_ids))
+        for (const auto & entity : parser.parseUsers(config, allowed_profile_ids, role_ids_from_users_config))
             all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
 
         for (const auto & entity : parser.parseQuotas(config))
@@ -98,7 +98,7 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
         for (const auto & entity : parser.parseSettingsProfiles(config, allowed_profile_ids))
             all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
 
-        for (const auto & entity : parser.parseRoles(config, allowed_role_ids))
+        for (const auto & entity : parser.parseRoles(config, role_ids_from_users_config))
             all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
 
         memory_storage.setAll(all_entities);

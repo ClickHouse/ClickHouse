@@ -191,7 +191,7 @@ DataTypePtr convertYTOptional(const Poco::JSON::Object::Ptr & json)
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'optional' type from YT(incorrect nested type)");
     }
-    /// ClickHouse/docs/en/engines/table-engines/integrations/ytsaurus.md *See Also*
+    /// ClickHouse/docs/engines/table-engines/integrations/ytsaurus.md *See Also*
     if (!nested_type->canBeInsideNullable())
     {
         switch (nested_type->getTypeId())
@@ -395,4 +395,17 @@ DataTypePtr convertYTSchema(const Poco::JSON::Object::Ptr & json)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse type_v3 from YT metadata: {}", e.what());
     }
 }
+
+bool isYTSaurusTypesCompatible(std::shared_ptr<const IDataType> ch_type, std::shared_ptr<const IDataType> yt_type, bool allow_nullable)
+{
+    return yt_type->getColumnType() == TypeIndex::Dynamic ||
+        ch_type->getColumnType() == TypeIndex::Dynamic ||
+        ch_type->equals(*yt_type) ||
+        (
+            allow_nullable &&
+            yt_type->getColumnType() == TypeIndex::Nullable &&
+            ch_type->equals(*assert_cast<const DataTypeNullable *>(yt_type.get())->getNestedType())
+        );
+}
+
 }

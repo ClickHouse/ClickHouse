@@ -41,6 +41,7 @@ RUN apt-get update \
     libkrb5-dev \
     krb5-user \
     g++ \
+    awscli \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -65,6 +66,7 @@ RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - \
 # https://s3.amazonaws.com/clickhouse-test-reports/59337/524625a1d2f4cc608a3f1059e3df2c30f353a649/integration_tests__asan__analyzer__[5_6].html
 COPY requirements.txt /
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
+RUN python3 -m pip install git+https://github.com/ClickHouse/kazoo.git
 
 RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-bin-hadoop3.tgz \
     && tar xzvf spark-3.5.5-bin-hadoop3.tgz -C / \
@@ -89,7 +91,6 @@ RUN set -x \
   && echo 'dockremap:165536:65536' >> /etc/subgid
 
 COPY modprobe.sh /usr/local/bin/modprobe
-COPY dockerd-entrypoint.sh /usr/local/bin/
 COPY misc/ /misc/
 
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
@@ -103,6 +104,7 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /etc/ssl/
 
 EXPOSE 2375
-ENTRYPOINT ["dockerd-entrypoint.sh"]
-# To pass additional arguments (i.e. list of tests) use PYTEST_ADDOPTS
-CMD ["sh", "-c", "pytest"]
+
+ENV SPARK_HOME="/spark-3.5.5-bin-hadoop3" \
+    PATH="${SPARK_HOME}/bin:${PATH}" \
+    JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true"

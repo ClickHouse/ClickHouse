@@ -12,6 +12,7 @@
     M(QueryLog,              query_log,            "Contains information about executed queries, for example, start time, duration of processing, error messages.") \
     M(QueryThreadLog,        query_thread_log,     "Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.") \
     M(PartLog,               part_log,             "This table contains information about events that occurred with data parts in the MergeTree family tables, such as adding or merging data.") \
+    M(BackgroundSchedulePoolLog, background_schedule_pool_log, "Contains history of background schedule pool task executions.") \
     M(TraceLog,              trace_log,            "Contains stack traces collected by the sampling query profiler.") \
     M(CrashLog,              crash_log,            "Contains information about stack traces for fatal errors. The table does not exist in the database by default, it is created only when fatal errors occur.") \
     M(TextLog,               text_log,             "Contains logging entries which are normally written to a log file or to stdout.") \
@@ -92,7 +93,7 @@ public:
     SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
     SystemLogs(const SystemLogs & other) = default;
 
-    void flush(const Strings & names);
+    void flush(const std::vector<std::pair<String, String>> & names);
     void flushAndShutdown();
     void shutdown();
     void handleCrash();
@@ -109,7 +110,7 @@ public:
 private:
     std::vector<ISystemLog *> getAllLogs() const;
 
-    void flushImpl(const Strings & names, bool should_prepare_tables_anyway, bool ignore_errors);
+    void flushImpl(const std::vector<std::pair<String, String>>  & names, bool should_prepare_tables_anyway, bool ignore_errors);
 };
 
 struct SystemLogSettings
@@ -118,7 +119,6 @@ struct SystemLogSettings
 
     String engine;
     bool symbolize_traces = false;
-    std::string view_name_for_transposed_metric_log;
 };
 
 template <typename LogElement>

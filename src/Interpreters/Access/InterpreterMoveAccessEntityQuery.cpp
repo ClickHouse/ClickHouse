@@ -92,6 +92,12 @@ AccessRightsElements InterpreterMoveAccessEntityQuery::getRequiredAccess() const
             res.emplace_back(AccessType::CREATE_QUOTA);
             return res;
         }
+        case AccessEntityType::MASKING_POLICY:
+        {
+            res.emplace_back(AccessType::DROP_MASKING_POLICY);
+            res.emplace_back(AccessType::CREATE_MASKING_POLICY);
+            return res;
+        }
         case AccessEntityType::MAX:
             break;
     }

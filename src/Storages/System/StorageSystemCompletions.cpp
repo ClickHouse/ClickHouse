@@ -31,8 +31,9 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsUInt64 readonly;
-extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 readonly;
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
 static constexpr const char * DATABASE_CONTEXT = "database";
@@ -88,8 +89,11 @@ void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    const auto & snapshot = table->getInMemoryMetadataPtr();
-    const auto & columns = snapshot->getColumns();
+    auto snapshot = table->tryGetInMemoryMetadataPtr();
+    if (!snapshot)
+        return;
+
+    const auto & columns = (*snapshot)->getColumns();
     for (const auto & column : columns)
     {
         if (!access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
@@ -104,7 +108,8 @@ void fillDataWithTableColumns(
 void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const ContextPtr & context)
 {
     const auto & access = context->getAccess();
-    const auto & databases = DatabaseCatalog::instance().getDatabases();
+    const auto & settings = context->getSettingsRef();
+    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
     for (const auto & [database_name, database_ptr] : databases)
     {
         if (!access->isGranted(AccessType::SHOW_DATABASES) || !access->isGranted(AccessType::SHOW_DATABASES, database_name))

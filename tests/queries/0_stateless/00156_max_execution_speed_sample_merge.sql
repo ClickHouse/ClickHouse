@@ -1,5 +1,6 @@
 -- Tags: stateful
-SET max_execution_speed = 4000000, timeout_before_checking_execution_speed = 0;
+SET max_execution_speed = 8000000;
+SET timeout_before_checking_execution_speed = 0;
 
 CREATE TEMPORARY TABLE times (t DateTime);
 

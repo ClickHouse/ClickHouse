@@ -125,7 +125,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 
 
 /// Constructor for MaterializedPostgreSQL table engine - for the case of MaterializePosgreSQL database engine.
-/// It is used when nested ReplacingMergeeTree table has already been created by replication thread.
+/// It is used when nested ReplacingMergeTree table has already been created by replication thread.
 /// This storage is ready to handle read queries.
 StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
         StoragePtr nested_storage_,

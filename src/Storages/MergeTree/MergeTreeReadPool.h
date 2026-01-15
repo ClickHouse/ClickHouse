@@ -30,13 +30,15 @@ public:
         VirtualFields shared_virtual_fields_,
         const IndexReadTasks & index_read_tasks_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     ~MergeTreeReadPool() override = default;
 
@@ -86,6 +88,8 @@ private:
 
         explicit BackoffState(size_t threads) : current_threads(threads) {}
     };
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     const BackoffSettings backoff_settings;
     BackoffState backoff_state TSA_GUARDED_BY(mutex);

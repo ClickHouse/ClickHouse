@@ -160,7 +160,7 @@ const ActionsDAG::Node & addCast(
     if (node_to_cast.result_type->equals(*to_type))
         return node_to_cast;  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
-    const auto & new_node = dag->addCast(node_to_cast, to_type, {});
+    const auto & new_node = dag->addCast(node_to_cast, to_type, {}, nullptr);
     return new_node;
 }
 
@@ -262,7 +262,7 @@ bool tryBuildPrewhereSteps(
         const auto & condition_group = condition_groups[step_index];
         ActionsDAGPtr step_dag = std::make_unique<ActionsDAG>();
         const ActionsDAG::Node * original_node = nullptr;
-         const ActionsDAG::Node * result_node;
+        const ActionsDAG::Node * result_node;
 
         std::vector<const ActionsDAG::Node *> new_condition_nodes;
         for (const auto * node : condition_group)
@@ -299,7 +299,10 @@ bool tryBuildPrewhereSteps(
         if (node_remap.contains(output))
         {
             const auto & new_node_info = node_remap[output];
-            new_node_info.dag->getOutputs().push_back(new_node_info.node);
+            auto & new_outputs = new_node_info.dag->getOutputs();
+            // If not `remove_prewhere_column` then column present in all_outputs, but it's already in the outputs
+            if (std::ranges::find(new_outputs, new_node_info.node) == new_outputs.end())
+                new_outputs.push_back(new_node_info.node);
         }
         else if (output->result_name == prewhere_info->prewhere_column_name)
         {

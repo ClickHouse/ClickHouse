@@ -9,6 +9,7 @@ namespace DB
 
 class WriteBuffer;
 class Context;
+class IDataType;
 
 
 /** Stream to output data in format "each value in separate row".
@@ -57,6 +58,7 @@ private:
     NamesAndPaddings names_and_paddings;
 
     std::vector<UInt8> is_number;
+    std::vector<UInt8> is_json;
     bool color;
 };
 

@@ -81,7 +81,7 @@ bool injectRequiredColumnsRecursively(
             }
         }
         /// TODO: correctly determine whether the index is present in the part
-        else if (column_name_in_part.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
+        else if (isTextIndexVirtualColumn(column_name_in_part))
         {
             add_column(column_name);
             return true;
@@ -129,7 +129,6 @@ NameSet injectRequiredColumns(
         alter_conversions = data_part_info_for_reader.getAlterConversions();
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-        .withExtendedObjects()
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
@@ -363,6 +362,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
+    const FilterDAGInfoPtr & row_level_filter,
     const PrewhereInfoPtr & prewhere_info,
     const PrewhereExprSteps & mutation_steps,
     const IndexReadTasks & index_read_tasks,
@@ -378,7 +378,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
-        .withExtendedObjects()
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
@@ -437,9 +436,10 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     for (const auto & step : mutation_steps)
         add_step(*step);
 
-    if (prewhere_info || !index_read_tasks.empty())
+    if (prewhere_info || row_level_filter || !index_read_tasks.empty())
     {
         auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
+            row_level_filter,
             prewhere_info,
             index_read_tasks,
             actions_settings,
@@ -472,11 +472,12 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
         data_part_info_for_reader,
         storage_snapshot,
         required_columns,
+        /*row_level_filter=*/ nullptr,
         /*prewhere_info=*/ nullptr,
         mutation_steps,
         /*index_read_tasks*/ {},
         /*actions_settings=*/ {},
-        /*reader_settings=*/ {},
+        /*reader_settings=*/ MergeTreeReaderSettings::createFromSettings(),
         storage_snapshot->storage.supportsSubcolumns());
 }
 

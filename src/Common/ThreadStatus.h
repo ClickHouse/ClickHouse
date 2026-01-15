@@ -3,7 +3,6 @@
 #include <Core/LogsLevel.h>
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/StringRef.h>
 #include <Common/IThrottler.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
@@ -43,6 +42,8 @@ struct PerfEventsCounters;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
+enum class ThreadName : uint8_t;
+
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -170,7 +171,7 @@ public:
     ///    Use this when running a task in a thread pool.
     ///  * If true, remembers the current group and restores it in destructor.
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
-    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group = false) noexcept;
+    ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher();
 
 private:

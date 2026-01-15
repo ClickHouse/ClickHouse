@@ -1,5 +1,5 @@
--- Tags: stateful, long, no-parallel, no-asan
--- no-asan: too long.
+-- Tags: stateful, long, no-parallel, no-asan, no-tsan, no-ubsan, no-msan
+-- no-*san: too long.
 
 DROP TABLE IF EXISTS hits_text;
 
@@ -14,11 +14,11 @@ CREATE TABLE hits_text
 ENGINE = MergeTree
 ORDER BY (CounterID, EventDate);
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
 
-ALTER TABLE hits_text ADD INDEX idx_search_phrase SearchPhrase TYPE text(tokenizer = 'default') GRANULARITY 8;
-ALTER TABLE hits_text ADD INDEX idx_url URL TYPE text(tokenizer = 'default') GRANULARITY 8;
+ALTER TABLE hits_text ADD INDEX idx_search_phrase SearchPhrase TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 8;
+ALTER TABLE hits_text ADD INDEX idx_url URL TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 8;
 
 SET max_insert_threads = 4;
 INSERT INTO hits_text SELECT CounterID, EventDate, UserID,SearchPhrase, URL FROM test.hits;
@@ -87,30 +87,30 @@ SET force_data_skipping_indices = 'idx_search_phrase,idx_url';
 SELECT uniqExact(UserID), min(EventDate), max(EventDate) FROM hits_text WHERE hasToken(URL, 'https') AND hasToken(SearchPhrase, 'video');
 SELECT count() FROM hits_text WHERE hasToken(URL, 'auto') AND hasToken(SearchPhrase, 'bmw');
 
-SELECT 'searchAny/searchAll reference without direct read from index';
+SELECT 'hasAnyTokens/hasAllTokens reference without direct read from index';
 
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 0;
 SET force_data_skipping_indices = 'idx_url';
 
-SELECT count() FROM hits_text WHERE searchAny(URL, ['https', 'http']);
-SELECT count() FROM hits_text WHERE searchAll(URL, ['com', 'mail']);
-SELECT count() FROM hits_text WHERE searchAll(URL, ['com', 'mail']) AND NOT hasToken(URL, 'http');
-SELECT count() FROM hits_text WHERE searchAny(URL, ['facebook', 'twitter']);
-SELECT count() FROM hits_text WHERE hasToken(URL, 'auto') AND searchAny(SearchPhrase, ['bmw', 'audi', 'toyota']);
-SELECT count() FROM hits_text WHERE searchAny(URL, ['market', 'shop']) OR searchAny(SearchPhrase, ['market', 'shop']);
+SELECT count() FROM hits_text WHERE hasAnyTokens(URL, ['https', 'http']);
+SELECT count() FROM hits_text WHERE hasAllTokens(URL, ['com', 'mail']);
+SELECT count() FROM hits_text WHERE hasAllTokens(URL, ['com', 'mail']) AND NOT hasToken(URL, 'http');
+SELECT count() FROM hits_text WHERE hasAnyTokens(URL, ['facebook', 'twitter']);
+SELECT count() FROM hits_text WHERE hasToken(URL, 'auto') AND hasAnyTokens(SearchPhrase, ['bmw', 'audi', 'toyota']);
+SELECT count() FROM hits_text WHERE hasAnyTokens(URL, ['market', 'shop']) OR hasAnyTokens(SearchPhrase, ['market', 'shop']);
 
-SELECT 'searchAny/searchAll direct read from index';
+SELECT 'hasAnyTokens/hasAllTokens direct read from index';
 
 SET use_skip_indexes = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET force_data_skipping_indices = 'idx_url';
 
-SELECT count() FROM hits_text WHERE searchAny(URL, ['https', 'http']);
-SELECT count() FROM hits_text WHERE searchAll(URL, ['com', 'mail']);
-SELECT count() FROM hits_text WHERE searchAll(URL, ['com', 'mail']) AND NOT hasToken(URL, 'http');
-SELECT count() FROM hits_text WHERE searchAny(URL, ['facebook', 'twitter']);
-SELECT count() FROM hits_text WHERE hasToken(URL, 'auto') AND searchAny(SearchPhrase, ['bmw', 'audi', 'toyota']);
-SELECT count() FROM hits_text WHERE searchAny(URL, ['market', 'shop']) OR searchAny(SearchPhrase, ['market', 'shop']);
+SELECT count() FROM hits_text WHERE hasAnyTokens(URL, ['https', 'http']);
+SELECT count() FROM hits_text WHERE hasAllTokens(URL, ['com', 'mail']);
+SELECT count() FROM hits_text WHERE hasAllTokens(URL, ['com', 'mail']) AND NOT hasToken(URL, 'http');
+SELECT count() FROM hits_text WHERE hasAnyTokens(URL, ['facebook', 'twitter']);
+SELECT count() FROM hits_text WHERE hasToken(URL, 'auto') AND hasAnyTokens(SearchPhrase, ['bmw', 'audi', 'toyota']);
+SELECT count() FROM hits_text WHERE hasAnyTokens(URL, ['market', 'shop']) OR hasAnyTokens(SearchPhrase, ['market', 'shop']);
 
 DROP TABLE hits_text;

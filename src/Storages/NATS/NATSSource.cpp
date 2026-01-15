@@ -160,8 +160,8 @@ Chunk NATSSource::generate()
                 if (exception_message)
                 {
                     const auto & current_message = consumer->getCurrentMessage();
-                    virtual_columns[1]->insertData(current_message.data(), current_message.size());
-                    virtual_columns[2]->insertData(exception_message->data(), exception_message->size());
+                    virtual_columns[1]->insertData(current_message);
+                    virtual_columns[2]->insertData(*exception_message);
 
                 }
                 else

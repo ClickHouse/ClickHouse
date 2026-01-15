@@ -472,10 +472,10 @@ void FillingTransform::initColumns(
     non_const_columns.reserve(input_columns.size());
 
     for (const auto & column : input_columns)
-        non_const_columns.push_back(column->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+        non_const_columns.push_back(column->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
 
     for (const auto & column : non_const_columns)
-        output_columns.push_back(column->cloneEmpty()->assumeMutable());
+        output_columns.push_back(column->cloneEmpty());
 
     initColumnsByPositions(non_const_columns, input_fill_columns, output_columns, output_fill_columns, fill_column_positions);
     initColumnsByPositions(

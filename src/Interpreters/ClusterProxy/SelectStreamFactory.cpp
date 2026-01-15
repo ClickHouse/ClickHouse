@@ -17,7 +17,6 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Client/IConnections.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -112,11 +111,9 @@ ASTPtr rewriteSelectQuery(
 
 SelectStreamFactory::SelectStreamFactory(
     SharedHeader header_,
-    const ColumnsDescriptionByShardNum & objects_by_shard_,
     const StorageSnapshotPtr & storage_snapshot_,
     QueryProcessingStage::Enum processed_stage_)
     : header(header_),
-    objects_by_shard(objects_by_shard_),
     storage_snapshot(storage_snapshot_),
     processed_stage(processed_stage_)
 {
@@ -134,10 +131,6 @@ void SelectStreamFactory::createForShard(
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator)
 {
-    auto it = objects_by_shard.find(shard_info.shard_num);
-    if (it != objects_by_shard.end())
-        replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, query_ast);
-
     createForShardImpl(
         shard_info,
         query_ast,
@@ -163,13 +156,12 @@ void SelectStreamFactory::createForShardImpl(
     Shards & remote_shards,
     UInt32 shard_count,
     bool parallel_replicas_enabled,
-    AdditionalShardFilterGenerator shard_filter_generator,
-    bool has_missing_objects) const
+    AdditionalShardFilterGenerator shard_filter_generator) const
 {
     auto emplace_local_stream = [&]()
     {
         local_plans.emplace_back(createLocalPlan(
-            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
+            query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count));
     };
 
     // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
@@ -186,7 +178,7 @@ void SelectStreamFactory::createForShardImpl(
         if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
-                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects, true, shard_info.default_database);
+                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
 
             shard_header = query_plan->getCurrentHeader();
         }
@@ -205,7 +197,6 @@ void SelectStreamFactory::createForShardImpl(
             .query_plan = std::move(query_plan),
             .main_table = main_table,
             .header = shard_header,
-            .has_missing_objects = has_missing_objects,
             .shard_info = shard_info,
             .lazy = lazy,
             .shard_filter_generator = std::move(shard_filter_generator),
@@ -327,20 +318,10 @@ void SelectStreamFactory::createForShard(
     bool parallel_replicas_enabled,
     AdditionalShardFilterGenerator shard_filter_generator)
 {
-
-    auto it = objects_by_shard.find(shard_info.shard_num);
-    QueryTreeNodePtr modified_query = query_tree;
-
-    bool has_missing_objects = false;
-    if (it != objects_by_shard.end())
-        has_missing_objects = replaceMissedSubcolumnsByConstants(storage_snapshot->object_columns, it->second, modified_query, context);
-
-    auto query_ast = queryNodeToDistributedSelectQuery(modified_query);
-
     createForShardImpl(
         shard_info,
-        query_ast,
-        modified_query,
+        queryNodeToDistributedSelectQuery(query_tree),
+        query_tree,
         main_table,
         table_func_ptr,
         std::move(context),
@@ -348,9 +329,7 @@ void SelectStreamFactory::createForShard(
         remote_shards,
         shard_count,
         parallel_replicas_enabled,
-        std::move(shard_filter_generator),
-        has_missing_objects);
-
+        std::move(shard_filter_generator));
 }
 
 

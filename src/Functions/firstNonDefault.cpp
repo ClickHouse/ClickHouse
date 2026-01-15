@@ -8,14 +8,13 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context_fwd.h>
 
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -147,7 +146,7 @@ REGISTER_FUNCTION(FirstNonDefault)
     };
     doc.category = {FunctionDocumentation::Category::Null};
 
-    doc.introduced_in = {25, 7};
+    doc.introduced_in = {25, 9};
     factory.registerFunction<FunctionFirstNonDefault>(doc, FunctionFactory::Case::Insensitive);
 }
 

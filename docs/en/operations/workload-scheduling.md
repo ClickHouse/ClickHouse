@@ -341,6 +341,38 @@ Blocked queries will wait indefinitely and not appear in `SHOW PROCESSLIST` unti
 
 Definitions of all workloads and resources in the form of `CREATE WORKLOAD` and `CREATE RESOURCE` queries are stored persistently either on disk at `workload_path` or in ZooKeeper at `workload_zookeeper_path`. ZooKeeper storage is recommended to achieve consistency between nodes. Alternatively `ON CLUSTER` clause could be used along with disk storage.
 
+## Configuration-based workloads and resources {#config_based_workloads}
+
+In addition to SQL-based definitions, workloads and resources can be predefined in the server configuration file. This is useful in cloud environments where some limitations are dictated by infrastructure, while other limits could be changed by customers. Configuration-based entities have priority over SQL-defined ones and cannot be modified or deleted using SQL commands.
+
+### Configuration format {#config_based_workloads_format}
+
+```xml
+<clickhouse>
+    <resources_and_workloads>
+        RESOURCE s3disk_read (READ DISK s3);
+        RESOURCE s3disk_write (WRITE DISK s3);
+        WORKLOAD all SETTINGS max_io_requests = 500 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = 1342177280 FOR s3disk_read, max_bytes_per_second = 3355443200 FOR s3disk_write;
+        WORKLOAD production IN all SETTINGS weight = 3;
+    </resources_and_workloads>
+</clickhouse>
+```
+
+The configuration uses the same SQL syntax as `CREATE WORKLOAD` and `CREATE RESOURCE` statements. All queries must be valid.
+
+### Usage recommendations {#config_based_workloads_usage_recommendations}
+
+For cloud environments, a typical setup might include:
+
+1. Define root workload and network IO resources in configuration to set infrastructure limits
+2. Set `throw_on_unknown_workload` to enforce these limits
+3. Create a `CREATE WORKLOAD default IN all` to automatically apply limits to all queries (since the default value for `workload` query setting is 'default')
+4. Allow users to create additional workloads within the configured hierarchy
+
+This ensures that all background activities and queries respect the infrastructure limitations while still allowing flexibility for user-specific scheduling policies.
+
+Another use case is different configuration for different nodes in a heterogeneous cluster.
+
 ## Strict resource access {#strict_resource_access}
 
 To enforce all queries to follow resource scheduling policies there is a server setting `throw_on_unknown_workload`. If it is set to `true` then every query is required to use valid `workload` query setting, otherwise `RESOURCE_ACCESS_DENIED` exception is thrown. If it is set to `false` then such a query does not use resource scheduler, i.e. it will get unlimited access to any `RESOURCE`. Query setting 'use_concurrency_control = 0' allows query to avoid CPU scheduler and get unlimited access to CPU. To enforce CPU scheduling create a setting constraint to keep 'use_concurrency_control' read-only constant value.

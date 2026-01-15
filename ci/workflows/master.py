@@ -20,7 +20,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
         ],
         *JobConfigs.unittest_jobs,
-        JobConfigs.docker_sever,
+        JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_master_jobs,
         *JobConfigs.compatibility_test_jobs,
@@ -28,7 +28,6 @@ workflow = Workflow.Config(
         *JobConfigs.functional_tests_jobs_azure_master_only,
         *JobConfigs.integration_test_jobs_required,
         *JobConfigs.integration_test_jobs_non_required,
-        *JobConfigs.functional_tests_jobs_coverage,
         *JobConfigs.stress_test_jobs,
         *JobConfigs.stress_test_azure_jobs,
         *JobConfigs.ast_fuzzer_jobs,
@@ -59,6 +58,7 @@ workflow = Workflow.Config(
     enable_report=True,
     enable_cidb=True,
     enable_commit_status_on_failure=True,
+    enable_slack_feed=True,
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",

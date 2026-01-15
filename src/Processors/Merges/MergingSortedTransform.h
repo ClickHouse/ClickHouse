@@ -17,6 +17,7 @@ public:
         const SortDescription & description,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
+        std::optional<size_t> max_dynamic_subcolumns_,
         SortingQueueStrategy sorting_queue_strategy,
         UInt64 limit_ = 0,
         bool always_read_till_end_ = false,

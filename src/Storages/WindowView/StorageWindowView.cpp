@@ -56,7 +56,7 @@
 #include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 
-#include <Storages/LiveView/StorageBlocks.h>
+#include <Storages/WindowView/StorageBlocks.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WindowViewSource.h>
 #include <Storages/ReadInOrderOptimizer.h>
@@ -425,7 +425,7 @@ UInt32 StorageWindowView::getCleanupBound()
 ASTPtr StorageWindowView::getCleanupQuery()
 {
     ASTPtr function_less;
-    function_less= makeASTFunction(
+    function_less= makeASTOperator(
         "less",
         std::make_shared<ASTIdentifier>(window_id_name),
         std::make_shared<ASTLiteral>(getCleanupBound()));
@@ -502,9 +502,9 @@ void StorageWindowView::alter(
 
     shutdown_called = false;
 
-    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
+    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     fire_task = getContext()->getSchedulePool().createTask(
-        getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
+        getStorageID(), getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
     clean_cache_task->deactivate();
     fire_task->deactivate();
 
@@ -558,11 +558,11 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     {
         /// SELECT * FROM inner_table WHERE window_id_name == w_end
         /// (because we fire at the end of windows)
-        filter_function = makeASTFunction("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(watermark));
+        filter_function = makeASTOperator("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(watermark));
     }
     else
     {
-        auto func_array = makeASTFunction("array");
+        auto func_array = makeASTOperator("array");
         auto w_end = watermark;
         while (w_start < w_end)
         {
@@ -609,7 +609,8 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         builder.getHeader().getColumnsWithTypeAndName(),
         new_header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        getContext());
     auto actions = std::make_shared<ExpressionActions>(
         std::move(convert_actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
     builder.addSimpleTransform([&](const SharedHeader & stream_header)
@@ -706,9 +707,10 @@ inline void StorageWindowView::fire(UInt32 watermark)
         StoragePtr target_table = getTargetTable();
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = target_table->getStorageID();
+        auto context = Context::createCopy(getContext());
         InterpreterInsertQuery interpreter(
             insert,
-            getContext(),
+            context,
             /* allow_materialized */ false,
             /* no_squash */ false,
             /* no_destination */ false,
@@ -721,8 +723,8 @@ inline void StorageWindowView::fire(UInt32 watermark)
             pipe.getHeader(),
             block_io.pipeline.getHeader().getNamesAndTypesList(),
             getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
-            getContext(),
-            getContext()->getSettingsRef()[Setting::insert_null_as_default]);
+            context,
+            context->getSettingsRef()[Setting::insert_null_as_default]);
         auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
         pipe.addSimpleTransform([&](const SharedHeader & stream_header)
         {
@@ -732,10 +734,11 @@ inline void StorageWindowView::fire(UInt32 watermark)
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
             block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Position,
+            context);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
-            ExpressionActionsSettings(getContext(), CompileExpressions::yes));
+            ExpressionActionsSettings(context, CompileExpressions::yes));
         pipe.addSimpleTransform([&](const SharedHeader & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -1172,7 +1175,10 @@ void StorageWindowView::read(
         if (!blocksHaveEqualStructure(*wv_header, *target_header))
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(
-                target_header->getColumnsWithTypeAndName(), wv_header->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
+                target_header->getColumnsWithTypeAndName(),
+                wv_header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                local_context);
             auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(converting_actions));
             converting_step->setStepDescription("Convert Target table structure to WindowView structure");
             query_plan.addStep(std::move(converting_step));
@@ -1305,9 +1311,9 @@ StorageWindowView::StorageWindowView(
     if (disabled_due_to_analyzer)
         return;
 
-    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
+    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     fire_task = getContext()->getSchedulePool().createTask(
-        getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
+        getStorageID(), getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
     clean_cache_task->deactivate();
     fire_task->deactivate();
 }
@@ -1515,7 +1521,7 @@ void StorageWindowView::writeIntoWindowView(
 
     if (lateness_bound > 0) /// Add filter, which leaves rows with timestamp >= lateness_bound
     {
-        auto filter_function = makeASTFunction(
+        auto filter_function = makeASTOperator(
             "greaterOrEquals",
             std::make_shared<ASTIdentifier>(window_view.timestamp_column_name),
             std::make_shared<ASTLiteral>(lateness_bound));
@@ -1586,33 +1592,6 @@ void StorageWindowView::writeIntoWindowView(
 
     builder = select_block.buildQueryPipeline();
 
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        // Can't move chunk_infos here, that function could be called several times
-        return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), stream_header);
-    });
-
-    bool disable_deduplication_for_children = !local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
-    if (!disable_deduplication_for_children)
-    {
-        String window_view_id = window_view.getStorageID().hasUUID() ? toString(window_view.getStorageID().uuid) : window_view.getStorageID().getFullNameNotQuoted();
-        builder.addSimpleTransform([&](const SharedHeader & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewIDTransform>(window_view_id, stream_header);
-        });
-        builder.addSimpleTransform([&](const SharedHeader & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
-        });
-    }
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer tmp table before squashing", stream_header);
-    });
-#endif
-
     builder.addSimpleTransform(
         [&](const SharedHeader & current_header)
         {
@@ -1621,6 +1600,22 @@ void StorageWindowView::writeIntoWindowView(
                 local_context->getSettingsRef()[Setting::min_insert_block_size_rows],
                 local_context->getSettingsRef()[Setting::min_insert_block_size_bytes]);
         });
+
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        // Can't move chunk_infos here, that function could be called several times
+        return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), stream_header);
+    });
+
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        return std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(stream_header);
+    });
+
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        return std::make_shared<UpdateDeduplicationInfoWithViewIDTransform>(window_view.getStorageID(), stream_header);
+    });
 
     if (!window_view.is_proctime)
     {
@@ -1653,13 +1648,6 @@ void StorageWindowView::writeIntoWindowView(
             lateness_upper_bound);
     });
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer WatermarkTransform", stream_header);
-    });
-#endif
-
     auto inner_table = window_view.getInnerTable();
     auto lock = inner_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
@@ -1671,19 +1659,13 @@ void StorageWindowView::writeIntoWindowView(
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             builder.getHeader().getColumnsWithTypeAndName(),
             output->getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            local_context);
         auto convert_actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag), ExpressionActionsSettings(local_context, CompileExpressions::yes));
 
         builder.addSimpleTransform([&](const SharedHeader & header_) { return std::make_shared<ExpressionTransform>(header_, convert_actions); });
     }
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Before out", stream_header);
-    });
-#endif
 
     builder.addChain(Chain(std::move(output)));
     builder.setSinks([&](const SharedHeader & cur_header, Pipe::StreamType)

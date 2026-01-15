@@ -8,6 +8,7 @@
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/Exception.h>
+#include <Common/MemoryWorker.h>
 #include <Common/formatReadable.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
@@ -38,6 +39,7 @@ namespace DB
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 os_cpu_busy_time_threshold;
+    extern const ServerSettingsBool os_collect_psi_metrics;
 }
 
 namespace ErrorCodes
@@ -139,16 +141,12 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     /// CGroups v2
     openCgroupv2MetricFile("memory.max", cgroupmem_limit_in_bytes);
-    openCgroupv2MetricFile("memory.current", cgroupmem_usage_in_bytes);
     openCgroupv2MetricFile("cpu.max", cgroupcpu_max);
     openCgroupv2MetricFile("cpu.stat", cgroupcpu_stat);
 
     /// CGroups v1
     if (!cgroupmem_limit_in_bytes)
-    {
         openFileIfExists("/sys/fs/cgroup/memory/memory.limit_in_bytes", cgroupmem_limit_in_bytes);
-        openFileIfExists("/sys/fs/cgroup/memory/memory.usage_in_bytes", cgroupmem_usage_in_bytes);
-    }
     if (!cgroupcpu_max)
     {
         openFileIfExists("/sys/fs/cgroup/cpu/cpu.cfs_period_us", cgroupcpu_cfs_period);
@@ -157,15 +155,33 @@ AsynchronousMetrics::AsynchronousMetrics(
     if (!cgroupcpu_stat)
         openFileIfExists("/sys/fs/cgroup/cpuacct/cpuacct.stat", cgroupcpuacct_stat);
 
+    try
+    {
+        const auto [cgroup_path, version] = ICgroupsReader::getCgroupsPath();
+        LOG_INFO(getLogger("AsynchronousMetrics"),
+            "Will use cgroup reader from '{}' (cgroups version: {})",
+            cgroup_path,
+            (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
+        cgroupmem_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("AsynchronousMetrics"), "cgroups are not available");
+    }
+
+
     openFileIfExists("/proc/loadavg", loadavg);
     openFileIfExists("/proc/stat", proc_stat);
     openFileIfExists("/proc/uptime", uptime);
 
     openFileIfExists("/proc/meminfo", meminfo);
 
-    openFileIfExists("/proc/pressure/memory", memory_pressure);
-    openFileIfExists("/proc/pressure/cpu", cpu_pressure);
-    openFileIfExists("/proc/pressure/io", io_pressure);
+    if (context->getServerSettings()[ServerSetting::os_collect_psi_metrics])
+    {
+        openFileIfExists("/proc/pressure/memory", memory_pressure);
+        openFileIfExists("/proc/pressure/cpu", cpu_pressure);
+        openFileIfExists("/proc/pressure/io", io_pressure);
+    }
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
@@ -419,7 +435,7 @@ auto get_next_update_time(std::chrono::seconds update_period)
 
 void AsynchronousMetrics::run()
 {
-    setThreadName("AsyncMetrics");
+    DB::setThreadName(ThreadName::ASYNC_METRICS);
 
     while (true)
     {
@@ -742,13 +758,19 @@ void AsynchronousMetrics::applyCgroupNormalizedCPUMetricsUpdate(
            "The value is similar to `CGroupUserTime` but divided by the number of available CPU cores to be measured in the [0..1] "
            "interval regardless of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
     new_values["CGroupSystemTimeNormalized"]
         = {delta_values_all_cpus.system * multiplier / num_cpus_to_normalize,
            "The value is similar to `CGroupSystemTime` but divided by the number of available CPU cores to be measured in the [0..1] "
            "interval regardless of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
 }
 
 void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
@@ -761,61 +783,91 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            "The value is similar to `OSUserTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
     new_values["OSNiceTimeNormalized"]
         = {delta_values_all_cpus.nice * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
     new_values["OSSystemTimeNormalized"]
         = {delta_values_all_cpus.system * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSSystemTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
     new_values["OSIdleTimeNormalized"]
         = {delta_values_all_cpus.idle * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSIdleTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
     new_values["OSIOWaitTimeNormalized"]
         = {delta_values_all_cpus.iowait * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSIOWaitTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
     new_values["OSIrqTimeNormalized"]
         = {delta_values_all_cpus.irq * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless of "
            "the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
     new_values["OSSoftIrqTimeNormalized"]
         = {delta_values_all_cpus.softirq * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSSoftIrqTime` but divided to the number of CPU cores to be measured in the [0..1] interval "
            "regardless of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
     new_values["OSStealTimeNormalized"]
         = {delta_values_all_cpus.steal * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSStealTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
     new_values["OSGuestTimeNormalized"]
         = {delta_values_all_cpus.guest * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSGuestTime` but divided to the number of CPU cores to be measured in the [0..1] interval regardless "
            "of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
     new_values["OSGuestNiceTimeNormalized"]
         = {delta_values_all_cpus.guest_nice * multiplier / num_cpus_to_normalize,
            "The value is similar to `OSGuestNiceTime` but divided to the number of CPU cores to be measured in the [0..1] interval "
            "regardless of the number of cores."
            " This allows you to average the values of this metric across multiple servers in a cluster even if the number of cores is "
-           "non-uniform, and still get the average resource utilization metric."};
+           "non-uniform, and still get the average resource utilization metric."
+           " If specified, the Cgroup CPU quota divided by its period can be used instead of the actual number of CPU cores, "
+           "and in that case the value of this metric may exceed 1 at some moments."
+        };
 }
 
 void readPressureFile(
@@ -1463,21 +1515,18 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
-    if (cgroupmem_limit_in_bytes && cgroupmem_usage_in_bytes)
+    if (cgroupmem_limit_in_bytes && cgroupmem_reader)
     {
         try
         {
             cgroupmem_limit_in_bytes->rewind();
-            cgroupmem_usage_in_bytes->rewind();
-
             uint64_t limit = 0;
-            uint64_t usage = 0;
-
             tryReadText(limit, *cgroupmem_limit_in_bytes);
-            tryReadText(usage, *cgroupmem_usage_in_bytes);
+
+            uint64_t usage = cgroupmem_reader->readMemoryUsage();
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
-            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes." };
+            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes (excluding page cache)." };
         }
         catch (...)
         {

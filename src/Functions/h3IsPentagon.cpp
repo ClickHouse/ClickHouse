@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -8,9 +8,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -76,6 +73,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
+            validateH3Cell(data[row]);
             UInt8 res = isPentagon(data[row]);
             dst_data[row] = res;
         }
@@ -113,7 +111,7 @@ In the H3 grid system, most cells are hexagonal, but there are exactly 12 pentag
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3IsPentagon>(documentation);
 }
 

@@ -1,5 +1,6 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/StringUtils.h>
+#include <base/arithmeticOverflow.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -13,8 +14,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int CANNOT_PARSE_DATETIME;
+extern const int LOGICAL_ERROR;
+extern const int CANNOT_PARSE_DATETIME;
 }
 
 
@@ -772,7 +773,7 @@ ReturnType parseDateTimeBestEffortImpl(
         }
     };
 
-    if constexpr (std::is_same_v<ReturnType, void>)
+    if constexpr (!strict || std::is_same_v<ReturnType, void>)
     {
         if (has_time_zone_offset)
         {
@@ -783,10 +784,12 @@ ReturnType parseDateTimeBestEffortImpl(
         {
             res = local_time_zone.makeDateTime(year, month, day_of_month, hour, minute, second);
         }
+
+        if constexpr (std::is_same_v<ReturnType, bool>)
+            return true;
     }
     else
     {
-
         if (has_time_zone_offset)
         {
             auto res_maybe = utc_time_zone.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
@@ -794,9 +797,11 @@ ReturnType parseDateTimeBestEffortImpl(
                 return false;
 
             /// For usual DateTime check if value is within supported range
-            if (!is_64 && (*res_maybe < 0 || *res_maybe > UINT32_MAX))
-                return false;
-
+            if constexpr (!is_64)
+            {
+                if (*res_maybe < 0 || *res_maybe > UINT32_MAX)
+                    return false;
+            }
             res = *res_maybe;
             adjust_time_zone();
         }
@@ -807,9 +812,11 @@ ReturnType parseDateTimeBestEffortImpl(
                 return false;
 
             /// For usual DateTime check if value is within supported range
-            if (!is_64 && (*res_maybe < 0 || *res_maybe > UINT32_MAX))
-                return false;
-
+            if constexpr (!is_64)
+            {
+                if (*res_maybe < 0 || *res_maybe > UINT32_MAX)
+                    return false;
+            }
             res = *res_maybe;
         }
 
@@ -845,9 +852,9 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
     }
 
     if constexpr (std::is_same_v<ReturnType, bool>)
-        return DecimalUtils::tryGetDecimalFromComponents<DateTime64>(whole, fractional, scale, res);
+        return DecimalUtils::tryGetDateTimeFromComponents(whole, fractional, scale, res);
 
-    res = DecimalUtils::decimalFromComponents<DateTime64>(whole, fractional, scale);
+    res = DecimalUtils::dateTimeFromComponents(whole, fractional, scale);
     return ReturnType(true);
 }
 

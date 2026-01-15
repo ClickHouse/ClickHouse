@@ -17,8 +17,13 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/hasNullable.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -51,6 +56,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -63,6 +69,8 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
+    extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool rewrite_in_to_join;
 }
 
 namespace
@@ -76,6 +84,139 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
+}
+
+/// Checks if node is a NULL constant
+bool isNullConstant(const QueryTreeNodePtr & node)
+{
+    if (const auto * const_node = node->as<ConstantNode>())
+        return const_node->getValue().isNull();
+    return false;
+}
+
+/// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
+std::pair<QueryTreeNodePtr, ProjectionNames> QueryAnalyzer::makeNullSafeHas(
+    QueryTreeNodePtr array_arg,    // [1,2,number]
+    QueryTreeNodePtr element_arg,  // x (e.g. NULL)
+    const ProjectionNames & args_proj,
+    IdentifierResolveScope & scope)
+{
+    auto is_null_fn = std::make_shared<FunctionNode>("isNull");
+    is_null_fn->getArguments().getNodes().push_back(element_arg);
+
+    auto has_fn = std::make_shared<FunctionNode>("has");
+    has_fn->getArguments().getNodes().push_back(array_arg);
+    has_fn->getArguments().getNodes().push_back(element_arg);
+
+    auto null_const = std::make_shared<ConstantNode>(
+        Field{},
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+
+    auto raw_if = std::make_shared<FunctionNode>("if");
+    raw_if->getArguments().getNodes() = {is_null_fn, null_const, has_fn};
+
+    QueryTreeNodePtr if_node = raw_if;
+    auto single_name = calculateFunctionProjectionName(if_node, {}, args_proj);
+    ProjectionNames proj = {single_name};
+
+    resolveFunction(if_node, scope);
+
+    return std::make_pair(if_node, proj);
+}
+
+/// handles special case: NULL IN (tuple) with transform_null_in enabled
+ProjectionNames QueryAnalyzer::handleNullInTuple(
+    const QueryTreeNodes & tuple_args,
+    const std::string & function_name,
+    const ProjectionNames & parameters_projection_names,
+    const ProjectionNames & arguments_projection_names,
+    IdentifierResolveScope & scope,
+    QueryTreeNodePtr & node)
+{
+    std::vector<QueryTreeNodePtr> null_checks;
+    for (const auto & elem : tuple_args)
+    {
+        if (isNullableOrLowCardinalityNullable(elem->getResultType()))
+        {
+            auto isnull_fn = std::make_shared<FunctionNode>("isNull");
+            isnull_fn->getArguments().getNodes().push_back(elem);
+            null_checks.emplace_back(isnull_fn);
+        }
+    }
+
+    if (null_checks.empty())
+    {
+        node = std::make_shared<ConstantNode>(Field(UInt64(0)), std::make_shared<DataTypeUInt8>());
+        return ProjectionNames{function_name};
+    }
+
+    auto list_node = std::make_shared<ListNode>();
+    list_node->getNodes() = null_checks;
+    auto array_fn = std::make_shared<FunctionNode>("array");
+    array_fn->getArgumentsNode() = list_node;
+
+    auto arraycount_fn = std::make_shared<FunctionNode>("arrayCount");
+    arraycount_fn->getArguments().getNodes().push_back(array_fn);
+
+    auto zero_const = std::make_shared<ConstantNode>(Field(UInt64(0)), std::make_shared<DataTypeUInt64>());
+    auto gt_fn = std::make_shared<FunctionNode>("greater");
+    gt_fn->getArguments().getNodes() = {arraycount_fn, zero_const};
+
+    node = gt_fn;
+    auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+    resolveFunction(node, scope);
+
+    return {proj};
+}
+
+/// converts tuple to array with proper type handling
+QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
+    const QueryTreeNodes & tuple_args,
+    const QueryTreeNodePtr & in_first_argument,
+    IdentifierResolveScope & scope)
+{
+    auto array_function_node = std::make_shared<FunctionNode>("array");
+    auto array_arguments_list = std::make_shared<ListNode>();
+
+    DataTypePtr common_type;
+
+    common_type = in_first_argument->getResultType();
+
+    bool has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
+        [](const auto & arg) { return isNullConstant(arg); });
+
+    if ((has_null || !scope.context->getSettingsRef()[Setting::transform_null_in]) && !common_type->isNullable())
+        common_type = makeNullable(common_type);
+
+    for (const auto & arg : tuple_args)
+        array_arguments_list->getNodes().push_back(castNodeToType(arg, common_type, scope));
+
+    array_function_node->getArgumentsNode() = array_arguments_list;
+    QueryTreeNodePtr array_node = array_function_node;
+    resolveExpressionNode(array_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+    return array_node;
+}
+
+/// casts node to target type with appropriate method (toString for strings, CAST for others)
+QueryTreeNodePtr QueryAnalyzer::castNodeToType(
+    const QueryTreeNodePtr & node,
+    const DataTypePtr & target_type,
+    IdentifierResolveScope & scope)
+{
+    if (node->getResultType()->equals(*target_type))
+        return node;
+
+    auto cast_node = std::make_shared<FunctionNode>("CAST");
+    auto cast_args = std::make_shared<ListNode>();
+    cast_args->getNodes().push_back(node);
+    cast_args->getNodes().push_back(
+        std::make_shared<ConstantNode>(target_type->getName(), std::make_shared<DataTypeString>()));
+    cast_node->getArgumentsNode() = cast_args;
+
+    QueryTreeNodePtr result = cast_node;
+    resolveFunction(result, scope);
+    return result;
 }
 
 /** Resolve function node in scope.
@@ -158,19 +299,47 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
 
-        auto function_name_lowercase = Poco::toLower(function_name);
-
-        /** Special handling for count and countState functions.
+        /** Special handling for count and countState functions (including with combinators like countIf, countIfState, etc.).
           *
           * Example: SELECT count(*) FROM test_table
           * Example: SELECT countState(*) FROM test_table;
+          *
+          * To determine if it's safe to remove the asterisk, we check the transformsArgumentTypes() method
+          * of each combinator. If any combinator transforms argument types (returns true), it's not safe to remove the asterisk.
           */
-        if (function_node_ptr->getArguments().getNodes().size() == 1 &&
-            (function_name_lowercase == "count" || function_name_lowercase == "countstate"))
+        String base_function_name = function_name;
+        bool safe_to_remove_asterisk = true;
+
+        while (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(base_function_name))
         {
-            auto * matcher_node = function_node_ptr->getArguments().getNodes().front()->as<MatcherNode>();
-            if (matcher_node && matcher_node->isUnqualified())
-                function_node_ptr->getArguments().getNodes().clear();
+            if (combinator->transformsArgumentTypes())
+            {
+                safe_to_remove_asterisk = false;
+                break;
+            }
+
+            base_function_name = base_function_name.substr(0, base_function_name.size() - combinator->getName().size());
+        }
+
+        auto base_function_name_lowercase = Poco::toLower(base_function_name);
+        auto function_name_lowercase = Poco::toLower(function_name);
+
+        /// Only remove asterisks for exactly "count" or "countstate" (possibly with combinators),
+        /// not for other functions like "countDistinct" which is a separate function
+        /// countDistinct gets transformed to uniqExact and requires arguments
+        bool is_count_function = (base_function_name_lowercase == "count" || base_function_name_lowercase == "countstate");
+        bool is_count_variant = is_count_function && function_name_lowercase.starts_with(base_function_name_lowercase);
+        bool is_not_count_distinct = function_name_lowercase != "countdistinct";
+
+        if (safe_to_remove_asterisk && is_count_variant && is_not_count_distinct)
+        {
+            auto & arguments = function_node_ptr->getArguments().getNodes();
+
+            std::erase_if(arguments, [](const QueryTreeNodePtr & argument)
+            {
+                auto * matcher_node = argument->as<MatcherNode>();
+                return matcher_node && matcher_node->isUnqualified();
+            });
         }
     }
 
@@ -286,6 +455,143 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_table_expression*/);
                 node = std::move(constant_if_result_node);
                 return result_projection_names;
+            }
+        }
+    }
+
+    /// Replace IN (subquery)
+    /// NOTE: the resulting subquery in the argument of EXISTS will have correlated column x, that's why this rewriting has to be before handling
+    /// EXISTS which is done below in 'if (is_special_function_exists)' case.
+    if (is_special_function_in &&
+        (function_name == "in" || function_name == "notIn") &&
+        scope.context->getSettingsRef()[Setting::rewrite_in_to_join])
+    {
+        if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+
+        const bool is_function_not_in = function_name == "notIn";
+
+        auto & function_in_arguments_nodes = function_node_ptr->getArguments().getNodes();
+        if (function_in_arguments_nodes.size() != 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
+
+        QueryTreeNodePtr in_first_argument = function_in_arguments_nodes[0]->clone();
+
+        /// Resolve first argument of IN to determine if it is constant or not. In case of constant we will not do any rewriting
+        resolveExpressionNode(
+            in_first_argument,
+            scope,
+            true /*allow_lambda_expression*/,
+            true /*allow_table_expression*/
+        );
+
+        if (!in_first_argument->as<ConstantNode>())
+        {
+            auto in_second_argument = function_in_arguments_nodes[1]->clone();
+
+            /// Resolve second argument of IN to determine if it is a subquery.
+            resolveExpressionNode(
+                in_second_argument,
+                scope,
+                true /*allow_lambda_expression*/,
+                true /*allow_table_expression*/
+            );
+
+            if (in_second_argument->as<QueryNode>())
+            {
+                /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
+
+                /// Rename subquery projection to a unique name to avoid collisions with names from outer scope
+                /// E.g. when rewriting "SELECT number IN (SELECT * FROM numbers(3)) FROM numbers(5)" the inner
+                /// query "SELECT * FROM numbers(3)" returns column `number` which will collide with outer column `number`
+                auto subquery_node = std::move(in_second_argument);
+
+                String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
+
+                /// Re-resolve subquery columns setting the unique alias
+                auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
+                subquery_node->as<QueryNode>()->clearProjectionColumns();
+                if (subquery_projection_columns.size() == 1)
+                {
+                    subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({unique_column_name});
+                    subquery_node->as<QueryNode>()->resolveProjectionColumns(subquery_projection_columns);
+                }
+                else
+                {
+                    /// It there are multiple columns, wrap them in a Tuple()
+                    auto projection = subquery_node->as<QueryNode>()->getProjection().clone();
+
+                    QueryTreeNodePtr wrapper_tuple_node = std::make_shared<FunctionNode>("tuple");
+                    wrapper_tuple_node->as<FunctionNode>()->getArguments().getNodes() = std::move(projection->as<ListNode>()->getNodes());
+                    resolveFunction(wrapper_tuple_node, scope);
+
+                    /// Replace the original projection columns with one Tuple column
+                    subquery_node->as<QueryNode>()->getProjection().getNodes() = { std::move(wrapper_tuple_node) };
+                    DataTypes wrapper_tuple_element_types;
+                    for (const auto & c : subquery_projection_columns)
+                        wrapper_tuple_element_types.push_back(c.type);
+                    auto wrapper_tuple_data_type = std::make_shared<DataTypeTuple>(wrapper_tuple_element_types);
+                    /// Return the Tuple under unique name
+                    subquery_node->as<QueryNode>()->resolveProjectionColumns(NamesAndTypes{{unique_column_name, wrapper_tuple_data_type}});
+                }
+
+                /// SELECT * AS _unique_name_ FROM subquery
+                auto internal_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+                internal_exists_subquery->setIsSubquery(true);
+                internal_exists_subquery->getProjection().getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{unique_column_name}));
+                internal_exists_subquery->getJoinTree() = std::move(subquery_node);
+
+                /// SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE a = _unique_name_ LIMIT 1
+                auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
+                {
+                    auto constant_data_type = std::make_shared<DataTypeUInt64>();
+                    new_exists_subquery->setIsSubquery(true);
+                    new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
+                    new_exists_subquery->getJoinTree() = std::move(internal_exists_subquery);
+
+                    auto equals_function_node_ptr = std::make_shared<FunctionNode>("equals");
+
+                    auto copy_of_in_first_parameter = function_in_arguments_nodes[0];
+
+                    auto subquery_projection = std::make_shared<IdentifierNode>(Identifier{unique_column_name});
+
+                    equals_function_node_ptr->getArguments().getNodes() = {
+                        std::move(copy_of_in_first_parameter), /// x
+                        std::move(subquery_projection) /// `_unique_name_` from subquery
+                    };
+
+                    new_exists_subquery->getWhere() = std::move(equals_function_node_ptr);
+                    new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
+                }
+
+                auto exists_function_node_ptr = std::make_shared<FunctionNode>("exists");
+                exists_function_node_ptr->getArguments().getNodes() = {
+                    std::move(new_exists_subquery)
+                };
+
+                if (is_function_not_in)
+                {
+                    /// NOT IN is rewritten to NOT EXISTS
+                    function_node_ptr = std::make_shared<FunctionNode>("not");
+                    function_node_ptr->getArguments().getNodes() = {
+                        std::move(exists_function_node_ptr)
+                    };
+
+                    node = function_node_ptr;
+                    function_name = "not";
+                    is_special_function_in = false;
+                    is_special_function_exists = false;
+                }
+                else
+                {
+                    function_node_ptr = exists_function_node_ptr;
+                    node = function_node_ptr;
+                    function_name = "exists";
+                    is_special_function_in = false;
+                    is_special_function_exists = true;
+                }
             }
         }
     }
@@ -419,6 +725,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (function_in_arguments_nodes.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
 
+        auto & in_first_argument = function_in_arguments_nodes[0];
         auto & in_second_argument = function_in_arguments_nodes[1];
         if (isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[0]) || isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[1]))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -487,10 +794,119 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression_table_node));
                 }
             }
+
+            /// If it's a function node like array(..) or tuple(..), consider rewriting them to 'has':
+            if (auto * non_const_set_candidate = in_second_argument->as<FunctionNode>())
+            {
+                bool left_is_null = isNullConstant(in_first_argument);
+                const auto & candidate_name = non_const_set_candidate->getFunctionName();
+                bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn" ||
+                                  function_name == "notNullIn" || function_name == "globalNotNullIn");
+
+                /// Case 1: array(..) node or any function returning Array type
+                if (candidate_name == "array" || isArray(non_const_set_candidate->getResultType()))
+                {
+                    /// convert to has() by swapping arguments
+                    function_name = "has";
+                    is_special_function_in = false;
+                    auto & fn_args = function_node.getArguments().getNodes();
+                    std::swap(fn_args[0], fn_args[1]);
+
+                    if (!scope.context->getSettingsRef()[Setting::transform_null_in])
+                    {
+                        auto [wrapped_node, proj_names] = makeNullSafeHas(
+                            fn_args[0], fn_args[1], arguments_projection_names, scope);
+                        if (is_not_in)
+                        {
+                            auto not_fn = std::make_shared<FunctionNode>("not");
+                            not_fn->getArguments().getNodes().push_back(wrapped_node);
+                            resolveFunction(wrapped_node = not_fn, scope);
+                        }
+                        node = wrapped_node;
+                        return proj_names;
+                    }
+
+                    if (is_not_in)
+                    {
+                        /// Wrap has() result with NOT for notIn/globalNotIn
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        resolveFunction(node, scope);
+                        auto not_fn = std::make_shared<FunctionNode>("not");
+                        not_fn->getArguments().getNodes().push_back(node);
+                        node = not_fn;
+                        resolveFunction(node, scope);
+                        return ProjectionNames{proj};
+                    }
+                }
+                /// Case 2: tuple(..) node - rewrite into an array
+                else if (candidate_name == "tuple")
+                {
+                    auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
+
+                    /// If the left-hand side is a lambda, do not rewrite
+                    /// Lambdas are rejected later by getLambdaArgumentTypes() with a proper error
+                    if (in_first_argument->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    {
+                        /// Do nothing; leave IN as-is
+                    }
+                    else
+                    {
+                        /// special handling for NULL IN (tuple) with transform_null_in enabled
+                        if (left_is_null && scope.context->getSettingsRef()[Setting::transform_null_in])
+                        {
+                            return handleNullInTuple(tuple_args, function_name,
+                                                parameters_projection_names,
+                                                arguments_projection_names, scope, node);
+                        }
+
+                        if (left_is_null && !scope.context->getSettingsRef()[Setting::transform_null_in])
+                        {
+                            auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                            auto null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+                            node = std::make_shared<ConstantNode>(Field{}, null_type);
+                            return ProjectionNames{proj};
+                        }
+
+                        /// convert tuple to array with proper type handling
+                        in_second_argument = convertTupleToArray(tuple_args, in_first_argument, scope);
+
+                        /// convert to has() and handle null-safety
+                        function_name = "has";
+                        is_special_function_in = false;
+                        auto & fn_args = function_node.getArguments().getNodes();
+                        std::swap(fn_args[0], fn_args[1]);
+
+                        if (!scope.context->getSettingsRef()[Setting::transform_null_in])
+                        {
+                            auto [wrapped_node, proj_names] = makeNullSafeHas(
+                                fn_args[0], fn_args[1], arguments_projection_names, scope);
+                            if (is_not_in)
+                            {
+                                auto not_fn = std::make_shared<FunctionNode>("not");
+                                not_fn->getArguments().getNodes().push_back(wrapped_node);
+                                resolveFunction(wrapped_node = not_fn, scope);
+                            }
+                            node = wrapped_node;
+                            return proj_names;
+                        }
+
+                        if (is_not_in)
+                        {
+                            /// Wrap has() result with NOT for notIn/globalNotIn
+                            auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                            resolveFunction(node, scope);
+                            auto not_fn = std::make_shared<FunctionNode>("not");
+                            not_fn->getArguments().getNodes().push_back(node);
+                            node = not_fn;
+                            resolveFunction(node, scope);
+                            return ProjectionNames{proj};
+                        }
+                    }
+                }
+            }
         }
 
         /// Edge case when the first argument of IN is scalar subquery.
-        auto & in_first_argument = function_in_arguments_nodes[0];
         auto first_argument_type = in_first_argument->getNodeType();
         if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
         {
@@ -506,6 +922,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     ColumnsWithTypeAndName argument_columns;
     DataTypes argument_types;
     bool all_arguments_constants = true;
+    bool all_arguments_are_deterministic = true;
     std::vector<size_t> function_lambda_arguments_indexes;
 
     auto & function_arguments = function_node.getArguments().getNodes();
@@ -544,11 +961,13 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 scope.scope_node->formatASTForErrorMessage());
 
         bool argument_is_constant = false;
+        bool argument_is_deterministic = true;
         const auto * constant_node = function_argument->as<ConstantNode>();
         if (constant_node)
         {
             argument_column.column = constant_node->getColumn();
             argument_column.type = constant_node->getResultType();
+            argument_is_deterministic = constant_node->isDeterministic();
             argument_is_constant = true;
         }
         else if (const auto * get_scalar_function_node = function_argument->as<FunctionNode>();
@@ -559,7 +978,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (get_scalar_const_arg && scope.context->hasQueryContext())
             {
                 auto query_context = scope.context->getQueryContext();
-                auto scalar_string = toString(get_scalar_const_arg->getValue());
+                auto scalar_string = fieldToString(get_scalar_const_arg->getValue());
                 if (query_context->hasScalar(scalar_string))
                 {
                     auto scalar = query_context->getScalar(scalar_string);
@@ -571,6 +990,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
 
         all_arguments_constants &= argument_is_constant;
+        all_arguments_are_deterministic &= argument_is_deterministic;
 
         argument_types.push_back(argument_column.type);
         argument_columns.emplace_back(std::move(argument_column));
@@ -747,15 +1167,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     function_name,
                     function_node.formatASTForErrorMessage());
             }
-
-            frame = WindowFrame{
-                .is_default = false,
-                .type = WindowFrame::FrameType::ROWS,
-                .begin_type = WindowFrame::BoundaryType::Unbounded,
-                .begin_preceding = true,
-                .end_type = WindowFrame::BoundaryType::Unbounded,
-                .end_preceding = false,
-            };
         }
 
         if (window_node_is_identifier)
@@ -1070,6 +1481,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     result_type->getColumnType(),
                     column->getDataType());
 
+            const bool is_deterministic = all_arguments_are_deterministic && function->isDeterministic();
+
             /** Do not perform constant folding if there are aggregate or arrayJoin functions inside function.
               * Example: SELECT toTypeName(sum(number)) FROM numbers(10);
               */
@@ -1079,7 +1492,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 column->byteSize() < 1_MiB)
             {
                 /// Replace function node with result constant node
-                constant_node = std::make_shared<ConstantNode>(ConstantValue{ std::move(column), std::move(result_type) }, node);
+                constant_node = std::make_shared<ConstantNode>(ConstantValue{ std::move(column), std::move(result_type) }, node, is_deterministic);
             }
         }
 

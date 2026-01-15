@@ -232,8 +232,42 @@ using FunctionDetectLanguage = FunctionTextClassificationString<FunctionDetectLa
 
 REGISTER_FUNCTION(DetectLanguage)
 {
-    factory.registerFunction<FunctionDetectLanguage>();
-    factory.registerFunction<FunctionDetectLanguageMixed>();
+    FunctionDocumentation::Description description_detect = R"(
+Detects the language of the UTF8-encoded input string.
+The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection and returns the 2-letter ISO language code.
+
+The longer the input, the more precise the language detection will be.
+)";
+    FunctionDocumentation::Syntax syntax_detect = "detectLanguage(s)";
+    FunctionDocumentation::Arguments arguments_detect = {
+        {"text_to_be_analyzed", "The text to analyze.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_detect = {"Returns the 2-letter ISO code of the detected language. Other possible results: `un` = unknown, can not detect any language, `other` = the detected language does not have 2 letter code.", {"String"}};
+    FunctionDocumentation::Examples examples_detect = {
+        {"Mixed language text", "SELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif. Where there\\'s a will, there\\'s a way.')", "fr"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_detect = {22, 2};
+    FunctionDocumentation::Category category_detect = FunctionDocumentation::Category::NLP;
+    FunctionDocumentation documentation_detect = {description_detect, syntax_detect, arguments_detect, {}, returned_value_detect, examples_detect, introduced_in_detect, category_detect};
+
+    factory.registerFunction<FunctionDetectLanguage>(documentation_detect);
+
+    FunctionDocumentation::Description description_mixed = R"(
+Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
+)";
+    FunctionDocumentation::Syntax syntax_mixed = "detectLanguageMixed(s)";
+    FunctionDocumentation::Arguments arguments_mixed = {
+        {"s", "The text to analyze", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mixed = {"Returns a map with keys which are 2-letter ISO codes and corresponding values which are a percentage of the text found for that language", {"Map(String, Float32)"}};
+    FunctionDocumentation::Examples examples_mixed = {
+        {"Mixed languages", "SELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追う者は一兎をも得ず A vaincre sans peril, on triomphe sans gloire.')", "{'ja':0.62,'fr':0.36}"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mixed = {22, 2};
+    FunctionDocumentation::Category category_mixed = FunctionDocumentation::Category::NLP;
+    FunctionDocumentation documentation_mixed = {description_mixed, syntax_mixed, arguments_mixed, {}, returned_value_mixed, examples_mixed, introduced_in_mixed, category_mixed};
+
+    factory.registerFunction<FunctionDetectLanguageMixed>(documentation_mixed);
 }
 
 }

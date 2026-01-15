@@ -2,16 +2,18 @@
 # Documentation : https://clickhouse.com/docs/engines/table-engines/mergetree-family/annindexes
 
 import os
-import sys
-import traceback
-import clickhouse_connect
 import random
-import time
+import sys
 import threading
+import time
+import traceback
+
+import clickhouse_connect
 import numpy as np
-from ci.praktika.result import Result
+
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.praktika.info import Info
+from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
@@ -41,29 +43,26 @@ RECALL_K = "recall_k"
 NEW_TRUTH_SET_FILE = "new_truth_set_file"
 CONCURRENCY_TEST = "concurrency_test"
 
-dataset_hackernews = {
-    TABLE: "hackernews",
-    S3_URLS: "..",
+dataset_hackernews_openai = {
+    TABLE: "hackernews_openai",
+    S3_URLS: [
+        "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_part_1_of_1.parquet",
+    ],
     SCHEMA: """
-        id            String,
-        doc_id        String,
-        text          String,
-        vector        Array(Float32),
-        node_info     Tuple(start Nullable(Int64), end Nullable(Int64)),
-        metadata      String,
+        id            UInt32,
         type          Enum8('story' = 1, 'comment' = 2, 'poll' = 3, 'pollopt' = 4, 'job' = 5),
-        by            LowCardinality(String),
         time          DateTime,
+        update_time   DateTime,
+        url           String,
         title         String,
-        post_score    Int32,
-        dead          UInt8,
-        deleted       UInt8,
-        length        UInt32
+        text          String,
+        vector        Array(Float32)
      """,
-    ID_COLUMN: "doc_id",
+    ID_COLUMN: "id",
     VECTOR_COLUMN: "vector",
     DISTANCE_METRIC: "cosineDistance",
-    DIMENSION: 384,
+    DIMENSION: 1536,
+    SOURCE_SELECT_LIST: None,
 }
 
 # The full 100M vectors - will take hours to run
@@ -112,7 +111,9 @@ test_params_laion_5b_full_run = {
     LIMIT_N: None,
     # Pass a filename to reuse a pre-generated truth set, else test will generate truth set (default)
     # Running 10000 brute force KNN queries over a 100 million dataset could take time.
-    TRUTH_SET_FILES: ["https://clickhouse-datasets.s3.amazonaws.com/laion-5b/truth_set_10k.tar"],
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/truth_set_10k.tar"
+    ],
     QUANTIZATION: "bf16",  # 'b1' for binary quantization
     HNSW_M: 64,
     HNSW_EF_CONSTRUCTION: 512,
@@ -126,7 +127,9 @@ test_params_laion_5b_full_run = {
 
 test_params_laion_5b_quick_test = {
     LIMIT_N: 100000,  # Adds a LIMIT clause to load exact number of rows
-    TRUTH_SET_FILES: ["https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion_100k_1k.tar"],
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion_100k_1k.tar"
+    ],
     QUANTIZATION: "bf16",
     HNSW_M: 16,
     HNSW_EF_CONSTRUCTION: 256,
@@ -149,7 +152,7 @@ test_params_laion_5b_1m = {
     HNSW_EF_CONSTRUCTION: 256,
     HNSW_EF_SEARCH: None,
     VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
-    GENERATE_TRUTH_SET: True, # Will take some time!
+    GENERATE_TRUTH_SET: True,  # Will take some time!
     TRUTH_SET_COUNT: 10000,  # Quick test! 10000 or 1000 is a good value
     RECALL_K: 100,
     NEW_TRUTH_SET_FILE: "laion_1m_10k",
@@ -158,18 +161,42 @@ test_params_laion_5b_1m = {
     CONCURRENCY_TEST: True,
 }
 
+test_params_hackernews_10m = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
+    ],
+    QUANTIZATION: "bf16",
+    HNSW_M: 64,
+    HNSW_EF_CONSTRUCTION: 256,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: None,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 1000,
+    RECALL_K: 100,
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: True,
+}
+
+
 def get_new_connection():
     chclient = clickhouse_connect.get_client(send_receive_timeout=1800)
     return chclient
 
+
 def current_time_ms():
     return round(time.time() * 1000)
+
 
 def current_time():
     return time.ctime(time.time())
 
+
 def logger(s):
     print(current_time(), " : ", s)
+
 
 class RunTest:
 
@@ -300,7 +327,7 @@ class RunTest:
 
         while i < self._query_count:
             query_vector_id = random.randint(1, max_id)
-            if query_vector_id in truth_set: # already used
+            if query_vector_id in truth_set:  # already used
                 continue
             subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = {query_vector_id})"
 
@@ -332,11 +359,12 @@ class RunTest:
     def load_truth_set(self, path):
         logger(f"Loading truth set from file {path} ...")
         tarfile = path
-        if "https" in path: # Files are in S3 or local(for quick test)
+        if "https" in path:  # Files are in S3 or local(for quick test)
             results = []
             commands = [f"wget -nv {path}"]
             results.append(
-                Result.from_commands_run(name=f"Download truthset {path}", command=commands
+                Result.from_commands_run(
+                    name=f"Download truthset {path}", command=commands
                 )
             )
             tarfile = os.path.basename(path)
@@ -344,7 +372,8 @@ class RunTest:
         results = []
         commands = [f"tar xvf {tarfile}"]
         results.append(
-            Result.from_commands_run(name=f"Extract truthset {tarfile}", command=commands
+            Result.from_commands_run(
+                name=f"Extract truthset {tarfile}", command=commands
             )
         )
         name, _ = os.path.splitext(tarfile)
@@ -398,7 +427,7 @@ class RunTest:
         while True:
             try:
                 subquery = f"(SELECT {self._vector_column} FROM {self._table} WHERE {self._id_column} = 100)"
-                ann_search_query =  f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {subquery} ) AS distance LIMIT {self._k}"
+                ann_search_query = f"SELECT {self._id_column}, distance FROM {self._table} ORDER BY {self._distance_metric}( {self._vector_column}, {subquery} ) AS distance LIMIT {self._k}"
                 result = chclient.query(ann_search_query)
                 logger(f"Vector indexes have loaded!")
                 break
@@ -504,6 +533,7 @@ def run_single_test(test_name, dataset, test_params):
 
     return True
 
+
 def install_and_start_clickhouse():
     res = True
     results = []
@@ -562,8 +592,18 @@ def install_and_start_clickhouse():
 
 # Array of (dataset, test_params)
 TESTS_TO_RUN = [
-    ("Test using the laion dataset", dataset_laion_5b_mini_for_quick_test, test_params_laion_5b_1m)
+    (
+        "Test using the laion dataset",
+        dataset_laion_5b_mini_for_quick_test,
+        test_params_laion_5b_1m,
+    ),
+    (
+        "Test using the hackernews dataset",
+        dataset_hackernews_openai,
+        test_params_hackernews_10m,
+    ),
 ]
+
 
 def main():
     test_results = []
@@ -580,7 +620,9 @@ def main():
             )
         )
 
-    Result.create_from(results=test_results, files=[], info="Check index build time & recall").complete_job()
+    Result.create_from(
+        results=test_results, files=[], info="Check index build time & recall"
+    ).complete_job()
 
 
 if __name__ == "__main__":

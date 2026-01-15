@@ -1,6 +1,7 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
@@ -17,8 +18,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/ObjectUtils.h>
-
 
 namespace DB
 {
@@ -117,7 +116,7 @@ Chunk ValuesBlockInputFormat::read()
     size_t chunk_start = getDataOffsetMaybeCompressed(*buf);
 
     size_t rows_in_block = 0;
-    for (; rows_in_block < params.max_block_size; ++rows_in_block)
+    for (; rows_in_block < params.max_block_size_rows; ++rows_in_block)
     {
         try
         {
@@ -303,7 +302,8 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         {
             const auto & type = types[column_idx];
             const auto & serialization = serializations[column_idx];
-            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type))
+            /// Let Enum conversion functions handle the null value.
+            if (format_settings.null_as_default && !isNullableOrLowCardinalityNullable(type) && !isEnum(type))
                 read = SerializationNullable::deserializeNullAsDefaultOrNestedTextQuoted(column, *buf, format_settings, serialization);
             else
                 serialization->deserializeTextQuoted(column, *buf, format_settings);
@@ -569,7 +569,19 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                         std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     }
 
-    column.insert(value);
+    /// Insert value into the column.
+    /// For Dynamic type we cannot just insert Field as we lose information about the data type.
+    /// Instead try to create a column with single element and cast it to the destination type.
+    if (type.hasDynamicSubcolumns())
+    {
+        auto const_column = value_raw.second->createColumnConst(1, expression_value);
+        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
+        column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
+    }
+    else
+    {
+        column.insert(value);
+    }
     return true;
 }
 

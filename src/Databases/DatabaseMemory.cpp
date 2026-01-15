@@ -22,10 +22,10 @@ namespace ErrorCodes
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
-    , data_path("data/" + escapeForFileName(database_name) + "/")
+    , data_path(DatabaseCatalog::getDataDirPath(name_) / "")
 {
-    /// Temporary database should not have any data on the moment of its creation
-    /// In case of sudden server shutdown remove database folder of temporary database
+    /// Temporary database should not have any data at the moment of its creation.
+    /// In case of starting up after sudden server shutdown, remove the database folder of the temporary database.
     if (name_ == DatabaseCatalog::TEMPORARY_DATABASE)
         removeDataPath(context_);
 }
@@ -65,10 +65,9 @@ void DatabaseMemory::dropTable(
     }
     try
     {
-        /// Remove table without lock since:
+        /// Remove table without lock since
         /// - it does not require it
-        /// - it may cause lock-order-inversion if underlying storage need to
-        ///   resolve tables (like StorageLiveView)
+        /// - it may cause lock-order-inversion if underlying storage need to resolve tables
         table->drop();
 
         if (table->storesDataOnDisk())
@@ -87,22 +86,23 @@ void DatabaseMemory::dropTable(
     std::lock_guard lock{mutex};
     table->is_dropped = true;
     create_queries.erase(table_name);
+    snapshot_detached_tables.erase(table_name);
     UUID table_uuid = table->getStorageID().uuid;
     if (table_uuid != UUIDHelpers::Nil)
         DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
 }
 
-ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
+ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    create_query->setDatabase(database_name);
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     auto engine = makeASTFunction(getEngineName());
     engine->no_empty_args = true;
     create_query->storage->set(create_query->storage->engine, engine);
 
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+    if (!comment.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -217,11 +217,6 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     }
 
     return res;
-}
-
-void DatabaseMemory::alterDatabaseComment(const AlterCommand & command)
-{
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 void registerDatabaseMemory(DatabaseFactory & factory)

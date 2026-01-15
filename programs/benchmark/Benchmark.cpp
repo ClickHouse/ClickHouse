@@ -37,7 +37,7 @@
 #include <Common/StudentTTest.h>
 #include <Common/CurrentMetrics.h>
 #include <IO/WriteBuffer.h>
-
+#include <Client/ClientApplicationBaseParser.h>
 
 /** A tool for evaluating ClickHouse performance.
   * The tool emulates a case with fixed amount of simultaneously executing queries.
@@ -58,9 +58,10 @@ static constexpr std::string_view DEFAULT_CLIENT_NAME = "benchmark";
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
-extern const int CANNOT_BLOCK_SIGNAL;
-extern const int EMPTY_DATA_PASSED;
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_BLOCK_SIGNAL;
+    extern const int EMPTY_DATA_PASSED;
+    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 class Benchmark : public Poco::Util::Application
@@ -182,9 +183,18 @@ public:
 
     int main(const std::vector<std::string> &) override
     {
-        readQueries();
-        runBenchmark();
-        return 0;
+        try
+        {
+            readQueries();
+            runBenchmark();
+            return 0;
+        }
+        catch (...)
+        {
+            log << getCurrentExceptionMessage(print_stacktrace, true) << '\n';
+            auto code = getCurrentExceptionCode();
+            return static_cast<UInt8>(code) ? code : 1;
+        }
     }
 
 private:
@@ -617,8 +627,6 @@ private:
                 size_t info_index = round_robin ? 0 : connection_index;
                 {
                     std::lock_guard lock(mutex);
-                    log << "An error occurred while processing the query " << "'" << query << "'"
-                            << ": " << getCurrentExceptionMessage(false) << '\n';
                     if (!(continue_on_errors || max_consecutive_errors > ++consecutive_errors))
                     {
                         shutdown = true;
@@ -626,7 +634,7 @@ private:
                     }
 
                     log << getCurrentExceptionMessage(print_stacktrace,
-                        true /*check embedded stack trace*/) << '\n' << flush;
+                        true /*check embedded stack trace*/) << "\n\n" << flush;
 
                     ++total_stats[info_index]->errors;
                 }
@@ -824,7 +832,7 @@ public:
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
-    bool print_stacktrace = true;
+    bool print_stacktrace = false;
 
     try
     {
@@ -863,15 +871,43 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("ignore-error,continue_on_errors", "continue testing even if a query fails")
             ("reconnect", value<size_t>()->default_value(0), "control reconnection behaviour: 0 (never reconnect), 1 (reconnect for every query), or N (reconnect after every N queries)")
             ("client-side-time", "display the time including network communication instead of server-side time; note that for server versions before 22.8 we always display client-side time")
+            ("proto_caps", value<std::string>(), "Enable/disable chunked protocol (comma-separated): chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
         ;
 
         Settings settings;
         auto options_description_non_verbose = options_description;
         settings.addToProgramOptions(options_description);
 
-        boost::program_options::variables_map options;
-        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, options_description), options);
-        boost::program_options::notify(options);
+        auto parser = po::command_line_parser(argc, argv)
+                          .options(options_description)
+                          .extra_parser(OptionsAliasParser(options_description))
+                          .allow_unregistered();
+        po::parsed_options parsed = parser.run();
+
+        /// Check unrecognized options.
+        auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
+        if (!unrecognized_options.empty())
+        {
+            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+        }
+
+        /// Check positional options.
+        for (const auto & op : parsed.options)
+        {
+            /// Skip all options after empty `--`. These are processed separately into the Application configuration.
+            if (op.string_key.empty() && op.original_tokens[0].starts_with("--"))
+                break;
+
+            if (!op.unregistered && op.string_key.empty() && !op.original_tokens[0].starts_with("--")
+                && !op.original_tokens[0].empty() && !op.value.empty())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional option '{}' is not supported.", op.original_tokens[0]);
+            }
+        }
+
+        po::variables_map options;
+        po::store(parsed, options);
+        po::notify(options);
 
         clearPasswordFromCommandLine(argc, argv);
 
@@ -941,9 +977,15 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             std::move(settings));
         return benchmark.run();
     }
+    catch (const po::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return ErrorCodes::BAD_ARGUMENTS;
+    }
     catch (...)
     {
         std::cerr << getCurrentExceptionMessage(print_stacktrace, true) << '\n';
-        return getCurrentExceptionCode();
+        auto code = getCurrentExceptionCode();
+        return static_cast<UInt8>(code) ? code : 1;
     }
 }

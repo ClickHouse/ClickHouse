@@ -37,7 +37,12 @@ struct ReplicaInfo
     std::optional<UInt32> replication_lag;
     UInt64 recovery_time;
 };
-using ReplicasInfo = std::vector<ReplicaInfo>;
+
+struct ReplicasInfo
+{
+    std::vector<ReplicaInfo> replicas;
+    bool replicas_belong_to_shared_catalog;
+};
 
 class DatabaseReplicated : public DatabaseAtomic
 {
@@ -209,11 +214,12 @@ private:
     static BlockIO
     getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);
 
-    String zookeeper_path;
-    String shard_name;
-    String replica_name;
+    const String zookeeper_path;
+    const String shard_name;
+    const String replica_name;
+    const String replica_path;
+
     String replica_group_name;
-    String replica_path;
     DatabaseReplicatedSettings db_settings;
 
     ZooKeeperPtr getZooKeeper() const;

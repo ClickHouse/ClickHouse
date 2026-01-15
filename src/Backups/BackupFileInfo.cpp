@@ -228,13 +228,13 @@ BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entr
 
     std::atomic_bool failed = false;
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::BACKUP_WORKER);
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
         if (failed)
             break;
 
-        runner([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed]()
+        runner.enqueueAndKeepTrack([&infos, &backup_entries, &read_settings, &base_backup, &process_list_element, i, log, &failed]()
         {
             if (failed)
                 return;

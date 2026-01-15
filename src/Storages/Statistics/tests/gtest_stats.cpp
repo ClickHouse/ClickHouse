@@ -80,7 +80,7 @@ TEST(Statistics, Estimator)
         std::vector<StatisticsType> stats_type_to_create({StatisticsType::TDigest, /*StatisticsType::Uniq,*/ StatisticsType::CountMinSketch});
         for (auto stats_type : stats_type_to_create)
         {
-            mock_description.types_to_desc.emplace(stats_type, SingleStatisticsDescription(stats_type, nullptr));
+            mock_description.types_to_desc.emplace(stats_type, SingleStatisticsDescription(stats_type, nullptr, false));
         }
         ColumnDescription column_desc;
         column_desc.name = column_name;
@@ -110,7 +110,7 @@ TEST(Statistics, Estimator)
         RPNBuilderTreeContext tree_context(context, Block{{ DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }}, {});
         ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
         RPNBuilderTreeNode node(ast.get(), tree_context);
-        auto estimate_result = estimator->estimateRelationProfile(node);
+        auto estimate_result = estimator->estimateRelationProfile(nullptr, node);
         std::cout << expression << " " << real_result << " "<< estimate_result.rows << std::endl;
         EXPECT_LT(std::abs(real_result - static_cast<Int64>(estimate_result.rows)), 10000 * eps);
     };

@@ -61,6 +61,8 @@ protected:
 class IcebergBitmapPositionDeleteTransform : public IcebergPositionDeleteTransform
 {
 public:
+    using ExcludedRows = DB::DataLakeObjectMetadata::ExcludedRows;
+
     IcebergBitmapPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
@@ -78,10 +80,11 @@ public:
 
 private:
     void initialize();
-    RoaringBitmapWithSmallSet<size_t, 32> bitmap;
+    ExcludedRows bitmap;
 };
 
 
+/// Requires both the deletes and the input Chunk-s to arrive in order of increasing row number.
 class IcebergStreamingPositionDeleteTransform : public IcebergPositionDeleteTransform
 {
 public:
@@ -116,7 +119,7 @@ private:
     std::vector<size_t> iterator_at_latest_chunks;
     std::set<std::pair<size_t, size_t>> latest_positions;
 
-    std::optional<size_t> previous_chunk_offset;
+    std::optional<size_t> previous_chunk_end_offset;
 };
 
 }

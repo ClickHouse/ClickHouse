@@ -230,6 +230,64 @@ inline bool tryGetDecimalFromComponents(
     return tryGetDecimalFromComponents<DecimalType>(components.whole, components.fractional, scale, result);
 }
 
+/** Specialized DateTime64 construction functions that correctly handle pre-epoch dates.
+ * These functions ensure fractional parts are always treated as positive additive components,
+ * which is essential for correct DateTime64 representation of pre-epoch timestamps.
+ */
+template <bool throw_on_error>
+inline bool dateTimeFromComponentsWithMultiplierImpl(
+    const Int64 & whole_seconds,
+    const Int64 & fractional,
+    DateTime64::NativeType scale_multiplier,
+    DateTime64 & result)
+{
+    using T = DateTime64::NativeType;
+    T result_value;
+
+    if (!multiplyAdd<T, throw_on_error>(
+            T(whole_seconds), scale_multiplier, fractional % scale_multiplier, result_value))
+        return false;
+
+    result = DateTime64(result_value);
+    return true;
+}
+
+inline DateTime64 dateTimeFromComponentsWithMultiplier(
+    const Int64 & whole_seconds,
+    const Int64 & fractional,
+    DateTime64::NativeType scale_multiplier)
+{
+    DateTime64 result;
+    dateTimeFromComponentsWithMultiplierImpl<true>(whole_seconds, fractional, scale_multiplier, result);
+    return result;
+}
+
+inline bool tryGetDateTimeFromComponentsWithMultiplier(
+    const Int64 & whole_seconds,
+    const Int64 & fractional,
+    DateTime64::NativeType scale_multiplier,
+    DateTime64 & result)
+{
+    return dateTimeFromComponentsWithMultiplierImpl<false>(whole_seconds, fractional, scale_multiplier, result);
+}
+
+inline DateTime64 dateTimeFromComponents(
+    const Int64 & whole_seconds,
+    const Int64 & fractional,
+    UInt32 scale)
+{
+    return dateTimeFromComponentsWithMultiplier(whole_seconds, fractional, scaleMultiplier<DateTime64>(scale));
+}
+
+inline bool tryGetDateTimeFromComponents(
+    const Int64 & whole_seconds,
+    const Int64 & fractional,
+    UInt32 scale,
+    DateTime64 & result)
+{
+    return tryGetDateTimeFromComponentsWithMultiplier(whole_seconds, fractional, scaleMultiplier<DateTime64>(scale), result);
+}
+
 /** Split decimal into whole and fractional parts with given scale_multiplier.
  * This is an optimization to reduce number of calls to scaleMultiplier on known scale.
  */

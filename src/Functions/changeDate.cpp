@@ -222,14 +222,14 @@ public:
         }
         else
         {
-            min_date = DecimalUtils::decimalFromComponents<DateTime64>(
+            min_date = DecimalUtils::dateTimeFromComponents(
                 date_lut.makeDateTime(1900, 1, 1, 0, 0, 0),
                 static_cast<Int64>(0),
                 static_cast<UInt32>(scale));
             Int64 deg = 1;
             for (Int64 j = 0; j < scale; ++j)
                 deg *= 10;
-            max_date = DecimalUtils::decimalFromComponents<DateTime64>(
+            max_date = DecimalUtils::dateTimeFromComponents(
                 date_lut.makeDateTime(2299, 12, 31, 23, 59, 59),
                 static_cast<Int64>(deg - 1),
                 static_cast<UInt32>(scale));
@@ -283,7 +283,7 @@ public:
             /// ^^ This looks funny. It is the least terrible suppression of a false positive reported by clang-analyzer (a sub-class
             /// of clang-tidy checks) deep down in 'decimalFromComponents'. Usual suppressions of the form NOLINT* don't work here (they
             /// would only affect code in _this_ file), and suppressing the issue in 'decimalFromComponents' may suppress true positives.
-            result = DecimalUtils::decimalFromComponents<DateTime64>(
+            result = DecimalUtils::dateTimeFromComponents(
                 date_lut.makeDateTime(year, month, day, hours, minutes, seconds),
                 fraction,
                 static_cast<UInt32>(scale));
@@ -356,7 +356,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(function_documentation);
     }
     {
@@ -372,7 +372,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>(function_documentation);
     }
     {
@@ -388,7 +388,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>(function_documentation);
     }
     {
@@ -404,7 +404,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>(function_documentation);
     }
     {
@@ -420,7 +420,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>(function_documentation);
     }
     {
@@ -436,7 +436,7 @@ REGISTER_FUNCTION(ChangeDate)
         };
         FunctionDocumentation::IntroducedIn introduced_in = {24, 7};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-        FunctionDocumentation function_documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+        FunctionDocumentation function_documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
         factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>(function_documentation);
     }
 }

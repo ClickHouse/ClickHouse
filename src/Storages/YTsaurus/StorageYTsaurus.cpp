@@ -32,6 +32,7 @@ namespace Setting
 
 namespace YTsaurusSetting
 {
+    extern const YTsaurusSettingsBool encode_utf8;
     extern const YTsaurusSettingsBool enable_heavy_proxy_redirection;
 }
 
@@ -48,6 +49,7 @@ StorageYTsaurus::StorageYTsaurus(
     , client_connection_info{
         .http_proxy_urls = std::move(configuration_.http_proxy_urls),
         .oauth_token = std::move(configuration_.oauth_token),
+        .encode_utf8 = settings[YTsaurusSetting::encode_utf8],
         .enable_heavy_proxy_redirection = settings[YTsaurusSetting::enable_heavy_proxy_redirection],
     }
     , log(getLogger("StorageYTsaurus(" + table_id_.table_name + ")"))

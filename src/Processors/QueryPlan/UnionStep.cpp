@@ -55,7 +55,7 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
 
     for (auto & cur_pipeline : pipelines)
     {
-#if !defined(NDEBUG)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
         assertCompatibleHeader(cur_pipeline->getHeader(), *getOutputHeader(), "UnionStep");
 #endif
         /// Headers for union must be equal.
@@ -66,7 +66,8 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
             auto converting_dag = ActionsDAG::makeConvertingActions(
                 cur_pipeline->getHeader().getColumnsWithTypeAndName(),
                 getOutputHeader()->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
+                ActionsDAG::MatchColumnsMode::Name,
+                nullptr);
 
             auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
             cur_pipeline->addSimpleTransform([&](const SharedHeader & cur_header)

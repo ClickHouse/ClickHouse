@@ -90,16 +90,16 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t index) const override
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override
     {
-        WriteBufferFromOwnString buf;
-        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, buf);
-        return {buf.str(), std::make_shared<DataTypeString>()};
+        if (options.notFull(name_buf))
+            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, name_buf);
+        return std::make_shared<DataTypeString>();
     }
 
-    StringRef getDataAt(size_t index) const override
+    std::string_view getDataAt(size_t index) const override
     {
-        return StringRef(&chars[n * index], n);
+        return {reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
     bool isDefaultAt(size_t index) const override;
@@ -137,9 +137,9 @@ public:
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 
@@ -173,6 +173,8 @@ public:
 #endif
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+
+    void filter(const IColumn::Filter & filt) override;
 
     void expand(const IColumn::Filter & mask, bool inverted) override;
 

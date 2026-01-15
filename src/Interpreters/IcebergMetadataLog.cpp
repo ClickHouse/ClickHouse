@@ -45,6 +45,12 @@ namespace
 
 const DataTypePtr rowType = makeNullable(std::make_shared<DataTypeUInt64>());
 
+auto iceberg_pruning_status_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
+    {"NotPruned", static_cast<Int8>(Iceberg::PruningReturnStatus::NOT_PRUNED)},
+    {"PartitionPruned", static_cast<Int8>(Iceberg::PruningReturnStatus::PARTITION_PRUNED)},
+    {"MinMaxIndexPruned", static_cast<Int8>(Iceberg::PruningReturnStatus::MIN_MAX_INDEX_PRUNED)}});
+
+const DataTypePtr iceberg_pruning_status_datatype_nullable = makeNullable(iceberg_pruning_status_datatype);
 }
 
 ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
@@ -65,7 +71,8 @@ ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
         {"table_path", std::make_shared<DataTypeString>(), "Table path."},
         {"file_path", std::make_shared<DataTypeString>(), "File path."},
         {"content", std::make_shared<DataTypeString>(), "Content in a JSON format (json file content, avro metadata or avro entry)."},
-        {"row_in_file", rowType, "Row in file."}};
+        {"row_in_file", rowType, "Row in file."},
+        {"pruning_status", iceberg_pruning_status_datatype_nullable, "Status of partition pruning or min-max index pruning for the file."}};
 }
 
 void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
@@ -79,6 +86,7 @@ void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_index++]->insert(file_path);
     columns[column_index++]->insert(metadata_content);
     columns[column_index++]->insert(row_in_file ? *row_in_file : rowType->getDefault());
+    columns[column_index++]->insert(pruning_status ? *pruning_status : iceberg_pruning_status_datatype_nullable->getDefault());
 }
 
 void insertRowToLogTable(
@@ -87,7 +95,8 @@ void insertRowToLogTable(
     IcebergMetadataLogLevel row_log_level,
     const String & table_path,
     const String & file_path,
-    std::optional<UInt64> row_in_file)
+    std::optional<UInt64> row_in_file,
+    std::optional<Iceberg::PruningReturnStatus> pruning_status)
 {
     IcebergMetadataLogLevel set_log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
     if (set_log_level < row_log_level)
@@ -111,6 +120,7 @@ void insertRowToLogTable(
             .table_path = table_path,
             .file_path = file_path,
             .metadata_content = row,
-            .row_in_file = row_in_file});
+            .row_in_file = row_in_file,
+            .pruning_status = pruning_status});
 }
 }
