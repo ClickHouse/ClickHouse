@@ -1,5 +1,6 @@
 #include <Columns/IColumn.h>
 #include <Core/Range.h>
+#include <DataTypes/IDataType.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/FieldVisitorToString.h>
@@ -35,6 +36,11 @@ Range Range::createWholeUniverse()
 Range Range::createWholeUniverseWithoutNull()
 {
     return Range(NEGATIVE_INFINITY, false, POSITIVE_INFINITY, false);
+}
+
+Range Range::createTypeAwareWholeUniverse(const DataTypePtr & type)
+{
+    return isNullableOrLowCardinalityNullable(type) ? createWholeUniverse() : createWholeUniverseWithoutNull();
 }
 
 Range Range::createRightBounded(const FieldRef & right_point, bool right_included, bool with_null)

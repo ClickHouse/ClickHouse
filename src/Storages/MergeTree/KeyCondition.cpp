@@ -2971,6 +2971,203 @@ static BoolMask forAnyHyperrectangle(
     return result;
 }
 
+/** For the range between tuples, determined by sparse_left_keys, left_bounded, sparse_right_keys, right_bounded,
+  * invoke the callback on every hyperrectangle composing this range (see the description above),
+  * and returns the OR of the callback results (meaning if callback returned true on any part of the range).
+  *
+  * In the above implementation, notice that we will need to create `Range` objects many many times, especially for suffix of the
+  * hyperrectangle. However, this is a problem if PK is very long but filter only uses few key columns only because creating
+  * and doing operations with `Range` object is very slow.
+  * That's why we use sparse representation of hyperrectangle by only storing and processing
+  * information about key columns that are used by some RPNElement (and whose marks were also loaded in memory).
+  *
+  * It is important to note that even if we only have sparse representation of hyperrectangle, we actually enumerate
+  * over all possible hyperrectangles by iterating using `prefix_size`. `prefix_size` goes from 0 till `equal_boundaries_mask.size() - 1`.
+  * `equal_boundaries_mask` is not sparse, rather it covers contiguous prefix of PK. Why `equal_boundaries_mask` does not cover
+  * the entire PK? Because if filter uses only first three columns of the PK, then there is no need to even consider columns after
+  * the third column. This truncation happens in `MergeTreeDataSelectExecutor::markRangesFromPKRange()`.
+  *
+  * This enumeration over prefix of PK columns is convenient and extremely fast because no `Range` object is being created for the
+  * intermediate columns that are not useful in KeyCondition. Maybe it is also possible to enumerate sparsely but that would require
+  * other information about intermediate columns and different approach. It is not possible to guarantee correctness by only using
+  * sparse key column information.
+  */
+template <typename F>
+static BoolMask forAnySparseHyperrectangle(
+    const std::vector<size_t> & sparse_key_indices,
+    const std::vector<int> & key_col_to_sparse_pos,
+    const FieldRef * sparse_left_keys,
+    const FieldRef * sparse_right_keys,
+    const std::vector<UInt8> & equal_boundaries_mask,
+    bool left_bounded,
+    bool right_bounded,
+    Hyperrectangle & sparse_hyperrectangle,
+    const DataTypes & sparse_data_types,
+    size_t prefix_size,
+    BoolMask initial_mask,
+    F && callback)
+{
+    const size_t key_size = equal_boundaries_mask.size();
+
+#ifndef NDEBUG
+    const size_t sparse_keys_size = sparse_key_indices.size();
+
+    chassert(key_size == key_col_to_sparse_pos.size());
+    chassert(sparse_key_indices.size() <= sparse_data_types.size());
+    chassert(prefix_size <= key_size);
+
+    for (size_t i = 1; i < sparse_keys_size; ++i)
+        chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
+    for (size_t i = 0; i < sparse_keys_size; ++i)
+        chassert(sparse_key_indices[i] < key_size);
+
+    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+        chassert(key_col_to_sparse_pos[sparse_key_indices[sparse_pos]] == static_cast<int>(sparse_pos));
+#endif
+
+    if (!left_bounded && !right_bounded)
+        return callback(sparse_hyperrectangle);
+
+    /// Extend common prefix in full key space (not sparse)
+    if (left_bounded && right_bounded)
+    {
+        while (prefix_size < key_size && equal_boundaries_mask[prefix_size])
+        {
+            bool is_key_col_used = (key_col_to_sparse_pos[prefix_size] != -1);
+            size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
+            if (is_key_col_used)
+                sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos]); /// point range
+
+            ++prefix_size;
+        }
+    }
+
+    if (prefix_size == key_size)
+        return callback(sparse_hyperrectangle);
+
+    const bool is_key_col_used = (key_col_to_sparse_pos[prefix_size] != -1);
+
+    /// Only one key component left
+    if (prefix_size + 1 == key_size)
+    {
+        if (is_key_col_used)
+        {
+            const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
+            if (left_bounded && right_bounded)
+            {
+                sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos], true, sparse_right_keys[sparse_pos], true);
+            }
+            else if (left_bounded)
+            {
+                sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
+                    sparse_left_keys[sparse_pos], true, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+            }
+            else if (right_bounded)
+            {
+                sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
+                    sparse_right_keys[sparse_pos], true, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+            }
+        }
+
+        return callback(sparse_hyperrectangle);
+    }
+
+    /// General case:
+    /// (x1 .. x2) × (-inf .. +inf) × ...
+    if (is_key_col_used)
+    {
+        const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
+        if (left_bounded && right_bounded)
+        {
+            sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos], false, sparse_right_keys[sparse_pos], false);
+        }
+        else if (left_bounded)
+        {
+            sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
+                sparse_left_keys[sparse_pos], false, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+        }
+        else if (right_bounded)
+        {
+            sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
+                sparse_right_keys[sparse_pos], false, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+        }
+    }
+
+    /// Tail coordinates > prefix_size for sparse columns become whole universe
+    auto it = std::upper_bound(sparse_key_indices.begin(), sparse_key_indices.end(), prefix_size);
+    for (; it != sparse_key_indices.end(); ++it)
+    {
+        size_t key_index = *it;
+        chassert(key_col_to_sparse_pos[key_index] >= 0);
+        size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_index]);
+
+        sparse_hyperrectangle[sparse_pos] = Range::createTypeAwareWholeUniverse(sparse_data_types[sparse_pos]);
+    }
+
+    auto result = BoolMask::combine(initial_mask, callback(sparse_hyperrectangle));
+
+    /// isComplete() means that both `can_be_true` = true and ``can_be_false` = true. No `result = BoolMask::combine(result, ...)`
+    /// can change `result` anymore. So, there is no need to continue.
+    if (result.isComplete())
+        return result;
+
+    /// [x1]       × [y1 .. +inf)
+    if (left_bounded)
+    {
+        if (is_key_col_used)
+        {
+            const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
+            sparse_hyperrectangle[sparse_pos] = Range(sparse_left_keys[sparse_pos]);
+        }
+
+        result = BoolMask::combine(
+            result,
+            forAnySparseHyperrectangle(
+                sparse_key_indices,
+                key_col_to_sparse_pos,
+                sparse_left_keys,
+                sparse_right_keys,
+                equal_boundaries_mask,
+                true,
+                false,
+                sparse_hyperrectangle,
+                sparse_data_types,
+                prefix_size + 1,
+                initial_mask,
+                callback));
+
+        if (result.isComplete())
+            return result;
+    }
+
+    /// [x2]       × (-inf .. y2]
+    if (right_bounded)
+    {
+        if (is_key_col_used)
+        {
+            const size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
+            sparse_hyperrectangle[sparse_pos] = Range(sparse_right_keys[sparse_pos]);
+        }
+
+        result = BoolMask::combine(
+            result,
+            forAnySparseHyperrectangle(
+                sparse_key_indices,
+                key_col_to_sparse_pos,
+                sparse_left_keys,
+                sparse_right_keys,
+                equal_boundaries_mask,
+                false,
+                true,
+                sparse_hyperrectangle,
+                sparse_data_types,
+                prefix_size + 1,
+                initial_mask,
+                callback));
+    }
+
+    return result;
+}
 
 BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
@@ -2995,6 +3192,67 @@ BoolMask KeyCondition::checkInRange(
     {
         return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
     });
+}
+
+/// Optimized overload for sparse key columns
+BoolMask KeyCondition::checkInRange(
+    const std::vector<size_t> & sparse_key_indices,
+    const FieldRef * sparse_left_keys,
+    const FieldRef * sparse_right_keys,
+    const DataTypes & sparse_data_types,
+    const std::vector<UInt8> & equal_boundaries_mask,
+    BoolMask initial_mask) const
+{
+    const size_t sparse_keys_size = sparse_key_indices.size();
+
+    if (sparse_keys_size == 0)
+        return BoolMask(true, true);
+
+#ifndef NDEBUG
+    chassert(sparse_keys_size <= sparse_data_types.size());
+    chassert(equal_boundaries_mask.size() > *std::max_element(sparse_key_indices.begin(), sparse_key_indices.end()));
+
+    for (size_t i = 1; i < sparse_keys_size; ++i)
+        chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
+#endif
+
+    Hyperrectangle sparse_key_ranges;
+    sparse_key_ranges.reserve(sparse_keys_size);
+    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+    {
+        chassert(sparse_pos < sparse_data_types.size());
+        sparse_key_ranges.emplace_back(Range::createTypeAwareWholeUniverse(sparse_data_types[sparse_pos]));
+    }
+
+    const size_t key_size = equal_boundaries_mask.size();
+
+    /// Mapping: full key index -> position in sparse hyperrectangle, or -1 if not tracked.
+    std::vector<int> key_col_to_sparse_pos(key_size, -1);
+    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+    {
+        size_t key_index = sparse_key_indices[sparse_pos];
+        chassert(key_index < key_size);
+        chassert(key_col_to_sparse_pos[key_index] == -1 && "sparse_key_indices contains duplicate entries");
+
+        key_col_to_sparse_pos[key_index] = static_cast<int>(sparse_pos);
+    }
+
+    return forAnySparseHyperrectangle(
+        sparse_key_indices,
+        key_col_to_sparse_pos,
+        sparse_left_keys,
+        sparse_right_keys,
+        equal_boundaries_mask,
+        /*left_bounded*/ true,
+        /*right_bounded*/ true,
+        sparse_key_ranges,
+        sparse_data_types,
+        /*prefix_size*/ 0,
+        initial_mask,
+        [&](const Hyperrectangle & key_ranges_hyperrectangle)
+        {
+            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);
+        });
 }
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
@@ -3039,293 +3297,6 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             key_range.invert();
     }
     return key_range;
-}
-
-// Returns whether the condition is one continuous range of the primary key,
-// where every field is matched by range or a single element set.
-// This allows to use a more efficient lookup with no extra reads.
-bool KeyCondition::matchesExactContinuousRange() const
-{
-    const Field field{};
-    auto check_monotonicity_of_chain = [&field](const std::vector<FunctionBasePtr> & chain) -> std::pair<bool, bool>
-    {
-        bool all_always_monotonic = true;
-        bool all_strict = true;
-
-        for (const auto & func : chain)
-        {
-            if (!func || !func->hasInformationAboutMonotonicity())
-                return {false, false};
-
-            const auto & types = func->getArgumentTypes();
-            if (types.empty() || !types.front())
-                return {false, false};
-
-            const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
-            all_always_monotonic &= monotonicity.is_always_monotonic;
-            all_strict &= monotonicity.is_strict;
-
-            if (!all_always_monotonic && !all_strict)
-                break;
-        }
-
-        return {all_always_monotonic, all_strict};
-    };
-
-    enum Constraint
-    {
-        POINT,
-        RANGE,
-        UNKNOWN,
-    };
-
-    std::vector<Constraint> column_constraints(num_key_columns, Constraint::UNKNOWN);
-
-    for (const auto & element : rpn)
-    {
-        if (element.function == RPNElement::Function::FUNCTION_AND || element.function == RPNElement::Function::FUNCTION_UNKNOWN
-            || element.function == RPNElement::Function::ALWAYS_TRUE)
-        {
-            continue;
-        }
-
-        if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
-        {
-            for (const auto & mapping : element.set_index->getIndexesMapping())
-            {
-                auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(mapping.functions);
-                if (!is_chain_always_monotonic)
-                    return false;
-
-                Constraint & constraint = column_constraints.at(mapping.key_index);
-                /// For Constraint::POINT, we need to check if the function chain is strict.
-                /// For example, `toDate(event_time) in ('2025-06-03')` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE
-                if (is_chain_strict)
-                    constraint = Constraint::POINT;
-                else
-                {
-                    /// If this key is contained by multiple elements and has been set to POINT, do not convert it to RANGE.
-                    if (constraint != Constraint::POINT)
-                        constraint = Constraint::RANGE;
-                }
-            }
-
-            continue;
-        }
-
-        if (element.function == RPNElement::Function::FUNCTION_IN_RANGE)
-        {
-            auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(element.monotonic_functions_chain);
-            if (!is_chain_always_monotonic)
-                return false;
-
-            auto & constraint = column_constraints.at(element.getKeyColumn());
-            if (element.range.left == element.range.right)
-            {
-                /// For Constraint::POINT, we need to check if the function chain is strict.
-                /// For example, `toDate(event_time) = '2025-06-03'` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
-                /// So, POINT needs to be converted to a RANGE
-                if (is_chain_strict)
-                    constraint = Constraint::POINT;
-            }
-
-            if (constraint != Constraint::POINT)
-                constraint = Constraint::RANGE;
-
-            continue;
-        }
-
-        return false;
-    }
-
-    auto min_constraint = column_constraints[0];
-
-    if (min_constraint > Constraint::RANGE)
-    {
-        return false;
-    }
-
-    for (size_t i = 1; i < num_key_columns; ++i)
-    {
-        if (column_constraints[i] < min_constraint)
-        {
-            return false;
-        }
-
-        if (column_constraints[i] == Constraint::RANGE && min_constraint == Constraint::RANGE)
-        {
-            return false;
-        }
-
-        min_constraint = column_constraints[i];
-    }
-
-    return true;
-}
-
-bool KeyCondition::extractPlainRanges(Ranges & ranges) const
-{
-    if (key_columns.size() != 1)
-        return false;
-
-    if (hasMonotonicFunctionsChain())
-        return false;
-
-    /// All Ranges in rpn_stack is plain.
-    std::stack<PlainRanges> rpn_stack;
-
-    for (const auto & element : rpn)
-    {
-        if (element.function == RPNElement::FUNCTION_AND)
-        {
-            auto right_ranges = rpn_stack.top();
-            rpn_stack.pop();
-
-            auto left_ranges = rpn_stack.top();
-            rpn_stack.pop();
-
-            auto new_range = left_ranges.intersectWith(right_ranges);
-            rpn_stack.emplace(std::move(new_range));
-        }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            auto right_ranges = rpn_stack.top();
-            rpn_stack.pop();
-
-            auto left_ranges = rpn_stack.top();
-            rpn_stack.pop();
-
-            auto new_range = left_ranges.unionWith(right_ranges);
-            rpn_stack.emplace(std::move(new_range));
-        }
-        else if (element.function == RPNElement::FUNCTION_NOT)
-        {
-            auto to_invert_ranges = rpn_stack.top();
-            rpn_stack.pop();
-
-            std::vector<Ranges> reverted_ranges = PlainRanges::invert(to_invert_ranges.ranges);
-
-            if (reverted_ranges.size() == 1)
-                rpn_stack.emplace(std::move(reverted_ranges[0]));
-            else
-            {
-                /// intersect reverted ranges
-                PlainRanges intersected_ranges(reverted_ranges[0]);
-                for (size_t i = 1; i < reverted_ranges.size(); i++)
-                {
-                    intersected_ranges = intersected_ranges.intersectWith(PlainRanges(reverted_ranges[i]));
-                }
-                rpn_stack.emplace(std::move(intersected_ranges));
-            }
-        }
-        else /// atom relational expression or constants
-        {
-            if (element.function == RPNElement::FUNCTION_IN_RANGE)
-            {
-                rpn_stack.push(PlainRanges(element.range));
-            }
-            else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
-            {
-                rpn_stack.push(PlainRanges(element.range.invertRange()));
-            }
-            else if (element.function == RPNElement::FUNCTION_IN_SET)
-            {
-                if (element.set_index->hasMonotonicFunctionsChain())
-                    return false;
-
-                if (element.set_index->size() == 0)
-                {
-                    rpn_stack.push(PlainRanges::makeBlank()); /// skip blank range
-                    continue;
-                }
-
-                const auto & values = element.set_index->getOrderedSet();
-                Ranges points_range;
-
-                /// values in set_index are ordered and no duplication
-                for (size_t i = 0; i < element.set_index->size(); i++)
-                {
-                    FieldRef f;
-                    values[0]->get(i, f);
-                    if (f.isNull())
-                        return false;
-                    points_range.push_back({f});
-                }
-                rpn_stack.push(PlainRanges(points_range));
-            }
-            else if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
-            {
-                if (element.set_index->hasMonotonicFunctionsChain())
-                    return false;
-
-                if (element.set_index->size() == 0)
-                {
-                    rpn_stack.push(PlainRanges::makeUniverse());
-                    continue;
-                }
-
-                const auto & values = element.set_index->getOrderedSet();
-                Ranges points_range;
-
-                std::optional<FieldRef> pre;
-                for (size_t i=0; i<element.set_index->size(); i++)
-                {
-                    FieldRef cur;
-                    values[0]->get(i, cur);
-
-                    if (cur.isNull())
-                        return false;
-                    if (pre)
-                    {
-                        Range r(*pre, false, cur, false);
-                        /// skip blank range
-                        if (!(r.left > r.right || (r.left == r.right && !r.left_included && !r.right_included)))
-                            points_range.push_back(r);
-                    }
-                    else
-                    {
-                        points_range.push_back(Range::createRightBounded(cur, false));
-                    }
-                    pre = cur;
-                }
-
-                points_range.push_back(Range::createLeftBounded(*pre, false));
-                rpn_stack.push(PlainRanges(points_range));
-            }
-            else if (element.function == RPNElement::ALWAYS_FALSE)
-            {
-                /// skip blank range
-                rpn_stack.push(PlainRanges::makeBlank());
-            }
-            else if (element.function == RPNElement::ALWAYS_TRUE)
-            {
-                rpn_stack.push(PlainRanges::makeUniverse());
-            }
-            else if (element.function == RPNElement::FUNCTION_IS_NULL)
-            {
-                /// key values can not be null, so isNull will get blank range.
-                rpn_stack.push(PlainRanges::makeBlank());
-            }
-            else if (element.function == RPNElement::FUNCTION_IS_NOT_NULL)
-            {
-                rpn_stack.push(PlainRanges::makeUniverse());
-            }
-            else /// FUNCTION_UNKNOWN or functions not supported by this method (FUNCTION_ARGS_IN_HYPERRECTANGLE, FUNCTION_POINT_IN_POLYGON)
-            {
-                if (!has_filter)
-                    rpn_stack.push(PlainRanges::makeUniverse());
-                else
-                    return false;
-            }
-        }
-    }
-
-    if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::extractPlainRanges");
-
-    ranges = std::move(rpn_stack.top().ranges);
-    return true;
 }
 
 BoolMask KeyCondition::checkInHyperrectangle(
@@ -3677,6 +3648,689 @@ BoolMask KeyCondition::checkInHyperrectangle(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
 
     return rpn_stack[0];
+}
+
+BoolMask KeyCondition::checkInHyperrectangle(
+    const std::vector<int> & key_col_to_sparse_pos,
+    const Hyperrectangle & sparse_hyperrectangle,
+    const DataTypes & sparse_data_types) const
+{
+    std::vector<BoolMask> rpn_stack;
+
+    auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
+    {
+        bool is_key_col_present = (key_column < key_col_to_sparse_pos.size() && key_col_to_sparse_pos[key_column] != -1);
+        const size_t sparse_pos = is_key_col_present ? static_cast<size_t>(key_col_to_sparse_pos[key_column]) : 0;
+        return {is_key_col_present, sparse_pos};
+    };
+
+    auto curve_type = [&](size_t key_column_pos)
+    {
+        for (const auto & curve : key_space_filling_curves)
+            if (curve.key_column_pos == key_column_pos)
+                return curve.type;
+        return SpaceFillingCurveType::Unknown;
+    };
+
+    for (const auto & element : rpn)
+    {
+        if (element.argument_num_of_space_filling_curve.has_value())
+        {
+            /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
+            /// we cannot process it.
+            rpn_stack.emplace_back(true, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        {
+            rpn_stack.emplace_back(true, true);
+        }
+        else if (element.function == RPNElement::FUNCTION_IN_RANGE
+              || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+        {
+            size_t key_column = element.getKeyColumn();
+            auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
+
+            if (!is_key_col_present)
+            {
+                /// Column not represented – treat as unknown for index pruning.
+                rpn_stack.emplace_back(true, true);
+            }
+            else
+            {
+                Range key_range = sparse_hyperrectangle[sparse_pos];
+
+                /// The case when the column is wrapped in a chain of possibly monotonic functions.
+                if (!element.monotonic_functions_chain.empty())
+                {
+                    std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
+                        key_range,
+                        element.monotonic_functions_chain,
+                        sparse_data_types[sparse_pos],
+                        single_point);
+
+                    if (!new_range)
+                    {
+                        /// Cannot determine monotonicity on this range – unknown.
+                        rpn_stack.emplace_back(true, true);
+                    }
+                    else
+                    {
+                        key_range = *new_range;
+
+                        bool intersects = element.range.intersectsRange(key_range);
+                        bool contains   = element.range.containsRange(key_range);
+
+                        rpn_stack.emplace_back(intersects, !contains);
+                        /// we don't create bloom_filter_data if monotonic_functions_chain is present
+                    }
+                }
+                else
+                {
+                    bool intersects = element.range.intersectsRange(key_range);
+                    bool contains = element.range.containsRange(key_range);
+
+                    rpn_stack.emplace_back(intersects, !contains);
+
+                }
+            }
+
+            /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
+            /// If `element.range` is relaxed (and thus wider) and contains `key_range`, then `can_be_false` becomes false.
+            /// However, in reality `can_be_false` may be true, because the actual range of element may be stricter than `element.range`.
+            /// For example, for `match(...)`, a false negative here (i.e. `can_be_false` is false) would make
+            /// `not match(...)` set `can_be_true = false`, causing us to skip the granule, which would be incorrect.
+            /// Therefore, we must set `can_be_false = true` to be safe.
+            /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
+            if (element.relaxed)
+                rpn_stack.back().can_be_false = true;
+
+            if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+                rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
+        {
+            /** The case of space-filling curves.
+              * We unpack the range of a space filling curve into hyperrectangles of their arguments,
+              * and then check the intersection of them with the given hyperrectangle from the key condition.
+              *
+              * Note: you might find this code hard to understand,
+              * because there are three different hyperrectangles involved:
+              *
+              * 1. A hyperrectangle derived from the range of the table's sparse index (marks granule): `hyperrectangle`
+              *    We analyze its dimension `key_range`, corresponding to the `key_column`.
+              *    For example, the table's key is a single column `mortonEncode(x, y)`,
+              *    the current granule is [500, 600], and it means that
+              *    mortonEncode(x, y) in [500, 600]
+              *
+              * 2. A hyperrectangle derived from the key condition, e.g.
+              *    `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30` defines: (x, y) in [10, 20] × [20, 30]
+              *
+              * 3. A set of hyperrectangles that we obtain by inverting the space-filling curve on the range:
+              *    From mortonEncode(x, y) in [500, 600]
+              *    We get (x, y) in [30, 31] × [12, 13]
+              *        or (x, y) in [28, 31] × [14, 15];
+              *        or (x, y) in [0, 7] × [16, 23];
+              *        or (x, y) in [8, 11] × [16, 19];
+              *        or (x, y) in [12, 15] × [16, 17];
+              *        or (x, y) in [12, 12] × [18, 18];
+              *
+              *  And we analyze the intersection of (2) and (3).
+              */
+
+            size_t key_column = element.getKeyColumn();
+            auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
+
+            if (!is_key_col_present)
+            {
+                rpn_stack.emplace_back(true, true);
+            }
+            else
+            {
+                Range key_range = sparse_hyperrectangle[sparse_pos];
+
+                /// The only possible result type of a space filling curve is UInt64.
+                /// We also only check bounded ranges.
+                if (key_range.left.getType() == Field::Types::UInt64
+                    && key_range.right.getType() == Field::Types::UInt64)
+                {
+                    key_range.shrinkToIncludedIfPossible();
+
+                    size_t num_dimensions = element.space_filling_curve_args_hyperrectangle.size();
+
+                    /// Let's support only the case of 2d, because I'm not confident in other cases.
+                    if (num_dimensions == 2)
+                    {
+                        UInt64 left = key_range.left.safeGet<UInt64>();
+                        UInt64 right = key_range.right.safeGet<UInt64>();
+
+                        BoolMask mask(false, true);
+                        auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)
+                        {
+                            BoolMask current_intersection(true, false);
+                            for (size_t dim = 0; dim < num_dimensions; ++dim)
+                            {
+                                const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
+
+                                const Range curve_arg_range(
+                                    curve_hyperrectangle[dim].first, true,
+                                    curve_hyperrectangle[dim].second, true);
+
+                                bool intersects = condition_arg_range.intersectsRange(curve_arg_range);
+                                bool contains = condition_arg_range.containsRange(curve_arg_range);
+
+                                current_intersection = current_intersection & BoolMask(intersects, !contains);
+                            }
+
+                            mask = mask | current_intersection;
+                        };
+
+                        switch (curve_type(key_column))
+                        {
+                            case SpaceFillingCurveType::Hilbert:
+                            {
+                                hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
+                                break;
+                            }
+                            case SpaceFillingCurveType::Morton:
+                            {
+                                mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
+                                break;
+                            }
+                            case SpaceFillingCurveType::Unknown:
+                            {
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                            }
+                        }
+
+                        rpn_stack.emplace_back(mask);
+                    }
+                    else
+                    {
+                        rpn_stack.emplace_back(true, true);
+                    }
+                }
+                else
+                {
+                    rpn_stack.emplace_back(true, true);
+                }
+            }
+
+            /** Note: we can consider implementing a simpler solution, based on "hidden keys".
+              * It means, when we have a table's key like (a, b, mortonCurve(x, y))
+              * we extract the arguments from the curves, and append them to the key,
+              * imagining that we have the key (a, b, mortonCurve(x, y), x, y)
+              *
+              * Then while we analyze the granule's range between (a, b, mortonCurve(x, y))
+              * and decompose it to the series of hyperrectangles,
+              * we can construct a series of hyperrectangles of the extended key (a, b, mortonCurve(x, y), x, y),
+              * and then do everything as usual.
+              *
+              * This approach is generalizable to any functions, that have preimage of interval
+              * represented by a set of hyperrectangles.
+              */
+        }
+        else if (element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
+        {
+            /** There are 2 kinds of polygons:
+              *   1. Polygon by minmax index
+              *   2. Polygons which is provided by user
+              *
+              * Polygon by minmax index:
+              *   For hyperactangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
+              *
+              * Algorithm:
+              *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
+              */
+
+            if (element.key_columns.size() != 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Point-in-polygon requires 2 key columns.");
+
+            size_t x_key_column = element.key_columns[0];
+            size_t y_key_column = element.key_columns[1];
+
+            auto [is_x_key_col_present, x_sparse_pos] = get_sparse_info(x_key_column);
+            auto [is_y_key_col_present, y_sparse_pos] = get_sparse_info(y_key_column);
+
+            if (!is_x_key_col_present || !is_y_key_col_present)
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            Float64 x_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[x_sparse_pos].left);
+            Float64 x_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[x_sparse_pos].right);
+            Float64 y_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[y_sparse_pos].left);
+            Float64 y_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), sparse_hyperrectangle[y_sparse_pos].right);
+
+            if (unlikely(isNaN(x_min) || isNaN(x_max) || isNaN(y_min) || isNaN(y_max)))
+            {
+                rpn_stack.emplace_back(true, true);
+                continue;
+            }
+
+            using Point = boost::geometry::model::d2::point_xy<Float64>;
+            using Polygon = boost::geometry::model::polygon<Point>;
+            Polygon  polygon_by_minmax_index;
+            polygon_by_minmax_index.outer().emplace_back(x_min, y_min);
+            polygon_by_minmax_index.outer().emplace_back(x_min, y_max);
+            polygon_by_minmax_index.outer().emplace_back(x_max, y_max);
+            polygon_by_minmax_index.outer().emplace_back(x_max, y_min);
+
+            /// Close ring
+            boost::geometry::correct(polygon_by_minmax_index);
+
+            /// Because the polygon may have a hole so the "can_be_false" should always be true.
+            rpn_stack.emplace_back(
+                boost::geometry::intersects(polygon_by_minmax_index, element.polygon->data), true);
+        }
+        else if (element.function == RPNElement::FUNCTION_IS_NULL
+              || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
+        {
+            size_t key_column = element.getKeyColumn();
+            auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
+
+            if (!is_key_col_present)
+            {
+                rpn_stack.emplace_back(true, true);
+            }
+            else
+            {
+                const Range * key_range = &sparse_hyperrectangle[sparse_pos];
+
+                /// No need to apply monotonic functions as nulls are kept.
+                bool intersects = element.range.intersectsRange(*key_range);
+                bool contains   = element.range.containsRange(*key_range);
+
+                rpn_stack.emplace_back(intersects, !contains);
+                if (element.function == RPNElement::FUNCTION_IS_NULL)
+                    rpn_stack.back() = !rpn_stack.back();
+            }
+        }
+        else if (element.function == RPNElement::FUNCTION_IN_SET
+              || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+        {
+            if (!element.set_index)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
+
+            /// We call set_index->checkInRange.
+            /// In theory this should be a checkInHyperrectangle rather than checkInRange.
+            /// checkInRange may produce false positives if some set element is in range but not in
+            /// hyperrectangle. But for MergeTreeSetIndex, range lookup is more efficient than
+            /// hyperrectangle lookup: range lookup is a binary search in O(log n) time, while
+            /// hyperrectangle lookup requires an O(n) scan in the worst case.
+            /// So we use checkInRange as an approximation of checkInHyperrectangle. This doesn't
+            /// break correctness because it can't produce false negatives, because the range is
+            /// a superset of the hyperrectangle.
+            ///
+            /// Moreover, when this KeyCondition::checkInHyperrectangle is called from
+            /// forAnySparseHyperrectangle, this checkInRange is equivalent to a checkInHyperrectangle,
+            /// no false positives.
+            /// Proof: Recall how forAnySparseHyperrectangle produces its hyperrectangles:
+            ///  > For example, the range [ x1 y1 .. x2 y2 ] given x1 != x2 is equal to the union of
+            ///  > the following three hyperrectangles:
+            ///  > [x1]       × [y1 .. +inf)
+            ///  > (x1 .. x2) × (-inf .. +inf)
+            ///  > [x2]       × (-inf .. y2]
+            /// (The above is applied recursively, i.e. y1 and y2 are tails of the tuple,
+            ///  not necessarily individual tuple elements.)
+            /// Suppose the MergeTreeSetIndex contains a set element that's inside the range but not
+            /// inside the hyperrectangle. It's a tuple (..., x, ..., y, ...), where y is outside
+            /// the corresponding hyperrectangle range, and x corresponds to a hyperrectangle range
+            /// that is not a single element. So x must come from the `(x1 .. x2) × (-inf .. +inf)`
+            /// case. But then y's range is (-inf, +inf), so y can't be outside its range. Contradiction.
+            ///
+            /// It may make sense to implement proper MergeTreeSetIndex::checkInHyperrectangle too,
+            /// for cases when KeyCondition::checkInHyperrectangle is called directly, e.g. based on
+            /// min/max index in MergeTree or Parquet file metadata.
+
+            /// But if set_index->checkInRange exists, can't KeyCondition::checkInRange call it
+            /// once for the initial key range instead of going through forAnySparseHyperrectangle?
+            /// No, that would be incorrect if the set's tuple doesn't include all key columns.
+            /// For example,
+            ///   (x, y, z) BETWEEN (10, 100, 1000) AND (20, 200, 2000)
+            /// is neither necessary nor sufficient for
+            ///   (x, z) BETWEEN (10, 1000) AND (20, 2000)
+            /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
+            /// but  (20, 150, 3000) satisfies the first condition but not the second.
+
+            rpn_stack.emplace_back(element.set_index->checkInRange(key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, single_point));
+
+            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
+                rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            chassert(!rpn_stack.empty());
+            rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (element.function == RPNElement::FUNCTION_AND)
+        {
+            assert(!rpn_stack.empty());
+
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+
+            chassert(!rpn_stack.empty());
+            auto arg2 = rpn_stack.back();
+            rpn_stack.back() = arg1 & arg2;
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            chassert(!rpn_stack.empty());
+            auto arg1 = rpn_stack.back();
+            rpn_stack.pop_back();
+
+            chassert(!rpn_stack.empty());
+            auto arg2 = rpn_stack.back();
+            rpn_stack.back() = arg1 | arg2;
+        }
+        else if (element.function == RPNElement::ALWAYS_FALSE)
+        {
+            rpn_stack.emplace_back(false, true);
+        }
+        else if (element.function == RPNElement::ALWAYS_TRUE)
+        {
+            rpn_stack.emplace_back(true, false);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
+        }
+
+    }
+
+    if (rpn_stack.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
+
+    return rpn_stack[0];
+}
+
+
+// Returns whether the condition is one continuous range of the primary key,
+// where every field is matched by range or a single element set.
+// This allows to use a more efficient lookup with no extra reads.
+bool KeyCondition::matchesExactContinuousRange() const
+{
+    const Field field{};
+    auto check_monotonicity_of_chain = [&field](const std::vector<FunctionBasePtr> & chain) -> std::pair<bool, bool>
+    {
+        bool all_always_monotonic = true;
+        bool all_strict = true;
+
+        for (const auto & func : chain)
+        {
+            if (!func || !func->hasInformationAboutMonotonicity())
+                return {false, false};
+
+            const auto & types = func->getArgumentTypes();
+            if (types.empty() || !types.front())
+                return {false, false};
+
+            const auto monotonicity = func->getMonotonicityForRange(*types.front(), field, field);
+            all_always_monotonic &= monotonicity.is_always_monotonic;
+            all_strict &= monotonicity.is_strict;
+
+            if (!all_always_monotonic && !all_strict)
+                break;
+        }
+
+        return {all_always_monotonic, all_strict};
+    };
+
+    enum Constraint
+    {
+        POINT,
+        RANGE,
+        UNKNOWN,
+    };
+
+    std::vector<Constraint> column_constraints(num_key_columns, Constraint::UNKNOWN);
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::Function::FUNCTION_AND || element.function == RPNElement::Function::FUNCTION_UNKNOWN
+            || element.function == RPNElement::Function::ALWAYS_TRUE)
+        {
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::FUNCTION_IN_SET && element.set_index && element.set_index->size() == 1)
+        {
+            for (const auto & mapping : element.set_index->getIndexesMapping())
+            {
+                auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(mapping.functions);
+                if (!is_chain_always_monotonic)
+                    return false;
+
+                Constraint & constraint = column_constraints.at(mapping.key_index);
+                /// For Constraint::POINT, we need to check if the function chain is strict.
+                /// For example, `toDate(event_time) in ('2025-06-03')` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
+                /// So, POINT needs to be converted to a RANGE
+                if (is_chain_strict)
+                    constraint = Constraint::POINT;
+                else
+                {
+                    /// If this key is contained by multiple elements and has been set to POINT, do not convert it to RANGE.
+                    if (constraint != Constraint::POINT)
+                        constraint = Constraint::RANGE;
+                }
+            }
+
+            continue;
+        }
+
+        if (element.function == RPNElement::Function::FUNCTION_IN_RANGE)
+        {
+            auto [is_chain_always_monotonic, is_chain_strict] = check_monotonicity_of_chain(element.monotonic_functions_chain);
+            if (!is_chain_always_monotonic)
+                return false;
+
+            auto & constraint = column_constraints.at(element.getKeyColumn());
+            if (element.range.left == element.range.right)
+            {
+                /// For Constraint::POINT, we need to check if the function chain is strict.
+                /// For example, `toDate(event_time) = '2025-06-03'` means a range of `event_time`: ['2025-06-03 00:00:00','2025-06-04 00:00:00')
+                /// So, POINT needs to be converted to a RANGE
+                if (is_chain_strict)
+                    constraint = Constraint::POINT;
+            }
+
+            if (constraint != Constraint::POINT)
+                constraint = Constraint::RANGE;
+
+            continue;
+        }
+
+        return false;
+    }
+
+    auto min_constraint = column_constraints[0];
+
+    if (min_constraint > Constraint::RANGE)
+    {
+        return false;
+    }
+
+    for (size_t i = 1; i < num_key_columns; ++i)
+    {
+        if (column_constraints[i] < min_constraint)
+        {
+            return false;
+        }
+
+        if (column_constraints[i] == Constraint::RANGE && min_constraint == Constraint::RANGE)
+        {
+            return false;
+        }
+
+        min_constraint = column_constraints[i];
+    }
+
+    return true;
+}
+
+bool KeyCondition::extractPlainRanges(Ranges & ranges) const
+{
+    if (key_columns.size() != 1)
+        return false;
+
+    if (hasMonotonicFunctionsChain())
+        return false;
+
+    /// All Ranges in rpn_stack is plain.
+    std::stack<PlainRanges> rpn_stack;
+
+    for (const auto & element : rpn)
+    {
+        if (element.function == RPNElement::FUNCTION_AND)
+        {
+            auto right_ranges = rpn_stack.top();
+            rpn_stack.pop();
+
+            auto left_ranges = rpn_stack.top();
+            rpn_stack.pop();
+
+            auto new_range = left_ranges.intersectWith(right_ranges);
+            rpn_stack.emplace(std::move(new_range));
+        }
+        else if (element.function == RPNElement::FUNCTION_OR)
+        {
+            auto right_ranges = rpn_stack.top();
+            rpn_stack.pop();
+
+            auto left_ranges = rpn_stack.top();
+            rpn_stack.pop();
+
+            auto new_range = left_ranges.unionWith(right_ranges);
+            rpn_stack.emplace(std::move(new_range));
+        }
+        else if (element.function == RPNElement::FUNCTION_NOT)
+        {
+            auto to_invert_ranges = rpn_stack.top();
+            rpn_stack.pop();
+
+            std::vector<Ranges> reverted_ranges = PlainRanges::invert(to_invert_ranges.ranges);
+
+            if (reverted_ranges.size() == 1)
+                rpn_stack.emplace(std::move(reverted_ranges[0]));
+            else
+            {
+                /// intersect reverted ranges
+                PlainRanges intersected_ranges(reverted_ranges[0]);
+                for (size_t i = 1; i < reverted_ranges.size(); i++)
+                {
+                    intersected_ranges = intersected_ranges.intersectWith(PlainRanges(reverted_ranges[i]));
+                }
+                rpn_stack.emplace(std::move(intersected_ranges));
+            }
+        }
+        else /// atom relational expression or constants
+        {
+            if (element.function == RPNElement::FUNCTION_IN_RANGE)
+            {
+                rpn_stack.push(PlainRanges(element.range));
+            }
+            else if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+            {
+                rpn_stack.push(PlainRanges(element.range.invertRange()));
+            }
+            else if (element.function == RPNElement::FUNCTION_IN_SET)
+            {
+                if (element.set_index->hasMonotonicFunctionsChain())
+                    return false;
+
+                if (element.set_index->size() == 0)
+                {
+                    rpn_stack.push(PlainRanges::makeBlank()); /// skip blank range
+                    continue;
+                }
+
+                const auto & values = element.set_index->getOrderedSet();
+                Ranges points_range;
+
+                /// values in set_index are ordered and no duplication
+                for (size_t i = 0; i < element.set_index->size(); i++)
+                {
+                    FieldRef f;
+                    values[0]->get(i, f);
+                    if (f.isNull())
+                        return false;
+                    points_range.push_back({f});
+                }
+                rpn_stack.push(PlainRanges(points_range));
+            }
+            else if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
+            {
+                if (element.set_index->hasMonotonicFunctionsChain())
+                    return false;
+
+                if (element.set_index->size() == 0)
+                {
+                    rpn_stack.push(PlainRanges::makeUniverse());
+                    continue;
+                }
+
+                const auto & values = element.set_index->getOrderedSet();
+                Ranges points_range;
+
+                std::optional<FieldRef> pre;
+                for (size_t i=0; i<element.set_index->size(); i++)
+                {
+                    FieldRef cur;
+                    values[0]->get(i, cur);
+
+                    if (cur.isNull())
+                        return false;
+                    if (pre)
+                    {
+                        Range r(*pre, false, cur, false);
+                        /// skip blank range
+                        if (!(r.left > r.right || (r.left == r.right && !r.left_included && !r.right_included)))
+                            points_range.push_back(r);
+                    }
+                    else
+                    {
+                        points_range.push_back(Range::createRightBounded(cur, false));
+                    }
+                    pre = cur;
+                }
+
+                points_range.push_back(Range::createLeftBounded(*pre, false));
+                rpn_stack.push(PlainRanges(points_range));
+            }
+            else if (element.function == RPNElement::ALWAYS_FALSE)
+            {
+                /// skip blank range
+                rpn_stack.push(PlainRanges::makeBlank());
+            }
+            else if (element.function == RPNElement::ALWAYS_TRUE)
+            {
+                rpn_stack.push(PlainRanges::makeUniverse());
+            }
+            else if (element.function == RPNElement::FUNCTION_IS_NULL)
+            {
+                /// key values can not be null, so isNull will get blank range.
+                rpn_stack.push(PlainRanges::makeBlank());
+            }
+            else if (element.function == RPNElement::FUNCTION_IS_NOT_NULL)
+            {
+                rpn_stack.push(PlainRanges::makeUniverse());
+            }
+            else /// FUNCTION_UNKNOWN or functions not supported by this method (FUNCTION_ARGS_IN_HYPERRECTANGLE, FUNCTION_POINT_IN_POLYGON)
+            {
+                if (!has_filter)
+                    rpn_stack.push(PlainRanges::makeUniverse());
+                else
+                    return false;
+            }
+        }
+    }
+
+    if (rpn_stack.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::extractPlainRanges");
+
+    ranges = std::move(rpn_stack.top().ranges);
+    return true;
 }
 
 void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
@@ -4236,6 +4890,23 @@ std::unordered_set<size_t> KeyCondition::getUsedColumns() const
     std::unordered_set<size_t> res;
     for (const RPNElement & element : rpn)
         res.insert(element.key_columns.begin(), element.key_columns.end());
+    return res;
+}
+
+size_t KeyCondition::getUsedKeyPrefixSize() const
+{
+    size_t res = 0;
+    for (const RPNElement & element : rpn)
+        for (size_t key_column : element.key_columns)
+            res = std::max(res, key_column + 1);
+    return res;
+}
+
+std::vector<size_t> KeyCondition::getUsedColumnsInOrder() const
+{
+    auto used_columns_set = getUsedColumns();
+    std::vector<size_t> res(used_columns_set.begin(), used_columns_set.end());
+    std::sort(res.begin(), res.end());
     return res;
 }
 

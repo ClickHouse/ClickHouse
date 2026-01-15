@@ -671,11 +671,6 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
         ordered_set[i] = block_to_sort.getByPosition(i).column;
 }
 
-
-/** Return the BoolMask where:
-  * 1: the intersection of the set and the range is non-empty
-  * 2: the range contains elements not in the set
-  */
 BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point) const
 {
     size_t tuple_size = indexes_mapping.size();
@@ -704,6 +699,179 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             return {true, true};
 
         ranges.emplace_back(*ordered_set[i]);
+        ranges.back().left.update(new_range->left);
+        ranges.back().right.update(new_range->right);
+        ranges.back().left_included = new_range->left_included;
+        ranges.back().right_included = new_range->right_included;
+    }
+
+    /// lhs < rhs return -1
+    /// lhs == rhs return 0
+    /// lhs > rhs return 1
+    auto compare = [](const IColumn & lhs, const FieldValue & rhs, size_t row)
+    {
+        if (rhs.isNegativeInfinity())
+            return +1;
+        if (rhs.isPositiveInfinity())
+            return lhs.isNullAt(row) ? 0 : -1; // +Inf == +Inf
+        return lhs.compareAt(row, 0, *rhs.column, 1);
+    };
+
+    /// Because ordered_set is sorted lexicographically, the elements we're looking for are
+    /// consecituve. Use binary search to find the range of indices.
+
+    /// The part about left_included/right_included is a little tricky. It was initially implemented
+    /// incorrectly:
+    ///   begin = lower_bound(..., left_point, tuple_less_unaware_of_includedness);
+    ///   if (!all(ranges[..].left_included) && equals(left_point, begin))
+    ///       begin += 1;
+    /// This breaks on the following example:
+    ///   key_ranges = [(0, +inf), (-inf, +inf)]  (the 0 is not included),
+    ///   ordered_set = [[0], [0]].
+    /// The incorrect implementation would output begin == 0 and conclude that the set element is
+    /// inside the range (it isn't). The `begin += 1` won't happen because (0, 0) != (0, -inf).
+
+    auto indices = collections::range(0, size());
+    size_t begin = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
+        {
+            /// Return true if set[row] is below the key range.
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                int cmp = compare(*ordered_set[i], ranges[i].left, row);
+
+                if (cmp > 0)
+                    return false;
+                /// Note: if some range has left_included == false then the left ends of all
+                /// subsequent ranges' don't matter. (Symmetrically for right.)
+                /// It's the only way to make sense of the notion of a range of tuples where the
+                /// included/excluded flags are given per element.
+                if (cmp < 0 || (cmp == 0 && !ranges[i].left_included))
+                    return true;
+            }
+            return false;
+        }) - indices.begin();
+    size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
+        {
+            /// Return false if set[row] is above the key range.
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                int cmp = compare(*ordered_set[i], ranges[i].right, row);
+
+                if (cmp > 0 || (cmp == 0 && !ranges[i].right_included))
+                    return false;
+                if (cmp < 0)
+                    return true;
+            }
+            return true;
+        }) - indices.begin();
+
+    if (begin > end)
+    {
+        /// TODO: Remove the #ifndef and always throw after
+        ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+        ///       (What happens here is: the applyMonotonicFunctionsChainToRange call above applies
+        ///        nonmonotonic functions, and we end up with left > right.)
+#ifndef NDEBUG
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid binary search result in MergeTreeSetIndex");
+#else
+        return {true, true};
+#endif
+    }
+
+    bool can_be_true = begin < end;
+
+    /// A special case of 1-element KeyRange. It's useful for partition pruning.
+    bool at_most_one_element_range = true;
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        auto & r = ranges[i];
+        if (r.left.isNormal() && r.right.isNormal())
+        {
+            if (0 != r.left.column->compareAt(0, 0, *r.right.column, 1))
+            {
+                at_most_one_element_range = false;
+                break;
+            }
+        }
+        else if ((r.left.isPositiveInfinity() && r.right.isPositiveInfinity()) || (r.left.isNegativeInfinity() && r.right.isNegativeInfinity()))
+        {
+            /// Special value equality.
+        }
+        else
+        {
+            at_most_one_element_range = false;
+            break;
+        }
+    }
+    if (at_most_one_element_range && has_all_keys)
+    {
+        /// Here we know that there is at most one element in range.
+        /// The main difference with the normal case is that we can definitely say that
+        /// condition in this range is always TRUE (can_be_false = 0) or always FALSE (can_be_true = 0).
+        return {can_be_true, !can_be_true};
+    }
+
+    return {can_be_true, true};
+}
+
+/** Return the BoolMask where:
+  * 1: the intersection of the set and the range is non-empty
+  * 2: the range contains elements not in the set
+  */
+BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const std::vector<Range> & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
+{
+    auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
+    {
+        bool is_key_col_present = (key_column < key_col_to_sparse_pos.size() && key_col_to_sparse_pos[key_column] != -1);
+        const size_t sparse_pos = is_key_col_present ? static_cast<size_t>(key_col_to_sparse_pos[key_column]) : 0;
+        return {is_key_col_present, sparse_pos};
+    };
+
+    size_t tuple_size = indexes_mapping.size();
+
+    struct FieldValueRange
+    {
+        FieldValue left;
+        FieldValue right;
+        bool left_included = false;
+        bool right_included = false;
+
+        explicit FieldValueRange(const IColumn & prototype) : left(prototype.cloneEmpty()), right(prototype.cloneEmpty()) {}
+    };
+
+    std::vector<FieldValueRange> ranges;
+    ranges.reserve(tuple_size);
+    for (size_t i = 0; i < tuple_size; ++i)
+    {
+        size_t key_column = indexes_mapping[i].key_index;
+        auto [is_key_col_present, sparse_pos] = get_sparse_info(key_column);
+
+        ranges.emplace_back(*ordered_set[i]);
+
+        if (!is_key_col_present)
+        {
+            /// We have no range information for this key column.
+            /// Most likely earlier columns were high cardinality, so this column and later column marks were not loaded into memory
+            /// Treat it as completely unconstrained; since we do not have the type information,
+            /// we do not know whether to createWholeUniverse() or createWholeUniverseWithoutNull().
+            /// So, we choose the more relaxed option:
+            /// [-inf, +inf] instead of ( -inf, +inf ).
+            ranges.back().left.update(NEGATIVE_INFINITY);
+            ranges.back().right.update(POSITIVE_INFINITY);
+            ranges.back().left_included = true;
+            ranges.back().right_included = true;
+            continue;
+        }
+
+        std::optional<Range> new_range = KeyCondition::applyMonotonicFunctionsChainToRange(
+            sparse_key_ranges[sparse_pos],
+            indexes_mapping[i].functions,
+            sparse_data_types[sparse_pos],
+            single_point);
+
+        if (!new_range)
+            return {true, true};
+
         ranges.back().left.update(new_range->left);
         ranges.back().right.update(new_range->right);
         ranges.back().left_included = new_range->left_included;

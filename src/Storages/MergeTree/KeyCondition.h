@@ -107,17 +107,44 @@ public:
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
         const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
 
+    /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
+    /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
+    /// If some key column >= `key_col_to_sparse_pos`.size(), it is considered as not tracked.
+    /// See the optimized overload of checkInRange for explanation of relevant parameters.
+    BoolMask checkInHyperrectangle(
+        const std::vector<int> & key_col_to_sparse_pos,
+        const Hyperrectangle & sparse_hyperrectangle,
+        const DataTypes & sparse_data_types) const;
+
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
     /// data_types - the types of the key columns.
     /// Argument initial_mask is used for early exiting the implementation when we do not care about
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
     BoolMask checkInRange(
-        size_t used_key_size,
+        size_t key_size,
         const FieldRef * left_keys,
         const FieldRef * right_keys,
         const DataTypes & data_types,
         BoolMask initial_mask = BoolMask(false, false)) const;
+
+    /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
+    /// However, `equal_boundaries_mask` must have the information about all/prefix keys. `equal_boundaries_mask` specifies whether ith key's
+    /// left and right boundaries are equal or not.
+    /// For example, suppose, a table has 6 columns in primary key : (0, 1, 2, 3, 4, 5)
+    /// The caller wants to use only columns (1, 3, 4) for range check.
+    /// Then, `sparse_key_indices` = {1, 3, 4}
+    /// `equal_boundaries_mask` = {false, true, false, true, true, false} (size must be max(sparse_key_indices) + 1)
+    ///      Information about entire prefix until `max(sparse_key_indices) column` must be specified.
+    /// `sparse_left_keys` and `sparse_right_keys` contain only 3 fields each, corresponding to columns (1, 3, 4).
+    /// `sparse_data_types` contain only 3 data types each, corresponding to columns (1, 3, 4).
+    BoolMask checkInRange(
+        const std::vector<size_t> & sparse_key_indices,
+        const FieldRef * sparse_left_keys,
+        const FieldRef * sparse_right_keys,
+        const DataTypes & sparse_data_types,
+        const std::vector<UInt8> & equal_boundaries_mask,
+        BoolMask initial_mask) const;
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.
@@ -146,6 +173,11 @@ public:
     String toString() const;
 
     size_t getNumKeyColumns() const { return num_key_columns; }
+
+    /// Returns the size of the minimal prefix of key columns that contains all columns used in the RPN.
+    /// Suppose there are 5 keys columns: 0, 1, 2, 3, 4. If any RPNElement uses key columns 0, 3.
+    /// Then, it returns 4 (last used key column index + 1).
+    size_t getUsedKeyPrefixSize() const;
 
     /// Condition description for EXPLAIN query.
     struct Description
@@ -322,6 +354,8 @@ public:
     /// List key columns that are actually used in the condition. E.g. condition `x AND y` doesn't use column `z`.
     std::unordered_set<size_t> getUsedColumns() const;
 
+    std::vector<size_t> getUsedColumnsInOrder() const;
+
     /// Private constructor.
     KeyCondition(
         ThisIsPrivate,
@@ -340,14 +374,6 @@ private:
         /// All intermediate columns are used to calculate key_expr.
         const NameSet key_subexpr_names;
     };
-
-    BoolMask checkInRange(
-        size_t used_key_size,
-        const FieldRef * left_key,
-        const FieldRef * right_key,
-        const DataTypes & data_types,
-        bool right_bounded,
-        BoolMask initial_mask) const;
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
 
