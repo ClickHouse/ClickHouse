@@ -196,7 +196,6 @@ public:
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key, const UserID & user_id);
 
-
     IFileCachePriority::PriorityDumpPtr dumpQueue();
 
     IFileCachePriority::Type getEvictionPolicyType();
@@ -299,7 +298,7 @@ private:
 
     void loadMetadata();
     void loadMetadataImpl();
-    void loadMetadataForKeys(const std::filesystem::path & keys_dir);
+    void loadMetadataForKeys(const std::filesystem::path & keys_dir, const UserInfo & user);
 
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit

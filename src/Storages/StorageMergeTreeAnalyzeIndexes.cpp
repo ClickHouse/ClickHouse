@@ -68,6 +68,9 @@ protected:
         if (std::exchange(analyzed, true))
             return {};
 
+        if (data_parts.empty())
+            return {};
+
         auto ranges = getIndexAnalysis();
         MutableColumns res_columns = header->cloneEmptyColumns();
 

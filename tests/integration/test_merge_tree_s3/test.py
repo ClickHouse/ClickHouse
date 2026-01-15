@@ -881,8 +881,9 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     node.query(
         "INSERT INTO test_merge_canceled_by_s3_errors SELECT 2*number, toString(number) FROM numbers(10000)"
     )
-    min_key = node.query("SELECT min(key) FROM test_merge_canceled_by_s3_errors")
-    assert int(min_key) == 0, min_key
+
+    rows_count = node.query("SELECT count(key) FROM test_merge_canceled_by_s3_errors")
+    assert int(rows_count) == 20000, rows_count
 
     broken_s3.setup_at_object_upload()
     broken_s3.setup_fake_multpartuploads()

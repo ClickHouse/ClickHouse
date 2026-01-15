@@ -70,6 +70,8 @@ public:
         IFileCachePriority & priority,
         const CachePriorityGuard::Lock &);
 
+    void resetHoldSpace() { hold_space.reset(); }
+
 private:
 
     std::unordered_map<FileCacheKey, KeyCandidates> candidates;

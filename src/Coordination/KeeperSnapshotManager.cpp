@@ -22,6 +22,14 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+
+namespace ProfileEvents
+{
+    extern const Event KeeperSnapshotWrittenBytes;
+    extern const Event KeeperSnapshotFileSyncMicroseconds;
+}
 
 namespace DB
 {
@@ -62,7 +70,7 @@ namespace
     {
         std::filesystem::path path(snapshot_path);
         std::string filename = path.stem();
-        Strings name_parts;
+        std::vector<std::string_view> name_parts;
         splitInto<'_', '.'>(name_parts, filename);
         return parse<uint64_t>(name_parts[1]);
     }
@@ -725,7 +733,14 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotBufferToDis
 
     auto plain_buf = disk->writeFile(snapshot_file_name);
     copyData(reader, *plain_buf);
+
+    const size_t bytes_written = plain_buf->count();
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
+
+    Stopwatch watch;
     plain_buf->sync();
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
+
     plain_buf->finalize();
 
     disk->removeFile(tmp_snapshot_file_name);
@@ -912,9 +927,16 @@ SnapshotFileInfoPtr KeeperSnapshotManager<Storage>::serializeSnapshotToDisk(cons
     else
         compressed_writer = std::make_unique<CompressedWriteBuffer>(*writer);
 
+    const size_t bytes_before = compressed_writer->count();
     KeeperStorageSnapshot<Storage>::serialize(snapshot, *compressed_writer, keeper_context);
+    const size_t bytes_written = compressed_writer->count() - bytes_before;
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotWrittenBytes, bytes_written);
+
     compressed_writer->finalize();
+
+    Stopwatch watch;
     compressed_writer->sync();
+    ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
     disk->removeFile(tmp_snapshot_file_name);
 
