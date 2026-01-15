@@ -197,3 +197,9 @@ SELECT 1 GLOBAL IN if(1 > 0, 1, 2);
 SELECT 1 GLOBAL NOT IN if(1 > 0, 1, 2);
 
 SELECT * FROM (SELECT * FROM VALUES('cab_type String, dropoff UInt16', ('yellow', 138), ('green', 132))) AS t WHERE dropoff IN if(cab_type = 'yellow', 138, 132);
+
+SELECT '-- Scalar NULL handling (preserves IN non-nullable behavior) --';
+SELECT 1 IN nullIf(1, 1) AS r, toTypeName(1 IN nullIf(1, 1)) AS t;
+SELECT 1 NOT IN nullIf(1, 1) AS r, toTypeName(1 NOT IN nullIf(1, 1)) AS t;
+SELECT number, number IN nullIf(number, 1) FROM numbers(3);
+SELECT number, number NOT IN nullIf(number, 1) FROM numbers(3);

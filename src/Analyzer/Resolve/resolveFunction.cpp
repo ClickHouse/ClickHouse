@@ -891,13 +891,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         arguments_projection_names, parameters_projection_names, scope);
                 }
 
-                /// Case 3: scalar-returning function -> rewrite to equals/notEquals
+                /// Case 3: scalar-returning function -> rewrite to ifNull(equals/notEquals, default)
+                /// We wrap with ifNull to preserve IN's non-nullable behavior (NULL → 0 for IN, 1 for NOT IN)
                 if (is_not_array_or_tuple_type)
                 {
                     auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
                     auto eq_fn = std::make_shared<FunctionNode>(is_not_in ? "notEquals" : "equals");
                     eq_fn->getArguments().getNodes() = {fn_args[0], fn_args[1]};
-                    node = eq_fn;
+
+                    auto default_val = std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u});
+                    auto ifnull_fn = std::make_shared<FunctionNode>("ifNull");
+                    ifnull_fn->getArguments().getNodes() = {eq_fn, default_val};
+
+                    node = ifnull_fn;
                     resolveFunction(node, scope);
                     return ProjectionNames{proj};
                 }
