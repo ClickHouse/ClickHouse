@@ -108,6 +108,10 @@
 namespace fs = std::filesystem;
 using namespace std::literals;
 
+#if USE_FUZZING_MODE
+int clickhouseMain(int argc_, char ** argv_);
+#endif
+
 namespace DB
 {
 namespace Setting
@@ -330,7 +334,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         }
     }
 
-    /// Copy rows from src that dst does not contains.
+    /// Copy rows from src that dst does not contain.
     for (const auto & [id, pos] : rows_by_name)
     {
         for (size_t col = 0; col < src.columns(); ++col)
@@ -3842,43 +3846,7 @@ fs::path ClientBase::getHistoryFilePath()
     throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Neither $CLICKHOUSE_HISTORY_FILE, $HOME nor $XDG_STATE_HOME is set; cannot place history file.");
 }
 
-
-#if USE_FUZZING_MODE
-extern "C" int LLVMFuzzerRunDriver(int * argc, char *** argv, int (*callback)(const uint8_t * data, size_t size));
-ClientBase * app;
-
-void ClientBase::runLibFuzzer()
-{
-    app = this;
-    std::vector<String> fuzzer_args_holder;
-
-    if (const char * fuzzer_args_env = getenv("FUZZER_ARGS")) // NOLINT(concurrency-mt-unsafe)
-        boost::split(fuzzer_args_holder, fuzzer_args_env, isWhitespaceASCII, boost::token_compress_on);
-
-    std::vector<char *> fuzzer_args;
-    fuzzer_args.push_back(argv0);
-    for (auto & arg : fuzzer_args_holder)
-        fuzzer_args.emplace_back(arg.data());
-
-    int fuzzer_argc = static_cast<int>(fuzzer_args.size());
-    char ** fuzzer_argv = fuzzer_args.data();
-
-    LLVMFuzzerRunDriver(&fuzzer_argc, &fuzzer_argv, [](const uint8_t * data, size_t size)
-    {
-        try
-        {
-            String query(reinterpret_cast<const char *>(data), size);
-            app->processQueryText(query);
-        }
-        catch (...)
-        {
-            return -1;
-        }
-
-        return 0;
-    });
-}
-#else
+#if !USE_FUZZING_MODE
 void ClientBase::runLibFuzzer() {}
 #endif
 
