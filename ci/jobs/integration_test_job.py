@@ -104,6 +104,7 @@ def get_parallel_sequential_tests_to_run(
     workers: int,
     job_options: str,
     info: Info,
+    no_strict: bool = False,
 ) -> Tuple[List[str], List[str]]:
     if args_test:
         batch_num = 1
@@ -146,7 +147,8 @@ def get_parallel_sequential_tests_to_run(
             if test_match(test_file, test_arg):
                 sequential_tests.append(test_arg)
                 matched = True
-        assert matched, f"Test [{test_arg}] not found"
+        if not no_strict:
+            assert matched, f"Test [{test_arg}] not found"
 
     return parallel_tests, sequential_tests
 
@@ -333,6 +335,7 @@ def main():
             workers,
             args.options,
             info,
+            no_strict=is_targeted_check,  # targeted check might want to run test that was removed on a merge-commit
         )
     )
 
