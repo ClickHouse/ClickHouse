@@ -217,12 +217,15 @@ def main():
         else:
             pass
 
+    workers = None
     if args.workers:
         print(f"Workers count set from --workers: {args.workers}")
-        runner_options += f" --jobs {args.workers}"
+        workers = args.workers
     else:
         print(f"Workers count set to optimal value: {nproc}")
-        runner_options += f" --jobs {nproc}"
+        workers = nproc
+    
+    runner_options += f" --jobs {workers}"
 
     if is_llvm_coverage:
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
@@ -442,7 +445,7 @@ def main():
         print(step_name)
 
         if is_llvm_coverage:
-            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%m-%p.profraw"
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%8m.profraw"
 
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
@@ -482,7 +485,7 @@ def main():
         res = results[-1].is_ok()
 
     if is_llvm_coverage:
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%m-%p.profraw"
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%8m.profraw"
     test_result = None
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
@@ -588,6 +591,8 @@ def main():
                 )
             )
         elif failed_tests:
+            if is_llvm_coverage:
+                os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-rerun-%8m.profraw"
             ft_res_processor = FTResultsProcessor(wd=temp_dir)
             run_tests(
                 batch_num=0,

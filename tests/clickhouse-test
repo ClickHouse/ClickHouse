@@ -2983,6 +2983,7 @@ def run_tests_array(
         multiprocessing.sharedctypes.Synchronized,
         multiprocessing.synchronize.Event,
         multiprocessing.managers.ListProxy,
+        int
     ],
 ):
     (
@@ -2994,7 +2995,10 @@ def run_tests_array(
         exit_code,
         server_died,
         restarted_tests,
+        process_index
     ) = all_tests_with_params
+
+    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-{process_index}-%8m-.profraw"
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=["bold"])
     CL_SQUARE_BRACKET = colored("]", args, attrs=["bold"])
@@ -3396,7 +3400,7 @@ def do_run_tests(
         parallel_tests.extend(test_suite.parallel_tests)
 
         processes = []
-        for _ in range(jobs):
+        for i in range(jobs):
             process = multiprocessing.Process(
                 target=run_tests_process,
                 args=(
@@ -3409,6 +3413,7 @@ def do_run_tests(
                         exit_code,
                         server_died,
                         restarted_tests,
+                        i,  # process index
                     ),
                 ),
             )

@@ -367,7 +367,7 @@ def main():
         "JAVA_PATH": java_path,
     }
     if is_llvm_coverage:
-        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%m-%p.profraw"
+        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%8m.profraw"
         print(
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
@@ -467,7 +467,7 @@ def main():
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         if is_llvm_coverage:
-            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun-%m-%p.profraw"
+            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun-%8m.profraw"
             print(
                 f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
             )
