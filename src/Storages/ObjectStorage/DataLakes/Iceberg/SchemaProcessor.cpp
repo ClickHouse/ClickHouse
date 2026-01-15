@@ -72,7 +72,7 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String
     {
         auto element_id = type->getValue<Int64>(Iceberg::f_element_id);
         if (type->isObject(Iceberg::f_element))
-            traverseComplexType(type->getObject(Iceberg::f_element), result, Nested::concatenateName(current_path, "list.element"));
+            traverseComplexType(type->getObject(Iceberg::f_element), result, current_path);
         result[current_path] = element_id;
         return;
     }
@@ -423,7 +423,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 }
                 else if (allowPrimitiveTypeConversion(old_type, new_type))
                 {
-                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name);
+                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name, nullptr);
                 }
                 outputs.push_back(node);
             }

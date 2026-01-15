@@ -43,7 +43,7 @@ static bool areNodesConvertableToBlock(const ActionsDAG::NodeRawConstPtrs & node
     return true;
 }
 
-size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -81,7 +81,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     child_node->children = {&node_with_needed};
 
     node_with_needed.step = std::make_unique<ExpressionStep>(getChildOutputHeader(node_with_needed), std::move(needed_for_sorting));
-    node_with_needed.step->setStepDescription(child_step->getStepDescription());
+    node_with_needed.step->setStepDescription(*child_step);
     // Sorting (parent_node) -> so far the origin Expression (child_node) -> NeededCalculations (node_with_needed)
 
     std::swap(parent_step, child_step);
@@ -90,8 +90,9 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     sorting_step->updateInputHeader(getChildOutputHeader(*child_node));
 
     auto description = parent_step->getStepDescription();
-    parent_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting));
-    parent_step->setStepDescription(description + " [lifted up part]");
+    auto new_expression_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting));
+    new_expression_step->setStepDescription(fmt::format("{} [lifted up part]", description), settings.max_step_description_length);
+    parent_step = std::move(new_expression_step);
     // UneededCalculations (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 
     return 3;

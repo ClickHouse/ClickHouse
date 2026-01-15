@@ -1,15 +1,16 @@
 #pragma once
 
 #include <Common/CacheBase.h>
+#include <Common/Logger.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <shared_mutex>
+#include <Common/SharedMutex.h>
 
 namespace DB
 {
 
 /// An implementation of predicate caching a la https://doi.org/10.1145/3626246.3653395
 ///
-/// Given the table + part IDs and a hash of a predicate as key, caches which marks definitely don't match the predicate and which marks may
+/// Given the table, part name and a hash of a predicate as key, caches which marks definitely don't match the predicate and which marks may
 /// match the predicate. This allows to skip the scan if the same predicate is evaluated on the same data again. Note that this doesn't work
 /// the other way round: we can't tell if _all_ rows in the mark match the predicate.
 ///
@@ -44,7 +45,7 @@ private:
     struct Entry
     {
         MatchingMarks matching_marks;
-        std::shared_mutex mutex; /// (*)
+        SharedMutex mutex; /// (*)
 
         explicit Entry(size_t mark_count); /// (**)
 

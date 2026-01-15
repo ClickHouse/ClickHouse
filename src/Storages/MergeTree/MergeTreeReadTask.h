@@ -1,14 +1,16 @@
 #pragma once
 
 #include <vector>
-#include <boost/core/noncopyable.hpp>
 #include <Core/NamesAndTypes.h>
-#include <Storages/StorageSnapshot.h>
-#include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/StorageSnapshot.h>
+#include <boost/core/noncopyable.hpp>
 
 namespace DB
 {
@@ -32,6 +34,15 @@ using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 struct MergeTreeIndexReadResult;
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 
+struct MergeTreeIndexBuildContext;
+using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
+
+struct LazyMaterializingRows;
+using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
+
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 enum class MergeTreeReadType : uint8_t
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
@@ -50,6 +61,18 @@ enum class MergeTreeReadType : uint8_t
     /// and who spreads marks and parts across them.
     ParallelReplicas,
 };
+
+/// Read task for index.
+/// Some indexes (e.g. inverted text index) may read special virtual columns.
+struct IndexReadTask
+{
+    NamesAndTypesList columns;
+    MergeTreeIndexWithCondition index;
+    bool is_final = false;
+};
+
+using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
+using IndexReadColumns = std::unordered_map<String, NamesAndTypesList>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -89,6 +112,8 @@ struct MergeTreeReadTaskInfo
     MergeTreeBlockSizePredictorPtr shared_size_predictor;
     /// Shared constant fields for virtual columns.
     VirtualFields const_virtual_fields;
+    /// Index read tasks.
+    IndexReadTasks index_read_tasks;
     /// The amount of data to read per task based on size of the queried columns.
     size_t min_marks_per_task = 0;
     size_t approx_size_of_mark = 0;
@@ -110,7 +135,7 @@ public:
         UncompressedCache * uncompressed_cache = nullptr;
         MarkCache * mark_cache = nullptr;
         PatchJoinCache * patch_join_cache = nullptr;
-        MergeTreeReaderSettings reader_settings{};
+        MergeTreeReaderSettings reader_settings;
         StorageSnapshotPtr storage_snapshot{};
         ValueSizeMap value_size_map{};
         ReadBufferFromFileBase::ProfileCallback profile_callback{};
@@ -121,7 +146,9 @@ public:
         MergeTreeReaderPtr main;
         std::vector<MergeTreeReaderPtr> prewhere;
         MergeTreePatchReaders patches;
-        MergeTreeReaderPtr index;
+        MergeTreeReaderPtr prepared_index;
+
+        void updateAllMarkRanges(const MarkRanges & ranges);
     };
 
     struct BlockSizeParams
@@ -148,12 +175,16 @@ public:
         MarkRanges mark_ranges_,
         std::vector<MarkRanges> patches_mark_ranges_,
         const BlockSizeParams & block_size_params_,
-        MergeTreeBlockSizePredictorPtr size_predictor_);
+        MergeTreeBlockSizePredictorPtr size_predictor_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,
-        ReadStepsPerformanceCounters & read_steps_performance_counters,
-        MergeTreeIndexReadResultPtr index_read_result);
+        MergeTreeIndexBuildContextPtr index_build_context,
+        LazyMaterializingRowsPtr lazy_materializing_rows,
+        const ReadStepsPerformanceCounters & read_steps_performance_counters);
+
+    void initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows);
 
     BlockAndProgress read();
     bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }
@@ -176,7 +207,9 @@ public:
         const std::vector<MarkRanges> & patches_ranges);
 
     static MergeTreeReadersChain createReadersChain(
-        const Readers & readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
+        const Readers & readers,
+        const PrewhereExprInfo & prewhere_actions,
+        const ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
     UInt64 estimateNumRows() const;
@@ -204,6 +237,8 @@ private:
 
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;

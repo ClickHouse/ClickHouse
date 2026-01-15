@@ -175,7 +175,37 @@ public:
 
 REGISTER_FUNCTION(CutURLParameter)
 {
-    factory.registerFunction<FunctionCutURLParameter>();
+    /// cutURLParameter documentation
+    FunctionDocumentation::Description description_cutURLParameter = R"(
+Removes the `name` parameter from a URL, if present.
+This function does not encode or decode characters in parameter names, e.g. `Client ID` and `Client%20ID` are treated as different parameter names.
+    )";
+    FunctionDocumentation::Syntax syntax_cutURLParameter = "cutURLParameter(url, name)";
+    FunctionDocumentation::Arguments arguments_cutURLParameter = {
+        {"url", "URL.", {"String"}},
+        {"name", "Name of URL parameter.", {"String", "Array(String)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_cutURLParameter = {"URL with `name` URL parameter removed.", {"String"}};
+    FunctionDocumentation::Examples examples_cutURLParameter = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', 'a') AS url_without_a,
+    cutURLParameter('http://bigmir.net/?a=b&c=d&e=f#g', ['c', 'e']) AS url_without_c_and_e;
+        )",
+        R"(
+┌─url_without_a────────────────┬─url_without_c_and_e──────┐
+│ http://bigmir.net/?c=d&e=f#g │ http://bigmir.net/?a=b#g │
+└──────────────────────────────┴──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_cutURLParameter = {1, 1};
+    FunctionDocumentation::Category category_cutURLParameter = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation_cutURLParameter = {description_cutURLParameter, syntax_cutURLParameter, arguments_cutURLParameter, {}, returned_value_cutURLParameter, examples_cutURLParameter, introduced_in_cutURLParameter, category_cutURLParameter};
+
+    factory.registerFunction<FunctionCutURLParameter>(documentation_cutURLParameter);
 }
 
 }

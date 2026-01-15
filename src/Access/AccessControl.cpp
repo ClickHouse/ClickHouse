@@ -491,6 +491,10 @@ void AccessControl::addStoragesFromMainConfig(
     const String & config_path,
     const zkutil::GetZooKeeper & get_zookeeper_function)
 {
+    String disk_storage_dir = config.getString("access_control_path", "");
+    if (!disk_storage_dir.empty())
+        addDiskStorage(DiskAccessStorage::STORAGE_TYPE, disk_storage_dir, /* readonly= */ false, /* allow_backup= */ true);
+
     String config_dir = std::filesystem::path{config_path}.remove_filename().string();
     String dbms_dir = config.getString("path", DBMS_DEFAULT_PATH);
     String include_from_path = config.getString("include_from", "/etc/metrika.xml");
@@ -520,10 +524,6 @@ void AccessControl::addStoragesFromMainConfig(
             get_zookeeper_function,
             /* allow_backup= */ false);
     }
-
-    String disk_storage_dir = config.getString("access_control_path", "");
-    if (!disk_storage_dir.empty())
-        addDiskStorage(DiskAccessStorage::STORAGE_TYPE, disk_storage_dir, /* readonly= */ false, /* allow_backup= */ true);
 
     if (has_user_directories)
         addStoragesFromUserDirectoriesConfig(config, "user_directories", config_dir, dbms_dir, include_from_path, get_zookeeper_function);

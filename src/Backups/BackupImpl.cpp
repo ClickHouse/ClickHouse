@@ -4,8 +4,10 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
+#include <Backups/getBackupDataFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
@@ -124,6 +126,8 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
+    , data_file_name_generator(params.data_file_name_generator)
+    , data_file_name_prefix_length(params.data_file_name_prefix_length)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
     , version(CURRENT_BACKUP_VERSION)
@@ -235,7 +239,8 @@ void BackupImpl::openArchive()
     }
     else
     {
-        archive_writer = createArchiveWriter(archive_name, writer->writeFile(archive_name));
+        archive_writer = createArchiveWriter(
+            archive_name, writer->writeFile(archive_name), DBMS_DEFAULT_BUFFER_SIZE, archive_params.adaptive_buffer_max_size);
         archive_writer->setPassword(archive_params.password);
         archive_writer->setCompression(archive_params.compression_method, archive_params.compression_level);
     }
@@ -354,6 +359,9 @@ void BackupImpl::writeBackupMetadata()
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
+    if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
+        *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
+             << "</data_file_name_generator>";
 
     auto all_file_infos = coordination->getFileInfosForAllHosts();
 
@@ -421,7 +429,10 @@ void BackupImpl::writeBackupMetadata()
         }
 
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+        bool has_entry = !params.deduplicate_files
+            || (info.size && (info.size != info.base_size)
+                && (info.data_file_name.empty()
+                    || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
         if (has_entry)
         {
             ++num_entries;
@@ -553,7 +564,7 @@ void BackupImpl::readBackupMetadata()
 
             ++num_files;
             total_size += info.size;
-            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
+            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
             if (has_entry)
             {
                 ++num_entries;
@@ -605,9 +616,12 @@ bool BackupImpl::checkLockFile(bool throw_if_failed) const
 {
     if (!lock_file_name.empty() && uuid)
     {
+        LOG_TRACE(log, "Checking lock file {}", lock_file_name);
         ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
-        if (writer->fileContentsEqual(lock_file_name, toString(*uuid)))
+        String actual_file_contents;
+        if (writer->fileContentsEqual(lock_file_name, toString(*uuid), actual_file_contents))
             return true;
+        LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, toString(*uuid), actual_file_contents);
     }
 
     if (throw_if_failed)
@@ -764,6 +778,16 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
+    // Zero-sized files are not inserted into `file_infos` during metadata load,
+    // but they are present in `file_names`. Short-circuit them here and return
+    // an empty buffer without consulting `file_infos`.
+    if (size_and_checksum.first == 0)
+    {
+        std::lock_guard lock{mutex};
+        ++num_read_files;
+        return std::make_unique<ReadBufferFromOutsideMemoryFile>(file_name, std::string_view{});
+    }
+
     BackupFileInfo info;
     {
         std::lock_guard lock{mutex};
@@ -778,14 +802,6 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
                 file_name);
         }
         info = it->second;
-    }
-
-    if (info.size == 0)
-    {
-        /// Entry's data is empty.
-        std::lock_guard lock{mutex};
-        ++num_read_files;
-        return std::make_unique<ReadBufferFromOutsideMemoryFile>(info.data_file_name, std::string_view{});
     }
 
     if (info.encrypted_by_disk != read_encrypted)

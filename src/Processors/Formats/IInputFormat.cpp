@@ -1,10 +1,25 @@
+#include <optional>
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
+#include <IO/VarInt.h>
+#include <Interpreters/Context_fwd.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
+
+ChunkInfoRowNumbers::ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_)
+    : row_num_offset(row_num_offset_), applied_filter(std::move(applied_filter_)) { }
+
+ChunkInfoRowNumbers::Ptr ChunkInfoRowNumbers::clone() const
+{
+    auto res = std::make_shared<ChunkInfoRowNumbers>(row_num_offset);
+    if (applied_filter.has_value())
+        res->applied_filter.emplace(applied_filter->begin(), applied_filter->end());
+    return res;
+}
 
 IInputFormat::IInputFormat(SharedHeader header, ReadBuffer * in_) : ISource(std::move(header)), in(in_)
 {
@@ -59,4 +74,9 @@ void IInputFormat::onFinish()
 {
     resetReadBuffer();
 }
+
+void IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*/)
+{
+}
+
 }

@@ -3,13 +3,16 @@
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
+#include <Common/Logger.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
+#include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
+#include <Common/StrictString.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
+#include <Interpreters/StorageID.h>
 
 #include <future>
-#include <shared_mutex>
 #include <variant>
 
 namespace DB
@@ -53,6 +56,7 @@ public:
 
     /// Force flush the whole queue.
     void flushAll();
+    void flush(const std::vector<StorageID> & tables);
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
     PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context);
@@ -84,6 +88,7 @@ public:
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
+        StorageID getStorageID() const;
 
     private:
         auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, setting_changes); }
@@ -92,9 +97,9 @@ public:
     };
 
 private:
-    struct DataChunk : public std::variant<String, Block>
+    struct DataChunk : public std::variant<StrictString, Block>
     {
-        using std::variant<String, Block>::variant;
+        using std::variant<StrictString, Block>::variant;
 
         size_t byteSize() const
         {
@@ -125,7 +130,7 @@ private:
             }, *this);
         }
 
-        const String * asString() const { return std::get_if<String>(this); }
+        const StrictString * asString() const { return std::get_if<StrictString>(this); }
         const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 
@@ -160,8 +165,14 @@ private:
             std::atomic_bool finished = false;
         };
 
-        InsertData() = default;
-        explicit InsertData(Milliseconds timeout_ms_) : timeout_ms(timeout_ms_) { }
+        InsertData()
+            : ready_future(ready_promise.get_future().share())
+        { }
+
+        explicit InsertData(Milliseconds timeout_ms_)
+            : ready_future(ready_promise.get_future().share())
+            , timeout_ms(timeout_ms_)
+        { }
 
         ~InsertData()
         {
@@ -174,11 +185,15 @@ private:
                 MemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
                 it = entries.erase(it);
             }
+
+            ready_promise.set_value();
         }
 
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
+        std::promise<void>  ready_promise;
+        std::shared_future<void> ready_future;
         size_t size_in_bytes = 0;
         Milliseconds timeout_ms = Milliseconds::zero();
     };
@@ -222,7 +237,7 @@ private:
         void updateWithCurrentTime();
 
     private:
-        mutable std::shared_mutex mutex;
+        mutable SharedMutex mutex;
         TimePoints time_points;
     };
 
@@ -283,6 +298,8 @@ private:
     static Chunk processPreprocessedEntries(
         const InsertDataPtr & data,
         const Block & header,
+        const ContextPtr & context_,
+        LoggerPtr logger,
         LogFunc && add_to_async_insert_log);
 
     template <typename E>

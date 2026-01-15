@@ -146,7 +146,38 @@ public:
 
 REGISTER_FUNCTION(ToStringCutToZero)
 {
-    factory.registerFunction<FunctionToStringCutToZero>();
+    /// toStringCutToZero documentation
+    FunctionDocumentation::Description toStringCutToZero_description = R"(
+Accepts a [String](/sql-reference/data-types/string) or [FixedString](/sql-reference/data-types/fixedstring) argument and returns a String that contains a copy of the original string truncated at the first null byte.
+
+Null bytes (\\0) are considered as string terminators.
+This function is useful for processing C-style strings or binary data where null bytes mark the end of meaningful content.
+    )";
+    FunctionDocumentation::Syntax toStringCutToZero_syntax = "toStringCutToZero(s)";
+    FunctionDocumentation::Arguments toStringCutToZero_arguments = {
+        {"s", "String or FixedString to process.", {"String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue toStringCutToZero_returned_value = {"Returns a String containing the characters before the first null byte.", {"String"}};
+    FunctionDocumentation::Examples toStringCutToZero_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    toStringCutToZero('hello'),
+    toStringCutToZero('hello\0world')
+        )",
+        R"(
+┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\\0world')─┐
+│ hello                      │ hello                             │
+└────────────────────────────┴───────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn toStringCutToZero_introduced_in = {1, 1};
+    FunctionDocumentation::Category toStringCutToZero_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation toStringCutToZero_documentation = {toStringCutToZero_description, toStringCutToZero_syntax, toStringCutToZero_arguments, {}, toStringCutToZero_returned_value, toStringCutToZero_examples, toStringCutToZero_introduced_in, toStringCutToZero_category};
+
+    factory.registerFunction<FunctionToStringCutToZero>(toStringCutToZero_documentation);
 }
 
 }

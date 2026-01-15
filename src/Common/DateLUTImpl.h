@@ -260,7 +260,7 @@ private:
 
     static LUTIndex toLUTIndex(ExtendedDayNum d)
     {
-        return normalizeLUTIndex(static_cast<Int64>(d + daynum_offset_epoch)); /// NOLINT
+        return normalizeLUTIndex(static_cast<Int64>(d) + daynum_offset_epoch);
     }
 
     LUTIndex toLUTIndex(Time t) const
@@ -314,7 +314,7 @@ public:
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
 
-    static auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
+    static constexpr auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
 
     /// All functions below are thread-safe; arguments are not checked.
 
@@ -969,7 +969,7 @@ public:
     }
 
     /// We count all hour-length intervals, unrelated to offset changes.
-    Time toRelativeHourNum(Time t) const
+    ALWAYS_INLINE Time toRelativeHourNum(Time t) const
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return t / 3600;
@@ -980,7 +980,7 @@ public:
     }
 
     template <typename DateOrTime>
-    Time toRelativeHourNum(DateOrTime v) const
+    ALWAYS_INLINE Time toRelativeHourNum(DateOrTime v) const
     {
         return toRelativeHourNum(lut[toLUTIndex(v)].date);
     }
@@ -1177,6 +1177,20 @@ public:
         return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
 
+    std::optional<LUTIndex> tryToMakeLUTIndex(Int16 year, UInt8 month, UInt8 day_of_month) const
+    {
+        if (unlikely(year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
+            return std::nullopt;
+
+        auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
+        UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
+
+        if (index >= DATE_LUT_SIZE)
+            return std::nullopt;
+
+        return LUTIndex(index);
+    }
+
     /// Create DayNum from year, month, day of month.
     ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
@@ -1184,6 +1198,18 @@ public:
             return ExtendedDayNum(default_error_day_num);
 
         return toDayNum(makeLUTIndex(year, month, day_of_month));
+    }
+
+    std::optional<ExtendedDayNum> tryToMakeDayNum(Int16 year, UInt8 month, UInt8 day_of_month) const
+    {
+        if (unlikely(year < DATE_LUT_MIN_YEAR || month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31))
+            return std::nullopt;
+
+        auto index = tryToMakeLUTIndex(year, month, day_of_month);
+        if (!index)
+            return std::nullopt;
+
+        return toDayNum(*index);
     }
 
     Time makeDate(Int16 year, UInt8 month, UInt8 day_of_month) const
@@ -1202,6 +1228,20 @@ public:
             time_offset -= lut[index].amount_of_offset_change();
 
         return lut[index].date + time_offset;
+    }
+
+    std::optional<Time> tryToMakeDateTime(Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second) const
+    {
+        auto index = tryToMakeLUTIndex(year, month, day_of_month);
+        if (!index)
+            return std::nullopt;
+
+        Time time_offset = hour * 3600 + minute * 60 + second;
+
+        if (time_offset >= lut[*index].time_at_offset_change())
+            time_offset -= lut[*index].amount_of_offset_change();
+
+        return lut[*index].date + time_offset;
     }
 
     Time makeTime(int64_t hour, UInt8 minute, UInt8 second) const

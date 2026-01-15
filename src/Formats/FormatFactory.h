@@ -9,6 +9,9 @@
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Allocator.h>
+#include <Common/NamePrompter.h>
+
+#include <Processors/Formats/IInputFormat.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -58,7 +61,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
 /** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
   */
-class FormatFactory final : private boost::noncopyable
+class FormatFactory final : private boost::noncopyable, public IHints<2>
 {
 public:
     /** Fast reading data from buffer and save result to memory.
@@ -76,6 +79,7 @@ public:
     using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
         const FormatSettings & settings)>;
 
+    std::vector<String> getAllRegisteredNames() const override;
 private:
     // On the input side, there are two kinds of formats:
     //  * InputCreator - formats parsed sequentially, e.g. CSV. Almost all formats are like this.
@@ -93,6 +97,10 @@ private:
             const Block & header,
             const RowInputFormatParams & params,
             const FormatSettings & settings)>;
+
+    using FileBucketInfoCreator = std::function<FileBucketInfoPtr()>;
+
+    using BucketSplitterCreator = std::function<BucketSplitter()>;
 
     // Incompatible with FileSegmentationEngine.
     using RandomAccessInputCreator = std::function<InputFormatPtr(
@@ -142,6 +150,8 @@ private:
     {
         String name;
         InputCreator input_creator;
+        FileBucketInfoCreator file_bucket_info_creator;
+        BucketSplitterCreator bucket_splitter_creator;
         RandomAccessInputCreator random_access_input_creator;
         OutputCreator output_creator;
         FileSegmentationEngineCreator file_segmentation_engine_creator;
@@ -178,13 +188,16 @@ public:
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt,
         FormatParserSharedResourcesPtr parser_shared_resources = nullptr,
-        FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(),
+        FormatFilterInfoPtr format_filter_info = nullptr,
         // affects things like buffer sizes and parallel reading
         bool is_remote_fs = false,
         // allows to do: buf -> parallel read -> decompression,
         // because parallel read after decompression is not possible
         CompressionMethod compression = CompressionMethod::None,
-        bool need_only_count = false) const;
+        bool need_only_count = false,
+        const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
+        const std::optional<UInt64> & min_block_size_rows = std::nullopt,
+        const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
@@ -202,6 +215,9 @@ public:
         const ContextPtr & context,
         const std::optional<FormatSettings> & _format_settings = std::nullopt,
         FormatFilterInfoPtr format_filter_info = nullptr) const;
+
+    /// Creates a standalone JSONEachRow output format for debugging or testing.
+    OutputFormatPtr getDefaultJSONEachRowOutputFormat(WriteBuffer & buf, const Block & sample) const;
 
     /// Content-Type to set when sending HTTP response with this output format.
     String getContentType(const String & name, const std::optional<FormatSettings> & settings) const;
@@ -285,6 +301,11 @@ public:
     /// Check that format with specified name exists and throw an exception otherwise.
     void checkFormatName(const String & name) const;
     bool exists(const String & name) const;
+
+    FileBucketInfoPtr getFileBucketInfo(const String & format);
+    void registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info);
+    void registerSplitter(const String & format, BucketSplitterCreator splitter);
+    BucketSplitter getSplitter(const String & format);
 
 private:
     FormatsDictionary dict;

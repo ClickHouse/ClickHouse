@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/quoteString.h>
+#include <Interpreters/ITokenExtractor.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -25,9 +26,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 MergeTreeIndexGranuleBloomFilterText::MergeTreeIndexGranuleBloomFilterText(
@@ -124,7 +124,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
                 for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
-                    token_extractor->stringPaddedToBloomFilter(ref.data, ref.size, granule->bloom_filters[col]);
+                    token_extractor->stringPaddedToBloomFilter(ref.data(), ref.size(), granule->bloom_filters[col]);
                 }
 
                 current_position += 1;
@@ -135,7 +135,7 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
             for (size_t i = 0; i < rows_read; ++i)
             {
                 auto ref = column->getDataAt(current_position + i);
-                token_extractor->stringPaddedToBloomFilter(ref.data, ref.size, granule->bloom_filters[col]);
+                token_extractor->stringPaddedToBloomFilter(ref.data(), ref.size(), granule->bloom_filters[col]);
             }
         }
     }
@@ -168,7 +168,6 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     rpn = std::move(builder).extractRPN();
 }
 
-/// Keep in-sync with MergeTreeConditionGinFilter::alwaysUnknownOrTrue
 bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(
@@ -185,8 +184,8 @@ bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
          RPNElement::ALWAYS_FALSE});
 }
 
-/// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnTranuleInPart
-bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+/// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart
+bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     std::shared_ptr<MergeTreeIndexGranuleBloomFilterText> granule
             = std::dynamic_pointer_cast<MergeTreeIndexGranuleBloomFilterText>(idx_granule);
@@ -195,61 +194,46 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
+    size_t element_idx = 0;
     for (const auto & element : rpn)
     {
-        if (element.function == RPNElement::FUNCTION_UNKNOWN)
+        switch (element.function)
         {
-            rpn_stack.emplace_back(true, true);
-        }
-        else if (element.function == RPNElement::FUNCTION_EQUALS
-             || element.function == RPNElement::FUNCTION_NOT_EQUALS
-             || element.function == RPNElement::FUNCTION_HAS)
-        {
-            rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
+            case RPNElement::FUNCTION_UNKNOWN:
+                rpn_stack.emplace_back(true, true);
+                break;
+            case RPNElement::FUNCTION_EQUALS:
+            case RPNElement::FUNCTION_NOT_EQUALS:
+            case RPNElement::FUNCTION_HAS:
+                rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
 
-            if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
-                rpn_stack.back() = !rpn_stack.back();
-        }
-        else if (element.function == RPNElement::FUNCTION_IN
-             || element.function == RPNElement::FUNCTION_NOT_IN)
-        {
-            std::vector<bool> result(element.set_bloom_filters.back().size(), true);
-
-            for (size_t column = 0; column < element.set_key_position.size(); ++column)
+                if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
+                    rpn_stack.back() = !rpn_stack.back();
+                break;
+            case RPNElement::FUNCTION_IN:
+            case RPNElement::FUNCTION_NOT_IN:
             {
-                const size_t key_idx = element.set_key_position[column];
+                std::vector<bool> result(element.set_bloom_filters.back().size(), true);
 
-                const auto & bloom_filters = element.set_bloom_filters[column];
-                for (size_t row = 0; row < bloom_filters.size(); ++row)
-                    result[row] = result[row] && granule->bloom_filters[key_idx].contains(bloom_filters[row]);
+                for (size_t column = 0; column < element.set_key_position.size(); ++column)
+                {
+                    const size_t key_idx = element.set_key_position[column];
+
+                    const auto & bloom_filters = element.set_bloom_filters[column];
+                    for (size_t row = 0; row < bloom_filters.size(); ++row)
+                        result[row] = result[row] && granule->bloom_filters[key_idx].contains(bloom_filters[row]);
+                }
+
+                rpn_stack.emplace_back(
+                        std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+                if (element.function == RPNElement::FUNCTION_NOT_IN)
+                    rpn_stack.back() = !rpn_stack.back();
+                break;
             }
-
-            rpn_stack.emplace_back(
-                    std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
-            if (element.function == RPNElement::FUNCTION_NOT_IN)
-                rpn_stack.back() = !rpn_stack.back();
-        }
-        else if (element.function == RPNElement::FUNCTION_MULTI_SEARCH
-            || element.function == RPNElement::FUNCTION_HAS_ANY
-            || element.function == RPNElement::FUNCTION_HAS_ALL)
-        {
-            std::vector<bool> result(element.set_bloom_filters.back().size(), true);
-
-            const auto & bloom_filters = element.set_bloom_filters[0];
-
-            for (size_t row = 0; row < bloom_filters.size(); ++row)
-                result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
-
-            if (element.function == RPNElement::FUNCTION_HAS_ALL)
-                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), false) == std::end(result), true);
-            else
-                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
-        }
-        else if (element.function == RPNElement::FUNCTION_MATCH)
-        {
-            if (!element.set_bloom_filters.empty())
+            case RPNElement::FUNCTION_MULTI_SEARCH:
+            case RPNElement::FUNCTION_HAS_ANY:
+            case RPNElement::FUNCTION_HAS_ALL:
             {
-                /// Alternative substrings
                 std::vector<bool> result(element.set_bloom_filters.back().size(), true);
 
                 const auto & bloom_filters = element.set_bloom_filters[0];
@@ -257,42 +241,64 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
                 for (size_t row = 0; row < bloom_filters.size(); ++row)
                     result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
 
-                rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+                if (element.function == RPNElement::FUNCTION_HAS_ALL)
+                    rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), false) == std::end(result), true);
+                else
+                    rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+                break;
             }
-            else if (element.bloom_filter)
+            case RPNElement::FUNCTION_MATCH:
+                if (!element.set_bloom_filters.empty())
+                {
+                    /// Alternative substrings
+                    std::vector<bool> result(element.set_bloom_filters.back().size(), true);
+
+                    const auto & bloom_filters = element.set_bloom_filters[0];
+
+                    for (size_t row = 0; row < bloom_filters.size(); ++row)
+                        result[row] = result[row] && granule->bloom_filters[element.key_column].contains(bloom_filters[row]);
+
+                    rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
+                }
+                else if (element.bloom_filter)
+                {
+                    /// Required substrings
+                    rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
+                }
+                break;
+            case RPNElement::FUNCTION_NOT:
+                rpn_stack.back() = !rpn_stack.back();
+                break;
+            case RPNElement::FUNCTION_AND:
             {
-                /// Required substrings
-                rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 & arg2;
+                break;
             }
+            case RPNElement::FUNCTION_OR:
+            {
+                auto arg1 = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto arg2 = rpn_stack.back();
+                rpn_stack.back() = arg1 | arg2;
+                break;
+            }
+            case RPNElement::ALWAYS_FALSE:
+                rpn_stack.emplace_back(false, true);
+                break;
+            case RPNElement::ALWAYS_TRUE:
+                rpn_stack.emplace_back(true, false);
+                break;
+            /// No `default:` to make the compiler warn if not all enum values are handled.
         }
-        else if (element.function == RPNElement::FUNCTION_NOT)
+
+        if (update_partial_disjunction_result_fn)
         {
-            rpn_stack.back() = !rpn_stack.back();
+            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            ++element_idx;
         }
-        else if (element.function == RPNElement::FUNCTION_AND)
-        {
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 & arg2;
-        }
-        else if (element.function == RPNElement::FUNCTION_OR)
-        {
-            auto arg1 = rpn_stack.back();
-            rpn_stack.pop_back();
-            auto arg2 = rpn_stack.back();
-            rpn_stack.back() = arg1 | arg2;
-        }
-        else if (element.function == RPNElement::ALWAYS_FALSE)
-        {
-            rpn_stack.emplace_back(false, true);
-        }
-        else if (element.function == RPNElement::ALWAYS_TRUE)
-        {
-            rpn_stack.emplace_back(true, false);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in BloomFilterCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
@@ -741,7 +747,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         {
             bloom_filters.back().emplace_back(params);
             auto ref = column->getDataAt(row);
-            token_extractor->stringPaddedToBloomFilter(ref.data, ref.size, bloom_filters.back().back());
+            token_extractor->stringPaddedToBloomFilter(ref.data(), ref.size(), bloom_filters.back().back());
         }
     }
 
@@ -756,7 +762,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexBloomFilterText::createIndexGranule() con
     return std::make_shared<MergeTreeIndexGranuleBloomFilterText>(index.name, index.column_names.size(), params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorBloomFilterText>(index.column_names, index.name, params, token_extractor.get());
 }
@@ -767,32 +773,36 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
     return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, token_extractor.get());
 }
 
-MergeTreeIndexPtr bloomFilterIndexTextCreator(
-    const IndexDescription & index)
+MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index)
 {
-    if (index.type == NgramTokenExtractor::getName())
+    static std::vector<String> allowed_tokenizers
+        = {NgramsTokenExtractor::getName(), SplitByNonAlphaTokenExtractor::getName(), SparseGramsTokenExtractor::getBloomFilterIndexName()};
+
+    TokenizerFactory::isAllowedTokenizer(index.type, allowed_tokenizers, index.name);
+
+    size_t num_tokenizer_params = 0;
+    /// Depending on tokenizer type, first n params are for tokenizer, then n, n+1, n+2 are for bloom filter
+    if (index.type == NgramsTokenExtractor::getName())
+        num_tokenizer_params = 1;
+    else if (index.type == SplitByNonAlphaTokenExtractor::getName())
+        num_tokenizer_params = 0;
+    else if (index.type == SparseGramsTokenExtractor::getBloomFilterIndexName())
     {
-        size_t n = index.arguments[0].safeGet<size_t>();
-        BloomFilterParameters params(
-            index.arguments[1].safeGet<size_t>(),
-            index.arguments[2].safeGet<size_t>(),
-            index.arguments[3].safeGet<size_t>());
-
-        auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
-
-        return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
-    }
-    if (index.type == DefaultTokenExtractor::getName())
-    {
-        BloomFilterParameters params(
-            index.arguments[0].safeGet<size_t>(), index.arguments[1].safeGet<size_t>(), index.arguments[2].safeGet<size_t>());
-
-        auto tokenizer = std::make_unique<DefaultTokenExtractor>();
-
-        return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+        if (index.arguments.size() == 5)
+            num_tokenizer_params = 2;
+        else
+            num_tokenizer_params = 3;
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
+    auto tokenizer = TokenizerFactory::createTokenizer(index.type, std::span(index.arguments).subspan(0, num_tokenizer_params), allowed_tokenizers, index.name);
+
+    size_t first_bf_param_idx = num_tokenizer_params;
+    BloomFilterParameters params(
+        index.arguments[first_bf_param_idx].safeGet<size_t>(),
+        index.arguments[first_bf_param_idx+1].safeGet<size_t>(),
+        index.arguments[first_bf_param_idx+2].safeGet<size_t>());
+
+    return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
 }
 
 void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach*/)
@@ -813,36 +823,54 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
         }
 
         if (!data_type.isString() && !data_type.isFixedString() && !data_type.isIPv6())
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Ngram and token bloom filter indexes can only be used with column types `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
 
-    if (index.type == NgramTokenExtractor::getName())
+    size_t first_bf_param_idx = 0;
+
+    if (index.type == NgramsTokenExtractor::getName())
     {
         if (index.arguments.size() != 4)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "`ngrambf` index must have exactly 4 arguments.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`ngrambf` index must have exactly 4 arguments");
+
+        UInt64 ngram_length = index.arguments[0].safeGet<UInt64>();
+        if (ngram_length < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ngram length must be at least 1");
+
+        first_bf_param_idx = 1;
     }
-    else if (index.type == DefaultTokenExtractor::getName())
+    else if (index.type == SplitByNonAlphaTokenExtractor::getName())
     {
         if (index.arguments.size() != 3)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "`tokenbf` index must have exactly 3 arguments.");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`tokenbf` index must have exactly 3 arguments");
+
+        first_bf_param_idx = 0;
+    }
+    else if (index.type == SparseGramsTokenExtractor::getBloomFilterIndexName())
+    {
+        if (index.arguments.size() != 5 && index.arguments.size() != 6)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "`sparseGrams` index must have exactly 5 or 6 arguments");
+
+        if (index.arguments.size() == 5)
+            first_bf_param_idx = 2;
+        else
+            first_bf_param_idx = 3;
     }
     else
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
     }
 
-    assert(index.arguments.size() >= 3);
-
     for (const auto & arg : index.arguments)
         if (arg.getType() != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "All parameters to *bf_v1 index must be unsigned integers");
 
-    /// Just validate
+    /// Just for validation
     BloomFilterParameters params(
-        index.arguments[0].safeGet<size_t>(),
-        index.arguments[1].safeGet<size_t>(),
-        index.arguments[2].safeGet<size_t>());
+        index.arguments[first_bf_param_idx].safeGet<size_t>(),
+        index.arguments[first_bf_param_idx+1].safeGet<size_t>(),
+        index.arguments[first_bf_param_idx+2].safeGet<size_t>());
 }
 
 }

@@ -4,6 +4,7 @@ sidebar_label: 'Continuous Integration (CI)'
 sidebar_position: 55
 slug: /development/continuous-integration
 title: 'Continuous Integration (CI)'
+doc_type: 'reference'
 ---
 
 # Continuous Integration (CI)
@@ -43,9 +44,17 @@ Go to the check report and look for `ERROR` and `WARNING` messages.
 Check that the description of your pull request conforms to the template [PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md).
 You have to specify a changelog category for your change (e.g., Bug Fix), and write a user-readable message describing the change for [CHANGELOG.md](../whats-new/changelog/index.md)
 
-## Push to DockerHub {#push-to-dockerhub}
+## Docker image {#docker-image}
 
-Builds docker images used for build and tests, then pushes them to DockerHub.
+Builds the ClickHouse server and keeper Docker images to verify that they build correctly.
+
+### Official docker library tests {#official-docker-library-tests}
+
+Runs the tests from the [official Docker library](https://github.com/docker-library/official-images/tree/master/test#alternate-config-files) to verify that the `clickhouse/clickhouse-server` Docker image works correctly.
+
+To add new tests, create a directory `ci/jobs/scripts/docker_server/tests/$test_name` and the script `run.sh` there.
+
+Additional details about the tests can be found in the [CI jobs scripts documentation](https://github.com/ClickHouse/ClickHouse/tree/master/ci/jobs/scripts/docker_server).
 
 ## Marker check {#marker-check}
 
@@ -156,17 +165,18 @@ To run a local debug build:
 
 ```bash
 python -m ci.praktika run "Build (amd_debug)"
+```
 
 If the above approach does not work for you, use the cmake options from the build log and follow the [general build process](../development/build.md).
-
-
 ## Functional stateless tests {#functional-stateless-tests}
+
 Runs [stateless functional tests](tests.md#functional-tests) for ClickHouse binaries built in various configurations -- release, debug, with sanitizers, etc.
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#functional-tests).
 Note that you have to use the correct build configuration to reproduce -- a test might fail under AddressSanitizer but pass in Debug.
 Download the binary from [CI build checks page](/install/advanced), or build it locally.
 
 ## Integration tests {#integration-tests}
+
 Runs [integration tests](tests.md#integration-tests).
 
 ## Bugfix validate check {#bugfix-validate-check}
@@ -175,6 +185,7 @@ Checks that either a new test (functional or integration) or there some changed 
 This check is triggered when pull request has "pr-bugfix" label.
 
 ## Stress test {#stress-test}
+
 Runs stateless functional tests concurrently from several clients to detect concurrency-related errors. If it fails:
 
     * Fix all other test failures first;
@@ -187,10 +198,12 @@ Checks that `clickhouse` binary runs on distributions with old libc versions.
 If it fails, ask a maintainer for help.
 
 ## AST fuzzer {#ast-fuzzer}
+
 Runs randomly generated queries to catch program errors.
 If it fails, ask a maintainer for help.
 
 ## Performance tests {#performance-tests}
+
 Measure changes in query performance.
 This is the longest check that takes just below 6 hours to run.
 The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report).

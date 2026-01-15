@@ -123,6 +123,11 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         if ((level == 0) && (max_flags_with_children & create_table))
             res |= create_arbitrary_temporary_table;
 
+        /// CREATE VIEW (on any database/table) => CREATE_TEMPORARY_VIEW (global)
+        static const AccessFlags create_temporary_view = AccessType::CREATE_TEMPORARY_VIEW;
+        if ((level == 0) && (max_flags_with_children & create_view))
+            res |= create_temporary_view;
+
         /// ALTER_TTL => ALTER_MATERIALIZE_TTL
         static const AccessFlags alter_ttl = AccessType::ALTER_TTL;
         static const AccessFlags alter_materialize_ttl = AccessType::ALTER_MATERIALIZE_TTL;
@@ -202,6 +207,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "table_engines",
             "table_functions",
             "aggregate_function_combinators",
+            "completions",
 
             "functions", /// Can contain user-defined functions
 

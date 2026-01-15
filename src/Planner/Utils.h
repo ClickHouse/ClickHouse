@@ -33,13 +33,14 @@ String dumpQueryPlan(const QueryPlan & query_plan);
 String dumpQueryPipeline(const QueryPlan & query_plan);
 
 /// Build common header for UNION query
-Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode);
+Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type);
 
 /// Add converting to common header actions if needed for each plan
 void addConvertingToCommonHeaderActionsIfNeeded(
     std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
-    SharedHeaders & query_plans_headers);
+    SharedHeaders & query_plans_headers,
+    ContextPtr context);
 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name = true);
@@ -69,6 +70,9 @@ bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescripti
 
 /// Returns true if query node JOIN TREE contains ARRAY JOIN node, false otherwise
 bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node);
+
+/// Returns true if any query tree children have WITH TOTALS, false otherwise.
+bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node);
 
 /** Returns true if query node JOIN TREE contains QUERY node with WITH TOTALS, false otherwise.
   * Function is applied recursively to subqueries in JOIN TREE.
@@ -114,5 +118,10 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
 /// Remove query plan steps that don't affect the number of rows in the result.
 /// Returns true if the query always returns at least 1 row.
 bool optimizePlanForExists(QueryPlan & query_plan);
+
+/// Create ExpressionStep that projects only used columns
+QueryPlanStepPtr projectOnlyUsedColumns(
+    const SharedHeader & stream_header,
+    const ColumnIdentifiers & used_column_identifiers);
 
 }

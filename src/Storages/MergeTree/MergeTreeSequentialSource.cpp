@@ -34,7 +34,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 merge_tree_min_read_task_size;
+    extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
 }
 
@@ -149,6 +149,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
     read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+        = read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
@@ -170,18 +171,11 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
             break;
     }
 
-    MergeTreeReaderSettings reader_settings =
-    {
-        .read_settings = read_settings,
-        .save_marks_in_cache = false,
-        .can_read_part_without_marks = true,
-    };
-
     MergeTreeReadTask::Extras extras =
     {
         .mark_cache = mark_cache.get(),
         .patch_join_cache = patch_join_cache.get(),
-        .reader_settings = reader_settings,
+        .reader_settings = MergeTreeReaderSettings::createForMergeMutation(std::move(read_settings)),
         .storage_snapshot = storage_snapshot,
     };
 

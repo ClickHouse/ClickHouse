@@ -24,6 +24,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool distributed_aggregation_memory_efficient;
+    extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
 }
 
 namespace Setting
@@ -144,7 +145,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
                                  : max_threads;
 
         auto transform_params = std::make_shared<AggregatingTransformParams>(pipeline.getSharedHeader(), std::move(params), final);
-        pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads);
+        pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads, should_produce_results_in_order_of_bucket_number);
     }
 
     pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
@@ -309,7 +310,8 @@ std::unique_ptr<IQueryPlanStep> MergingAggregatedStep::deserialize(Deserializati
         overflow_row,
         settings[Setting::max_threads],
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
-        ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization]);
+        ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
+        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte]);
 
     auto merging_aggregated_step = std::make_unique<MergingAggregatedStep>(
         ctx.input_headers.front(),

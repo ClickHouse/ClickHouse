@@ -4,6 +4,7 @@ sidebar_label: 'Named collections'
 sidebar_position: 69
 slug: /operations/named-collections
 title: 'Named collections'
+doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -367,8 +368,6 @@ SELECT * FROM postgresql(mypg, table = 'test');
 │ 2 │ two │
 │ 1 │ one │
 └───┴─────┘
-
-
 SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
 
 ┌─a─┐
@@ -549,7 +548,7 @@ SETTINGS kafka_num_consumers = 4,
 
 ## Named collections for backups {#named-collections-for-backups}
 
-For the description of parameters see [Backup and Restore](./backup.md).
+For the description of parameters see [Backup and Restore](/operations/backup/overview).
 
 ### DDL example {#ddl-example-4}
 

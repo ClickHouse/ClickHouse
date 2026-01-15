@@ -11,7 +11,6 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnLazy.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -73,12 +72,6 @@ void NativeWriter::flush()
       */
     ColumnPtr full_column = column->convertToFullColumnIfConst()->decompress();
 
-    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(full_column.get()))
-    {
-        const auto & columns = column_lazy->getColumns();
-        full_column = ColumnTuple::create(columns);
-    }
-
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
@@ -102,15 +95,26 @@ void NativeWriter::flush()
     serialization.serializeBinaryBulkStateSuffix(settings, state);
 }
 
-/*static*/ SerializationPtr NativeWriter::getSerialization(UInt64 client_revision, const ColumnWithTypeAndName & column)
+std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getSerializationAndColumn(UInt64 client_revision, const ColumnWithTypeAndName & column)
 {
     if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
     {
-        auto info = column.type->getSerializationInfo(*column.column);
-        if (client_revision >= DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
-            return column.type->getSerialization(*info);
+        ColumnPtr result_column = column.column;
+        if (client_revision < DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION)
+            result_column = result_column->convertToFullColumnIfReplicated();
+        if (client_revision < DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
+            result_column = recursiveRemoveSparse(result_column);
+        if (client_revision < DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION)
+        {
+            if (column.type->isNullable())
+                result_column = recursiveRemoveSparse(result_column);
+        }
+
+        auto info = column.type->getSerializationInfo(*result_column);
+        return {column.type->getSerialization(*info), info, result_column};
     }
-    return column.type->getDefaultSerialization();
+
+    return {column.type->getDefaultSerialization(), nullptr, recursiveRemoveSparse(column.column->convertToFullColumnIfReplicated())};
 }
 
 size_t NativeWriter::write(const Block & block)
@@ -119,7 +123,7 @@ size_t NativeWriter::write(const Block & block)
 
     /// Additional information about the block.
     if (client_revision > 0)
-        block.info.write(ostr);
+        block.info.write(ostr, client_revision);
 
     block.checkNumberOfRows();
 
@@ -188,42 +192,19 @@ size_t NativeWriter::write(const Block & block)
 
         /// Serialization. Dynamic, if client supports it.
         SerializationPtr serialization;
-        bool skip_writing = false;
-        if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(column.column.get()))
         {
-            if (!column_lazy->getColumns().empty())
-                serialization = column_lazy->getDefaultSerialization();
-            else
-                skip_writing = true;
-        }
-        else if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
-        {
-            auto info = column.type->getSerializationInfo(*column.column);
-            bool has_custom = false;
-
-            if (client_revision >= DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION)
+            SerializationInfoPtr info;
+            std::tie(serialization, info, column.column) = getSerializationAndColumn(client_revision, column);
+            if (info)
             {
-                serialization = column.type->getSerialization(*info);
-                has_custom = info->hasCustomSerialization();
+                writeBinary(static_cast<UInt8>(info->hasCustomSerialization()), ostr);
+                if (info->hasCustomSerialization())
+                    info->serialializeKindStackBinary(ostr);
             }
-            else
-            {
-                serialization = column.type->getDefaultSerialization();
-                column.column = recursiveRemoveSparse(column.column);
-            }
-
-            writeBinary(static_cast<UInt8>(has_custom), ostr);
-            if (has_custom)
-                info->serialializeKindBinary(ostr);
-        }
-        else
-        {
-            serialization = column.type->getDefaultSerialization();
-            column.column = recursiveRemoveSparse(column.column);
         }
 
         /// Data
-        if (!skip_writing && rows)    /// Zero items of data is always represented as zero number of bytes.
+        if (rows)    /// Zero items of data is always represented as zero number of bytes.
             writeData(*serialization, column.column, ostr, format_settings, 0, 0, client_revision);
 
         if (index)

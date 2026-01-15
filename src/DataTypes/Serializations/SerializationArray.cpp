@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationArrayOffsets.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
@@ -46,13 +47,13 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, con
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.binary.max_binary_array_size);
 
     field = Array();
     Array & arr = field.safeGet<Array>();
@@ -86,13 +87,13 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.binary.max_binary_array_size);
 
     IColumn & nested_column = column_array.getData();
 
@@ -112,6 +113,21 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
     offsets.push_back(offsets.back() + size);
 }
 
+void SerializationArray::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+
+    size_t offset = offsets[ssize_t(row_num) - 1];
+    size_t next_offset = offsets[row_num];
+    size_t size = next_offset - offset;
+
+    writeVarUInt(size, ostr);
+
+    const IColumn & nested_column = column_array.getData();
+    for (size_t i = offset; i < next_offset; ++i)
+        nested->serializeForHashCalculation(nested_column, i, ostr);
+}
 
 namespace
 {
@@ -248,7 +264,7 @@ void SerializationArray::enumerateStreams(
 
     auto subcolumn_name = "size" + std::to_string(getArrayLevel(settings.path));
     auto offsets_serialization = std::make_shared<SerializationNamed>(
-        std::make_shared<SerializationNumber<UInt64>>(),
+        std::make_shared<SerializationArrayOffsets>(),
         subcolumn_name, SubstreamType::NamedOffsets);
 
     auto offsets_column = offsets && !settings.position_independent_encoding
@@ -371,7 +387,7 @@ void SerializationArray::serializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 }
 
-void SerializationArray::deserializeOffsetsBinaryBulk(
+bool SerializationArray::deserializeOffsetsBinaryBulk(
     ColumnPtr & offsets_column,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
@@ -389,8 +405,11 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
             insertArraySizesToOffsets(offsets_column, cached_column, cached_column->size() - num_read_rows, cached_column->size());
         else
             offsets_column = arraySizesToOffsets(*cached_column);
+
+        return true;
     }
-    else if (auto * stream = settings.getter(settings.path))
+
+    if (auto * stream = settings.getter(settings.path))
     {
         size_t prev_size = offsets_column->size();
 
@@ -415,7 +434,11 @@ void SerializationArray::deserializeOffsetsBinaryBulk(
         /// Add array sizes read from current range into the cache.
         if (cache)
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(*offsets_column), offsets_column->size() - prev_size);
+
+        return true;
     }
+
+    return false;
 }
 
 std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(
@@ -428,7 +451,8 @@ std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGet
     const auto & offsets_data = assert_cast<const ColumnArray::ColumnOffsets &>(*offsets_column).getData();
     size_t prev_last_offset = offsets_data.back();
     size_t prev_offset_size = offsets_data.size();
-    deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache);
+    if (!deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache))
+        return {0, 0};
 
     size_t skipped_nested_rows = 0;
 
@@ -476,9 +500,6 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
 
     if (unlikely(nested_limit > MAX_ARRAYS_SIZE))
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array sizes are too large: {}", nested_limit);
-
-    /// Adjust value size hint. Divide it to the average array size.
-    settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
 
     nested->deserializeBinaryBulkWithMultipleStreams(
         nested_column, skipped_nested_rows, nested_limit, settings, state, cache);
@@ -537,6 +558,16 @@ static ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reade
         if constexpr (throw_exception)
             throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Array does not start with '[' character");
         return ReturnType(false);
+    }
+    else
+    {
+        skipWhitespaceIfAny(istr);
+        if (istr.eof())
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT, "Cannot read array from text, expected opening bracket '[' or array element");
+            return ReturnType(false);
+        }
     }
 
     auto on_error_no_throw = [&]()

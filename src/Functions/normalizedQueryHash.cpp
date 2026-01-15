@@ -76,6 +76,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr column = arguments[0].column;
@@ -97,8 +101,64 @@ public:
 
 REGISTER_FUNCTION(NormalizedQueryHash)
 {
-    factory.registerFunction("normalizedQueryHashKeepNames", [](ContextPtr){ return std::make_shared<FunctionNormalizedQueryHash>(true); });
-    factory.registerFunction("normalizedQueryHash", [](ContextPtr){ return std::make_shared<FunctionNormalizedQueryHash>(false); });
+    FunctionDocumentation::Description normalizedQueryHash_description = R"(
+Returns identical 64 bit hash values without the values of literals for similar queries.
+Can be helpful in analyzing query logs.
+    )";
+    FunctionDocumentation::Syntax normalizedQueryHash_syntax = "normalizedQueryHash(x)";
+    FunctionDocumentation::Arguments normalizedQueryHash_arguments = {
+        {"x", "Sequence of characters.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue normalizedQueryHash_returned_value = {"Returns a 64 bit hash value.", {"UInt64"}};
+    FunctionDocumentation::Examples normalizedQueryHash_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res
+        )",
+        R"(
+┌─res─┐
+│   1 │
+└─────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn normalizedQueryHash_introduced_in = {20, 8};
+    FunctionDocumentation::Category normalizedQueryHash_category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation normalizedQueryHash_documentation = {normalizedQueryHash_description, normalizedQueryHash_syntax, normalizedQueryHash_arguments, {}, normalizedQueryHash_returned_value, normalizedQueryHash_examples, normalizedQueryHash_introduced_in, normalizedQueryHash_category};
+
+    FunctionDocumentation::Description normalizedQueryHashKeepNames_description = R"(
+Like [`normalizedQueryHash`](#normalizedQueryHash) it returns identical 64 bit hash values without the values of literals for similar queries, but it does not replace complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs) with a placeholder before hashing.
+Can be helpful in analyzing query logs.
+    )";
+    FunctionDocumentation::Syntax normalizedQueryHashKeepNames_syntax = "normalizedQueryHashKeepNames(x)";
+    FunctionDocumentation::Arguments normalizedQueryHashKeepNames_arguments = {
+        {"x", "Sequence of characters.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue normalizedQueryHashKeepNames_returned_value = {"Returns a 64 bit hash value.", {"UInt64"}};
+    FunctionDocumentation::Examples normalizedQueryHashKeepNames_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT normalizedQueryHash('SELECT 1 AS `xyz123`') != normalizedQueryHash('SELECT 1 AS `abc123`') AS normalizedQueryHash;
+SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHashKeepNames('SELECT 1 AS `abc123`') AS normalizedQueryHashKeepNames;
+        )",
+        R"(
+┌─normalizedQueryHash─┐
+│                   0 │
+└─────────────────────┘
+┌─normalizedQueryHashKeepNames─┐
+│                            1 │
+└──────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn normalizedQueryHashKeepNames_introduced_in = {21, 2};
+    FunctionDocumentation::Category normalizedQueryHashKeepNames_category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation normalizedQueryHashKeepNames_documentation = {normalizedQueryHashKeepNames_description, normalizedQueryHashKeepNames_syntax, normalizedQueryHashKeepNames_arguments, {}, normalizedQueryHashKeepNames_returned_value, normalizedQueryHashKeepNames_examples, normalizedQueryHashKeepNames_introduced_in, normalizedQueryHashKeepNames_category};
+
+    factory.registerFunction("normalizedQueryHashKeepNames", [](ContextPtr){ return std::make_shared<FunctionNormalizedQueryHash>(true); }, normalizedQueryHashKeepNames_documentation);
+    factory.registerFunction("normalizedQueryHash", [](ContextPtr){ return std::make_shared<FunctionNormalizedQueryHash>(false); }, normalizedQueryHash_documentation);
 }
 
 }

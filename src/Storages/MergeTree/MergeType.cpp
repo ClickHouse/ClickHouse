@@ -20,7 +20,7 @@ MergeType checkAndGetMergeType(UInt32 merge_type)
 
 bool isTTLMergeType(MergeType merge_type)
 {
-    return merge_type == MergeType::TTLDelete || merge_type == MergeType::TTLRecompress;
+    return merge_type == MergeType::TTLDelete || merge_type == MergeType::TTLRecompress || merge_type == MergeType::TTLDrop;
 }
 
 }

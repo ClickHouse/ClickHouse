@@ -55,7 +55,6 @@ public:
     bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
     bool isComparable() const override { return nested->isComparable(); }
     bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
-    bool hasDynamicSubcolumnsDeprecated() const override { return nested->hasDynamicSubcolumnsDeprecated(); }
 
     /// Array column doesn't have subcolumns by itself but allows to read subcolumns of nested column.
     /// If nested column has dynamic subcolumns, Array of this type should also be able to read these dynamic subcolumns.

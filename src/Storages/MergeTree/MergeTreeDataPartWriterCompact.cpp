@@ -75,7 +75,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         assert(!substream_path.empty());
-        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         /// Shared offsets for Nested type.
         if (compressed_streams.contains(stream_name))
@@ -212,6 +212,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     }
 
     result_block = permuteBlockIfNeeded(result_block, permutation);
+    calculateAndSerializeStatistics(result_block);
 
     if (header.empty())
         header = result_block.cloneEmpty();
@@ -235,7 +236,6 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
         auto granules_to_write = getGranulesToWrite(*index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
         setCurrentMark(getCurrentMark() + granules_to_write.size());
-        calculateAndSerializeStatistics(flushed_block);
     }
 }
 
@@ -269,9 +269,13 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             CompressedStreamPtr prev_stream;
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
-                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
+                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
-                auto & result_stream = compressed_streams[stream_name];
+                auto stream_it = compressed_streams.find(stream_name);
+                if (stream_it == compressed_streams.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} not found", stream_name, name_and_type->name);
+
+                auto & result_stream = stream_it->second;
                 /// Write one compressed block per column in granule for more optimal reading.
                 if (prev_stream && prev_stream != result_stream)
                 {
@@ -300,7 +304,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
             auto stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
             {
-                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
+                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
                 return {plain_hashing.count(), compressed_streams[stream_name]->hashing_buf.offset()};
             };
 
@@ -398,7 +402,7 @@ void MergeTreeDataPartWriterCompact::initColumnsSubstreamsIfNeeded(const Block &
         columns_substreams.addColumn(name_and_type.name);
         auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path));
+            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings)));
             return &buf;
         };
 
@@ -503,7 +507,11 @@ void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && column
     else
     {
         for (size_t i = 0; i < columns.size(); ++i)
+        {
+            /// Fix dynamic structure so it won't changed after insertion of new rows.
+            accumulated_columns[i]->fixDynamicStructure();
             accumulated_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+        }
     }
 }
 

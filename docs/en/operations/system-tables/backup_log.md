@@ -4,6 +4,7 @@ description: 'System table containing logging entries with information about `BA
 keywords: ['system table', 'backup_log']
 slug: /operations/system-tables/backup_log
 title: 'system.backup_log'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -158,4 +159,4 @@ SELECT * FROM system.backups ORDER BY start_time
 
 **See Also**
 
-- [Backup and Restore](../../operations/backup.md)
+- [Backup and Restore](/operations/backup/overview)

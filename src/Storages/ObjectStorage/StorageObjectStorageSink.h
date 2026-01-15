@@ -12,10 +12,11 @@ public:
     StorageObjectStorageSink(
         const std::string & path_,
         ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context);
+        ContextPtr context,
+        const String & format,
+        const String & compression_method);
 
     ~StorageObjectStorageSink() override;
 
@@ -27,11 +28,14 @@ public:
 
     const String & getPath() const { return path; }
 
+    size_t getFileSize() const;
+
 private:
     const String path;
     SharedHeader sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
+    std::optional<size_t> result_file_size;
 
     void finalizeBuffers();
     void releaseBuffers();

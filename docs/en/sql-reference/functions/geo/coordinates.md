@@ -3,6 +3,7 @@ description: 'Documentation for Coordinates'
 sidebar_label: 'Geographical Coordinates'
 slug: /sql-reference/functions/geo/coordinates
 title: 'Functions for Working with Geographical Coordinates'
+doc_type: 'reference'
 ---
 
 ## greatCircleDistance {#greatcircledistance}

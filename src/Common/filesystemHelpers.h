@@ -14,10 +14,8 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-using PocoTemporaryFile = Poco::TemporaryFile;
-
 bool enoughSpaceInDirectory(const std::string & path, size_t data_size);
-std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path);
+std::unique_ptr<Poco::TemporaryFile> createTemporaryFile(const std::string & folder_path);
 
 
 // Determine what block device is responsible for specified path
@@ -77,6 +75,12 @@ std::optional<size_t> tryGetSizeFromFilePath(const String & path);
 Int64 getINodeNumberFromPath(const String & path);
 
 }
+
+// On illumos, <sys/regset.h> defines FS as a macro (x86 segment register).
+// Undef it to avoid conflict with FS namespace below.
+#ifdef FS
+#  undef FS
+#endif
 
 namespace FS
 {

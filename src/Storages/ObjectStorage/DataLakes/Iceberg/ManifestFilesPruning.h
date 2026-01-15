@@ -1,12 +1,12 @@
 #pragma once
 #include "config.h"
 
-#if USE_AVRO
 
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
@@ -20,6 +20,13 @@ enum class PruningReturnStatus
     PARTITION_PRUNED,
     MIN_MAX_INDEX_PRUNED
 };
+
+}
+
+#if USE_AVRO
+
+namespace DB::Iceberg
+{
 
 struct ManifestFileEntry;
 class ManifestFileContent;
@@ -51,7 +58,7 @@ public:
         const ManifestFileContent & manifest_file,
         DB::ContextPtr context);
 
-    PruningReturnStatus canBePruned(const ManifestFileEntry & entry) const;
+    PruningReturnStatus canBePruned(const ManifestFileEntryPtr & entry) const;
 };
 
 }

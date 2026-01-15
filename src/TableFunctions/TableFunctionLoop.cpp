@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Access/Common/AccessFlags.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -118,6 +119,7 @@ namespace DB
             storage = database->tryGetTable(loop_table_name, context);
             if (!storage)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
+            context->checkAccess(AccessType::SELECT, database_name, loop_table_name);
         }
         else
         {

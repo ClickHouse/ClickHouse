@@ -4,6 +4,7 @@ description: 'System table which exists only if ZooKeeper is configured. Shows c
 keywords: ['system table', 'zookeeper_connection']
 slug: /operations/system-tables/zookeeper_connection
 title: 'system.zookeeper_connection'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -28,6 +29,8 @@ Columns:
 -   `xid` ([Int64](../../sql-reference/data-types/int-uint.md)) — XID of the current session.
 -   `enabled_feature_flags` ([Array(Enum16)](../../sql-reference/data-types/array.md)) — Feature flags which are enabled. Only applicable to ClickHouse Keeper. Possible values are `FILTERED_LIST`, `MULTI_READ`, `CHECK_NOT_EXISTS`, `CREATE_IF_NOT_EXISTS`, `REMOVE_RECURSIVE`.
 -   `availability_zone` ([String](../../sql-reference/data-types/string.md)) — Availability zone.
+-   `session_timeout_ms` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Session timeout (in milliseconds).
+-   `last_zxid_seen` ([Int64](../../sql-reference/data-types/int-uint.md)) — Last zxid seen by the current session.
 
 Example:
 

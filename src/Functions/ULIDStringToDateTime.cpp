@@ -163,26 +163,41 @@ public:
         if constexpr (std::endian::native == std::endian::little)
             ms = std::byteswap(ms);
 
-        return DecimalUtils::decimalFromComponents<DateTime64>(ms / intExp10(DATETIME_SCALE), ms % intExp10(DATETIME_SCALE), DATETIME_SCALE);
+        return DecimalUtils::dateTimeFromComponents(ms / intExp10(DATETIME_SCALE), ms % intExp10(DATETIME_SCALE), DATETIME_SCALE);
     }
 };
 
 
 REGISTER_FUNCTION(ULIDStringToDateTime)
 {
-    factory.registerFunction<FunctionULIDStringToDateTime>(FunctionDocumentation
-        {
-            .description=R"(
-This function extracts the timestamp from a ULID and returns it as a DateTime64(3) typed value.
-The function expects the ULID to be provided as the first argument, which can be either a String or a FixedString(26) data type.
-An optional second argument can be passed to specify a timezone for the timestamp.
-)",
-            .examples{
-                {"ulid", "SELECT ULIDStringToDateTime(generateULID())", ""},
-                {"timezone", "SELECT ULIDStringToDateTime(generateULID(), 'Asia/Istanbul')", ""}
-            },
-            .category = FunctionDocumentation::Category::ULID
-        });
+    /// ULIDStringToDateTime documentation
+    FunctionDocumentation::Description description_ULIDStringToDateTime = R"(
+This function extracts the timestamp from a [ULID](https://github.com/ulid/spec).
+    )";
+    FunctionDocumentation::Syntax syntax_ULIDStringToDateTime = "ULIDStringToDateTime(ulid[, timezone])";
+    FunctionDocumentation::Arguments arguments_ULIDStringToDateTime = {
+        {"ulid", "Input ULID.", {"String", "FixedString(26)"}},
+        {"timezone", "Optional. Timezone name for the returned value.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_ULIDStringToDateTime = {"Timestamp with milliseconds precision.", {"DateTime64(3)"}};
+    FunctionDocumentation::Examples examples_ULIDStringToDateTime = {
+    {
+        "Usage example",
+        R"(
+SELECT ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')
+        )",
+        R"(
+┌─ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')─┐
+│                            2022-12-28 00:40:37.616 │
+└────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_ULIDStringToDateTime = {23, 3};
+    FunctionDocumentation::Category category_ULIDStringToDateTime = FunctionDocumentation::Category::ULID;
+    FunctionDocumentation documentation_ULIDStringToDateTime = {description_ULIDStringToDateTime, syntax_ULIDStringToDateTime, arguments_ULIDStringToDateTime, {}, returned_value_ULIDStringToDateTime, examples_ULIDStringToDateTime, introduced_in_ULIDStringToDateTime, category_ULIDStringToDateTime};
+
+    factory.registerFunction<FunctionULIDStringToDateTime>(documentation_ULIDStringToDateTime);
 }
 
 }

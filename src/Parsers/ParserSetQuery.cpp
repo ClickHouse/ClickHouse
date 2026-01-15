@@ -10,6 +10,7 @@
 #include <Parsers/FieldFromAST.h>
 
 #include <Core/Names.h>
+#include <Core/Settings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -292,7 +293,20 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
             return false;
     }
     else
-        node = std::make_shared<ASTLiteral>(Field(UInt64(1)));
+    {
+        try
+        {
+            Field type_test = Settings::castValueUtil(name, true);
+            if (type_test.getType() == Field::Types::Which::Bool)
+                node = std::make_shared<ASTLiteral>(Field(true));
+            else
+                return false;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
 
     change.name = name;
     change.value = node->as<ASTLiteral &>().value;

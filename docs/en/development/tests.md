@@ -4,6 +4,7 @@ sidebar_label: 'Testing'
 sidebar_position: 40
 slug: /development/tests
 title: 'Testing ClickHouse'
+doc_type: 'guide'
 ---
 
 # Testing ClickHouse

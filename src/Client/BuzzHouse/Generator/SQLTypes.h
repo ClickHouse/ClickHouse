@@ -34,19 +34,22 @@ enum class SQLTypeClass
     MAP = 19,
     TUPLE = 20,
     VARIANT = 21,
-    NESTED = 22
+    QBIT = 22,
+    AGGREGATEFUNCTION = 23,
+    NESTED = 24
 };
 
 class SQLType
 {
 public:
-    virtual String typeName(bool escape) const = 0;
+    virtual String typeName(bool, bool) const = 0;
     virtual String MySQLtypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const = 0;
     virtual String SQLitetypeName(RandomGenerator & rg, bool escape) const = 0;
-    String ToSparkTypeName(bool escape) const { return typeName(escape); }
     virtual SQLType * typeDeepCopy() const = 0;
     virtual String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen) const = 0;
+    virtual String insertNumberEntry(RandomGenerator & rg, StatementGenerator & gen, uint32_t max_strlen, uint32_t max_nested_rows) const
+        = 0;
     virtual bool isNullable() const = 0;
     virtual SQLTypeClass getTypeClass() const = 0;
 
@@ -56,12 +59,13 @@ public:
 class BoolType : public SQLType
 {
 public:
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::BOOL; }
 
@@ -79,12 +83,13 @@ public:
     {
     }
 
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::INT; }
 
@@ -100,12 +105,13 @@ public:
     {
     }
 
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::FLOAT; }
 
@@ -121,13 +127,13 @@ public:
     {
     }
 
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
-    String ToSparkTypeName(bool) const { return "Date"; }
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::DATE; }
 
@@ -146,13 +152,13 @@ public:
     {
     }
 
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
-    String ToSparkTypeName(bool) const { return "Time"; }
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::TIME; }
 
@@ -173,13 +179,13 @@ public:
     {
     }
 
-    String typeName(bool escape) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
-    String ToSparkTypeName(bool) const { return "DateTime"; }
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::DATETIME; }
 
@@ -199,13 +205,14 @@ public:
     {
     }
 
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
     SQLType * typeDeepCopy() const override;
     static String appendDecimalValue(RandomGenerator & rg, bool use_func, const DecimalType * dt);
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::DECIMAL; }
 
@@ -221,12 +228,13 @@ public:
     {
     }
 
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::STRING; }
 
@@ -236,12 +244,13 @@ public:
 class UUIDType : public SQLType
 {
 public:
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::UUID; }
 
@@ -272,13 +281,13 @@ public:
     {
     }
 
-    String typeName(bool escape) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
-    String ToSparkTypeName(bool) const { return "String"; }
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::ENUM; }
 
@@ -288,12 +297,13 @@ public:
 class IPv4Type : public SQLType
 {
 public:
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::IPV4; }
 
@@ -303,12 +313,13 @@ public:
 class IPv6Type : public SQLType
 {
 public:
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator & rg, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return true; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::IPV6; }
 
@@ -324,12 +335,13 @@ public:
     {
     }
 
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::DYNAMIC; }
 
@@ -360,12 +372,13 @@ public:
     {
     }
 
-    String typeName(bool escape) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::JSON; }
 
@@ -381,12 +394,13 @@ public:
     {
     }
 
-    String typeName(bool escape) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool escape) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::NULLABLE; }
 
@@ -402,12 +416,13 @@ public:
     {
     }
 
-    String typeName(bool escape) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator & rg, bool escape) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator & rg, bool escape) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::LOWCARDINALITY; }
 
@@ -423,12 +438,13 @@ public:
     {
     }
 
-    String typeName(bool) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::GEO; }
 
@@ -444,13 +460,14 @@ public:
     {
     }
 
-    String typeName(bool escape) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator & rg, bool escape) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
     static String appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const SQLType * tp, uint64_t limit);
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::ARRAY; }
 
@@ -467,12 +484,13 @@ public:
     {
     }
 
-    String typeName(bool escape) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::MAP; }
 
@@ -501,12 +519,13 @@ public:
     {
     }
 
-    String typeName(bool escape) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::TUPLE; }
 
@@ -522,16 +541,69 @@ public:
     {
     }
 
-    String typeName(bool escape) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::VARIANT; }
 
     ~VariantType() override;
+};
+
+class QBitType : public SQLType
+{
+public:
+    SQLType * subtype;
+    const uint32_t dimension;
+
+    QBitType(SQLType * s, const uint32_t d)
+        : subtype(s)
+        , dimension(d)
+    {
+    }
+
+    String typeName(bool, bool) const override;
+    String MySQLtypeName(RandomGenerator &, bool) const override;
+    String PostgreSQLtypeName(RandomGenerator &, bool) const override;
+    String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
+    bool isNullable() const override { return true; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::QBIT; }
+
+    ~QBitType() override;
+};
+
+class AggregateFunctionType : public SQLType
+{
+public:
+    const bool simple;
+    const SQLFunc aggregate;
+    const std::vector<SQLType *> subtypes;
+
+    AggregateFunctionType(const bool s, const SQLFunc aggr, const std::vector<SQLType *> subs)
+        : simple(s)
+        , aggregate(aggr)
+        , subtypes(subs)
+    {
+    }
+
+    String typeName(bool, bool) const override;
+    String MySQLtypeName(RandomGenerator &, bool) const override;
+    String PostgreSQLtypeName(RandomGenerator &, bool) const override;
+    String SQLitetypeName(RandomGenerator &, bool) const override;
+    SQLType * typeDeepCopy() const override;
+    String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
+    bool isNullable() const override { return simple; }
+    SQLTypeClass getTypeClass() const override { return SQLTypeClass::AGGREGATEFUNCTION; }
+
+    ~AggregateFunctionType() override;
 };
 
 class NestedSubType
@@ -556,12 +628,13 @@ public:
     {
     }
 
-    String typeName(bool escape) const override;
+    String typeName(bool, bool) const override;
     String MySQLtypeName(RandomGenerator &, bool) const override;
     String PostgreSQLtypeName(RandomGenerator &, bool) const override;
     String SQLitetypeName(RandomGenerator &, bool) const override;
     SQLType * typeDeepCopy() const override;
     String appendRandomRawValue(RandomGenerator &, StatementGenerator &) const override;
+    String insertNumberEntry(RandomGenerator &, StatementGenerator &, uint32_t, uint32_t) const override;
     bool isNullable() const override { return false; }
     SQLTypeClass getTypeClass() const override { return SQLTypeClass::NESTED; }
 
@@ -633,4 +706,5 @@ String strBuildJSONArray(RandomGenerator & rg, int jdepth, int jwidth);
 String strBuildJSONElement(RandomGenerator & rg);
 String strBuildJSON(RandomGenerator & rg, int jdepth, int jwidth);
 String strAppendGeoValue(RandomGenerator & rg, const GeoTypes & gt);
+
 }

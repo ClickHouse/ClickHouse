@@ -109,7 +109,8 @@ public:
             auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                     from_header->getColumnsWithTypeAndName(),
                     to_header->getColumnsWithTypeAndName(),
-                    ActionsDAG::MatchColumnsMode::Name);
+                    ActionsDAG::MatchColumnsMode::Name,
+                    context);
 
             auto step = std::make_unique<ExpressionStep>(
                 query_plan.getCurrentHeader(),

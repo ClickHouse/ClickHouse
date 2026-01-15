@@ -6,8 +6,6 @@
 #include <Common/NaNUtils.h>
 #include <DataTypes/NumberTraits.h>
 
-#include "config.h"
-
 
 namespace DB
 {
@@ -22,22 +20,33 @@ inline void throwIfDivisionLeadsToFPE(A a, B b)
 {
     /// Is it better to use siglongjmp instead of checks?
 
-    if (unlikely(b == 0))
+    if (b == 0) [[unlikely]]
         throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division by zero");
 
     /// http://avva.livejournal.com/2548306.html
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
-        throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
+    if constexpr (is_signed_v<A> && is_signed_v<B>)
+    {
+        if (a == std::numeric_limits<A>::min() && b == -1) [[unlikely]]
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Division of minimal signed number by minus one");
+    }
 }
 
+}
+
+
+namespace DB
+{
 template <typename A, typename B>
 inline bool divisionLeadsToFPE(A a, B b)
 {
-    if (unlikely(b == 0))
+    if (b == 0) [[unlikely]]
         return true;
 
-    if (unlikely(is_signed_v<A> && is_signed_v<B> && a == std::numeric_limits<A>::min() && b == -1))
-        return true;
+    if constexpr (is_signed_v<A> && is_signed_v<B>)
+    {
+        if (a == std::numeric_limits<A>::min() && b == -1) [[unlikely]]
+            return true;
+    }
 
     return false;
 }
@@ -173,7 +182,7 @@ struct ModuloImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
+    static constexpr bool compilable = false;
 #endif
 };
 
@@ -181,6 +190,10 @@ template <typename A, typename B>
 struct ModuloLegacyImpl : ModuloImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// moduloLegacy is only used in partition key expression
+#endif
 };
 
 template <typename A, typename B>
@@ -224,6 +237,10 @@ struct PositiveModuloImpl : ModuloImpl<A, B>
         }
         return static_cast<ResultType>(res);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
+#endif
 };
 
 template <typename A, typename B>

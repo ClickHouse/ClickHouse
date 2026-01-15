@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -10,9 +10,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -78,6 +75,8 @@ public:
             H3Index h3index = data[row];
             CellBoundary boundary{};
 
+            validateH3Cell(h3index);
+
             auto err = cellToBoundary(h3index, &boundary);
             if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", h3index, err);
@@ -124,7 +123,7 @@ Returns array of pairs `(lat, lon)`, which corresponds to the boundary of the pr
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToGeoBoundary>(documentation);
 }
 

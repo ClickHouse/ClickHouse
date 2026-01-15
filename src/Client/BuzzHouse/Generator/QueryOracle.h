@@ -12,13 +12,24 @@ enum class DumpOracleStrategy
     DUMP_TABLE = 1,
     OPTIMIZE = 2,
     REATTACH = 3,
-    BACKUP_RESTORE = 4
+    BACKUP_RESTORE = 4,
+    ALTER_UPDATE = 5,
+    INSERT_COUNT = 6
+};
+
+struct MatchHandler
+{
+    /// predicate: returns true if this message should be handled
+    std::function<bool(const google::protobuf::Message &)> predicate;
+    /// handler: mutates or processes the message
+    std::function<void(google::protobuf::Message &)> handler;
 };
 
 class QueryOracle
 {
 private:
-    const FuzzConfig & fc;
+    static const std::vector<std::vector<OutFormat>> oracleFormats;
+    FuzzConfig & fc;
     const std::filesystem::path qcfile, qsfile, qfile_peer;
 
     MD5Impl md5_hash1, md5_hash2;
@@ -27,26 +38,28 @@ private:
 
     PeerQuery peer_query = PeerQuery::AllPeers;
     int first_errcode = 0;
-    bool other_steps_sucess = true, can_test_oracle_result, measure_performance;
+    uint64_t nrows = 0;
+    std::uniform_int_distribution<uint64_t> rows_dist;
+    bool other_steps_sucess = true, can_test_oracle_result, measure_performance, compare_explain;
 
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
 
-    bool findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
-    void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, uint32_t ncols, SelectStatementCore * ssc) const;
+    void iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules);
     void insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool peer, TableOrFunction * tof) const;
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void
     generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
 
 public:
-    explicit QueryOracle(const FuzzConfig & ffc)
+    explicit QueryOracle(FuzzConfig & ffc)
         : fc(ffc)
         , qcfile(ffc.client_file_path / "query.data")
         , qsfile(ffc.server_file_path / "query.data")
         , qfile_peer(
               ffc.clickhouse_server.has_value() ? (ffc.clickhouse_server.value().user_files_dir / "peer.data")
                                                 : std::filesystem::temp_directory_path())
+        , rows_dist(fc.min_insert_rows, fc.max_insert_rows)
         , can_test_oracle_result(fc.compare_success_results)
         , measure_performance(fc.measure_performance)
     {
@@ -62,11 +75,18 @@ public:
     void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
     /// Dump and read table oracle
-    void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq1);
+    void dumpTableContent(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        DumpOracleStrategy strategy,
+        bool test_content,
+        const SQLTable & t,
+        SQLQuery & sq1,
+        SQLQuery & sq2);
     void dumpOracleIntermediateSteps(
         RandomGenerator & rg,
         StatementGenerator & gen,
-        const SQLTable & t,
+        SQLTable & t,
         DumpOracleStrategy strategy,
         bool test_content,
         std::vector<SQLQuery> & intermediate_queries);
@@ -75,6 +95,7 @@ public:
     bool generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
     void generateOracleSelectQuery(RandomGenerator & rg, PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2);
     void generateSecondSetting(RandomGenerator & rg, StatementGenerator & gen, bool use_settings, const SQLQuery & sq1, SQLQuery & sq3);
+    void maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLQuery & sq1, SQLQuery & sq2);
 
     /// Replace query with peer tables
     void truncatePeerTables(const StatementGenerator & gen);

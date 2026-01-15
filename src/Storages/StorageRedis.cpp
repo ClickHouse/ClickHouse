@@ -534,7 +534,7 @@ RedisInteger StorageRedis::multiDelete(const RedisArray & keys) const
     return ret;
 }
 
-Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const
+Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const
 {
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageRedis supports only one key, got: {}", keys.size());

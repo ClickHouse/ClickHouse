@@ -62,7 +62,7 @@ public:
 
     /// This method is for CPU consumption only.
     /// It should be called from a thread that started using the slot.
-    /// Required for obtainting CPU time for the thread, because ctor is called in another thread.
+    /// Required for obtaining CPU time for the thread, because ctor is called in another thread.
     virtual void startConsumption() = 0;
 
     /// Renew the slot. This method should be called periodically.
@@ -80,6 +80,9 @@ class ISlotAllocation : public std::enable_shared_from_this<ISlotAllocation>, bo
 {
 public:
     virtual ~ISlotAllocation() = default;
+
+    /// Free the allocated slots, cancel slot requests and wake up preempted threads.
+    virtual void free() {}
 
     /// Take one already granted slot if available.
     [[nodiscard]] virtual AcquiredSlotPtr tryAcquire() = 0;

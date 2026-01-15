@@ -106,7 +106,32 @@ private:
 
 REGISTER_FUNCTION(StringToH3)
 {
-    factory.registerFunction<FunctionStringToH3>();
+    FunctionDocumentation::Description description = R"(
+Converts the string representation of an H3 index to the `H3Index` ([UInt64](/sql-reference/data-types/int-uint)) representation.
+    )";
+    FunctionDocumentation::Syntax syntax = "stringToH3(index_str)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index_str", "String representation of the H3 index.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the H3 index number, or `0` if the input is not a valid H3 index.",
+        {"UInt64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Convert string to H3 index",
+            "SELECT stringToH3('89184926cc3ffff') AS index",
+            R"(
+┌──────────────index─┐
+│ 617420388351344639 │
+└────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionStringToH3>(documentation);
 }
 
 }

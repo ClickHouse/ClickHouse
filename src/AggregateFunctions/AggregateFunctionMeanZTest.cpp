@@ -180,7 +180,50 @@ AggregateFunctionPtr createAggregateFunctionMeanZTest(
 
 void registerAggregateFunctionMeanZTest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("meanZTest", createAggregateFunctionMeanZTest);
+    FunctionDocumentation::Description description = R"(
+Applies mean z-test to samples from two populations.
+
+Values of both samples are in the `sample_data` column.
+If `sample_index` equals to 0 then the value in that row belongs to the sample from the first population.
+Otherwise it belongs to the sample from the second population.
+The null hypothesis is that means of populations are equal.
+A normal distribution is assumed.
+Populations may have unequal variance and the variances are known.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+meanZTest(population_variance_x, population_variance_y, confidence_level)(sample_data, sample_index)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"sample_data", "Sample data.", {"(U)Int*", "Float*", "Decimal"}},
+        {"sample_index", "Sample index.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"population_variance_x", "Variance for population x.", {"Float*"}},
+        {"population_variance_y", "Variance for population y.", {"Float*"}},
+        {"confidence_level", "Confidence level in order to calculate confidence intervals.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple with four elements: calculated z-statistic, calculated p-value, calculated confidence-interval-low, calculated confidence-interval-high.", {"Tuple(Float64, Float64, Float64, Float64)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Mean Z-test example",
+        R"(
+CREATE TABLE mean_ztest (sample_data Float64, sample_index UInt8) ENGINE = Memory;
+INSERT INTO mean_ztest VALUES (20.3, 0), (21.9, 0), (22.1, 0), (18.9, 1), (19, 1), (20.3, 1);
+
+SELECT meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index) FROM mean_ztest;
+        )",
+        R"(
+┌─meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index)───────────────────────────────┐
+│ (3.2841296025548123, 0.0010229786769086013, 0.8198428246768334, 3.2468238419898365) │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("meanZTest", {createAggregateFunctionMeanZTest, {}, documentation});
 }
 
 }

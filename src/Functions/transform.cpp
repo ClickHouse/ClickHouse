@@ -474,7 +474,7 @@ namespace
                 ColumnString::Offset current_offset = 0;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    const StringRef ref{&data[current_offset], offsets[i] - current_offset};
+                    const std::string_view ref{reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset};
                     current_offset = offsets[i];
                     const auto * it = table.find(ref);
                     if (it)
@@ -551,7 +551,7 @@ namespace
             {
                 const char8_t * to = nullptr;
                 size_t to_size = 0;
-                const StringRef ref{&data[current_offset], offsets[i] - current_offset};
+                const std::string_view ref{reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset};
                 current_offset = offsets[i];
                 const auto * it = table.find(ref);
                 if (it)
@@ -621,7 +621,7 @@ namespace
             ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                const StringRef ref{&data[current_offset], offsets[i] - current_offset};
+                const std::string_view ref{reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset};
                 current_offset = offsets[i];
                 const auto * it = table.find(ref);
                 if (it)
@@ -643,7 +643,7 @@ namespace
         struct Cache
         {
             using NumToIdx = HashMap<UInt64, size_t, HashCRC32<UInt64>>;
-            using StringToIdx = HashMap<StringRef, size_t, StringRefHash>;
+            using StringToIdx = HashMap<std::string_view, size_t, StringViewHash>;
             using AnythingToIdx = HashMap<UInt128, size_t>;
 
             std::unique_ptr<NumToIdx> table_num_to_idx;
@@ -768,10 +768,10 @@ namespace
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunreachable-code"
                         if constexpr (std::endian::native == std::endian::big)
-                            dst += sizeof(key) - ref.size;
+                            dst += sizeof(key) - ref.size();
 #pragma clang diagnostic pop
 
-                        memcpy(dst, ref.data, ref.size);
+                        memcpy(dst, ref.data(), ref.size());
                         table.insertIfNotPresent(key, i);
                     }
                 }
@@ -784,7 +784,7 @@ namespace
                 {
                     if (accurateEquals((*cache.from_column)[i], (*from_column_uncast)[i]))
                     {
-                        StringRef ref = cache.from_column->getDataAt(i);
+                        std::string_view ref = cache.from_column->getDataAt(i);
                         table.insertIfNotPresent(ref, i);
                     }
                 }
@@ -810,7 +810,83 @@ namespace
 
 REGISTER_FUNCTION(Transform)
 {
-    factory.registerFunction<FunctionTransform>();
+    FunctionDocumentation::Description description = R"(
+Transforms a value according to the explicitly defined mapping of some elements to other elements.
+
+There are two variations of this function:
+- `transform(x, array_from, array_to, default)` - transforms `x` using mapping arrays with a default value for unmatched elements
+- `transform(x, array_from, array_to)` - same transformation but returns the original `x` if no match is found
+
+The function searches for `x` in `array_from` and returns the corresponding element from `array_to` at the same index.
+If `x` is not found in `array_from`, it returns either the `default` value (4-parameter version) or the original `x` (3-parameter version).
+If multiple matching elements exist in `array_from`, it returns the element corresponding to the first match.
+
+Requirements:
+- `array_from` and `array_to` must have the same number of elements
+- For 4-parameter version: `transform(T, Array(T), Array(U), U) -> U` where `T` and `U` can be different compatible types
+- For 3-parameter version: `transform(T, Array(T), Array(T)) -> T` where all types must be the same
+)";
+
+    FunctionDocumentation::Syntax syntax = "transform(x, array_from, array_to[, default])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Value to transform.", {"(U)Int*", "Decimal", "Float*", "String", "Date", "DateTime"}},
+        {"array_from", "Constant array of values to search for matches.", {"Array((U)Int*)", "Array(Decimal)", "Array(Float*)", "Array(String)", "Array(Date)", "Array(DateTime)"}},
+        {"array_to", "Constant array of values to return for corresponding matches in `array_from`.", {"Array((U)Int*)", "Array(Decimal)", "Array(Float*)", "Array(String)", "Array(Date)", "Array(DateTime)"}},
+        {"default", "Optional. Value to return if `x` is not found in `array_from`. If omitted, returns x unchanged.", {"(U)Int*", "Decimal", "Float*", "String", "Date", "DateTime"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the corresponding value from `array_to` if x matches an element in `array_from`, otherwise returns default (if provided) or x (if default not provided).",
+        {"Any"}
+    };
+    FunctionDocumentation::Examples examples = {
+    {
+        "transform(T, Array(T), Array(U), U) -> U",
+        R"(
+SELECT
+transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
+count() AS c
+FROM test.hits
+WHERE SearchEngineID != 0
+GROUP BY title
+ORDER BY c DESC
+        )",
+        R"(
+┌─title─────┬──────c─┐
+│ Yandex    │ 498635 │
+│ Google    │ 229872 │
+│ Other     │ 104472 │
+└───────────┴────────┘
+        )"
+    },
+    {
+        "transform(T, Array(T), Array(T)) -> T",
+        R"(
+SELECT
+transform(domain(Referer), ['yandex.ru', 'google.ru', 'vkontakte.ru'], ['www.yandex', 'example.com', 'vk.com']) AS s, count() AS c
+FROM test.hits
+GROUP BY domain(Referer)
+ORDER BY count() DESC
+LIMIT 10
+        )",
+        R"(
+┌─s──────────────┬───────c─┐
+│                │ 2906259 │
+│ www.yandex     │  867767 │
+│ ███████.ru     │  313599 │
+│ mail.yandex.ru │  107147 │
+│ ██████.ru      │  100355 │
+│ █████████.ru   │   65040 │
+│ news.yandex.ru │   64515 │
+│ ██████.net     │   59141 │
+│ example.com    │   57316 │
+└────────────────┴─────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionTransform>(documentation);
 }
 
 }

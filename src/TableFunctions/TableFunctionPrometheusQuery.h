@@ -36,7 +36,11 @@ private:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return "PrometheusQuery"; }
+    const char * getStorageEngineName() const override
+    {
+        /// Technically it's PrometheusQuery but it doesn't register itself
+        return "";
+    }
 
     StorageID time_series_storage_id = StorageID::createEmpty();
     PrometheusQueryTree promql_query;

@@ -122,7 +122,7 @@ void addNode(Storage & storage, const std::string & path, const std::string & da
     auto child_it = storage.container.find(path);
     auto child_path = Coordination::getBaseNodeName(child_it->key);
     storage.container.updateValue(
-        Coordination::parentNodePath(StringRef{path}),
+        Coordination::parentNodePath(path),
         [&](auto & parent)
         {
             parent.addChild(child_path);

@@ -40,7 +40,9 @@ public:
         const ActionsDAG::Node * predicate,
         const ActionsDAG * filter_actions_dag,
         const ContextPtr & context,
-        ClusterPtr cluster) const = 0;
+        ClusterPtr cluster,
+        StorageMetadataPtr storage_metadata_snapshot) const
+        = 0;
 
     QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
@@ -52,6 +54,8 @@ public:
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
     virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
+
+    virtual void updateConfigurationIfNeeded(ContextPtr /* context */) {}
 
 private:
     LoggerPtr log;

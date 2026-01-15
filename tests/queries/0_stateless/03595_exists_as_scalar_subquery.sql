@@ -1,3 +1,6 @@
+-- Does additional subquery cache lookups that the test doesn't expect
+set automatic_parallel_replicas_mode=0;
+
 set enable_analyzer=1;
 drop table if exists tab;
 
@@ -13,3 +16,5 @@ set force_primary_key = 0;
 system flush logs query_log;
 SELECT 'ScalarSubqueriesGlobalCacheHit ' || ProfileEvents['ScalarSubqueriesGlobalCacheHit'] FROM system.query_log
 WHERE type != 'QueryStart' AND current_database = currentDatabase() AND query like 'select%' AND Settings['execute_exists_as_scalar_subquery']='1';
+
+SELECT EXISTS(SELECT 1 from numbers(2) where number != 0) settings execute_exists_as_scalar_subquery = 1;

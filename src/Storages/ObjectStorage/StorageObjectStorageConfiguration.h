@@ -5,21 +5,29 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <Common/Exception.h>
+#include <Storages/StorageFactory.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 namespace DB
 {
 
 class NamedCollection;
 class SinkToStorage;
+class IDataLakeMetadata;
+struct IObjectIterator;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
+using ObjectIterator = std::shared_ptr<IObjectIterator>;
+
+struct StorageParsedArguments;
 
 namespace ErrorCodes
 {
@@ -123,7 +131,7 @@ public:
     bool isPathInArchiveWithGlobs() const;
     virtual std::string getPathInArchive() const;
 
-    virtual void check(ContextPtr context) const;
+    virtual void check(ContextPtr context);
     virtual void validateNamespace(const String & /* name */) const {}
 
     virtual ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) = 0;
@@ -133,8 +141,15 @@ public:
 
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
+    /// NOTE: In this function we are going to check is data which we are going to read sorted by sorting key specified in StorageMetadataPtr.
+    /// It may look confusing that this function checks only StorageMetadataPtr, and not StorageSnapshot.
+    /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
+    virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
-    virtual bool hasExternalDynamicMetadata() { return false; }
+    // This function is used primarily for datalake storages to check if we need to update metadata
+    // snapshot before executing operation (SELECT, INSERT, etc) to enforce that schema in operation metadata snapshot
+    // is consistent with schema in metadata snapshot which was used by analyser during query analysis.
+    virtual bool needsUpdateForSchemaConsistency() const { return false; }
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
@@ -142,7 +157,7 @@ public:
 
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }
 
-    virtual void modifyFormatSettings(FormatSettings &) const {}
+    virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 
     virtual void addDeleteTransformers(
         ObjectInfoPtr object_info,
@@ -161,9 +176,11 @@ public:
 
     void initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context);
 
-    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const;
+    virtual StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const;
+    virtual std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const;
 
     virtual bool supportsFileIterator() const { return false; }
+    virtual bool supportsParallelInsert() const { return false; }
     virtual bool supportsWrites() const { return true; }
 
     virtual bool supportsPartialPathPrefix() const { return true; }
@@ -172,23 +189,21 @@ public:
         const ActionsDAG * /* filter_dag */,
         std::function<void(FileProgress)> /* callback */,
         size_t /* list_batch_size */,
+        StorageMetadataPtr /*storage_metadata*/,
         ContextPtr /*context*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method iterate() is not implemented for configuration type {}", getTypeName());
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    virtual bool update(
-        ObjectStoragePtr object_storage,
-        ContextPtr local_context,
-        bool if_not_updated_before,
-        bool check_consistent_with_previous_metadata);
+    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before);
 
     virtual void create(
         ObjectStoragePtr object_storage,
         ContextPtr local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
+        ASTPtr order_by,
         bool if_not_exists,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
@@ -213,7 +228,16 @@ public:
         const std::optional<FormatSettings> & /*format_settings*/) {}
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) {}
 
-    virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) {}
+    virtual void checkAlterIsPossible(const AlterCommands & commands)
+    {
+        for (const auto & command : commands)
+        {
+            if (!command.isCommentAlter())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getEngineName());
+        }
+    }
+
     virtual void alter(const AlterCommands & /*params*/, ContextPtr /*context*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
@@ -223,7 +247,7 @@ public:
 
     virtual ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr /**/) const { return nullptr; }
 
-    virtual ColumnMapperPtr getColumnMapperForCurrentSchema() const { return nullptr; }
+    virtual ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr /**/, ContextPtr /**/) const { return nullptr; }
 
 
     virtual std::shared_ptr<DataLake::ICatalog> getCatalog(ContextPtr /*context*/, bool /*is_attach*/) const { return nullptr; }
@@ -232,6 +256,8 @@ public:
     {
         return false;
     }
+
+    virtual void drop(ContextPtr) {}
 
     String format = "auto";
     String compression_method = "auto";
@@ -243,8 +269,13 @@ public:
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:
+    void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
+    virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "method fromDisk is not implemented");
+    }
 
     void assertInitialized() const;
 

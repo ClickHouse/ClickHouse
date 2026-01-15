@@ -11,7 +11,7 @@ namespace DB
   *  dot -T png < pipeline.dot > pipeline.png
   */
 template <typename Processors, typename Statuses>
-void printPipeline(const Processors & processors, const Statuses & statuses, WriteBuffer & out)
+void printPipeline(const Processors & processors, const Statuses & statuses, WriteBuffer & out, bool with_profile = false)
 {
     out << "digraph\n{\n";
     out << "  rankdir=\"LR\";\n";
@@ -38,6 +38,17 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
         {
             out << " (" << IProcessor::statusToName(*statuses_iter) << ")";
             ++statuses_iter;
+        }
+
+        if (with_profile)
+        {
+            out << "\\nExecution time: " << processor->getElapsedNs()/1000.0 << " us"
+                << "\\nInput wait time: " << processor->getInputWaitElapsedNs()/1000.0 << " us"
+                << "\\nOutput wait time: " << processor->getOutputWaitElapsedNs()/1000.0 << " us"
+                << "\\nInput rows: " << processor->getProcessorDataStats().input_rows
+                << "\\nInput bytes: " << processor->getProcessorDataStats().input_bytes
+                << "\\nOutput rows: " << processor->getProcessorDataStats().output_rows
+                << "\\nOutput bytes: " << processor->getProcessorDataStats().output_bytes;
         }
 
         out << "\"];\n";
@@ -84,9 +95,9 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
 }
 
 template <typename Processors>
-void printPipeline(const Processors & processors, WriteBuffer & out)
+void printPipeline(const Processors & processors, WriteBuffer & out, bool with_profile = false)
 {
-    printPipeline(processors, std::vector<IProcessor::Status>(), out);
+    printPipeline(processors, std::vector<IProcessor::Status>(), out, with_profile);
 }
 
 /// Prints pipeline in compact representation.

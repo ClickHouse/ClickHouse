@@ -92,6 +92,10 @@ public:
 
     virtual size_t getDefaultVersion() const { return 0; }
 
+    /// Some aggregate functions have more efficient implementation for merging final states.
+    /// See AggregateFunctionAny for example.
+    virtual AggregateFunctionPtr getAggregateFunctionForMergingFinal() const { return shared_from_this(); }
+
     ~IAggregateFunction() override = default;
 
     /** Data manipulating functions. */
@@ -496,8 +500,9 @@ public:
         auto offset_it = column_sparse.getIterator(row_begin);
 
         for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
-                                                    &values, offset_it.getValueIndex(), arena);
+            if (places[offset_it.getCurrentRow()])
+                static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
+                                                        &values, offset_it.getValueIndex(), arena);
     }
 
     void mergeBatch(
@@ -539,13 +544,14 @@ public:
         size_t row_begin,
         size_t row_end,
         AggregateDataPtr __restrict place,
-        const IColumn ** columns,
+        const IColumn ** __restrict columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
         if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            alignas(32) const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+
             for (size_t i = row_begin; i < row_end; ++i)
             {
                 if (flags[i])

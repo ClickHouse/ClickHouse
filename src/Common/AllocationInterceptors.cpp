@@ -202,7 +202,7 @@ void operator delete[](void * ptr, std::size_t size, std::align_val_t align) noe
 extern "C" void * __wrap_malloc(size_t size) // NOLINT
 {
     AllocationTrace trace;
-    std::size_t actual_size = Memory::trackMemory(size, trace);
+    std::size_t actual_size = Memory::trackMemoryFromC(size, trace);
     void * ptr = __real_malloc(size);
     if (unlikely(!ptr))
     {
@@ -220,7 +220,7 @@ extern "C" void * __wrap_calloc(size_t number_of_members, size_t size) // NOLINT
         return nullptr;
 
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(real_size, trace);
+    size_t actual_size = Memory::trackMemoryFromC(real_size, trace);
     void * res = __real_calloc(number_of_members, size);
     if (unlikely(!res))
     {
@@ -240,7 +240,7 @@ extern "C" void * __wrap_realloc(void * ptr, size_t size) // NOLINT
         trace.onFree(ptr, actual_size);
     }
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(size, trace);
+    size_t actual_size = Memory::trackMemoryFromC(size, trace);
     void * res = __real_realloc(ptr, size);
     if (unlikely(!res))
     {
@@ -254,7 +254,7 @@ extern "C" void * __wrap_realloc(void * ptr, size_t size) // NOLINT
 extern "C" int __wrap_posix_memalign(void ** memptr, size_t alignment, size_t size) // NOLINT
 {
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(size, trace, static_cast<std::align_val_t>(alignment));
+    size_t actual_size = Memory::trackMemoryFromC(size, trace, static_cast<std::align_val_t>(alignment));
     int res = __real_posix_memalign(memptr, alignment, size);
     if (unlikely(res != 0))
     {
@@ -268,7 +268,7 @@ extern "C" int __wrap_posix_memalign(void ** memptr, size_t alignment, size_t si
 extern "C" void * __wrap_aligned_alloc(size_t alignment, size_t size) // NOLINT
 {
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(size, trace, static_cast<std::align_val_t>(alignment));
+    size_t actual_size = Memory::trackMemoryFromC(size, trace, static_cast<std::align_val_t>(alignment));
     void * res = __real_aligned_alloc(alignment, size);
     if (unlikely(!res))
     {
@@ -279,10 +279,11 @@ extern "C" void * __wrap_aligned_alloc(size_t alignment, size_t size) // NOLINT
     return res;
 }
 
+#if !defined(OS_FREEBSD)
 extern "C" void * __wrap_valloc(size_t size) // NOLINT
 {
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(size, trace);
+    size_t actual_size = Memory::trackMemoryFromC(size, trace);
     void * res = __real_valloc(size);
     if (unlikely(!res))
     {
@@ -292,20 +293,7 @@ extern "C" void * __wrap_valloc(size_t size) // NOLINT
     trace.onAlloc(res, actual_size);
     return res;
 }
-
-extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
-{
-    AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(size, trace, static_cast<std::align_val_t>(alignment));
-    void * res = __real_memalign(alignment, size);
-    if (unlikely(!res))
-    {
-        trace = CurrentMemoryTracker::free(actual_size);
-        return nullptr;
-    }
-    trace.onAlloc(res, actual_size);
-    return res;
-}
+#endif
 
 extern "C" void * __wrap_reallocarray(void * ptr, size_t number_of_members, size_t size) // NOLINT
 {
@@ -324,11 +312,27 @@ extern "C" void __wrap_free(void * ptr) // NOLINT
     __real_free(ptr);
 }
 
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
+{
+    AllocationTrace trace;
+    size_t actual_size = Memory::trackMemoryFromC(size, trace, static_cast<std::align_val_t>(alignment));
+    void * res = __real_memalign(alignment, size);
+    if (unlikely(!res))
+    {
+        trace = CurrentMemoryTracker::free(actual_size);
+        return nullptr;
+    }
+    trace.onAlloc(res, actual_size);
+    return res;
+}
+#endif
+
 #if !defined(USE_MUSL) && defined(OS_LINUX)
 extern "C" void * __wrap_pvalloc(size_t size) // NOLINT
 {
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(size, trace);
+    size_t actual_size = Memory::trackMemoryFromC(size, trace);
     void * res = __real_pvalloc(size);
     if (unlikely(!res))
     {

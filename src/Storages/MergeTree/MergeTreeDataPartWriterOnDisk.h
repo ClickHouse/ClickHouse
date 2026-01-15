@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -10,6 +10,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MarkCache.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 
 namespace DB
 {
@@ -44,70 +45,8 @@ class MergeTreeDataPartWriterOnDisk : public IMergeTreeDataPartWriter
 public:
     using WrittenOffsetColumns = std::set<std::string>;
 
-    /// Helper class, which holds chain of buffers to write data file with marks.
-    /// It is used to write: one column, skip index or all columns (in compact format).
-    template<bool only_plain_file>
-    struct Stream
-    {
-        Stream(
-            const String & escaped_column_name_,
-            const MutableDataPartStoragePtr & data_part_storage,
-            const String & data_path_,
-            const std::string & data_file_extension_,
-            const std::string & marks_path_,
-            const std::string & marks_file_extension_,
-            const CompressionCodecPtr & compression_codec_,
-            size_t max_compress_block_size_,
-            const CompressionCodecPtr & marks_compression_codec_,
-            size_t marks_compress_block_size_,
-            const WriteSettings & query_write_settings);
-
-        Stream(
-            const String & escaped_column_name_,
-            const MutableDataPartStoragePtr & data_part_storage,
-            const String & data_path_,
-            const std::string & data_file_extension_,
-            const CompressionCodecPtr & compression_codec_,
-            size_t max_compress_block_size_,
-            const WriteSettings & query_write_settings);
-
-        ~Stream()
-        {
-            plain_file.reset();
-            marks_file.reset();
-        }
-
-        String escaped_column_name;
-        std::string data_file_extension;
-        std::string marks_file_extension;
-
-        /// compressed_hashing -> compressor -> plain_hashing -> plain_file
-        std::unique_ptr<WriteBufferFromFileBase> plain_file;
-        HashingWriteBuffer plain_hashing;
-        CompressedWriteBuffer compressor;
-        HashingWriteBuffer compressed_hashing;
-
-        /// marks_compressed_hashing -> marks_compressor -> marks_hashing -> marks_file
-        std::unique_ptr<WriteBufferFromFileBase> marks_file;
-        std::conditional_t<!only_plain_file, HashingWriteBuffer, void*> marks_hashing;
-        std::conditional_t<!only_plain_file, CompressedWriteBuffer, void*> marks_compressor;
-        std::conditional_t<!only_plain_file, HashingWriteBuffer, void*> marks_compressed_hashing;
-        bool compress_marks;
-
-        bool is_prefinalized = false;
-
-        void preFinalize();
-
-        void finalize();
-        void cancel() noexcept;
-
-        void sync() const;
-
-        void addToChecksums(MergeTreeDataPartChecksums & checksums);
-    };
-
-    using StreamPtr = std::unique_ptr<Stream<false>>;
-    using StatisticStreamPtr = std::unique_ptr<Stream<true>>;
+    using StreamPtr = std::unique_ptr<MergeTreeWriterStream<false>>;
+    using StatisticStreamPtr = std::unique_ptr<MergeTreeWriterStream<true>>;
 
     MergeTreeDataPartWriterOnDisk(
         const String & data_part_name_,
@@ -130,7 +69,6 @@ public:
     {
         written_offset_columns = written_offset_columns_;
     }
-
 
     void cancel() noexcept override;
 
@@ -186,7 +124,9 @@ protected:
 
     const bool compute_granularity;
 
-    std::vector<StreamPtr> skip_indices_streams;
+    std::vector<StreamPtr> skip_indices_streams_holders;
+    std::vector<MergeTreeIndexOutputStreams> skip_indices_streams;
+
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
 
@@ -208,8 +148,6 @@ protected:
 
     /// Data is already written up to this mark.
     size_t current_mark = 0;
-
-    GinIndexStoreFactory::GinIndexStores gin_index_stores;
 
     bool is_dynamic_streams_initialized = false;
     Block block_sample;

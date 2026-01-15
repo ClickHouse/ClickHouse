@@ -46,7 +46,7 @@ def cluster():
             with_minio=True,
             stay_alive=True,
             tmpfs=[
-                "/jbod1:size=2M",
+                "/test_merge_tree_s3_jbod1:size=2M",
             ],
         )
 
@@ -115,7 +115,7 @@ def create_table(node, table_name, **additional_settings):
 
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8083")
+    yield start_s3_mock(cluster, "broken_s3", "8085")
 
 
 @pytest.fixture(scope="function")
@@ -508,7 +508,7 @@ def test_table_manipulations(cluster, node_name):
 
     node.query("RENAME TABLE s3_renamed TO s3_test")
 
-    assert node.query("CHECK TABLE s3_test FORMAT Values") == "(1)"
+    assert node.query("CHECK TABLE s3_test FORMAT Values SETTINGS check_query_single_value_result = 1") == "(1)"
 
     node.query("DETACH TABLE s3_test")
     node.query("ATTACH TABLE s3_test")
@@ -808,7 +808,7 @@ def test_cache_with_full_disk_space(cluster, node_name):
         [
             "/usr/bin/dd",
             "if=/dev/zero",
-            "of=/jbod1/dummy",
+            "of=/test_merge_tree_s3_jbod1/dummy",
             "bs=1000",
             "count=2000",
         ]
@@ -881,8 +881,9 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     node.query(
         "INSERT INTO test_merge_canceled_by_s3_errors SELECT 2*number, toString(number) FROM numbers(10000)"
     )
-    min_key = node.query("SELECT min(key) FROM test_merge_canceled_by_s3_errors")
-    assert int(min_key) == 0, min_key
+
+    rows_count = node.query("SELECT count(key) FROM test_merge_canceled_by_s3_errors")
+    assert int(rows_count) == 20000, rows_count
 
     broken_s3.setup_at_object_upload()
     broken_s3.setup_fake_multpartuploads()
@@ -945,10 +946,7 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 
     node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
 
-    node.wait_for_log_line(
-        "ExpectedError Message: mock s3 injected unretryable error",
-        look_behind_lines=1000,
-    )
+    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
 
     count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
     assert int(count) == 2000, count
@@ -984,7 +982,7 @@ def test_s3_engine_heavy_write_check_mem(
         " ("
         "   key UInt32 CODEC(NONE), value String CODEC(NONE)"
         " )"
-        " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', '{minio_secret_key}', 'CSV')",
+        " ENGINE S3('http://resolver:8085/root/data/test-upload.csv', 'minio', '{minio_secret_key}', 'CSV')",
     )
 
     broken_s3.setup_fake_multpartuploads()

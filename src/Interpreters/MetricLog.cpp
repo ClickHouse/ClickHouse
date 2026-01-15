@@ -24,15 +24,15 @@ ColumnsDescription MetricLogElement::getColumnsDescription()
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
     {
         auto name = fmt::format("ProfileEvent_{}", ProfileEvents::getName(ProfileEvents::Event(i)));
-        const auto * comment = ProfileEvents::getDocumentation(ProfileEvents::Event(i));
-        result.add({std::move(name), std::make_shared<DataTypeUInt64>(), comment});
+        std::string_view comment = ProfileEvents::getDocumentation(ProfileEvents::Event(i));
+        result.add({std::move(name), std::make_shared<DataTypeUInt64>(), std::string(comment)});
     }
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
     {
         auto name = fmt::format("CurrentMetric_{}", CurrentMetrics::getName(CurrentMetrics::Metric(i)));
-        const auto * comment = CurrentMetrics::getDocumentation(CurrentMetrics::Metric(i));
-        result.add({std::move(name), std::make_shared<DataTypeInt64>(), comment});
+        std::string_view comment = CurrentMetrics::getDocumentation(CurrentMetrics::Metric(i));
+        result.add({std::move(name), std::make_shared<DataTypeInt64>(), std::string(comment)});
     }
 
     return result;
@@ -57,9 +57,7 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
 
 void MetricLog::stepFunction(const std::chrono::system_clock::time_point current_time)
 {
-    /// Static lazy initialization to avoid polluting the header with implementation details
-    /// For differentiation of ProfileEvents counters.
-    static std::vector<ProfileEvents::Count> prev_profile_events(ProfileEvents::end());
+    std::lock_guard lock(previous_profile_events_mutex);
 
     MetricLogElement elem;
     elem.event_time = std::chrono::system_clock::to_time_t(current_time);
@@ -69,7 +67,7 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
         const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
-        auto & old_value = prev_profile_events[i];
+        auto & old_value = previous_profile_events[i];
 
         /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
         /// So, since in the future the counter should always have a bigger value than in the past, we skip this event.

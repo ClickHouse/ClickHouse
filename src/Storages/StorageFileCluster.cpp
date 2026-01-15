@@ -46,8 +46,8 @@ StorageFileCluster::StorageFileCluster(
 {
     StorageInMemoryMetadata storage_metadata;
 
-    size_t total_bytes_to_read; // its value isn't used as we are not reading files (just listing them). But it is required by getPathsList
-    paths = StorageFile::getPathsList(filename_, context->getUserFilesPath(), context, total_bytes_to_read);
+    /// The archive syntax (e.g. "archive*.zip::file.parquet") is not supported by function fileCluster() yet.
+    paths = StorageFile::FileSource::parse(filename_, context, /* allow_archive_path_syntax = */ false).paths;
 
     if (columns_.empty())
     {
@@ -77,7 +77,7 @@ StorageFileCluster::StorageFileCluster(
         context);
 
     storage_metadata.setConstraints(constraints_);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -96,10 +96,7 @@ void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const Sto
 }
 
 RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate,
-    const ActionsDAG * /* filter */,
-    const ContextPtr & context,
-    ClusterPtr) const
+    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr) const
 {
     auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, getVirtualsList(), hive_partition_columns_to_read_from_file_path, context);
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr

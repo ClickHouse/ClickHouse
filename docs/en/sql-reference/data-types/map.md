@@ -4,6 +4,7 @@ sidebar_label: 'Map(K, V)'
 sidebar_position: 36
 slug: /sql-reference/data-types/map
 title: 'Map(K, V)'
+doc_type: 'reference'
 ---
 
 # Map(K, V)
@@ -47,7 +48,7 @@ Result:
 ```
 
 If the requested key `k` is not contained in the map, `m[k]` returns the value type's default value, e.g. `0` for integer types and `''` for string types.
-To check whether a key exists in a map, you can use function [mapContains](../../sql-reference/functions/tuple-map-functions#mapcontains).
+To check whether a key exists in a map, you can use function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey).
 
 ```sql
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
@@ -66,7 +67,7 @@ Result:
 
 ## Converting Tuple to Map {#converting-tuple-to-map}
 
-Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/sql-reference/functions/type-conversion-functions#cast):
+Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/sql-reference/functions/type-conversion-functions#CAST):
 
 **Example**
 
@@ -115,7 +116,7 @@ Result:
 **See Also**
 
 - [map()](/sql-reference/functions/tuple-map-functions#map) function
-- [CAST()](/sql-reference/functions/type-conversion-functions#cast) function
+- [CAST()](/sql-reference/functions/type-conversion-functions#CAST) function
 - [-Map combinator for Map datatype](../aggregate-functions/combinators.md#-map)
 
 ## Related content {#related-content}

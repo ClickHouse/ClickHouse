@@ -7,14 +7,15 @@
 
 #if USE_AWS_S3
 
-#include <Common/Histogram.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/IThrottler.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <IO/HTTPRequestThrottler.h>
 #include <IO/SessionAwareIOStream.h>
+#include <IO/S3Defines.h>
 
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
@@ -46,22 +47,22 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
     struct RetryStrategy
     {
-        unsigned int max_retries = 10;
-        unsigned int initial_delay_ms = 25;
-        unsigned int max_delay_ms = 5000;
-        double jitter_factor = 0;
+        unsigned int max_retries = DEFAULT_RETRY_ATTEMPTS;
+        unsigned int initial_delay_ms = DEFAULT_RETRY_INITIAL_DELAY_MS;
+        unsigned int max_delay_ms = DEFAULT_RETRY_MAX_DELAY_MS;
+        double jitter_factor = DEFAULT_RETRY_JITTER_FACTOR;
     };
     std::function<ProxyConfiguration()> per_request_configuration;
     String force_region;
     const RemoteHostFilter & remote_host_filter;
-    unsigned int s3_max_redirects;
+    unsigned int s3_max_redirects = DEFAULT_MAX_REDIRECTS;
     RetryStrategy retry_strategy;
     bool s3_slow_all_threads_after_network_error;
     bool s3_slow_all_threads_after_retryable_error;
     bool enable_s3_requests_logging;
     bool for_disk_s3;
-    ThrottlerPtr get_request_throttler;
-    ThrottlerPtr put_request_throttler;
+    std::optional<std::string> opt_disk_name;
+    HTTPRequestThrottler request_throttler;
 
     HTTPHeaderEntries extra_headers;
     String http_client;
@@ -93,9 +94,9 @@ private:
         bool s3_slow_all_threads_after_retryable_error_,
         bool enable_s3_requests_logging_,
         bool for_disk_s3_,
+        std::optional<std::string> opt_disk_name_,
         bool s3_use_adaptive_timeouts_,
-        const ThrottlerPtr & get_request_throttler_,
-        const ThrottlerPtr & put_request_throttler_,
+        const HTTPRequestThrottler & request_throttler_,
         std::function<void(const ProxyConfiguration &)> error_report_);
 
     /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
@@ -194,7 +195,7 @@ private:
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
-    static S3LatencyType getFirstByteLatencyType(const String & sdk_attempt, const String & ch_attempt);
+    static S3LatencyType getFirstByteLatencyType(size_t sdk_attempt, size_t ch_attempt);
 
 protected:
     virtual void makeRequestInternal(
@@ -205,7 +206,7 @@ protected:
 
     static S3MetricKind getMetricKind(const Aws::Http::HttpRequest & request);
     void addMetric(const Aws::Http::HttpRequest & request, S3MetricType type, ProfileEvents::Count amount = 1) const;
-    void observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, Histogram::Value latency = 1) const;
+    void observeLatency(const Aws::Http::HttpRequest & request, S3LatencyType type, HistogramMetrics::Value latency = 1) const;
 
     std::function<ProxyConfiguration()> per_request_configuration;
     std::function<void(const ProxyConfiguration &)> error_report;
@@ -219,14 +220,7 @@ protected:
     bool enable_s3_requests_logging = false;
     bool for_disk_s3 = false;
 
-    /// Limits get request per second rate for GET, SELECT and all other requests, excluding throttled by put throttler
-    /// (i.e. throttles GetObject, HeadObject)
-    ThrottlerPtr get_request_throttler;
-
-    /// Limits put request per second rate for PUT, COPY, POST, LIST requests
-    /// (i.e. throttles PutObject, CopyObject, ListObjects, CreateMultipartUpload, UploadPartCopy, UploadPart, CompleteMultipartUpload)
-    /// NOTE: DELETE and CANCEL requests are not throttled by either put or get throttler
-    ThrottlerPtr put_request_throttler;
+    HTTPRequestThrottler request_throttler;
 
     const HTTPHeaderEntries extra_headers;
 };

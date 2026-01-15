@@ -5,23 +5,24 @@ import shutil
 import socket
 import subprocess
 import time
-import typing
-import urllib3
+import threading
 
 from pathlib import Path
-from minio import Minio
+from integration.helpers.client import Client
 from pyiceberg.catalog import load_catalog
-from pyiceberg.catalog.rest import RestCatalog
+from .kafkatest import KafkaHandler
 from .laketables import (
     TableStorage,
     LakeFormat,
     LakeCatalogs,
     SparkTable,
 )
-from .tablegenerator import LakeTableGenerator
+from .tablegenerator import LakeTableGenerator, sample_from_dict, true_false_lambda
 from .datagenerator import LakeDataGenerator
+from .tablecheck import SparkAndClickHouseCheck
 
-from integration.helpers.config_cluster import minio_access_key, minio_secret_key
+from utils.backgroundworker import BackgroundWorker
+
 
 """
 ┌─────────────────┬────────────────┬──────────────────────────────────────┐
@@ -49,349 +50,82 @@ from integration.helpers.config_cluster import minio_access_key, minio_secret_ke
 """
 
 
-def get_local_base_path(cluster, catalog_name: str) -> str:
-    return f"{Path(cluster.instances_dir) / "node0" / "database" / "user_files" / "lakehouse" / f"{catalog_name}"}"
+def get_local_base_path(catalog_name: str) -> str:
+    return f"/var/lib/clickhouse/user_files/lakehouses/{catalog_name}"
 
 
-Parameter = typing.Callable[[], int | float]
-
-
-def sample_from_dict(d: dict[str, Parameter], sample: int) -> dict[str, Parameter]:
-    items = random.sample(list(d.items()), sample)
-    return dict(items)
-
-
-def get_spark(
-    cluster,
-    logfile: str,
-    catalog_name: str,
-    storage: TableStorage,
-    lake: LakeFormat,
-    catalog: LakeCatalogs,
-):
-    true_false_lambda = lambda: random.choice(["false", "true"])
-
-    spark_properties = {
-        "spark.databricks.delta.checkLatestSchemaOnRead": true_false_lambda,
-        "spark.databricks.delta.merge.optimizeInsertOnlyMerge.enabled": true_false_lambda,
-        "spark.databricks.delta.metricsCollection.enabled": true_false_lambda,
-        "spark.databricks.delta.optimize.maxFileSize": lambda: random.choice(
-            ["134217728", "268435456", "1073741824"]
-        ),
-        # "spark.databricks.delta.optimize.minFileSize" : lambda: random.choice(["10485760", "20971520", "104857600"]),
-        "spark.databricks.delta.optimize.repartition.enabled": true_false_lambda,
-        "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact": true_false_lambda,
-        "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": true_false_lambda,
-        "spark.databricks.delta.retentionDurationCheck.enabled": true_false_lambda,
-        "spark.databricks.delta.schema.autoMerge.enabled": true_false_lambda,
-        "spark.databricks.delta.stalenessLimit": lambda: random.choice(
-            ["1h", "6h", "12h", "24h"]
-        ),
-        "spark.databricks.delta.vacuum.parallelDelete.enabled": true_false_lambda,
-        "spark.sql.adaptive.coalescePartitions.enabled": true_false_lambda,
-        "spark.sql.adaptive.enabled": true_false_lambda,
-        "spark.sql.adaptive.localShuffleReader.enabled": true_false_lambda,
-        "spark.sql.adaptive.skewJoin.enabled": true_false_lambda,
-        "spark.sql.iceberg.check-committer-thread": true_false_lambda,
-        "spark.sql.iceberg.compress-metadata": true_false_lambda,
-        "spark.sql.iceberg.handle-timestamp-without-timezone": true_false_lambda,
-        "spark.sql.iceberg.merge-on-read.enabled": true_false_lambda,
-        "spark.sql.iceberg.planning.locality.enabled": true_false_lambda,
-        "spark.sql.iceberg.planning.max-table-cache-size": lambda: random.choice(
-            ["10", "50", "100"]
-        ),
-        "spark.sql.iceberg.use-native-partition-data": true_false_lambda,
-        "spark.sql.iceberg.vectorization.enabled": true_false_lambda,
-        "spark.sql.iceberg.write.distribution.mode": lambda: random.choice(
-            ["none", "hash", "range"]
-        ),
-        "spark.sql.iceberg.write.fanout.enabled": true_false_lambda,
-        "spark.sql.orc.compression.codec": lambda: random.choice(["snappy"]),
-        "spark.sql.parquet.compression.codec": lambda: random.choice(["snappy"]),
-        "spark.sql.parquet.filterPushdown": true_false_lambda,
-        "spark.sql.parquet.mergeSchema": true_false_lambda,
-        "spark.sql.statistics.autogather": true_false_lambda,
-    }
-
-    # ============================================================
-    # CORE CONFIGURATIONS FOR BOTH ICEBERG AND DELTA
-    # ============================================================
-    catalog_extension = ""
-    catalog_format = ""
-    all_jars = [
-        "org.apache.spark:spark-hadoop-cloud_2.12:3.5.6",
-        "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2",
-        "org.apache.iceberg:iceberg-spark-extensions-3.5_2.12:1.9.2",
-        "org.apache.iceberg:iceberg-aws:1.9.2",
-        "org.apache.iceberg:iceberg-azure-bundle:1.9.2",
-        "io.delta:delta-spark_2.12:3.3.2",
-        "io.unitycatalog:unitycatalog-spark_2.12:0.2.0",
-        "com.microsoft.azure:azure-storage:8.6.6",
-        "org.apache.hadoop:hadoop-azure:3.3.6",
-    ]
-
-    nessie_jars = [
-        "org.projectnessie.nessie-integrations:nessie-spark-extensions-3.4_2.12:0.76.0",
-        "org.projectnessie:nessie-spark-runtime-3.4_2.12:0.76.0",
-    ]
-
-    if lake == LakeFormat.Iceberg:
-        catalog_extension = (
-            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
-        )
-        catalog_format = "org.apache.iceberg.spark.SparkCatalog"
-    elif lake == LakeFormat.DeltaLake:
-        catalog_extension = "io.delta.sql.DeltaSparkSessionExtension"
-        catalog_format = (
-            "io.unitycatalog.spark.UCSingleCatalog"
-            if catalog == LakeCatalogs.Unity
-            else "org.apache.spark.sql.delta.catalog.DeltaCatalog"
-        )
-    else:
-        raise Exception("Unknown lake format")
-
-    os.environ["PYSPARK_SUBMIT_ARGS"] = f"--packages {",".join(all_jars)} pyspark-shell"
-
-    from pyspark.sql import SparkSession
-
-    builder = SparkSession.builder
-    builder.config("spark.sql.extensions", catalog_extension)
-    builder.config(f"spark.sql.catalog.{catalog_name}", catalog_format)
-    builder.config(
-        "spark.driver.extraJavaOptions", f"-Dlog4j.configurationFile=file:{logfile}"
-    )
-    builder.config(
-        "spark.executor.extraJavaOptions", f"-Dlog4j.configurationFile=file:{logfile}"
-    )
-
-    # ============================================================
-    # CATALOG CONFIGURATIONS
-    # ============================================================
-    if catalog == LakeCatalogs.Glue:
-        if lake == LakeFormat.Iceberg:
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.catalog-impl",
-                "org.apache.iceberg.aws.glue.GlueCatalog",
-            )
-        elif lake == LakeFormat.DeltaLake:
-            builder.config(
-                "spark.hadoop.hive.metastore.client.factory.class",
-                "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory",
-            )
-    elif catalog == LakeCatalogs.Hive:
-        # Enable Hive support
-        if lake == LakeFormat.Iceberg:
-            builder.config(f"spark.sql.catalog.{catalog_name}.type", "hive")
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.uri", "thrift://0.0.0.0:9083"
-            )
-        # Hive metastore version
-        builder.config("spark.sql.hive.metastore.version", "3.1.3")
-        builder.config("spark.sql.hive.metastore.jars", "maven")
-        builder.enableHiveSupport()
-    elif catalog == LakeCatalogs.REST or (
-        catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
-    ):
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.catalog-impl",
-            "org.apache.iceberg.rest.RESTCatalog",
-        )
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.uri",
-            f"http://localhost:{"8081/api/2.1/unity-catalog/iceberg" if catalog == LakeCatalogs.Unity else "8182"}",
-        )
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.cache-enabled",
-            random.choice(["true", "false"]),
-        )
-
-        if storage == TableStorage.S3:
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.endpoint",
-                f"http://{cluster.minio_ip}:{cluster.minio_port}",
-            )
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.access-key-id", "minio"
-            )
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
-                minio_access_key,
-            )
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.s3.path-style-access", "true"
-            )
-    elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
-        builder.config(f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8081")
-        builder.config(f"spark.sql.catalog.{catalog_name}.token", "")
-        builder.config("spark.sql.defaultCatalog", f"{catalog_name}")
-    elif catalog == LakeCatalogs.Nessie:
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.catalog-impl",
-            "org.apache.iceberg.nessie.NessieCatalog",
-        )
-        # builder.config(f"spark.sql.catalog.{catalog_name}.uri", "uri")
-        # builder.config(f"spark.sql.catalog.{catalog_name}.ref", "ref")
-    elif lake == LakeFormat.Iceberg:
-        # Something as default for iceberg, nothing needed for delta
-        builder.config(f"spark.sql.catalog.{catalog_name}.type", "hadoop")
-
-    # ============================================================
-    # STORAGE CONFIGURATIONS
-    # ============================================================
-    if catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg:
-        # It has to point to unity
-        builder.config("spark.sql.warehouse.dir", "unity")
-        builder.config(f"spark.sql.catalog.{catalog_name}.warehouse", "unity")
-
-        if storage == TableStorage.S3:
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.warehouse",
-                f"s3a://{cluster.minio_bucket}/{catalog_name}",
-            )
-        elif storage == TableStorage.Azure:
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.warehouse",
-                f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
-            )
-        elif storage == TableStorage.Local:
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.warehouse",
-                f"file://{get_local_base_path(cluster, catalog_name)}",
-            )
-    elif storage == TableStorage.S3:
-        # S3A filesystem implementation
-        builder.config(
-            "spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem"
-        )
-        # MinIO endpoint and credentials
-        builder.config(
-            "spark.hadoop.fs.s3a.endpoint",
-            f"http://{cluster.minio_ip}:{cluster.minio_port}",
-        )
-        builder.config("spark.hadoop.fs.s3a.access.key", minio_access_key)
-        builder.config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)
-        # MinIO specific settings
-        builder.config("spark.hadoop.fs.s3a.path.style.access", "true")
-        builder.config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-        builder.config("spark.hadoop.fs.s3a.path-style-access", "true")
-        builder.config("spark.hadoop.fs.s3a.endpoint.region", "us-east-1")
-        builder.config(
-            "spark.hadoop.fs.s3a.aws.credentials.provider",
-            "com.amazonaws.auth.EnvironmentVariableCredentialsProvider",
-        )
-        if catalog == LakeCatalogs.Glue:
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.endpoint", "http://localhost:3000"
-            )
-            builder.config(f"spark.sql.catalog.{catalog_name}.region", "us-east-1")
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.access-key-id", minio_access_key
-            )
-            builder.config(
-                f"spark.sql.catalog.{catalog_name}.secret-access-key", minio_secret_key
-            )
-
-        # S3 optimizations
-        # builder.config("spark.hadoop.fs.s3a.fast.upload", "true")
-        # builder.config("spark.hadoop.fs.s3a.fast.upload.buffer", "disk")
-        # builder.config("spark.hadoop.fs.s3a.multipart.size", "104857600")
-        # builder.config("spark.hadoop.fs.s3a.multipart.threshold", "2147483647")
-
-        builder.config(
-            "spark.sql.warehouse.dir", f"s3a://{cluster.minio_bucket}/{catalog_name}"
-        )
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"s3a://{cluster.minio_bucket}/{catalog_name}",
-        )
-    elif storage == TableStorage.Azure:
-        # For Azurite local emulation
-        builder.config(
-            f"spark.hadoop.fs.azure.storage.emulator.account.name",
-            cluster.azurite_account,
-        )
-        builder.config(
-            f"spark.hadoop.fs.azure.account.key.{cluster.azurite_account}.blob.core.windows.net",
-            cluster.azurite_key,
-        )
-        # WASB implementation, ABFS is not compatible with Azurite?
-        builder.config(
-            "spark.hadoop.fs.wasb.impl",
-            "org.apache.hadoop.fs.azure.NativeAzureFileSystem",
-        )
-
-        builder.config(
-            "spark.sql.warehouse.dir",
-            f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
-        )
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}/{catalog_name}",
-        )
-    elif storage == TableStorage.Local:
-        os.makedirs(get_local_base_path(cluster, catalog_name), exist_ok=True)
-
-        builder.config(
-            "spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem"
-        )
-        builder.config(
-            "spark.sql.warehouse.dir",
-            f"file://{get_local_base_path(cluster, catalog_name)}",
-        )
-        builder.config(
-            f"spark.sql.catalog.{catalog_name}.warehouse",
-            f"file://{get_local_base_path(cluster, catalog_name)}",
-        )
-    else:
-        raise Exception("Unknown storage")
-
-    # ============================================================
-    # FILE FORMAT CONFIGURATIONS
-    # ============================================================
-    # builder.config("spark.sql.sources.default", "parquet")
-    # builder.config(f"spark.sql.catalog.{catalog_name}.write.format.default", "parquet")
-    # builder.config(
-    #    f"spark.sql.catalog.{catalog_name}.write.parquet.compression-codec", "snappy"
-    # )
-    # builder.config(
-    #    f"spark.sql.catalog.{catalog_name}.compression.enabled",
-    #    random.choice(["true", "false"]),
-    # )
-
-    # Random properties
-    if random.randint(1, 100) <= 70:
-        selected_properties = sample_from_dict(
-            spark_properties, random.randint(0, len(spark_properties))
-        )
-        for key, val in selected_properties.items():
-            builder.config(key, val())
-
-    return builder.getOrCreate()
-
-
-class DolorCatalog:
-    def __init__(
-        self,
-        cluster,
-        spark_log_config: str,
-        _catalog_name: str,
-        _storage_type: TableStorage,
-        _lake_type: LakeFormat,
-        _catalog_type: LakeCatalogs,
-    ):
-        self.catalog_name = _catalog_name
-        self.storage_type = _storage_type
-        self.lake_type = _lake_type
-        self.catalog_type = _catalog_type
-        self.session = get_spark(
-            cluster,
-            spark_log_config,
-            _catalog_name,
-            _storage_type,
-            _lake_type,
-            _catalog_type,
-        )
-        self.spark_tables: dict[str, SparkTable] = {}
+spark_properties = {
+    "spark.databricks.delta.checkLatestSchemaOnRead": true_false_lambda,
+    "spark.databricks.delta.merge.optimizeInsertOnlyMerge.enabled": true_false_lambda,
+    "spark.databricks.delta.metricsCollection.enabled": true_false_lambda,
+    "spark.databricks.delta.optimize.maxFileSize": lambda: random.choice(
+        ["134217728", "268435456", "1073741824"]
+    ),
+    # "spark.databricks.delta.optimize.minFileSize" : lambda: random.choice(["10485760", "20971520", "104857600"]),
+    "spark.databricks.delta.optimize.repartition.enabled": true_false_lambda,
+    "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact": true_false_lambda,
+    "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": true_false_lambda,
+    "spark.databricks.delta.schema.autoMerge.enabled": true_false_lambda,
+    "spark.databricks.delta.stalenessLimit": lambda: random.choice(
+        ["1h", "6h", "12h", "24h"]
+    ),
+    "spark.databricks.delta.vacuum.parallelDelete.enabled": true_false_lambda,
+    "spark.sql.adaptive.coalescePartitions.enabled": true_false_lambda,
+    "spark.sql.adaptive.localShuffleReader.enabled": true_false_lambda,
+    "spark.sql.adaptive.skewJoin.enabled": true_false_lambda,
+    "spark.sql.ansi.enabled": true_false_lambda,
+    "spark.sql.autoBroadcastJoinThreshold": lambda: random.choice(
+        ["-1", "1MB", "10MB", "48MB"]
+    ),
+    "spark.sql.caseSensitive": true_false_lambda,
+    "spark.sql.codegen.fallback": true_false_lambda,
+    "spark.sql.codegen.wholeStage": true_false_lambda,
+    "spark.sql.execution.sortBeforeRepartition": true_false_lambda,
+    "spark.sql.iceberg.check-committer-thread": true_false_lambda,
+    "spark.sql.iceberg.compress-metadata": true_false_lambda,
+    "spark.sql.iceberg.handle-timestamp-without-timezone": true_false_lambda,
+    "spark.sql.iceberg.merge-on-read.enabled": true_false_lambda,
+    "spark.sql.iceberg.planning.locality.enabled": true_false_lambda,
+    "spark.sql.iceberg.planning.max-table-cache-size": lambda: random.choice(
+        ["10", "50", "100"]
+    ),
+    "spark.sql.iceberg.use-native-partition-data": true_false_lambda,
+    "spark.sql.iceberg.vectorization.enabled": true_false_lambda,
+    "spark.sql.iceberg.write.distribution.mode": lambda: random.choice(
+        ["none", "hash", "range"]
+    ),
+    "spark.sql.iceberg.write.fanout.enabled": true_false_lambda,
+    "spark.sql.inMemoryColumnarStorage.batchSize": lambda: random.choice(
+        ["10", "100", "1000"]
+    ),
+    "spark.sql.inMemoryColumnarStorage.compressed": true_false_lambda,
+    "spark.sql.join.preferSortMergeJoin": true_false_lambda,
+    "spark.sql.jsonGenerator.ignoreNullFields": true_false_lambda,
+    "spark.sql.orc.compression.codec": lambda: random.choice(
+        ["snappy", "zlib", "zstd", "uncompressed"]
+    ),
+    "spark.sql.orc.enableVectorizedReader": true_false_lambda,
+    "spark.sql.orc.filterPushdown": true_false_lambda,
+    "spark.sql.orc.impl": lambda: random.choice(["native", "hive"]),
+    "spark.sql.parquet.compression.codec": lambda: random.choice(
+        ["uncompressed", "snappy", "gzip", "zstd"]
+    ),
+    "spark.sql.parquet.enableDictionary": true_false_lambda,
+    "spark.sql.parquet.enableVectorizedReader": true_false_lambda,
+    "spark.sql.parquet.filterPushdown": true_false_lambda,
+    "spark.sql.parquet.mergeSchema": true_false_lambda,
+    "spark.sql.parquet.outputTimestampType": lambda: random.choice(
+        ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"]
+    ),
+    "spark.sql.parquet.writeLegacyFormat": true_false_lambda,
+    # "spark.sql.shuffle.partitions": lambda: random.choice( don't set this too low
+    #    ["8", "16", "32", "64", "200", "400"]
+    # ),
+    "spark.sql.sources.partitionOverwriteMode": lambda: random.choice(
+        ["static", "dynamic"]
+    ),
+    "spark.sql.statistics.autogather": true_false_lambda,
+}
 
 
 def wait_for_port(host, port, timeout=90):
@@ -405,19 +139,40 @@ def wait_for_port(host, port, timeout=90):
     return False
 
 
+class DolorCatalog:
+
+    def __init__(
+        self,
+        _catalog_name: str,
+        _catalog_type: LakeCatalogs,
+        _catalog_impl,
+    ):
+        self.catalog_name = _catalog_name
+        self.catalog_type = _catalog_type
+        self.catalog_impl = _catalog_impl
+        self.spark_tables: dict[str, SparkTable] = {}
+
+
 class SparkHandler:
-    def __init__(self, cluster, args):
+    def __init__(self, cluster, with_unity: bool, env: dict[str, str]):
         self.logger = logging.getLogger(__name__)
+        self.catalogs_lock = threading.Lock()
+        self.spark_lock = threading.Lock()
         self.uc_server = None
         self.catalogs = {}
         self.uc_server_dir = None
-        if args.with_unity is not None:
-            self.uc_server_dir = args.with_unity
+        if with_unity is not None:
+            self.uc_server_dir = with_unity
             self.uc_server_run_dir = Path(cluster.instances_dir) / "ucserver"
 
         self.spark_log_dir = Path(cluster.instances_dir) / "spark"
         self.spark_log_config = Path(cluster.instances_dir) / "log4j2.properties"
         self.spark_query_logger = self.spark_log_dir / "query.log"
+        self.derby_logger = self.spark_log_dir / "derby.log"
+        self.metastore_db = self.spark_log_dir / "metastore_db"
+        self.data_generator = LakeDataGenerator(self.spark_query_logger)
+        self.table_check = SparkAndClickHouseCheck()
+        self.env = env
         spark_log = f"""
 # ----- log4j2.properties -----
 status = error
@@ -456,86 +211,76 @@ rootLogger.appenderRef.file.ref = file
 logger.jetty.name = org.eclipse.jetty
 logger.jetty.level = warn
 """
-        with open(self.spark_log_config, "w") as f:
+        with open(self.spark_log_config, "w+") as f:
             f.write(spark_log)
 
-    def create_minio_bucket(self, cluster, bucket_name: str):
-        minio_client = Minio(
-            f"{cluster.minio_ip}:{cluster.minio_port}",
-            access_key=minio_access_key,
-            secret_key=minio_secret_key,
-            secure=False,
-            http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
-        )
-        if not minio_client.bucket_exists(bucket_name):
-            minio_client.make_bucket(bucket_name)
+        # Setup background worker for later
+        def my_task():
+            pass
+
+        self.worker = BackgroundWorker(my_task, interval=1)
+        self.worker.start()
+        if cluster.with_kafka:
+            self.kafka_handler = KafkaHandler(cluster)
 
     def start_uc_server(self):
-        if self.uc_server is None:
-            if self.uc_server_dir is None:
-                raise RuntimeError(
-                    "with_unity argument with path to unity server dir is required"
-                )
-            java = shutil.which("java")
-            if not java:
-                raise RuntimeError(
-                    "Java not found on PATH. Install JDK 17 and/or set JAVA_HOME."
-                )
-
-            env = os.environ.copy()
-            env["UC_HOST"] = "localhost"
-            env["UC_PORT"] = "8081"
-            env["UC_DIR"] = str(self.uc_server_dir)
-            uc_server_bin = self.uc_server_dir / "bin" / "start-uc-server"
-            os.makedirs(self.uc_server_run_dir, exist_ok=True)
-            # Start the server
-            with open(self.uc_server_run_dir / "uc_server_bin.log", "w") as f1:
-                with open(self.uc_server_run_dir / "uc_server_bin.err.log", "w") as f2:
-                    self.uc_server = subprocess.Popen(
-                        [str(uc_server_bin)],
-                        cwd=str(self.uc_server_run_dir),
-                        env=env,
-                        stdout=f1,
-                        stderr=f2,
-                        text=True,
-                        bufsize=1,
+        with self.catalogs_lock:
+            if self.uc_server is None:
+                if self.uc_server_dir is None:
+                    raise RuntimeError(
+                        "with_unity argument with path to unity server dir is required"
                     )
-            self.logger.info(f"Starting UC server using pid = {self.uc_server.pid}")
-            if not wait_for_port(env["UC_HOST"], env["UC_PORT"], timeout=120):
-                # Print a few lines of output to help debug
-                try:
-                    for _ in range(50):
-                        line = self.uc_server.stdout.readline()
-                        if not line:
-                            break
-                        self.logger.error(
-                            f"UC server did not start: Here is a line {line}"
-                        )
-                except Exception:
-                    pass
-                raise TimeoutError(
-                    f"UC server did not start on {env["UC_HOST"]}:{env["UC_PORT"]} within timeout"
-                )
-            self.logger.info(
-                f"UC server is accepting connections on http://{env["UC_HOST"]}:{env["UC_PORT"]}"
-            )
+                java = shutil.which("java")
+                if not java:
+                    raise RuntimeError(
+                        "Java not found on PATH. Install JDK 17 and/or set JAVA_HOME."
+                    )
 
-    def create_uc_namespace(self, catalog_name: str):
+                uc_port = 8085
+                uc_server_bin = self.uc_server_dir / "bin" / "start-uc-server"
+                cmd = [str(uc_server_bin), "-p", str(uc_port)]
+                os.makedirs(self.uc_server_run_dir, exist_ok=True)
+                # Start the server
+                with open(self.uc_server_run_dir / "uc_server_bin.log", "w+") as f1:
+                    with open(
+                        self.uc_server_run_dir / "uc_server_bin.err.log", "w+"
+                    ) as f2:
+                        self.uc_server = subprocess.Popen(
+                            cmd,
+                            cwd=str(self.uc_server_run_dir),
+                            env=os.environ.copy(),
+                            stdout=f1,
+                            stderr=f2,
+                            text=True,
+                            bufsize=1,
+                        )
+                self.logger.info(f"Starting UC server using pid = {self.uc_server.pid}")
+                if not wait_for_port("localhost", uc_port, timeout=120):
+                    # Print a few lines of output to help debug
+                    try:
+                        for _ in range(50):
+                            line = self.uc_server.stdout.readline()
+                            if not line:
+                                break
+                            self.logger.error(
+                                f"UC server did not start: Here is a line {line}"
+                            )
+                    except Exception:
+                        pass
+                    raise TimeoutError(
+                        f"UC server did not start on localhost:{uc_port} within timeout"
+                    )
+                self.logger.info(
+                    f"UC server is accepting connections on http://localhost:{uc_port}"
+                )
+
+    def run_unity_cmd(self, args: list[str]):
         if self.uc_server_dir is None:
             raise RuntimeError(
                 "with_unity argument with path to unity server dir is required"
             )
-        uc_server_bin = self.uc_server_dir / "bin" / "uc"
-        cmd = [
-            str(uc_server_bin),
-            "schema",
-            "create",
-            "--catalog",
-            "unity",
-            "--name",
-            catalog_name,
-        ]
-        self.logger.info(f"Creating unity namespace {catalog_name}")
+        cmd: list[str] = [str(self.uc_server_dir / "bin" / "uc")]
+        cmd.extend(args)
         proc = subprocess.Popen(
             cmd, cwd=str(self.uc_server_run_dir), env=os.environ.copy(), text=True
         )
@@ -547,159 +292,661 @@ logger.jetty.level = warn
                 f"stderr:\n{proc.stderr}"
             )
 
+    def get_spark(
+        self,
+        cluster,
+        env,
+        sparklogfile: str,
+        derbylogfile: str,
+        metastore_db: str,
+        catalog_name: str,
+        storage: TableStorage,
+        lake: LakeFormat,
+        catalog: LakeCatalogs,
+    ):
+        selected_properties = {}
+        # ============================================================
+        # CORE CONFIGURATIONS FOR BOTH ICEBERG AND DELTA
+        # ============================================================
+        catalog_extension = ""
+        catalog_format = ""
+        all_jars = [
+            "io.delta:delta-spark_2.13:4.0.0",
+            "io.unitycatalog:unitycatalog-spark_2.13:0.3.0",
+            "org.apache.iceberg:iceberg-aws-bundle:1.10.0",
+            "org.apache.iceberg:iceberg-azure-bundle:1.10.0",
+            "org.apache.iceberg:iceberg-spark-extensions-4.0_2.13:1.10.0",
+            "org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.10.0",
+            "org.apache.spark:spark-hadoop-cloud_2.13:4.0.1",
+            # Derby jars
+            "org.apache.derby:derby:10.14.2.0",
+            "org.apache.derby:derbytools:10.14.2.0",
+            "org.datanucleus:datanucleus-core:4.1.17",
+            "org.datanucleus:datanucleus-api-jdo:4.2.4",
+            "org.datanucleus:datanucleus-rdbms:4.1.19",
+        ]
+        if lake == LakeFormat.Iceberg:
+            catalog_extension = (
+                "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+            )
+            catalog_format = "org.apache.iceberg.spark.SparkCatalog"
+        elif lake == LakeFormat.DeltaLake:
+            catalog_extension = "io.delta.sql.DeltaSparkSessionExtension"
+            catalog_format = (
+                "io.unitycatalog.spark.UCSingleCatalog"
+                if catalog == LakeCatalogs.Unity
+                else "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+            )
+        else:
+            raise Exception("Unknown lake format")
+
+        os.environ["PYSPARK_SUBMIT_ARGS"] = (
+            f"--packages {','.join(all_jars)} pyspark-shell"
+        )
+        for k, val in env.items():
+            os.environ[k] = val
+
+        if random.randint(1, 100) <= 70:
+            selected_properties = sample_from_dict(
+                spark_properties, random.randint(0, len(spark_properties))
+            )
+
+        with self.spark_lock:
+            from pyspark.sql import SparkSession
+
+            builder = SparkSession.builder
+            builder.config("spark.sql.extensions", catalog_extension)
+            builder.config(f"spark.sql.catalog.{catalog_name}", catalog_format)
+            builder.config(
+                "spark.driver.extraJavaOptions",
+                f"-Dlog4j.configurationFile=file:{sparklogfile} -Dderby.stream.error.file={derbylogfile}",
+            )
+            builder.config(
+                "spark.executor.extraJavaOptions",
+                f"-Dlog4j.configurationFile=file:{sparklogfile} -Dderby.stream.error.file={derbylogfile}",
+            )
+            builder.config("spark.driver.memory", "16g")
+            builder.config("spark.driver.memoryOverhead", "2g")
+
+            # ============================================================
+            # CATALOG CONFIGURATIONS
+            # ============================================================
+            if catalog == LakeCatalogs.Glue:
+                # Mock AWS credentials
+                builder.config("spark.driverEnv.AWS_ACCESS_KEY_ID", "testing")
+                builder.config("spark.driverEnv.AWS_SECRET_ACCESS_KEY", "testing")
+                builder.config("spark.driverEnv.AWS_SESSION_TOKEN", "testing")
+                builder.config("spark.executorEnv.AWS_ACCESS_KEY_ID", "testing")
+                builder.config("spark.executorEnv.AWS_SECRET_ACCESS_KEY", "testing")
+                builder.config("spark.executorEnv.AWS_SESSION_TOKEN", "testing")
+
+                if lake == LakeFormat.Iceberg:
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.catalog-impl",
+                        "org.apache.iceberg.aws.glue.GlueCatalog",
+                    )
+                elif lake == LakeFormat.DeltaLake:
+                    builder.config(
+                        "spark.hadoop.hive.metastore.client.factory.class",
+                        "com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory",
+                    )
+
+                if storage == TableStorage.S3:
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.io-impl",
+                        "org.apache.iceberg.aws.s3.S3FileIO",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.endpoint",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
+                        cluster.minio_access_key,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
+                        cluster.minio_secret_key,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.signing-region",
+                        "us-east-1",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.path-style-access", "true"
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.glue.endpoint",
+                        "http://localhost:3000",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.glue.region", "us-east-1"
+                    )
+
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.warehouse",
+                        "s3://warehouse-glue/data",
+                    )
+            elif catalog == LakeCatalogs.Hive:
+                builder.config(
+                    "spark.sql.catalog.hive.catalog-impl",
+                    "org.apache.iceberg.hive.HiveCatalog",
+                )
+
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.uri", "thrift://0.0.0.0:9083"
+                )
+                if storage == TableStorage.S3:
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.io-impl",
+                        "org.apache.iceberg.aws.s3.S3FileIO",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.endpoint",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
+                        cluster.minio_access_key,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
+                        cluster.minio_secret_key,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.signing-region",
+                        "us-east-1",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.path-style-access",
+                        "true",
+                    )
+
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.warehouse",
+                        "s3a://warehouse-hms/data",
+                    )
+            elif catalog == LakeCatalogs.REST or (
+                catalog == LakeCatalogs.Unity and lake == LakeFormat.Iceberg
+            ):
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.catalog-impl",
+                    "org.apache.iceberg.rest.RESTCatalog",
+                )
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.uri",
+                    f"http://localhost:{'8085/api/2.1/unity-catalog/iceberg' if catalog == LakeCatalogs.Unity else '8182'}",
+                )
+                if storage == TableStorage.S3:
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.io-impl",
+                        "org.apache.iceberg.aws.s3.S3FileIO",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.endpoint",
+                        f"http://{cluster.get_instance_ip('minio')}:9000",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.access-key-id",
+                        cluster.minio_access_key,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.secret-access-key",
+                        cluster.minio_secret_key,
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.signing-region",
+                        "us-east-1",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.s3.path-style-access", "true"
+                    )
+
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.warehouse",
+                        "s3://warehouse-rest/data",
+                    )
+            elif catalog == LakeCatalogs.Unity and lake == LakeFormat.DeltaLake:
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.uri", "http://localhost:8085"
+                )
+                builder.config(f"spark.sql.catalog.{catalog_name}.token", "")
+                builder.config("spark.sql.defaultCatalog", f"{catalog_name}")
+            elif lake == LakeFormat.Iceberg:
+                # Something as default for iceberg
+                builder.config(f"spark.sql.catalog.{catalog_name}.type", "hadoop")
+            elif lake == LakeFormat.DeltaLake:
+                # Enable persistence
+                builder.config(
+                    "spark.hadoop.javax.jdo.option.ConnectionURL",
+                    f"jdbc:derby:;databaseName={metastore_db};create=true",
+                )
+                builder.config(
+                    "javax.jdo.option.ConnectionDriverName",
+                    "org.apache.derby.jdbc.EmbeddedDriver",
+                )
+                builder.config("datanucleus.schema.autoCreateAll", "true")
+                builder.config("datanucleus.fixedDatastore", "false")
+                builder.config("spark.sql.catalogImplementation", "hive")
+                builder.enableHiveSupport()
+
+            # ============================================================
+            # STORAGE CONFIGURATIONS
+            # ============================================================
+            if storage == TableStorage.S3:
+                # Driver environment
+                builder.config(
+                    "spark.driverEnv.MINIO_ACCESS_KEY", cluster.minio_access_key
+                )
+                builder.config(
+                    "spark.driverEnv.MINIO_SECRET_KEY", cluster.minio_secret_key
+                )
+                # Executor environment
+                builder.config(
+                    "spark.executorEnv.MINIO_ACCESS_KEY", cluster.minio_access_key
+                )
+                builder.config(
+                    "spark.executorEnv.MINIO_SECRET_KEY", cluster.minio_secret_key
+                )
+
+                if catalog not in (LakeCatalogs.Glue, LakeCatalogs.REST):
+                    # S3A filesystem implementation
+                    builder.config(
+                        "spark.hadoop.fs.s3a.impl",
+                        "org.apache.hadoop.fs.s3a.S3AFileSystem",
+                    )
+                    # MinIO endpoint and credentials
+                    builder.config(
+                        "spark.hadoop.fs.s3a.endpoint",
+                        f"http://{cluster.minio_ip}:{cluster.minio_port}",
+                    )
+                    builder.config("spark.hadoop.fs.s3a.path.style.access", "true")
+                    builder.config(
+                        "spark.hadoop.fs.s3a.connection.ssl.enabled", "false"
+                    )
+                    builder.config(
+                        "spark.hadoop.fs.s3a.access.key", cluster.minio_access_key
+                    )
+                    builder.config(
+                        "spark.hadoop.fs.s3a.secret.key", cluster.minio_secret_key
+                    )
+                    builder.config(
+                        "spark.hadoop.fs.s3a.aws.credentials.provider",
+                        "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider",
+                    )
+
+                if catalog == LakeCatalogs.NoCatalog:
+                    builder.config(
+                        "spark.sql.warehouse.dir",
+                        f"s3a://{cluster.minio_bucket}/{catalog_name}",
+                    )
+                    builder.config(
+                        f"spark.sql.catalog.{catalog_name}.warehouse",
+                        f"s3a://{cluster.minio_bucket}/{catalog_name}",
+                    )
+            elif storage == TableStorage.Azure:
+                # For Azurite local emulation
+                builder.config(
+                    f"spark.hadoop.fs.azure.storage.emulator.account.name",
+                    cluster.azurite_account,
+                )
+                builder.config(
+                    f"spark.hadoop.fs.azure.account.key.{cluster.azurite_account}.blob.core.windows.net",
+                    cluster.azurite_key,
+                )
+                # WASB implementation, ABFS is not compatible with Azurite?
+                builder.config(
+                    "spark.hadoop.fs.wasb.impl",
+                    "org.apache.hadoop.fs.azure.NativeAzureFileSystem",
+                )
+                builder.config("spark.hadoop.fs.azure.always.use.https", "false")
+                builder.config("spark.hadoop.fs.azure.ssl.enabled", "false")
+
+                builder.config(
+                    "spark.sql.warehouse.dir",
+                    f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/{catalog_name}",
+                )
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.warehouse",
+                    f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}.blob.core.windows.net/{catalog_name}",
+                )
+            elif storage == TableStorage.Local:
+                os.makedirs(get_local_base_path(catalog_name), exist_ok=True)
+
+                builder.config(
+                    "spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem"
+                )
+                builder.config(
+                    "spark.sql.warehouse.dir",
+                    f"file://{get_local_base_path(catalog_name)}",
+                )
+                builder.config(
+                    f"spark.sql.catalog.{catalog_name}.warehouse",
+                    f"file://{get_local_base_path(catalog_name)}",
+                )
+            else:
+                raise Exception("Unknown storage")
+
+            # ============================================================
+            # FILE FORMAT CONFIGURATIONS
+            # ============================================================
+            # builder.config("spark.sql.sources.default", "parquet")
+            # builder.config(f"spark.sql.catalog.{catalog_name}.write.format.default", "parquet")
+            # builder.config(
+            #    f"spark.sql.catalog.{catalog_name}.write.parquet.compression-codec", "snappy"
+            # )
+            # builder.config(
+            #    f"spark.sql.catalog.{catalog_name}.compression.enabled",
+            #    random.choice(["true", "false"]),
+            # )
+            # Support very old dates
+            builder.config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
+            builder.config("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")
+            # Allow multiple sessions with different settings
+            builder.config("spark.sql.adaptive.enabled", "true")
+            # Allow to retain 0 hours on vacuum
+            builder.config(
+                "spark.databricks.delta.retentionDurationCheck.enabled", "false"
+            )
+            # Set timezone to match ClickHouse
+            if "TZ" in env:
+                builder.config("spark.sql.session.timeZone", env["TZ"])
+            for k, val in env.items():
+                builder.config(f"spark.executorEnv.{k}", val)
+
+            # Random properties
+            for key, val in selected_properties.items():
+                builder.config(key, val())
+
+            return builder.getOrCreate()
+        return None
+
+    def get_next_session(
+        self,
+        cluster,
+        catalog_name: str,
+        next_storage: TableStorage,
+        next_lake: LakeFormat,
+        next_catalog: LakeCatalogs,
+    ):
+        return self.get_spark(
+            cluster,
+            self.env,
+            str(self.spark_log_config),
+            str(self.derby_logger),
+            str(self.metastore_db),
+            catalog_name,
+            next_storage,
+            next_lake,
+            next_catalog,
+        )
+
     def run_query(self, session, query: str):
         self.logger.info(f"Running query: {query}")
-        with open(self.spark_query_logger, "a") as f:
-            f.write(query + "\n")
+        # Ignore spark_query_logger at the moment because this is multithreaded
+        # with open(self.spark_query_logger, "a") as f:
+        #    f.write(query + "\n")
         session.sql(query)
 
     def create_database(self, session, catalog_name: str):
         next_sql = f"CREATE DATABASE IF NOT EXISTS {catalog_name}.test;"
         self.run_query(session, next_sql)
 
-    def create_lake_database(self, cluster, data):
+    def create_lake_database(self, cluster, data) -> bool:
+        saved_exception = None
         catalog = data["catalog"]
         catalog_name = data["database_name"]
         next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
+        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
         next_catalog = LakeCatalogs.catalog_from_str(catalog)
+        next_catalog_impl = None
 
         # Load catalog if needed
-        if next_catalog == LakeCatalogs.REST:
-            if next_lake == LakeFormat.Iceberg:
-                next_warehouse = ""
-                kwargs = {"py-io-impl": "pyiceberg.io.pyarrow.PyArrowFileIO"}
-                if next_storage == TableStorage.S3:
-                    kwargs.update(
-                        {
-                            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": minio_access_key,
-                            "s3.secret-access-key": minio_secret_key,
-                            "s3.region": "us-east-1",
-                            "s3.path-style-access": "true",
-                        }
-                    )
-                    next_warehouse = f"s3a://{cluster.minio_bucket}/{catalog_name}"
-                elif next_storage == TableStorage.Azure:
-                    kwargs.update(
-                        {
-                            "wasb.account-name": cluster.azurite_account,
-                            "wasb.account-key": cluster.azurite_key,
-                            "azure.blob-endpoint": f"http://{cluster.azurite_ip}:{cluster.azurite_port}/{cluster.azurite_account}",
-                        }
-                    )
-                    next_warehouse = f"wasb://{cluster.azure_container_name}@{cluster.azurite_account}"
-                elif next_storage == TableStorage.Local:
-                    next_warehouse = (
-                        f"file://{get_local_base_path(cluster, catalog_name)}"
-                    )
-                rest_catalog = RestCatalog(
-                    catalog_name,
-                    uri="http://localhost:8182",
-                    warehouse=next_warehouse,
-                    **kwargs,
+        if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
+            params = {
+                "s3.endpoint": f"http://{cluster.get_instance_ip('minio')}:9000",
+                "s3.access-key-id": cluster.minio_access_key,
+                "s3.secret-access-key": cluster.minio_secret_key,
+                "s3.signing-region": "us-east-1",
+                "s3.path-style-access": "true",
+                "s3.connection-ssl.enabled": "false",
+            }
+            if next_catalog == LakeCatalogs.REST:
+                params.update(
+                    {
+                        "type": "rest",
+                        "uri": "http://localhost:8182",
+                    }
                 )
-                rest_catalog.create_namespace("test")
+            elif next_catalog == LakeCatalogs.Glue:
+                params.update(
+                    {
+                        "type": "glue",
+                        "glue.endpoint": "http://localhost:3000",
+                        "glue.region": "us-east-1",
+                        "glue.access-key-id": cluster.minio_access_key,
+                        "glue.secret-access-key": cluster.minio_secret_key,
+                    }
+                )
+            elif next_catalog == LakeCatalogs.Hive:
+                params.update(
+                    {
+                        "type": "hive",
+                        "uri": "thrift://0.0.0.0:9083",
+                        "client.region": "us-east-1",
+                    }
+                )
             else:
-                raise Exception("REST catalog not avaiable outside Iceberg")
-        elif next_catalog == LakeCatalogs.Glue:
-            if next_storage == TableStorage.S3:
-                if next_lake == LakeFormat.Iceberg:
-                    glue_catalog = load_catalog(
-                        catalog,
-                        **{
-                            "type": "glue",
-                            "glue.endpoint": "http://localhost:3000",
-                            "glue.region": "us-east-1",
-                            "glue.access-key-id": minio_access_key,
-                            "glue.secret-access-key": minio_secret_key,
-                            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": minio_access_key,
-                            "s3.secret-access-key": minio_secret_key,
-                            "s3.region": "us-east-1",
-                            "s3.path-style-access": "true",
-                        },
-                    )
-                    glue_catalog.create_namespace("test")
-            else:
-                raise Exception("Glue catalog not available outside AWS at the moment")
-        elif next_catalog == LakeCatalogs.Hive:
-            if next_storage == TableStorage.S3:
-                if next_lake == LakeFormat.Iceberg:
-                    hive_catalog = load_catalog(
-                        catalog,
-                        **{
-                            "uri": "thrift://0.0.0.0:9083",
-                            "type": "hive",
-                            "s3.endpoint": f"http://{cluster.minio_ip}:{cluster.minio_port}",
-                            "s3.access-key-id": minio_access_key,
-                            "s3.secret-access-key": minio_secret_key,
-                            "s3.region": "us-east-1",
-                            "s3.path-style-access": "true",
-                        },
-                    )
-                    hive_catalog.create_namespace("test")
-            else:
-                raise Exception("Hive catalog not available outside AWS at the moment")
+                raise Exception("I have not implemented this case yet")
+            next_catalog_impl = load_catalog(catalog_name, **params)
         elif next_catalog == LakeCatalogs.Unity:
             self.start_uc_server()
-            self.create_uc_namespace(catalog_name)
-        elif next_catalog == LakeCatalogs.Nessie:
-            raise Exception("No Nessie yet")
+            self.logger.info(f"Creating unity catalog {catalog_name}")
+            self.run_unity_cmd(["catalog", "create", "--name", catalog_name])
+        else:
+            raise Exception("I have not implemented this case yet")
 
-        self.catalogs[catalog_name] = DolorCatalog(
-            cluster,
-            str(self.spark_log_config),
-            catalog_name,
-            next_storage,
-            next_lake,
-            next_catalog,
-        )
-        self.create_database(self.catalogs[catalog_name].session, catalog_name)
-
-    def create_lake_table(self, cluster, data):
-        catalog_name = data["database_name"]
-        one_time = catalog_name[0] != "d"
-        next_session = None
-        next_storage = TableStorage.storage_from_str(data["storage"])
-        next_lake = LakeFormat.lakeformat_from_str(data["lake"])
-        next_table_generator = LakeTableGenerator.get_next_generator(
-            cluster.minio_bucket, next_lake
-        )
-
-        if one_time:
+        with self.catalogs_lock:
             self.catalogs[catalog_name] = DolorCatalog(
-                cluster,
-                str(self.spark_log_config),
                 catalog_name,
-                next_storage,
-                next_lake,
-                LakeCatalogs.NoCatalog,
+                next_catalog,
+                next_catalog_impl,
             )
-            self.create_database(self.catalogs[catalog_name].session, catalog_name)
-        next_session = self.catalogs[catalog_name].session
+        if next_lake == LakeFormat.Iceberg and next_storage == TableStorage.S3:
+            try:
+                self.logger.info(f"Creating Iceberg catalog {catalog_name}")
+                next_catalog_impl.create_namespace("test")
+            except Exception:
+                pass  # already exists
+        elif next_lake == LakeFormat.DeltaLake and next_storage == TableStorage.S3:
+            try:
+                self.logger.info(f"Creating Delta Lake catalog {catalog_name}")
+                self.run_unity_cmd(
+                    ["schema", "create", "--catalog", catalog_name, "--name", "test"]
+                )
+            except Exception:
+                pass  # already exists
+        else:
+            next_session = self.get_next_session(
+                cluster, catalog_name, next_storage, next_lake, next_catalog
+            )
+            try:
+                self.create_database(next_session, catalog_name)
+            except Exception as e:
+                saved_exception = e
+            next_session.stop()
+            if saved_exception is not None:
+                raise saved_exception
+        return True
+
+    def create_lake_table(self, cluster, data) -> bool:
+        saved_exception = None
+        if data["engine"] == "kafka":
+            # At the moment, this is an ugly hack
+            return self.kafka_handler.create_kafka_table(
+                cluster,
+                data["database_name"],
+                data["table_name"],
+                data["topic"],
+                data["format"],
+                data["columns"],
+            )
+        catalog_name = data["catalog_name"]
+        next_storage = TableStorage.storage_from_str(data["storage"])
+        next_lake = LakeFormat.lakeformat_from_str(data["engine"])
+        next_table_generator = LakeTableGenerator.get_next_generator(next_lake)
+        catalog_type = LakeCatalogs.NoCatalog
+        catalog_impl = None
+
+        self.catalogs_lock.acquire()
+        if catalog_name not in self.catalogs:
+            self.catalogs[catalog_name] = DolorCatalog(
+                catalog_name,
+                LakeCatalogs.NoCatalog,
+                None,
+            )
+            self.catalogs_lock.release()
+            next_session = self.get_next_session(
+                cluster, catalog_name, next_storage, next_lake, LakeCatalogs.NoCatalog
+            )
+            saved_exception = None
+            try:
+                self.create_database(next_session, catalog_name)
+            except Exception as e:
+                saved_exception = e
+            next_session.stop()
+            if saved_exception is not None:
+                raise saved_exception
+        else:
+            catalog_type = self.catalogs[catalog_name].catalog_type
+            catalog_impl = self.catalogs[catalog_name].catalog_impl
+            self.catalogs_lock.release()
+
         next_sql, next_table = next_table_generator.generate_create_table_ddl(
             catalog_name,
+            data["database_name"],
             data["table_name"],
             data["columns"],
             data["format"],
             data["deterministic"] > 0,
+            next_storage,
+            catalog_type,
         )
-        self.run_query(next_session, next_sql)
-        self.catalogs[catalog_name].spark_tables[data["table_name"]] = next_table
-
-        self.logger.info(
-            f"Inserting data into {data["table_name"]} in catalog: {catalog_name}"
+        next_session = self.get_next_session(
+            cluster,
+            catalog_name,
+            next_storage,
+            next_lake,
+            catalog_type,
         )
-        next_data_generator = LakeDataGenerator()
-        next_data_generator.insert_random_data(next_session, catalog_name, next_table)
+        with self.catalogs_lock:
+            self.catalogs[catalog_name].spark_tables[data["table_name"]] = next_table
 
-        if one_time:
+        try:
+            if (
+                next_lake == LakeFormat.Iceberg
+                and next_storage == TableStorage.S3
+                and catalog_type
+                in (LakeCatalogs.Hive, LakeCatalogs.REST, LakeCatalogs.Glue)
+            ):
+                next_info = next_table_generator.create_catalog_table(
+                    catalog_impl, data["columns"], next_table
+                )
+                self.logger.info(f"Created catalog table: {next_info}")
+            elif catalog_type == LakeCatalogs.NoCatalog:
+                self.run_query(next_session, next_sql)
+            else:
+                raise Exception("I have not implemented this case yet")
+
+            if random.randint(1, 5) != 5:
+                self.data_generator.insert_random_data(next_session, next_table)
+        except Exception as e:
+            saved_exception = e
+        next_session.stop()
+        if saved_exception is not None:
+            raise saved_exception
+        return True
+
+    def update_or_check_table(self, cluster, data) -> bool:
+        res = False
+        next_table = None
+        next_session = None
+        saved_exception = None
+        catalog_name = data["catalog_name"]
+        catalog_type = LakeCatalogs.NoCatalog
+        run_background_worker = data["async"] == 0 and random.randint(1, 2) == 1
+
+        if data["engine"] != "kafka":
+            with self.catalogs_lock:
+                next_table = self.catalogs[catalog_name].spark_tables[
+                    data["table_name"]
+                ]
+                catalog_type = self.catalogs[catalog_name].catalog_type
+
+        if run_background_worker:
+
+            def my_new_task():
+                client = Client(
+                    host=(
+                        cluster.instances["node0"].ip_address
+                        if hasattr(cluster, "instances")
+                        else "localhost"
+                    ),
+                    port=9000,
+                    command=cluster.client_bin_path,
+                )
+                nloops = random.randint(1, 50)
+                tbl = (
+                    f"{data['catalog_name']}.{data['table_name']}"
+                    if data["engine"] == "kafka"
+                    else next_table.get_clickhouse_path()
+                )
+                for _ in range(nloops):
+                    client.query(f"SELECT * FROM {tbl} LIMIT 100;")
+                    time.sleep(1)
+
+            self.worker.set_task_function(my_new_task)
+            self.worker.resume()
+
+        if data["engine"] != "kafka":
+            next_session = self.get_next_session(
+                cluster,
+                catalog_name,
+                next_table.storage,
+                next_table.lake_format,
+                catalog_type,
+            )
+        try:
+            if data["engine"] == "kafka":
+                res = self.kafka_handler.update_table(
+                    cluster, data["catalog_name"], data["table_name"]
+                )
+            elif data["engine"] in ["iceberg", "deltalake"]:
+                res = (
+                    self.data_generator.update_table(next_session, next_table)
+                    if random.randint(1, 10) < 9
+                    else self.table_check.check_table(cluster, next_session, next_table)
+                )
+        except Exception as e:
+            saved_exception = e
+        if run_background_worker:
+            self.worker.pause()
+        if next_session is not None:
             next_session.stop()
+        if saved_exception is not None:
+            raise saved_exception
+        return res
 
     def close_sessions(self):
-        for _, val in self.catalogs.items():
-            val.session.stop()
-        if self.uc_server is not None and self.uc_server.poll() is None:
-            self.uc_server.kill()
-            self.uc_server.wait()
+        # Stop Unity catalog server
+        with self.catalogs_lock:
+            if self.uc_server is not None and self.uc_server.poll() is None:
+                self.uc_server.kill()
+                self.uc_server.wait()
+        # Stop Spark session
+        with self.spark_lock:
+            from pyspark.sql import SparkSession
+
+            spark = SparkSession.getActiveSession()
+            if spark:
+                spark.stop()

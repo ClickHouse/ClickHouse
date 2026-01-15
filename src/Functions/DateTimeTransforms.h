@@ -93,19 +93,20 @@ struct ToDateImpl
 
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
+        auto day_num = time_zone.toDayNum(t);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            if (t < 0)
-                t = 0;
-            else if (t > MAX_DATE_TIMESTAMP)
-                t = MAX_DATE_TIMESTAMP;
+            if (day_num < 0)
+                day_num = 0;
+            else if (day_num > DATE_LUT_MAX_DAY_NUM)
+                day_num = DATE_LUT_MAX_DAY_NUM;
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (t < 0 || t > MAX_DATE_TIMESTAMP) [[unlikely]]
+            if (day_num < 0 || day_num > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);
         }
-        return static_cast<UInt16>(time_zone.toDayNum(t));
+        return static_cast<UInt16>(day_num);
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2131,28 +2132,28 @@ struct ToRelativeHourNumImpl
 {
     static constexpr auto name = "toRelativeHourNum";
 
-    static auto execute(Int64 t, const DateLUTImpl & time_zone)
+    ALWAYS_INLINE static auto execute(Int64 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toStableRelativeHourNum(t));
         else
             return static_cast<UInt32>(time_zone.toRelativeHourNum(t));
     }
-    static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
+    ALWAYS_INLINE static UInt32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<UInt32>(time_zone.toStableRelativeHourNum(static_cast<DateLUTImpl::Time>(t)));
         else
             return static_cast<UInt32>(time_zone.toRelativeHourNum(static_cast<DateLUTImpl::Time>(t)));
     }
-    static auto execute(Int32 d, const DateLUTImpl & time_zone)
+    ALWAYS_INLINE static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<Int64>(time_zone.toStableRelativeHourNum(ExtendedDayNum(d)));
         else
             return static_cast<UInt32>(time_zone.toRelativeHourNum(ExtendedDayNum(d)));
     }
-    static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    ALWAYS_INLINE static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
             return static_cast<UInt32>(time_zone.toStableRelativeHourNum(DayNum(d)));
@@ -2425,6 +2426,21 @@ struct Transformer
         using ValueType = typename ToTypeVector::value_type;
         vec_to.resize(input_rows_count);
 
+        if constexpr (
+            std::is_same_v<FromType, DataTypeDateTime> &&
+            std::is_same_v<ToType, DataTypeNumber<UInt32>> &&
+            std::is_same_v<Transform, ToRelativeHourNumImpl<ResultPrecision::Standard>> &&
+            !is_extended_result
+        )
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                vec_to[i] = transform.execute(vec_from[i], time_zone);
+            }
+
+            return;
+        }
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if constexpr (std::is_same_v<ToType, DataTypeDate> || std::is_same_v<ToType, DataTypeDateTime> || std::is_same_v<ToType, DataTypeTime>)
@@ -2447,7 +2463,7 @@ struct Transformer
                         else
                         {
                             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
-                                vec_from[i], TypeName<ValueType>);
+                                static_cast<double>(vec_from[i]), TypeName<ValueType>);
                         }
                     }
                 }
@@ -2492,7 +2508,17 @@ struct DateTimeTransformImpl
             }
             else if (result_data_type.isTime() || result_data_type.isTime64())
             {
-                Op::vector(sources->getData(), col_to->getData(), DateLUT::instance(), transform, vec_null_map_to, input_rows_count);
+                const IDataType * from_type = arguments[0].type.get();
+                WhichDataType from_data_type(from_type);
+                const DateLUTImpl * tz_ptr = &DateLUT::instance();
+                if (from_data_type.isDateTime() || from_data_type.isDateTime64())
+                {
+                    const auto & tz_mixin = dynamic_cast<const TimezoneMixin &>(*from_type);
+                    if (tz_mixin.hasExplicitTimeZone())
+                        tz_ptr = &tz_mixin.getTimeZone();
+                }
+                const DateLUTImpl & tz = *tz_ptr;
+                Op::vector(sources->getData(), col_to->getData(), tz, transform, vec_null_map_to, input_rows_count);
             }
             else
             {

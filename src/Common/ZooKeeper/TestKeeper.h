@@ -3,7 +3,6 @@
 #include <mutex>
 #include <map>
 #include <atomic>
-#include <thread>
 #include <chrono>
 
 #include <Poco/Timespan.h>
@@ -43,7 +42,9 @@ public:
     String getConnectedHostPort() const override { return "TestKeeper:0000"; }
     int64_t getConnectionXid() const override { return 0; }
     int64_t getSessionID() const override { return 0; }
-
+    int64_t getLastZXIDSeen() const override { return 0; }
+    bool isFeatureEnabled(DB::KeeperFeatureFlag flag) const override { return keeper_feature_flags.isEnabled(flag); }
+    const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
     void create(
             const String & path,
@@ -64,35 +65,35 @@ public:
         RemoveRecursiveCallback callback) override;
 
     void exists(
-            const String & path,
-            ExistsCallback callback,
-            WatchCallbackPtr watch) override;
+        const String & path,
+        ExistsCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void get(
-            const String & path,
-            GetCallback callback,
-            WatchCallbackPtr watch) override;
+        const String & path,
+        GetCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void set(
-            const String & path,
-            const String & data,
-            int32_t version,
-            SetCallback callback) override;
+        const String & path,
+        const String & data,
+        int32_t version,
+        SetCallback callback) override;
 
     void list(
-            const String & path,
-            ListRequestType list_request_type,
-            ListCallback callback,
-            WatchCallbackPtr watch) override;
+        const String & path,
+        ListRequestType list_request_type,
+        ListCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void check(
-            const String & path,
-            int32_t version,
-            CheckCallback callback) override;
+        const String & path,
+        int32_t version,
+        CheckCallback callback) override;
 
     void sync(
-            const String & path,
-            SyncCallback callback) override;
+        const String & path,
+        SyncCallback callback) override;
 
     void reconfig(
         std::string_view joining,
@@ -102,21 +103,16 @@ public:
         ReconfigCallback callback) final;
 
     void multi(
-            const Requests & requests,
-            MultiCallback callback) override;
+        const Requests & requests,
+        MultiCallback callback) override;
 
     void multi(
-            std::span<const RequestPtr> requests,
-            MultiCallback callback) override;
+        std::span<const RequestPtr> requests,
+        MultiCallback callback) override;
 
     void getACL(const String & path, GetACLCallback callback) override;
 
     void finalize(const String & reason) override;
-
-    bool isFeatureEnabled(DB::KeeperFeatureFlag) const override
-    {
-        return false;
-    }
 
     struct Node
     {
@@ -130,9 +126,6 @@ public:
 
     using Container = std::map<std::string, Node>;
 
-    using WatchCallbacks = std::unordered_set<WatchCallbackPtr>;
-    using Watches = std::map<String /* path, relative of root_path */, WatchCallbacks>;
-
 private:
     using clock = std::chrono::steady_clock;
 
@@ -140,7 +133,7 @@ private:
     {
         TestKeeperRequestPtr request;
         ResponseCallback callback;
-        WatchCallbackPtr watch;
+        WatchCallbackPtrOrEventPtr watch;
         clock::time_point time;
     };
 
@@ -152,9 +145,10 @@ private:
     std::atomic<bool> expired{false};
 
     int64_t zxid = 0;
+    DB::KeeperFeatureFlags keeper_feature_flags;
 
     Watches watches;
-    Watches list_watches;   /// Watches for 'list' request (watches on children).
+    Watches list_watches; /// Watches for 'list' request (watches on children).
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
     RequestsQueue requests_queue{1};

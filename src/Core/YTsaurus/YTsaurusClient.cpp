@@ -42,10 +42,10 @@ YTsaurusClient::YTsaurusClient(ContextPtr context_, const ConnectionInfo & conne
 }
 
 
-DB::ReadBufferPtr YTsaurusClient::readTable(const String & cypress_path)
+ReadBufferPtr YTsaurusClient::readTable(const String & cypress_path)
 {
     YTsaurusQueryPtr read_table_query(new YTsaurusReadTableQuery(cypress_path));
-    return createQueryRWBuffer(read_table_query);
+    return executeQuery(read_table_query);
 }
 
 YTsaurusNodeType YTsaurusClient::getNodeType(const String & cypress_path)
@@ -58,12 +58,12 @@ YTsaurusNodeType YTsaurusClient::getNodeType(const String & cypress_path)
 YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Object::Ptr & json_ptr)
 {
     if (!json_ptr->has("type"))
-        throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'type'.");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'type'.");
 
-    if (json_ptr->getValue<String>("type") == "table")
+    if (json_ptr->getValue<String>("type") == "table" || json_ptr->getValue<String>("type") == "replicated_table")
     {
         if (!json_ptr->has("dynamic"))
-            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'dynamic'.");
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'dynamic'.");
 
         return json_ptr->getValue<bool>("dynamic") ? YTsaurusNodeType::DYNAMIC_TABLE : YTsaurusNodeType::STATIC_TABLE;
     }
@@ -73,13 +73,26 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     }
 }
 
-DB::ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path)
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const String & column_names_str = "*")
 {
-    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path));
-    return createQueryRWBuffer(select_rows_query);
+    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path, column_names_str));
+    return executeQuery(select_rows_query);
 }
 
-DB::ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input)
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const ColumnsWithTypeAndName & columns)
+{
+    String columns_names_str;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        columns_names_str += columns[i].name;
+        if (i + 1 != columns.size())
+            columns_names_str += ", ";
+    }
+    return selectRows(cypress_path, columns_names_str);
+}
+
+
+ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input)
 {
     YTsaurusQueryPtr lookup_rows_query(new YTsaurusLookupRows(cypress_path));
     auto out_callback = [lookup_block_input, this](std::ostream & ostr)
@@ -91,50 +104,31 @@ DB::ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const 
         formatBlock(output_format, lookup_block_input);
         out_buffer.finalize();
     };
-    return createQueryRWBuffer(lookup_rows_query, std::move(out_callback));
+    return executeQuery(lookup_rows_query, std::move(out_callback));
 }
 
-
-DB::ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const YTsaurusQueryPtr query, ReadWriteBufferFromHTTP::OutStreamCallback out_callback)
+ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback&& out_callback)
 {
     for (size_t num_try = 0; num_try < connection_info.http_proxy_urls.size(); ++num_try)
     {
         size_t url_index = (recently_used_url_index + num_try) % connection_info.http_proxy_urls.size();
+        URI host_for_request(connection_info.http_proxy_urls[url_index].c_str());
+        if (connection_info.enable_heavy_proxy_redirection && query->isHeavyQuery())
+            host_for_request = getHeavyProxyURI(host_for_request);
+
         try
         {
-            Poco::URI uri(connection_info.http_proxy_urls[url_index].c_str());
-            uri.setPath(fmt::format("/api/{}/{}", connection_info.api_version, query->getQueryName()));
+            host_for_request.setPath(fmt::format("/api/{}/{}", connection_info.api_version, query->getQueryName()));
 
             for (const auto & query_param : query->getQueryParameters())
             {
-                uri.addQueryParameter(query_param.name, query_param.value);
+                host_for_request.addQueryParameter(query_param.name, query_param.value);
             }
+            LOG_TRACE(log, "URI {} , query type {}", host_for_request.toString(), query->getQueryName());
 
-            DB::HTTPHeaderEntries http_headers{
-                /// Always use json format for input and output.
-                {"Accept", "application/json"},
-                {"Content-Type", "application/json"},
-                {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
-                {"X-YT-Header-Format", "<format=text>yson"},
-                {"X-YT-Output-Format", "<uuid_mode=text_yql;complex_type_mode=positional>json"}
-            };
-
-            LOG_TRACE(log, "URI {} , query type {}", uri.toString(), query->getQueryName());
-            Poco::Net::HTTPBasicCredentials creds;
-            auto buf = DB::BuilderRWBufferFromHTTP(uri)
-                        .withConnectionGroup(DB::HTTPConnectionGroupType::STORAGE)
-                        .withMethod(query->getHTTPMethod())
-                        .withSettings(context->getReadSettings())
-                        .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-                        .withHostFilter(&context->getRemoteHostFilter())
-                        .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
-                        .withOutCallback(out_callback)
-                        .withHeaders(http_headers)
-                        .withDelayInit(false)
-                        .create(creds);
-
+            auto buf = createQueryRWBuffer(host_for_request, out_callback, query->getHTTPMethod());
             recently_used_url_index = url_index;
-            return DB::ReadBufferPtr(std::move(buf));
+            return buf;
         }
         catch (Exception & e)
         {
@@ -142,13 +136,65 @@ DB::ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const YTsaurusQueryPtr que
                 connection_info.http_proxy_urls[url_index], e.displayText());
         }
     }
-    throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "All connection tries with ytsaurus http proxies are failed.");
+    throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "All connection tries with ytsaurus http proxies are failed");
+}
+
+YTsaurusClient::URI YTsaurusClient::getHeavyProxyURI(const URI& uri)
+{
+    URI list_of_proxies_uri(uri);
+    list_of_proxies_uri.setPath("/hosts");
+
+    LOG_TRACE(log, "Get list of heavy proxies from path {}", list_of_proxies_uri.toString());
+    auto buf = createQueryRWBuffer(list_of_proxies_uri, nullptr, "GET");
+
+    // Make sure that there are no recursive calls
+    String json_str;
+    readJSONArrayInto(json_str, *buf);
+
+    Poco::JSON::Parser parser;
+    auto list_of_proxies = parser.parse(json_str).extract<Poco::JSON::Array::Ptr>();
+    if (!list_of_proxies || !list_of_proxies->size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't take the list of heavy proxies.");
+
+    URI host;
+    host.setScheme(uri.getScheme());
+    host.setAuthority(list_of_proxies->getElement<std::string>(0));
+    return host;
+}
+
+
+ReadBufferPtr YTsaurusClient::createQueryRWBuffer(const URI& uri, const ReadWriteBufferFromHTTP::OutStreamCallback& out_callback, const std::string & http_method)
+{
+    std::string output_params = fmt::format("<uuid_mode=text_yql;complex_type_mode=positional;encode_utf8={}>", connection_info.encode_utf8  ?  "true" : "false");
+    HTTPHeaderEntries http_headers{
+        /// Always use json format for input and output.
+        {"Accept", "application/json"},
+        {"Content-Type", "application/json"},
+        {"Authorization", fmt::format("OAuth {}", connection_info.oauth_token)},
+        {"X-YT-Header-Format", "<format=text>yson"},
+        {"X-YT-Output-Format", fmt::format("{}json", output_params)},
+    };
+
+    Poco::Net::HTTPBasicCredentials creds;
+    auto buf = BuilderRWBufferFromHTTP(uri)
+                .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
+                .withMethod(http_method)
+                .withSettings(context->getReadSettings())
+                .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+                .withHostFilter(&context->getRemoteHostFilter())
+                .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
+                .withOutCallback(out_callback)
+                .withHeaders(http_headers)
+                .withDelayInit(false)
+                .create(creds);
+
+    return ReadBufferPtr(std::move(buf));
 }
 
 Poco::Dynamic::Var YTsaurusClient::getMetadata(const String & path)
 {
     YTsaurusQueryPtr get_query(new YTsaurusGetQuery(path));
-    auto buf = createQueryRWBuffer(get_query);
+    auto buf = executeQuery(get_query);
 
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -172,56 +218,65 @@ Poco::Dynamic::Var YTsaurusClient::getTableAttribute(const String & cypress_path
     return json;
 }
 
-Poco::JSON::Array::Ptr YTsaurusClient::getTableSchema(const String & cypress_path)
+YTsaurusClient::SchemaDescription YTsaurusClient::getTableSchema(const String & cypress_path)
 {
     auto schema = getTableAttribute(cypress_path, "schema");
     const auto & schema_json = schema.extract<Poco::JSON::Object::Ptr>();
+
+    if (!schema_json->has("$attributes"))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "No \"$attributes\" property in yt table schema");
+
+    auto attributes = schema_json->get("$attributes").extract<Poco::JSON::Object::Ptr>();
+    if (!attributes->has("strict"))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Broken YtSaurus schema json. Missing `strict` field in attributes.");
+
+    bool is_strict = attributes->getValue<bool>("strict");
+
+    // Doesn't make sense to continue, schema isn't strict.
+    if (!is_strict)
+        return {is_strict, {}};
+
     if (!schema_json->has("$value"))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No \"$value\" property in yt table schema");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "No \"$value\" property in yt table schema");
     }
-    return schema_json->get("$value").extract<Poco::JSON::Array::Ptr>();
+
+    auto columns_array = schema_json->get("$value").extract<Poco::JSON::Array::Ptr>();
+    std::unordered_map<String, DataTypePtr> yt_columns;
+
+    for (const auto& yt_column : *columns_array) {
+        const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();
+        if (!yt_column_json->has("name"))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Broken YtSaurus schema json. Missing `name` field.");
+
+        auto yt_column_name = yt_column_json->getValue<String>("name");
+        auto data_type = convertYTSchema(yt_column_json);
+
+        yt_columns.insert({std::move(yt_column_name), data_type});
+    }
+    return {true, std::move(yt_columns)};
 }
 
-bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block)
+bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason, bool allow_nullable)
 {
-    auto schema_json = getTableSchema(table_path);
-    chassert(schema_json);
-    for (const auto& yt_column : *schema_json) {
-        try
-        {
-            const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();
-            auto yt_column_name = yt_column_json->getValue<String>("name");
-            if (!sample_block->has(yt_column_name))
-            {
-                LOG_ERROR(log, "Table schema mismatch. No column {}", yt_column_name);
-                return false;
-            }
+    auto yt_schema = getTableSchema(table_path);
 
-            const auto & column_type_ptr = sample_block->getByName(yt_column_name).type;
+    if (!yt_schema.is_strict)
+        return true;
 
-            chassert(column_type_ptr != nullptr);
-            auto data_type = convertYTSchema(yt_column_json);
-            if (column_type_ptr->getName() != "Dynamic" &&
-                data_type->getName() != "Dynamic" &&
-                column_type_ptr->getName() != data_type->getName())
-            {
-                LOG_ERROR(log, "Table schema mismatch. Clickhouse expecting: {}, Real: {}", column_type_ptr->getName(), data_type->getName());
-                return false;
-            }
-        }
-        catch (const Exception & e)
+    for (const auto & column_type_with_name : sample_block->getColumnsWithTypeAndName())
+    {
+        auto iter = yt_schema.columns.find(column_type_with_name.name);
+        if (iter == yt_schema.columns.end())
         {
-            if (e.code() == ErrorCodes::INCORRECT_DATA)
-            {
-                LOG_DEBUG(log, "Couldn't extract schema from {}: {}", table_path, e.what());
-                return false;
-            }
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Something went wrong while parsing YT table schema: {}", e.what());
+            reason = fmt::format("There are no column with name {} in YtSaurus table", column_type_with_name.name);
+            return false;
         }
-        catch (const std::exception & e)
+        auto yt_column_type = iter->second;
+        if (!isYTSaurusTypesCompatible(column_type_with_name.type, yt_column_type, allow_nullable))
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Something went wrong while parsing YT table schema: {}", e.what());
+            reason = fmt::format("Column {} types mismatch. YtSaurus converted type {} table column type {}", column_type_with_name.name, yt_column_type->getName(), column_type_with_name.type->getName());
+            return false;
         }
     }
     return true;

@@ -19,7 +19,7 @@ Returns the hour component (0-23) of a `DateTime` or `DateTime64` value.
     {
         {"datetime", "Date with time to get the hour from.", {"DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the hour of the given `Date` or `DateTime` value", {"UInt8"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the hour (0-23) of `datetime`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
@@ -35,7 +35,7 @@ SELECT toHour(toDateTime('2023-04-21 10:20:30'))
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToHour>(documentation);
 
