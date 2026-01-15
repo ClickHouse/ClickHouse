@@ -341,11 +341,12 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
 {
     const uint32_t nopt = rg.nextMediumNumber();
 
-    if (nopt < 15)
+    if (nopt < 15 && ((this->next_type_mask & allow_array) != 0 || (complex && ((this->next_type_mask & allow_tuple) != 0))))
     {
         /// Generate a few arrays/tuples with literal values
-        ExprList * elist
-            = (!complex || rg.nextBool()) ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
+        ExprList * elist = ((this->next_type_mask & allow_tuple) == 0 || !complex || rg.nextBool())
+            ? expr->mutable_comp_expr()->mutable_array()
+            : expr->mutable_comp_expr()->mutable_tuple();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 8));
 
         this->depth++;
@@ -356,7 +357,7 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
         }
         this->depth--;
     }
-    else if (nopt < 20)
+    else if (nopt < 20 && (this->next_type_mask & allow_map) != 0)
     {
         /// Generate a few map key/value pairs
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 4));
