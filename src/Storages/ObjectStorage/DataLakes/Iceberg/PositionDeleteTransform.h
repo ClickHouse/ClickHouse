@@ -61,6 +61,8 @@ protected:
 class IcebergBitmapPositionDeleteTransform : public IcebergPositionDeleteTransform
 {
 public:
+    using ExcludedRows = DB::DataLakeObjectMetadata::ExcludedRows;
+
     IcebergBitmapPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
@@ -78,7 +80,7 @@ public:
 
 private:
     void initialize();
-    RoaringBitmapWithSmallSet<size_t, 32> bitmap;
+    ExcludedRows bitmap;
 };
 
 
