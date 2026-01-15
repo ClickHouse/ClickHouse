@@ -18,35 +18,29 @@ namespace DB
 namespace
 {
 
-/// Find QueryNode in the JoinTree and replace it with a clone if needed.
-/// Returns the clone if replacement was made, otherwise returns nullptr.
-QueryTreeNodePtr cloneQueryNodeInJoinTree(QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & target)
+/// Try to clone the target QueryNode if it IS the join_tree root (not nested inside).
+/// Returns the clone if successful, nullptr otherwise.
+///
+/// We intentionally do NOT recurse into JoinNodes because cloning a child of a
+/// JoinNode would invalidate column references in the join condition (ON clause).
+/// The ON clause contains columns that reference the original table expressions,
+/// and cloning one side would leave those columns with invalid (deallocated) sources.
+QueryTreeNodePtr tryCloneTopLevelQueryNode(QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & target)
 {
     if (!join_tree)
         return nullptr;
 
-    /// Found the target node - clone it and replace in the tree.
-    /// The clone will be owned by the tree, keeping it alive.
-    if (join_tree.get() == target.get())
-    {
-        auto clone = join_tree->clone();
-        join_tree = clone;
-        return clone;
-    }
+    /// Only clone if join_tree IS the target (a simple FROM clause, not a JOIN)
+    if (join_tree.get() != target.get())
+        return nullptr;
 
-    /// For JOINs, recursively search both sides of the join
-    if (auto * join_node = join_tree->as<JoinNode>())
-    {
-        auto & left = join_node->getLeftTableExpression();
-        if (auto result = cloneQueryNodeInJoinTree(left, target))
-            return result;
+    /// Don't clone JoinNodes - their children have cross-references we can't safely update
+    if (join_tree->as<JoinNode>())
+        return nullptr;
 
-        auto & right = join_node->getRightTableExpression();
-        if (auto result = cloneQueryNodeInJoinTree(right, target))
-            return result;
-    }
-
-    return nullptr;
+    auto clone = join_tree->clone();
+    join_tree = clone;
+    return clone;
 }
 
 /// Check if the optimization can be performed for a given projection column.
@@ -172,50 +166,48 @@ public:
             if (!canOptimizeProjectionColumn(proj_column, full_subcolumn_name, subcolumn_type, context, new_proj_node))
                 return;
 
-            /// CTEs are identified by having a non-empty CTE name.
-            /// CTEs are already cloned by the analyzer, so we can modify them directly.
-            bool is_cte = !query_source->getCTEName().empty();
-            QueryTreeNodePtr source_to_modify = column_source;
+            /// We need to clone the source QueryNode before modifying it to avoid
+            /// modifying shared state. This is necessary for both CTEs and inline
+            /// subqueries because the query tree might be used in multiple contexts
+            /// (e.g., EXPLAIN, caching, etc.)
+            auto * root_query_node = root_query->as<QueryNode>();
+            if (!root_query_node)
+                return;
 
-            if (!is_cte)
-            {
-                /// For non-CTE sources (inline subqueries, VIEW expansions), we need to clone
-                /// the QueryNode to avoid modifying shared state. Multiple references to the
-                /// same subquery would otherwise see our modifications.
-                auto * root_query_node = root_query->as<QueryNode>();
-                /// Safety check: root must be a QueryNode
-                if (!root_query_node)
-                    return;
+            auto & join_tree = root_query_node->getJoinTree();
+            auto clone = tryCloneTopLevelQueryNode(join_tree, column_source);
+            /// The source must be found at the top level of JoinTree for cloning to work.
+            /// If it's nested inside a JOIN, we skip optimization (cloning would break
+            /// column references in the join condition).
+            if (!clone)
+                return;
 
-                auto & join_tree = root_query_node->getJoinTree();
-                auto clone = cloneQueryNodeInJoinTree(join_tree, column_source);
-                /// The source must be found in the JoinTree for cloning to work
-                if (!clone)
-                    return;
+            QueryTreeNodePtr source_to_modify = clone;
+            query_source = source_to_modify->as<QueryNode>();
 
-                source_to_modify = clone;
-                query_source = source_to_modify->as<QueryNode>();
+            /// After cloning, we need to re-get the projection column from the clone
+            auto & cloned_projection_nodes = query_source->getProjection().getNodes();
+            proj_column = cloned_projection_nodes[i]->as<ColumnNode>();
+            /// The cloned projection must still be a ColumnNode
+            if (!proj_column)
+                return;
 
-                /// After cloning, we need to re-get the projection column from the clone
-                auto & cloned_projection_nodes = query_source->getProjection().getNodes();
-                proj_column = cloned_projection_nodes[i]->as<ColumnNode>();
-                /// The cloned projection must still be a ColumnNode
-                if (!proj_column)
-                    return;
-
-                /// Re-check optimization on the cloned source (its internal pointers may differ)
-                if (!canOptimizeProjectionColumn(proj_column, full_subcolumn_name, subcolumn_type, context, new_proj_node))
-                    return;
-            }
+            /// Re-check optimization on the cloned source (its internal pointers may differ)
+            if (!canOptimizeProjectionColumn(proj_column, full_subcolumn_name, subcolumn_type, context, new_proj_node))
+                return;
 
             /// Now we can safely modify the query source
             auto & final_projection_nodes = query_source->getProjection().getNodes();
+
+            /// Safety check: projection nodes and columns must be in sync
+            auto projection_columns = query_source->getProjectionColumns();
+            if (i >= final_projection_nodes.size() || i >= projection_columns.size())
+                return;
 
             /// Replace the projection column (e.g., tup -> tup.a)
             final_projection_nodes[i] = new_proj_node;
 
             /// Update the projection columns metadata to reflect the new column name and type
-            auto projection_columns = query_source->getProjectionColumns();
             projection_columns[i] = NameAndTypePair{full_subcolumn_name, subcolumn_type};
             query_source->resolveProjectionColumns(std::move(projection_columns));
 
