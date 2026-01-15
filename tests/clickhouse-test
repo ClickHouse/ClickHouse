@@ -3467,6 +3467,7 @@ def do_run_tests(
                 exit_code,
                 server_died,
                 restarted_tests,
+                jobs + 1
             )
         )
 
