@@ -4,6 +4,7 @@ import os
 import typing as tp
 
 import pytest
+import time
 
 import helpers.keeper_utils as ku
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
@@ -114,6 +115,14 @@ def test_reconfig_remove_2_and_leader(started_cluster):
     assert "node5" not in config
 
     zk2.stop()
+
+    for i in range(100):
+        if any("leader" in ku.send_4lw_cmd(cluster, node, f"mntr") for node in [node2, node3]):
+            break
+        time.sleep(1)
+    else:
+        assert False, "New leader not found"
+
     zk2 = create_client(node2)
     zk2.sync("/test_leader_0")
     ku.wait_configs_equal(config, zk2)
