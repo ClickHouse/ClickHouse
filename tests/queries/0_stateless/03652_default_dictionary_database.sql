@@ -1,3 +1,5 @@
+-- Tags: no-replicated-database, no-parallel
+
 DROP DATABASE IF EXISTS test_dict_db;
 DROP DATABASE IF EXISTS test_normal_db;
 
@@ -13,6 +15,8 @@ SOURCE(CLICKHOUSE(QUERY 'SELECT number AS id, toString(number) AS value FROM num
 LAYOUT(FLAT())
 LIFETIME(0);
 
+SYSTEM RELOAD DICTIONARY test_dict_db.test_dictionary;
+
 CREATE DATABASE test_normal_db;
 USE test_normal_db;
 
@@ -25,6 +29,8 @@ PRIMARY KEY id
 SOURCE(CLICKHOUSE(QUERY 'SELECT number AS id, toString(number) AS value FROM numbers(5)'))
 LAYOUT(FLAT())
 LIFETIME(0);
+
+SYSTEM RELOAD DICTIONARY test_dict_db.test_dictionary;
 
 SELECT 'Test 1: Without setting (should fail)';
 SELECT dictGet('test_dictionary', 'value', toUInt64(1)); -- { serverError 36 }
