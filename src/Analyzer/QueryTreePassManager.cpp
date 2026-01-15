@@ -271,7 +271,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<ConvertEmptyStringComparisonToFunctionPass>());
     manager.addPass(std::make_unique<FunctionToSubcolumnsPass>());
-    
+
     /// Push subcolumn access into subqueries to enable subcolumn pruning.
     /// Must run after FunctionToSubcolumnsPass which creates getSubcolumn calls.
     manager.addPass(std::make_unique<SubcolumnPushdownPass>());

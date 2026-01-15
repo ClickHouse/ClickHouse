@@ -77,7 +77,7 @@ bool canOptimizeProjectionColumn(
             if (!table_node->getStorage()->supportsOptimizationToSubcolumns())
                 return false;
         }
-        
+
         /// Create a direct subcolumn reference. The storage will read only this subcolumn
         /// at execution time (e.g., for Tuple/JSON columns).
         NameAndTypePair subcolumn_name_and_type{full_subcolumn_name, subcolumn_type};
@@ -93,7 +93,7 @@ bool canOptimizeProjectionColumn(
         auto & func_args = get_subcolumn_func->getArguments().getNodes();
         func_args.push_back(proj_column->clone());
         func_args.push_back(std::make_shared<ConstantNode>(subcolumn_name));
-        
+
         auto func = FunctionFactory::instance().get("getSubcolumn", context);
         get_subcolumn_func->resolveAsFunction(func->build(get_subcolumn_func->getArgumentColumns()));
         out_new_proj_node = get_subcolumn_func;
@@ -158,7 +158,7 @@ public:
 
         /// Find the matching projection column in the source query's SELECT list
         auto & projection_nodes = query_source->getProjection().getNodes();
-        
+
         for (size_t i = 0; i < projection_nodes.size(); ++i)
         {
             auto * proj_column = projection_nodes[i]->as<ColumnNode>();
@@ -195,14 +195,14 @@ public:
 
                 source_to_modify = clone;
                 query_source = source_to_modify->as<QueryNode>();
-                
+
                 /// After cloning, we need to re-get the projection column from the clone
                 auto & cloned_projection_nodes = query_source->getProjection().getNodes();
                 proj_column = cloned_projection_nodes[i]->as<ColumnNode>();
                 /// The cloned projection must still be a ColumnNode
                 if (!proj_column)
                     return;
-                
+
                 /// Re-check optimization on the cloned source (its internal pointers may differ)
                 if (!canOptimizeProjectionColumn(proj_column, full_subcolumn_name, subcolumn_type, context, new_proj_node))
                     return;
@@ -210,7 +210,7 @@ public:
 
             /// Now we can safely modify the query source
             auto & final_projection_nodes = query_source->getProjection().getNodes();
-            
+
             /// Replace the projection column (e.g., tup -> tup.a)
             final_projection_nodes[i] = new_proj_node;
 
