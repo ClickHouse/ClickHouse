@@ -477,7 +477,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
         mutation_steps,
         /*index_read_tasks*/ {},
         /*actions_settings=*/ {},
-        /*reader_settings=*/ MergeTreeReaderSettings::createFromSettings(),
+        /*reader_settings=*/ {},
         storage_snapshot->storage.supportsSubcolumns());
 }
 

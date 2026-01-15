@@ -13,7 +13,6 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/misc.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -67,7 +66,6 @@ namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
 }
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -168,35 +166,6 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 NameSet getVirtualNamesForFileLikeStorage()
 {
     return getCommonVirtualsForFileLikeStorage().getNameSet();
-}
-
-std::string_view findHivePartitioningInPath(const String & path)
-{
-    auto key_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
-
-    if (key_values.empty())
-        return std::string_view();
-
-    // All keys and values are string_view over 'path', so starts and ends must be inside 'path'
-    auto kv = key_values.begin();
-    const auto * start = kv->first.data();
-    const auto * end = kv->second.data() + kv->second.size();
-    ++kv;
-    while (kv != key_values.end())
-    {
-        start = std::min(kv->first.data(), start);
-        end = std::max(kv->second.data() + kv->second.size(), end);
-        ++kv;
-    }
-
-    if (start < path.data() || start > path.data() + path.size()
-            || end < path.data() || end > path.data() + path.size()
-            || end < start)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "String views are not inside initial string");
-    }
-
-    return std::string_view(start, end - start);
 }
 
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
@@ -473,8 +442,17 @@ bool isDeterministic(const ActionsDAG::Node * node)
             return false;
     }
 
+    /// Special case: `in subquery or table` is non-deterministic
     if (node->type == ActionsDAG::ActionType::COLUMN)
-        return node->isDeterministic();
+    {
+        if (const auto * column = typeid_cast<const ColumnSet *>(node->column.get()))
+        {
+            if (!column->getData()->isDeterministic())
+            {
+                return false;
+            }
+        }
+    }
 
     if (node->type != ActionsDAG::ActionType::FUNCTION)
         return true;
@@ -616,49 +594,6 @@ void filterBlockWithPredicate(
     auto dag = splitFilterDagForAllowedInputs(predicate, &block, context, /*allow_partial_result=*/allow_filtering_with_partial_predicate);
     if (dag)
         filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
-}
-
-std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit)
-{
-    if (!filter_dag)
-        return {};
-    if (filter_dag->getOutputs().size() != 1)
-        return {};
-
-    const ActionsDAG::Node * path_node = nullptr;
-    for (const auto * input : filter_dag->getInputs())
-    {
-        if (input->result_name == "_path")
-        {
-            path_node = input;
-            break;
-        }
-    }
-    if (!path_node)
-        return {};
-
-    auto variants = evaluateExpressionOverConstantCondition(filter_dag->getOutputs().at(0), {path_node}, context, limit);
-
-    if (!variants)
-        return {};
-
-    Strings result;
-    for (const auto & block : variants.value())
-    {
-        // Check for unexpected number of columns in block, or absent column
-        if (block.size() != 1 || !block.at(0).column)
-            return {};
-
-        // Check for unexpected column data type
-        if (!recursiveRemoveLowCardinality(block.at(0).type)->equals(DataTypeString()))
-            return {};
-
-        const auto & column = block.at(0).column;
-        for (size_t i = 0; i < column->size(); ++i)
-            result.push_back((*column)[i].safeGet<String>());
-    }
-
-    return result;
 }
 
 }

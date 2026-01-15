@@ -147,8 +147,8 @@ struct IdentifierResolveScope
     /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.
     ScopeAliases global_with_aliases;
 
-    /// Valid only during table ALIAS columns resolve.
-    AnalysisTableExpressionData * table_expression_data_for_alias_resolution = nullptr;
+    /// Table column name to column node. Valid only during table ALIAS columns resolve.
+    ColumnNameToColumnNodeMap column_name_to_column_node;
 
     std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
 

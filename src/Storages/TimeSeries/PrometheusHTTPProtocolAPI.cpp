@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
 
 #include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -97,7 +98,12 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     if (!sql_query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to convert PromQL to SQL");
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    auto query_context = getContext();
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(toString(thread_local_rng()));
+    query_context->setSetting("allow_experimental_time_series_aggregate_functions", Field(1));
+
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
     PullingPipelineExecutor executor(io.pipeline);
     Block result_block;
@@ -366,7 +372,7 @@ void DB::PrometheusHTTPProtocolAPI::writeMetricLabels(WriteBuffer & response, co
                 bool first = true;
                 for (size_t j = start; j < end; ++j)
                 {
-                    String key{key_column.getDataAt(j)};
+                    String key = key_column.getDataAt(j).toString();
 
                     if (!first)
                         writeString(",", response);
@@ -375,7 +381,7 @@ void DB::PrometheusHTTPProtocolAPI::writeMetricLabels(WriteBuffer & response, co
                     writeString("\"", response);
                     writeString(key, response);
                     writeString("\":\"", response);
-                    writeString(value_column.getDataAt(j), response);
+                    writeString(value_column.getDataAt(j).toString(), response);
                     writeString("\"", response);
                 }
             }

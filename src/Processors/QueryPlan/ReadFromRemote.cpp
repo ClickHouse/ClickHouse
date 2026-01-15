@@ -236,7 +236,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
-    ContextMutablePtr & context)
+    const ContextPtr & context)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
@@ -405,12 +405,9 @@ static ASTPtr tryBuildAdditionalFilterAST(
 
                         external_table = external_storage_holder.getTable();
                         set_from_subquery->setExternalTable(external_table);
-
-                        context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
                     }
 
                     node_to_ast[second_arg] = std::make_shared<ASTIdentifier>(temporary_table_name);
-                    arguments[1] = node_to_ast[second_arg];
                 }
             }
         }
@@ -424,7 +421,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
 
 static void addFilters(
     Tables * external_tables,
-    ContextMutablePtr & context,
+    const ContextMutablePtr & context,
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,
@@ -802,7 +799,7 @@ static void formatExplain(IQueryPlanStep::FormatSettings & settings, Pipes pipes
             size_t num_rows = col->size();
 
             for (size_t row = 0; row < num_rows; ++row)
-                settings.out << prefix << col->getDataAt(row) << '\n';
+                settings.out << prefix << col->getDataAt(row).toView() << '\n';
         }
     }
 }
