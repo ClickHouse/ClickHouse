@@ -276,6 +276,10 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     /// Must run after FunctionToSubcolumnsPass which creates getSubcolumn calls.
     manager.addPass(std::make_unique<SubcolumnPushdownPass>());
 
+    /// Clean up unused projection columns after SubcolumnPushdownPass.
+    /// SubcolumnPushdownPass adds subcolumns to projections, leaving the original base columns unused.
+    manager.addPass(std::make_unique<RemoveUnusedProjectionColumnsPass>());
+
     manager.addPass(std::make_unique<ConvertLogicalExpressionToCNFPass>());
     manager.addPass(std::make_unique<RegexpFunctionRewritePass>());
 

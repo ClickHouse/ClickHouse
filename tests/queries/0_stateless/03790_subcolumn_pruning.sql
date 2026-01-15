@@ -1,4 +1,6 @@
--- Tags: no-parallel
+-- Requires new analyzer - SubcolumnPushdownPass is part of the new analyzer infrastructure
+SET enable_analyzer = 1;
+
 -- Test subcolumn pruning works through CTEs and subqueries
 -- Verifies only the needed subcolumn (tup.a) is read, not the entire Tuple
 
@@ -90,6 +92,59 @@ SELECT 'join_map_subcolumn';
 SELECT a.ProfileEvents.keys, b.ProfileEvents.values
 FROM (SELECT * FROM test_map_join) a
 JOIN (SELECT * FROM test_map_join) b ON a.id = b.id;
+
+-- Test multiple subcolumns from same base column (tup.a AND tup.b)
+-- This was previously causing LOGICAL_ERROR with CTEs/UNIONs
+
+-- CTE: verify both subcolumns are read but NOT the full tuple
+SELECT 'multi_subcolumn_cte_has_a';
+SELECT count() > 0 FROM (
+    EXPLAIN header=1
+    WITH sub AS (SELECT * FROM test_subcolumn_pruning)
+    SELECT tup.a, tup.b FROM sub
+) WHERE explain LIKE '%tup.a String%';
+
+SELECT 'multi_subcolumn_cte_has_b';
+SELECT count() > 0 FROM (
+    EXPLAIN header=1
+    WITH sub AS (SELECT * FROM test_subcolumn_pruning)
+    SELECT tup.a, tup.b FROM sub
+) WHERE explain LIKE '%tup.b Int32%';
+
+SELECT 'multi_subcolumn_cte_no_full_tuple';
+SELECT count() == 0 FROM (
+    EXPLAIN header=1
+    WITH sub AS (SELECT * FROM test_subcolumn_pruning)
+    SELECT tup.a, tup.b FROM sub
+) WHERE explain LIKE '%tup Tuple%';
+
+-- Subquery: verify both subcolumns are read but NOT the full tuple
+SELECT 'multi_subcolumn_subquery_has_a';
+SELECT count() > 0 FROM (
+    EXPLAIN header=1
+    SELECT tup.a, tup.b FROM (SELECT * FROM test_subcolumn_pruning)
+) WHERE explain LIKE '%tup.a String%';
+
+SELECT 'multi_subcolumn_subquery_has_b';
+SELECT count() > 0 FROM (
+    EXPLAIN header=1
+    SELECT tup.a, tup.b FROM (SELECT * FROM test_subcolumn_pruning)
+) WHERE explain LIKE '%tup.b Int32%';
+
+SELECT 'multi_subcolumn_subquery_no_full_tuple';
+SELECT count() == 0 FROM (
+    EXPLAIN header=1
+    SELECT tup.a, tup.b FROM (SELECT * FROM test_subcolumn_pruning)
+) WHERE explain LIKE '%tup Tuple%';
+
+-- UNION: verify query executes without LOGICAL_ERROR (pushdown through UNION not yet supported)
+SELECT 'multi_subcolumn_union_no_error';
+WITH sub AS (
+    SELECT tup FROM test_subcolumn_pruning
+    UNION ALL
+    SELECT tup FROM test_subcolumn_pruning
+)
+SELECT count() FROM (SELECT tup.a, tup.b FROM (SELECT * FROM sub));
 
 DROP TABLE test_map_join;
 
