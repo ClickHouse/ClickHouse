@@ -60,13 +60,13 @@ REGISTER_FUNCTION(ColorSRGBToOKLAB)
                         SELECT colorSRGBToOKLAB((128, 64, 32), 2.2) AS lab
                     )",
         R"(
-                        ┌─lab─────────────────────────────────────────────────────────┐
-                        │ (0.4436238384931984,0.10442699545678624,45.907345481930236) │
-                        └─────────────────────────────────────────────────────────────┘
+                        ┌─lab───────────────────────────────────────────────────────── ┐
+                        │ (0.4436238384931984,0.07266246769242975,0.07500108778529994) │
+                        └───────────────────────────────────────────────────────────── ┘
                     )"
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

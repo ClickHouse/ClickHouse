@@ -19,8 +19,6 @@ namespace ErrorCodes
 }
 
 /** Base class for functions that convert color from perceptual color spaces to sRGB color space.
-  * Uses CRTP (Curiously Recurring Template Pattern) to allow derived classes to provide
-  * their specific color space conversion logic while sharing common validation and execution code.
   * Returns a tuple of type Tuple(Float64, Float64, Float64).
   */
 template <typename Derived>

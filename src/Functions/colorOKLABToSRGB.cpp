@@ -43,30 +43,30 @@ public:
 REGISTER_FUNCTION(FunctionColorOKLABToSRGB)
 {
     FunctionDocumentation::Description description = R"(
-Converts a color from the OKLab perceptual color space to the sRGB color space.
+        Converts a color from the OKLab perceptual color space to the sRGB color space.
 
-The input color is specified in the OKLab color space. If the input values are outside
-the typical OKLab ranges, the result is implementation-defined.
+        The input color is specified in the OKLab color space. If the input values are outside
+        the typical OKLab ranges, the result is implementation-defined.
 
-OKLab uses three components:
-- L: perceptual lightness (typically in the range [0..1])
-- a: green–red opponent axis
-- b: blue–yellow opponent axis
+        OKLab uses three components:
+        - L: perceptual lightness (typically in the range [0..1])
+        - a: green–red opponent axis
+        - b: blue–yellow opponent axis
 
-The a and b components are not bounded. OKLab is designed to be perceptually uniform
-while remaining inexpensive to compute.
+        The a and b components are not bounded. OKLab is designed to be perceptually uniform
+        while remaining inexpensive to compute.
 
-The conversion is intended to be the inverse of colorSRGBToOKLAB and consists of
-the following stages:
-1) Conversion from OKLab to linear sRGB.
-2) Conversion from linear sRGB to gamma-encoded sRGB.
+        The conversion is intended to be the inverse of colorSRGBToOKLAB and consists of
+        the following stages:
+        1) Conversion from OKLab to linear sRGB.
+        2) Conversion from linear sRGB to gamma-encoded sRGB.
 
-The optional gamma argument specifies the exponent used when converting from linear
-sRGB to gamma-encoded RGB values. If not specified, a default gamma value is used
-for consistency with colorSRGBToOKLAB.
+        The optional gamma argument specifies the exponent used when converting from linear
+        sRGB to gamma-encoded RGB values. If not specified, a default gamma value is used
+        for consistency with colorSRGBToOKLAB.
 
-For more information about the OKLab color space and its relationship to sRGB, see https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/color_value/oklab:wq
-.
+        For more information about the OKLab color space and its relationship to sRGB, see https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/color_value/oklab:wq
+        .
     )";
     FunctionDocumentation::Syntax syntax = "colorOKLABToSRGB(tuple [, gamma])";
     FunctionDocumentation::Arguments arguments = {
@@ -100,7 +100,7 @@ For more information about the OKLab color space and its relationship to sRGB, s
             }
     };
 
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
