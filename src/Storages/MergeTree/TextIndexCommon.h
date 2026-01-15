@@ -43,22 +43,21 @@ struct TokenPostingsInfo
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
+    size_t bytesAllocated() const;
 };
 
-using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfo>;
-using TokenToPostingsInfosPtr = std::shared_ptr<TokenToPostingsInfosMap>;
+using TokenPostingsInfoPtr = std::shared_ptr<TokenPostingsInfo>;
+using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfoPtr>;
 
-class TokenInfosCache
+class TokensCardinalitiesCache
 {
 public:
     using CardinalityMap = std::unordered_map<std::string_view, size_t>;
-    TokenInfosCache(std::vector<String> all_search_tokens_, TextSearchMode global_search_mode_);
+    TokensCardinalitiesCache(std::vector<String> all_search_tokens_, TextSearchMode global_search_mode_);
 
-    bool has(const String & part_name) const;
-    TokenToPostingsInfosPtr get(const String & part_name) const;
-    void set(const String & part_name, TokenToPostingsInfosPtr token_infos);
-    void updateCardinalities(const TokenToPostingsInfosMap & token_infos, size_t total_rows);
-    std::vector<String> getOrderedTokens() const;
+    void update(const String & part_name, const TokenToPostingsInfosMap & token_infos, size_t num_tokens, size_t total_rows);
+    void sortTokens(std::vector<String> & tokens) const;
+    std::optional<size_t> getNumTokens(const String & part_name) const;
 
 private:
     const std::vector<String> all_search_tokens;
@@ -72,9 +71,10 @@ private:
         bool operator==(const CardinalityAggregate & other) const = default;
     };
 
+    using CardinalitiesMap = std::unordered_map<String, CardinalityAggregate>;
     mutable std::mutex mutex;
-    std::unordered_map<String, CardinalityAggregate> cardinalities;
-    std::unordered_map<String, TokenToPostingsInfosPtr> cache;
+    CardinalitiesMap cardinalities TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, size_t> num_tokens_by_part TSA_GUARDED_BY(mutex);
 };
 
 }

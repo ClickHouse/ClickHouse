@@ -2829,7 +2829,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t enable_failpoint = 20;
     const uint32_t disable_failpoint = 5;
     const uint32_t reconnect_keeper = 5;
-    const uint32_t drop_text_index_dictionary_cache = 3;
+    const uint32_t drop_text_index_tokens_cache = 3;
     const uint32_t drop_text_index_header_cache = 3;
     const uint32_t drop_text_index_postings_cache = 3;
     const uint32_t drop_text_index_caches = 3;
@@ -2844,7 +2844,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         + drop_primary_index_cache + drop_index_mark_cache + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache
         + drop_schema_cache + drop_s3_client_cache + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache
         + reload_dictionary + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache
-        + enable_failpoint + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+        + enable_failpoint + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
         + drop_text_index_postings_cache + drop_text_index_caches;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
@@ -3719,7 +3719,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
         sc->set_reconnect_keeper(true);
     }
     else if (
-        drop_text_index_dictionary_cache
+        drop_text_index_tokens_cache
         && nopt
             < (reload_embedded_dictionaries + reload_dictionaries + reload_models + reload_functions + reload_function
                + reload_asynchronous_metrics + drop_dns_cache + drop_mark_cache + drop_uncompressed_cache + drop_compiled_expression_cache
@@ -3733,9 +3733,9 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + 1))
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + 1))
     {
-        sc->set_drop_text_index_dictionary_cache(true);
+        sc->set_drop_text_index_tokens_cache(true);
     }
     else if (
         drop_text_index_header_cache
@@ -3752,7 +3752,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache + 1))
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache + 1))
     {
         sc->set_drop_text_index_header_cache(true);
     }
@@ -3771,7 +3771,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + 1))
     {
         sc->set_drop_text_index_postings_cache(true);
@@ -3791,7 +3791,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
                + drop_index_uncompressed_cache + drop_mmap_cache + drop_page_cache + drop_schema_cache + drop_s3_client_cache
                + flush_async_insert_queue + sync_filesystem_cache + drop_vector_similarity_index_cache + reload_dictionary
                + flush_distributed + stop_distributed_sends + start_distributed_sends + drop_query_condition_cache + enable_failpoint
-               + disable_failpoint + reconnect_keeper + drop_text_index_dictionary_cache + drop_text_index_header_cache
+               + disable_failpoint + reconnect_keeper + drop_text_index_tokens_cache + drop_text_index_header_cache
                + drop_text_index_postings_cache + drop_text_index_caches + 1))
     {
         sc->set_drop_text_index_caches(true);

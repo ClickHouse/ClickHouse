@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/TextIndexCommon.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -22,7 +23,26 @@ std::optional<RowsRange> RowsRange::intersectWith(const RowsRange & other) const
     return RowsRange(std::max(begin, other.begin), std::min(end, other.end));
 }
 
-TokenInfosCache::TokenInfosCache(std::vector<String> all_search_tokens_, TextSearchMode global_search_mode_)
+std::vector<size_t> TokenPostingsInfo::getBlocksToRead(const RowsRange & range) const
+{
+    std::vector<size_t> blocks;
+    for (size_t i = 0; i < ranges.size(); ++i)
+    {
+        if (ranges[i].intersects(range))
+            blocks.emplace_back(i);
+    }
+    return blocks;
+}
+
+size_t TokenPostingsInfo::bytesAllocated() const
+{
+    return sizeof(TokenPostingsInfo)
+        + offsets.capacity() * sizeof(UInt64)
+        + ranges.size() * sizeof(RowsRange)
+        + (embedded_postings ? embedded_postings->getSizeInBytes() : 0);
+}
+
+TokensCardinalitiesCache::TokensCardinalitiesCache(std::vector<String> all_search_tokens_, TextSearchMode global_search_mode_)
     : all_search_tokens(std::move(all_search_tokens_))
     , global_search_mode(global_search_mode_)
 {
@@ -30,77 +50,58 @@ TokenInfosCache::TokenInfosCache(std::vector<String> all_search_tokens_, TextSea
         cardinalities.emplace(token, CardinalityAggregate{});
 }
 
-bool TokenInfosCache::has(const String & part_name) const
+void TokensCardinalitiesCache::update(const String & part_name, const TokenToPostingsInfosMap & token_infos, size_t num_tokens, size_t total_rows)
 {
     std::lock_guard lock(mutex);
-    return cache.contains(part_name);
-}
+    num_tokens_by_part[part_name] = num_tokens;
 
-TokenToPostingsInfosPtr TokenInfosCache::get(const String & part_name) const
-{
-    std::lock_guard lock(mutex);
-    auto it = cache.find(part_name);
-
-    if (it == cache.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Token infos cache not found for part {}", part_name);
-
-    return it->second;
-}
-
-void TokenInfosCache::set(const String & part_name, TokenToPostingsInfosPtr token_infos)
-{
-    std::lock_guard lock(mutex);
-    cache[part_name] = std::move(token_infos);
-}
-
-void TokenInfosCache::updateCardinalities(const TokenToPostingsInfosMap & token_infos, size_t total_rows)
-{
-    std::lock_guard lock(mutex);
+    if (global_search_mode == TextSearchMode::Any)
+        return;
 
     for (const auto & [token, token_info] : token_infos)
     {
         auto & cardinality_agg = cardinalities[String(token)];
-        cardinality_agg.cardinality += token_info.cardinality;
+        cardinality_agg.cardinality += token_info->cardinality;
         cardinality_agg.checked_rows += total_rows;
     }
 }
 
-std::vector<String> TokenInfosCache::getOrderedTokens() const
+void TokensCardinalitiesCache::sortTokens(std::vector<String> & tokens) const
 {
     if (global_search_mode == TextSearchMode::Any)
     {
-        chassert(std::ranges::is_sorted(all_search_tokens));
-        return all_search_tokens;
+        std::ranges::sort(tokens);
+        return;
     }
 
-    std::vector<std::pair<String, CardinalityAggregate>> current_cardinalities;
+    CardinalitiesMap current_cardinalities;
 
     {
         std::lock_guard lock(mutex);
-        current_cardinalities.reserve(cardinalities.size());
-
-        for (const auto & [token, cardinality] : cardinalities)
-            current_cardinalities.emplace_back(token, cardinality);
+        current_cardinalities = cardinalities;
     }
 
-    std::ranges::sort(current_cardinalities, [](const auto & lhs_pair, const auto & rhs_pair)
+    std::ranges::sort(tokens, [&current_cardinalities](const auto & lhs_token, const auto & rhs_token)
     {
-        const auto & lhs = lhs_pair.second;
-        const auto & rhs = rhs_pair.second;
+        const auto & lhs_cardinality = current_cardinalities.at(lhs_token);
+        const auto & rhs_cardinality = current_cardinalities.at(rhs_token);
 
-        double lhs_ratio = lhs.checked_rows > 0 ? static_cast<double>(lhs.cardinality) / lhs.checked_rows : 1.0;
-        double rhs_ratio = rhs.checked_rows > 0 ? static_cast<double>(rhs.cardinality) / rhs.checked_rows : 1.0;
+        double lhs_ratio = lhs_cardinality.checked_rows > 0 ? static_cast<double>(lhs_cardinality.cardinality) / lhs_cardinality.checked_rows : 1.0;
+        double rhs_ratio = rhs_cardinality.checked_rows > 0 ? static_cast<double>(rhs_cardinality.cardinality) / rhs_cardinality.checked_rows : 1.0;
 
-        return std::tie(lhs_ratio, lhs_pair.first) < std::tie(rhs_ratio, rhs_pair.first);
+        return std::tie(lhs_ratio, lhs_token) < std::tie(rhs_ratio, rhs_token);
     });
+}
 
-    std::vector<String> ordered_tokens;
-    ordered_tokens.reserve(current_cardinalities.size());
+std::optional<size_t> TokensCardinalitiesCache::getNumTokens(const String & part_name) const
+{
+    std::lock_guard lock(mutex);
+    auto it = num_tokens_by_part.find(part_name);
 
-    for (const auto & [token, cardinality] : current_cardinalities)
-        ordered_tokens.push_back(token);
+    if (it == num_tokens_by_part.end())
+        return std::nullopt;
 
-    return ordered_tokens;
+    return it->second;
 }
 
 }

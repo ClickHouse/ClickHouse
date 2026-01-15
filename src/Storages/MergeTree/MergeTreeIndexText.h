@@ -156,7 +156,9 @@ struct DictionaryBlockBase
     bool empty() const;
     size_t size() const;
 
+    size_t lowerBound(std::string_view token) const;
     size_t upperBound(std::string_view token) const;
+    std::optional<size_t> binarySearch(std::string_view token) const;
 };
 
 struct DictionaryBlock : public DictionaryBlockBase
@@ -165,6 +167,7 @@ struct DictionaryBlock : public DictionaryBlockBase
     DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_);
 
     std::vector<TokenPostingsInfo> token_infos;
+    const TokenPostingsInfo & getTokenInfo(size_t idx) const { return token_infos.at(idx); }
 };
 
 struct DictionarySparseIndex : public DictionaryBlockBase
@@ -227,7 +230,7 @@ public:
     bool hasAllQueryTokens(const TextSearchQuery & query) const;
     bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
-    const TokenToPostingsInfosMap & getRemainingTokens() const { return *remaining_tokens; }
+    const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     PostingListPtr getPostingsForRareToken(std::string_view token) const;
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
 
@@ -240,13 +243,15 @@ public:
 private:
     /// Reads dictionary blocks and analyzes them for tokens.
     void analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
+    DictionarySparseIndexPtr loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
     void readPostingsForRareTokens(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     bool is_empty = true;
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     /// Tokens that are in the index granule after analysis.
-    TokenToPostingsInfosPtr remaining_tokens;
+    TokenToPostingsInfosMap remaining_tokens;
     /// Tokens with postings lists that have only one block.
     TokenToPostingsMap rare_tokens_postings;
     /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.

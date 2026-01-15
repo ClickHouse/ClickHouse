@@ -7,8 +7,8 @@
 namespace DB
 {
 
-class TextIndexDictionaryBlockCache;
-using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBlockCache>;
+class TextIndexTokensCache;
+using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
 
 class TextIndexHeaderCache;
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
@@ -78,10 +78,10 @@ public:
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
-    TextIndexDictionaryBlockCachePtr dictionaryBlockCache() const { return dictionary_block_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
-    TokenInfosCache & tokenInfosCache() const { return *token_infos_cache; }
+    TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
+    TokensCardinalitiesCache & cardinalitiesCache() const { return *cardinalities_cache; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -151,14 +151,11 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
-    /// Instance of the text index dictionary block cache
-    TextIndexDictionaryBlockCachePtr dictionary_block_cache;
-    /// Instance of the text index dictionary block cache
+
     TextIndexHeaderCachePtr header_cache;
-    /// Instance of the text index dictionary block cache
     TextIndexPostingsCachePtr postings_cache;
-    /// TODO: ...
-    std::unique_ptr<TokenInfosCache> token_infos_cache;
+    TextIndexTokensCachePtr tokens_cache;
+    std::unique_ptr<TokensCardinalitiesCache> cardinalities_cache;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";

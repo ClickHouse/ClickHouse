@@ -101,10 +101,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
     extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
-    extern const ServerSettingsString text_index_dictionary_block_cache_policy;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_size;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_max_entries;
-    extern const ServerSettingsDouble text_index_dictionary_block_cache_size_ratio;
+    extern const ServerSettingsString text_index_tokens_cache_policy;
+    extern const ServerSettingsUInt64 text_index_tokens_cache_size;
+    extern const ServerSettingsUInt64 text_index_tokens_cache_max_entries;
+    extern const ServerSettingsDouble text_index_tokens_cache_size_ratio;
     extern const ServerSettingsString text_index_header_cache_policy;
     extern const ServerSettingsUInt64 text_index_header_cache_size;
     extern const ServerSettingsUInt64 text_index_header_cache_max_entries;
@@ -902,16 +902,16 @@ void LocalServer::processConfig()
     }
     global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_count, vector_similarity_index_cache_size_ratio);
 
-    String text_index_dictionary_block_cache_policy = server_settings[ServerSetting::text_index_dictionary_block_cache_policy];
-    size_t text_index_dictionary_block_cache_size = server_settings[ServerSetting::text_index_dictionary_block_cache_size];
-    size_t text_index_dictionary_block_cache_max_count = server_settings[ServerSetting::text_index_dictionary_block_cache_max_entries];
-    double text_index_dictionary_block_cache_size_ratio = server_settings[ServerSetting::text_index_dictionary_block_cache_size_ratio];
-    if (text_index_dictionary_block_cache_size > max_cache_size)
+    String text_index_tokens_cache_policy = server_settings[ServerSetting::text_index_tokens_cache_policy];
+    size_t text_index_tokens_cache_size = server_settings[ServerSetting::text_index_tokens_cache_size];
+    size_t text_index_tokens_cache_max_count = server_settings[ServerSetting::text_index_tokens_cache_max_entries];
+    double text_index_tokens_cache_size_ratio = server_settings[ServerSetting::text_index_tokens_cache_size_ratio];
+    if (text_index_tokens_cache_size > max_cache_size)
     {
-        text_index_dictionary_block_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index dictionary block cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_dictionary_block_cache_size));
+        text_index_tokens_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered text index tokens cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_tokens_cache_size));
     }
-    global_context->setTextIndexDictionaryBlockCache(text_index_dictionary_block_cache_policy, text_index_dictionary_block_cache_size, text_index_dictionary_block_cache_max_count, text_index_dictionary_block_cache_size_ratio);
+    global_context->setTextIndexTokensCache(text_index_tokens_cache_policy, text_index_tokens_cache_size, text_index_tokens_cache_max_count, text_index_tokens_cache_size_ratio);
 
     String text_index_header_cache_policy = server_settings[ServerSetting::text_index_header_cache_policy];
     size_t text_index_header_cache_size = server_settings[ServerSetting::text_index_header_cache_size];

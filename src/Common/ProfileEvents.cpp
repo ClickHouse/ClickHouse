@@ -105,8 +105,8 @@
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \
     M(TextIndexReadDictionaryBlocks, "Number of times a text index dictionary block has been read from disk.", ValueType::Number) \
-    M(TextIndexDictionaryBlockCacheHits, "Number of times a text index dictionary block has been found in the cache.", ValueType::Number) \
-    M(TextIndexDictionaryBlockCacheMisses, "Number of times a text index dictionary block has not been found in the cache.", ValueType::Number) \
+    M(TextIndexTokensCacheHits, "Number of times a text index token info has been found in the cache.", ValueType::Number) \
+    M(TextIndexTokensCacheMisses, "Number of times a text index token info has not been found in the cache.", ValueType::Number) \
     M(TextIndexHeaderCacheHits, "Number of times a header has been found in the cache.", ValueType::Number) \
     M(TextIndexHeaderCacheMisses, "Number of times a header has not been found in the cache.", ValueType::Number) \
     M(TextIndexPostingsCacheHits, "Number of times a text index posting list has been found in the cache.", ValueType::Number) \

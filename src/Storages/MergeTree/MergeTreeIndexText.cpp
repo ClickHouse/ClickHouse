@@ -72,7 +72,19 @@ size_t DictionaryBlockBase::size() const
     return tokens ? tokens->size() : 0;
 }
 
-size_t DictionaryBlockBase::upperBound(const std::string_view token) const
+size_t DictionaryBlockBase::lowerBound(std::string_view token) const
+{
+    auto range = collections::range(0, tokens->size());
+
+    auto it = std::lower_bound(range.begin(), range.end(), token, [this](size_t lhs_idx, std::string_view rhs_ref)
+    {
+        return assert_cast<const ColumnString &>(*tokens).getDataAt(lhs_idx) < rhs_ref;
+    });
+
+    return it - range.begin();
+}
+
+size_t DictionaryBlockBase::upperBound(std::string_view token) const
 {
     auto range = collections::range(0, tokens->size());
 
@@ -82,6 +94,17 @@ size_t DictionaryBlockBase::upperBound(const std::string_view token) const
     });
 
     return it - range.begin();
+}
+
+std::optional<size_t> DictionaryBlockBase::binarySearch(std::string_view token) const
+{
+    size_t idx = lowerBound(token);
+    const auto & tokens_str = assert_cast<const ColumnString &>(*tokens);
+
+    if (idx == tokens_str.size() || token != tokens_str.getDataAt(idx))
+        return std::nullopt;
+
+    return idx;
 }
 
 DictionarySparseIndex::DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_)
@@ -172,17 +195,6 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
         istr.readStrict(buf.data(), num_bytes);
         return std::make_shared<PostingList>(PostingList::read(buf.data()));
     }
-}
-
-std::vector<size_t> TokenPostingsInfo::getBlocksToRead(const RowsRange & range) const
-{
-    std::vector<size_t> blocks;
-    for (size_t i = 0; i < ranges.size(); ++i)
-    {
-        if (ranges[i].intersects(range))
-            blocks.emplace_back(i);
-    }
-    return blocks;
 }
 
 MergeTreeIndexGranuleText::MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_)
@@ -288,42 +300,25 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
 void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state)
 {
-    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-    auto & token_infos_cache = condition_text.tokenInfosCache();
-
-    if (token_infos_cache.has(state.part.name))
-    {
-        remaining_tokens = token_infos_cache.get(state.part.name);
-        return;
-    }
-
-    /// Either retrieves a text index header from cache or from disk when cache is disabled.
-    const auto load_sparse_index = [&]
-    {
-        auto index = TextIndexSerialization::deserializeSparseIndex(*header_stream.getDataBuffer());
-        return std::make_shared<DictionarySparseIndex>(std::move(index));
-    };
-
-    auto header_hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
-    auto sparse_index = condition_text.headerCache()->getOrSet(header_hash, load_sparse_index);
-    remaining_tokens = std::make_shared<TokenToPostingsInfosMap>();
-
-    if (sparse_index->empty())
-    {
-        token_infos_cache.set(state.part.name, remaining_tokens);
-        return;
-    }
-
     is_empty = false;
-    auto global_search_mode = condition_text.getGlobalSearchMode();
-    auto ordered_tokens = token_infos_cache.getOrderedTokens();
+    remaining_tokens.clear();
 
-    LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Analyzing dictionary for part {}, ordered tokens: {}", state.part.name, toString(ordered_tokens));
+    auto tokens_to_read = fillTokensFromCache(state);
+    if (tokens_to_read.empty())
+        return;
+
+    auto sparse_index = loadSparseIndex(header_stream, state);
+    if (sparse_index->empty())
+        return;
 
     std::vector<size_t> blocks_to_read;
     std::unordered_map<size_t, std::vector<std::string_view>> block_to_tokens;
 
-    for (const auto & token : ordered_tokens)
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    auto global_search_mode = condition_text.getGlobalSearchMode();
+    auto & cardinalities_cache = condition_text.cardinalitiesCache();
+
+    for (const auto & token : tokens_to_read)
     {
         size_t idx = sparse_index->upperBound(token);
         if (idx != 0)
@@ -336,49 +331,47 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & h
         it->second.emplace_back(token);
     }
 
-    /// Either retrieves a dictionary block from cache or from disk when cache is disabled.
-    const auto get_dictionary_block = [&](size_t block_id)
-    {
-        const auto load_dictionary_block = [&] -> TextIndexDictionaryBlockCacheEntryPtr
-        {
-            UInt64 offset_in_file = sparse_index->getOffsetInFile(block_id);
-            dictionary_stream.seekToMark({offset_in_file, 0});
-            auto * data_buffer = dictionary_stream.getDataBuffer();
-            return std::make_shared<TextIndexDictionaryBlockCacheEntry>(TextIndexSerialization::deserializeDictionaryBlock(*data_buffer));
-        };
-
-        auto block_hash = TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), block_id);
-        return condition_text.dictionaryBlockCache()->getOrSet(block_hash, load_dictionary_block);
-    };
-
     RowsRange intersection(0, state.part.rows_count);
 
     for (const auto block_idx : blocks_to_read)
     {
+        UInt64 offset_in_file = sparse_index->getOffsetInFile(block_idx);
+        dictionary_stream.seekToMark({offset_in_file, 0});
+        auto * data_buffer = dictionary_stream.getDataBuffer();
+
+        std::optional<DictionaryBlock> dictionary_block;
         const auto & tokens = block_to_tokens.at(block_idx);
-        const auto dictionary_block = get_dictionary_block(block_idx);
+
+        const auto get_token_info = [&](const std::string_view token) -> TokenPostingsInfoPtr
+        {
+            const auto load_token_info = [&]
+            {
+                if (!dictionary_block.has_value())
+                    dictionary_block = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer);
+
+                if (auto token_idx = dictionary_block->binarySearch(token))
+                    return std::make_shared<TokenPostingsInfo>(dictionary_block->getTokenInfo(*token_idx));
+
+                return std::make_shared<TokenPostingsInfo>();
+            };
+
+            auto token_hash = TextIndexTokensCache::hash(state.part.name, token);
+            return condition_text.tokensCache()->getOrSet(token_hash, load_token_info);
+        };
 
         for (const auto & token : tokens)
         {
-            auto * token_info = dictionary_block->getTokenInfo(token);
+            auto token_info = get_token_info(token);
+            remaining_tokens.emplace(String(token), token_info);
 
             if (global_search_mode == TextSearchMode::All)
             {
-                auto finish_search_all_tokens = [&]
+                if (token_info->cardinality == 0)
                 {
-                    token_infos_cache.updateCardinalities(*remaining_tokens, state.part.rows_count);
-                    remaining_tokens->clear();
-                    token_infos_cache.set(state.part.name, remaining_tokens);
-                };
-
-                if (!token_info)
-                {
-                    remaining_tokens->emplace(token, TokenPostingsInfo{});
-                    finish_search_all_tokens();
+                    cardinalities_cache.update(state.part.name, remaining_tokens, 0, state.part.rows_count);
+                    remaining_tokens.clear();
                     return;
                 }
-
-                remaining_tokens->emplace(token, *token_info);
 
                 chassert(!token_info->ranges.empty());
                 RowsRange token_range(token_info->ranges.front().begin, token_info->ranges.back().end);
@@ -386,23 +379,66 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & h
 
                 if (!new_intersection)
                 {
-                    finish_search_all_tokens();
+                    cardinalities_cache.update(state.part.name, remaining_tokens, 0, state.part.rows_count);
+                    remaining_tokens.clear();
                     return;
                 }
 
                 intersection = std::move(*new_intersection);
             }
-            else if (token_info)
-            {
-                remaining_tokens->emplace(token, *token_info);
-            }
         }
     }
 
-    if (global_search_mode == TextSearchMode::All)
-        token_infos_cache.updateCardinalities(*remaining_tokens, state.part.rows_count);
+    cardinalities_cache.update(state.part.name, remaining_tokens, remaining_tokens.size(), state.part.rows_count);
+}
 
-    token_infos_cache.set(state.part.name, remaining_tokens);
+std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeIndexDeserializationState & state)
+{
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    const auto & all_search_tokens = condition_text.getAllSearchTokens();
+    auto tokens_cache = condition_text.tokensCache();
+
+    auto & cardinalities_cache = condition_text.cardinalitiesCache();
+    auto num_tokens_in_part = cardinalities_cache.getNumTokens(state.part.name);
+
+    if (num_tokens_in_part.has_value() && num_tokens_in_part.value() == 0)
+        return {};
+
+    std::vector<TextIndexTokensCache::Key> keys;
+    keys.reserve(all_search_tokens.size());
+
+    for (const auto & token : all_search_tokens)
+        keys.emplace_back(TextIndexTokensCache::hash(state.part.name, token));
+
+    auto cached_infos = tokens_cache->getMany(keys);
+    std::vector<String> tokens_to_read;
+
+    for (size_t i = 0; i < all_search_tokens.size(); ++i)
+    {
+        if (cached_infos[i])
+            remaining_tokens.emplace(all_search_tokens[i], cached_infos[i]);
+        else
+            tokens_to_read.emplace_back(all_search_tokens[i]);
+    }
+
+    if (num_tokens_in_part.has_value() && num_tokens_in_part.value() == remaining_tokens.size())
+        return {};
+
+    return tokens_to_read;
+}
+
+DictionarySparseIndexPtr MergeTreeIndexGranuleText::loadSparseIndex(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state)
+{
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+    /// Either retrieves a text index header from cache or from disk when cache is disabled.
+    const auto load_sparse_index = [&]
+    {
+        auto index = TextIndexSerialization::deserializeSparseIndex(*header_stream.getDataBuffer());
+        return std::make_shared<DictionarySparseIndex>(std::move(index));
+    };
+
+    auto header_hash = TextIndexHeaderCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName());
+    return condition_text.headerCache()->getOrSet(header_hash, load_sparse_index);
 }
 
 PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
@@ -433,10 +469,10 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
     using enum PostingsSerialization::Flags;
 
     std::vector<std::pair<std::string_view, TokenPostingsInfo>> ordered_tokens;
-    ordered_tokens.reserve(remaining_tokens->size());
+    ordered_tokens.reserve(remaining_tokens.size());
 
-    for (const auto & [token, token_info] : *remaining_tokens)
-        ordered_tokens.emplace_back(token, token_info);
+    for (const auto & [token, token_info] : remaining_tokens)
+        ordered_tokens.emplace_back(token, *token_info);
 
     std::ranges::sort(ordered_tokens, [](const auto & lhs, const auto & rhs)
     {
@@ -475,7 +511,7 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
 
             if (intersection.isEmpty())
             {
-                remaining_tokens->clear();
+                remaining_tokens.clear();
                 rare_tokens_postings.clear();
                 return;
             }
@@ -488,7 +524,7 @@ void MergeTreeIndexGranuleText::readPostingsForRareTokens(MergeTreeIndexReaderSt
 size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 {
     return sizeof(*this)
-        + remaining_tokens->capacity() * sizeof(*remaining_tokens->begin())
+        + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin())
         + rare_tokens_postings.capacity() * sizeof(*rare_tokens_postings.begin());
 }
 
@@ -498,7 +534,7 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
     {
         return std::ranges::any_of(query.tokens, [this](const auto & token)
         {
-            return remaining_tokens->contains(token);
+            return remaining_tokens.contains(token);
         });
     }
 
@@ -507,11 +543,11 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
 
     for (const auto & token : query.tokens)
     {
-        auto it = remaining_tokens->find(token);
-        if (it == remaining_tokens->end())
+        auto it = remaining_tokens.find(token);
+        if (it == remaining_tokens.end())
             continue;
 
-        bool has_any_range = std::ranges::any_of(it->second.ranges, [this](const auto & range)
+        bool has_any_range = std::ranges::any_of(it->second->ranges, [this](const auto & range)
         {
             return current_range->intersects(range);
         });
@@ -548,7 +584,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     {
         return std::ranges::all_of(query.tokens, [this](const auto & token)
         {
-            return remaining_tokens->contains(token);
+            return remaining_tokens.contains(token);
         });
     }
 
@@ -557,11 +593,11 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
 
     for (const auto & token : query.tokens)
     {
-        auto it = remaining_tokens->find(token);
-        if (it == remaining_tokens->end())
+        auto it = remaining_tokens.find(token);
+        if (it == remaining_tokens.end())
             return false;
 
-        bool has_any_range = std::ranges::any_of(it->second.ranges, [this](const auto & range)
+        bool has_any_range = std::ranges::any_of(it->second->ranges, [this](const auto & range)
         {
             return current_range->intersects(range);
         });
