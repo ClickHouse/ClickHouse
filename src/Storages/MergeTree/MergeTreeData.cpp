@@ -188,7 +188,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
-    extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool allow_suspicious_indices;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
@@ -209,6 +208,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsUInt64 max_table_size_to_drop;
+    extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
 }
 
@@ -825,7 +825,7 @@ std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const Dat
 ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator(
     const RangesInDataParts & parts, ContextPtr local_context) const
 {
-    if (!local_context->getSettingsRef()[Setting::allow_statistics_optimize])
+    if (!local_context->getSettingsRef()[Setting::use_statistics])
         return nullptr;
 
     if (parts.empty())
