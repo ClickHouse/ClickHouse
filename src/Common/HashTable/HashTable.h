@@ -747,7 +747,7 @@ public:
         return *this;
     }
 
-    HashTable & operator=(const HashTable & rhs) noexcept
+    HashTable & operator=(const HashTable & rhs)
     {
         if (this == &rhs)
             return *this;
