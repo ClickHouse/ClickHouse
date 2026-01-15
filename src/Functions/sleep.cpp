@@ -82,7 +82,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        static auto is_float_or_native_uint = [](const IDataType & type) 
+        auto is_float_or_native_uint = [](const IDataType & type)
         {
             WhichDataType which(type);
             return which.isFloat() || which.isNativeUInt();

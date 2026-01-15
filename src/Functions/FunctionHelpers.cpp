@@ -264,7 +264,7 @@ void validateNumberOfFunctionArguments(
     size_t expected_min_args,
     size_t expected_max_args)
 {
-    if( arguments.size() < expected_min_args || arguments.size() > expected_max_args)
+    if (arguments.size() < expected_min_args || arguments.size() > expected_max_args)
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,

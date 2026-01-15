@@ -93,7 +93,7 @@ bool isTupleOfTwoDateTimesOrUInt32(const IDataType & type)
 
     const auto & elems = tuple_type->getElements();
     // Check if elements are Date/DateTime, allowing nullable versions
-    auto check_elem = [](const DataTypePtr & elem) 
+    auto check_elem = [](const DataTypePtr & elem)
     {
         auto base_type = removeNullable(elem);
         return isDate(base_type) || isDateTime(base_type);

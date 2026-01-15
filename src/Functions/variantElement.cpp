@@ -21,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -47,7 +46,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto is_variant_or_array_of_variant = [](const IDataType & type) 
+        auto is_variant_or_array_of_variant = [](const IDataType & type)
         {
             const IDataType * current_type = &type;
             while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(current_type))

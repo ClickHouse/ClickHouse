@@ -173,7 +173,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto is_native_number_or_string = [](const IDataType & type) 
+        auto is_native_number_or_string = [](const IDataType & type)
         {
             return isNativeNumber(type) || isStringOrFixedString(type);
         };
