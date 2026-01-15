@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <random>
 #include <vector>
 
@@ -20,43 +19,23 @@ struct ProbabilityBounds
     double max = 1.0;
 };
 
-struct ProbabilityConfig
-{
-    ProbabilityStrategy strategy = ProbabilityStrategy::BoundedRealism;
-    std::optional<uint64_t> seed;
-
-    double balanced_max_ratio = 6.0;
-    int balanced_resample_attempts = 20;
-
-    std::vector<ProbabilityBounds> bounds; /// used by Bounded + Drifting
-
-    /// Drifting controls
-    uint64_t drift_every_n_ops = 500;
-    double drift_strength = 0.10; /// ±10%
-
-    /// Runtime enablement default (all enabled)
-    std::vector<bool> enabled;
-
-    ProbabilityConfig(const ProbabilityStrategy & ps, const std::optional<uint64_t> & s, const std::vector<ProbabilityBounds> & b)
-        : strategy(ps)
-        , seed(s)
-        , bounds(b)
-        , enabled(bounds.size(), true)
-    {
-    }
-};
-
 class ProbabilityGenerator
 {
 public:
     const size_t nvalues;
+    ProbabilityStrategy strategy = ProbabilityStrategy::BoundedRealism;
+    double balanced_max_ratio = 6.0;
+    int balanced_resample_attempts = 20;
+    /// Drifting controls
+    uint64_t drift_every_n_ops = 500;
+    double drift_strength = 0.10; /// ±10%
+    std::vector<ProbabilityBounds> bounds; /// used by Bounded + Drifting
 
-    explicit ProbabilityGenerator(ProbabilityConfig _cfg);
+    explicit ProbabilityGenerator(ProbabilityStrategy ps, uint64_t in_seed, const std::vector<ProbabilityBounds> & b);
 
-    uint64_t seedUsed() const;
-    ProbabilityStrategy strategy() const;
-    const std::vector<double> & probs() const;
-    const std::vector<bool> & enabled() const;
+    ProbabilityStrategy getStrategy() const;
+    const std::vector<double> & getProbs() const;
+    const std::vector<bool> & isEnabled() const;
 
     /// Change enable mask at runtime. Preserves current distribution shape as much as possible.
     void setEnabled(const std::vector<bool> & mask);
@@ -67,9 +46,7 @@ public:
     void tick();
 
 private:
-    ProbabilityConfig cfg;
     std::mt19937_64 rng;
-    uint64_t seed_used;
 
     std::vector<double> cdf;
     std::vector<bool> enabled_values;
@@ -92,12 +69,11 @@ private:
 
     void applyEnabledMaskAndRenorm(std::vector<double> & p) const;
 
-    void normalizeEnabledInPlace(std::vector<double> & v, const std::vector<bool> & enabled) const;
+    void normalizeEnabledInPlace(std::vector<double> & v, const std::vector<bool> & enabled_values) const;
 
-    std::pair<double, double> minmaxEnabled(const std::vector<double> & v, const std::vector<bool> & enabled) const;
+    std::pair<double, double> minmaxEnabled(const std::vector<double> & v, const std::vector<bool> & enabled_values) const;
 
-    void clampToBoundsAndRenormEnabled(
-        std::vector<double> & p, const std::vector<ProbabilityBounds> & bounds, const std::vector<bool> & enabled);
+    void clampToBoundsAndRenormEnabled(std::vector<double> & p, const std::vector<bool> & enabled_values);
 };
 
 }

@@ -6,41 +6,31 @@
 namespace BuzzHouse
 {
 
-ProbabilityGenerator::ProbabilityGenerator(ProbabilityConfig _cfg)
-    : nvalues(_cfg.bounds.size())
-    , cfg(std::move(_cfg))
+ProbabilityGenerator::ProbabilityGenerator(const ProbabilityStrategy ps, const uint64_t in_seed, const std::vector<ProbabilityBounds> & b)
+    : nvalues(b.size())
+    , strategy(ps)
+    , bounds(b)
     , cdf(nvalues, 0.0)
-    , enabled_values(cfg.enabled)
+    , enabled_values(nvalues, true)
 {
-    if (cfg.seed.has_value())
-    {
-        seed_used = *cfg.seed;
-    }
-    else
-    {
-        std::random_device rd;
-        seed_used = (static_cast<uint64_t>(rd()) << 32) ^ static_cast<uint64_t>(rd());
-    }
-    rng.seed(seed_used);
+    rng.seed(in_seed);
     ensureAtLeastOneEnabled(enabled_values);
     probabilities = generateInitial();
     applyEnabledMaskAndRenorm(probabilities);
     buildCdf();
 }
 
-uint64_t ProbabilityGenerator::seedUsed() const
+ProbabilityStrategy ProbabilityGenerator::getStrategy() const
 {
-    return seed_used;
+    return strategy;
 }
-ProbabilityStrategy ProbabilityGenerator::strategy() const
-{
-    return cfg.strategy;
-}
-const std::vector<double> & ProbabilityGenerator::probs() const
+
+const std::vector<double> & ProbabilityGenerator::getProbs() const
 {
     return probabilities;
 }
-const std::vector<bool> & ProbabilityGenerator::enabled() const
+
+const std::vector<bool> & ProbabilityGenerator::isEnabled() const
 {
     return enabled_values;
 }
@@ -54,8 +44,8 @@ void ProbabilityGenerator::setEnabled(const std::vector<bool> & mask)
     applyEnabledMaskAndRenorm(probabilities);
 
     /// If you're using bounded realism / drifting, enforce bounds among enabled.
-    if (cfg.strategy == ProbabilityStrategy::BoundedRealism || cfg.strategy == ProbabilityStrategy::Drifting)
-        clampToBoundsAndRenormEnabled(probabilities, cfg.bounds, enabled_values);
+    if (strategy == ProbabilityStrategy::BoundedRealism || strategy == ProbabilityStrategy::Drifting)
+        clampToBoundsAndRenormEnabled(probabilities, enabled_values);
 
     buildCdf();
 }
@@ -88,9 +78,9 @@ size_t ProbabilityGenerator::nextOp(const bool tick)
 void ProbabilityGenerator::tick()
 {
     ++ops_emitted;
-    if (cfg.strategy == ProbabilityStrategy::Drifting && cfg.drift_every_n_ops > 0)
+    if (strategy == ProbabilityStrategy::Drifting && drift_every_n_ops > 0)
     {
-        if (ops_emitted % cfg.drift_every_n_ops == 0)
+        if (ops_emitted % drift_every_n_ops == 0)
         {
             applyDrift();
             buildCdf();
@@ -118,7 +108,7 @@ size_t ProbabilityGenerator::lastEnabledEnum() const
 
 std::vector<double> ProbabilityGenerator::generateInitial()
 {
-    switch (cfg.strategy)
+    switch (strategy)
     {
         case ProbabilityStrategy::Balanced:
             return genBalanced();
@@ -132,7 +122,7 @@ std::vector<double> ProbabilityGenerator::generateInitial()
 std::vector<double> ProbabilityGenerator::genBalanced()
 {
     /// Resample a few times to avoid extreme skew among enabled ops.
-    for (int attempt = 0; attempt < std::max(1, cfg.balanced_resample_attempts); ++attempt)
+    for (int attempt = 0; attempt < std::max(1, balanced_resample_attempts); ++attempt)
     {
         std::vector<double> w(nvalues, 0.0);
         std::exponential_distribution<double> exp(1.0);
@@ -143,7 +133,7 @@ std::vector<double> ProbabilityGenerator::genBalanced()
 
         const auto [mn, mx] = minmaxEnabled(w, enabled_values);
         const double ratio = (mn > 0.0) ? (mx / mn) : std::numeric_limits<double>::infinity();
-        if (ratio <= cfg.balanced_max_ratio)
+        if (ratio <= balanced_max_ratio)
             return w;
     }
 
@@ -168,21 +158,21 @@ std::vector<double> ProbabilityGenerator::genBounded()
             w[i] = 0.0;
             continue;
         }
-        const auto b = cfg.bounds[i];
+        const auto b = bounds[i];
         if (b.min < 0.0 || b.max < 0.0 || b.min > b.max)
             throw std::runtime_error("Invalid bounds");
         std::uniform_real_distribution<double> unif(b.min, b.max);
         w[i] = unif(rng);
     }
     normalizeEnabledInPlace(w, enabled_values);
-    clampToBoundsAndRenormEnabled(w, cfg.bounds, enabled_values);
+    clampToBoundsAndRenormEnabled(w, enabled_values);
     return w;
 }
 
 void ProbabilityGenerator::applyDrift()
 {
     /// drift only enabled ops
-    std::uniform_real_distribution<double> unif(-cfg.drift_strength, cfg.drift_strength);
+    std::uniform_real_distribution<double> unif(-drift_strength, drift_strength);
     std::vector<double> w = probabilities;
 
     for (size_t i = 0; i < nvalues; ++i)
@@ -197,7 +187,7 @@ void ProbabilityGenerator::applyDrift()
     }
 
     normalizeEnabledInPlace(w, enabled_values);
-    clampToBoundsAndRenormEnabled(w, cfg.bounds, enabled_values);
+    clampToBoundsAndRenormEnabled(w, enabled_values);
     probabilities = w;
 }
 
@@ -270,8 +260,7 @@ std::pair<double, double> ProbabilityGenerator::minmaxEnabled(const std::vector<
     return {mn, mx};
 }
 
-void ProbabilityGenerator::clampToBoundsAndRenormEnabled(
-    std::vector<double> & p, const std::vector<ProbabilityBounds> & bounds, const std::vector<bool> & enabled)
+void ProbabilityGenerator::clampToBoundsAndRenormEnabled(std::vector<double> & p, const std::vector<bool> & enabled)
 {
     /// Validate bounds feasibility for enabled subset
     double sum_min = 0.0;

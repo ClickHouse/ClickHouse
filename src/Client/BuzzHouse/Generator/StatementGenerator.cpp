@@ -112,7 +112,7 @@ StatementGenerator::StatementGenerator(
     , deterministic_aggrs_limit(
           static_cast<size_t>(
               std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
-    , SQLGen(ProbabilityGenerator(ProbabilityConfig(
+    , SQLGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
@@ -140,8 +140,8 @@ StatementGenerator::StatementGenerator(
               {0.30, 0.90}, /// SelectQuery
               {0.01, 0.03}, /// Kill
               {0.01, 0.01} /// ShowStatement
-          }})))
-    , litGen(ProbabilityGenerator(ProbabilityConfig(
+          }}))
+    , litGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
@@ -163,8 +163,8 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.10}, /// LitJSON
               {0.01, 0.05}, /// LitNULLVal
               {0.01, 0.10} /// LitFraction
-          }})))
-    , expGen(ProbabilityGenerator(ProbabilityConfig(
+          }}))
+    , expGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
@@ -187,8 +187,8 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.03}, /// ProjectionExpr
               {0.01, 0.03}, /// DictExpr
               {0.01, 0.02} /// StarExpr
-          }})))
-    , predGen(ProbabilityGenerator(ProbabilityConfig(
+          }}))
+    , predGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
@@ -202,8 +202,8 @@ StatementGenerator::StatementGenerator(
               {0.03, 0.20}, /// LikeExpr
               {0.10, 0.35}, /// SearchExpr
               {0.03, 0.05} /// OtherExpr
-          }})))
-    , queryGen(ProbabilityGenerator(ProbabilityConfig(
+          }}))
+    , queryGen(ProbabilityGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
@@ -226,7 +226,7 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.10}, /// MergeProjectionUDF
               {0.01, 0.05}, /// RandomTableUDF
               {0.01, 0.05} /// MergeIndexAnalyzeUDF
-          }})))
+          }}))
     , SQLMask(static_cast<size_t>(SQLOp::ShowStatement) + 1, true)
     , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
     , expMask(static_cast<size_t>(ExpOp::StarExpr) + 1, true)
