@@ -263,68 +263,78 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     else if (usage == TableFunctionUsage::EngineReplace && t.isEngineReplaceable())
     {
         Expr * structure = nullptr;
-        S3Func * sfunc = nullptr;
-        LocalFunc * lfunc = nullptr;
-        AzureBlobStorageFunc * afunc = nullptr;
+        ObjectStoreFunc * ofunc = nullptr;
         const std::optional<String> & cluster = t.getCluster();
 
-        if (t.isOnS3())
+        if (t.isOnS3() || t.isOnAzure() || t.isOnLocal())
         {
-            sfunc = tfunc->mutable_s3();
-            const S3Func_FName val = (this->allow_not_deterministic && rg.nextLargeNumber() < 11)
-                ? static_cast<S3Func_FName>(rg.randomInt<uint32_t>(2, 4))
-                : (t.isAnyS3Engine()
-                       ? S3Func_FName::S3Func_FName_s3
-                       : (t.isIcebergS3Engine() ? S3Func_FName::S3Func_FName_icebergS3 : S3Func_FName::S3Func_FName_deltaLakeS3));
+            ofunc = tfunc->mutable_object_func();
+            ObjectStoreFunc_FName val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_s3;
 
-            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
+            if (!this->allow_not_deterministic || rg.nextLargeNumber() < 971)
             {
-                sfunc->set_fname(static_cast<S3Func_FName>(static_cast<uint32_t>(val) + 4));
-                setClusterClause(rg, cluster, sfunc->mutable_cluster(), true);
+                switch (t.teng)
+                {
+                    case TableEngineValues::S3:
+                    case TableEngineValues::S3Queue:
+                        val = rg.nextBool() ? ObjectStoreFunc_FName::ObjectStoreFunc_FName_s3
+                                            : ObjectStoreFunc_FName::ObjectStoreFunc_FName_gcs;
+                        break;
+                    case TableEngineValues::IcebergS3:
+                        val = rg.nextBool() ? ObjectStoreFunc_FName::ObjectStoreFunc_FName_iceberg
+                                            : ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergS3;
+                        break;
+                    case TableEngineValues::DeltaLakeS3:
+                        val = rg.nextBool() ? ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLake
+                                            : ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeS3;
+                        break;
+                    case TableEngineValues::AzureBlobStorage:
+                    case TableEngineValues::AzureQueue:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_azureBlobStorage;
+                        break;
+                    case TableEngineValues::IcebergAzure:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergAzure;
+                        break;
+                    case TableEngineValues::DeltaLakeAzure:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeAzure;
+                        break;
+                    case TableEngineValues::IcebergLocal:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_icebergLocal;
+                        break;
+                    case TableEngineValues::DeltaLakeLocal:
+                        val = ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeLocal;
+                        break;
+                    default:
+                        UNREACHABLE();
+                }
             }
             else
             {
-                sfunc->set_fname((val == S3Func_FName::S3Func_FName_s3 && rg.nextBool()) ? S3Func_FName::S3Func_FName_gcs : val);
+                std::uniform_int_distribution<uint32_t> obj_range(1, static_cast<uint32_t>(ObjectStoreFunc_FName_FName_MAX));
+                val = static_cast<ObjectStoreFunc_FName>(obj_range(rg.generator));
             }
-            if (fc.minio_server.has_value())
-            {
-                sfunc->set_credential(fc.minio_server.value().named_collection);
-            }
-        }
-        else if (t.isOnAzure())
-        {
-            afunc = tfunc->mutable_azure();
-            const AzureBlobStorageFunc_FName val = (this->allow_not_deterministic && rg.nextLargeNumber() < 11)
-                ? static_cast<AzureBlobStorageFunc_FName>(rg.randomInt<uint32_t>(1, 3))
-                : (t.isAnyAzureEngine()
-                       ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_azureBlobStorage
-                       : (t.isIcebergAzureEngine() ? AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_icebergAzure
-                                                   : AzureBlobStorageFunc_FName::AzureBlobStorageFunc_FName_deltaLakeAzure));
 
-            if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
+            ofunc->set_fname(val);
+            if (cluster.has_value() && val != ObjectStoreFunc_FName::ObjectStoreFunc_FName_gcs
+                && val != ObjectStoreFunc_FName::ObjectStoreFunc_FName_deltaLakeLocal
+                && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
             {
-                afunc->set_fname(static_cast<AzureBlobStorageFunc_FName>(static_cast<uint32_t>(val) + 3));
-                setClusterClause(rg, cluster, afunc->mutable_cluster(), true);
+                ofunc->set_cluster_func(true);
+                setClusterClause(rg, cluster, ofunc->mutable_cluster(), true);
             }
-            else
-            {
-                afunc->set_fname(val);
-            }
-            if (fc.azurite_server.has_value())
-            {
-                afunc->set_credential(fc.azurite_server.value().named_collection);
-            }
-        }
-        else if (t.isOnLocal())
-        {
-            lfunc = tfunc->mutable_local();
-            const LocalFunc_FName val = (this->allow_not_deterministic && rg.nextLargeNumber() < 11)
-                ? static_cast<LocalFunc_FName>(rg.randomInt<uint32_t>(1, 2))
-                : (t.isIcebergLocalEngine() ? LocalFunc_FName::LocalFunc_FName_icebergLocal
-                                            : LocalFunc_FName::LocalFunc_FName_deltaLakeLocal);
 
-            lfunc->set_fname(val);
-            lfunc->set_credential("local");
+            if (t.isOnS3() && fc.minio_server.has_value())
+            {
+                ofunc->set_credential(fc.minio_server.value().named_collection);
+            }
+            else if (t.isOnAzure() && fc.azurite_server.has_value())
+            {
+                ofunc->set_credential(fc.azurite_server.value().named_collection);
+            }
+            else if (t.isOnLocal())
+            {
+                ofunc->set_credential("local");
+            }
         }
         else if (t.isFileEngine())
         {
@@ -443,29 +453,15 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         {
             structure->mutable_lit_val()->set_string_lit(getTableStructure(rg, t, false));
         }
-        if (sfunc || afunc || lfunc)
+        if (ofunc)
         {
             const auto & engineSettings = allTableSettings.at(
                 t.isS3QueueEngine() ? TableEngineValues::S3 : (t.isAzureQueueEngine() ? TableEngineValues::AzureBlobStorage : t.teng));
 
-            if (sfunc)
-            {
-                setObjectStoreParams<SQLTable, S3Func>(rg, t, sfunc);
-            }
-            else if (afunc)
-            {
-                setObjectStoreParams<SQLTable, AzureBlobStorageFunc>(rg, t, afunc);
-            }
-            else if (lfunc)
-            {
-                setObjectStoreParams<SQLTable, LocalFunc>(rg, t, lfunc);
-            }
+            setObjectStoreParams<SQLTable, ObjectStoreFunc>(rg, t, ofunc);
             if (!engineSettings.empty() && rg.nextSmallNumber() < 8)
             {
-                generateSettingValues(
-                    rg,
-                    engineSettings,
-                    sfunc ? sfunc->mutable_setting_values() : (afunc ? afunc->mutable_setting_values() : lfunc->mutable_setting_values()));
+                generateSettingValues(rg, engineSettings, ofunc->mutable_setting_values());
             }
         }
     }
