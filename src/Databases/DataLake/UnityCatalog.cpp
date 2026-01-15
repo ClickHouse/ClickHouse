@@ -91,9 +91,10 @@ DB::Names UnityCatalog::getTables() const
 void UnityCatalog::getTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
+    DB::ContextPtr context_,
     TableMetadata & result) const
 {
-    if (!tryGetTableMetadata(namespace_name, table_name, result))
+    if (!tryGetTableMetadata(namespace_name, table_name, context_, result))
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from unity catalog");
 }
 
@@ -159,6 +160,7 @@ void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & 
 bool UnityCatalog::tryGetTableMetadata(
     const std::string & schema_name,
     const std::string & table_name,
+    DB::ContextPtr /* context_ */,
     TableMetadata & result) const
 {
     auto full_table_name = warehouse + "." + schema_name + "." + table_name;

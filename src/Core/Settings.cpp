@@ -7298,6 +7298,16 @@ instead of glob listing. 0 means disabled.
     DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
+    DECLARE(Timezone, iceberg_timezone_for_timestamptz, "UTC", R"(
+Timezone for Iceberg timestamptz field.
+
+Possible values:
+
+- Any valid timezone, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+- `` (empty value) - use session timezone
+
+Default value is `UTC`.
+)", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_qbit_type, true, R"(
 Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
 )", BETA, allow_experimental_qbit_type) \
