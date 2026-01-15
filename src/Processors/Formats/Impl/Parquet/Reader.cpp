@@ -2002,7 +2002,10 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         MutableColumns columns;
         for (size_t idx : output_info.nested_columns)
             columns.push_back(formOutputColumn(row_subgroup, idx, num_rows));
-        res = ColumnTuple::create(std::move(columns));
+        if (columns.empty())
+            res = ColumnTuple::create(num_rows);
+        else
+            res = ColumnTuple::create(std::move(columns));
     }
     else
     {
