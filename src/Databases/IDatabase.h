@@ -18,17 +18,8 @@
 #include <mutex>
 #include <vector>
 
-#include <Common/Exception.h>
-#include <Poco/String.h>
-
-
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int AMBIGUOUS_IDENTIFIER;
-}
 
 struct Settings;
 struct ConstraintsDescription;
@@ -268,29 +259,7 @@ public:
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
-    virtual String tryResolveTableNameCaseInsensitive(const String & name, ContextPtr context) const
-    {
-        /// first try exact match
-        if (tryGetTable(name, context))
-            return name;
-
-        /// try case-insensitive match
-        String found_name;
-        for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
-        {
-            if (Poco::icompare(table_it->name(), name) == 0)
-            {
-                if (!found_name.empty())
-                {
-                    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                        "Table name '{}' is ambiguous: matches multiple tables with different cases: '{}' and '{}'",
-                        name, found_name, table_it->name());
-                }
-                found_name = table_it->name();
-            }
-        }
-        return found_name;
-    }
+    virtual String tryResolveTableNameCaseInsensitive(const String & name, ContextPtr context) const;
 
     using FilterByNameFunction = std::function<bool(const String &)>;
 

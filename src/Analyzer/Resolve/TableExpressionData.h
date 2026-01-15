@@ -56,14 +56,14 @@ struct AnalysisTableExpressionData
 
     LowercaseToOriginalNamesMap lowercase_column_name_to_original_names;
 
-    bool use_standard_mode = false;
+    bool standard_mode = false;
 
     bool hasFullIdentifierName(IdentifierView identifier_view, bool use_case_insensitive = false) const
     {
         const auto & full_name = identifier_view.getFullName();
         if (column_name_to_column_node.contains(full_name))
             return true;
-        if (use_case_insensitive && use_standard_mode)
+        if (use_case_insensitive)
             return hasColumnCaseInsensitive(full_name);
         return false;
     }
@@ -73,7 +73,7 @@ struct AnalysisTableExpressionData
         const auto & first_part = identifier_view.at(0);
         if (column_identifier_first_parts.contains(first_part) || column_name_to_column_node.contains(first_part))
             return true;
-        if (use_case_insensitive && use_standard_mode)
+        if (use_case_insensitive)
         {
             String lower_first = Poco::toLower(String(first_part));
             if (column_identifier_first_parts.contains(lower_first))
@@ -145,7 +145,7 @@ struct AnalysisTableExpressionData
         for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(full_identifier_name))
         {
             auto it = column_name_to_column_node.find(column_name);
-            if (it == column_name_to_column_node.end() && use_case_insensitive && use_standard_mode)
+            if (it == column_name_to_column_node.end() && use_case_insensitive)
             {
                 /// try case-insensitive lookup
                 String lower_column_name = Poco::toLower(String(column_name));
@@ -177,7 +177,7 @@ struct AnalysisTableExpressionData
     /// builds lowercase-to-original mappings for case-insensitive identifier resolution
     void enableStandardMode()
     {
-        use_standard_mode = true;
+        standard_mode = true;
         lowercase_column_name_to_original_names.clear();
 
         for (const auto & [column_name, _] : column_name_to_column_node)

@@ -47,7 +47,9 @@ void IdentifierNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_sta
 bool IdentifierNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const IdentifierNode &>(rhs);
-    return identifier == rhs_typed.identifier && table_expression_modifiers == rhs_typed.table_expression_modifiers;
+    return identifier == rhs_typed.identifier
+        && table_expression_modifiers == rhs_typed.table_expression_modifiers
+        && quote_styles == rhs_typed.quote_styles;
 }
 
 void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -58,6 +60,11 @@ void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
+
+    /// provides correct caching with case-insensitivity
+    state.update(quote_styles.size());
+    for (auto style : quote_styles)
+        state.update(static_cast<uint8_t>(style));
 }
 
 QueryTreeNodePtr IdentifierNode::cloneImpl() const

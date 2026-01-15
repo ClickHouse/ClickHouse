@@ -615,7 +615,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
         databases_without_datalake_catalogs.emplace(database_name, database);
 
     String lowercase_name = Poco::toLower(database_name);
-    lowercase_db_to_original_names[lowercase_name].push_back(database_name);
+    lowercase_db_to_original_names[lowercase_name].insert(database_name);
 
     NOEXCEPT_SCOPE({
         UUID db_uuid = database->getUUID();
@@ -646,9 +646,9 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             String lowercase_name = Poco::toLower(database_name);
             if (auto lower_it = lowercase_db_to_original_names.find(lowercase_name); lower_it != lowercase_db_to_original_names.end())
             {
-                auto & names = lower_it->second;
-                names.erase(std::remove(names.begin(), names.end(), database_name), names.end());
-                if (names.empty())
+                // removal from unord_set is O(1)
+                lower_it->second.erase(database_name);
+                if (lower_it->second.empty())
                     lowercase_db_to_original_names.erase(lower_it);
             }
         }
@@ -870,7 +870,7 @@ String DatabaseCatalog::tryResolveDatabaseNameCaseInsensitive(std::string_view d
             database_name, fmt::join(it->second, ", "));
     }
 
-    return it->second.front();
+    return *it->second.begin();
 }
 
 Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const

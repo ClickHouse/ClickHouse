@@ -48,10 +48,6 @@ struct IdentifierLookup
     Identifier identifier;
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
-    /// If true, identifier was double-quoted and should be treated as case-sensitive in case_insensitive_names = 'standard'
-    /// Quoted identifiers are case-sensitive in SQL standard mode
-    bool is_double_quoted = false;
-
     /// Per-part double-quote tracking for compound identifiers like "db".table
     std::vector<bool> is_part_double_quoted = {};
 
@@ -77,7 +73,16 @@ struct IdentifierLookup
     {
         if (index < is_part_double_quoted.size())
             return is_part_double_quoted[index];
-        return is_double_quoted;  // Fallback to the overall flag
+        return false;
+    }
+    
+    /// used for expression lookups (table.column), the last part is the column name that
+    /// looked up in the column map, so its quote style determines case sensitivity
+    bool isLastPartDoubleQuoted() const
+    {
+        if (is_part_double_quoted.empty())
+            return false;
+        return is_part_double_quoted.back();
     }
 
     String dump() const
@@ -127,6 +132,7 @@ inline const char * toString(IdentifierResolvePlace resolved_identifier_place)
         case IdentifierResolvePlace::CTE: return "CTE";
         case IdentifierResolvePlace::DATABASE_CATALOG: return "DATABASE_CATALOG";
     }
+    UNREACHABLE();
 }
 
 struct IdentifierResolveScope;

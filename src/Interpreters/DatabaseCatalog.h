@@ -349,9 +349,9 @@ private:
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
     Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
-    /// Map from lowercase database name to list of original database names
+    /// Map from lowercase database name to set of original database names
     /// Multiple entries indicate case-ambiguity
-    std::unordered_map<String, std::vector<String>> lowercase_db_to_original_names TSA_GUARDED_BY(databases_mutex);
+    std::unordered_map<String, std::unordered_set<String>> lowercase_db_to_original_names TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"

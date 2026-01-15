@@ -323,30 +323,16 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 {
     const bool use_case_insensitive = scope.context
         && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.is_double_quoted;
+        && !identifier_lookup.isLastPartDoubleQuoted();
 
-    auto find_in_map = [&](const std::string & key) -> decltype(scope.expression_argument_name_to_node.find(key))
-    {
-        if (use_case_insensitive)
-        {
-            for (auto it = scope.expression_argument_name_to_node.begin(); it != scope.expression_argument_name_to_node.end(); ++it)
-            {
-                if (Poco::icompare(it->first, key) == 0)
-                    return it;
-            }
-            return scope.expression_argument_name_to_node.end();
-        }
-        return scope.expression_argument_name_to_node.find(key);
-    };
-
-    auto it = find_in_map(identifier_lookup.identifier.getFullName());
+    auto it = scope.findExpressionArgument(identifier_lookup.identifier.getFullName(), use_case_insensitive);
     bool resolve_full_identifier = it != scope.expression_argument_name_to_node.end();
 
     if (!resolve_full_identifier)
     {
         const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
-        it = find_in_map(identifier_bind_part);
+        it = scope.findExpressionArgument(identifier_bind_part, use_case_insensitive);
         if (it == scope.expression_argument_name_to_node.end())
             return {};
     }
@@ -373,7 +359,7 @@ bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & ide
 {
     const bool use_case_insensitive = scope.context
         && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.is_double_quoted;
+        && !identifier_lookup.isLastPartDoubleQuoted();
 
     if (use_case_insensitive)
         return scope.aliases.findCaseInsensitive(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
@@ -385,7 +371,7 @@ bool IdentifierResolver::tryBindIdentifierToJoinUsingColumn(const IdentifierLook
 {
     const bool use_case_insensitive = scope.context
         && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.is_double_quoted;
+        && !identifier_lookup.isLastPartDoubleQuoted();
 
     const auto & identifier_name = identifier_lookup.identifier.getFullName();
 
@@ -427,7 +413,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
 
     const bool use_case_insensitive = scope.context
         && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.is_double_quoted;
+        && !identifier_lookup.isLastPartDoubleQuoted();
 
     const auto & identifier = identifier_lookup.identifier;
     auto identifier_full_name = identifier.getFullName();
@@ -485,7 +471,7 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
-    const bool use_case_insensitive = table_expression_data.use_standard_mode && !identifier_lookup.is_double_quoted;
+    const bool use_case_insensitive = table_expression_data.standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
 
     auto strings_equal = [use_case_insensitive](const std::string & a, const std::string & b)
     {
@@ -552,7 +538,7 @@ bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const Identifie
 {
     const bool use_case_insensitive = scope.context
         && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.is_double_quoted;
+        && !identifier_lookup.isLastPartDoubleQuoted();
 
     for (const auto & table_expression : scope.registered_table_expression_nodes)
     {
@@ -605,7 +591,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
     /// In SQL standard mode, use case-insensitive lookup for non-double-quoted-identifiers
-    const bool use_case_insensitive = table_expression_data.use_standard_mode && !identifier_lookup.is_double_quoted;
+    const bool use_case_insensitive = table_expression_data.standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
 
     if (use_case_insensitive)
     {
@@ -826,7 +812,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return {};
     }
 
-    const bool use_case_insensitive = table_expression_data.use_standard_mode && !identifier_lookup.is_double_quoted;
+    const bool use_case_insensitive = table_expression_data.standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
 
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
        * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
@@ -1524,7 +1510,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 
     const bool use_case_insensitive = scope.context
         && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
-        && !identifier_lookup.is_double_quoted;
+        && !identifier_lookup.isLastPartDoubleQuoted();
 
     const auto & array_join_column_expressions = from_array_join_node.getJoinExpressions();
     const auto & array_join_column_expressions_nodes = array_join_column_expressions.getNodes();

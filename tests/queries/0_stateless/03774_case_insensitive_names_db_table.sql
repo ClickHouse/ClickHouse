@@ -1,5 +1,7 @@
 -- Tags: no-parallel
 
+SET allow_experimental_analyzer = 1;
+
 DROP DATABASE IF EXISTS TestDBCase;
 CREATE DATABASE TestDBCase;
 CREATE TABLE TestDBCase.TestTableCase (Id UInt8, Name String) ENGINE = Memory;
