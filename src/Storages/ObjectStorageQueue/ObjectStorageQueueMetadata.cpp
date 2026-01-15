@@ -154,7 +154,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger(fmt::format(
         "StorageObjectStorageQueue({}{})",
-        zookeeper_name_.empty() ? "" : zookeeper_name_ + ":",
+        (zookeeper_name_.empty() || zookeeper_name_ == zkutil::DEFAULT_ZOOKEEPER_NAME) ? "" : zookeeper_name_ + ":",
         zookeeper_path_.string())))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
     , is_path_with_hive_partitioning(is_path_with_hive_partitioning_)
