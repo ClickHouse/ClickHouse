@@ -63,8 +63,8 @@ public:
     {
         rng.seed(seed_used);
         ensureAtLeastOneEnabled(enabled_values);
-        probabilites = generateInitial();
-        applyEnabledMaskAndRenorm(probabilites);
+        probabilities = generateInitial();
+        applyEnabledMaskAndRenorm(probabilities);
         buildCdf();
     }
 
@@ -88,7 +88,7 @@ private:
 
     std::vector<double> cdf;
     std::vector<bool> enabled_values;
-    std::vector<double> probabilites;
+    std::vector<double> probabilities;
     uint64_t ops_emitted = 0;
 
     static void ensureAtLeastOneEnabled(const std::vector<bool> & mask);

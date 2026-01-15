@@ -16,7 +16,7 @@ ProbabilityStrategy ProbabilityGenerator::strategy() const
 }
 const std::vector<double> & ProbabilityGenerator::probs() const
 {
-    return probabilites;
+    return probabilities;
 }
 const std::vector<bool> & ProbabilityGenerator::enabled() const
 {
@@ -29,11 +29,11 @@ void ProbabilityGenerator::setEnabled(const std::vector<bool> & mask)
     enabled_values = mask;
 
     /// Zero out disabled and renormalize among enabled.
-    applyEnabledMaskAndRenorm(probabilites);
+    applyEnabledMaskAndRenorm(probabilities);
 
     /// If you're using bounded realism / drifting, enforce bounds among enabled.
     if (cfg.strategy == ProbabilityStrategy::BoundedRealism || cfg.strategy == ProbabilityStrategy::Drifting)
-        clampToBoundsAndRenormEnabled(probabilites, cfg.bounds, enabled_values);
+        clampToBoundsAndRenormEnabled(probabilities, cfg.bounds, enabled_values);
 
     buildCdf();
 }
@@ -161,7 +161,7 @@ void ProbabilityGenerator::applyDrift()
 {
     /// drift only enabled ops
     std::uniform_real_distribution<double> unif(-cfg.drift_strength, cfg.drift_strength);
-    std::vector<double> w = probabilites;
+    std::vector<double> w = probabilities;
 
     for (size_t i = 0; i < nvalues; ++i)
     {
@@ -176,7 +176,7 @@ void ProbabilityGenerator::applyDrift()
 
     normalizeEnabledInPlace(w, enabled_values);
     clampToBoundsAndRenormEnabled(w, cfg.bounds, enabled_values);
-    probabilites = w;
+    probabilities = w;
 }
 
 void ProbabilityGenerator::buildCdf()
@@ -185,7 +185,7 @@ void ProbabilityGenerator::buildCdf()
 
     for (size_t i = 0; i < nvalues; ++i)
     {
-        running += probabilites[i];
+        running += probabilities[i];
         cdf[i] = running;
     }
     /// Force last enabled bucket to 1.0; others after it (if disabled) already have same value.

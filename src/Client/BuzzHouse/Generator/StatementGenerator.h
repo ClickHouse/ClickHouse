@@ -302,8 +302,8 @@ private:
         MergeIndexAnalyzeUDF
     };
 
-    ProbabilityGenerator sqlGen, litGen, expGen, predGen, queryGen;
-    std::vector<bool> sqlMask, litMask, expMask, predMask, queryMask;
+    ProbabilityGenerator SQLGen, litGen, expGen, predGen, queryGen;
+    std::vector<bool> SQLMask, litMask, expMask, predMask, queryMask;
 
     template <typename T>
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);
