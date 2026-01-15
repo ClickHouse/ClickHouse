@@ -481,3 +481,122 @@ def test_ordered_mode_with_regex_partitioning(started_cluster, engine_name, proc
     # Expected partition keys are hostnames
     expected_nodes = ["server-1", "server-2", "server-3", "server-4"]
     assert processed_nodes == expected_nodes, f"Expected nodes: {expected_nodes}, got: {processed_nodes}"
+
+
+@pytest.mark.parametrize("engine_name", ["S3Queue"])
+def test_bucket_assignment_strategy(started_cluster, engine_name):
+    """
+    Test bucket assignment strategies (PATH vs PARTITION).
+
+    PATH strategy: hashes full file path (default behavior)
+    PARTITION strategy: hashes partition key for better locality
+
+    With PARTITION strategy, all files from same partition (hostname)
+    should be assigned to the same bucket.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name_path = f"test_bucket_strategy_path_{generate_random_string()}"
+    table_name_partition = f"test_bucket_strategy_partition_{generate_random_string()}"
+    dst_table_name_path = f"{table_name_path}_dst"
+    dst_table_name_partition = f"{table_name_partition}_dst"
+    files_path = f"bucket_strategy_test_{generate_random_string()}"
+    keeper_path_path = f"/clickhouse/test_{table_name_path}"
+    keeper_path_partition = f"/clickhouse/test_{table_name_partition}"
+
+    # Regex patterns for hostname-based partitioning
+    partition_by_regex = r'^([^_]+)_.*'
+    ordering_components_regex = r'.*_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)'
+
+    # Create files from 3 different hostnames
+    # Each hostname has 3 files
+    hostnames = ["server-a", "server-b", "server-c"]
+    files = []
+    for i, hostname in enumerate(hostnames):
+        for seq in range(1, 4):
+            filename = f"{files_path}/{hostname}_20251217T100000.000000Z_{seq:04d}.csv"
+            content = f"{i},{seq},{i*10+seq}\n".encode()
+            put_file_content(started_cluster, engine_name, filename, content)
+            files.append((filename, hostname))
+
+    # Test 1: PATH strategy (default) - files with different paths can go to different buckets
+    create_table(
+        started_cluster,
+        node,
+        table_name_path,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path_path,
+            "processing_threads_num": 4,
+            "buckets": 4,
+            "bucket_assignment_strategy": "path",  # Explicit PATH strategy
+        },
+        engine_name=engine_name,
+        partitioning_mode="regex",
+        partition_by_regex=partition_by_regex,
+        ordering_components_regex=ordering_components_regex,
+    )
+
+    create_mv(node, table_name_path, dst_table_name_path)
+
+    # Wait for processing
+    time.sleep(10)
+
+    # Verify all files processed
+    result_path = node.query(f"SELECT count() FROM {dst_table_name_path}")
+    assert int(result_path) == 9, f"Expected 9 rows with PATH strategy, got {result_path}"
+
+    # Test 2: PARTITION strategy - all files from same hostname go to same bucket
+    create_table(
+        started_cluster,
+        node,
+        table_name_partition,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path_partition,
+            "processing_threads_num": 4,
+            "buckets": 4,
+            "bucket_assignment_strategy": "partition",  # PARTITION strategy for locality
+        },
+        engine_name=engine_name,
+        partitioning_mode="regex",
+        partition_by_regex=partition_by_regex,
+        ordering_components_regex=ordering_components_regex,
+    )
+
+    create_mv(node, table_name_partition, dst_table_name_partition)
+
+    # Wait for processing
+    time.sleep(10)
+
+    # Verify all files processed
+    result_partition = node.query(f"SELECT count() FROM {dst_table_name_partition}")
+    assert int(result_partition) == 9, f"Expected 9 rows with PARTITION strategy, got {result_partition}"
+
+    # Verify bucket assignment with PARTITION strategy:
+    # All files from same hostname should be in same bucket
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    # Collect which partition (hostname) is in which bucket
+    partition_to_bucket = {}
+    for bucket_id in range(4):
+        bucket_path = f"{keeper_path_partition}/buckets/{bucket_id}/processed"
+        if zk.exists(bucket_path):
+            partitions_in_bucket = zk.get_children(bucket_path)
+            for partition in partitions_in_bucket:
+                assert partition not in partition_to_bucket, \
+                    f"Partition {partition} found in multiple buckets! " \
+                    f"Was in bucket {partition_to_bucket[partition]}, now found in {bucket_id}"
+                partition_to_bucket[partition] = bucket_id
+
+    # Verify all 3 hostnames were processed
+    assert len(partition_to_bucket) == 3, \
+        f"Expected 3 partitions, got {len(partition_to_bucket)}: {partition_to_bucket}"
+
+    # Verify all hostnames are accounted for
+    processed_hostnames = set(partition_to_bucket.keys())
+    expected_hostnames = set(hostnames)
+    assert processed_hostnames == expected_hostnames, \
+        f"Expected hostnames {expected_hostnames}, got {processed_hostnames}"

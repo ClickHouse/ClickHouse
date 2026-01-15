@@ -391,6 +391,14 @@ enum class ObjectStorageQueuePartitioningMode : uint8_t
 
 DECLARE_SETTING_ENUM(ObjectStorageQueuePartitioningMode)
 
+enum class ObjectStorageQueueBucketAssignmentStrategy : uint8_t
+{
+    PATH,       /// Hash full file path for bucket assignment (default, backward compatible)
+    PARTITION,  /// Hash partition key for bucket assignment (improves locality when partitioning enabled)
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageQueueBucketAssignmentStrategy)
+
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 DECLARE_SETTING_ENUM(SchemaInferenceMode)

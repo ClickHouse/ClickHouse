@@ -59,6 +59,7 @@ namespace Setting
 
 namespace ObjectStorageQueueSetting
 {
+    extern const ObjectStorageQueueSettingsObjectStorageQueueBucketAssignmentStrategy bucket_assignment_strategy;
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
 }
 
@@ -138,11 +139,13 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_max_ms_,
     bool use_persistent_processing_nodes_,
     size_t persistent_processing_nodes_ttl_seconds_,
+    ObjectStorageQueueBucketAssignmentStrategy bucket_assignment_strategy_,
     size_t keeper_multiread_batch_size_)
     : table_metadata(table_metadata_)
     , storage_type(storage_type_)
     , mode(table_metadata.getMode())
     , partitioning_mode(table_metadata.getPartitioningMode())
+    , bucket_assignment_strategy(bucket_assignment_strategy_)
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
@@ -274,6 +277,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
                 partitioning_mode,
+                bucket_assignment_strategy,
                 filename_parser.get(),
                 log);
         case ObjectStorageQueueMode::UNORDERED:
@@ -295,12 +299,17 @@ bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path) const
 {
-    return getBucketForPath(path, buckets_num);
+    return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num, bucket_assignment_strategy, partitioning_mode, filename_parser.get());
 }
 
-ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path, size_t buckets_num)
+ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
+    const std::string & path,
+    size_t buckets_num,
+    ObjectStorageQueueBucketAssignmentStrategy strategy,
+    ObjectStorageQueuePartitioningMode partitioning_mode,
+    const ObjectStorageQueueFilenameParser * parser)
 {
-    return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num);
+    return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num, strategy, partitioning_mode, parser);
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
@@ -568,6 +577,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
                     table_metadata.getPartitioningMode(),
+                    settings[ObjectStorageQueueSetting::bucket_assignment_strategy],
                     /* parser */nullptr,  /// Parser not needed for ZK metadata initialization
                     log).prepareProcessedAtStartRequests(requests);
             }

@@ -36,6 +36,7 @@ public:
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
         ObjectStorageQueuePartitioningMode partitioning_mode_,
+        ObjectStorageQueueBucketAssignmentStrategy bucket_assignment_strategy_,
         const ObjectStorageQueueFilenameParser * parser_,
         LoggerPtr log_);
 
@@ -51,7 +52,12 @@ public:
         bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
-    static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num);
+    static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(
+        const std::string & path,
+        size_t buckets_num,
+        ObjectStorageQueueBucketAssignmentStrategy strategy,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser);
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
@@ -63,6 +69,7 @@ public:
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
         ObjectStorageQueuePartitioningMode partitioning_mode,
+        ObjectStorageQueueBucketAssignmentStrategy bucket_assignment_strategy,
         const ObjectStorageQueueFilenameParser * parser,
         LoggerPtr log);
 
@@ -73,6 +80,7 @@ private:
     const std::string zk_path;
     const BucketInfoPtr bucket_info;
     const ObjectStorageQueuePartitioningMode partitioning_mode;
+    const ObjectStorageQueueBucketAssignmentStrategy bucket_assignment_strategy;
     const ObjectStorageQueueFilenameParser * parser;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;

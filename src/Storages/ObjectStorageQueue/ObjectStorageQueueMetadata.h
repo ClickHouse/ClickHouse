@@ -63,6 +63,7 @@ public:
         size_t cleanup_interval_max_ms_,
         bool use_persistent_processing_nodes_,
         size_t persistent_processing_nodes_ttl_seconds_,
+        ObjectStorageQueueBucketAssignmentStrategy bucket_assignment_strategy_,
         size_t keeper_multiread_batch_size_);
 
     ~ObjectStorageQueueMetadata();
@@ -145,7 +146,12 @@ public:
     size_t getBucketsNum() const { return buckets_num; }
     /// Get bucket by file path in case of bucket-based processing.
     Bucket getBucketForPath(const std::string & path) const;
-    static Bucket getBucketForPath(const std::string & path, size_t buckets_num);
+    static Bucket getBucketForPath(
+        const std::string & path,
+        size_t buckets_num,
+        ObjectStorageQueueBucketAssignmentStrategy strategy,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser);
     /// Acquire (take unique ownership of) bucket for processing.
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
 
@@ -156,6 +162,7 @@ public:
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
 
     ObjectStorageQueuePartitioningMode getPartitioningMode() const { return partitioning_mode; }
+    ObjectStorageQueueBucketAssignmentStrategy getBucketAssignmentStrategy() const { return bucket_assignment_strategy; }
     const ObjectStorageQueueFilenameParser * getFilenameParser() const { return filename_parser.get(); }
 
     void updateSettings(const SettingsChanges & changes);
@@ -182,6 +189,7 @@ private:
     const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
     const ObjectStorageQueuePartitioningMode partitioning_mode;
+    const ObjectStorageQueueBucketAssignmentStrategy bucket_assignment_strategy;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
 

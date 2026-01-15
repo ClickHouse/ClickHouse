@@ -81,6 +81,7 @@ namespace ServerSetting
 
 namespace ObjectStorageQueueSetting
 {
+    extern const ObjectStorageQueueSettingsObjectStorageQueueBucketAssignmentStrategy bucket_assignment_strategy;
     extern const ObjectStorageQueueSettingsUInt32 cleanup_interval_max_ms;
     extern const ObjectStorageQueueSettingsUInt32 cleanup_interval_min_ms;
     extern const ObjectStorageQueueSettingsUInt32 enable_logging_to_queue_log;
@@ -371,6 +372,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
+        (*queue_settings_)[ObjectStorageQueueSetting::bucket_assignment_strategy],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
