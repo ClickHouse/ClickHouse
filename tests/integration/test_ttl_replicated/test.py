@@ -539,7 +539,8 @@ def test_ttl_empty_parts(started_cluster):
 def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     # The test times out for sanitizer builds, so we increase the timeout.
     timeout = 20
-    if node_left.is_built_with_sanitizer() or node_right.is_built_with_sanitizer():
+    if node_left.is_built_with_sanitizer() or node_right.is_built_with_sanitizer() or \
+    node_left.is_built_with_llvm() or node_right.is_built_with_llvm():
         timeout = 300
 
     table = f"test_ttl_compatibility_{node_left.name}_{node_right.name}_{num_run}"
