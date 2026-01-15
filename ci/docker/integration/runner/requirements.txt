@@ -106,7 +106,7 @@ tomli==2.0.1
 typing_extensions==4.11.0
 tzdata==2025.1
 tzlocal==2.1
-urllib3==2.2.2
+urllib3==2.6.3
 websocket-client==1.8.0
 wheel==0.46.1
 filelock==3.18.0
