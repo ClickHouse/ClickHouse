@@ -108,7 +108,7 @@ std::string getFaultMemoryAccessType(int sig, [[maybe_unused]] const ucontext_t 
     if (sig != SIGSEGV && sig != SIGBUS)
         return "";
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) && !defined(OS_DARWIN) && !defined(OS_FREEBSD)
     return (context.uc_mcontext.gregs[REG_ERR] & 0x02) ? "write" : "read";
 #else
     return "";  // Not available on this platform
