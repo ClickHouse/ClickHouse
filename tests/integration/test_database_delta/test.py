@@ -272,8 +272,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
         node1.query(
             f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`",
             settings={
-                "allow_experimental_delta_kernel_rs": use_delta_kernel,
-                "delta_lake_snapshot_start_version": 1,
+                "allow_experimental_delta_kernel_rs": use_delta_kernel
             },
         )
         .strip()
