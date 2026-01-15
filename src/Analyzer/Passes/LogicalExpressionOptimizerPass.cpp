@@ -1449,6 +1449,14 @@ private:
 
         auto function_node_type = function_node.getResultType();
 
+        /// Check that the inner boolean function returns a compatible type (UInt8-based).
+        /// The result type can be wrapped in Nullable, LowCardinality, or both.
+        /// If the base type is not UInt8 (e.g., Nothing), skip the optimization.
+        auto inner_base_type = removeLowCardinalityAndNullable(child_function->getResultType());
+        auto outer_base_type = removeLowCardinalityAndNullable(function_node_type);
+        if (!inner_base_type->equals(*outer_base_type))
+            return;
+
         // if we have something like `function = 0`, we need to add a `NOT` when dropping the `= 0`
         if (constant_value == 0)
         {
@@ -1466,10 +1474,10 @@ private:
 
         if (!function_node_type->equals(*node->getResultType()))
         {
-            /// Result of replacement_function can be low cardinality, while redundant equal
+            /// Result of replacement_function can be low cardinality or nullable, while redundant equal
             /// returns UInt8, and this equal can be an argument of external function -
             /// so we want to convert replacement_function to the expected UInt8
-            chassert(function_node_type->equals(*removeLowCardinality(node->getResultType())));
+            chassert(removeLowCardinalityAndNullable(function_node_type)->equals(*removeLowCardinalityAndNullable(node->getResultType())));
             node = createCastFunction(node, function_node_type, getContext());
         }
     }
