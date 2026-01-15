@@ -168,24 +168,24 @@ StatementGenerator::StatementGenerator(
           static_cast<ProbabilityStrategy>(rg.randomInt<uint32_t>(0, 2)),
           rg.nextInFullRange(),
           {{
-              {0.01, 0.50}, /// Literal
-              {0.01, 0.80}, /// ColumnRef
+              {0.01, 0.40}, /// Literal
+              {0.01, 0.60}, /// ColumnRef
               {0.01, 0.25}, /// Predicate
-              {0.01, 0.03}, /// CastExpr
+              {0.01, 0.10}, /// CastExpr
               {0.01, 0.15}, /// UnaryExpr
               {0.01, 0.05}, /// IntervalExpr
               {0.01, 0.03}, /// ColumnsExpr
-              {0.01, 0.05}, /// CondExpr
-              {0.01, 0.05}, /// CaseExpr
+              {0.01, 0.20}, /// CondExpr
+              {0.01, 0.20}, /// CaseExpr
               {0.01, 0.10}, /// SubqueryExpr
               {0.01, 0.20}, /// BinaryExpr
               {0.01, 0.30}, /// ArrayTupleExpr
-              {0.01, 0.40}, /// FuncExpr
+              {0.01, 0.60}, /// FuncExpr
               {0.01, 0.25}, /// WindowFuncExpr
               {0.01, 0.02}, /// TableStarExpr
-              {0.01, 0.03}, /// LambdaExpr
-              {0.01, 0.03}, /// ProjectionExpr
-              {0.01, 0.03}, /// DictExpr
+              {0.01, 0.05}, /// LambdaExpr
+              {0.01, 0.05}, /// ProjectionExpr
+              {0.01, 0.05}, /// DictExpr
               {0.01, 0.02} /// StarExpr
           }}))
     , predGen(ProbabilityGenerator(
