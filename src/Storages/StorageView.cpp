@@ -41,6 +41,7 @@ namespace Setting
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsBool enable_positional_arguments;
 }
 
 namespace ErrorCodes
@@ -110,6 +111,8 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     view_settings[Setting::max_result_rows] = 0;
     view_settings[Setting::max_result_bytes] = 0;
     view_settings[Setting::extremes] = false;
+    view_settings[Setting::enable_positional_arguments] = true;
+
     view_context->setSettings(view_settings);
     return view_context;
 }
