@@ -10,10 +10,10 @@ ProbabilityGenerator::ProbabilityGenerator(const ProbabilityStrategy ps, const u
     : nvalues(b.size())
     , strategy(ps)
     , bounds(b)
+    , rng(in_seed)
     , cdf(nvalues, 0.0)
     , enabled_values(nvalues, true)
 {
-    rng.seed(in_seed);
     ensureAtLeastOneEnabled(enabled_values);
     probabilities = generateInitial();
     applyEnabledMaskAndRenorm(probabilities);
