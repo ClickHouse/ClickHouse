@@ -18,6 +18,7 @@
 
 #include <BridgeHelper/XDBCBridgeHelper.h>
 
+
 namespace DB
 {
 namespace Setting
