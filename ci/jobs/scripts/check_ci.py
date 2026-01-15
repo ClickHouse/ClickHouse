@@ -534,10 +534,7 @@ def main():
 
         selected_pr = UserPrompt.select_from_menu(pr_menu, "Select a PR to merge")
         if selected_pr[1] == 1:
-            # PR numbers are expected to be in the range 80000-100000 for recent PRs
-            pr_number = UserPrompt.get_number(
-                "Enter PR number", lambda x: x > 80000 and x < 100000
-            )
+            pr_number = UserPrompt.get_number("Enter PR number", lambda x: x > 70000)
         elif selected_pr[1] == 0:
             is_master_commit = True
             commit_sha = UserPrompt.get_string(
