@@ -31,17 +31,8 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
     {
-        /// bytesize takes an arbitrary number of arguments of any type and requires at least one argument
-        if (arguments.empty())
-        {
-            FunctionArgumentDescriptors mandatory_args{
-                {"value", nullptr, nullptr, "Any"}
-            };
-            validateFunctionArguments(getName(), arguments, mandatory_args);
-        }
-
         return std::make_shared<DataTypeUInt64>();
     }
 
