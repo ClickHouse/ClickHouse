@@ -136,7 +136,7 @@ NamesAndTypesList SchemaConverter::inferSchema()
     return res;
 }
 
-std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element) const
+std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const
 {
     if (!column_mapper)
         return element.name;
@@ -151,6 +151,11 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     auto it = map.find(element.field_id);
     if (it == map.end())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
+
+    /// At top level (empty path), return the full mapped name. For nested elements, extract the last component.
+    if (current_path.empty())
+        return it->second;
+
     auto split = Nested::splitName(std::string_view(it->second), /*reverse=*/ true);
     return split.second.empty() ? split.first : split.second;
 }
@@ -170,7 +175,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.schema_context == SchemaContext::None)
     {
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element));
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name));
 
         if (sample_block)
         {
@@ -617,7 +622,7 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     std::vector<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
-        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx)));
+        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {
