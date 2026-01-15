@@ -484,7 +484,11 @@ Calculate the sample variance of a data set. Unlike [`varSamp`](https://clickhou
 
 The sample variance is calculated using the same formula as [`varSamp`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/varsamp):
 
-$$\frac{\Sigma{(x - \bar{x})^2}}{n-1}$$
+$$
+\frac{\Sigma{(x - \bar{x})^2}}{n-1}
+$$
+
+<br/>
 
 Where:
 - $x$ is each individual data point in the data set
@@ -589,19 +593,97 @@ FROM test_data;
         documentation_varPopStable
     });
 
-    factory.registerFunction("stddevSampStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    FunctionDocumentation::Description description_stddevSampStable = R"(
+The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varSamp.md). Unlike [stddevSamp](../reference/stddevSamp.md) this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
+    )";
+    FunctionDocumentation::Syntax syntax_stddevSampStable = R"(
+stddevSampStable(x)
+    )";
+    FunctionDocumentation::Parameters parameters_stddevSampStable = {};
+    FunctionDocumentation::Arguments arguments_stddevSampStable = {
+        {"x", "Values for which to find the square root of sample variance.", {"(U)Int*", "Float*", "Decimal*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_stddevSampStable = {"Returns the square root of sample variance of `x`.", {"Float64"}};
+    FunctionDocumentation::Examples examples_stddevSampStable = {
+    {
+        "Basic usage",
+        R"(
+DROP TABLE IF EXISTS test_data;
+CREATE TABLE test_data
+(
+    population UInt8,
+)
+ENGINE = Log;
+
+INSERT INTO test_data VALUES (3),(3),(3),(4),(4),(5),(5),(7),(11),(15);
+
+SELECT
+    stddevSampStable(population)
+FROM test_data;
+        )",
+        R"(
+┌─stddevSampStable(population)─┐
+│                            4 │
+└──────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_stddevSampStable = {1, 1};
+    FunctionDocumentation::Category category_stddevSampStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_stddevSampStable = {description_stddevSampStable, syntax_stddevSampStable, arguments_stddevSampStable, parameters_stddevSampStable, returned_value_stddevSampStable, examples_stddevSampStable, introduced_in_stddevSampStable, category_stddevSampStable};
+
+    factory.registerFunction("stddevSampStable", {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevSampStable, argument_types[0]);
-    });
+    }, {}, documentation_stddevSampStable});
 
-    factory.registerFunction("stddevPopStable", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    FunctionDocumentation::Description description_stddevPopStable = R"(
+The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varPop.md). Unlike [stddevPop](../reference/stddevPop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
+    )";
+    FunctionDocumentation::Syntax syntax_stddevPopStable = R"(
+stddevPopStable(x)
+    )";
+    FunctionDocumentation::Parameters parameters_stddevPopStable = {};
+    FunctionDocumentation::Arguments arguments_stddevPopStable = {
+        {"x", "Population of values to find the standard deviation of.", {"(U)Int*", "Float*", "Decimal*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_stddevPopStable = {"Returns the square root of the variance of `x`.", {"Float64"}};
+    FunctionDocumentation::Examples examples_stddevPopStable = {
+    {
+        "Basic usage",
+        R"(
+DROP TABLE IF EXISTS test_data;
+CREATE TABLE test_data
+(
+    population Float64,
+)
+ENGINE = Log;
+
+INSERT INTO test_data SELECT randUniform(5.5, 10) FROM numbers(1000000);
+
+SELECT
+    stddevPopStable(population) AS stddev
+FROM test_data;
+        )",
+        R"(
+┌─────────────stddev─┐
+│ 1.2999977786592576 │
+└────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_stddevPopStable = {1, 1};
+    FunctionDocumentation::Category category_stddevPopStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_stddevPopStable = {description_stddevPopStable, syntax_stddevPopStable, arguments_stddevPopStable, parameters_stddevPopStable, returned_value_stddevPopStable, examples_stddevPopStable, introduced_in_stddevPopStable, category_stddevPopStable};
+
+    factory.registerFunction("stddevPopStable", {[](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
     {
         assertNoParameters(name, parameters);
         assertUnary(name, argument_types);
         return std::make_shared<AggregateFunctionVariance>(VarKind::stddevPopStable, argument_types[0]);
-    });
+    }, {}, documentation_stddevPopStable});
 
     FunctionDocumentation::Description covarSampStable_description = R"(
 Calculates the sample covariance:
@@ -609,6 +691,8 @@ Calculates the sample covariance:
 $$
 \frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{n - 1}
 $$
+
+<br/>
 
 It is similar to [`covarSamp`](../reference/covarsamp.md) but uses a numerically stable algorithm.
 As a result, `covarSampStable` is slower than `covarSamp` but provides a lower computational error.
@@ -680,7 +764,11 @@ FROM
     FunctionDocumentation::Description covarPopStable_description = R"(
 Calculates the population covariance:
 
-$$\frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{n}$$
+$$
+\frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{n}
+$$
+
+<br/>
 
 It is similar to the [`covarPop`](../reference/covarpop.md) function, but uses a numerically stable algorithm. As a result, `covarPopStable` is slower than `covarPop` but produces a more accurate result.
     )";
@@ -730,6 +818,8 @@ Calculates the [Pearson correlation coefficient](https://en.wikipedia.org/wiki/P
 $$
 \frac{\Sigma{(x - \bar{x})(y - \bar{y})}}{\sqrt{\Sigma{(x - \bar{x})^2} * \Sigma{(y - \bar{y})^2}}}
 $$
+
+<br/>
 
 Similar to the [`corr`](../reference/corr.md) function, but uses a numerically stable algorithm.
 As a result, `corrStable` is slower than `corr` but produces a more accurate result.
