@@ -33,7 +33,8 @@ struct SubcolumnAccess
     size_t projection_index;                  /// Index of base column in the source query's projection
 };
 
-/// Check if a projection column can be optimized and return the new projection node
+/// Check if a projection column can be optimized and return the new projection node.
+/// Returns nullptr if optimization is not possible.
 QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
     const ColumnNode * proj_column,
     const String & full_subcolumn_name,
@@ -41,22 +42,29 @@ QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
     ContextPtr context)
 {
     auto proj_source = proj_column->getColumnSourceOrNull();
+
+    /// The projection column must have a valid source to determine how to create the subcolumn node
     if (!proj_source)
         return nullptr;
 
     auto proj_source_type = proj_source->getNodeType();
 
-    /// Case 1: Projection column comes directly from a table or table function
+    /// Case 1: Projection column comes directly from a table or table function.
+    /// We can create a direct ColumnNode for the subcolumn (e.g., tup.a) if the storage supports it.
     if (proj_source_type == QueryTreeNodeType::TABLE || proj_source_type == QueryTreeNodeType::TABLE_FUNCTION)
     {
         auto * table_node = proj_source->as<TableNode>();
+
+        /// Some storage engines don't support subcolumn optimization (e.g., system tables).
+        /// Skip optimization for those to avoid errors.
         if (table_node && !table_node->getStorage()->supportsOptimizationToSubcolumns())
             return nullptr;
 
         NameAndTypePair subcolumn_name_and_type{full_subcolumn_name, subcolumn_type};
         return std::make_shared<ColumnNode>(subcolumn_name_and_type, proj_source);
     }
-    /// Case 2: Projection column comes from a nested subquery or union
+    /// Case 2: Projection column comes from a nested subquery or union.
+    /// We need to create a getSubcolumn function call to push the access down recursively.
     else if (proj_source_type == QueryTreeNodeType::QUERY || proj_source_type == QueryTreeNodeType::UNION)
     {
         const String subcolumn_part = full_subcolumn_name.substr(proj_column->getColumnName().size() + 1);
@@ -73,7 +81,8 @@ QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
     return nullptr;
 }
 
-/// First pass: collect all getSubcolumn calls that can be optimized
+/// First pass: collect all getSubcolumn calls that can be optimized.
+/// Groups accesses by their source node so we can clone each source only once.
 class CollectSubcolumnAccessesVisitor : public InDepthQueryTreeVisitor<CollectSubcolumnAccessesVisitor>
 {
 public:
@@ -86,27 +95,38 @@ public:
     void visitImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
+
+        /// We only optimize getSubcolumn function calls (e.g., getSubcolumn(tup, 'a') from tup.a access)
         if (!function_node || function_node->getFunctionName() != "getSubcolumn")
             return;
 
         auto & args = function_node->getArguments().getNodes();
+
+        /// getSubcolumn must have exactly 2 arguments: the column and the subcolumn name
         if (args.size() != 2)
             return;
 
         auto * column_node = args[0]->as<ColumnNode>();
         auto * subcolumn_name_node = args[1]->as<ConstantNode>();
 
+        /// First arg must be a column, second must be a constant (the subcolumn name)
         if (!column_node || !subcolumn_name_node)
             return;
 
+        /// The subcolumn name must be a string constant
         if (subcolumn_name_node->getValue().getType() != Field::Types::String)
             return;
 
         auto column_source = column_node->getColumnSourceOrNull();
+
+        /// The column must have a valid source to push the optimization into
         if (!column_source)
             return;
 
         auto * query_source = column_source->as<QueryNode>();
+
+        /// We can only push down into QueryNode sources (subqueries), not tables directly.
+        /// Tables are already handled by FunctionToSubcolumnsPass.
         if (!query_source)
             return;
 
@@ -115,23 +135,29 @@ public:
         const String full_subcolumn_name = base_column_name + "." + subcolumn_name;
 
         auto subcolumn_type = column_node->getResultType()->tryGetSubcolumnType(subcolumn_name);
+
+        /// The column type must support this subcolumn (e.g., Tuple has .a, Map has .keys/.values)
         if (!subcolumn_type)
             return;
 
-        /// Find the matching projection column
+        /// Find the matching projection column in the source query
         auto & projection_nodes = query_source->getProjection().getNodes();
         for (size_t i = 0; i < projection_nodes.size(); ++i)
         {
             auto * proj_column = projection_nodes[i]->as<ColumnNode>();
+
+            /// The projection node must be a column with matching name
             if (!proj_column || proj_column->getColumnName() != base_column_name)
                 continue;
 
-            /// Verify this can be optimized
+            /// Verify this can actually be optimized before recording
             auto new_proj_node = tryCreateSubcolumnProjectionNode(proj_column, full_subcolumn_name, subcolumn_type, context);
+
+            /// Skip if we can't create the optimized projection node
             if (!new_proj_node)
                 return;
 
-            /// Record this access grouped by source
+            /// Record this access grouped by source for batch processing
             accesses_by_source[column_source.get()].push_back({
                 .node_to_replace = &node,
                 .column_node = column_node,
@@ -155,15 +181,21 @@ private:
     std::unordered_map<IQueryTreeNode *, std::vector<SubcolumnAccess>> accesses_by_source;
 };
 
-/// Try to clone the target QueryNode if it IS the join_tree root
+/// Try to clone the target QueryNode if it IS the join_tree root.
+/// We must clone to avoid modifying shared nodes (e.g., CTEs referenced multiple times).
+/// Returns nullptr if cloning is not possible or not needed.
 QueryTreeNodePtr tryCloneTopLevelQueryNode(QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & target)
 {
+    /// join_tree must exist
     if (!join_tree)
         return nullptr;
 
+    /// We can only clone if target is exactly the join_tree root.
+    /// Nested sources inside JOINs cannot be safely cloned without breaking ON clause references.
     if (join_tree.get() != target.get())
         return nullptr;
 
+    /// Don't clone JoinNode - modifying its children would invalidate column references in ON clause
     if (join_tree->as<JoinNode>())
         return nullptr;
 
@@ -177,6 +209,8 @@ QueryTreeNodePtr tryCloneTopLevelQueryNode(QueryTreeNodePtr & join_tree, const Q
 void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
     auto * root_query_node = query_tree_node->as<QueryNode>();
+
+    /// This pass only works on query nodes (SELECT statements)
     if (!root_query_node)
         return;
 
@@ -185,35 +219,47 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
     collector.visit(query_tree_node);
 
     auto & accesses_by_source = collector.getAccessesBySource();
+
+    /// Nothing to optimize if no subcolumn accesses were found
     if (accesses_by_source.empty())
         return;
 
     /// Second pass: for each source, clone once and add all needed subcolumns
     for (auto & [original_source_ptr, accesses] : accesses_by_source)
     {
+        /// Skip empty access lists (shouldn't happen, but defensive check)
         if (accesses.empty())
             continue;
 
         /// Get the source from any access (they all reference the same source)
         auto column_source = accesses[0].column_node->getColumnSourceOrNull();
+
+        /// Source must still be valid (weak pointer might have expired)
         if (!column_source)
             continue;
 
-        /// Clone the source
+        /// Clone the source to avoid modifying shared nodes
         auto & join_tree = root_query_node->getJoinTree();
         auto cloned_source = tryCloneTopLevelQueryNode(join_tree, column_source);
+
+        /// Skip if cloning failed (e.g., source is inside a JOIN)
         if (!cloned_source)
             continue;
 
         auto * cloned_query_source = cloned_source->as<QueryNode>();
+
+        /// Cloned source must be a QueryNode to modify its projection
         if (!cloned_query_source)
             continue;
 
-        /// Get unique subcolumns to add (deduplicate by full_subcolumn_name)
-        /// Multiple accesses to the same subcolumn (e.g., tup.a used twice) share one projection column
+        /// Get unique subcolumns to add (deduplicate by full_subcolumn_name).
+        /// Multiple accesses to the same subcolumn (e.g., tup.a used twice) share one projection column.
         std::unordered_map<String, SubcolumnAccess *> unique_subcolumns;
         for (auto & access : accesses)
             unique_subcolumns.try_emplace(access.full_subcolumn_name, &access);
+
+        /// Track which projection indices we're optimizing (to remove unused base columns later)
+        std::unordered_set<size_t> optimized_projection_indices;
 
         /// Add new subcolumn projections
         auto & cloned_projection_nodes = cloned_query_source->getProjection().getNodes();
@@ -226,16 +272,21 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
         {
             auto & access = *access_ptr;
 
+            /// Projection index must be valid (defensive check against data corruption)
             if (access.projection_index >= cloned_projection_nodes.size())
                 continue;
 
             auto * proj_column = cloned_projection_nodes[access.projection_index]->as<ColumnNode>();
+
+            /// Projection node must be a ColumnNode to extract subcolumn from
             if (!proj_column)
                 continue;
 
             /// Create the subcolumn projection node
             auto new_proj_node = tryCreateSubcolumnProjectionNode(
                 proj_column, access.full_subcolumn_name, access.subcolumn_type, context);
+
+            /// Skip if we couldn't create the projection node
             if (!new_proj_node)
                 continue;
 
@@ -245,17 +296,17 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
             projection_columns.push_back(NameAndTypePair{access.full_subcolumn_name, access.subcolumn_type});
 
             subcolumn_to_new_index[full_subcolumn_name] = new_index;
+            optimized_projection_indices.insert(access.projection_index);
         }
-
-        cloned_query_source->resolveProjectionColumns(std::move(projection_columns));
 
         /// Replace all getSubcolumn calls with direct column references to the new projection columns
         for (auto & access : accesses)
         {
             auto it = subcolumn_to_new_index.find(access.full_subcolumn_name);
+
+            /// If we couldn't add this subcolumn to projection, just update the source reference
             if (it == subcolumn_to_new_index.end())
             {
-                /// Couldn't add this subcolumn - just update the source reference
                 access.column_node->setColumnSource(cloned_source);
                 continue;
             }
@@ -264,10 +315,24 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
             NameAndTypePair new_column_name_and_type{access.full_subcolumn_name, access.subcolumn_type};
             *access.node_to_replace = std::make_shared<ColumnNode>(new_column_name_and_type, cloned_source);
         }
-    }
 
-    /// Note: The original base columns (e.g., "tup") are now unused in the cloned projection.
-    /// RemoveUnusedProjectionColumnsPass will clean them up if they're not referenced elsewhere.
+        /// Remove unused base columns from projection (those that were only accessed via subcolumns).
+        /// We need to remove from highest index to lowest to avoid invalidating indices.
+        std::vector<size_t> indices_to_remove(optimized_projection_indices.begin(), optimized_projection_indices.end());
+        std::sort(indices_to_remove.begin(), indices_to_remove.end(), std::greater<size_t>());
+
+        for (size_t idx : indices_to_remove)
+        {
+            /// Defensive check to avoid out-of-bounds access
+            if (idx < cloned_projection_nodes.size())
+            {
+                cloned_projection_nodes.erase(cloned_projection_nodes.begin() + idx);
+                projection_columns.erase(projection_columns.begin() + idx);
+            }
+        }
+
+        cloned_query_source->resolveProjectionColumns(std::move(projection_columns));
+    }
 }
 
 }
