@@ -47,7 +47,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto is_variant_or_array_of_variant = [](const IDataType & type) {
+        auto is_variant_or_array_of_variant = [](const IDataType & type) 
+        {
             const IDataType * current_type = &type;
             while (const DataTypeArray * array = checkAndGetDataType<DataTypeArray>(current_type))
                 current_type = array->getNestedType().get();

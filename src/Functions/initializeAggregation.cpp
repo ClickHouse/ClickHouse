@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/IColumn.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -10,14 +11,12 @@
 #include <Common/Arena.h>
 
 #include <Common/scope_guard_safe.h>
-#include "Columns/IColumn.h"
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
@@ -59,7 +58,8 @@ DataTypePtr FunctionInitializeAggregation::getReturnTypeImpl(const ColumnsWithTy
         {"aggregate_function_name", &isString, &isColumnConst, "const String"},
         {"argument", nullptr, nullptr, "Any"}
     };
-    validateFunctionArguments(*this, arguments, mandatory_args);
+    FunctionArgumentDescriptor variadic_args{"argument", nullptr, nullptr, "Any"};
+    validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
 
     const ColumnConst * aggregate_function_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
     if (!aggregate_function_name_column)

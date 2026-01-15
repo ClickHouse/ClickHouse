@@ -8,11 +8,11 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsTimeWindow.h>
-#include "DataTypes/IDataType.h"
 
 
 namespace DB
@@ -93,7 +93,8 @@ bool isTupleOfTwoDateTimesOrUInt32(const IDataType & type)
 
     const auto & elems = tuple_type->getElements();
     // Check if elements are Date/DateTime, allowing nullable versions
-    auto check_elem = [](const DataTypePtr & elem) {
+    auto check_elem = [](const DataTypePtr & elem) 
+    {
         auto base_type = removeNullable(elem);
         return isDate(base_type) || isDateTime(base_type);
     };

@@ -18,7 +18,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
@@ -232,10 +231,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors first_mandatory_arg{
-            {"start_time", &isDateTimeOrDateTime64, nullptr, "DateTime or DateTime64"}
-        };
-        validateFunctionArguments(getName(), arguments, first_mandatory_arg, {});
+        validateNumberOfFunctionArguments(*this, arguments, 2, 3);
 
         if (WhichDataType(arguments[0].type).isDateTime())
         {

@@ -11,9 +11,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 DataTypePtr FunctionReplicate::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const

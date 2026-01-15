@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 template <typename Transform>
@@ -80,7 +79,8 @@ public:
 protected:
     void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32, bool value_may_be_string) const
     {
-        auto is_date_or_date_time_or_string = [](const IDataType & type) {
+        auto is_date_or_date_time_or_string = [](const IDataType & type) 
+        {
             return isDateOrDate32OrDateTimeOrDateTime64(type) || isString(type);
         };
 

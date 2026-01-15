@@ -258,6 +258,24 @@ void validateFunctionArgumentsWithVariadics(
     validateVariadicArgumentsImpl(func.getName(), arguments, mandatory_args.size(), variadic_args);
 }
 
+void validateNumberOfFunctionArguments(
+    const IFunction & func,
+    const ColumnsWithTypeAndName & arguments,
+    size_t expected_min_args,
+    size_t expected_max_args)
+{
+    if( arguments.size() < expected_min_args || arguments.size() > expected_max_args)
+    {
+        throw Exception(
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Incorrect number of arguments for function {}. Expected {} or {}, got {}",
+            func.getName(),
+            expected_min_args,
+            expected_max_args,
+            arguments.size());
+        }
+}
+
 std::pair<std::vector<const IColumn *>, const ColumnArray::Offset *>
 checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
 {

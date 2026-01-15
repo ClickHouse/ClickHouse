@@ -32,7 +32,6 @@ extern const SettingsUInt64 function_sleep_max_microseconds_per_block;
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_SLOW;
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
@@ -83,7 +82,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        static auto is_float_or_native_uint = [](const IDataType & type) {
+        static auto is_float_or_native_uint = [](const IDataType & type) 
+        {
             WhichDataType which(type);
             return which.isFloat() || which.isNativeUInt();
         };
