@@ -12,10 +12,17 @@
 SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
+SET min_compress_block_size = 65536;
+SET max_compress_block_size = 1048576;
 
 DROP TABLE IF EXISTS tab_bitpacking;
 DROP TABLE IF EXISTS table_uncompressed;
 
+-- The following MergeTree settings do NOT directly affect postings list compression.
+-- They are pinned here because this test compares the on-disk data size for identical input
+-- across two scenarios. Some of these settings can change the part layout/serialization,
+-- compression granularity, or statistics, which in turn may alter the resulting data size.
+-- By fixing them, we make the test deterministic and ensure predictable, stable output.
 CREATE TABLE tab_bitpacking
 (
     ts DateTime,
@@ -26,9 +33,22 @@ CREATE TABLE tab_bitpacking
     )
 )
 ENGINE = MergeTree
-ORDER BY ts;
-CREATE TABLE table_uncompressed
+ORDER BY ts
+SETTINGS
+   min_rows_for_wide_part = 0,
+   min_bytes_for_wide_part= 0,
+   index_granularity = 8192,
+   index_granularity_bytes = 0,
+   enable_block_offset_column = 0,
+   enable_block_number_column = 0,
+   string_serialization_version = 'with_size_stream',
+   primary_key_compress_block_size = 65536,
+   marks_compress_block_size = 65536,
+   ratio_of_defaults_for_sparse_serialization = 0.95,
+   serialization_info_version = 'basic',
+   auto_statistics_types = 'minmax';
 
+CREATE TABLE table_uncompressed
 (
     ts DateTime,
     str String,
@@ -37,7 +57,20 @@ CREATE TABLE table_uncompressed
     )
 )
 ENGINE = MergeTree
-ORDER BY ts;
+ORDER BY ts
+SETTINGS
+   min_rows_for_wide_part = 0,
+   min_bytes_for_wide_part= 0,
+   index_granularity = 8192,
+   index_granularity_bytes = 0,
+   enable_block_offset_column = 0,
+   enable_block_number_column = 0,
+   string_serialization_version = 'with_size_stream',
+   primary_key_compress_block_size = 65536,
+   marks_compress_block_size = 65536,
+   ratio_of_defaults_for_sparse_serialization = 0.95,
+   serialization_info_version = 'basic',
+   auto_statistics_types = 'minmax';
 
 INSERT INTO tab_bitpacking
 SELECT
