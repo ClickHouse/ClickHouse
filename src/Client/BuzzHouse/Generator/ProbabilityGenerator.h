@@ -1,7 +1,9 @@
 #pragma once
 
-#include <random>
+#include <cstdint>
 #include <vector>
+
+#include <pcg_random.hpp>
 
 namespace BuzzHouse
 {
@@ -33,9 +35,10 @@ public:
 
     explicit ProbabilityGenerator(ProbabilityStrategy ps, uint64_t in_seed, const std::vector<ProbabilityBounds> & b);
 
+    uint64_t getSeed() const;
     ProbabilityStrategy getStrategy() const;
     const std::vector<double> & getProbs() const;
-    const std::vector<bool> & isEnabled() const;
+    const std::vector<bool> & getEnabledMask() const;
 
     /// Change enable mask at runtime. Preserves current distribution shape as much as possible.
     void setEnabled(const std::vector<bool> & mask);
@@ -46,7 +49,8 @@ public:
     void tick();
 
 private:
-    std::mt19937_64 rng;
+    uint64_t seed;
+    pcg64_fast generator;
 
     std::vector<double> cdf;
     std::vector<bool> enabled_values;

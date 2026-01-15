@@ -1,7 +1,10 @@
 #include <Client/BuzzHouse/Generator/ProbabilityGenerator.h>
 
 #include <cassert>
+#include <random>
+
 #include <base/defines.h>
+#include <Common/randomSeed.h>
 
 namespace BuzzHouse
 {
@@ -10,7 +13,8 @@ ProbabilityGenerator::ProbabilityGenerator(const ProbabilityStrategy ps, const u
     : nvalues(b.size())
     , strategy(ps)
     , bounds(b)
-    , rng(in_seed)
+    , seed(in_seed ? in_seed : randomSeed())
+    , generator(seed)
     , cdf(nvalues, 0.0)
     , enabled_values(nvalues, true)
 {
@@ -18,6 +22,11 @@ ProbabilityGenerator::ProbabilityGenerator(const ProbabilityStrategy ps, const u
     probabilities = generateInitial();
     applyEnabledMaskAndRenorm(probabilities);
     buildCdf();
+}
+
+uint64_t ProbabilityGenerator::getSeed() const
+{
+    return seed;
 }
 
 ProbabilityStrategy ProbabilityGenerator::getStrategy() const
@@ -30,7 +39,7 @@ const std::vector<double> & ProbabilityGenerator::getProbs() const
     return probabilities;
 }
 
-const std::vector<bool> & ProbabilityGenerator::isEnabled() const
+const std::vector<bool> & ProbabilityGenerator::getEnabledMask() const
 {
     return enabled_values;
 }
@@ -50,7 +59,7 @@ void ProbabilityGenerator::setEnabled(const std::vector<bool> & mask)
     buildCdf();
 }
 
-void ProbabilityGenerator::setEnabled(size_t i, bool on)
+void ProbabilityGenerator::setEnabled(const size_t i, const bool on)
 {
     if (i >= nvalues)
         throw std::out_of_range("setEnabled index out of range");
@@ -65,7 +74,7 @@ size_t ProbabilityGenerator::nextOp(const bool tick)
         this->tick();
 
     std::uniform_real_distribution<double> unif01(0.0, 1.0);
-    const double u = unif01(rng);
+    const double u = unif01(generator);
 
     for (size_t i = 0; i < nvalues; ++i)
         if (u < cdf[i])
@@ -127,7 +136,7 @@ std::vector<double> ProbabilityGenerator::genBalanced()
         std::vector<double> w(nvalues, 0.0);
         std::exponential_distribution<double> exp(1.0);
         for (size_t i = 0; i < nvalues; ++i)
-            w[i] = enabled_values[i] ? (exp(rng) + 1e-12) : 0.0;
+            w[i] = enabled_values[i] ? (exp(generator) + 1e-12) : 0.0;
 
         normalizeEnabledInPlace(w, enabled_values);
 
@@ -141,7 +150,7 @@ std::vector<double> ProbabilityGenerator::genBalanced()
     std::vector<double> w(nvalues, 0.0);
     std::exponential_distribution<double> exp(1.0);
     for (size_t i = 0; i < nvalues; ++i)
-        w[i] = enabled_values[i] ? (exp(rng) + 1e-12) : 0.0;
+        w[i] = enabled_values[i] ? (exp(generator) + 1e-12) : 0.0;
 
     normalizeEnabledInPlace(w, enabled_values);
     return w;
@@ -162,7 +171,7 @@ std::vector<double> ProbabilityGenerator::genBounded()
         if (b.min < 0.0 || b.max < 0.0 || b.min > b.max)
             throw std::runtime_error("Invalid bounds");
         std::uniform_real_distribution<double> unif(b.min, b.max);
-        w[i] = unif(rng);
+        w[i] = unif(generator);
     }
     normalizeEnabledInPlace(w, enabled_values);
     clampToBoundsAndRenormEnabled(w, enabled_values);
@@ -182,7 +191,7 @@ void ProbabilityGenerator::applyDrift()
             w[i] = 0.0;
             continue;
         }
-        w[i] = w[i] * (1.0 + unif(rng));
+        w[i] = w[i] * (1.0 + unif(generator));
         w[i] = std::max(w[i], 0.0);
     }
 
