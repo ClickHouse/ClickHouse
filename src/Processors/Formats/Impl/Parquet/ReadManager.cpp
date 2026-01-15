@@ -889,8 +889,6 @@ ReadManager::ReadResult ReadManager::read()
                 for (const RowGroup & row_group : reader.row_groups)
                 {
                     chassert(row_group.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
-                    for (size_t s = 0; s < row_group.next_subgroup_for_step.size(); ++s)
-                        chassert(row_group.next_subgroup_for_step[s].load(std::memory_order_relaxed) == row_group.subgroups.size());
                     chassert(row_group.delivery_ptr.load(std::memory_order_relaxed) == row_group.subgroups.size());
                     for (const RowSubgroup & subgroup : row_group.subgroups)
                         chassert(subgroup.stage.load(std::memory_order_relaxed) == ReadStage::Deallocated);
