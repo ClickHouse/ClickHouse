@@ -514,8 +514,6 @@ SortAnalysisResult analyzeSort(
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {
             auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-            // if (interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT)
-            //    continue;
 
             auto [nodes, correlated_subtrees] = interpolate_actions_visitor.visit(before_interpolate_actions_dag, interpolate_node_typed.getExpression());
             correlated_subtrees.assertEmpty("in expression to interpolate");
@@ -529,41 +527,6 @@ SortAnalysisResult analyzeSort(
 
         before_interpolate_actions = std::make_shared<ActionsAndProjectInputsFlag>();
         before_interpolate_actions->dag = std::move(before_interpolate_actions_dag);
-
-
-        // ActionsDAG interpolate_actions_dag;
-
-        // for (auto & interpolate_node : interpolate_list_node.getNodes())
-        // {
-        //     auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
-        //     if (interpolate_node_typed.getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT)
-        //        continue;
-
-        //     interpolate_actions_visitor.visit(interpolate_actions_dag, interpolate_node_typed.getInterpolateExpression());
-        // }
-
-        // std::unordered_map<std::string_view, const ActionsDAG::Node *> before_sort_actions_inputs_name_to_node;
-        // for (const auto & node : before_sort_actions->dag.getInputs())
-        //     before_sort_actions_inputs_name_to_node.emplace(node->result_name, node);
-
-        // for (const auto & node : interpolate_actions_dag.getNodes())
-        // {
-        //     if (before_sort_actions_dag_output_node_names.contains(node.result_name) ||
-        //         node.type != ActionsDAG::ActionType::INPUT)
-        //         continue;
-
-        //     auto input_node_it = before_sort_actions_inputs_name_to_node.find(node.result_name);
-        //     if (input_node_it == before_sort_actions_inputs_name_to_node.end())
-        //     {
-        //         auto input_column = ColumnWithTypeAndName{node.column, node.result_type, node.result_name};
-        //         const auto * input_node = &before_sort_actions->dag.addInput(std::move(input_column));
-        //         auto [it, _] = before_sort_actions_inputs_name_to_node.emplace(node.result_name, input_node);
-        //         input_node_it = it;
-        //     }
-
-        //     before_sort_actions_outputs.push_back(input_node_it->second);
-        //     before_sort_actions_dag_output_node_names.insert(node.result_name);
-        // }
     }
 
     if (before_interpolate_actions)

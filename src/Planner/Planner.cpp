@@ -986,8 +986,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
                 const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
-                // const auto & expression_to_interpolate_name = expression_to_interpolate->result_name;
-
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
                 if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
                 {
@@ -999,29 +997,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
                 const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, interpolate_node_typed.getExpressionName());
                 interpolate_actions_dag.getOutputs().push_back(alias_node);
-
-                /// Here we fix INTERPOLATE by constant expression.
-                /// Example from 02336_sort_optimization_with_fill:
-                ///
-                /// SELECT 5 AS x, 'Hello' AS s ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (s AS s||'A')
-                ///
-                /// For this query, INTERPOLATE_EXPRESSION would be : s AS concat(s, 'A'),
-                /// so that interpolate_actions_dag would have INPUT `s`.
-                ///
-                /// However, INPUT `s` does not exist. Instead, we have a constant with execution name 'Hello'_String.
-                /// To fix this, we prepend a rename : 'Hello'_String -> s
-                // if (const auto * /*constant_node*/ _ = interpolate_node_typed.getExpression()->as<const ConstantNode>())
-                // {
-                //     const auto & name = interpolate_node_typed.getExpressionName();
-                //     const auto * node = &rename_dag.addInput(alias_node->result_name, alias_node->result_type);
-                //     node = &rename_dag.addAlias(*node, name);
-                //     rename_dag.getOutputs().push_back(node);
-
-                //     /// Interpolate DAG should contain INPUT with same name to ensure a proper merging
-                //     const auto & inputs = interpolate_actions_dag.getInputs();
-                //     if (std::ranges::find_if(inputs, [&name](const auto & input){ return input->result_name == name; }) == inputs.end())
-                //         interpolate_actions_dag.addInput(name, interpolate_node_typed.getExpression()->getResultType());
-                // }
             }
 
             if (!rename_dag.getOutputs().empty())

@@ -12,7 +12,6 @@
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Storages/IStorage.h>
 
-#include <iostream>
 #include <memory>
 
 namespace DB
