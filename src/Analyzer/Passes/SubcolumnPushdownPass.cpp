@@ -18,35 +18,29 @@ namespace DB
 namespace
 {
 
-/// Find QueryNode in the JoinTree and replace it with a clone if needed.
-/// Returns the clone if replacement was made, otherwise returns nullptr.
-QueryTreeNodePtr cloneQueryNodeInJoinTree(QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & target)
+/// Try to clone the target QueryNode if it IS the join_tree root (not nested inside).
+/// Returns the clone if successful, nullptr otherwise.
+///
+/// We intentionally do NOT recurse into JoinNodes because cloning a child of a
+/// JoinNode would invalidate column references in the join condition (ON clause).
+/// The ON clause contains columns that reference the original table expressions,
+/// and cloning one side would leave those columns with invalid (deallocated) sources.
+QueryTreeNodePtr tryCloneTopLevelQueryNode(QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & target)
 {
     if (!join_tree)
         return nullptr;
 
-    /// Found the target node - clone it and replace in the tree.
-    /// The clone will be owned by the tree, keeping it alive.
-    if (join_tree.get() == target.get())
-    {
-        auto clone = join_tree->clone();
-        join_tree = clone;
-        return clone;
-    }
+    /// Only clone if join_tree IS the target (a simple FROM clause, not a JOIN)
+    if (join_tree.get() != target.get())
+        return nullptr;
 
-    /// For JOINs, recursively search both sides of the join
-    if (auto * join_node = join_tree->as<JoinNode>())
-    {
-        auto & left = join_node->getLeftTableExpression();
-        if (auto result = cloneQueryNodeInJoinTree(left, target))
-            return result;
+    /// Don't clone JoinNodes - their children have cross-references we can't safely update
+    if (join_tree->as<JoinNode>())
+        return nullptr;
 
-        auto & right = join_node->getRightTableExpression();
-        if (auto result = cloneQueryNodeInJoinTree(right, target))
-            return result;
-    }
-
-    return nullptr;
+    auto clone = join_tree->clone();
+    join_tree = clone;
+    return clone;
 }
 
 /// Check if the optimization can be performed for a given projection column.
@@ -188,7 +182,7 @@ public:
                     return;
 
                 auto & join_tree = root_query_node->getJoinTree();
-                auto clone = cloneQueryNodeInJoinTree(join_tree, column_source);
+                auto clone = tryCloneTopLevelQueryNode(join_tree, column_source);
                 /// The source must be found in the JoinTree for cloning to work
                 if (!clone)
                     return;

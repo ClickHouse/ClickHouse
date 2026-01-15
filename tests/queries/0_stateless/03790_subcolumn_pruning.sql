@@ -70,6 +70,29 @@ SELECT count() == 0 FROM (
     SELECT tup.a FROM test_view_pruning
 ) WHERE explain LIKE '%tup Tuple%';
 
+-- JOIN with subcolumn access should work without crashing
+-- (Regression test: subcolumn pushdown must not clone inside JoinNode
+-- as it would invalidate column references in the ON clause)
+SELECT 'join_subquery_subcolumn';
+SELECT a.tup.a, b.tup.b
+FROM (SELECT * FROM test_subcolumn_pruning) a
+JOIN (SELECT * FROM test_subcolumn_pruning) b ON a.id = b.id;
+
+-- Also test with Map type which was the original failure case
+DROP TABLE IF EXISTS test_map_join;
+CREATE TABLE test_map_join (
+    id UInt64,
+    ProfileEvents Map(LowCardinality(String), UInt64)
+) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO test_map_join VALUES (1, {'event1': 100, 'event2': 200});
+
+SELECT 'join_map_subcolumn';
+SELECT a.ProfileEvents.keys, b.ProfileEvents.values
+FROM (SELECT * FROM test_map_join) a
+JOIN (SELECT * FROM test_map_join) b ON a.id = b.id;
+
+DROP TABLE test_map_join;
+
 DROP VIEW test_view_pruning;
 DROP VIEW test_view_system;
 DROP TABLE test_subcolumn_pruning;

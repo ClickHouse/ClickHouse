@@ -16,3 +16,7 @@ no_full_tuple_subquery
 1
 no_full_tuple_view
 1
+join_subquery_subcolumn
+x	1
+join_map_subcolumn
+['event1','event2']	[100,200]
