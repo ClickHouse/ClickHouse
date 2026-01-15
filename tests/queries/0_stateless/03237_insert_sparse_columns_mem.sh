@@ -51,7 +51,7 @@ $MY_CLICKHOUSE_CLIENT --query "DETACH TABLE t_insert_mem"
 $MY_CLICKHOUSE_CLIENT --query "ATTACH TABLE t_insert_mem"
 
 $MY_CLICKHOUSE_CLIENT --query "INSERT INTO t_insert_mem SELECT * FROM s3(s3_conn, filename='$filename', format='JSONEachRow')"
-$MY_CLICKHOUSE_CLIENT --query "SELECT * FROM file('$filename', LineAsString) FORMAT LineAsString" | ${CLICKHOUSE_CURL} -sS --max-time 240 "${CLICKHOUSE_URL}&query=INSERT+INTO+t_insert_mem+FORMAT+JSONEachRow&enable_parsing_to_custom_serialization=1" --data-binary @-
+$MY_CLICKHOUSE_CLIENT --query "SELECT * FROM file('$filename', LineAsString) FORMAT LineAsString" | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT+INTO+t_insert_mem+FORMAT+JSONEachRow&enable_parsing_to_custom_serialization=1" --data-binary @-
 
 $MY_CLICKHOUSE_CLIENT --query "
     SELECT count() FROM t_insert_mem;
@@ -62,7 +62,7 @@ $MY_CLICKHOUSE_CLIENT --query "
     WHERE table = 't_insert_mem' AND database = '$CLICKHOUSE_DATABASE'
     GROUP BY serialization_kind ORDER BY serialization_kind;
 
-    SYSTEM FLUSH LOGS query_log;
+    SYSTEM FLUSH LOGS;
 
     SELECT written_bytes <= 10000000 FROM system.query_log
     WHERE query LIKE 'INSERT INTO t_insert_mem%' AND current_database = '$CLICKHOUSE_DATABASE' AND type = 'QueryFinish'

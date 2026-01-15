@@ -1,4 +1,4 @@
-#include <Common/QueryFuzzer.h>
+#include "QueryFuzzer.h"
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -146,8 +146,6 @@ Field QueryFuzzer::getRandomField(int type)
 
 Field QueryFuzzer::fuzzField(Field field)
 {
-    checkIterationLimit();
-
     const auto type = field.getType();
 
     int type_index = -1;
@@ -365,8 +363,6 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast, const size_t nproj)
         return;
     }
 
-    checkIterationLimit();
-
     auto * list = assert_cast<ASTExpressionList *>(ast);
 
     /// Permute list
@@ -387,7 +383,7 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast, const size_t nproj)
     if (fuzz_rand() % 50 == 0)
     {
         /// Order by one of the projections, starting from position 1
-        auto pos = list->children.empty() ? list->children.begin() : list->children.begin() + fuzz_rand() % list->children.size();
+        auto * pos = list->children.empty() ? list->children.begin() : list->children.begin() + fuzz_rand() % list->children.size();
         const auto col = nproj && (fuzz_rand() % 4 == 0) ? std::make_shared<ASTLiteral>((fuzz_rand() % nproj) + 1) : getRandomColumnLike();
         if (col)
         {
@@ -418,8 +414,6 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
         return;
     }
 
-    checkIterationLimit();
-
     auto * impl = assert_cast<ASTExpressionList *>(ast);
 
     /// Permute list
@@ -439,7 +433,7 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     // Add element
     if (fuzz_rand() % 50 == 0)
     {
-        auto pos = impl->children.empty() ? impl->children.begin() : impl->children.begin() + fuzz_rand() % impl->children.size();
+        auto * pos = impl->children.empty() ? impl->children.begin() : impl->children.begin() + fuzz_rand() % impl->children.size();
         auto col = getRandomColumnLike();
         if (col)
             impl->children.insert(pos, col);
@@ -483,8 +477,6 @@ void QueryFuzzer::fuzzNullsAction(NullsAction & action)
 
 void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
 {
-    checkIterationLimit();
-
     switch (fuzz_rand() % 40)
     {
         case 0: {
@@ -632,8 +624,6 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
-    checkIterationLimit();
-
     /// Do not replace Array/Tuple/etc. with not Array/Tuple too often.
     const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
     if (type_array && fuzz_rand() % 4 != 0)
@@ -646,8 +636,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         for (const auto & element : type_tuple->getElements())
             elements.push_back(fuzzDataType(element));
 
-        return type_tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(elements, type_tuple->getElementNames())
-                                              : std::make_shared<DataTypeTuple>(elements);
+        return type_tuple->haveExplicitNames() ? std::make_shared<DataTypeTuple>(elements, type_tuple->getElementNames())
+                                               : std::make_shared<DataTypeTuple>(elements);
     }
 
     const auto * type_map = typeid_cast<const DataTypeMap *>(type.get());
@@ -709,8 +699,6 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 
 DataTypePtr QueryFuzzer::getRandomType()
 {
-    checkIterationLimit();
-
     static const std::vector<TypeIndex> & random_types
         = {TypeIndex::UInt8,       TypeIndex::UInt16,         TypeIndex::UInt32,   TypeIndex::UInt64,     TypeIndex::UInt128,
            TypeIndex::UInt256,     TypeIndex::Int8,           TypeIndex::Int16,    TypeIndex::Int32,      TypeIndex::Int64,
@@ -719,7 +707,7 @@ DataTypePtr QueryFuzzer::getRandomType()
            TypeIndex::FixedString, TypeIndex::Enum8,          TypeIndex::Enum16,   TypeIndex::Decimal32,  TypeIndex::Decimal64,
            TypeIndex::Decimal128,  TypeIndex::Decimal256,     TypeIndex::UUID,     TypeIndex::Array,      TypeIndex::Tuple,
            TypeIndex::Nullable,    TypeIndex::LowCardinality, TypeIndex::Map,      TypeIndex::IPv4,       TypeIndex::IPv6,
-           TypeIndex::Variant,     TypeIndex::Dynamic,        TypeIndex::Time,     TypeIndex::Time64};
+           TypeIndex::Variant,     TypeIndex::Dynamic};
     const auto type_id = pickRandomly(fuzz_rand, random_types);
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)
@@ -871,7 +859,7 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
 
     static const std::unordered_map<ASTExplainQuery::ExplainKind, std::vector<String>> settings_by_kind
         = {{ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
-           {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "query_tree_passes"}},
+           {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {}},
            {ASTExplainQuery::QueryTree, {"run_passes", "dump_passes", "dump_ast", "passes"}},
            {ASTExplainQuery::ExplainKind::QueryPlan, {"header, description", "actions", "indexes", "optimize", "json", "sorting"}},
            {ASTExplainQuery::ExplainKind::QueryPipeline, {"header", "graph=1", "compact"}},
@@ -947,8 +935,6 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
 
 ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
 {
-    checkIterationLimit();
-
     const auto * l = child->as<ASTLiteral>();
     chassert(l);
     const auto type = l->value.getType();
@@ -1087,12 +1073,6 @@ struct ScopedIncrement
     ~ScopedIncrement() { --counter; }
 };
 
-void QueryFuzzer::checkIterationLimit()
-{
-    if (++iteration_count > iteration_limit)
-        throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "AST complexity limit exceeded while fuzzing ({})", iteration_count);
-}
-
 static const Strings comparison_comparators
     = {"equals", "notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals", "isNotDistinctFrom"};
 
@@ -1146,7 +1126,7 @@ static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p)
 {
     /// No query parameters identifiers at this moment
     const auto * id = typeid_cast<ASTIdentifier *>(p.second.get());
-    return id && !id->name_parts.empty() && !id->isParam();
+    return id && !id->name_parts.empty();
 };
 
 ASTPtr QueryFuzzer::generatePredicate()
@@ -1178,34 +1158,34 @@ ASTPtr QueryFuzzer::generatePredicate()
                 /// Pick a random identifier
                 auto rand_col1 = colids.begin();
                 std::advance(rand_col1, fuzz_rand() % colids.size());
-                ASTPtr expression_1 = rand_col1->second->clone();
+                ASTPtr exp1 = rand_col1->second->clone();
 
-                expression_1 = setIdentifierAliasOrNot(expression_1);
+                exp1 = setIdentifierAliasOrNot(exp1);
                 if (nprob == 0)
                 {
-                    next_condition = makeASTFunction(fuzz_rand() % 2 == 0 ? "isNull" : "isNotNull", expression_1);
+                    next_condition = makeASTFunction(fuzz_rand() % 2 == 0 ? "isNull" : "isNotNull", exp1);
                 }
                 else
                 {
                     /// Pick any other column reference
                     auto rand_col2 = column_like.begin();
                     std::advance(rand_col2, fuzz_rand() % column_like.size());
-                    ASTPtr expression_2 = rand_col2->second->clone();
+                    ASTPtr exp2 = rand_col2->second->clone();
 
-                    expression_2 = setIdentifierAliasOrNot(expression_2);
+                    exp2 = setIdentifierAliasOrNot(exp2);
                     if (fuzz_rand() % 3 == 0)
                     {
                         /// Swap sides
-                        auto expression_3 = expression_1;
-                        expression_1 = expression_2;
-                        expression_2 = expression_3;
+                        auto exp3 = exp1;
+                        exp1 = exp2;
+                        exp2 = exp3;
                     }
                     /// Run mostly equality conditions
                     /// No isNotDistinctFrom outside join conditions
                     next_condition = makeASTFunction(
                         comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % (comparison_comparators.size() - 1)) : 0],
-                        expression_1,
-                        expression_2);
+                        exp1,
+                        exp2);
                 }
                 next_condition = tryNegateNextPredicate(next_condition, 30);
                 /// Sometimes use multiple conditions
@@ -1376,7 +1356,7 @@ static String getOldALias(const ASTPtr & input)
     }
     else
     {
-        chassert(false);
+        chassert(0);
         return "";
     }
 }
@@ -1437,7 +1417,7 @@ ASTPtr QueryFuzzer::addJoinClause()
             }
             else
             {
-                chassert(false);
+                chassert(0);
             }
         }
         else
@@ -1467,20 +1447,20 @@ ASTPtr QueryFuzzer::addJoinClause()
 
             const String id1_alias = id1->tryGetAlias();
             const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ? id1->shortName() : id1_alias;
-            ASTPtr expression_1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
-            ASTPtr expression_2 = rand_col2->second->clone();
+            ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
+            ASTPtr exp2 = rand_col2->second->clone();
 
-            expression_2 = setIdentifierAliasOrNot(expression_2);
+            exp2 = setIdentifierAliasOrNot(exp2);
             if (fuzz_rand() % 3 == 0)
             {
                 /// Swap sides
-                auto expression_e = expression_1;
-                expression_1 = expression_2;
-                expression_2 = expression_e;
+                auto exp3 = exp1;
+                exp1 = exp2;
+                exp2 = exp3;
             }
             /// Run mostly equi-joins
             ASTPtr next_condition = makeASTFunction(
-                comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], expression_1, expression_2);
+                comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], exp1, exp2);
             next_condition = tryNegateNextPredicate(next_condition, 30);
 
             /// Sometimes use multiple conditions
@@ -1524,8 +1504,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     if (!ast)
         return;
 
-    checkIterationLimit();
-
     // Check for exceeding max depth.
     ScopedIncrement depth_increment(current_ast_depth);
     if (current_ast_depth > 500)
@@ -1550,7 +1528,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             current_ast_depth,
             debug_visited_nodes.size(),
             (*debug_top_ast)->dumpTree());
-        std::abort();
+        assert(false);
     }
 
     // The fuzzing.
@@ -2191,7 +2169,6 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
 void QueryFuzzer::fuzzMain(ASTPtr & ast)
 {
     current_ast_depth = 0;
-    iteration_count = 0;
     debug_visited_nodes.clear();
     debug_top_ast = &ast;
 

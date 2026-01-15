@@ -1,3 +1,9 @@
+<!---
+A technical comment, you are free to remove or leave it as it is when PR is created
+The following categories are used in the next scripts, update them accordingly
+utils/changelog/changelog.py
+tests/ci/cancel_and_rerun_workflow_lambda/app.py
+-->
 ### Changelog category (leave one):
 - New Feature
 - Experimental Feature
@@ -12,7 +18,7 @@
 - Not for changelog (changelog entry is not required)
 
 
-### Changelog entry (a [user-readable short description](https://github.com/ClickHouse/ClickHouse/blob/master/docs/changelog_entry_guidelines.md) of the changes that goes into CHANGELOG.md):
+### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
 ...
 
 ### Documentation entry for user-facing changes

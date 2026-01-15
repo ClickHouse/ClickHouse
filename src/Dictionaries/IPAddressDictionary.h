@@ -9,10 +9,11 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryHelpers.h>
+#include <base/StringRef.h>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
+#include "DictionaryHelpers.h"
 
 namespace DB
 {
@@ -151,7 +152,7 @@ private:
             ContainerType<UUID>,
             ContainerType<IPv4>,
             ContainerType<IPv6>,
-            ContainerType<std::string_view>,
+            ContainerType<StringRef>,
             ContainerType<Array>>
             maps;
         std::unique_ptr<Arena> string_arena;

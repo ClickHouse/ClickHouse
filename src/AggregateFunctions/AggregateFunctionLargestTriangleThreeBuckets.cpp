@@ -26,10 +26,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int NOT_IMPLEMENTED;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 struct Settings;
@@ -39,8 +38,6 @@ namespace
 
 struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float64>
 {
-    static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
-
     void add(const Float64 xval, const Float64 yval, Arena * arena)
     {
         /// We need to ensure either both or neither coordinates are saved (StatisticalSample ignores NaNs)
@@ -50,53 +47,68 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
         this->addY(yval, arena);
     }
 
-    PODArray<std::pair<Float64, Float64>> getResult(size_t total_buckets)
+    void sort(Arena * arena)
     {
-        size_t size = this->x.size();
-        if (size >= MAX_ARRAY_SIZE)
-            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in largestTriangleThreeBuckets, max: {}", MAX_ARRAY_SIZE);
-
-        /// Sort the data
-        chassert(size == this->y.size());
-
+        chassert(this->x.size() == this->y.size());
         // sort the this->x and this->y in ascending order of this->x using index
-        PODArray<UInt32> index(size);
-        iota(index.data(), size, UInt32(0));
+        std::vector<size_t> index(this->x.size());
 
+        iota(index.data(), index.size(), size_t(0));
         ::sort(index.begin(), index.end(), [&](size_t i1, size_t i2) { return this->x[i1] < this->x[i2]; });
+
+        SampleX temp_x{};
+        SampleY temp_y{};
+
+        for (size_t i = 0; i < this->x.size(); ++i)
+        {
+            temp_x.push_back(this->x[index[i]], arena);
+            temp_y.push_back(this->y[index[i]], arena);
+        }
+
+        for (size_t i = 0; i < this->x.size(); ++i)
+        {
+            this->x[i] = temp_x[i];
+            this->y[i] = temp_y[i];
+        }
+    }
+
+    PODArray<std::pair<Float64, Float64>> getResult(size_t total_buckets, Arena * arena)
+    {
+        // Sort the data
+        this->sort(arena);
 
         PODArray<std::pair<Float64, Float64>> result;
 
         // Handle special cases for small data list
-        if (size <= total_buckets)
+        if (this->x.size() <= total_buckets)
         {
-            for (size_t i = 0; i < size; ++i)
-                result.emplace_back(this->x[index[i]], this->y[index[i]]);
+            for (size_t i = 0; i < this->x.size(); ++i)
+            {
+                result.emplace_back(std::make_pair(this->x[i], this->y[i]));
+            }
             return result;
         }
 
         // Handle special cases for 0 or 1 or 2 buckets
         if (total_buckets == 0)
-        {
             return result;
-        }
         if (total_buckets == 1)
         {
-            result.emplace_back(this->x[index.front()], this->y[index.front()]);
+            result.emplace_back(std::make_pair(this->x.front(), this->y.front()));
             return result;
         }
         if (total_buckets == 2)
         {
-            result.emplace_back(this->x[index.front()], this->y[index.front()]);
-            result.emplace_back(this->x[index.back()], this->y[index.back()]);
+            result.emplace_back(std::make_pair(this->x.front(), this->y.front()));
+            result.emplace_back(std::make_pair(this->x.back(), this->y.back()));
             return result;
         }
 
         // Find the size of each bucket
-        Float64 single_bucket_size = static_cast<Float64>(size - 2) / static_cast<Float64>(total_buckets - 2);
+        Float64 single_bucket_size = static_cast<Float64>(this->x.size() - 2) / static_cast<Float64>(total_buckets - 2);
 
         // Include the first data point
-        result.emplace_back(this->x[index.front()], this->y[index.front()]);
+        result.emplace_back(std::make_pair(this->x[0], this->y[0]));
 
         // the start index of current bucket
         size_t start_index = 1;
@@ -108,15 +120,15 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
             // the end index of next bucket
             size_t end_index = 1 + static_cast<int>(floor(single_bucket_size * (i + 2)));
             // current bucket is the last bucket
-            end_index = std::min(end_index, size);
+            end_index = std::min(end_index, this->x.size());
 
             // Compute the average point in the next bucket
             Float64 avg_x = 0;
             Float64 avg_y = 0;
             for (size_t j = center_index; j < end_index; ++j)
             {
-                avg_x += this->x[index[j]];
-                avg_y += this->y[index[j]];
+                avg_x += this->x[j];
+                avg_y += this->y[j];
             }
             avg_x /= static_cast<Float64>(end_index - center_index);
             avg_y /= static_cast<Float64>(end_index - center_index);
@@ -128,8 +140,8 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
             {
                 Float64 area = std::abs(
                     0.5
-                    * (result.back().first * this->y[index[j]] + this->x[index[j]] * avg_y + avg_x * result.back().second - result.back().first * avg_y
-                       - this->x[index[j]] * result.back().second - avg_x * this->y[index[j]]));
+                    * (result.back().first * this->y[j] + this->x[j] * avg_y + avg_x * result.back().second - result.back().first * avg_y
+                       - this->x[j] * result.back().second - avg_x * this->y[j]));
                 if (area > max_area)
                 {
                     max_area = area;
@@ -138,14 +150,14 @@ struct LargestTriangleThreeBucketsData : public StatisticalSample<Float64, Float
             }
 
             // Include the selected point
-            result.emplace_back(this->x[index[max_index]], this->y[index[max_index]]);
+            result.emplace_back(std::make_pair(this->x[max_index], this->y[max_index]));
 
             start_index = center_index;
             center_index = end_index;
         }
 
         // Include the last data point
-        result.emplace_back(this->x[index.back()], this->y[index.back()]);
+        result.emplace_back(std::make_pair(this->x.back(), this->y.back()));
 
         return result;
     }
@@ -271,9 +283,9 @@ public:
         data(place).read(buf, arena);
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
-        auto res = data(place).getResult(total_buckets);
+        auto res = data(place).getResult(total_buckets, arena);
 
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
@@ -357,51 +369,7 @@ createAggregateFunctionLargestTriangleThreeBuckets(const std::string & name, con
 
 void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFactory & factory)
 {
-    FunctionDocumentation::Description description = R"(
-Applies the [Largest-Triangle-Three-Buckets](https://skemman.is/bitstream/1946/15343/3/SS_MSthesis.pdf) algorithm to the input data.
-The algorithm is used for downsampling time series data for visualization.
-It is designed to operate on series sorted by x coordinate.
-It works by dividing the sorted series into buckets and then finding the largest triangle in each bucket.
-The number of buckets is equal to the number of points in the resulting series.
-The function will sort data by `x` and then apply the downsampling algorithm to the sorted data.
-
-NaNs are ignored in the provided series, meaning that any NaN values will be excluded from the analysis.
-This ensures that the function operates only on valid numerical data.
-    )";
-    FunctionDocumentation::Syntax syntax = R"(
-largestTriangleThreeBuckets(n)(x, y)
-    )";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "x coordinate.", {"(U)Int*", "Float*", "Decimal", "Date", "Date32", "DateTime", "DateTime64"}},
-        {"y", "y coordinate.", {"(U)Int*", "Float*", "Decimal", "Date", "Date32", "DateTime", "DateTime64"}}
-    };
-    FunctionDocumentation::Parameters parameters = {
-        {"n", "Number of points in the resulting series.", {"UInt64"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples with two elements..", {"Array(Tuple(Float64, Float64))"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Downsampling time series data",
-        R"(
-CREATE TABLE largestTriangleThreeBuckets_test (x Float64, y Float64) ENGINE = Memory;
-INSERT INTO largestTriangleThreeBuckets_test VALUES
-    (1.0, 10.0), (2.0, 20.0), (3.0, 15.0), (8.0, 60.0), (9.0, 55.0),
-    (10.0, 70.0), (4.0, 30.0), (5.0, 40.0), (6.0, 35.0), (7.0, 50.0);
-
-SELECT largestTriangleThreeBuckets(4)(x, y) FROM largestTriangleThreeBuckets_test;
-        )",
-        R"(
-┌────────largestTriangleThreeBuckets(4)(x, y)───────────┐
-│           [(1,10),(3,15),(9,55),(10,70)]              │
-└───────────────────────────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction(AggregateFunctionLargestTriangleThreeBuckets::name, {createAggregateFunctionLargestTriangleThreeBuckets, {}, documentation});
+    factory.registerFunction(AggregateFunctionLargestTriangleThreeBuckets::name, createAggregateFunctionLargestTriangleThreeBuckets);
     factory.registerAlias("lttb", AggregateFunctionLargestTriangleThreeBuckets::name);
 }
 

@@ -1,7 +1,6 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -36,6 +35,7 @@ ASTPtr ASTDropQuery::clone() const
 
 void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    ostr << (settings.hilite ? hilite_keyword : "");
     if (kind == ASTDropQuery::Kind::Drop)
         ostr << "DROP ";
     else if (kind == ASTDropQuery::Kind::Detach)
@@ -48,10 +48,8 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     if (temporary)
         ostr << "TEMPORARY ";
 
-    if (has_all)
-        ostr << "ALL ";
-    if (has_tables)
-        ostr << "TABLES FROM ";
+    if (has_all_tables)
+        ostr << "ALL TABLES FROM ";
     else if (!table && !database_and_tables && database)
         ostr << "DATABASE ";
     else if (is_dictionary)
@@ -67,6 +65,8 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     if (if_empty)
         ostr << "IF EMPTY ";
 
+    ostr << (settings.hilite ? hilite_none : "");
+
     if (!table && !database_and_tables && database)
     {
         database->format(ostr, settings, state, frame);
@@ -74,7 +74,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     else if (database_and_tables)
     {
         auto & list = database_and_tables->as<ASTExpressionList &>();
-        for (auto it = list.children.begin(); it != list.children.end(); ++it)
+        for (auto * it = list.children.begin(); it != list.children.end(); ++it)
         {
             if (it != list.children.begin())
                 ostr << ", ";
@@ -106,21 +106,13 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         table->format(ostr, settings, state, frame);
     }
 
-    if (!like.empty())
-    {
-        ostr
-            << (not_like ? " NOT" : "")
-            << (case_insensitive_like ? " ILIKE " : " LIKE")
-            << quoteString(like);
-    }
-
     formatOnCluster(ostr, settings);
 
     if (permanently)
         ostr << " PERMANENTLY";
 
     if (sync)
-        ostr << " SYNC";
+        ostr << (settings.hilite ? hilite_keyword : "") << " SYNC" << (settings.hilite ? hilite_none : "");
 }
 
 ASTs ASTDropQuery::getRewrittenASTsOfSingleTable()

@@ -188,13 +188,12 @@ REGISTER_FUNCTION(IcebergTruncate)
 {
     FunctionDocumentation::Description description = R"(Implements logic of iceberg truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
     FunctionDocumentation::Syntax syntax = "icebergTruncate(N, value)";
-    FunctionDocumentation::Arguments arguments = {{"value", "The value to transform.", {"String", "(U)Int*", "Decimal"}}};
-    FunctionDocumentation::ReturnedValue returned_value = {"The same type as the argument"};
+    FunctionDocumentation::Arguments arguments = {{"value", "String, integer or Decimal value."}};
+    FunctionDocumentation::ReturnedValue returned_value = "The same type as argument";
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergTruncate(3, 'iceberg')", "ice"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 3};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation::Category category = {"Other"};
 
-    factory.registerFunction<FunctionIcebergTruncate>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionIcebergTruncate>({description, syntax, arguments, returned_value, examples, category});
 }
 
 }

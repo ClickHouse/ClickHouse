@@ -9,7 +9,6 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
-#include <Server/HTTPResponseHeaderWriter.h>
 #include <Server/IServer.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -37,8 +36,6 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 {
     try
     {
-        applyHTTPResponseHeaders(response, http_response_headers_override);
-
         HTMLForm params(getContext()->getSettingsRef(), request);
 
         const auto & config = getContext()->getConfigRef();
@@ -55,13 +52,13 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         bool ok = true;
         WriteBufferFromOwnString message;
 
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases();
 
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)
         {
             /// Check if database can contain replicated tables
-            if (db.second->isExternal())
+            if (!db.second->canContainMergeTreeTables())
                 continue;
 
             // Note that in case `async_load_databases = true` we do not want replica status handler to be hanging
@@ -140,16 +137,9 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
 HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    std::unordered_map<String, String> & common_headers)
+    const std::string & config_prefix)
 {
-    std::unordered_map<String, String> http_response_headers_override
-        = parseHTTPResponseHeadersWithCommons(config, config_prefix, "text/plain; charset=UTF-8", common_headers);
-
-    auto creator = [&server, http_response_headers_override]() -> std::unique_ptr<ReplicasStatusHandler>
-    { return std::make_unique<ReplicasStatusHandler>(server, http_response_headers_override); };
-
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(std::move(creator));
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
     factory->addFiltersFromConfig(config, config_prefix);
     return factory;
 }

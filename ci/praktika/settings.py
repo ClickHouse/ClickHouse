@@ -16,14 +16,12 @@ class _Settings:
     SETTINGS_DIRECTORY: str = f"{CI_PATH}/settings"
     CI_CONFIG_JOB_NAME = "Config Workflow"
 
-    # Enables a single job (DOCKER_BUILD_MANIFEST_JOB_NAME) for building all platforms and merge
+    # Enables a single job (DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME) for building all platforms and merge
     ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB = False
     DOCKER_BUILD_ARM_LINUX_JOB_NAME = "Dockers Build (arm)"
-    DOCKER_BUILD_AMD_LINUX_JOB_NAME = "Dockers Build (amd)"
-    DOCKER_BUILD_MANIFEST_JOB_NAME = "Dockers Build (multiplatform manifest)"
-    DOCKER_MERGE_RUNS_ON: Optional[List[str]] = None
+    DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME = "Dockers Build (amd) and Merge"
+    DOCKER_BUILD_AND_MERGE_RUNS_ON: Optional[List[str]] = None
     DOCKER_BUILD_ARM_RUNS_ON: Optional[List[str]] = None
-    DOCKER_BUILD_AMD_RUNS_ON: Optional[List[str]] = None
 
     FINISH_WORKFLOW_JOB_NAME = "Finish Workflow"
     READY_FOR_MERGE_CUSTOM_STATUS_NAME = ""
@@ -67,10 +65,10 @@ class _Settings:
     SECRET_GH_APP_PEM_KEY: str = ""
 
     ENV_SETUP_SCRIPT: str = f"{TEMP_DIR}/praktika_setup_env.sh"
-    WORKFLOW_JOB_FILE: str = f"{TEMP_DIR}/workflow_job.json"
     WORKFLOW_STATUS_FILE: str = f"{TEMP_DIR}/workflow_status.json"
     WORKFLOW_INPUTS_FILE: str = f"{TEMP_DIR}/workflow_inputs.json"
     ARTIFACT_URLS_FILE: str = f"{TEMP_DIR}/artifact_urls.json"
+    CUSTOM_DATA_FILE: str = "/tmp/custom_data.json"
 
     ######################################
     #        CI Cache settings           #
@@ -101,43 +99,24 @@ class _Settings:
     SECRET_CI_DB_PASSWORD: str = ""
     CI_DB_DB_NAME = ""
     CI_DB_TABLE_NAME = ""
-    CI_DB_INSERT_TIMEOUT_SEC = 20
-
-    # to post links for reading statistics in html report (with read-only user)
-    CI_DB_READ_USER: str = ""
-    CI_DB_READ_URL: str = ""
-
-    # Substrings to classify test failures. Used to generate helper queries for checking failure history.
-    # Not required to cover all failures, but recommended to maximize coverage.
-    # Choose values wisely to effectively differentiate between different failure types.
-    TEST_FAILURE_PATTERNS: Optional[List[str]] = None
-
-    ######################################
-    #        Infrastructure Settings     #
-    ######################################
-    CLOUD_INFRASTRUCTURE_CONFIG_PATH: str = ""
-    AWS_REGION: str = ""
-    # S3 path for Slack feed events storage (format: bucket/prefix)
-    # Used by EventFeed and FeedSubscription for PR notification subscriptions
-    EVENT_FEED_S3_PATH: str = ""
+    CI_DB_INSERT_TIMEOUT_SEC = 5
+    SUB_RESULT_NAMES_WITH_TESTS = [
+        "Tests",
+    ]
 
 
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
     "CACHE_S3_PATH",
     "HTML_S3_PATH",
-    "CLOUD_INFRASTRUCTURE_CONFIG_PATH",
-    "EVENT_FEED_S3_PATH",
-    "AWS_REGION",
     "S3_BUCKET_TO_HTTP_ENDPOINT",
     "TEXT_CONTENT_EXTENSIONS",
     "TEMP_DIR",
     "OUTPUT_DIR",
     "INPUT_DIR",
     "CI_CONFIG_RUNS_ON",
-    "DOCKER_MERGE_RUNS_ON",
+    "DOCKER_BUILD_AND_MERGE_RUNS_ON",
     "DOCKER_BUILD_ARM_RUNS_ON",
-    "DOCKER_BUILD_AMD_RUNS_ON",
     "ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB",
     "CI_CONFIG_JOB_NAME",
     "PYTHON_INTERPRETER",
@@ -157,6 +136,7 @@ _USER_DEFINED_SETTINGS = [
     "CI_DB_DB_NAME",
     "CI_DB_TABLE_NAME",
     "CI_DB_INSERT_TIMEOUT_SEC",
+    "SUB_RESULT_NAMES_WITH_TESTS",
     "USE_CUSTOM_GH_AUTH",
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
@@ -167,9 +147,6 @@ _USER_DEFINED_SETTINGS = [
     "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
-    "CI_DB_READ_USER",
-    "CI_DB_READ_URL",
-    "TEST_FAILURE_PATTERNS",
 ]
 
 

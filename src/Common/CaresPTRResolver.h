@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/DNSPTRResolver.h>
+#include "DNSPTRResolver.h"
 
 #include <span>
 #include <mutex>

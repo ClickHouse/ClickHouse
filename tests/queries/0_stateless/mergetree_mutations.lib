@@ -7,16 +7,18 @@ function wait_for_mutation()
     local database=$3
     database=${database:="${CLICKHOUSE_DATABASE}"}
 
-    for _ in {1..300}
+    for i in {1..100}
     do
-        sleep 0.3
+        sleep 0.1
         if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT min(is_done) FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'") -eq 1 ]]; then
-            return
+            break
         fi
-    done
 
-    echo "Timed out while waiting for mutation to execute!"
-    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND mutation_id='$mutation_id' AND is_done=0"
+        if [[ $i -eq 100 ]]; then
+            echo "Timed out while waiting for mutation to execute!"
+        fi
+
+    done
 }
 
 function wait_for_all_mutations()
@@ -25,50 +27,19 @@ function wait_for_all_mutations()
     local database=$2
     database=${database:="${CLICKHOUSE_DATABASE}"}
 
-    for _ in {1..600}
+    for i in {1..200}
     do
         if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT coalesce(minOrNull(is_done), 1) FROM system.mutations WHERE database='$database' AND table like '$table'") -eq 1 ]]; then
-            return
+            break
         fi
+
+        if [[ $i -eq 200 ]]; then
+            echo "Timed out while waiting for mutation to execute!"
+            ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND is_done=0"
+        fi
+
         sleep 0.3
     done
-
-    echo "Timed out while waiting for mutation to execute!"
-    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table like '$table' AND is_done=0"
-}
-
-function wait_for_mutation_in_progress()
-{
-    local table=$1
-    local mutation_id=$2
-    local expect_non_empty=${3:-1}  # 0 = expect empty, 1 = expect non-empty (default: 1)
-    local database=$4
-    database=${database:="${CLICKHOUSE_DATABASE}"}
-
-    for _ in {1..300}
-    do
-        sleep 0.3
-        local length=$(${CLICKHOUSE_CLIENT} --query="SELECT length(parts_in_progress_names) FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'")
-
-        if [[ $expect_non_empty -eq 0 ]]; then
-            # Expect parts_in_progress_names to be empty (length = 0)
-            if [[ $length -eq 0 ]]; then
-                return
-            fi
-        else
-            # Expect parts_in_progress_names to be non-empty (length > 0)
-            if [[ $length -gt 0 ]]; then
-                return
-            fi
-        fi
-    done
-
-    if [[ $expect_non_empty -eq 0 ]]; then
-        echo "Timed out while waiting for mutation parts_in_progress to become empty!"
-    else
-        echo "Timed out while waiting for mutation parts_in_progress to become non-empty!"
-    fi
-    ${CLICKHOUSE_CLIENT} -q "SELECT * FROM system.mutations WHERE database='$database' AND table='$table' AND mutation_id='$mutation_id'"
 }
 
 # vi: ft=bash

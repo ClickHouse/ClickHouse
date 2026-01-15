@@ -1,7 +1,6 @@
 #include <functional>
 #include <iostream>
 #include <string_view>
-#include <Client/ClientBaseHelpers.h>
 #include <boost/program_options.hpp>
 
 #include <Core/Settings.h>
@@ -55,6 +54,32 @@ namespace DB::ErrorCodes
 
 namespace
 {
+
+void skipSpacesAndComments(const char*& pos, const char* end, bool print_comments)
+{
+    do
+    {
+        /// skip spaces to avoid throw exception after last query
+        while (pos != end && std::isspace(*pos))
+            ++pos;
+
+        const char * comment_begin = pos;
+        /// for skip comment after the last query and to not throw exception
+        if (end - pos > 2 && *pos == '-' && *(pos + 1) == '-')
+        {
+            pos += 2;
+            /// skip until the end of the line
+            while (pos != end && *pos != '\n')
+                ++pos;
+            if (print_comments)
+                std::cout << std::string_view(comment_begin, pos - comment_begin) << "\n";
+        }
+        /// need to parse next sql
+        else
+            break;
+    } while (pos != end);
+}
+
 }
 
 #pragma clang diagnostic ignored "-Wunused-function"
@@ -73,17 +98,16 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("query", po::value<std::string>(), "query to format")
             ("help,h", "produce help message")
             ("comments", "keep comments in the output")
-            ("hilite,highlight", "add syntax highlight with ANSI terminal escape sequences (can also use --highlight)")
+            ("hilite", "add syntax highlight with ANSI terminal escape sequences")
             ("oneline", "format in single line")
             ("max_line_length", po::value<size_t>()->default_value(0), "format in single line queries with length less than specified")
             ("quiet,q", "just check syntax, no output on success")
             ("multiquery,n", "allow multiple queries in the same file")
             ("obfuscate", "obfuscate instead of formatting")
             ("backslash", "add a backslash at the end of each line of the formatted query")
-            ("allow_settings_after_format_in_insert", "allow SETTINGS after FORMAT, but note, that this is not always safe")
+            ("allow_settings_after_format_in_insert", "Allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
-            ("show_secrets", po::bool_switch()->default_value(false), "show secret values like passwords, API keys, etc.")
-            ("semicolons_inline", "In multiquery mode put semicolon on last line of query instead of a new line")
+            ("format_alter_operations_with_parentheses", po::value<bool>()->default_value(true), "If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.")
         ;
 
         Settings cmd_settings;
@@ -94,40 +118,23 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
         po::notify(options);
 
-        if (options.contains("help"))
+        if (options.count("help"))
         {
             std::cout << "Usage: " << argv[0] << " [options] < query" << std::endl;
             std::cout << desc << std::endl;
             return 1;
         }
 
-        bool hilite = options.contains("hilite");
-        bool oneline = options.contains("oneline");
-        bool quiet = options.contains("quiet");
-        bool multiple = options.contains("multiquery");
+        bool hilite = options.count("hilite");
+        bool oneline = options.count("oneline");
+        bool quiet = options.count("quiet");
+        bool multiple = options.count("multiquery");
+        bool print_comments = options.count("comments");
         size_t max_line_length = options["max_line_length"].as<size_t>();
-        bool obfuscate = options.contains("obfuscate");
-        bool backslash = options.contains("backslash");
-        bool allow_settings_after_format_in_insert = options.contains("allow_settings_after_format_in_insert");
-        bool show_secrets = options["show_secrets"].as<bool>();
-        bool semicolon_inline = options.contains("semicolons_inline");
-
-        std::function<void(std::string_view)> comments_callback;
-        if (options.contains("comments"))
-            comments_callback = [](const std::string_view comment) { std::cout << comment << '\n'; };
-
-        SharedContextHolder shared_context = Context::createShared();
-        auto context = Context::createGlobal(shared_context.get());
-        auto context_const = WithContext(context).getContext();
-        context->makeGlobalContext();
-
-#if !USE_REPLXX
-        if (hilite)
-        {
-            std::cerr << "Option 'hilite' is only available if ClickHouse is built with replxx library." << std::endl;
-            return 2;
-        }
-#endif
+        bool obfuscate = options.count("obfuscate");
+        bool backslash = options.count("backslash");
+        bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
+        bool format_alter_operations_with_parentheses = options["format_alter_operations_with_parentheses"].as<bool>();
 
         if (quiet && (hilite || oneline || obfuscate))
         {
@@ -153,9 +160,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             return 2;
         }
 
+        ASTAlterCommand::setFormatAlterCommandsWithParentheses(format_alter_operations_with_parentheses);
+
         String query;
 
-        if (options.contains("query"))
+        if (options.count("query"))
         {
             query = options["query"].as<std::string>();
         }
@@ -171,17 +180,22 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             WordSet used_nouns;
             SipHash hash_func;
 
-            if (options.contains("seed"))
+            if (options.count("seed"))
             {
                 hash_func.update(options["seed"].as<std::string>());
             }
 
+            SharedContextHolder shared_context = Context::createShared();
+            auto context = Context::createGlobal(shared_context.get());
+            auto context_const = WithContext(context).getContext();
+            context->makeGlobalContext();
+
             registerInterpreters();
             registerFunctions();
             registerAggregateFunctions();
-            registerTableFunctions();
+            registerTableFunctions(false);
             registerDatabases();
-            registerStorages();
+            registerStorages(false);
             registerFormats();
 
             std::unordered_set<std::string> additional_names;
@@ -228,7 +242,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         {
             const char * pos = query.data();
             const char * end = pos + query.size();
-            skipSpacesAndComments(pos, end, comments_callback);
+            skipSpacesAndComments(pos, end, print_comments);
 
             ParserQuery parser(end, allow_settings_after_format_in_insert);
             while (pos != end)
@@ -267,19 +281,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     if (!backslash)
                     {
                         WriteBufferFromOwnString str_buf;
-
-                        WriteBufferFromOwnString query_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(oneline_current_query);
-                        settings.show_secrets = show_secrets;
+                        IAST::FormatSettings settings(oneline_current_query, hilite);
+                        settings.show_secrets = true;
                         settings.print_pretty_type_names = !oneline_current_query;
-                        res->format(query_buf, settings);
-                        String formatted_query = query_buf.str();
-#if USE_REPLXX
-                        if (hilite)
-                            formatted_query = highlighted(formatted_query, *context);
-#endif
-                        str_buf.write(formatted_query.data(), formatted_query.size());
+                        res->format(str_buf, settings);
 
                         if (insert_query_payload)
                         {
@@ -307,7 +313,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
                         if (multiple && !insert_query_payload)
                         {
-                            if (oneline || !has_multiple_lines || semicolon_inline)
+                            if (oneline || !has_multiple_lines)
                                 std::cout << ";\n";
                             else
                                 std::cout << "\n;\n";
@@ -323,20 +329,16 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                     {
                         WriteBufferFromOwnString str_buf;
                         bool oneline_current_query = oneline || approx_query_length < max_line_length;
-                        IAST::FormatSettings settings(oneline_current_query);
-                        settings.show_secrets = show_secrets;
+                        IAST::FormatSettings settings(oneline_current_query, hilite);
+                        settings.show_secrets = true;
                         settings.print_pretty_type_names = !oneline_current_query;
                         res->format(str_buf, settings);
 
-                        String formatted_query = str_buf.str();
-#if USE_REPLXX
-                        if (hilite)
-                            formatted_query = highlighted(formatted_query, *context);
-#endif
+                        auto res_string = str_buf.str();
                         WriteBufferFromOStream res_cout(std::cout, 4096);
 
-                        const char * s_pos = formatted_query.data();
-                        const char * s_end = s_pos + formatted_query.size();
+                        const char * s_pos= res_string.data();
+                        const char * s_end = s_pos + res_string.size();
 
                         while (s_pos != s_end)
                         {
@@ -351,7 +353,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                         std::cout << std::endl;
                     }
                 }
-                skipSpacesAndComments(pos, end, comments_callback);
+                skipSpacesAndComments(pos, end, print_comments);
                 if (!multiple)
                     break;
             }

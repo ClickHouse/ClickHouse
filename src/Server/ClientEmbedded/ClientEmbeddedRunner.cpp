@@ -83,7 +83,7 @@ void ClientEmbeddedRunner::clientRoutine(NameToNameMap envs, String starting_que
     finished.test_and_set();
     char c = 0;
     // Server may poll on a descriptor waiting for client output, wake him up with invisible character
-    (void)write(client_descriptors->getDescriptorsForClient().out, &c, 1);
+    write(client_descriptors->getDescriptorsForClient().out, &c, 1);
 }
 
 }

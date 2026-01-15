@@ -22,19 +22,10 @@ void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
 #if USE_MONGODB
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
-#endif
-#if USE_YTSAURUS
-void registerTableFunctionYTsaurus(TableFunctionFactory & factory);
+void registerTableFunctionMongoDBPocoLegacy(TableFunctionFactory & factory);
 #endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
-
-#if USE_ARROWFLIGHT
-void registerTableFunctionArrowFlight(TableFunctionFactory & factory);
-#endif
-
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
-void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory);
-void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory);
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);
@@ -75,6 +66,6 @@ void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory);
 
 void registerTableFunctionTimeSeries(TableFunctionFactory & factory);
 
-void registerTableFunctions();
+void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]);
 
 }

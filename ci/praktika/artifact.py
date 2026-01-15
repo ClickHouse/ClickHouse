@@ -20,15 +20,11 @@ class Artifact:
         name: str
         type: str
         path: Union[str, List[str]]
-        compress_zst: bool = False
         _provided_by: str = ""
         _s3_path: str = ""
 
         def is_s3_artifact(self):
             return self.type == Artifact.Type.S3
-
-        def is_phony(self):
-            return self.type == Artifact.Type.PHONY
 
         def parametrize(self, names):
             res = []
