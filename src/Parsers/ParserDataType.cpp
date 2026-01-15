@@ -318,6 +318,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (parseEnumValues(pos, enum_node->values, expected) && pos->type == TokenType::ClosingRoundBracket)
         {
             ++pos;
+            enum_node->values.shrink_to_fit();
             node = enum_node;
             return true;
         }
