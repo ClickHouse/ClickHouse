@@ -184,7 +184,8 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         return res;
 
     const std::string & default_database_name = local_context->getSettingsRef()[Setting::default_dictionary_database];
-    if (qualified_name->database.empty() && !default_database_name.empty())
+    bool database_empty = qualified_name->database.empty();
+    if (database_empty && !default_database_name.empty())
     {
         /// Either database name is not specified and we should use default or current one
         qualified_name->database = default_database_name;
@@ -196,7 +197,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         const_pointer_cast<Context>(getContext()));
 
     std::string current_database_name = local_context->getCurrentDatabase();
-    if (qualified_name->database.empty() && !db)
+    if (database_empty && !db)
     {
         res = name;
         bool is_xml_dictionary = has(name);
