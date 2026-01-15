@@ -32,6 +32,7 @@ def get_ddl_worker_reset_count(node):
 
 
 def assert_ddl_worker_reset_with_retry(node, prev_reset_count: int):
+    node.query("SYSTEM FLUSH LOGS")
     node.query_with_retry(
         "SELECT count() FROM system.text_log WHERE (message='Resetting state as requested') AND (logger_name='DDLWorker') AND (level='Information')",
         check_callback=lambda x: int(x.strip()) == prev_reset_count + 1,
