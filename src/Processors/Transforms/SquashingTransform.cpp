@@ -37,7 +37,6 @@ SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 
 bool SquashingTransform::canGenerate()
 {
-
     return squashing.canGenerate();
 }
 

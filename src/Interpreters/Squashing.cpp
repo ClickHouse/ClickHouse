@@ -143,7 +143,7 @@ Chunk Squashing::generateUsingStrictBounds()
     /// Consumes partial chunks if needed to respect max limits
     while (!pending.empty())
     {
-        if (pending.peekFront().getNumRows() == 0)
+        if (!pending.peekFront())
         {
             pending.dropFront();
             continue;
@@ -174,20 +174,12 @@ Chunk Squashing::generateUsingStrictBounds()
 
 Chunk Squashing::generateUsingOneMinBound(bool flush_if_enough_size)
 {
-    if (pending.empty() && oneMinReached())
-        return convertToChunk();
-
     while (!pending.empty())
     {
         auto input_chunk = pending.pullFront();
 
-        if (!input_chunk || input_chunk.getNumRows() == 0)
-        {
-            if (pending.empty() && oneMinReached())
-                return convertToChunk();
-
+        if (!input_chunk)
             continue;
-        }
 
         /// Just read block is already enough.
         if (oneMinReached(input_chunk))
@@ -221,6 +213,10 @@ Chunk Squashing::generateUsingOneMinBound(bool flush_if_enough_size)
         if (oneMinReached())
             return convertToChunk();
     }
+
+    if (oneMinReached())
+        return convertToChunk();
+
     return {};
 }
 
