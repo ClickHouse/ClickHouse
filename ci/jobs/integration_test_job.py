@@ -17,8 +17,9 @@ MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() // (1024**3), 1)
-MAX_CPUS_PER_WORKER = 4
-MAX_MEM_PER_WORKER = 7
+
+MAX_CPUS_PER_WORKER = 5
+MAX_MEM_PER_WORKER = 11
 
 
 def _start_docker_in_docker():
@@ -103,6 +104,7 @@ def get_parallel_sequential_tests_to_run(
     workers: int,
     job_options: str,
     info: Info,
+    no_strict: bool = False,
 ) -> Tuple[List[str], List[str]]:
     if args_test:
         batch_num = 1
@@ -145,7 +147,8 @@ def get_parallel_sequential_tests_to_run(
             if test_match(test_file, test_arg):
                 sequential_tests.append(test_arg)
                 matched = True
-        assert matched, f"Test [{test_arg}] not found"
+        if not no_strict:
+            assert matched, f"Test [{test_arg}] not found"
 
     return parallel_tests, sequential_tests
 
@@ -328,7 +331,8 @@ def main():
             args.test or targeted_tests or changed_test_modules,
             workers,
             args.options,
-            info
+            info,
+            no_strict=is_targeted_check,  # targeted check might want to run test that was removed on a merge-commit
         )
     )
 

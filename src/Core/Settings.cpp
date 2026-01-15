@@ -1026,6 +1026,9 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
     DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
 Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
 )", 0) \
+    DECLARE(Bool, use_variant_default_implementation_for_comparisons, true, R"(
+Enables or disables default implementation for Variant type in comparison functions.
+)", 0) \
     DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code.
 )", 0) \
@@ -1380,37 +1383,11 @@ Possible values:
 - 2 — Enables `force_optimize_skip_unused_shards` up to the second level.
 )", 0) \
     \
-    DECLARE(Bool, input_format_parallel_parsing, true, R"(
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TabSeparated (TSV)](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-)", 0) \
     DECLARE(NonZeroUInt64, min_chunk_bytes_for_parallel_parsing, (10 * 1024 * 1024), R"(
 - Type: unsigned int
 - Default value: 1 MiB
 
 The minimum chunk size in bytes, which each thread will parse in parallel.
-)", 0) \
-    DECLARE(Bool, output_format_parallel_formatting, true, R"(
-Enables or disables parallel formatting of data formats. Supported only for [TSV](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-)", 0) \
-    DECLARE(UInt64, output_format_compression_level, 3, R"(
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
-
-Possible values: from `1` to `22`
-)", 0) \
-    DECLARE(UInt64, output_format_compression_zstd_window_log, 0, R"(
-Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
-
-Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
 )", 0) \
     DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, true, R"(
 Allows to output columns with special serialization kinds like Sparse and Replicated without converting them to full column representation.
@@ -1974,13 +1951,14 @@ Possible values:
 ```
 )", 0) \
 \
-    DECLARE(BoolAuto, insert_select_deduplicate, Field("auto"), R"(
+    DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE, R"(
 Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
 The setting overrids `insert_deduplicate` for `INSERT SELECT` queries.
 That setting has three possible values:
-- 0 — Deduplication is disabled for `INSERT SELECT` query.
-- 1 — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
-- auto — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
+- disable — Deduplication is disabled for `INSERT SELECT` query.
+- force_enable — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
+- enable_when_possible — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
+- enable_even_for_bad_queries - Deduplication is enabled if `insert_deduplicate` is enable. If select result is not stable, warning is logged, but query is executed with deduplication. This option is for backward compatibility. Consider to use other options instead as it may lead to unexpected results.
     )", 0) \
 \
     DECLARE(Bool, insert_deduplicate, true, R"(
@@ -3130,6 +3108,12 @@ Possible values:
 source data ran out.
 )", 0) \
     \
+    DECLARE(Bool, exact_rows_before_limit, false, R"(
+When enabled, ClickHouse will provide exact value for rows_before_limit_at_least statistic, but with the cost that the data before limit will have to be read completely
+)", 0) \
+    DECLARE(Bool, rows_before_aggregation, false, R"(
+When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
+)", 0) \
     DECLARE(UInt64, max_rows_in_join, 0, R"(
 Limits the number of rows in the hash table that is used when joining tables.
 
@@ -3259,6 +3243,9 @@ Possible values:
  Legacy value, please don't use anymore.
  Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
 
+)", 0) \
+    DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
+Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
 )", 0) \
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
 Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
@@ -3634,6 +3621,18 @@ To disable the collection of a single query, set `query_metric_log_interval` to 
 
 Default value: -1
     )", 0) \
+    DECLARE(Bool, regexp_dict_allow_hyperscan, true, R"(
+Allow regexp_tree dictionary using Hyperscan library.
+)", 0) \
+    DECLARE(Bool, regexp_dict_flag_case_insensitive, false, R"(
+Use case-insensitive matching for a regexp_tree dictionary. Can be overridden in individual expressions with (?i) and (?-i).
+)", 0) \
+    DECLARE(Bool, regexp_dict_flag_dotall, false, R"(
+Allow '.' to match newline characters for a regexp_tree dictionary.
+)", 0) \
+    DECLARE(Bool, dictionary_use_async_executor, false, R"(
+Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
+)", 0) \
     DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
 Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \
@@ -5518,7 +5517,7 @@ The engine family allowed in Cloud.
 - 1 - rewrite DDLs to use *ReplicatedMergeTree
 - 2 - rewrite DDLs to use SharedMergeTree
 - 3 - rewrite DDLs to use SharedMergeTree except when explicitly passed remote disk is specified
-- 4 - same as 3, plus additionally use Alias instead of Distributed
+- 4 - same as 3, plus additionally use Alias instead of Distributed (the Alias table will point to the destination table of the Distributed table, so it will use the corresponding local table)
 
 UInt64 to minimize public part
 )", 0) \
@@ -5835,6 +5834,9 @@ Possible values:
 
 - `left` - Decorrelation process will produce LEFT JOINs and input table will appear on the left side.
 - `right` - Decorrelation process will produce RIGHT JOINs and input table will appear on the right side.
+)", 0) \
+    DECLARE(Bool, correlated_subqueries_use_in_memory_buffer, true, R"(
+Use in-memory buffer for correlated subquery input to avoid its repeated evaluation.
 )", 0) \
     DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
 Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
@@ -7296,6 +7298,11 @@ instead of glob listing. 0 means disabled.
     DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
 Always ignore ON CLUSTER clause for DDL queries with replicated databases.
 )", 0) \
+    DECLARE_WITH_ALIAS(Bool, enable_qbit_type, true, R"(
+Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
+)", BETA, allow_experimental_qbit_type) \
+    DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
+Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
@@ -7398,10 +7405,6 @@ On server startup, prevent scheduling of refreshable materialized views, as if w
     \
     DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
 Allow to create database with Engine=MaterializedPostgreSQL(...).
-)", EXPERIMENTAL) \
-    \
-    DECLARE(Bool, allow_experimental_qbit_type, false, R"(
-Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
 )", EXPERIMENTAL) \
     \
     /** Experimental feature for moving data between shards. */ \
@@ -7645,6 +7648,7 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_r
     MAKE_OBSOLETE(M, Bool, use_json_alias_for_old_object_type, false) \
     MAKE_OBSOLETE(M, Bool, describe_extend_object_types, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_object_type, false) \
+    MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"})
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

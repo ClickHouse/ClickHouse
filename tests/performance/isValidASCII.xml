@@ -34,5 +34,5 @@
     <query>SELECT isValidASCII(medium_utf8) FROM tab FORMAT Null</query>
     <query>SELECT isValidASCII(long_utf8) FROM tab FORMAT Null</query>
 
-    <query>DROP TABLE tab</query>
+    <drop_query>DROP TABLE tab</drop_query>
 </clickhouse>

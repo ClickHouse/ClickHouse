@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-random-merge-tree-settings
+# add_minmax_index_for_numeric_columns=0: Changes the plan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,7 +14,7 @@ do
     $CH_CLIENT -q "drop table if exists test_index"
     $CH_CLIENT -q "drop table if exists idx"
 
-    $CH_CLIENT -q "create table test_index (x UInt32, y UInt32, z UInt32, t UInt32, index t_minmax t % 20 TYPE minmax GRANULARITY 2, index t_set t % 19 type set(4) granularity 2) engine = MergeTree order by (x, y) partition by (y, bitAnd(z, 3), intDiv(t, 15)) settings index_granularity = 2, min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1"
+    $CH_CLIENT -q "create table test_index (x UInt32, y UInt32, z UInt32, t UInt32, index t_minmax t % 20 TYPE minmax GRANULARITY 2, index t_set t % 19 type set(4) granularity 2) engine = MergeTree order by (x, y) partition by (y, bitAnd(z, 3), intDiv(t, 15)) settings index_granularity = 2, min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, add_minmax_index_for_numeric_columns=0"
     $CH_CLIENT -q "insert into test_index select number, number > 3 ? 3 : number, number = 1 ? 1 : 0, number from numbers(20)"
 
     $CH_CLIENT -q "
@@ -38,7 +39,7 @@ do
         explain actions = 1 select x from test_index where x > 15 order by x desc;
         " | grep -A 100 "ReadFromMergeTree"
 
-    $CH_CLIENT -q "CREATE TABLE idx (x UInt32, y UInt32, z UInt32) ENGINE = MergeTree ORDER BY (x, x + y) settings min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1"
+    $CH_CLIENT -q "CREATE TABLE idx (x UInt32, y UInt32, z UInt32) ENGINE = MergeTree ORDER BY (x, x + y) settings min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, add_minmax_index_for_numeric_columns=0"
     $CH_CLIENT -q "insert into idx select number, number, number from numbers(10)"
 
     $CH_CLIENT -q "

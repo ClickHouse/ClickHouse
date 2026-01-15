@@ -442,6 +442,16 @@ protected:
       */
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
 
+    /** If useDefaultImplementationForVariant() is true, then special FunctionBaseVariantAdaptor will be used
+     *  if function arguments has Variant column. This adaptor will build and execute this function for all
+     *  internal types inside Variant column separately and construct result based on results for these types.
+     *  The result will be Variant with the union of all variant types from arguments.
+     *
+     *  We cannot use default implementation for Variant if function doesn't use default implementation for NULLs,
+     *  because Variant column can contain NULLs and we should know how to process them.
+      */
+    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
+
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
@@ -512,6 +522,8 @@ public:
 
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
+
+    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
 
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 

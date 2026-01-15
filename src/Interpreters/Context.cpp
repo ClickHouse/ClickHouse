@@ -987,6 +987,8 @@ struct ContextSharedPart : boost::noncopyable
         {
             /// Stop zookeeper connection
             std::lock_guard lock(zookeeper_mutex);
+            if (zookeeper)
+                zookeeper->finalize("shutdown");
             zookeeper.reset();
         }
 
@@ -2555,8 +2557,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
         if (parts.size() == 2)
         {
-            database_name = parts[0];
-            table_name = parts[1];
+            database_name = std::move(parts[0]);
+            table_name = std::move(parts[1]);
         }
     }
 
@@ -2584,7 +2586,13 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     }
     auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     auto key = toString(hash);
-    StoragePtr & res = table_function_results[key];
+
+    StoragePtr res;
+    {
+        std::lock_guard lock(table_function_results_mutex);
+        res = table_function_results[key];
+    }
+
     if (!res)
     {
         TableFunctionPtr table_function_ptr;
@@ -2621,7 +2629,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
             bool asterisk = false;
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
-            const auto * expression = expression_list.begin();
+            auto expression = expression_list.begin();
 
             /// We want to go through SELECT expression list and correspond each expression to column in insert table
             /// which type will be used as a hint for the file structure inference.
@@ -2742,6 +2750,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
         ///
         auto new_hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
+
+        std::lock_guard lock(table_function_results_mutex);
+        table_function_results[key] = res;
         if (hash != new_hash)
         {
             key = toString(new_hash);
@@ -2755,11 +2766,20 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 {
     const auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     const auto key = toString(hash);
-    StoragePtr & res = table_function_results[key];
+
+    StoragePtr res;
+    {
+        std::lock_guard lock(table_function_results_mutex);
+        res = table_function_results[key];
+    }
 
     if (!res)
     {
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+        std::lock_guard lock(table_function_results_mutex);
+        /// In case of race, another thread might have inserted a result already.
+        /// We just overwrite it since both should be equivalent.
+        table_function_results[key] = res;
     }
 
     return res;
