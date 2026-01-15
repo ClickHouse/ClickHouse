@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
@@ -17,12 +18,6 @@
 
 namespace DB
 {
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 max_file_name_length;
-    extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
-}
 
 namespace ErrorCodes
 {
@@ -148,11 +143,7 @@ void MergeTreeDataPartWriterWide::addStreams(
 
         auto full_stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
-        String stream_name;
-        if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_name.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
-            stream_name = sipHash128String(full_stream_name);
-        else
-            stream_name = full_stream_name;
+        String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
 
         /// Shared offsets for Nested type.
         if (column_streams.contains(stream_name))
@@ -582,12 +573,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     if (!type->isValueRepresentedByNumber() || type->haveSubtypes() || serialization->getKindStack() != ISerialization::KindStack{ISerialization::Kind::DEFAULT})
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot validate column of non fixed type {}", type->getName());
 
-    String escaped_name = escapeForFileName(name);
-    String stream_name;
-    if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && escaped_name.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
-        stream_name = sipHash128String(escaped_name);
-    else
-        stream_name = escaped_name;
+    String stream_name = replaceFileNameToHashIfNeeded(escapeForFileName(name), *storage_settings, data_part_storage.get());
     String mrk_path = stream_name + marks_file_extension;
     String bin_path = stream_name + DATA_FILE_EXTENSION;
 
