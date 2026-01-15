@@ -8,9 +8,11 @@
 #include <base/phdr_cache.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/logger_useful.h>
 #include <Common/SignalHandlers.h>
 #include <Common/tests/gtest_global_context.h>
@@ -20,6 +22,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionGenerateRandomStructure.h>
 #include <Interpreters/Context.h>
@@ -134,6 +137,8 @@ enum Problem
     P_BULK_SUCCESS_BUT_ROW_ERROR,
     P_BULK_ERROR_BUT_ROW_SUCCESS,
     P_BROKEN_DETERMINISM,
+    P_BROKEN_INJECTIVITY,
+    P_BROKEN_MONOTONICITY,
     P_UNEXPECTED_ERROR,
 
     P_COUNT,
@@ -161,6 +166,8 @@ std::pair<String, String> problemInfo(Problem p)
             "function says it's deterministic, but returned different values when executed twice"};
         case P_UNEXPECTED_ERROR: return {"unexpected_error",
             "function threw from unexpected place or with unexpected error code, or misc test failure"};
+        case P_BROKEN_INJECTIVITY: return {"broken_injectivity", "function said it's injective, but returned the same value on different inputs"};
+        case P_BROKEN_MONOTONICITY: return {"broken_monotonicity", "function said it's monotonic, but returned nonmonotonic values"};
 
         case P_COUNT: std::abort();
     }
@@ -192,8 +199,7 @@ struct Options
     /// consistently followed.
     bool avoid_reusing_overload_resolver = true;
 
-    //asdqwe use these 3
-    VectorOfStrings ignore_problems = {{"late_typecheck", "const_dependent_checks", "broken_nullable_input"}};
+    VectorOfStrings ignore_problems = {{"late_typecheck", "const_dependent_checks", "broken_nullable_input", "data_dependent_const"}};
     VectorOfStrings functions;
     VectorOfStrings skip_functions;
 
@@ -452,6 +458,9 @@ const std::unordered_set<std::string_view> excluded_functions = {
     /// this behavior is intended and makes sense somehow.
     "kql_array_sort_asc",
     "kql_array_sort_desc",
+
+    /// Slow, especially in TSAN build.
+    "addressToLineWithInlines",
 };
 
 /// For these functions, IFunctionBase::prepare may throw (for no good reason).
@@ -470,12 +479,27 @@ const std::unordered_set<std::string_view> functions_with_const_dependent_semant
     "getTypeSerializationStreams",
 };
 
-/// Functions whose result may be const or non-const depending on the input *data*, not just on
-/// types and constness of inputs.
-const std::unordered_set<std::string_view> functions_with_data_dependent_const = {
-    /// These have a fast path to return ColumnConst if IColumn pointers are equal.
-    "isDistinctFrom",
-    "isNotDistinctFrom",
+struct ArgConstraints
+{
+    /// If the value is [U]Int{8,16,32,64,128,256} (possibly inside Nullable, LowCardinality, etc),
+    /// it must be no greater than this value.
+    std::optional<Int64> integer_at_most;
+
+    auto toTuple() const { return std::make_tuple(integer_at_most); }
+    bool operator<(const ArgConstraints & rhs) const { return toTuple() < rhs.toTuple(); }
+
+    bool isUnconstrained() const
+    {
+        return toTuple() == ArgConstraints().toTuple();
+    }
+};
+
+/// Limits on some arguments of some functions, to avoid them using lots of memory or time.
+/// E.g. avoid calling randomStringUTF8(1000000000000) because it would try to generate a 1 TB string.
+const std::unordered_map<std::string_view, std::vector<std::pair</*arg_idx*/ size_t, ArgConstraints>>>
+function_arg_constraints = {
+    {"randomStringUTF8", {{0, {.integer_at_most = 50}}}},
+    {"arrayWithConstant", {{0, {.integer_at_most = 20}}}},
 };
 
 static constexpr size_t MEMORY_LIMIT_BYTES_PER_THREAD = 256 << 20;
@@ -493,12 +517,6 @@ size_t generateRandomNumberOfArgs()
     else
         return n - 11 + 3;
 }
-
-struct ArgConstraints
-{
-    auto toTuple() const { return std::make_tuple(); }
-    bool operator<(const ArgConstraints & rhs) const { return toTuple() < rhs.toTuple(); }
-};
 
 ContextMutablePtr makeContext()
 {
@@ -520,8 +538,11 @@ struct FunctionInfo
 {
     String name;
     FunctionOverloadResolverPtr overload_resolver;
-    /// TODO: maybe put hardcoded ArgConstraints here
+
+    std::vector<std::pair</*arg_idx*/ size_t, ArgConstraints>> hard_constraints {};
 };
+
+std::vector<std::atomic<UInt64>> reported_problems; // function idx -> bitmask of Problem enum values
 
 Options options;
 LoggerPtr logger;
@@ -562,7 +583,13 @@ void listTestableFunctions()
             resolver.reset();
 
         testable_functions.push_back(FunctionInfo {.name = name, .overload_resolver = resolver});
+
+        auto it = function_arg_constraints.find(name);
+        if (it != function_arg_constraints.end())
+            testable_functions.back().hard_constraints = it->second;
     }
+
+    reported_problems = std::vector<std::atomic<UInt64>>(testable_functions.size());
 
     LOG_INFO(logger, "testable functions: {} / {}; excluded: {}", testable_functions.size(), all_names.size(), num_excluded);
 }
@@ -587,6 +614,8 @@ enum Stat
 class FunctionStats
 {
 public:
+    size_t function_idx = size_t(-1);
+
     Int64 get(Stat idx) const
     {
         return counters[idx];
@@ -612,9 +641,9 @@ public:
         {
             if (problems[p].empty() && !options.ignore_problem.at(p))
             {
-                /// Deduplicate across threads.
-                static std::array<std::atomic<bool>, P_COUNT> printed {};
-                if (!printed.at(p).exchange(true))
+                UInt64 bit = 1ul << function_idx;
+                UInt64 m = reported_problems.at(function_idx).fetch_or(bit);
+                if (!(m & bit))
                     LOG_ERROR(logger, "{}: {}\n", problemInfo(Problem(p)).first, error);
             }
 
@@ -629,6 +658,7 @@ public:
 
     void merge(const FunctionStats & s)
     {
+        chassert(function_idx == size_t(-1) || function_idx == s.function_idx);
         UInt64 mask_diff = which_stats_use_max ^ s.which_stats_use_max;
         UInt64 mask_union = which_stats_use_max | s.which_stats_use_max;
         for (size_t i = 0; i < counters.size(); ++i)
@@ -678,87 +708,26 @@ struct Operation
     size_t function_idx = UINT64_MAX;
     /// Function, argument types and constness. Values of const args. Random columns for non-const args.
     ColumnsWithTypeAndName args;
-    size_t row_idx = 0; // if ExecutingFunctionOnOneRow or ReExecutingFunctionOnOneRow
+    size_t cur_row_idx = 0; // if ExecutingFunctionOnOneRow or ReExecutingFunctionOnOneRow
     std::vector<size_t> args_became_const; // for ReExecutingFunctionOnOneRow
 
 
-    /// Returns a string that fits in the sentence "... while {}", e.g. "executing function: SELECT f(42)".
-    /// If `multirow_query_only`, returns just the query (without "executing function: ") and includes
-    /// an ARRAY JOIN with all rows even if `step` is ExecutingFunctionOnOneRow.
-    String describe(bool multirow_query_only = false) const
+    static String genName(size_t i)
+    {
+        if (i < 26)
+            return String(1, char('a' + i));
+        return fmt::format("c{}", i);
+    }
+
+    /// 3 modes for what to do with non-const columns in `args`:
+    ///  * row has value: use argument values for that row index
+    ///  * row has no value, out_need_array_join is nullptr: use default value
+    ///  * row has no value, out_need_array_join is not nullptr: use columns name genName(i) and expect the caller to add a corresponding ARRAY JOIN to the query
+    String formatFunctionCall(std::optional<size_t> row, bool * out_need_array_join = nullptr) const
     {
         WriteBufferFromOwnString buf;
-
-        /// What argument values to print.
-        enum class Mode
-        {
-            OnlyConstants,
-            OneRow,
-            AllRows,
-        };
-
-        Mode mode = Mode::OnlyConstants;
-        if (multirow_query_only)
-        {
-            mode = Mode::AllRows;
-        }
-        else
-        {
-            switch (step)
-            {
-                case Step::None:
-                    return "unknown";
-                case Step::GeneratingArguments:
-                    writeString("picking arguments for function ", buf);
-                    writeString(testable_functions.at(function_idx).name, buf);
-                    return std::move(buf.str());
-                case Step::ResolvingOverload:
-                    writeString("resolving overload", buf);
-                    mode = Mode::OnlyConstants;
-                    break;
-                case Step::ExecutingFunctionInBulk:
-                    writeString("executing", buf);
-                    mode = Mode::AllRows;
-                    break;
-                case Step::ExecutingFunctionOnOneRow:
-                    writeString("executing", buf);
-                    mode = Mode::OneRow;
-                    break;
-                case Step::ReExecutingFunctionOnOneRow:
-                    if (args_became_const.empty())
-                    {
-                        writeString("re-resolving and re-executing", buf);
-                    }
-                    else
-                    {
-                        writeString("re-executing after making arguments {", buf);
-                        bool first = true;
-                        for (size_t idx : args_became_const)
-                        {
-                            if (!first)
-                                writeString(", ", buf);
-                            first = false;
-                            writeIntText(idx + 1, buf);
-                        }
-                        writeString("} const", buf);
-                    }
-                    mode = Mode::OneRow;
-                    break;
-            }
-            writeString(": ", buf);
-        }
-
-        writeString("SELECT ", buf);
         writeString(testable_functions.at(function_idx).name, buf);
 
-        auto gen_name = [](size_t i) -> String
-        {
-            if (i < 26)
-                return String(1, char('a' + i));
-            return fmt::format("c{}", i);
-        };
-
-        bool need_array_join = false;
         writeString("(", buf);
         for (size_t i = 0; i < args.size(); ++i)
         {
@@ -769,10 +738,10 @@ struct Operation
 
             bool is_const = arg.column->isConst();
 
-            if (!is_const && mode == Mode::AllRows)
+            if (!is_const && !row.has_value() && out_need_array_join)
             {
-                need_array_join = true;
-                writeString(gen_name(i), buf);
+                *out_need_array_join = true;
+                writeString(genName(i), buf);
                 continue;
             }
 
@@ -784,8 +753,8 @@ struct Operation
             {
                 /// Make a non-const non-sparse etc column (for ISerialization) with one value.
                 MutableColumnPtr mutable_column = arg.column->cloneEmpty();
-                if (is_const || mode == Mode::OneRow)
-                    mutable_column->insertRangeFrom(*arg.column, row_idx, 1);
+                if (is_const || row.has_value())
+                    mutable_column->insertRangeFrom(*arg.column, row.value_or(0), 1);
                 else
                     arg.type->insertDefaultInto(*mutable_column);
                 ColumnPtr column = std::move(mutable_column);
@@ -810,6 +779,70 @@ struct Operation
                 writeString(")", buf); // materialize(
         }
         writeString(")", buf);
+        return std::move(buf.str());
+    }
+
+    /// Returns a string that fits in the sentence "... while {}", e.g. "executing function: SELECT f(42)".
+    /// If `multirow_query_only`, returns just the query (without "executing function: ") and includes
+    /// an ARRAY JOIN with all rows even if `step` is ExecutingFunctionOnOneRow.
+    String describe(bool multirow_query_only = false) const
+    {
+        WriteBufferFromOwnString buf;
+
+        std::optional<size_t> row;
+        bool need_array_join = false;
+        bool only_constants = true;
+        if (multirow_query_only)
+        {
+            only_constants = false;
+        }
+        else
+        {
+            switch (step)
+            {
+                case Step::None:
+                    return "unknown";
+                case Step::GeneratingArguments:
+                    writeString("picking arguments for function ", buf);
+                    writeString(testable_functions.at(function_idx).name, buf);
+                    return std::move(buf.str());
+                case Step::ResolvingOverload:
+                    writeString("resolving overload", buf);
+                    break;
+                case Step::ExecutingFunctionInBulk:
+                    writeString("executing", buf);
+                    only_constants = false;
+                    break;
+                case Step::ExecutingFunctionOnOneRow:
+                    writeString("executing", buf);
+                    row = cur_row_idx;
+                    break;
+                case Step::ReExecutingFunctionOnOneRow:
+                    if (args_became_const.empty())
+                    {
+                        writeString("re-resolving and re-executing", buf);
+                    }
+                    else
+                    {
+                        writeString("re-executing after making arguments {", buf);
+                        bool first = true;
+                        for (size_t idx : args_became_const)
+                        {
+                            if (!first)
+                                writeString(", ", buf);
+                            first = false;
+                            writeIntText(idx + 1, buf);
+                        }
+                        writeString("} const", buf);
+                    }
+                    row = cur_row_idx;
+                    break;
+            }
+            writeString(": ", buf);
+        }
+
+        writeString("SELECT ", buf);
+        writeString(formatFunctionCall(row, only_constants ? nullptr : &need_array_join), buf);
 
         if (need_array_join)
         {
@@ -851,7 +884,7 @@ struct Operation
                 writeString(" AS ", buf);
                 writeString(array_type_name, buf);
                 writeString(") AS ", buf);
-                writeString(gen_name(i), buf);
+                writeString(genName(i), buf);
             }
         }
 
@@ -863,9 +896,18 @@ struct Operation
 
 String valueToString(const DataTypePtr & type, const ColumnPtr & column, size_t row_idx)
 {
-    auto serialization = type->getDefaultSerialization();
     WriteBufferFromOwnString buf;
-    serialization->serializeTextQuoted(*column->convertToFullColumnIfConst(), /*row_num=*/ row_idx, buf, FormatSettings());
+    try
+    {
+        auto serialization = type->getDefaultSerialization();
+        serialization->serializeTextQuoted(*column->convertToFullColumnIfConst(), /*row_num=*/ row_idx, buf, FormatSettings());
+    }
+    catch (...)
+    {
+        writeString(" <failed to format value: ", buf);
+        writeString(getCurrentExceptionMessage(false), buf);
+        writeString(">", buf);
+    }
     return std::move(buf.str());
 }
 
@@ -901,8 +943,8 @@ bool reportResults(const std::vector<FunctionStats> & function_stats, size_t stu
         else if (stats.get(S_EXEC_ROW_OK) == 0)
             function_lists["no successful execution"].push_back(name);
 
-        if (stats.get(S_NONDEFAULT_NULL) != 0)
-            function_lists["nondefault values behind NULLs"].push_back(name);
+        //if (stats.get(S_NONDEFAULT_NULL) != 0)
+        //    function_lists["nondefault values behind NULLs"].push_back(name);
 
         by_time_max.emplace_back(stats.get(S_TIME_MAX_NS), name);
         by_time_total.emplace_back(stats.get(S_TIME_TOTAL_NS), name);
@@ -1028,6 +1070,10 @@ bool isAnyArgumentDynamicallyTyped(const ColumnsWithTypeAndName & args)
 
 }
 
+struct FunctionsStressTestThread;
+
+thread_local FunctionsStressTestThread constinit * current_stress_thread = nullptr;
+
 struct FunctionsStressTestThread
 {
     size_t thread_idx;
@@ -1035,6 +1081,10 @@ struct FunctionsStressTestThread
     std::condition_variable thread_stop_cv;
     std::atomic<bool> thread_should_stop {false};
     bool thread_stopped = false;
+
+    /// If true, we should print information about the current operation asap.
+    /// We can't do it directly from sanitizer callback because memory allocations are not allowed in there.
+    bool got_sanitizer_error = false;
 
     std::optional<ThreadStatus> thread_status;
     ThreadGroupPtr thread_group;
@@ -1053,6 +1103,7 @@ struct FunctionsStressTestThread
     std::vector<ColumnWithTypeAndName> additional_random_values;
 
     /// Result of overload resolution.
+    FunctionOverloadResolverPtr resolver;
     FunctionBasePtr resolved_function;
     ExecutableFunctionPtr executable_function;
     DataTypePtr result_type;
@@ -1069,15 +1120,28 @@ struct FunctionsStressTestThread
 
     Operation operation;
 
+    /// Call before mutating `operation`.
+    [[nodiscard]] std::unique_lock<std::mutex> lockMutex()
+    {
+        if (got_sanitizer_error)
+            logCurrentOperation();
+        got_sanitizer_error = false;
+        return std::unique_lock(mutex);
+    }
+
     void run()
     {
         thread_status.emplace();
         chassert(current_thread == &*thread_status);
         context = makeContext();
-        thread_group = std::make_shared<ThreadGroup>(context, 0, [&] { onCrash(); });
+        thread_group = std::make_shared<ThreadGroup>(context, 0, [&] { logCurrentOperation(); });
         CurrentThread::attachToGroup(thread_group);
 
         function_stats.resize(testable_functions.size());
+        for (size_t i = 0; i < function_stats.size(); ++i)
+            function_stats[i].function_idx = i;
+        current_stress_thread = this;
+        SCOPE_EXIT({ chassert(current_stress_thread == this); current_stress_thread = nullptr; });
 
         while (!thread_should_stop.load(std::memory_order_relaxed))
         {
@@ -1087,7 +1151,7 @@ struct FunctionsStressTestThread
             FunctionStats & stats = function_stats[function_idx];
 
             {
-                std::unique_lock lock(mutex);
+                auto lock = lockMutex();
                 chassert(operation.step == Operation::Step::None);
                 operation.iteration_start_time = std::chrono::steady_clock::now();
                 operation.function_idx = function_idx;
@@ -1148,7 +1212,7 @@ struct FunctionsStressTestThread
             if (ns >= log_threshold_ns && stats.get(S_TIME_MAX_NS) < log_threshold_ns)
             {
                 {
-                    std::unique_lock lock(mutex);
+                    auto lock = lockMutex();
                     /// Print all rows.
                     if (operation.step > Operation::Step::ExecutingFunctionInBulk)
                         operation.step = Operation::Step::ExecutingFunctionInBulk;
@@ -1167,11 +1231,12 @@ struct FunctionsStressTestThread
 
             executable_function.reset();
             resolved_function.reset();
+            resolver.reset();
             valid_args.clear();
             result.reset();
 
             {
-                std::unique_lock lock(mutex);
+                auto lock = lockMutex();
                 operation = Operation();
             }
         }
@@ -1179,16 +1244,16 @@ struct FunctionsStressTestThread
         thread_status.reset(); // must be done from this thread
 
         {
-            std::unique_lock lock(mutex);
+            auto lock = lockMutex();
             chassert(operation.step == Operation::Step::None);
             thread_stopped = true;
         }
         thread_stop_cv.notify_all();
     }
 
-    void onCrash()
+    void logCurrentOperation()
     {
-        LOG_FATAL(logger, "(while {})", operation.describe());
+        LOG_ERROR(logger, "(while {})", operation.describe());
     }
 
     FunctionOverloadResolverPtr getOverloadResolver(const FunctionInfo & function_info)
@@ -1202,21 +1267,24 @@ struct FunctionsStressTestThread
     {
         const FunctionInfo & function_info = testable_functions[operation.function_idx];
         FunctionStats & stats = function_stats[operation.function_idx];
-        FunctionOverloadResolverPtr resolver = getOverloadResolver(function_info);
+        resolver = getOverloadResolver(function_info);
         size_t num_args = resolver->isVariadic() ? generateRandomNumberOfArgs() : resolver->getNumberOfArguments();
         ColumnNumbers always_const_args = resolver->getArgumentsThatAreAlwaysConstant();
         ColumnsWithTypeAndName args;
         for (size_t i = 0; i < num_args; ++i)
         {
             bool always_const = std::find(always_const_args.begin(), always_const_args.end(), i) != always_const_args.end();
-            ArgConstraints constraints; // TODO: lookup from hardcoded table or something
+            ArgConstraints constraints;
+            for (const auto & [idx, c] : function_info.hard_constraints)
+                if (idx == i)
+                    constraints = c;
             args.push_back(pickRandomArg(constraints, always_const));
         }
 
         stats.add(S_OVERLOAD_ATTEMPTS, 1);
 
         {
-            std::unique_lock lock(mutex);
+            auto lock = lockMutex();
             operation.step = Operation::Step::ResolvingOverload;
             operation.args = args;
         }
@@ -1242,6 +1310,10 @@ struct FunctionsStressTestThread
 
         if (resolved_function->isDeterministic() && !resolved_function->isDeterministicInScopeOfQuery())
             throw Exception(ErrorCodes::INCORRECT_DATA, "isDeterministic is true, but isDeterministicInScopeOfQuery is false");
+        if (resolver->isDeterministic() && !resolved_function->isDeterministic())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "isDeterministic is true for IFunctionOverloadResolver but not for IFunctionBase");
+        if (resolver->isDeterministicInScopeOfQuery() && !resolved_function->isDeterministicInScopeOfQuery())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "isDeterministicInScopeOfQuery is true for IFunctionOverloadResolver but not for IFunctionBase");
 
         try
         {
@@ -1263,7 +1335,7 @@ struct FunctionsStressTestThread
     }
 
     /// Random type and a column with plenty of random values of that type.
-    ColumnWithTypeAndName generateRandomTypeAndColumn(const ArgConstraints &)
+    ColumnWithTypeAndName generateRandomTypeAndColumn(const ArgConstraints & constraints)
     {
         ColumnWithTypeAndName res;
         res.name = fmt::format("c{}", thread_local_rng());
@@ -1275,6 +1347,69 @@ struct FunctionsStressTestThread
 
         res.column = fillColumnWithRandomData(res.type, options.rows_per_batch, /*max_array_length=*/ 4, /*max_string_length=*/ 80, thread_local_rng, /*fuzzy=*/ true);
 
+        if (constraints.integer_at_most.has_value())
+        {
+            /// res = if(res > limit, 0, res)
+            /// (0 instead of limit or random just because it's less code)
+            /// (why not use min2? because it always returns Float64)
+
+            ColumnsWithTypeAndName args {res};
+            args.emplace_back(ColumnConst::create(ColumnUInt64::create(1, *constraints.integer_at_most), options.rows_per_batch), std::make_shared<DataTypeUInt64>(), "limit");
+            ColumnWithTypeAndName mask;
+            try
+            {
+                /// mask = greater(res, limit)
+                auto func = FunctionFactory::instance().get("greater", context)->build(args);
+                mask.type = func->getResultType();
+                mask.column = func->execute(args, mask.type, options.rows_per_batch, false);
+                mask.name = "mask";
+            }
+            catch (Exception & e)
+            {
+                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED || e.code() == ErrorCodes::LOGICAL_ERROR)
+                    throw;
+                /// Presumably the type is not numeric, leave the column as is.
+                chassert(!mask.column);
+            }
+
+            if (mask.column)
+            {
+                /// res = if(mask, 0, res)
+                args = {
+                    mask,
+                    ColumnWithTypeAndName(res.type->createColumnConstWithDefaultValue(options.rows_per_batch), res.type, "zero"),
+                    res};
+                auto func = FunctionFactory::instance().get("if", context)->build(args);
+                auto new_type = func->getResultType();
+                auto new_column = func->execute(args, new_type, options.rows_per_batch, false);
+
+                /// if(..., LowCardinality(T), LowCardinality(T)) returns T.
+                /// In all other cases if(..., U, U) should return U.
+                if (!new_type->equals(*res.type))
+                {
+                    bool ok = false;
+                    if (auto lc = typeid_cast<const DataTypeLowCardinality *>(res.type.get()))
+                    {
+                        if (lc->getDictionaryType()->equals(*new_type))
+                        {
+                            new_type = std::make_shared<DataTypeLowCardinality>(new_type);
+                            auto lc_col = new_type->createColumn();
+                            assert_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*new_column, 0, new_column->size());
+                            new_column = std::move(lc_col);
+                            ok = true;
+                        }
+                    }
+                    if (!ok)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "unexpected return type from if({}, {}, {}): {}", args[0].type->getName(), args[1].type->getName(), args[2].type->getName(), new_type->getName());
+                }
+
+                res.column = new_column;
+                res.type = new_type;
+            }
+        }
+
+        if (!res.column)
+
         checkAndFixupColumn(res.column, res.type.get(), options.rows_per_batch, nullptr);
 
         return res;
@@ -1284,7 +1419,7 @@ struct FunctionsStressTestThread
     ColumnWithTypeAndName pickRandomArg(const ArgConstraints & constraints, bool always_const)
     {
         ColumnWithTypeAndName res;
-        if (!additional_random_values.empty() && thread_local_rng() % 8 == 0)
+        if (constraints.isUnconstrained() && !additional_random_values.empty() && thread_local_rng() % 8 == 0)
         {
             res = additional_random_values[thread_local_rng() % additional_random_values.size()];
         }
@@ -1380,7 +1515,7 @@ struct FunctionsStressTestThread
         /// Try to execute on all rows at once.
 
         {
-            std::unique_lock lock(mutex);
+            auto lock = lockMutex();
             operation.step = Operation::Step::ExecutingFunctionInBulk;
         }
 
@@ -1419,9 +1554,9 @@ struct FunctionsStressTestThread
         for (size_t row_idx = 0; row_idx < options.rows_per_batch; ++row_idx)
         {
             {
-                std::unique_lock lock(mutex);
+                auto lock = lockMutex();
                 operation.step = Operation::Step::ExecutingFunctionOnOneRow;
-                operation.row_idx = row_idx;
+                operation.cur_row_idx = row_idx;
             }
 
             ColumnsWithTypeAndName row_args = operation.args;
@@ -1466,8 +1601,7 @@ struct FunctionsStressTestThread
                 int compare_result = 1;
                 if (result->isConst() != row_result->isConst())
                 {
-                    if (!functions_with_data_dependent_const.contains(function_info.name))
-                        stats.reportProblem(P_DATA_DEPENDENT_CONST, fmt::format("{}", operation.describe()));
+                    stats.reportProblem(P_DATA_DEPENDENT_CONST, fmt::format("{}", operation.describe()));
 
                     ColumnPtr left_column = result;
                     size_t left_idx = row_idx;
@@ -1476,11 +1610,11 @@ struct FunctionsStressTestThread
                         left_column = c->getDataColumnPtr();
                         left_idx = 0;
                     }
-                    compare_result = left_column->compareAt(left_idx, 0, *row_result->convertToFullColumnIfConst(), /*nan_direction_hint=*/ 1);
+                    compare_result = left_column->compareAt(left_idx, 0, *row_result->convertToFullColumnIfConst(), /*nan_direction_hint=*/ -1);
                 }
                 else
                 {
-                    compare_result = result->compareAt(row_idx, 0, *row_result, /*nan_direction_hint=*/ 1);
+                    compare_result = result->compareAt(row_idx, 0, *row_result, /*nan_direction_hint=*/ -1);
                 }
 
                 if (compare_result != 0)
@@ -1494,7 +1628,7 @@ struct FunctionsStressTestThread
             if (thread_local_rng() % 32 == 0)
             {
                 {
-                    std::unique_lock lock(mutex);
+                    auto lock = lockMutex();
                     operation.step = Operation::Step::ReExecutingFunctionOnOneRow;
                     operation.args_became_const.clear();
                 }
@@ -1522,7 +1656,7 @@ struct FunctionsStressTestThread
 
                 if (!args_became_const.empty())
                 {
-                    std::unique_lock lock(mutex);
+                    auto lock = lockMutex();
                     operation.args_became_const = args_became_const;
                 }
 
@@ -1585,7 +1719,7 @@ struct FunctionsStressTestThread
                         throw;
                 }
 
-                if (new_result && is_deterministic && unwrap_column(new_result)->compareAt(0, 0, *unwrap_column(row_result), /*nan_direction_hint=*/ 1) != 0)
+                if (new_result && is_deterministic && unwrap_column(new_result)->compareAt(0, 0, *unwrap_column(row_result), /*nan_direction_hint=*/ -1) != 0)
                 {
                     bool ignore = !args_became_const.empty() && isStringEnumComparisonQuirk(function_info.name, new_args);
                     if (!ignore)
@@ -1618,7 +1752,7 @@ struct FunctionsStressTestThread
         if (bulk_exception && !any_failed_row.has_value())
         {
             {
-                std::unique_lock lock(mutex);
+                auto lock = lockMutex();
                 operation.step = Operation::Step::ExecutingFunctionInBulk;
             }
             String message;
@@ -1652,8 +1786,61 @@ struct FunctionsStressTestThread
         }
     }
 
+    static void getPermutationToSortColumn(const DataTypePtr & type, const ColumnPtr & col, IColumnPermutation & perm, EqualRanges & equal_ranges, FunctionStats & stats, const Operation & operation)
+    {
+        perm.resize(col->size());
+        std::iota(perm.begin(), perm.end(), 0);
+        EqualRanges nontrivial_equal_ranges {{0, col->size()}};
+        col->updatePermutation(
+            IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortStability::Unstable,
+            /*limit=*/ 0, /*nan_direction_hint=*/ -1, perm, nontrivial_equal_ranges);
+        std::sort(nontrivial_equal_ranges.begin(), nontrivial_equal_ranges.end(), [](const auto & a, const auto & b) { return a.from < b.from; });
+
+        /// updatePermutation omits single-element ranges. Let's add them back for convenience.
+        equal_ranges.clear();
+        size_t prev = 0;
+        for (const auto & range : nontrivial_equal_ranges)
+        {
+            chassert(range.from >= prev);
+            chassert(range.to > range.from + 1);
+            for (size_t i = prev; i < range.from; ++i)
+                equal_ranges.emplace_back(i, i + 1);
+            equal_ranges.push_back(range);
+            prev = range.to;
+        }
+        chassert(prev <= col->size());
+        for (size_t i = prev; i < col->size(); ++i)
+            equal_ranges.emplace_back(i, i + 1);
+
+        for (const auto & range : equal_ranges)
+        {
+            for (size_t row = range.from; row + 1 < range.to; ++row)
+            {
+                int cmp = col->compareAt(perm[row], perm[row + 1], *col, /*nan_direction_hint=*/ -1);
+                if (cmp != 0)
+                    stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("updatePermutation said {} == {}, but compareAt said first {} second; {}", valueToString(type, col, perm[row]), valueToString(type, col, perm[row] + 1), cmp < 0 ? "<" : ">", operation.describe()));
+            }
+            if (range.to < col->size())
+            {
+                size_t row = range.to - 1;
+                int cmp = col->compareAt(perm[row], perm[row + 1], *col, /*nan_direction_hint=*/ -1);
+                if (cmp >= 0)
+                    stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("updatePermutation said {} < {}, but compareAt said first {} second; {}", valueToString(type, col, perm[row]), valueToString(type, col, perm[row + 1]), cmp == 0 ? "==" : ">", operation.describe()));
+            }
+        }
+    }
+
     void checkFunctionExecutionResults()
     {
+        {
+            auto lock = lockMutex();
+            /// For formatFunctionCall.
+            operation.args = valid_args;
+            operation.step = Operation::Step::ExecutingFunctionInBulk;
+            operation.cur_row_idx = 0;
+        }
+        FunctionStats & stats = function_stats[operation.function_idx];
+
         /// Maybe add result to additional_random_values.
         if (thread_local_rng() % 8 == 0 && result->byteSize() < (16ul << 10))
         {
@@ -1677,20 +1864,167 @@ struct FunctionsStressTestThread
                 additional_random_values[thread_local_rng() % additional_random_values.size()] = std::move(c);
         }
 
-        // TODO: check monotonicity (query on full or half-infinite range sometimes) and injectivity
+        bool injective = resolved_function->isInjective(valid_args);
+        if (injective != resolver->isInjective(valid_args))
+            stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective mismatch between IFunctionOverloadResolver and IFunctionBase; {}", operation.describe()));
+        if (!injective && resolved_function->isInjective({}))
+            /// isInjective({}) means "all overloads are injective", not "at least one overload is injective", right?
+            stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("isInjective is false with arguments but true without; {}", operation.describe()));
+
+        bool has_monotonicity = resolved_function->hasInformationAboutMonotonicity();
+
+        if (injective && !result_type->isComparableForEquality())
+            stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("function says it's injective, but its return type is not comparable for equality; {}", operation.describe()));
+        if (has_monotonicity && !result_type->isComparable())
+            stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("function says it has monotonicity, but its return type is not comparable", operation.describe()));
+        for (const auto & arg : valid_args)
+        {
+            if (arg.column->isConst())
+                continue;
+            if (injective && !arg.type->isComparableForEquality())
+                stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("function says it's injective, but its argument type is not comparable for equality", operation.describe()));
+            if (has_monotonicity && !arg.type->isComparable())
+                stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("function says it has monotonicity, but its argument type is not comparable", operation.describe()));
+        }
+
+        if (injective && !stats.hasProblem(P_BROKEN_INJECTIVITY))
+        {
+            /// In principle, the result of injective function could be comparable only for equality,
+            /// and we wouldn't be able to sort here.
+            /// But thankfully ordered comparison is implemented for all relevant types, and we can always sort.
+            IColumnPermutation perm;
+            EqualRanges equal_ranges;
+            getPermutationToSortColumn(result_type, result, perm, equal_ranges, stats, operation);
+            for (const auto & range : equal_ranges)
+            {
+                for (size_t row = range.from; row + 1 < range.to; ++row)
+                {
+                    for (const auto & arg : valid_args)
+                    {
+                        if (!arg.column->isConst() && arg.column->compareAt(perm[row], perm[row + 1], *arg.column, /*nan_direction_hint=*/ -1) != 0)
+                        {
+                            stats.reportProblem(P_BROKEN_INJECTIVITY, fmt::format("return value {} on different inputs: SELECT {}, {};", valueToString(result_type, result, perm[row]), operation.formatFunctionCall(perm[row]), operation.formatFunctionCall(perm[row + 1])));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        size_t num_rows = result->size();
+        if (has_monotonicity && num_rows > 1)
+        {
+            size_t num_nonconst_args = 0;
+            size_t nonconst_arg_idx = 0;
+            for (size_t i = 0; i < valid_args.size(); ++i)
+            {
+                if (!valid_args[i].column->isConst())
+                {
+                    ++num_nonconst_args;
+                    nonconst_arg_idx = i;
+                }
+            }
+            bool is_always_monotonic = false;
+            if (num_nonconst_args == 1)
+            {
+                auto arg = valid_args[nonconst_arg_idx];
+                IColumnPermutation perm;
+                EqualRanges equal_ranges;
+                getPermutationToSortColumn(arg.type, arg.column, perm, equal_ranges, stats, operation);
+                for (int attempt = 0; attempt < 10; ++attempt)
+                {
+                    /// Pick a random pair of distinct row indices.
+                    size_t start = thread_local_rng() % (num_rows - 1);
+                    size_t end = thread_local_rng() % (num_rows - 1);
+                    if (end < start)
+                        std::swap(start, end);
+                    ++end;
+
+                    bool left_infinite = start == 0;
+                    bool right_infinite = end + 1 == num_rows;
+                    Field start_field = left_infinite ? Field(NEGATIVE_INFINITY) : (*arg.column)[perm[start]];
+                    Field end_field = right_infinite ? Field(POSITIVE_INFINITY) : (*arg.column)[perm[end]];
+                    IFunctionBase::Monotonicity mono = resolved_function->getMonotonicityForRange(*arg.type, start_field, end_field);
+                    is_always_monotonic |= mono.is_always_monotonic;
+                    if (is_always_monotonic && !mono.is_monotonic)
+                        stats.reportProblem(P_BROKEN_MONOTONICITY, fmt::format("is_always_monotonic is true on some ranges, but is_monotonic is false on some ranges; {}", operation.describe()));
+                    if (!mono.is_monotonic)
+                        continue;
+
+                    auto monotonicity_call_description = [&]
+                    {
+                        return fmt::format("getMonotonicityForRange({}, {})", left_infinite ? "-inf" : valueToString(arg.type, arg.column, perm[start]), right_infinite ? "+inf" : valueToString(arg.type, arg.column, perm[end]));
+                    };
+
+                    for (size_t row = start; row + 1 <= end; ++row)
+                    {
+                        int cmp = result->compareAt(perm[row], perm[row + 1], *result, /*nan_direction_hint=*/ -1);
+
+                        /// Check that Field comparison works the same way as IColumn::compareAt.
+                        Field lhs = (*result)[perm[row]];
+                        Field rhs = (*result)[perm[row + 1]];
+                        bool field_less = accurateLess(lhs, rhs);
+                        bool field_greater = accurateLess(rhs, lhs);
+                        bool field_equal = accurateEquals(lhs, rhs);
+                        bool field_leq = accurateLessOrEqual(lhs, rhs);
+                        bool field_geq = accurateLessOrEqual(rhs, lhs);
+                        if (field_less != (cmp < 0) || field_greater != (cmp > 0) || field_equal != (cmp == 0) || field_leq != (cmp <= 0) || field_geq != (cmp >= 0))
+                            stats.reportProblem(P_UNEXPECTED_ERROR, fmt::format("Field comparison inconsistent with IColumn comparison: compareAt says {} {} {} (type: {}), but accurateLess etc say: less={}, greater={}, equal={}, leq={}, geq={}", valueToString(result_type, result, perm[row]), cmp < 0 ? "<" : cmp > 0 ? ">" : "==", valueToString(result_type, result, perm[row + 1]), result_type->getName(), field_less, field_greater, field_equal, field_leq, field_geq));
+
+                        if (cmp == 0)
+                        {
+                            if (mono.is_strict)
+                                stats.reportProblem(P_BROKEN_MONOTONICITY, fmt::format("{} said strictly monotonic, but f({}) = {} == {} = f({}); {}", monotonicity_call_description(), valueToString(arg.type, arg.column, perm[row]), valueToString(result_type, result, perm[row]), valueToString(result_type, result, perm[row + 1]), valueToString(arg.type, arg.column, perm[row + 1]), operation.describe()));
+                        }
+                        else
+                        {
+                            if ((cmp > 0) != mono.is_positive)
+                                stats.reportProblem(P_BROKEN_MONOTONICITY, fmt::format("{} said {} monotonicity, but f({}) = {} {} {} = f({}); {}", monotonicity_call_description(), mono.is_positive ? "positive" : "negative", valueToString(arg.type, arg.column, perm[row]), valueToString(result_type, result, perm[row]), cmp > 0 ? ">" : "<", valueToString(result_type, result, perm[row + 1]), valueToString(arg.type, arg.column, perm[row + 1]), operation.describe()));
+                        }
+                    }
+                }
+                /// TODO: maybe also test FunctionWithOptionalConstArg from KeyCondition
+            }
+        }
+
+        if (resolved_function->hasInformationAboutPreimage())
+        {
+            /// TODO: FieldIntervalPtr getPreimage(const IDataType & /*type*/, const Field & /*point*/);
+        }
     }
 };
+
+extern "C" {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+void __tsan_on_report(void * /*report*/)
+{
+    if (current_stress_thread)
+        current_stress_thread->got_sanitizer_error = true;
+}
+#pragma clang diagnostic pop
+}
 
 TEST(FunctionsStress, DISABLED_stress)
 {
     chassert(!logger);
     logger = getLogger("stress");
 
+    /// (This makes exception stack traces much faster, and this test spends a lot of time throwing and catching exceptions.)
+    updatePHDRCache();
+
     options.parse(getTestCommandLineOptions().argc, getTestCommandLineOptions().argv);
 
     int num_threads = options.num_threads;
     if (num_threads <= 0)
-        num_threads = std::thread::hardware_concurrency();
+    {
+        if (hasPHDRCache())
+            num_threads = std::thread::hardware_concurrency();
+        else
+            /// In TSAN build, with too many threads, this test gets >30s stalls on lock
+            /// contention in glibc's dl_iterate_phdr when unwinding stacks.
+            num_threads = 16;
+    }
     if (num_threads <= 0)
         num_threads = 1;
     std::vector<FunctionsStressTestThread> threads(static_cast<size_t>(num_threads));
@@ -1709,9 +2043,6 @@ TEST(FunctionsStress, DISABLED_stress)
     HandledSignals::instance().setupCommonTerminateRequestSignalHandlers();
     SignalListener signal_listener(nullptr, logger, [&](int, bool) { request_shutdown(); });
     std::thread signal_listener_thread([&] { signal_listener.run(); });
-
-    /// (This makes exception stack traces much faster, and this test spends a lot of time throwing and catching exceptions.)
-    updatePHDRCache();
 
     tryRegisterFunctions();
     listTestableFunctions();
@@ -1734,6 +2065,8 @@ TEST(FunctionsStress, DISABLED_stress)
     LOG_INFO(logger, "Waiting for threads to stop for up to {} seconds", stop_timeout.count());
 
     std::vector<FunctionStats> total_stats(testable_functions.size());
+    for (size_t i = 0; i < total_stats.size(); ++i)
+        total_stats[i].function_idx = i;
     size_t stuck_threads = 0;
 
     auto deadline = std::chrono::steady_clock::now() + stop_timeout;
@@ -1772,8 +2105,8 @@ TEST(FunctionsStress, DISABLED_stress)
 // * better float/double distribution in generateRandom
 // * maybe test constant folding
 // * sanity check that the two known monotonicity bugs are found
-// * maybe fix SerializationMap outputting invalid SQL
-// * maybe fix SerializationTuple outputting non-tuple SQL for single-element tuples
-// * investigate memory tracker
+// * maybe fix SerializationMap outputting invalid SQL: {k: v} instead of map(k, v)
+// * maybe fix SerializationTuple outputting non-tuple SQL for single-element tuples: (x) instead of tuple(x) or (x,)
+// * investigate memory tracker imbalance
 // * run with sanitizers
 // * randomize settings: decimal_check_overflow, cast_string_to_date_time_mode, enable_extended_results_for_datetime_functions, allow_nonconst_timezone_arguments, use_legacy_to_time, function_locate_has_mysql_compatible_argument_order, allow_simdjson, splitby_max_substrings_includes_remaining_string, least_greatest_legacy_null_behavior, h3togeo_lon_lat_result_order, geotoh3_argument_order, cast_keep_nullable, cast_ipv4_ipv6_default_on_conversion_error, enable_named_columns_in_function_tuple, function_visible_width_behavior, function_json_value_return_type_allow_nullable, function_json_value_return_type_allow_complex, use_variant_as_common_type, geo_distance_returns_float64_on_float64_arguments, session_timezone, function_date_trunc_return_type_behavior, date_time_input_format, date_time_output_format, date_time_overflow_behavior

@@ -36,7 +36,7 @@ struct BitWrapperFuncImpl
 };
 
 struct NameBitWrapperFunc { static constexpr auto name = "__bitWrapperFunc"; };
-using FunctionBitWrapperFunc = FunctionUnaryArithmetic<BitWrapperFuncImpl, NameBitWrapperFunc, true>;
+using FunctionBitWrapperFunc = FunctionUnaryArithmetic<BitWrapperFuncImpl, NameBitWrapperFunc, /*is_injective=*/ false>;
 
 }
 

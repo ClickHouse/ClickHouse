@@ -103,8 +103,18 @@ protected:
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
-    /** True if function can be called on default arguments (include Nullable's) and won't throw.
+    /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
+      *
+      * Useful when executing on LowCardinality dictionary, which contains default value even if
+      * none of the rows use it.
+      *
+      * *Not* useful when executing on Nullable columns. The value behind a NULL is
+      * not necessarily default. E.g.:
+      *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
+      *   ┌──x─┐
+      *   │ 42 │
+      *   └────┘
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
@@ -503,9 +513,6 @@ public:
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
-    /** True if function can be called on default arguments (include Nullable's) and won't throw.
-      * Counterexample: modulo(0, 0)
-      */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
     /// Properties from IFunctionBase (see IFunction.h)

@@ -598,9 +598,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
 
             /// Invariants:
             ///  write_idx < read_idx
-            ///  write_idx points to NULL
-            ///  read_idx will be incremented to position of next not-NULL
-            ///  there are range of NULLs between write_idx and read_idx - 1,
+            ///  elements at [write_idx, min(read_idx, end_idx)) are all NULL
             /// We are moving elements from end to begin of this range,
             ///  so range will "bubble" towards the end.
             /// Relative order of NULL elements could be changed,
@@ -617,17 +615,18 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             }
 
             /// We have a range [first, write_idx) of non-NULL values
-            if (first != write_idx)
+            if (first + 1 < write_idx)
                 new_ranges.emplace_back(first, write_idx);
 
             /// We have a range [write_idx, last) of NULL values
-            if (write_idx != last)
+            if (write_idx + 1 < last)
                 null_ranges.emplace_back(write_idx, last);
         }
     }
     else
     {
         /// Shift all NULL values to the beginning.
+        /// This code is an exact mirror image of the is_nulls_last case above.
         for (const auto & [first, last] : equal_ranges)
         {
             /// Current interval is righter than limit.
@@ -636,9 +635,9 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
 
             ssize_t read_idx = last - 1;
             ssize_t write_idx = last - 1;
-            ssize_t begin_idx = first;
+            ssize_t begin_idx = first - 1;
 
-            while (read_idx >= begin_idx && !isNullAt(res[read_idx]))
+            while (read_idx > begin_idx && !isNullAt(res[read_idx]))
             {
                 --read_idx;
                 --write_idx;
@@ -646,7 +645,7 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
 
             --read_idx;
 
-            while (read_idx >= begin_idx && write_idx >= begin_idx)
+            while (read_idx > begin_idx && write_idx > begin_idx)
             {
                 if (!isNullAt(res[read_idx]))
                 {
@@ -657,11 +656,11 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             }
 
             /// We have a range [write_idx+1, last) of non-NULL values
-            if (write_idx != static_cast<ssize_t>(last))
+            if (write_idx + 1 + 1 < static_cast<ssize_t>(last))
                 new_ranges.emplace_back(write_idx + 1, last);
 
             /// We have a range [first, write_idx+1) of NULL values
-            if (static_cast<ssize_t>(first) != write_idx)
+            if (static_cast<ssize_t>(first) + 1 < write_idx + 1)
                 null_ranges.emplace_back(first, write_idx + 1);
         }
     }
