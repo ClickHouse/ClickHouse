@@ -66,11 +66,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"column_names", &isArray, &isColumnConst, "const Array(String)"},
-            {"value", nullptr, nullptr, "Any"}
-        };
-        validateFunctionArguments(*this, arguments, mandatory_args);
+        // Validation is not exhaustive.
+        FunctionArgumentDescriptors mandatory_args{{"column_names", &isArray, &isColumnConst, "const Array(String)"}};
+        FunctionArgumentDescriptor variadic_args{"value", &isArray, nullptr, "Any"};
+        validateFunctionArgumentsWithVariadics(*this, arguments, mandatory_args, variadic_args);
 
         if (const auto * const_column = typeid_cast<const ColumnConst *>(arguments[0].column.get()))
             if (auto res_type = getType(0, const_column->getDataColumn(), arguments))

@@ -184,6 +184,11 @@ void validateFunctionArguments(
     validateFunctionArguments(func.getName(), arguments, mandatory_args, optional_args);
 }
 
+std::string_view getArgumentSingularOrPlural(const auto & args)
+{
+    return args.size() == 1 ? "argument" : "arguments";
+}
+
 void validateFunctionArguments(
     const String & function_name,
     const ColumnsWithTypeAndName & arguments,
@@ -192,22 +197,19 @@ void validateFunctionArguments(
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto argument_singular_or_plural
-            = [](const auto & args) -> std::string_view { return args.size() == 1 ? "argument" : "arguments"; };
-
         String expected_args_string;
         if (!mandatory_args.empty() && !optional_args.empty())
             expected_args_string = fmt::format(
                 "{} mandatory {} and {} optional {}",
                 mandatory_args.size(),
-                argument_singular_or_plural(mandatory_args),
+                getArgumentSingularOrPlural(mandatory_args),
                 optional_args.size(),
-                argument_singular_or_plural(optional_args));
+                getArgumentSingularOrPlural(optional_args));
         else if (!mandatory_args.empty() && optional_args.empty())
             expected_args_string = fmt::format(
-                "{} {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args)); /// intentionally not "_mandatory_ arguments"
+                "{} {}", mandatory_args.size(), getArgumentSingularOrPlural(mandatory_args)); /// intentionally not "_mandatory_ arguments"
         else if (mandatory_args.empty() && !optional_args.empty())
-            expected_args_string = fmt::format("{} optional {}", optional_args.size(), argument_singular_or_plural(optional_args));
+            expected_args_string = fmt::format("{} optional {}", optional_args.size(), getArgumentSingularOrPlural(optional_args));
         else
             expected_args_string = "0 arguments";
 
@@ -216,7 +218,7 @@ void validateFunctionArguments(
             "An incorrect number of arguments was specified for function '{}'. Expected {}, got {}",
             function_name,
             expected_args_string,
-            fmt::format("{} {}", arguments.size(), argument_singular_or_plural(arguments)));
+            fmt::format("{} {}", arguments.size(), getArgumentSingularOrPlural(arguments)));
     }
 
     validateArgumentsImpl(function_name, arguments, 0, mandatory_args);
@@ -232,18 +234,15 @@ void validateFunctionArgumentsWithVariadics(
 {
     if (arguments.size() < mandatory_args.size())
     {
-        auto argument_singular_or_plural
-            = [](const auto & args) -> std::string_view { return args.size() == 1 ? "argument" : "arguments"; };
-
         String expected_args_string;
         if (!mandatory_args.empty())
             expected_args_string = fmt::format(
-                "{} mandatory {}",
+                "{} {}",
                 mandatory_args.size(),
-                argument_singular_or_plural(mandatory_args));
+                getArgumentSingularOrPlural(mandatory_args));
         else if (!mandatory_args.empty())
             expected_args_string = fmt::format(
-                "{} {}", mandatory_args.size(), argument_singular_or_plural(mandatory_args));
+                "{} {}", mandatory_args.size(), getArgumentSingularOrPlural(mandatory_args));
         else
             expected_args_string = "0 arguments";
 
@@ -252,7 +251,7 @@ void validateFunctionArgumentsWithVariadics(
             "An incorrect number of arguments was specified for function '{}'. Expected at least {}, got {}",
             func.getName(),
             expected_args_string,
-            fmt::format("{} {}", arguments.size(), argument_singular_or_plural(arguments)));
+            fmt::format("{} {}", arguments.size(), getArgumentSingularOrPlural(arguments)));
     }
 
     validateArgumentsImpl(func.getName(), arguments, 0, mandatory_args);

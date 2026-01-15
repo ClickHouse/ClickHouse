@@ -419,6 +419,7 @@ bool isInteger(TYPE data_type) { return WhichDataType(data_type).isInteger(); } 
 bool isNativeInteger(TYPE data_type) { return WhichDataType(data_type).isNativeInteger(); } \
 \
 bool isDecimal(TYPE data_type) { return WhichDataType(data_type).isDecimal(); } \
+bool isDecimal64(TYPE data_type) { return WhichDataType(data_type).isDecimal64(); } \
 \
 bool isFloat(TYPE data_type) { return WhichDataType(data_type).isFloat(); } \
 \
@@ -434,7 +435,6 @@ bool isDate(TYPE data_type) { return WhichDataType(data_type).isDate(); } \
 bool isDate32(TYPE data_type) { return WhichDataType(data_type).isDate32(); } \
 bool isDateOrDate32(TYPE data_type) { return WhichDataType(data_type).isDateOrDate32(); } \
 bool isDateTime(TYPE data_type) { return WhichDataType(data_type).isDateTime(); } \
-bool isDecimal64(TYPE data_type) { return WhichDataType(data_type).isDecimal64(); } \
 bool isTime(TYPE data_type) { return WhichDataType(data_type).isTime(); } \
 bool isDateTime64(TYPE data_type) { return WhichDataType(data_type).isDateTime64(); } \
 bool isTime64(TYPE data_type) { return WhichDataType(data_type).isTime64(); } \
