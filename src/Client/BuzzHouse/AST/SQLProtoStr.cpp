@@ -3862,6 +3862,10 @@ CONV_FN(CheckTable, ct)
 CONV_FN(DescribeStatement, ds)
 {
     ret += "DESCRIBE ";
+    if (ds.paren())
+    {
+        ret += "(";
+    }
     using DescType = DescribeStatement::DescOneofCase;
     switch (ds.desc_oneof_case())
     {
@@ -3869,15 +3873,17 @@ CONV_FN(DescribeStatement, ds)
             TableOrFunctionToString(ret, false, ds.tof());
             break;
         case DescType::kSel:
-            ret += "(";
             ExplainQueryToString(ret, ds.sel());
-            ret += ")";
             break;
         case DescType::kStf:
             SQLTableFuncCallToString(ret, ds.stf());
             break;
         default:
             ret += "t0";
+    }
+    if (ds.paren())
+    {
+        ret += ")";
     }
     if (ds.has_setting_values())
     {

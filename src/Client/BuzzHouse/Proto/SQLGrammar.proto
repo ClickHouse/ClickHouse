@@ -3656,13 +3656,14 @@ message CheckTable {
 }
 
 message DescribeStatement {
+    optional bool paren = 1;
     oneof desc_oneof {
-        TableOrFunction tof = 1;
-        ExplainQuery sel = 2;
-        SQLTableFuncCall stf = 3;
+        TableOrFunction tof = 2;
+        ExplainQuery sel = 3;
+        SQLTableFuncCall stf = 4;
     }
-    optional SettingValues setting_values = 4;
-    optional OutFormat format = 5;
+    optional SettingValues setting_values = 5;
+    optional OutFormat format = 6;
 }
 
 message DeduplicateExpr {

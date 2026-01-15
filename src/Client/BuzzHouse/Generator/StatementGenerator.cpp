@@ -1131,6 +1131,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
+    dt->set_paren(rg.nextBool());
     if (desc_table && nopt < (desc_table + 1))
     {
         const auto is_url = tableOrFunctionRef(rg, rg.pickRandomly(filterCollection<SQLTable>(attached_tables)), true, dt->mutable_tof());
