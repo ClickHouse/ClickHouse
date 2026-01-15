@@ -1,5 +1,8 @@
 -- Tags: long
 
+-- Statistics-based part pruning can skip parts before they appear in EXPLAIN output
+SET allow_statistics_optimize = 0;
+
 DROP TABLE IF EXISTS normal;
 CREATE TABLE IF NOT EXISTS normal
 (

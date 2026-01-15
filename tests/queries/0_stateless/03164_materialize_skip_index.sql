@@ -1,5 +1,7 @@
 DROP TABLE IF EXISTS t_skip_index_insert;
 
+SET allow_statistics_optimize = 0; -- disable statistics-based part pruning to keep EXPLAIN output stable
+
 CREATE TABLE t_skip_index_insert
 (
     a UInt64,

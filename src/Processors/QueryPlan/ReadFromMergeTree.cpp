@@ -2122,7 +2122,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     {
         std::optional<StatisticsPartPruner> statistics_pruner;
-        if (settings[Setting::allow_statistics_optimize] && !query_info_.isFinal())
+        /// Disable statistics-based pruning when there are on-fly mutations or patch parts,
+        /// Because the Statistics only reflects the original data.
+        if (settings[Setting::allow_statistics_optimize] && !query_info_.isFinal()
+            && !(mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         {
             const auto * filter_node = query_info_.filter_actions_dag ? query_info_.filter_actions_dag->getOutputs().front() : nullptr;
             statistics_pruner = StatisticsPartPruner::build(metadata_snapshot, filter_node, context_);

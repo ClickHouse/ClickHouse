@@ -1,10 +1,27 @@
 #include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <cmath>
+#include <limits>
 #include <set>
 
 namespace DB
 {
+
+/// Statistics stores min/max values as Float64, which may lose precision for large integers.
+/// To ensure correctness of part pruning, we need to expand the range conservatively:
+/// - min is adjusted towards negative infinity using std::nextafter
+/// - max is adjusted towards positive infinity using std::nextafter
+/// This ensures we never incorrectly skip parts that contain matching data.
+static Float64 getConservativeMin(Float64 value)
+{
+    return std::nextafter(value, -std::numeric_limits<Float64>::infinity());
+}
+
+static Float64 getConservativeMax(Float64 value)
+{
+    return std::nextafter(value, std::numeric_limits<Float64>::infinity());
+}
 
 StatisticsPartPruner::StatisticsPartPruner(std::vector<RPNElement> rpn_)
     : rpn(std::move(rpn_))
@@ -129,7 +146,19 @@ BoolMask StatisticsPartPruner::checkRangeCondition(
     if (!est.estimated_min.has_value() || !est.estimated_max.has_value())
         return {true, true};
 
-    Range part_range(Field(est.estimated_min.value()), true, Field(est.estimated_max.value()), true);
+    /// Range comparison between Float64 Field and Decimal Field is incorrect.
+    /// Skip optimization for Decimal types to avoid incorrect results.
+    /// TODO: Remove this workaround after FieldVisitorAccurateLess is fixed.
+    for (const auto & range : condition_ranges.ranges)
+    {
+        if (Field::isDecimal(range.left.getType()) || Field::isDecimal(range.right.getType()))
+            return {true, true};
+    }
+
+    /// Apply conservative bounds to handle Float64 precision loss for large integers.
+    Float64 conservative_min = getConservativeMin(est.estimated_min.value());
+    Float64 conservative_max = getConservativeMax(est.estimated_max.value());
+    Range part_range(Field(conservative_min), true, Field(conservative_max), true);
 
     bool intersects = false;
     bool contains = true;

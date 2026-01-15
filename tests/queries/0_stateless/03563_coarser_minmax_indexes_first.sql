@@ -1,3 +1,5 @@
+SET allow_statistics_optimize = 0; -- disable statistics-based part pruning to test skip indexes
+
 DROP TABLE IF EXISTS skip_table;
 
 CREATE TABLE skip_table
