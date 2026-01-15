@@ -977,7 +977,7 @@ void TCPHandler::runImpl()
             }
 
             if (exception->code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT || exception->code() == ErrorCodes::USER_EXPIRED
-                || exception->code() == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED)
+                || exception->code() == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED || in->isCanceled())
             {
                 LOG_DEBUG(log, "Going to close connection due to exception: {}", exception->message());
                 query_state->finalizeOut(out);
