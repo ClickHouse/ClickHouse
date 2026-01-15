@@ -28,7 +28,7 @@ function wait_distributed_background_flush()
   return 1
 }
 if ! wait_distributed_background_flush; then
-  echo "test_local_03745 does not contains all data" >&2
+  echo "test_local_03745 does not contain all data" >&2
   exit 1
 fi
 $CLICKHOUSE_CLIENT -nmq "
