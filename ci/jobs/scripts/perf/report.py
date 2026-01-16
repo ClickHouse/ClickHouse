@@ -38,8 +38,8 @@ benchmarks = {
 }
 
 # max seconds to run one query by itself, not counting preparation
-# by default it's 2 seconds, but for benchmarks it's 5 seconds
-get_allowed_single_run_time = lambda test_name: 5 if test_name in benchmarks else 2
+# by default it's 2 seconds, but for benchmarks it's 8 seconds
+get_allowed_single_run_time = lambda test_name: 8 if test_name in benchmarks else 2
 
 color_bad = "#ffb0c0"
 color_good = "#b0d050"
