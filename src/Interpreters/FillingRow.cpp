@@ -88,7 +88,7 @@ std::optional<Field> FillingRow::doLongJump(const FillColumnDescription & descr,
     if (less(to, shifted_value, getDirection(column_ind)))
         return std::nullopt;
 
-    for (int32_t step_len = 1, step_no = 0; step_no < 100 && step_len > 0; ++step_no)
+    for (int32_t step_len = 1, step_no = 0; step_no < 100 && step_len > 0 && step_len < INT32_MAX/2; ++step_no)
     {
         Field next_value = shifted_value;
         descr.step_func(next_value, step_len);
