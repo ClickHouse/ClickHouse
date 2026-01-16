@@ -23,6 +23,8 @@ def started_cluster():
 
 def test_index_filename_upgrade(started_cluster):
     node = started_cluster.instances["old_node"]
+
+    node.query("DROP TABLE IF EXISTS test_index_filename;")
     node.query(
         f"""
         CREATE TABLE test_index_filename (
@@ -50,3 +52,5 @@ def test_index_filename_upgrade(started_cluster):
     # And now the index should work
     node.query("SELECT count() FROM test_index_filename WHERE `column` = 24;")
     node.wait_for_log_line("Index `minmax_index_ESPAÑA` has dropped 1")
+
+    node.query("DROP TABLE test_index_filename;")
