@@ -1766,7 +1766,7 @@ try
         else
         {
             rlim_t old = rlim.rlim_cur;
-            rlim.rlim_cur = server_settings[ServerSetting::max_open_files].changed ? server_settings[ServerSetting::max_open_files] : static_cast<unsigned>(rlim.rlim_max);
+            rlim.rlim_cur = server_settings[ServerSetting::max_open_files].changed ? static_cast<rlim_t>(server_settings[ServerSetting::max_open_files]) : rlim.rlim_max;
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
                 LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString());
@@ -1891,9 +1891,9 @@ try
                     host_tag, this_host);
             }
 
-            int port = port_setting.value;
+            UInt64 port = port_setting.value;
 
-            if (port < 0 || port > 0xFFFF)
+            if (port > 0xFFFF)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range '{}': {}", String(port_tag), port);
 
             global_context->setInterserverIOAddress(this_host, static_cast<UInt16>(port));
