@@ -404,12 +404,13 @@ void FormatFactory::registerFileBucketInfo(const String & format, FileBucketInfo
     creators.file_bucket_info_creator = std::move(bucket_info);
 }
 
-InputFormatPtr FormatFactory::getInput(
+InputFormatPtr FormatFactory::getInputImpl(
     const String & name,
     ReadBuffer & _buf,
     const Block & sample,
     const ContextPtr & context,
     UInt64 max_block_size,
+    const std::optional<RelativePathWithMetadata> & metadata,
     const std::optional<FormatSettings> & _format_settings,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
@@ -418,11 +419,10 @@ InputFormatPtr FormatFactory::getInput(
     bool need_only_count,
     const std::optional<UInt64> & max_block_size_bytes,
     const std::optional<UInt64> & min_block_size_rows,
-    const std::optional<UInt64> & min_block_size_bytes,
-    const std::optional<RelativePathWithMetadata> & metadata) const
+    const std::optional<UInt64> & min_block_size_bytes) const
 {
     const auto& creators = getCreators(name);
-    if (!creators.input_creator && !creators.random_access_input_creator)
+    if (!creators.input_creator && !creators.random_access_input_creator && !creators.random_access_input_creator_with_metadata)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT, "Format {} is not suitable for input", name);
 
     /// Some formats use this thread pool. Lazily initialize it.
@@ -432,7 +432,9 @@ InputFormatPtr FormatFactory::getInput(
     const FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     const Settings & settings = context->getSettingsRef();
 
-    if (format_filter_info && (format_filter_info->prewhere_info || format_filter_info->row_level_filter) && (!creators.random_access_input_creator || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
+    if (format_filter_info && (format_filter_info->prewhere_info || format_filter_info->row_level_filter)
+        && (!creators.random_access_input_creator || !creators.random_access_input_creator_with_metadata
+        || !creators.prewhere_support_checker || !creators.prewhere_support_checker(format_settings)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "{} passed to format that doesn't support it",
             format_filter_info->prewhere_info ? "PREWHERE" : "ROW LEVEL FILTER");
 
@@ -463,7 +465,8 @@ InputFormatPtr FormatFactory::getInput(
 
     size_t max_parsing_threads = parser_shared_resources->getParsingThreadsPerReader();
     bool parallel_parsing = max_parsing_threads > 1 && settings[Setting::input_format_parallel_parsing]
-        && creators.file_segmentation_engine_creator && !creators.random_access_input_creator && !need_only_count;
+        && creators.file_segmentation_engine_creator && !(creators.random_access_input_creator && creators.random_access_input_creator_with_metadata)
+        && !need_only_count;
 
     if (settings[Setting::max_memory_usage]
         && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage])
@@ -509,10 +512,14 @@ InputFormatPtr FormatFactory::getInput(
 
         format = std::make_shared<ParallelParsingInputFormat>(params);
     }
+    else if (creators.random_access_input_creator_with_metadata && metadata)
+    {
+        format = creators.random_access_input_creator_with_metadata(
+            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info, *metadata);
+    }
     else if (creators.random_access_input_creator)
     {
-        format = creators.random_access_input_creator(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info, metadata);
+        format = creators.random_access_input_creator(buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info);
     }
     else
     {
@@ -536,6 +543,52 @@ InputFormatPtr FormatFactory::getInput(
         values->setContext(context);
 
     return format;
+}
+
+InputFormatPtr FormatFactory::getInput(
+    const String & name,
+    ReadBuffer & buf,
+    const Block & sample,
+    const ContextPtr & context,
+    UInt64 max_block_size,
+    const std::optional<FormatSettings> & format_settings,
+    FormatParserSharedResourcesPtr parser_shared_resources,
+    FormatFilterInfoPtr format_filter_info,
+    bool is_remote_fs,
+    CompressionMethod compression,
+    bool need_only_count,
+    const std::optional<UInt64> & max_block_size_bytes,
+    const std::optional<UInt64> & min_block_size_rows,
+    const std::optional<UInt64> & min_block_size_bytes) const
+{
+    return getInputImpl(name, buf, sample, context, max_block_size, std::nullopt,
+                       format_settings, parser_shared_resources, format_filter_info,
+                       is_remote_fs, compression, need_only_count,
+                       max_block_size_bytes, min_block_size_rows, min_block_size_bytes);
+}
+
+// Overload with metadata
+InputFormatPtr FormatFactory::getInput(
+    const String & name,
+    ReadBuffer & buf,
+    const Block & sample,
+    const ContextPtr & context,
+    UInt64 max_block_size,
+    const std::optional<RelativePathWithMetadata> & metadata,
+    const std::optional<FormatSettings> & format_settings,
+    FormatParserSharedResourcesPtr parser_shared_resources,
+    FormatFilterInfoPtr format_filter_info,
+    bool is_remote_fs,
+    CompressionMethod compression,
+    bool need_only_count,
+    const std::optional<UInt64> & max_block_size_bytes,
+    const std::optional<UInt64> & min_block_size_rows,
+    const std::optional<UInt64> & min_block_size_bytes) const
+{
+    return getInputImpl(name, buf, sample, context, max_block_size, metadata,
+                       format_settings, parser_shared_resources, format_filter_info,
+                       is_remote_fs, compression, need_only_count,
+                       max_block_size_bytes, min_block_size_rows, min_block_size_bytes);
 }
 
 std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
@@ -700,11 +753,30 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
     const String & name,
     ReadBuffer & buf,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & _format_settings,
-    const std::optional<RelativePathWithMetadata> & metadata) const
+    const std::optional<FormatSettings> & _format_settings) const
 {
     const FormatFactory::Creators & creators = getCreators(name);
     const SchemaReaderCreator & schema_reader_creator = creators.schema_reader_creator;
+    if (!schema_reader_creator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} doesn't support schema inference.", name);
+
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    auto schema_reader = schema_reader_creator(buf, format_settings);
+    if (schema_reader->needContext())
+        schema_reader->setContext(context);
+    return schema_reader;
+}
+
+/// overload for formats that support object storage metadata
+SchemaReaderPtr FormatFactory::getSchemaReader(
+    const String & name,
+    ReadBuffer & buf,
+    const ContextPtr & context,
+    const RelativePathWithMetadata & metadata,
+    const std::optional<FormatSettings> & _format_settings) const
+{
+    const FormatFactory::Creators & creators = getCreators(name);
+    const SchemaReaderCreatorWithMetadata & schema_reader_creator = creators.schema_reader_creator_with_metadata;
     if (!schema_reader_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} doesn't support schema inference.", name);
 
@@ -758,9 +830,20 @@ void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomA
 {
     chassert(input_creator);
     auto & creators = getOrCreateCreators(name);
-    if (creators.input_creator || creators.random_access_input_creator)
+    if (creators.input_creator || creators.random_access_input_creator || creators.random_access_input_creator_with_metadata)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.random_access_input_creator = std::move(input_creator);
+    registerFileExtension(name, name);
+    KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
+}
+
+void FormatFactory::registerRandomAccessInputFormatWithMetadata(const String & name, RandomAccessInputCreatorWithMetadata input_creator)
+{
+    chassert(input_creator);
+    auto & creators = getOrCreateCreators(name);
+    if (creators.input_creator || creators.random_access_input_creator_with_metadata)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
+    creators.random_access_input_creator_with_metadata = std::move(input_creator);
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
@@ -890,6 +973,14 @@ void FormatFactory::registerSchemaReader(const String & name, SchemaReaderCreato
     target = std::move(schema_reader_creator);
 }
 
+void FormatFactory::registerSchemaReaderWithMetadata(const String & name, SchemaReaderCreatorWithMetadata schema_reader_creator)
+{
+    auto & target = getOrCreateCreators(name).schema_reader_creator_with_metadata;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Schema reader {} is already registered", name);
+    target = std::move(schema_reader_creator);
+}
+
 void FormatFactory::registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator)
 {
     auto & target = getOrCreateCreators(name).external_schema_reader_creator;
@@ -993,7 +1084,7 @@ String FormatFactory::getAdditionalInfoForSchemaCache(const String & name, const
 bool FormatFactory::isInputFormat(const String & name) const
 {
     auto it = dict.find(boost::to_lower_copy(name));
-    return it != dict.end() && (it->second.input_creator || it->second.random_access_input_creator);
+    return it != dict.end() && (it->second.input_creator || it->second.random_access_input_creator || it->second.random_access_input_creator_with_metadata);
 }
 
 bool FormatFactory::isOutputFormat(const String & name) const
@@ -1005,7 +1096,7 @@ bool FormatFactory::isOutputFormat(const String & name) const
 bool FormatFactory::checkIfFormatHasSchemaReader(const String & name) const
 {
     const auto & target = getCreators(name);
-    return bool(target.schema_reader_creator);
+    return bool(target.schema_reader_creator) || bool(target.schema_reader_creator_with_metadata);
 }
 
 bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name) const
@@ -1052,7 +1143,7 @@ std::vector<String> FormatFactory::getAllInputFormats() const
     std::vector<String> input_formats;
     for (const auto & [format_name, creators] : dict)
     {
-        if (creators.input_creator || creators.random_access_input_creator)
+        if (creators.input_creator || creators.random_access_input_creator || creators.random_access_input_creator_with_metadata)
             input_formats.push_back(format_name);
     }
 

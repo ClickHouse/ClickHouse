@@ -654,6 +654,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     initial_header,
                     context_,
                     max_block_size,
+                    metadata,
                     format_settings,
                     parser_shared_resources,
                     filter_info,
@@ -662,8 +663,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     need_only_count,
                     std::nullopt /*min_block_size_bytes*/,
                     std::nullopt /*min_block_size_rows*/,
-                    std::nullopt /*max_block_size_bytes*/,
-                    metadata
+                    std::nullopt /*max_block_size_bytes*/
                 );
             }
             else
