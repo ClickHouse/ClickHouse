@@ -38,7 +38,7 @@ def test_index_filename_upgrade(started_cluster):
     node.query("SELECT count() FROM test_index_filename WHERE `column` = 24 SETTINGS use_query_condition_cache=0;")
     node.wait_for_log_line("Index `minmax_index_ESPAÑA` has dropped 1")
 
-    # When restating with the latest version, the index filename is expected to be escaped so loading it will fail
+    # When restarting with the latest version, the index filename is expected to be escaped so loading it will fail
     node.restart_with_latest_version()
 
     node.query("SELECT count() FROM test_index_filename WHERE `column` = 24 SETTINGS use_query_condition_cache=0;")
