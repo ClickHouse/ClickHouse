@@ -901,6 +901,31 @@ static void addSortingForMergeJoin(
     add_sorting(right_node, join_clause.key_names_right, JoinTableSide::Right);
 }
 
+/// If actions_dag expect columns of different types than in header, prepend casts to actions_dag.
+static void prependConvertingActions(const Block & header, ActionsDAG & actions_dag)
+{
+    std::unordered_map<String, DataTypePtr> expected_types;
+    for (const auto & col : actions_dag.getRequiredColumns())
+        expected_types[col.name] = col.type;
+
+    ActionsDAG cast_dag(header.getColumnsWithTypeAndName());
+    bool need_casts = false;
+    for (auto & join_out_node : cast_dag.getOutputs())
+    {
+        auto it = expected_types.find(join_out_node->result_name);
+        if (it != expected_types.end() && !join_out_node->result_type->equals(*it->second))
+        {
+            join_out_node = &cast_dag.addCast(*join_out_node, it->second, join_out_node->result_name, nullptr);
+            need_casts = true;
+        }
+    }
+
+    if (need_casts)
+    {
+        cast_dag.mergeInplace(std::move(actions_dag));
+        actions_dag = std::move(cast_dag);
+    }
+}
 
 static void constructPhysicalStep(
     QueryPlanNode & node,
@@ -925,6 +950,8 @@ static void constructPhysicalStep(
     node.step->setStepDescription("Filled JOIN");
 
     post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
+    prependConvertingActions(*node.step->getOutputHeader(), post_join_actions);
+
     makeFilterNodeOnTopOf(
         node, std::move(post_join_actions),
         residual_filter_condition.first, residual_filter_condition.second,
