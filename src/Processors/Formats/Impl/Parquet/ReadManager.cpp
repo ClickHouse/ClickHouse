@@ -462,7 +462,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
                 break;
             }
 
-            size_t prev = row_group.next_subgroup_for_step[step_idx].exchange(main_ptr + 1);
+            size_t prev = row_group.next_subgroup_for_step[s].exchange(main_ptr + 1);
             chassert(prev == main_ptr);
             main_ptr += 1;
             advanced_ptr = main_ptr;
