@@ -118,17 +118,56 @@ def main():
     # Generate configuration file
     # No PARALLEL WITH with slow sanitizers
     # If hardcoded inserts are allowed, reduce insert size, so logs don't grow as much
+
+    allow_transactions = random.randint(1, 5) == 1
+    disallowed_settings = [
+        # Disable old analyzer always
+        "enable_analyzer",
+        # Don't always apply settings from the server
+        "apply_settings_from_server",
+        # Keep all debugging messages
+        "send_logs_level",
+        # Slow settings
+        "enable_producing_buckets_out_of_order_in_aggregation",
+        "grace_hash_join_initial_buckets",
+        "join_default_strictness",
+        "max_download_buffer_size",
+        "max_partitions_per_insert_block",
+        "max_table_size_to_drop",
+        "max_temporary_data_on_disk_size_for_query",
+        "max_temporary_data_on_disk_size_for_user",
+        "max_untracked_memory",
+        # Makes everything nullable, not handy
+        "data_type_default_nullable",
+        "restore_replace_external_dictionary_source_to_null",
+        "restore_replace_external_engines_to_null",
+        "restore_replace_external_table_functions_to_null",
+        # Not handy
+        "default_compression_codec",
+        "insert_shard_id",
+        "union_default_mode",
+        "except_default_mode",
+        "input_format_skip_unknown_fields",
+        "insert_quorum",
+        "temporary_files_buffer_size",
+        "trace_profile_events",
+        "unknown_packet_in_send_data",
+    ]
+    if allow_transactions:
+        # Doesn't work well with transactions
+        disallowed_settings.append("apply_mutations_on_fly")
+
     allow_hardcoded_inserts = random.choice([True, False])
     min_nested_rows = random.randint(0, 5)
     max_nested_rows = min_nested_rows + (5 if allow_hardcoded_inserts else 100)
     min_insert_rows = random.randint(1, 100)
-    max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 5000)
+    max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 3000)
     min_string_length = random.randint(0, 100)
-    max_string_length = min_string_length + (10 if allow_hardcoded_inserts else 1000)
+    max_string_length = min_string_length + (10 if allow_hardcoded_inserts else 300)
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
-        "max_depth": random.randint(2, 6),
-        "max_width": random.randint(2, 8),
+        "max_depth": random.randint(2, 5),
+        "max_width": random.randint(2, 7),
         "max_databases": random.randint(2, 5),
         "max_tables": random.randint(3, 10),
         "max_views": random.randint(0, 10),
@@ -140,11 +179,18 @@ def main():
         "max_insert_rows": random.randint(min_insert_rows, max_insert_rows),
         "min_string_length": min_string_length,
         "max_string_length": random.randint(min_string_length, max_string_length),
-        "max_parallel_queries": 1,
+        "max_parallel_queries": (
+            1
+            if (
+                any(x in Info().job_name for x in ["tsan", "asan", "msan"])
+                or random.randint(1, 2) == 1
+            )
+            else random.randint(1, 5)
+        ),
         "max_number_alters": (1 if random.randint(1, 2) == 1 else random.randint(1, 4)),
         "fuzz_floating_points": random.choice([True, False]),
-        "enable_fault_injection_settings": random.choice([True, False]),
-        "enable_force_settings": random.choice([True, False]),
+        "enable_fault_injection_settings": random.randint(1, 4) == 1,
+        "enable_force_settings": random.randint(1, 4) == 1,
         # Don't compare for correctness yet, false positives maybe
         "use_dump_table_oracle": random.randint(1, 3) == 1,
         "test_with_fill": False,  # Creating too many issues
@@ -172,45 +218,14 @@ def main():
         # Make CI logs less verbose
         "truncate_output": True,
         # Don't always run transactions, makes many statements fail
-        "allow_transactions": random.randint(1, 5) == 1,
+        "allow_transactions": allow_transactions,
         # Run query oracles sometimes
         "allow_query_oracles": random.randint(1, 4) == 1,
         "remote_servers": ["localhost:9000"],
         "remote_secure_servers": ["localhost:9440"],
         "http_servers": ["localhost:8123"],
         "https_servers": ["localhost:8443"],
-        "disallowed_settings": [
-            # Disable old analyzer always
-            "enable_analyzer",
-            # Don't always apply settings from the server
-            "apply_settings_from_server",
-            # Keep all debugging messages
-            "send_logs_level",
-            # Slow settings
-            "enable_producing_buckets_out_of_order_in_aggregation",
-            "grace_hash_join_initial_buckets",
-            "join_default_strictness",
-            "max_download_buffer_size",
-            "max_partitions_per_insert_block",
-            "max_table_size_to_drop",
-            "max_temporary_data_on_disk_size_for_query",
-            "max_temporary_data_on_disk_size_for_user",
-            "max_untracked_memory",
-            # Makes everything nullable, not handy
-            "data_type_default_nullable",
-            "restore_replace_external_dictionary_source_to_null",
-            "restore_replace_external_engines_to_null",
-            "restore_replace_external_table_functions_to_null",
-            # Not handy
-            "default_compression_codec",
-            "insert_shard_id",
-            "union_default_mode",
-            "except_default_mode",
-            "input_format_skip_unknown_fields",
-            "insert_quorum",
-            "trace_profile_events",
-            "unknown_packet_in_send_data",
-        ],
+        "disallowed_settings": disallowed_settings,
         # MergeTree settings to set more often
         "hot_table_settings": [
             "allow_coalescing_columns_in_partition_or_order_key",
@@ -228,6 +243,7 @@ def main():
             "merge_max_block_size",
             "min_bytes_for_full_part_storage",
             "min_bytes_for_wide_part",
+            "nullable_serialization_version",
             "ratio_of_defaults_for_sparse_serialization",
             "string_serialization_version",
             "vertical_merge_algorithm_min_bytes_to_activate",
