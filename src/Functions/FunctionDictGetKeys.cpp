@@ -1,9 +1,7 @@
 #include <Common/Arena.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
-#include <Common/ThreadPool.h>
 #include <Common/assert_cast.h>
 
 #include <Core/Block.h>
@@ -22,19 +20,22 @@
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/Context.h>
 
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISink.h>
+#include <Processors/Port.h>
+#include <Processors/Sinks/NullSink.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/ReadProgressCallback.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
-
-#include <mutex>
+#include <Columns/ColumnsCommon.h>
 
 namespace DB
 {
@@ -43,6 +44,7 @@ namespace Setting
 {
 extern const SettingsNonZeroUInt64 max_block_size;
 extern const SettingsMaxThreads max_threads;
+extern const SettingsBool use_concurrency_control;
 }
 
 
@@ -62,6 +64,73 @@ inline UInt128 sipHash128AtRow(const IColumn & column, size_t row_id)
     column.updateHashWithValue(row_id, h);
     return h.get128();
 }
+
+/// Consumes one `dict->read()` output stream, filters rows by the constant attribute value and
+/// accumulates matching key columns for the constant-path implementation
+class DictGetKeysMatchingRowsSink final : public ISink
+{
+public:
+    DictGetKeysMatchingRowsSink(SharedHeader header, const DataTypes & key_types_, ColumnPtr value_column_, size_t num_keys_)
+        : ISink(std::move(header))
+        , value_column(std::move(value_column_))
+        , num_keys(num_keys_)
+    {
+        columns.reserve(num_keys);
+        for (const auto & key_type : key_types_)
+            columns.emplace_back(key_type->createColumn());
+    }
+
+    String getName() const override { return "DictGetKeysMatchingRowsSink"; }
+
+    const MutableColumns & getColumns() const { return columns; }
+    size_t getMatchedRows() const { return matched_rows; }
+
+protected:
+    void consume(Chunk chunk) override
+    {
+        if (chunk.getNumRows() == 0)
+            return;
+
+        chassert(chunk.getColumns().size() == num_keys + 1);
+
+        /// Chunk layout: key columns followed by the attribute column
+        auto chunk_columns = chunk.detachColumns();
+
+        ColumnPtr attr_col = removeSpecialRepresentations(chunk_columns[num_keys]);
+        chassert(attr_col != nullptr);
+
+        Columns key_columns(num_keys);
+        for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+        {
+            key_columns[key_pos] = removeSpecialRepresentations(chunk_columns[key_pos]);
+            chassert(key_columns[key_pos] != nullptr);
+        }
+
+        const size_t rows_in_chunk = attr_col->size();
+
+        IColumn::Filter filter(rows_in_chunk);
+        for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
+            filter[row_id] = (attr_col->compareAt(row_id, 0, *value_column, 1) == 0);
+
+        const size_t matched_in_chunk = countBytesInFilter(filter);
+        if (matched_in_chunk == 0)
+            return;
+
+        for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+        {
+            auto filtered = key_columns[key_pos]->filter(filter, matched_in_chunk);
+            columns[key_pos]->insertRangeFrom(*filtered, 0, filtered->size());
+        }
+
+        matched_rows += matched_in_chunk;
+    }
+
+private:
+    ColumnPtr value_column;
+    size_t num_keys = 0;
+    MutableColumns columns;
+    size_t matched_rows = 0;
+};
 
 }
 
@@ -191,108 +260,69 @@ private:
 
         const auto & settings = helper.context->getSettingsRef();
 
-        auto pipe = dict->read(column_names, settings[Setting::max_block_size], settings[Setting::max_threads]);
-        const size_t parallel_streams = pipe.maxParallelStreams();
+        const size_t max_threads = settings[Setting::max_threads];
 
-        QueryPipeline pipeline(std::move(pipe));
-        pipeline.setNumThreads(parallel_streams);
+        /// Read the dictionary as a pipeline and attach sinks to collect matching keys per stream
+        auto pipe = dict->read(column_names, settings[Setting::max_block_size], max_threads);
 
-        auto progress_cb = helper.context->getProgressCallback();
-        if (progress_cb)
-            pipeline.setProgressCallback(progress_cb);
+        /// We do not need totals and extremes
+        pipe.dropTotals();
+        pipe.dropExtremes();
 
-        PullingAsyncPipelineExecutor executor(pipeline);
+        const size_t num_threads = std::max<size_t>(1, std::min(max_threads, pipe.maxParallelStreams()));
+        const size_t num_streams = pipe.numOutputPorts();
+        auto processors = pipe.getProcessorsPtr();
 
-        struct TaskResult
+        processors->reserve(processors->size() + num_streams);
+
+        std::vector<std::shared_ptr<DictGetKeysMatchingRowsSink>> sinks;
+        sinks.reserve(num_streams);
+
+        /// Attach one sink to each reading output stream
+        for (size_t stream = 0; stream < num_streams; ++stream)
         {
-            MutableColumns columns;
-            size_t matched_rows = 0;
-        };
-
-        std::vector<std::optional<TaskResult>> task_results;
-        std::mutex task_mutex;
-        size_t task_index = 0;
-
-        ThreadPool pool(CurrentMetrics::end(), CurrentMetrics::end(), CurrentMetrics::end(), settings[Setting::max_threads]);
-
-        Chunk chunk;
-        while (executor.pull(chunk))
-        {
-            /// It can happen if dictionary is empty
-            if (chunk.getNumRows() == 0)
-                continue;
-
-            chassert(chunk.getColumns().size() == num_keys + 1);
-
-            const size_t current_task_index = task_index++;
-
-            pool.scheduleOrThrowOnError(
-                [&, task_idx = current_task_index, chunk_columns = chunk.detachColumns()]() mutable
-                {
-                    ColumnPtr attr_col = removeSpecialRepresentations(chunk_columns[num_keys]);
-                    chassert(attr_col != nullptr);
-
-                    Columns key_columns(num_keys);
-                    for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                    {
-                        key_columns[key_pos] = removeSpecialRepresentations(chunk_columns[key_pos]);
-                        chassert(key_columns[key_pos] != nullptr);
-                    }
-
-                    const size_t rows_in_chunk = attr_col->size();
-
-                    TaskResult result;
-                    result.columns.reserve(num_keys);
-                    for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                        result.columns.emplace_back(key_columns[key_pos]->cloneEmpty());
-
-                    for (size_t row_id = 0; row_id < rows_in_chunk; ++row_id)
-                    {
-                        if (attr_col->compareAt(row_id, 0, *values_column, 1) != 0)
-                            continue;
-
-                        for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                            result.columns[key_pos]->insertFrom(*key_columns[key_pos], row_id);
-
-                        ++result.matched_rows;
-                    }
-
-                    if (result.matched_rows)
-                    {
-                        std::lock_guard lock(task_mutex);
-                        if (task_results.size() <= task_idx)
-                            task_results.resize(task_idx + 1);
-                        task_results[task_idx] = std::move(result);
-                    }
-                });
+            auto sink = std::make_shared<DictGetKeysMatchingRowsSink>(
+                pipe.getOutputPort(stream)->getSharedHeader(), key_types, values_column, num_keys);
+            connect(*pipe.getOutputPort(stream), sink->getPort());
+            processors->emplace_back(sink);
+            sinks.emplace_back(std::move(sink));
         }
 
-        pool.wait();
+        auto process_list_element = helper.context->getProcessListElement();
+        PipelineExecutor executor(processors, process_list_element);
+
+        auto read_progress_callback = std::make_unique<ReadProgressCallback>();
+        read_progress_callback->setProgressCallback(helper.context->getProgressCallback());
+        read_progress_callback->setQuota(helper.context->getQuota());
+        read_progress_callback->setProcessListElement(process_list_element);
+        executor.setReadProgressCallback(std::move(read_progress_callback));
+
+        executor.execute(num_threads, settings[Setting::use_concurrency_control]);
+
+        size_t matched_rows = 0;
+        for (const auto & sink : sinks)
+            matched_rows += sink->getMatchedRows();
 
         MutableColumns result_cols;
         result_cols.reserve(num_keys);
-
         for (const auto & key_type : key_types)
         {
             auto col = key_type->createColumn();
+            col->reserve(matched_rows);
             result_cols.emplace_back(std::move(col));
+        }
+
+        for (const auto & sink : sinks)
+        {
+            const auto & cols = sink->getColumns(); /// already filtered matching rows
+            for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                result_cols[key_pos]->insertRangeFrom(*cols[key_pos], 0, cols[key_pos]->size());
         }
 
         auto offsets_col = ColumnArray::ColumnOffsets::create();
         auto & offsets = offsets_col->getData();
         offsets.resize(1);
-
-        offsets[0] = 0;
-        for (auto & task_result_opt : task_results)
-        {
-            if (!task_result_opt || task_result_opt->matched_rows == 0)
-                continue;
-
-            for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                result_cols[key_pos]->insertRangeFrom(*task_result_opt->columns[key_pos], 0, task_result_opt->columns[key_pos]->size());
-
-            offsets[0] += task_result_opt->matched_rows;
-        }
+        offsets[0] = matched_rows;
 
         /// Step 2
         if (num_keys == 1)
