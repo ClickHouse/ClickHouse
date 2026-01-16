@@ -5,6 +5,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <base/hex.h>
+#include <Common/HistogramMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
@@ -44,6 +45,12 @@ namespace ProfileEvents
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
     extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
+}
+
+namespace HistogramMetrics
+{
+    extern Metric & KeeperCurrentBatchSizeElements;
+    extern Metric & KeeperCurrentBatchSizeBytes;
 }
 
 using namespace std::chrono_literals;
@@ -290,6 +297,9 @@ void KeeperDispatcher::requestThread()
                         ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
 
                     LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
+
+                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeElements, current_batch.size());
+                    HistogramMetrics::observe(HistogramMetrics::KeeperCurrentBatchSizeBytes, current_batch_bytes_size);
 
                     auto result = server->putRequestBatch(current_batch);
 
