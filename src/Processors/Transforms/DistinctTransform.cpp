@@ -69,7 +69,7 @@ DistinctTransform::DistinctTransform(
     if (is_pre_distinct_)
     {
         pool = nullptr;
-        try_init_bf = !(limit_hint_ && limit_hint_ < 1000000);
+        try_init_bf = !((limit_hint_ && limit_hint_ < 1000000) || set_limit_for_enabling_bloom_filter_ == 0);
     } else
     {
         try_init_bf = false;
@@ -429,7 +429,7 @@ void DistinctTransform::transform(Chunk & chunk)
             data.init(type);
     }
 
-    auto check_only = data.getTotalRowCount() > set_limit_for_enabling_bloom_filter * 2;
+    auto check_only = (data.getTotalRowCount() > set_limit_for_enabling_bloom_filter * 2) && set_limit_for_enabling_bloom_filter > 0;
 
     IColumn::Filter filter(num_rows);
 
