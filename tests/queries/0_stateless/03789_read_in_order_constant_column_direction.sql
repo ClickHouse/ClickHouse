@@ -1,7 +1,4 @@
--- Tags: no-parallel
 -- Test: read-in-order optimization should use InReverseOrder when constant ORDER BY columns are skipped
--- Bug: ORDER BY tenant, event_time DESC with WHERE tenant='42' used InOrder instead of InReverseOrder
--- because the constant 'tenant' column was setting the read direction.
 
 -- This test specifically tests read-in-order optimization, so we need to ensure it's enabled
 SET optimize_read_in_order = 1;
