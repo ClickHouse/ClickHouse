@@ -48,7 +48,7 @@ private:
 
     const bool is_pre_distinct;
 
-    /// BloomFilter PreDISTINCT optimization
+    /// BloomFilter Pre DISTINCT optimization
     size_t total_passed_bf = 0;
     bool use_bf = false;
     bool try_init_bf;
