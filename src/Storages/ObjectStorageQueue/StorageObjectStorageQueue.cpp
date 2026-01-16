@@ -969,21 +969,21 @@ void StorageObjectStorageQueue::commit(
     Coordination::Requests requests;
     StoredObjects successful_objects;
 
-    HiveLastProcessedFileInfoMap last_processed_file_per_hive_partition;
+    PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
     auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
     for (auto & source : sources)
     {
         source->prepareCommitRequests(
             requests, insert_succeeded, successful_objects,
-            last_processed_file_per_hive_partition, created_nodes, exception_message, error_code);
+            last_processed_file_per_partition, created_nodes, exception_message, error_code);
     }
 
     // Use partition-based processing for both HIVE and REGEX modes
     bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
     if (has_partitioning)
-        ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, last_processed_file_per_hive_partition);
+        ObjectStorageQueueSource::preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
     else
-        chassert(last_processed_file_per_hive_partition.empty());
+        chassert(last_processed_file_per_partition.empty());
 
     if (requests.empty())
     {

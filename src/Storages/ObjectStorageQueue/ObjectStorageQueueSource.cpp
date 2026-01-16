@@ -1259,7 +1259,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     Coordination::Requests & requests,
     bool insert_succeeded,
     StoredObjects & successful_files,
-    HiveLastProcessedFileInfoMap & file_map,
+    PartitionLastProcessedFileInfoMap & file_map,
     LastProcessedFileInfoMapPtr created_nodes,
     const std::string & exception_message,
     int error_code)
@@ -1332,7 +1332,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                             file_metadata->prepareResetProcessingRequests(requests);
                         }
                         if (has_partitioning)
-                            file_metadata->prepareHiveProcessedMap(file_map);
+                            file_metadata->preparePartitionProcessedMap(file_map);
                     }
                     else
                     {
@@ -1389,21 +1389,21 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     }
 }
 
-void ObjectStorageQueueSource::prepareHiveProcessedRequests(
+void ObjectStorageQueueSource::preparePartitionProcessedRequests(
     Coordination::Requests & requests,
-    const HiveLastProcessedFileInfoMap & last_processed_file_per_hive_partition)
+    const PartitionLastProcessedFileInfoMap & last_processed_file_per_partition)
 {
-    for (const auto & [hive_partition_processed_path, last_processed_file_info] : last_processed_file_per_hive_partition)
+    for (const auto & [partition_processed_path, last_processed_file_info] : last_processed_file_per_partition)
     {
         if (last_processed_file_info.exists)
         {
             requests.push_back(zkutil::makeSetRequest(
-                hive_partition_processed_path, last_processed_file_info.file_path, -1));
+                partition_processed_path, last_processed_file_info.file_path, -1));
         }
         else
         {
             requests.push_back(zkutil::makeCreateRequest(
-                hive_partition_processed_path, last_processed_file_info.file_path, zkutil::CreateMode::Persistent));
+                partition_processed_path, last_processed_file_info.file_path, zkutil::CreateMode::Persistent));
         }
     }
 }
@@ -1484,17 +1484,17 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     Coordination::Requests requests;
     StoredObjects successful_objects;
-    HiveLastProcessedFileInfoMap last_processed_file_per_hive_partition;
+    PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
     // `created_nodes` is nullptr here, because it is required only in mutithread case,
     // when `requests` is filled with several `prepareCommitRequests` calls.
     prepareCommitRequests(
         requests,
         insert_succeeded,
         successful_objects,
-        last_processed_file_per_hive_partition,
+        last_processed_file_per_partition,
         /* created_nodes */ nullptr,
         exception_message);
-    prepareHiveProcessedRequests(requests, last_processed_file_per_hive_partition);
+    preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)

@@ -139,7 +139,16 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
             hive_partitioning_columns="date Date, city String",
         )
         create_mv(node, table_name, dst_table_name, virtual_columns="date Date, city String")
-        time.sleep(5)
+
+    # Wait for tables to be created and queryable on all instances
+    # Check MV existence - if MV exists, then S3Queue and dst tables must also exist
+    for node in instances:
+        for _ in range(10):
+            try:
+                node.query(f"EXISTS TABLE {table_name}_mv")
+                break
+            except:
+                time.sleep(0.5)
 
     def compare_data(data, expected_data):
         data = data.strip().split("\n")
@@ -342,7 +351,16 @@ def test_ordered_mode_with_regex_partitioning(started_cluster, engine_name, proc
             partition_component=partition_component,
         )
         create_mv(node, table_name, dst_table_name)
-        time.sleep(5)
+
+    # Wait for tables to be created and queryable on all instances
+    # Check MV existence - if MV exists, then S3Queue and dst tables must also exist
+    for node in instances:
+        for _ in range(10):
+            try:
+                node.query(f"EXISTS TABLE {table_name}_mv")
+                break
+            except:
+                time.sleep(0.5)
 
     def compare_data(data, expected_data):
         data = data.strip().split("\n")

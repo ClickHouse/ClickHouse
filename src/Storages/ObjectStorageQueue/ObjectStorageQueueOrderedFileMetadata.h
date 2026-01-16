@@ -120,20 +120,7 @@ private:
         bool ignore_if_exists,
         LastProcessedFileInfoMapPtr created_nodes = nullptr);
 
-    void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & last_processed_file_per_hive_partition) override;
-
-    /// Extract partition key from file path based on partitioning mode
-    /// For HIVE mode: extracts hive partition from path structure (e.g., date=2025-01-01/city=NY)
-    /// For REGEX mode: uses parser to extract partition from filename
-    /// For NONE mode: returns empty string
-    std::string getPartitionKey(const std::string & file_path) const;
-
-    /// Helper for HIVE mode: return hive part of path
-    /// For path `/table/path/date=2025-01-01/city=New_Orlean/data.parquet` returns `date=2025-01-01/city=New_Orlean`
-    static std::string getHivePart(const std::string & file_path);
-    /// Normalize hive part to use as node in zookeeper path
-    /// `date=2025-01-01/city=New_Orlean` changes to `date=2025-01-01_city=New__Orlean`
-    static void normalizeHivePart(std::string & hive_part);
+    void preparePartitionProcessedMap(PartitionLastProcessedFileInfoMap & last_processed_file_per_partition) override;
 };
 
 struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::noncopyable
