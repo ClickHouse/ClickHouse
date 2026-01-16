@@ -2,10 +2,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric FilesystemCacheSizeLimit;
-}
 
 namespace DB
 {
@@ -18,7 +14,6 @@ namespace ErrorCodes
 IFileCachePriority::IFileCachePriority(size_t max_size_, size_t max_elements_)
     : max_size(max_size_), max_elements(max_elements_)
 {
-    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, max_size_);
 }
 
 IFileCachePriority::Entry::Entry(
