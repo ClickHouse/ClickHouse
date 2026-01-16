@@ -554,117 +554,51 @@ std::string_view IMergeTreeDataPart::stateString(MergeTreeDataPartState state)
 
 std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 {
-    if (!minmax_idx->initialized || info.isPatch())
-        return {};
-
-    /// FIX: Instead of using storage.minmax_idx_date_column_pos (which can become stale after ALTER TABLE),
-    /// we dynamically find the Date column position from the current metadata.
-    auto metadata_snapshot = getMetadataSnapshot();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
-    auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
-
-    /// Find the Date column position dynamically
-    Int64 date_column_pos = -1;
-    for (size_t i = 0; i < minmax_column_types.size(); ++i)
+    if (storage.minmax_idx_date_column_pos != -1 && minmax_idx->initialized && !info.isPatch())
     {
-        if (isDate(minmax_column_types[i]))
-        {
-            if (date_column_pos == -1)
-            {
-                date_column_pos = static_cast<Int64>(i);
-            }
-            else
-            {
-                /// More than one Date column - can't determine which one to use
-                date_column_pos = -1;
-                break;
-            }
-        }
+        const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
+
+        /// The case when all values are NULL in a Nullable Date column.
+        /// In this case, getExtremes() returns POSITIVE_INFINITY which has type Null.
+        if (hyperrectangle.left.isNull())
+            return {};
+
+        return {DayNum(hyperrectangle.left.safeGet<UInt64>()), DayNum(hyperrectangle.right.safeGet<UInt64>())};
     }
-
-    if (date_column_pos == -1)
-        return {};
-
-    if (static_cast<size_t>(date_column_pos) >= minmax_idx->hyperrectangle.size())
-        return {};
-
-    const auto & hyperrectangle = minmax_idx->hyperrectangle[date_column_pos];
-
-    /// The case when all values are NULL in a Nullable Date column.
-    /// In this case, getExtremes() returns POSITIVE_INFINITY which has type Null.
-    if (hyperrectangle.left.isNull())
-        return {};
-
-    if (hyperrectangle.left.getType() != Field::Types::UInt64)
-        return {};
-
-    return {DayNum(hyperrectangle.left.safeGet<UInt64>()), DayNum(hyperrectangle.right.safeGet<UInt64>())};
+    return {};
 }
 
 std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 {
-    if (!minmax_idx->initialized || info.isPatch())
-        return {};
-
-    /// Instead of using storage.minmax_idx_time_column_pos (which can become stale after ALTER TABLE),
-    /// we dynamically find the DateTime column position from the current metadata.
-    auto metadata_snapshot = getMetadataSnapshot();
-    const auto & partition_key = metadata_snapshot->getPartitionKey();
-    auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
-
-    /// Find the DateTime/DateTime64 column position dynamically
-    Int64 time_column_pos = -1;
-    for (size_t i = 0; i < minmax_column_types.size(); ++i)
+    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx->initialized && !info.isPatch())
     {
-        if (isDateTime(minmax_column_types[i]) || isDateTime64(minmax_column_types[i]))
+        const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_time_column_pos];
+
+        /// The case when all values are NULL in a Nullable DateTime/DateTime64 column.
+        /// In this case, getExtremes() returns POSITIVE_INFINITY which has type Null.
+        if (hyperrectangle.left.isNull())
+            return {};
+
+        /// The case of DateTime (stored as UInt64)
+        if (hyperrectangle.left.getType() == Field::Types::UInt64)
         {
-            if (time_column_pos == -1)
-            {
-                time_column_pos = static_cast<Int64>(i);
-            }
-            else
-            {
-                /// More than one DateTime column - can't determine which one to use
-                time_column_pos = -1;
-                break;
-            }
+            assert(hyperrectangle.right.getType() == Field::Types::UInt64);
+            return {hyperrectangle.left.safeGet<UInt64>(), hyperrectangle.right.safeGet<UInt64>()};
         }
+        /// The case of DateTime64
+        if (hyperrectangle.left.getType() == Field::Types::Decimal64)
+        {
+            assert(hyperrectangle.right.getType() == Field::Types::Decimal64);
+
+            auto left = hyperrectangle.left.safeGet<DecimalField<Decimal64>>();
+            auto right = hyperrectangle.right.safeGet<DecimalField<Decimal64>>();
+
+            assert(left.getScale() == right.getScale());
+
+            return {left.getValue() / left.getScaleMultiplier(), right.getValue() / right.getScaleMultiplier()};
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part minmax index by time is neither DateTime or DateTime64");
     }
-
-    if (time_column_pos == -1)
-        return {};
-
-    if (static_cast<size_t>(time_column_pos) >= minmax_idx->hyperrectangle.size())
-        return {};
-
-    const auto & hyperrectangle = minmax_idx->hyperrectangle[time_column_pos];
-
-    /// The case when all values are NULL in a Nullable DateTime/DateTime64 column.
-    /// In this case, getExtremes() returns POSITIVE_INFINITY which has type Null.
-    if (hyperrectangle.left.isNull())
-        return {};
-
-    /// The case of DateTime (stored as UInt64)
-    if (hyperrectangle.left.getType() == Field::Types::UInt64)
-    {
-        assert(hyperrectangle.right.getType() == Field::Types::UInt64);
-        return {hyperrectangle.left.safeGet<UInt64>(), hyperrectangle.right.safeGet<UInt64>()};
-    }
-    /// The case of DateTime64
-    if (hyperrectangle.left.getType() == Field::Types::Decimal64)
-    {
-        assert(hyperrectangle.right.getType() == Field::Types::Decimal64);
-
-        auto left = hyperrectangle.left.safeGet<DecimalField<Decimal64>>();
-        auto right = hyperrectangle.right.safeGet<DecimalField<Decimal64>>();
-
-        assert(left.getScale() == right.getScale());
-
-        return {left.getValue() / left.getScaleMultiplier(), right.getValue() / right.getScaleMultiplier()};
-    }
-
-    /// If we reach here, the type doesn't match DateTime/DateTime64 - return empty
-    /// This can happen in edge cases after ALTER TABLE changes types
     return {};
 }
 
