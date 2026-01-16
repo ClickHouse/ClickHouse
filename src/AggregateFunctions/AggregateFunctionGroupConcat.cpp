@@ -8,9 +8,10 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int LOGICAL_ERROR;
+extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 void GroupConcatDataBase::checkAndUpdateSize(UInt64 add, Arena * arena)
@@ -161,12 +162,19 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
 {
     auto & cur_data = this->data(place);
 
+    /// IAggregateFunction::deserialize() must be called only for an empty (just created) state.
+    if (cur_data.data_size != 0)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "groupConcat deserialize() expects an empty state (data_size = 0), got data_size = {}",
+            cur_data.data_size);
+
     UInt64 temp_size = 0;
     readVarUInt(temp_size, buf);
 
     cur_data.checkAndUpdateSize(temp_size, arena);
 
-    buf.readStrict(cur_data.data + cur_data.data_size, temp_size);
+    buf.readStrict(cur_data.data, temp_size);
     cur_data.data_size = temp_size;
 
     if constexpr (has_limit)

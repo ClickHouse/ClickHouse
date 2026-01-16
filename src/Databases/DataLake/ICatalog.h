@@ -88,6 +88,9 @@ private:
     std::string storage_type_str;
 
     std::string bucket;
+    /// For Azure ABFSS URLs: stores the account with suffix (e.g., "account.dfs.core.windows.net")
+    /// This is extracted from URLs like: abfss://container@account.dfs.core.windows.net/path
+    std::string azure_account_with_suffix;
     /// Endpoint is set and used in case we have non-AWS storage implementation, for example, Minio.
     /// Also not all catalogs support non-AWS storages.
     std::string endpoint;

@@ -333,7 +333,7 @@ private:
         ExecuteAndFinalizeHorizontalPartSubtasks::const_iterator subtasks_iterator = subtasks.begin();
 
         void prepareProjectionsToMergeAndRebuild() const;
-        void calculateProjections(const Block & block) const;
+        void calculateProjections(const Block & block, UInt64 starting_offset) const;
         void finalizeProjections() const;
         void constructTaskForProjectionPartsMerge() const;
         bool executeMergeProjections() const;

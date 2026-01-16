@@ -316,6 +316,8 @@ void updateTTL(
         subquery->buildSetInplace(context);
 
     auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
+    /// In some cases block can contain Sparse columns (for example, during direct deserialization into Sparse in input formats).
+    ttl_column = ttl_column->convertToFullColumnIfSparse();
     ColumnPtr where_column;
 
     if (ttl_entry.where_expression_ast)
@@ -887,7 +889,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         Block projection_block;
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
-            projection_block = projection.calculate(block, context, perm_ptr);
+            projection_block = projection.calculate(block, 0, context, perm_ptr);
             LOG_DEBUG(
                 log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed() / 1000, projection.name, new_data_part->name);
         }

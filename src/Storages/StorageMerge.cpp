@@ -513,6 +513,25 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             &filter.actions,
             filter.column_name,
             filter.do_remove_column));
+
+    if (child_plans)
+    {
+        /// Propagate new filter to all child plans if they are already present
+        for (auto & child : *child_plans)
+        {
+            auto filter_step = std::make_unique<FilterStep>(
+                child.plan.getCurrentHeader(),
+                filter.actions.clone(),
+                filter.column_name,
+                filter.do_remove_column);
+
+            child.plan.addStep(std::move(filter_step));
+
+            /// Push down this newly added filter if possible
+            child.plan.optimize(QueryPlanOptimizationSettings(context));
+        }
+    }
+
     pushed_down_filters.push_back(std::move(filter));
 }
 
