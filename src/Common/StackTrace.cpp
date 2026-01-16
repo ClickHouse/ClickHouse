@@ -122,8 +122,6 @@ std::string getSignalCodeDescription(int sig, int si_code)
     {
         case SI_USER:
             return "Sent by kill, sigsend.";
-        case SI_KERNEL:
-            return "Sent by the kernel.";
         case SI_QUEUE:
             return "Sent by sigqueue.";
         case SI_TIMER:
@@ -132,6 +130,10 @@ std::string getSignalCodeDescription(int sig, int si_code)
             return "Sent by real time mesq state change.";
         case SI_ASYNCIO:
             return "Sent by AIO completion.";
+#if defined(SI_KERNEL)
+        case SI_KERNEL:
+            return "Sent by the kernel.";
+#endif
 #if defined(SI_SIGIO)
         case SI_SIGIO:
             return "Sent by queued SIGIO.";
