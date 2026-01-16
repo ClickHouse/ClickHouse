@@ -25,10 +25,6 @@
 #include <Interpreters/Cache/OvercommitFileCachePriority.h>
 #endif
 
-#if ENABLE_DISTRIBUTED_CACHE
-#include <Interpreters/Cache/OvercommitFileCachePriority.h>
-#endif
-
 #include <exception>
 #include <filesystem>
 #include <mutex>
