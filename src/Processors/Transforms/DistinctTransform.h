@@ -9,6 +9,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ColumnsHashing.h>
+#include "base/types.h"
 
 #include <unordered_map>
 
@@ -24,6 +25,10 @@ public:
         UInt64 limit_hint_,
         const Names & columns_,
         bool is_pre_distinct_,
+        UInt64 predistinct_set_limit_,
+        UInt64 predistinct_bloom_filter_bytes_,
+        Float64 predistinct_pass_ratio_threshold_for_disabling_,
+        Float64 predistinct_max_ratio_of_set_bits_in_bloom_filter_,
         size_t max_threads_);
 
     String getName() const override { return "DistinctTransform"; }
@@ -37,16 +42,20 @@ private:
     std::unique_ptr<BloomFilter> bloom_filter;
     std::unique_ptr<ThreadPool> pool;
 
-    ///Statistics for BloomFilter optimization
-    size_t total_passed_bf = 0;
-    size_t new_passes = 0;
-    bool use_bf = false;
-    bool try_init_bf;
 
     Sizes key_sizes;
     const UInt64 limit_hint;
 
     const bool is_pre_distinct;
+
+    /// BloomFilter PreDISTINCT optimization
+    size_t total_passed_bf = 0;
+    bool use_bf = false;
+    bool try_init_bf;
+    UInt64 set_limit_for_enabling_bloom_filter = 1000000;
+    UInt64 bloom_filter_bytes = 0;
+    Float64 pass_ratio_threshold_for_disabling_bloom_filter = 0.7;
+    Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;
@@ -71,6 +80,15 @@ private:
 
     /// mask[i] == 0 -> row i is known duplicate (by LC index) and is never inserted.
     template <typename Method>
+    void buildSetFilter(
+        Method & method,
+        const ColumnRawPtrs & key_columns,
+        IColumn::Filter & filter,
+        size_t rows,
+        SetVariants & variants,
+        const IColumn::Filter * mask) const;
+
+    template <typename Method>
     void buildCombinedFilter(
         Method & method,
         const ColumnRawPtrs & columns,
@@ -78,14 +96,6 @@ private:
         size_t rows,
         SetVariants & variants,
         size_t &  passed_bf) const;
-
-    template <typename Method>
-    void buildSetFilter(
-        Method & method,
-        const ColumnRawPtrs & key_columns,
-        IColumn::Filter & filter,
-        size_t rows,
-        SetVariants & variants) const;
 
     template <typename Method>
     void checkSetFilter(
@@ -104,8 +114,9 @@ private:
         size_t rows,
         SetVariants & variants,
         ThreadPool & thread_pool) const;
-        SetVariants & variants,
-        const IColumn::Filter * mask) const;
+
+    /// Disables bloom filter if it is likely to have bad selectivity
+    void checkBloomFilterWorthiness();
 
     /// For a single LowCardinality key column, build a mask of rows that are
     /// the first occurrence of their LC dictionary index for this dictionary identity. Then, only those

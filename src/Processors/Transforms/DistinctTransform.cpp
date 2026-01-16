@@ -18,9 +18,9 @@ static inline size_t intHash32(UInt64 x)
 
 namespace CurrentMetrics
 {
-    extern const Metric DestroyAggregatesThreads;
-    extern const Metric DestroyAggregatesThreadsActive;
-    extern const Metric DestroyAggregatesThreadsScheduled;
+    extern const Metric DistinctThreads;
+    extern const Metric DistinctThreadsActive;
+    extern const Metric DistinctThreadsScheduled;
 }
 
 #include <Columns/ColumnsNumber.h>
@@ -41,11 +41,20 @@ DistinctTransform::DistinctTransform(
     const UInt64 limit_hint_,
     const Names & columns_,
     bool is_pre_distinct_,
+    UInt64 set_limit_for_enabling_bloom_filter_,
+    UInt64 bloom_filter_bytes_,
+    Float64 pass_ratio_threshold_for_disabling_bloom_filter_,
+    Float64 max_ratio_of_set_bits_in_bloom_filter_,
     size_t max_threads_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
     , is_pre_distinct(is_pre_distinct_)
+    , set_limit_for_enabling_bloom_filter(set_limit_for_enabling_bloom_filter_)
+    , bloom_filter_bytes(bloom_filter_bytes_)
+    , pass_ratio_threshold_for_disabling_bloom_filter(pass_ratio_threshold_for_disabling_bloom_filter_)
+    , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , set_size_limits(set_size_limits_)
+
 {
     const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
     key_columns_pos.reserve(num_columns);
@@ -65,13 +74,25 @@ DistinctTransform::DistinctTransform(
     {
         try_init_bf = false;
         pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::DestroyAggregatesThreads,
-            CurrentMetrics::DestroyAggregatesThreadsActive,
-            CurrentMetrics::DestroyAggregatesThreadsScheduled,
+            CurrentMetrics::DistinctThreads,
+            CurrentMetrics::DistinctThreadsActive,
+            CurrentMetrics::DistinctThreadsScheduled,
             max_threads_);
     }
 
     setInputNotNeededAfterRead(true);
+}
+
+void DistinctTransform::checkBloomFilterWorthiness()
+{
+    const auto & raw_filter_words = bloom_filter->getFilter();
+    const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;
+    size_t set_bits = 0;
+    for (auto word : raw_filter_words)
+        set_bits += std::popcount(word);
+    /// If too many bits are set then it is likely that the filter will not filter out much
+    if (set_bits > max_ratio_of_set_bits_in_bloom_filter * total_bits)
+        use_bf = false;
 }
 
 template <typename Method>
@@ -317,7 +338,7 @@ void DistinctTransform::buildSetParallelFilter(
         thread_pool.scheduleOrThrowOnError(
             [next_bucket, &bucket_offsets, &all_indices, &hashes, &keys, &method, &filter, thread_group]()
         {
-            ThreadGroupSwitcher switcher(thread_group, "DistinctFinal", true);
+            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTINCT_FINAL);
             typename std::remove_reference_t<decltype(method.data)>::LookupResult it;
 
             while (true)
@@ -368,7 +389,12 @@ void DistinctTransform::transform(Chunk & chunk)
         stopReading();
         return;
     }
-  
+
+    ColumnRawPtrs column_ptrs;
+    column_ptrs.reserve(key_columns_pos.size());
+    for (auto pos : key_columns_pos)
+        column_ptrs.emplace_back(columns[pos].get());
+
     std::optional<IColumn::Filter> lc_mask;
 
     if (key_columns_pos.size() == 1)
@@ -383,17 +409,12 @@ void DistinctTransform::transform(Chunk & chunk)
         }
     }
 
-    ColumnRawPtrs column_ptrs;
-    column_ptrs.reserve(key_columns_pos.size());
-    for (auto pos : key_columns_pos)
-        column_ptrs.emplace_back(columns[pos].get());
-
     const auto old_set_size = data.getTotalRowCount();
     const auto old_bf_size = total_passed_bf;
 
-    if (try_init_bf && old_set_size > 1000000)
+    if (try_init_bf && old_set_size > set_limit_for_enabling_bloom_filter)
     {
-        bloom_filter = std::make_unique<BloomFilter>(BloomFilterParameters(6553600, 1, 0));
+        bloom_filter = std::make_unique<BloomFilter>(BloomFilterParameters(bloom_filter_bytes, 1, 0));
         try_init_bf = false;
         use_bf = true;
     }
@@ -408,7 +429,7 @@ void DistinctTransform::transform(Chunk & chunk)
             data.init(type);
     }
 
-    auto check_only = data.getTotalRowCount() > 2000000;
+    auto check_only = data.getTotalRowCount() > set_limit_for_enabling_bloom_filter * 2;
 
     IColumn::Filter filter(num_rows);
 
@@ -420,12 +441,12 @@ void DistinctTransform::transform(Chunk & chunk)
             case SetVariants::Type::NAME: \
                 if constexpr (SetVariants::Type::NAME == SetVariants::Type::hashed_two_level) \
                 { \
-                    data.getTotalRowCount() > 1000000 ? buildSetParallelFilter(*data.NAME, column_ptrs, filter, num_rows, data, *pool): buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data); \
+                    data.getTotalRowCount() > set_limit_for_enabling_bloom_filter ? buildSetParallelFilter(*data.NAME, column_ptrs, filter, num_rows, data, *pool): buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr); \
                 } else \
                 { \
                     is_pre_distinct \
-                    ? check_only ? checkSetFilter(*data.NAME, column_ptrs, filter, num_rows, data, total_passed_bf): use_bf ? buildCombinedFilter(*data.NAME, column_ptrs, filter, num_rows, data, total_passed_bf): buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data) \
-                    : buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data); \
+                    ? check_only ? checkSetFilter(*data.NAME, column_ptrs, filter, num_rows, data, total_passed_bf): use_bf ? buildCombinedFilter(*data.NAME, column_ptrs, filter, num_rows, data, total_passed_bf): buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr) \
+                    : buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr); \
                 } \
                 break;
         APPLY_FOR_SET_VARIANTS(M)
@@ -435,20 +456,21 @@ void DistinctTransform::transform(Chunk & chunk)
     /// Just go to the next chunk if there isn't any new record in the current one.
     size_t new_bf_size = total_passed_bf;
     size_t new_set_size = data.getTotalRowCount();
-    new_passes = ((new_set_size - old_set_size) + (new_bf_size - old_bf_size));
 
-    if (!new_passes)
+    size_t rows_passed = ((new_set_size - old_set_size) + (new_bf_size - old_bf_size));
+
+    if (!rows_passed)
         return;
 
     if (!set_size_limits.check(new_set_size, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         return;
 
     for (auto & column : columns)
-        column = column->filter(filter, new_passes);
+        column = column->filter(filter, rows_passed);
 
-    use_bf = use_bf && (new_passes * 2) > num_rows ? true: false;
+    use_bf = use_bf && (rows_passed > (pass_ratio_threshold_for_disabling_bloom_filter * num_rows)) ? true: false;
 
-    chunk.setColumns(std::move(columns), new_passes);
+    chunk.setColumns(std::move(columns), rows_passed);
 
     /// Stop reading if we already reach the limit
     if (limit_hint && (new_set_size >= limit_hint || new_bf_size >= limit_hint))
