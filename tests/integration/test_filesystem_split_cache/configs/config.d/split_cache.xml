@@ -15,7 +15,7 @@
                 <max_file_segment_size>1Ki</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <use_split_cache>1</use_split_cache>
-                <split_cache_ratio>0.2</split_cache_ratio>
+                <split_cache_ratio>0.4</split_cache_ratio>
                 <cache_policy>SLRU</cache_policy>
             </split_cache_slru>
             <split_cache_lru>
@@ -26,7 +26,7 @@
                 <max_file_segment_size>1Ki</max_file_segment_size>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <use_split_cache>1</use_split_cache>
-                <split_cache_ratio>0.2</split_cache_ratio>
+                <split_cache_ratio>0.4</split_cache_ratio>
                 <cache_policy>LRU</cache_policy>
             </split_cache_lru>
             <lru>
