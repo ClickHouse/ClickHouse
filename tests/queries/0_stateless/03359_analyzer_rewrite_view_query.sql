@@ -1,3 +1,5 @@
+set enable_analyzer=1;
+
 CREATE TABLE mydestination
 (
     `object` String
@@ -8,6 +10,6 @@ ORDER BY object;
 CREATE MATERIALIZED VIEW myview TO mydestination
 AS WITH ('foo', 'bar') AS objects
 SELECT 'foo' AS object
-WHERE object IN objects;
+WHERE object IN (objects);
 
 SELECT * FROM myview;
