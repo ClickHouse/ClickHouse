@@ -156,7 +156,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     // Initialize regex-based parser if configured
     if (partitioning_mode == ObjectStorageQueuePartitioningMode::REGEX)
     {
-        LOG_INFO(log, "Initializing regex-based filename parser - partition_regex: '{}', partition_component: '{}'",
+        LOG_DEBUG(log, "Initializing regex-based filename parser - partition_regex: '{}', partition_component: '{}'",
                  table_metadata.partition_regex, table_metadata.partition_component);
 
         filename_parser = std::make_unique<ObjectStorageQueueFilenameParser>(
@@ -170,7 +170,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
                 filename_parser->getError());
         }
 
-        LOG_INFO(log, "Successfully initialized regex-based filename parser for partitioning");
+        LOG_DEBUG(log, "Successfully initialized regex-based filename parser for partitioning");
     }
 
     LOG_TRACE(
