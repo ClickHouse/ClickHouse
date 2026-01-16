@@ -1,10 +1,13 @@
 import argparse
 import os
+import re
 import secrets
 import subprocess
 import time
+import traceback
 from pathlib import Path
 
+from ci.jobs.ast_fuzzer_job import analyze_job_logs
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -97,6 +100,7 @@ def main():
     use_old_analyzer = False
     use_distributed_plan = False
     use_database_disk = False
+    is_sanitized = "san" in info.job_name
 
     if args.param:
         for item in args.param.split(","):
@@ -184,8 +188,27 @@ def main():
 
     temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
     workspace_path = temp_dir / "workspace"
-    server_log = workspace_path / "dolor.log"
+    dolor_log = workspace_path / "dolor.log"
     buzzconfig = workspace_path / "fuzz.json"
+    fuzzer_log = workspace_path / "fuzzer.log"
+    dmesg_log = workspace_path / "dmesg.log"
+    fatal_log = workspace_path / "fatal.log"
+    server_log = workspace_path / "server.log"
+    stderr_log = workspace_path / "stderr.log"
+    buzz_out = workspace_path / "fuzzerout.sql"
+    paths = [
+        workspace_path / "core.zst",
+        workspace_path / "dmesg.log",
+        fatal_log,
+        stderr_log,
+        server_log,
+        fuzzer_log,
+        dmesg_log,
+        buzzconfig,
+        buzz_out,
+        dolor_log,
+    ]
+
     # Generate BuzzHouse config
     generate_buzz_config(buzzconfig)
 
@@ -201,7 +224,7 @@ def main():
                 --client-binary={clickhouse_path} \
                 --server-binaries={clickhouse_path} \
                 --client-config={buzzconfig} \
-                --log-path={server_log} \
+                --log-path={dolor_log} \
                 --timeout=30 --server-settings-prob=0 \
                 --kill-server-prob=50 --without-monitoring \
                 --replica-values=1 --shard-values=1 \
@@ -214,28 +237,48 @@ def main():
         )
     ]
 
-    if not test_results[-1].is_ok():
-        pass
-        # TODO:
-        # died server - lets fetch failure from log
-        # fuzzer_log_parser = FuzzerLogParser(
-        #     server_log=str(server_log),
-        #     stderr_log=str(stderr_log),
-        #     fuzzer_log=str(
-        #         workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log
-        #     ),
-        # )
-        # parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
+    server_died = False
+    server_exit_code = 0
+    fuzzer_exit_code = 0
 
-        # if parsed_name:
-        #     results.append(
-        #         Result(
-        #             name=parsed_name,
-        #             info=parsed_info,
-        #             status=Result.StatusExtended.FAIL,
-        #             files=files,
-        #         )
-        #     )
+    if not test_results[-1].is_ok():
+        try:
+            pattern1 = re.compile(r"Load generator exited with code:\s*(\d+)")
+            pattern2 = re.compile(r"The server node0 exited with code:\s*(\d+)")
+            pattern3 = re.compile(r"The server node0 is not running")
+
+            with open(dolor_log, "r", encoding="utf-8") as logf:
+                for line in logf:
+                    m = pattern1.search(line)
+                    if m:
+                        fuzzer_exit_code = int(m.group(1))
+                    # The server may restart, so we need to find the last exit code
+                    n = pattern2.search(line)
+                    if n:
+                        server_exit_code = int(n.group(1))
+                    o = pattern3.search(line)
+                    if o:
+                        server_died = True
+        except Exception:
+            error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
+            Result.create_from(
+                status=Result.Status.ERROR, info=error_info
+            ).complete_job()
+
+        result, is_failed = analyze_job_logs(
+            paths,
+            server_died,
+            fuzzer_exit_code,
+            is_sanitized,
+            buzz_out,
+            fuzzer_log,
+            dmesg_log,
+            server_log,
+            stderr_log,
+            fatal_log,
+        )
+        if is_failed:
+            test_results.append(result)
 
     attached_files = []
     if not info.is_local_run:
