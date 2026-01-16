@@ -4,26 +4,15 @@
 #include <Storages/VirtualColumnUtils.h>
 
 #include <Core/NamesAndTypes.h>
-#include <Core/TypeId.h>
 
-#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/misc.h>
 
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
@@ -38,15 +27,10 @@
 
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #include <Columns/ColumnSet.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Functions/FunctionHelpers.h>
@@ -56,8 +40,6 @@
 #include <Functions/indexHint.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/makeASTForLogicalFunction.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/HivePartitioningUtils.h>
 
 
