@@ -915,16 +915,15 @@ void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff &
 std::string ReadManager::collectDeadlockDiagnostics()
 {
     std::string result;
-    result += "Deadlock diagnostics:\t";
 
-    result += "  first_incomplete_row_group: " + std::to_string(first_incomplete_row_group.load(std::memory_order_relaxed)) + "\t";
+    result += " first_inc_rg: " + std::to_string(first_incomplete_row_group.load(std::memory_order_relaxed)) + " ";
     {
         std::lock_guard lock(delivery_mutex);
-        result += "  delivery_queue.size(): " + std::to_string(delivery_queue.size()) + "\t";
+        result += " delivery_queue.size(): " + std::to_string(delivery_queue.size());
     }
-    result += "  total_row_groups: " + std::to_string(reader.row_groups.size()) + "\t";
+    result += " tot_rgs: " + std::to_string(reader.row_groups.size());
 
-    result += "  Stages:\t";
+    result += " stages: ";
     for (size_t i = 0; i < size_t(ReadStage::Deallocated); ++i)
     {
         const auto & stage = stages[i];
@@ -934,31 +933,31 @@ std::string ReadManager::collectDeadlockDiagnostics()
             UInt64 bits = atomic_bits.load(std::memory_order_relaxed);
             schedulable_count += __builtin_popcountll(bits);
         }
-        result += "    stage " + std::to_string(i) + " (" + std::string(magic_enum::enum_name(ReadStage(i))) + "):\t";
-        result += "      memory_usage: " + std::to_string(stage.memory_usage.load(std::memory_order_relaxed)) + "\t";
-        result += "      batches_in_progress: " + std::to_string(stage.batches_in_progress.load(std::memory_order_relaxed)) + "\t";
-        result += "      schedulable_row_groups: " + std::to_string(schedulable_count) + "\t";
+        result += " st " + std::to_string(i) + " (" + std::string(magic_enum::enum_name(ReadStage(i))) + "):";
+        result += " mem_u: " + std::to_string(stage.memory_usage.load(std::memory_order_relaxed));
+        result += " btch: " + std::to_string(stage.batches_in_progress.load(std::memory_order_relaxed));
+        result += " rgs_sch: " + std::to_string(schedulable_count) + "\t";
         size_t tasks_to_schedule = 0;
         for (const auto & tasks : stage.row_group_tasks_to_schedule)
             tasks_to_schedule += tasks.size();
-        result += "      tasks_to_schedule: " + std::to_string(tasks_to_schedule) + "\t";
+        result += " tasks_to_sch: " + std::to_string(tasks_to_schedule) + "\t";
     }
 
-    result += "  Row groups:\t";
+    result += " RGs: ";
     for (size_t rg_idx = 0; rg_idx < reader.row_groups.size(); ++rg_idx)
     {
         const auto & row_group = reader.row_groups[rg_idx];
-        result += "    row_group[" + std::to_string(rg_idx) + "]:\t";
-        result += "      stage: " + std::string(magic_enum::enum_name(row_group.stage.load(std::memory_order_relaxed))) + "\t";
-        result += "      delivery_ptr: " + std::to_string(row_group.delivery_ptr.load(std::memory_order_relaxed)) + "/" + std::to_string(row_group.subgroups.size()) + "\nt";
-        result += "      next_subgroup_for_step: [";
+        result += " rg[" + std::to_string(rg_idx) + "]: ";
+        result += " st: " + std::string(magic_enum::enum_name(row_group.stage.load(std::memory_order_relaxed)));
+        result += " del_ptr: " + std::to_string(row_group.delivery_ptr.load(std::memory_order_relaxed)) + "/" + std::to_string(row_group.subgroups.size());
+        result += " nsgfs: [";
         for (size_t s = 0; s < row_group.next_subgroup_for_step.size(); ++s)
         {
             if (s > 0)
                 result += ", ";
             result += std::to_string(row_group.next_subgroup_for_step[s].load(std::memory_order_relaxed));
         }
-        result += "]\t";
+        result += "] ";
 
         size_t subgroups_in_progress = 0;
         size_t subgroups_delivered = 0;
@@ -976,10 +975,10 @@ std::string ReadManager::collectDeadlockDiagnostics()
             else
                 subgroups_not_started++;
         }
-        result += "      subgroups: not_started=" + std::to_string(subgroups_not_started) +
-                  ", in_progress=" + std::to_string(subgroups_in_progress) +
-                  ", delivered=" + std::to_string(subgroups_delivered) +
-                  ", deallocated=" + std::to_string(subgroups_deallocated) + "\t";
+        result += " subrgs: ns=" + std::to_string(subgroups_not_started) +
+                  ", in_pr=" + std::to_string(subgroups_in_progress) +
+                  ", deliv=" + std::to_string(subgroups_delivered) +
+                  ", deal=" + std::to_string(subgroups_deallocated) + " ";
     }
 
     return result;
