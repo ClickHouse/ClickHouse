@@ -38,7 +38,7 @@ static DataTypePtr createEnumFromValues(const String & type_name, const std::vec
     String type_name_upper = Poco::toUpper(type_name);
     bool use_enum16 = (type_name_upper == "ENUM16");
 
-    if (type_name_upper == "ENUM")
+    if (!use_enum16 && type_name_upper == "ENUM")
     {
         /// Auto-detect Enum8 vs Enum16 based on values
         for (const auto & [_, value] : values)
