@@ -601,6 +601,7 @@ def main():
 
     CH.terminate()
 
+    reset_success = False
     if (
         test_result
         and not test_result.is_error()
@@ -618,6 +619,8 @@ def main():
                 ).do(),
             )
         )
+        if results[-1].is_ok():
+            reset_success = True
 
     if test_result and JobStages.CHECK_ERRORS in stages:
         # must not be performed for a test validation - test must fail and log errors are not respected
@@ -670,12 +673,18 @@ def main():
     if test_result:
         test_result.sort()
 
-    Result.create_from(
+    R = Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    ).complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
+    )
+
+    if reset_success:
+        # coverage job ignores test failures
+        R.set_success()
+
+    R.complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":
