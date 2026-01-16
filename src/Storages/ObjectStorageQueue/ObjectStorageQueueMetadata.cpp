@@ -624,7 +624,7 @@ namespace
             return buf.str();
         }
 
-        static Info deserialize(const std::string & str)
+        static Info deserialize(std::string_view str)
         {
             ReadBufferFromString buf(str);
             Info info;
@@ -685,7 +685,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
             bool registry_exists = zk_client->tryGet(registry_path, registry_str, &stat);
             if (registry_exists)
             {
-                Strings registered;
+                std::vector<std::string_view> registered;
                 splitInto<','>(registered, registry_str);
 
                 if (zk_retries.isRetry() && registered.size() == 1 && (Info::deserialize(registered[0]) == self))
@@ -698,7 +698,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id,
 
                 created_new_metadata = false;
 
-                for (const auto & elem : registered)
+                for (auto elem : registered)
                 {
                     if (elem.empty())
                         continue;
@@ -841,7 +841,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                 return;
             }
 
-            Strings registered;
+            std::vector<std::string_view> registered;
             splitInto<','>(registered, registry_str);
 
             bool found = false;
