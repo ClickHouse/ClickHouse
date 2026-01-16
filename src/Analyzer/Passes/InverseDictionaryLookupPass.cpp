@@ -6,8 +6,8 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
@@ -260,10 +260,9 @@ public:
             dict_get_keys_args.push_back(dictget_function_info.attr_col_name_node);
             dict_get_keys_args.push_back(dict_side == Side::LHS ? arguments[1] : arguments[0]);
 
-            resolveOrdinaryFunctionNodeByName(*dict_get_keys_fn, "dictGetKeys", getContext());
-
+            QueryAnalyzer analyzer(false);
             QueryTreeNodePtr node_function_ptr = dict_get_keys_fn;
-            QueryAnalysisPass(/*only_analyze*/ false).run(node_function_ptr, getContext());
+            analyzer.resolveConstantExpression(node_function_ptr, nullptr, getContext());
 
             auto * keys_constant = node_function_ptr->as<ConstantNode>();
 
