@@ -831,11 +831,12 @@ void ContextTimeSeriesTagsCollector::extractTag(const std::vector<Group> & group
 template <typename IDType>
 void ContextTimeSeriesTagsCollector::storeTags(const IDType & id, const TagNamesAndValuesPtr & tags)
 {
-    auto & groups_by_id = getIDMap<IDType>().groups_by_id;
-
     {
         SharedLockGuard lock{mutex};
+
+        const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
         auto it = groups_by_id.find(id);
+
         if (it != groups_by_id.end())
         {
             Group existing_group = it->second;
@@ -849,7 +850,7 @@ void ContextTimeSeriesTagsCollector::storeTags(const IDType & id, const TagNames
         std::lock_guard lock{mutex};
 
         Group group = tryAddGroupUnlocked(tags);
-
+        auto & groups_by_id = getIDMap<IDType>().groups_by_id;
         auto it = groups_by_id.try_emplace(id, group).first;
 
         if (it->second != group)
@@ -862,7 +863,6 @@ template <typename IDType>
 void ContextTimeSeriesTagsCollector::storeTags(const std::vector<IDType> & ids, const std::vector<TagNamesAndValuesPtr> & tags_vector)
 {
     chassert(ids.size() == tags_vector.size());
-    auto & groups_by_id = getIDMap<IDType>().groups_by_id;
 
     std::vector<Group> found_groups;
     found_groups.resize(tags_vector.size(), INVALID_GROUP);
@@ -870,6 +870,8 @@ void ContextTimeSeriesTagsCollector::storeTags(const std::vector<IDType> & ids, 
 
     {
         SharedLockGuard lock{mutex};
+        const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
+
         for (size_t i = 0; i != tags_vector.size(); ++i)
         {
             const auto & id = ids[i];
@@ -891,6 +893,8 @@ void ContextTimeSeriesTagsCollector::storeTags(const std::vector<IDType> & ids, 
 
     {
         std::lock_guard lock{mutex};
+        auto & groups_by_id = getIDMap<IDType>().groups_by_id;
+
         for (size_t i = 0; i != tags_vector.size(); ++i)
         {
             if (found_groups[i] != INVALID_GROUP)
@@ -915,9 +919,8 @@ void ContextTimeSeriesTagsCollector::storeTags(const std::vector<IDType> & ids, 
 template <typename IDType>
 Group ContextTimeSeriesTagsCollector::getGroupByID(const IDType & id) const
 {
-    const auto & groups_by_id = getIDMap<IDType>().groups_by_id;
-
     SharedLockGuard lock{mutex};
+    const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
 
     auto it = groups_by_id.find(id);
     if (it == groups_by_id.end())
@@ -930,12 +933,12 @@ Group ContextTimeSeriesTagsCollector::getGroupByID(const IDType & id) const
 template <typename IDType>
 std::vector<Group> ContextTimeSeriesTagsCollector::getGroupByID(const std::vector<IDType> & ids) const
 {
-    const auto & groups_by_id = getIDMap<IDType>().groups_by_id;
-
     std::vector<Group> res;
     res.reserve(ids.size());
 
     SharedLockGuard lock{mutex};
+    const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
+
     for (const auto & id : ids)
     {
         auto it = groups_by_id.find(id);
@@ -951,9 +954,8 @@ std::vector<Group> ContextTimeSeriesTagsCollector::getGroupByID(const std::vecto
 template <typename IDType>
 TagNamesAndValuesPtr ContextTimeSeriesTagsCollector::getTagsByID(const IDType & id) const
 {
-    const auto & groups_by_id = getIDMap<IDType>().groups_by_id;
-
     SharedLockGuard lock{mutex};
+    const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
 
     auto it = groups_by_id.find(id);
     if (it == groups_by_id.end())
@@ -965,12 +967,12 @@ TagNamesAndValuesPtr ContextTimeSeriesTagsCollector::getTagsByID(const IDType & 
 template <typename IDType>
 std::vector<TagNamesAndValuesPtr> ContextTimeSeriesTagsCollector::getTagsByID(const std::vector<IDType> & ids) const
 {
-    const auto & groups_by_id = getIDMap<IDType>().groups_by_id;
-
     std::vector<TagNamesAndValuesPtr> res;
     res.reserve(ids.size());
 
     SharedLockGuard lock{mutex};
+    const auto & groups_by_id = getConstIDMap<IDType>().groups_by_id;
+
     for (const auto & id : ids)
     {
         auto it = groups_by_id.find(id);
@@ -1243,9 +1245,9 @@ ContextTimeSeriesTagsCollector::IDMap<IDType> & ContextTimeSeriesTagsCollector::
 }
 
 template <typename IDType>
-const ContextTimeSeriesTagsCollector::IDMap<IDType> & ContextTimeSeriesTagsCollector::getIDMap() const
+const ContextTimeSeriesTagsCollector::IDMap<IDType> & ContextTimeSeriesTagsCollector::getConstIDMap() const
 {
-    return const_cast<ContextTimeSeriesTagsCollector *>(this)->getIDMap<IDType>();
+    return TSA_SUPPRESS_WARNING_FOR_READ(const_cast<ContextTimeSeriesTagsCollector *>(this)->getIDMap<IDType>());
 }
 
 

@@ -156,11 +156,11 @@ private:
 
     /// Adds a group associated with a specified set of tags.
     /// If there is such a group already the function returns it.
-    Group tryAddGroupUnlocked(const TagNamesAndValuesPtr & tags);
+    Group tryAddGroupUnlocked(const TagNamesAndValuesPtr & tags) TSA_REQUIRES(mutex);
 
     mutable SharedMutex mutex;
 
-    std::vector<TagNamesAndValuesPtr> groups;
+    std::vector<TagNamesAndValuesPtr> groups TSA_GUARDED_BY(mutex);
 
     struct Equal
     {
@@ -172,7 +172,7 @@ private:
         size_t operator()(const TagNamesAndValuesPtr & ptr) const;
     };
 
-    std::unordered_map<TagNamesAndValuesPtr, Group, Hash, Equal> groups_for_tags;
+    std::unordered_map<TagNamesAndValuesPtr, Group, Hash, Equal> groups_for_tags TSA_GUARDED_BY(mutex);
 
     template <typename IDType>
     struct IDMap
@@ -181,13 +181,13 @@ private:
     };
 
     template <typename IDType>
-    IDMap<IDType> & getIDMap();
+    IDMap<IDType> & getIDMap() TSA_REQUIRES(mutex);
 
     template <typename IDType>
-    const IDMap<IDType> & getIDMap() const;
+    const IDMap<IDType> & getConstIDMap() const TSA_REQUIRES_SHARED(mutex);
 
-    IDMap<UInt64> uint64_id_map;
-    IDMap<UInt128> uint128_id_map;
+    IDMap<UInt64> uint64_id_map TSA_GUARDED_BY(mutex);
+    IDMap<UInt128> uint128_id_map TSA_GUARDED_BY(mutex);
 };
 
 }
