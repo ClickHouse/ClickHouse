@@ -193,5 +193,5 @@ def test_check_data_size(start_cluster):
         """
     )
     assert result_bitpacking == result_uncompressed
-    node.query("DROP TABLE IF EXISTS tab_bitpacking;") 
-    node.query("DROP TABLE IF EXISTS tab_unbitpacking;") 
+    node.query("DROP TABLE tab_bitpacking;")
+    node.query("DROP TABLE tab_uncompressed;")
