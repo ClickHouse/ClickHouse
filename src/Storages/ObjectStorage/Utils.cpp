@@ -48,7 +48,7 @@ std::string normalizeScheme(const std::string & scheme)
 {
     auto scheme_lowercase = Poco::toLower(scheme);
 
-    if (scheme_lowercase == "s3a" || scheme_lowercase == "s3n")
+    if (scheme_lowercase == "s3a" || scheme_lowercase == "s3n" || scheme_lowercase == "gs" || scheme_lowercase == "gcs" || scheme_lowercase == "oss")
         scheme_lowercase = "s3";
     else if (scheme_lowercase == "wasb" || scheme_lowercase == "wasbs" || scheme_lowercase == "abfss")
         scheme_lowercase = "abfs";
@@ -503,6 +503,10 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
         {
             normalized_path = "s3://" + target_decomposed.authority + "/" + target_decomposed.key;
         }
+        else if (target_decomposed.scheme == "gcs")
+        {
+            normalized_path = "gs://" + target_decomposed.authority + "/" + target_decomposed.key;
+        }
         S3::URI s3_uri(normalized_path);
 
         std::string key_to_use = s3_uri.key;
@@ -526,6 +530,10 @@ std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
             if (table_location_decomposed.scheme == "s3a" || table_location_decomposed.scheme == "s3n")
             {
                 normalized_table_location = "s3://" + table_location_decomposed.authority + "/" + table_location_decomposed.key;
+            }
+            else if (table_location_decomposed.scheme == "gcs")
+            {
+                normalized_table_location = "gs://" + table_location_decomposed.authority + "/" + table_location_decomposed.key;
             }
             S3::URI base_s3_uri(normalized_table_location);
 
