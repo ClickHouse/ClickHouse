@@ -215,6 +215,6 @@ void ReplaceQueryParameterVisitor::resolveParameterizedAlias(ASTPtr & ast)
         return;
 
     if (ast_with_alias->parametrised_alias)
-        setAlias(ast, getParamValue((*ast_with_alias->parametrised_alias)->name));
+        setAlias(ast, getParamValue(ast_with_alias->parametrised_alias->name));
 }
 }

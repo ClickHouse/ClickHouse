@@ -247,13 +247,15 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         if (tcp_keep_alive_timeout_in_sec)
         {
             socket->setKeepAlive(true);
-            socket->setOption(IPPROTO_TCP,
-#if defined(TCP_KEEPALIVE)
-                TCP_KEEPALIVE
-#else
-                TCP_KEEPIDLE  // __APPLE__
+#if defined(TCP_KEEPIDLE)
+            // TCP_KEEPIDLE: Linux, illumos
+            // Note: Check TCP_KEEPIDLE first because illumos defines TCP_KEEPALIVE
+            // but doesn't implement it.
+            socket->setOption(IPPROTO_TCP, TCP_KEEPIDLE, tcp_keep_alive_timeout_in_sec);
+#elif defined(TCP_KEEPALIVE)
+            // TCP_KEEPALIVE: macOS
+            socket->setOption(IPPROTO_TCP, TCP_KEEPALIVE, tcp_keep_alive_timeout_in_sec);
 #endif
-                , tcp_keep_alive_timeout_in_sec);
         }
 
         in = std::make_shared<ReadBufferFromPocoSocketChunked>(*socket);

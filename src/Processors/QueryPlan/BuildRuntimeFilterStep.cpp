@@ -6,6 +6,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/Exception.h>
 
@@ -98,8 +99,12 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     auto streams = pipeline.getNumStreams();
-    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType)
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)-> ProcessorPtr
     {
+        /// Build the filter only from the main stream
+        if (stream_type != QueryPipelineBuilder::StreamType::Main)
+            return nullptr;
+
         return std::make_shared<BuildRuntimeFilterTransform>(
             header,
             filter_column_name,
@@ -179,6 +184,15 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
 QueryPlanStepPtr BuildRuntimeFilterStep::clone() const
 {
     return std::make_unique<BuildRuntimeFilterStep>(*this);
+}
+
+void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) const
+{
+    std::string prefix(format_settings.offset, format_settings.indent_char);
+    format_settings.out
+        << prefix << "Filter id: " << filter_name << '\n'
+        << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';
+
 }
 
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry)

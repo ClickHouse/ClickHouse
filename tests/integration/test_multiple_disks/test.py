@@ -24,6 +24,7 @@ node1 = cluster.add_instance(
     stay_alive=True,
     tmpfs=["/test_multiple_disks_jbod1:size=40M", "/test_multiple_disks_jbod2:size=40M", "/test_multiple_disks_external:size=200M"],
     macros={"shard": 0, "replica": 1},
+    cpu_limit=10,
 )
 
 node2 = cluster.add_instance(

@@ -587,7 +587,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
 
-    state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings[CoordinationSetting::reserved_log_items]);
+    state_manager->loadLogStore(state_machine->last_commit_index(), coordination_settings[CoordinationSetting::reserved_log_items]);
 
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
@@ -655,11 +655,6 @@ void KeeperServer::shutdown()
     state_machine->shutdownStorage();
 }
 
-namespace
-{
-
-
-}
 
 void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
 {

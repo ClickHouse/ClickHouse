@@ -530,6 +530,7 @@ protected:
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
+    mutable std::mutex table_function_results_mutex;
 
     ContextWeakMutablePtr query_context;
     ContextWeakMutablePtr session_context;  /// Session context or nullptr. Could be equal to this.
@@ -1081,8 +1082,15 @@ public:
     const BackupsInMemoryHolder & getBackupsInMemory() const;
 
     /// I/O formats.
-    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
-                                  const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    InputFormatPtr getInputFormat(
+        const String & name,
+        ReadBuffer & buf,
+        const Block & sample,
+        UInt64 max_block_size,
+        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
+        const std::optional<UInt64> & min_block_size_rows = std::nullopt,
+        const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;

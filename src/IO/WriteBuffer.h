@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <exception>
 #include <memory>
 
@@ -51,6 +52,7 @@ public:
         try
         {
             nextImpl();
+            ++flush_count;
         }
         catch (CurrentBufferExhausted &)
         {
@@ -105,6 +107,9 @@ public:
     bool isFinalized() const { return finalized; }
     bool isCanceled() const { return canceled; }
 
+    /// Get number of times next() has been called (number of flushes)
+    size_t getFlushCount() const { return flush_count.load(std::memory_order_relaxed); }
+
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.
     virtual void sync()
@@ -146,6 +151,9 @@ private:
     }
 
     int exception_level = std::uncaught_exceptions();
+
+    /// Number of flushes for debugging/assertions
+    std::atomic<size_t> flush_count = 0;
 };
 
 
