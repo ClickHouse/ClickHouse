@@ -36,10 +36,3 @@ Formatted: SELECT * FROM tuple('42', '3141592')
 
 Original:  SELECT 1 FROM VALUES (1, (NOT 1 IS NULL)) tx
 Formatted: SELECT 1 FROM VALUES(1, NOT (1 IS NULL)) AS tx
-
-Original:  INSERT INTO tab2 SELECT * FROM tab EXCEPT SELECT * FROM tab;
-Formatted: INSERT INTO tab2 SELECT (*) FROM tab EXCEPT SELECT (*) FROM tab
-
-Original:  SELECT 1,2,3 EXCEPT SELECT 1,2,3;
-Formatted: SELECT (1), (2), (3) EXCEPT SELECT (1), (2), (3)
-
