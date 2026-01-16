@@ -2462,6 +2462,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
     {
         /// For cases where it says, for example, `WHERE 0 AND something`
 
+        if (const_value.isNull())
+        {
+            out.function = RPNElement::ALWAYS_FALSE;
+            return true;
+        }
         if (const_value.getType() == Field::Types::UInt64)
         {
             out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
