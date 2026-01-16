@@ -166,11 +166,6 @@ JoinStepLogical::JoinStepLogical(
         /// FIXME: do not reorder join with `using` clause
         optimized = true;
     }
-    for (const auto & [name, node] : changed_types)
-    {
-        if (right_header_->has(name))
-            right_type_changes.push_back(node);
-    }
     addToNullableIfNeeded(expression_actions, join_operator.kind, use_nulls_, required_output_columns_, actions_after_join, changed_types);
     updateInputHeaders({left_header_, right_header_});
 }
@@ -911,13 +906,11 @@ static void addSortingForMergeJoin(
 static void constructPhysicalStep(
     QueryPlanNode & node,
     ActionsDAG left_pre_join_actions,
+    ActionsDAG right_after_join_actions,
     ActionsDAG post_join_actions,
     std::pair<String, bool> residual_filter_condition,
     JoinPtr join_ptr,
-    std::optional<ActionsDAG> type_conversion_actions,
-    const QueryPlanOptimizationSettings & ,
     const JoinSettings & join_settings,
-    const SortingStep::Settings &,
     QueryPlan::Nodes & nodes)
 {
     if (!join_ptr->isFilled())
@@ -930,8 +923,8 @@ static void constructPhysicalStep(
 
     node.step = std::make_unique<FilledJoinStep>(join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size);
     node.step->setStepDescription("Filled JOIN");
-    if (type_conversion_actions)
-        makeExpressionNodeOnTopOf(node, std::move(*type_conversion_actions), nodes, makeDescription("Right Type Conversion Actions"));
+
+    makeExpressionNodeOnTopOf(node, std::move(right_after_join_actions), nodes, makeDescription("Right Type Conversion Actions"));
 
     post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
     makeFilterNodeOnTopOf(
@@ -1001,7 +994,6 @@ static QueryPlanNode buildPhysicalJoinImpl(
     JoinSettings join_settings,
     JoinAlgorithmParams join_algorithm_params,
     SortingStep::Settings sorting_settings,
-    const ActionsDAG::NodeRawConstPtrs & right_type_changes,
     const ActionsDAG::NodeRawConstPtrs & actions_after_join,
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan::Nodes & nodes)
@@ -1307,17 +1299,24 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
     else
     {
-        std::optional<ActionsDAG> type_conversion_dag;
-        if (!right_type_changes.empty())
+        ActionsDAG right_type_correction_actions;
+        if (logical_lookup && prepared_join_storage.storage_join)
         {
-            type_conversion_dag = JoinExpressionActions::getSubDAG(right_type_changes | std::views::transform(
-                [&](const auto * action) { return JoinActionRef(action, expression_actions); })
-            );
+            right_type_correction_actions = JoinExpressionActions::getSubDAG(
+                actions_after_join
+                    | std::views::transform([&](const auto * action) { return JoinActionRef(action, expression_actions); })
+                    | std::views::filter([](const auto & action) { return action.fromRight() && action.getNode()->type != ActionsDAG::ActionType::INPUT; }));
         }
 
         constructPhysicalStep(
-            node, std::move(left_dag), std::move(residual_dag), std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
-            std::move(join_algorithm_ptr), std::move(type_conversion_dag), optimization_settings, join_settings, sorting_settings, nodes);
+            node,
+            std::move(left_dag),
+            std::move(right_type_correction_actions),
+            std::move(residual_dag),
+            std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
+            std::move(join_algorithm_ptr),
+            join_settings,
+            nodes);
     }
     return node;
 }
@@ -1374,7 +1373,6 @@ void JoinStepLogical::buildPhysicalJoin(
         join_step->join_settings,
         *join_step->join_algorithm_params,
         join_step->sorting_settings,
-        join_step->right_type_changes,
         join_step->actions_after_join,
         optimization_settings,
         nodes);
