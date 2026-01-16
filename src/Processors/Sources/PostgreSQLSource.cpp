@@ -44,7 +44,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     , connection_holder(std::move(connection_holder_))
     , query_str(query_str_)
 {
-    LOG_DEBUG(getLogger("PGinit"), "in constructor 1");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "in constructor 1");
     init(*sample_block);
 }
 
@@ -62,7 +62,7 @@ PostgreSQLSource<T>::PostgreSQLSource(
     , query_str(query_str_)
     , tx(std::move(tx_))
 {
-    LOG_DEBUG(getLogger("PGinit"), "in constructor 2");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "in constructor 2");
     init(*sample_block);
 }
 
@@ -98,7 +98,7 @@ void PostgreSQLSource<T>::onStart()
         }
     }
 
-    LOG_DEBUG(getLogger("PGinit"), "before starting stream");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "before starting stream");
 
     try
     {
@@ -106,17 +106,15 @@ void PostgreSQLSource<T>::onStart()
     }
     catch (...)
     {
-        LOG_DEBUG(getLogger("PGinit"), "exception during starting stream");
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "exception during starting stream");
         throw;
     }
     if (stream)
-        LOG_DEBUG(getLogger("PGinit"), "stream not empty");
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "stream not empty");
     else
     {
-        LOG_DEBUG(getLogger("PGinit"), "stream empty");
-        finished = true;
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "stream empty");
     }
-
 }
 
 template<typename T>
@@ -125,25 +123,24 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
     if (!started)
     {
         onStart();
-        LOG_DEBUG(getLogger("PGinit"), "Check after onStart");
-        if (!finished)
-            started = true;
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "Check after onStart");
+        started = true;
     }
 
-    LOG_DEBUG(getLogger("PGinit"), "before ISource::prepare()");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "before ISource::prepare()");
     auto status = ISource::prepare();
-    LOG_DEBUG(getLogger("PGinit"), "after ISource::prepare()");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "after ISource::prepare()");
     if (status == Status::Finished)
     {
-        LOG_DEBUG(getLogger("PGinit"), "in finished");
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "in finished");
         if (stream)
             stream->close();
 
-        if (tx && auto_commit && !finished)
+        if (tx && auto_commit)
             tx->commit();
 
         is_completed = true;
-        LOG_DEBUG(getLogger("PGinit"), "after finished");
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "after finished");
     }
 
     return status;
@@ -152,7 +149,7 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 template<typename T>
 Chunk PostgreSQLSource<T>::generate()
 {
-    LOG_DEBUG(getLogger("PGinit"), "in generate()");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "in generate()");
     /// Check if pqxx::stream_from is finished
     if (!stream || !(*stream))
         return {};
@@ -160,7 +157,7 @@ Chunk PostgreSQLSource<T>::generate()
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
 
-    LOG_DEBUG(getLogger("PGinit"), "before while loop");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "before while loop");
 
     while (!isCancelled())
     {
@@ -217,43 +214,52 @@ Chunk PostgreSQLSource<T>::generate()
 template<typename T>
 void PostgreSQLSource<T>::onCancel() noexcept
 {
-    LOG_DEBUG(getLogger("PGinit"), "onCancel cancelling query");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel entering");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel cancelling query");
     tx->conn().cancel_query();
     if (stream)
     {
-        // LOG_DEBUG(getLogger("PGinit"), "cancelling query");
+        // LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel cancelling query");
         // tx->conn().cancel_query();
 
-        /** If stream is not closed, libpqxx::stream_from closes stream in destructor, but that way
-             * exception is added into transaction pending error and we can potentially ignore exception message.
-             */
-        LOG_DEBUG(getLogger("PGinit"), "onCancel closing stream");
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel closing stream");
         stream->close();
 
     }
-    LOG_DEBUG(getLogger("PGinit"), "onCancel aborting transcation");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel aborting transcation");
     tx->abort();
-    LOG_DEBUG(getLogger("PGinit"), "onCancel transaction aborted");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel transaction aborted");
+    stream.reset();
+    tx.reset();
+    if (connection_holder)
+    {
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "setBroken");
+        connection_holder->setBroken();
+    }
     is_completed = true;
 }
 
 template<typename T>
 PostgreSQLSource<T>::~PostgreSQLSource()
 {
-    LOG_DEBUG(getLogger("PGinit"), "in destructor");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "in destructor");
     if (!is_completed)
     {
-        LOG_DEBUG(getLogger("PGinit"), "is not completed");
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "is not completed");
         try
         {
+            // LOG_DEBUG(getLogger("PostgreSQLSource"), "cancel query outside");
+            // tx->conn().cancel_query();
             if (stream)
             {
+                LOG_DEBUG(getLogger("PostgreSQLSource"), "in stream canceling query");
                 /** Internally libpqxx::stream_from runs PostgreSQL copy query `COPY query TO STDOUT`.
                   * During transaction abort we try to execute PostgreSQL `ROLLBACK` command and if
                   * copy query is not cancelled, we wait until it finishes.
                   */
                 tx->conn().cancel_query();
 
+                LOG_DEBUG(getLogger("PostgreSQLSource"), "in stream close");
                 /** If stream is not closed, libpqxx::stream_from closes stream in destructor, but that way
                   * exception is added into transaction pending error and we can potentially ignore exception message.
                   */
@@ -262,21 +268,26 @@ PostgreSQLSource<T>::~PostgreSQLSource()
         }
         catch (...)
         {
-            LOG_DEBUG(getLogger("PGinit"), "in destructor catch");
+            LOG_DEBUG(getLogger("PostgreSQLSource"), "in destructor catch");
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
+        // LOG_DEBUG(getLogger("PostgreSQLSource"), "aborting trans");
+        // tx->abort();
+
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "reset stream and trans");
         stream.reset();
         tx.reset();
 
         if (connection_holder)
         {
-            LOG_DEBUG(getLogger("PGinit"), "setBroken");
+            LOG_DEBUG(getLogger("PostgreSQLSource"), "setBroken");
             connection_holder->setBroken();
         }
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "finished cleanup");
 
     }
-    LOG_DEBUG(getLogger("PGinit"), "exiting destructor");
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "exiting destructor");
 }
 
 template
