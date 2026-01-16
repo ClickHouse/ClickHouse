@@ -976,9 +976,9 @@ std::string ReadManager::collectDeadlockDiagnostics()
             else
                 subgroups_not_started++;
         }
-        result += "      subgroups: not_started=" + std::to_string(subgroups_not_started) + 
-                  ", in_progress=" + std::to_string(subgroups_in_progress) + 
-                  ", delivered=" + std::to_string(subgroups_delivered) + 
+        result += "      subgroups: not_started=" + std::to_string(subgroups_not_started) +
+                  ", in_progress=" + std::to_string(subgroups_in_progress) +
+                  ", delivered=" + std::to_string(subgroups_delivered) +
                   ", deallocated=" + std::to_string(subgroups_deallocated) + "\n";
     }
 
