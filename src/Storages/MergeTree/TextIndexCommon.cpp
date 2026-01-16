@@ -5,11 +5,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 bool RowsRange::intersects(const RowsRange & other) const
 {
     return (begin <= other.begin && other.begin <= end) || (other.begin <= begin && begin <= other.end);

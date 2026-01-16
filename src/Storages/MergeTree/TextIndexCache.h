@@ -4,8 +4,6 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexCommon.h>
 
-#include <vector>
-
 #include <absl/container/flat_hash_map.h>
 
 namespace ProfileEvents
@@ -41,25 +39,6 @@ struct TextIndexCacheBase : public CacheBase<UInt128, Mapped, UInt128TrivialHash
         : Base(cache_policy, bytes_metric, cells_metric, max_size_in_bytes, max_count, size_ratio)
     {
     }
-
-    template <typename... ARGS>
-    static UInt128 hash(ARGS... args)
-    {
-        SipHash hasher;
-        (hasher.update(args),...);
-        return hasher.get128();
-    }
-
-    template <typename LoadFunc>
-    MappedPtr getOrSet(UInt128 key, LoadFunc && load_func)
-    {
-        auto [cache_entry, cache_miss] = Base::getOrSet(key, load_func);
-        if (cache_miss)
-            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheMisses);
-        else
-            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
-        return std::move(cache_entry);
-    }
 };
 
 /// Estimate of the memory usage (bytes) of a dictionary block in cache
@@ -74,12 +53,31 @@ struct TextIndexTokensWeightFunction
     }
 };
 
-class TextIndexTokensCache : public TextIndexCacheBase<TokenPostingsInfo, TextIndexTokensWeightFunction>
+class TextIndexTokensCache : public CacheBase<UInt128, TokenPostingsInfo, UInt128TrivialHash, TextIndexTokensWeightFunction>
 {
 public:
     TextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
-        : TextIndexCacheBase(cache_policy, max_size_in_bytes, max_count, size_ratio, CurrentMetrics::TextIndexTokensCacheBytes, CurrentMetrics::TextIndexTokensCacheCells)
+        : CacheBase(cache_policy, CurrentMetrics::TextIndexTokensCacheBytes, CurrentMetrics::TextIndexTokensCacheCells, max_size_in_bytes, max_count, size_ratio)
     {
+    }
+
+    template <typename... Args>
+    static UInt128 hash(Args... args)
+    {
+        SipHash hasher;
+        (hasher.update(args),...);
+        return hasher.get128();
+    }
+
+    template <typename LoadFunc>
+    MappedPtr getOrSet(UInt128 key, LoadFunc && load_func)
+    {
+        auto [cache_entry, cache_miss] = CacheBase::getOrSet(key, load_func);
+        if (cache_miss)
+            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
+        return std::move(cache_entry);
     }
 };
 
@@ -92,12 +90,31 @@ struct TextIndexHeaderWeightFunction
     }
 };
 
-class TextIndexHeaderCache : public TextIndexCacheBase<DictionarySparseIndex, TextIndexHeaderWeightFunction>
+class TextIndexHeaderCache : public CacheBase<UInt128, DictionarySparseIndex, UInt128TrivialHash, TextIndexHeaderWeightFunction>
 {
 public:
     TextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
-        : TextIndexCacheBase(cache_policy, max_size_in_bytes, max_count, size_ratio, CurrentMetrics::TextIndexHeaderCacheBytes, CurrentMetrics::TextIndexHeaderCacheCells)
+        : CacheBase(cache_policy, CurrentMetrics::TextIndexHeaderCacheBytes, CurrentMetrics::TextIndexHeaderCacheCells, max_size_in_bytes, max_count, size_ratio)
     {
+    }
+
+    template <typename... Args>
+    static UInt128 hash(Args... args)
+    {
+        SipHash hasher;
+        (hasher.update(args),...);
+        return hasher.get128();
+    }
+
+    template <typename LoadFunc>
+    MappedPtr getOrSet(UInt128 key, LoadFunc && load_func)
+    {
+        auto [cache_entry, cache_miss] = CacheBase::getOrSet(key, load_func);
+        if (cache_miss)
+            ProfileEvents::increment(ProfileEvents::TextIndexHeaderCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::TextIndexHeaderCacheHits);
+        return std::move(cache_entry);
     }
 };
 
@@ -110,12 +127,30 @@ struct TextIndexPostingsWeightFunction
     }
 };
 
-class TextIndexPostingsCache : public TextIndexCacheBase<PostingList, TextIndexPostingsWeightFunction>
+class TextIndexPostingsCache : public CacheBase<UInt128, PostingList, UInt128TrivialHash, TextIndexPostingsWeightFunction>
 {
 public:
     TextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
-        : TextIndexCacheBase(cache_policy, max_size_in_bytes, max_count, size_ratio, CurrentMetrics::TextIndexPostingsCacheBytes, CurrentMetrics::TextIndexPostingsCacheCells)
+        : CacheBase(cache_policy, CurrentMetrics::TextIndexPostingsCacheBytes, CurrentMetrics::TextIndexPostingsCacheCells, max_size_in_bytes, max_count, size_ratio)
     {
+    }
+    template <typename... Args>
+    static UInt128 hash(Args... args)
+    {
+        SipHash hasher;
+        (hasher.update(args),...);
+        return hasher.get128();
+    }
+
+    template <typename LoadFunc>
+    MappedPtr getOrSet(UInt128 key, LoadFunc && load_func)
+    {
+        auto [cache_entry, cache_miss] = CacheBase::getOrSet(key, load_func);
+        if (cache_miss)
+            ProfileEvents::increment(ProfileEvents::TextIndexPostingsCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::TextIndexPostingsCacheHits);
+        return std::move(cache_entry);
     }
 };
 
