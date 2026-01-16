@@ -78,9 +78,9 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     /// If usage of global text index caches is disabled, create local
     /// one to share them between threads that read the same data parts.
     if (settings[Setting::use_text_index_dictionary_cache])
-        dictionary_block_cache = context_->getTextIndexDictionaryBlockCache();
+        tokens_cache = context_->getTextIndexTokensCache();
     else
-        dictionary_block_cache = std::make_shared<TextIndexDictionaryBlockCache>(cache_policy, max_memory_usage, 0, 1.0);
+        tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, max_memory_usage, 0, 1.0);
 
     if (settings[Setting::use_text_index_header_cache])
         header_cache = context_->getTextIndexHeaderCache();
@@ -115,7 +115,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     }
 
     all_search_tokens = Names(all_search_tokens_set.begin(), all_search_tokens_set.end());
-    std::ranges::sort(all_search_tokens); /// Technically not necessary but leads to nicer read patterns on sorted dictionary blocks
+    std::ranges::sort(all_search_tokens);
+    cardinalities_cache = std::make_unique<TokensCardinalitiesCache>(all_search_tokens, global_search_mode);
 }
 
 TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement & element)

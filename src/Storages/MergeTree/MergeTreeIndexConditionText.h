@@ -2,12 +2,13 @@
 #include <memory>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/MergeTree/TextIndexCommon.h>
 
 namespace DB
 {
 
-class TextIndexDictionaryBlockCache;
-using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBlockCache>;
+class TextIndexTokensCache;
+using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
 
 class TextIndexHeaderCache;
 using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
@@ -17,12 +18,6 @@ using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
 
 struct ITokenExtractor;
 using TokenExtractorPtr = const ITokenExtractor *;
-
-enum class TextSearchMode : uint8_t
-{
-    Any,
-    All,
-};
 
 enum class TextIndexDirectReadMode : uint8_t
 {
@@ -83,9 +78,10 @@ public:
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
-    TextIndexDictionaryBlockCachePtr dictionaryBlockCache() const { return dictionary_block_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
+    TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
+    TokensCardinalitiesCache & cardinalitiesCache() const { return *cardinalities_cache; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -155,12 +151,11 @@ private:
     TextSearchMode global_search_mode = TextSearchMode::All;
     /// Reference preprocessor expression
     MergeTreeIndexTextPreprocessorPtr preprocessor;
-    /// Instance of the text index dictionary block cache
-    TextIndexDictionaryBlockCachePtr dictionary_block_cache;
-    /// Instance of the text index dictionary block cache
+
     TextIndexHeaderCachePtr header_cache;
-    /// Instance of the text index dictionary block cache
     TextIndexPostingsCachePtr postings_cache;
+    TextIndexTokensCachePtr tokens_cache;
+    std::unique_ptr<TokensCardinalitiesCache> cardinalities_cache;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";

@@ -322,8 +322,8 @@
     M(HiveMetadataFilesCacheFiles, "Number of cached files in the hive metadata cache") \
     M(VectorSimilarityIndexCacheBytes, "Size of the vector similarity index cache in bytes") \
     M(VectorSimilarityIndexCacheCells, "Number of entries in the vector similarity index cache") \
-    M(TextIndexDictionaryBlockCacheBytes, "Size of the text index dictionary block cache in bytes") \
-    M(TextIndexDictionaryBlockCacheCells, "Number of entries in the text index dictionary block cache") \
+    M(TextIndexTokensCacheBytes, "Size of the text index tokens cache in bytes") \
+    M(TextIndexTokensCacheCells, "Number of entries in the text index tokens cache") \
     M(TextIndexHeaderCacheBytes, "Size of the text index header cache in bytes") \
     M(TextIndexHeaderCacheCells, "Number of entries in text index header cache") \
     M(TextIndexPostingsCacheBytes, "Size of the text index posting lists cache in bytes") \
