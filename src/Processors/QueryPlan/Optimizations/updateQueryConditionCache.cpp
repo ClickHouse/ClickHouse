@@ -32,6 +32,10 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (!read_from_merge_tree)
         return;
 
+    /// ORDER BY ... LIMIT N can drop granules, don't update qcc for the WHERE filter
+    if (read_from_merge_tree->isSelectedForTopKFilterOptimization())
+        return;
+
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto & filter_actions_dag = query_info.filter_actions_dag;
     if (!filter_actions_dag || query_info.isFinal())

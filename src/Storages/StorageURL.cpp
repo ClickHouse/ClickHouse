@@ -82,6 +82,7 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -933,25 +934,11 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
             auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext());
             StorageURL::getSchemaCache(getContext()).addColumns(key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            for (const auto & options : url_options_to_check)
-            {
-                auto keys = getKeysForSchemaCache(options, *format, format_settings, getContext());
-                StorageURL::getSchemaCache(getContext()).addManyColumns(keys, columns);
-            }
         }
 
         void setFormatName(const String & format_name) override
@@ -1205,6 +1192,9 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(
         column_names,
@@ -1593,7 +1583,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
 {
     ASTs::iterator headers_it = url_function_args.end();
 
-    for (auto * arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
+    for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
         const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
         if (headers_ast_function && headers_ast_function->name == "headers")

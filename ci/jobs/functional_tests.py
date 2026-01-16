@@ -2,6 +2,7 @@ import argparse
 import os
 import random
 import re
+import subprocess
 from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
@@ -64,6 +65,12 @@ def parse_args():
         help="Optional. Number of parallel workers for the test runner. Default: automatically computed from CPU count and job type",
         default=None,
     )
+    parser.add_argument(
+        "--debug",
+        help="Optional. Open clickhouse-client console after test run",
+        default=False,
+        action="store_true",
+    )
     return parser.parse_args()
 
 
@@ -85,7 +92,7 @@ def run_tests(
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --trace \
+    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {5*2**30} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
                 {extra_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
@@ -118,6 +125,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
+    "targeted": "--flaky-check",  # to disable tests not compatible with the thread fuzzer
 }
 
 
@@ -147,12 +155,7 @@ def main():
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
             print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
-        elif (
-            to.startswith("amd_")
-            or to.startswith("arm_")
-            or "flaky" in to
-            or "targeted" in to
-        ):
+        elif to.startswith("amd_") or to.startswith("arm_"):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             print(
@@ -195,6 +198,9 @@ def main():
             nproc = int(Utils.cpu_count() * 1.2)
         elif is_database_replicated:
             nproc = int(Utils.cpu_count() * 0.4)
+        elif "msan" in args.options:
+            # MSan is slow
+            nproc = int(Utils.cpu_count() * 0.4)
         elif is_coverage:
             cidb_cluster = CIDBCluster()
             assert cidb_cluster.is_ready()
@@ -218,7 +224,7 @@ def main():
         rerun_count = 50
     elif is_targeted_check:
         print(f"Rerun count set to 5 for targeted check")
-        rerun_count = 10
+        rerun_count = 5
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
@@ -297,6 +303,35 @@ def main():
         stages.remove(JobStages.RETRIES)
 
     tests = args.test
+
+    # for local run check if stateful tests are present to skip prepare_stateful_data and start faster if not
+    has_stateful_tests = True
+    if tests and info.is_local_run:
+        from glob import glob
+
+        has_stateful = False
+        for test_pattern in tests:
+            test_pattern_clean = test_pattern.strip()
+            matching_files = glob(
+                f"tests/queries/**/*{test_pattern_clean}*.sql", recursive=True
+            )
+            matching_files += glob(
+                f"tests/queries/**/*{test_pattern_clean}*.sh", recursive=True
+            )
+            for test_file in matching_files:
+                try:
+                    with open(test_file, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
+                        if "stateful" in content.lower():
+                            has_stateful = True
+                            break
+                except Exception:
+                    pass
+            if has_stateful:
+                break
+        if not has_stateful:
+            has_stateful_tests = False
+
     targeter = Targeting(info=info)
     if is_flaky_check or is_bugfix_validation:
         if info.is_local_run:
@@ -410,13 +445,14 @@ def main():
                     )
                     print("Failed to create minio log tables")
 
-                res = (
-                    CH.prepare_stateful_data(
-                        with_s3_storage=is_s3_storage,
-                        is_db_replicated=is_database_replicated,
+                if has_stateful_tests:
+                    res = (
+                        CH.prepare_stateful_data(
+                            with_s3_storage=is_s3_storage,
+                            is_db_replicated=is_database_replicated,
+                        )
+                        and CH.insert_system_zookeeper_config()
                     )
-                    and CH.insert_system_zookeeper_config()
-                )
             if res:
                 print("stateful data prepared")
             return res
@@ -442,11 +478,11 @@ def main():
         # Mode (2): N consequent runs for chosen tests
         #   - Drawback: Might eliminate mode (1) issues but potentially catches fewer problems
         #
-        # Currently using Mode (1):
-        run_sets_cnt = 1
-        # To use Mode (2), uncomment:
-        # run_sets_cnt = rerun_count if is_targeted_check else 1
-        # rerun_count = 1 if is_targeted_check else rerun_count
+        # Mode (1):
+        # run_sets_cnt = 1
+        # Mode (2):
+        run_sets_cnt = rerun_count if is_targeted_check else 1
+        rerun_count = 1 if is_targeted_check else rerun_count
 
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
@@ -558,6 +594,10 @@ def main():
                     elif test_case.name in failed_after_rerun:
                         test_case.set_label(Result.Label.FAILED_ON_RETRY)
             results.append(retry_result)
+
+    if args.debug:
+        print("\n\n=== Debug mode enabled, starting clickhouse-client ===\n")
+        subprocess.call("clickhouse-client", shell=True)
 
     CH.terminate()
 

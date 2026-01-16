@@ -5,7 +5,7 @@
 SET log_queries = 1;
 
 -- Affects the number of read rows.
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET max_rows_to_read = 0; -- system.text_log can be really big

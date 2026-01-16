@@ -94,12 +94,10 @@
             <allow_suspicious_types_in_group_by>1</allow_suspicious_types_in_group_by>
             <allow_suspicious_types_in_order_by>1</allow_suspicious_types_in_order_by>
             <allow_suspicious_variant_types>1</allow_suspicious_variant_types>
-            <enable_deflate_qpl_codec>1</enable_deflate_qpl_codec>
             <enable_lightweight_delete>1</enable_lightweight_delete>
             <enable_order_by_all>1</enable_order_by_all>
             <enable_positional_arguments>1</enable_positional_arguments>
             <enable_time_time64_type>1</enable_time_time64_type>
-            <enable_zstd_qat_codec>1</enable_zstd_qat_codec>
             <input_format_parquet_allow_geoparquet_parser>1</input_format_parquet_allow_geoparquet_parser>
         </default>
     </profiles>

@@ -55,6 +55,7 @@ WHAT TO REVIEW VS WHAT TO IGNORE
 
 **Explicitly ignore (do not comment on these unless they indicate a bug):**
 - Typos in comments, variable names, or commit messages.
+- Commented debugging code (completely ignore for draft PR, no more than one message in total)
 - Trivial grammar corrections (e.g., "Corrected "it's" to "its" (possessive form without apostrophe).").
 - Pure formatting (whitespace, brace style, minor naming preferences).
 - “Nice to have” refactors or micro-optimizations without clear benefit.

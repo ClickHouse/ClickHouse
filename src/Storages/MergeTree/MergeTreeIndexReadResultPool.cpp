@@ -109,11 +109,28 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     if (is_cancelled)
         return {};
 
-    auto res = std::make_shared<SkipIndexReadResult>(ending_mark);
+    auto res = std::make_shared<SkipIndexReadResult>();
+    res->granules_selected.resize(ending_mark, false);
     for (const auto & range : ranges)
     {
         for (auto i = range.begin; i < range.end; ++i)
-            (*res)[i] = true;
+            (*res).granules_selected[i] = true;
+    }
+
+    if (skip_indexes.skip_index_for_top_k_filtering && skip_indexes.threshold_tracker)
+    {
+        res->min_max_index_for_top_k = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
+            part.data_part,
+            skip_indexes.skip_index_for_top_k_filtering,
+            ranges,
+            skip_indexes.threshold_tracker->getDirection(),
+            true,/*access_by_mark*/
+            reader_settings,
+            mark_cache.get(),
+            uncompressed_cache.get(),
+            vector_similarity_index_cache.get());
+
+        res->threshold_tracker = skip_indexes.threshold_tracker;
     }
     return res;
 }
@@ -346,7 +363,6 @@ SingleProjectionIndexReader::SingleProjectionIndexReader(
           std::make_unique<MergeTreeProjectionIndexSelectAlgorithm>(),
           nullptr /*row_level_filter*/,
           std::move(prewhere_info),
-          nullptr /*lazily_read_info*/,
           IndexReadTasks{} /*index_read_tasks*/,
           actions_settings,
           reader_settings))

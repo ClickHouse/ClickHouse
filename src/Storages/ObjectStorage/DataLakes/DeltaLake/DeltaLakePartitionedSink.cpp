@@ -68,23 +68,25 @@ namespace
 
 DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     DeltaLake::WriteTransactionPtr delta_transaction_,
-    StorageObjectStorageConfigurationPtr configuration_,
     const Names & partition_columns_,
     ObjectStoragePtr object_storage_,
     ContextPtr context_,
     SharedHeader sample_block_,
-    const std::optional<FormatSettings> & format_settings_)
+    const std::optional<FormatSettings> & format_settings_,
+    const String & write_format_,
+    const String & write_compression_method_)
     : SinkToStorage(sample_block_)
     , WithContext(context_)
     , log(getLogger("DeltaLakePartitionedSink"))
     , partition_columns(partition_columns_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
-    , configuration(configuration_)
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
     , partition_strategy(createPartitionStrategy(partition_columns, getHeader(), context_))
     , delta_transaction(delta_transaction_)
+    , write_format(write_format_)
+    , write_compression_method(write_compression_method_)
 {
     delta_transaction->validateSchema(getHeader());
 }
@@ -180,12 +182,13 @@ DeltaLakePartitionedSink::createSinkForPartition(std::string_view partition_key)
 {
     auto data_prefix = std::filesystem::path(delta_transaction->getDataPath()) / partition_key;
     return std::make_unique<StorageObjectStorageSink>(
-        DeltaLake::generateWritePath(std::move(data_prefix), configuration->format),
+        DeltaLake::generateWritePath(std::move(data_prefix), write_format),
         object_storage,
-        configuration,
         format_settings,
         std::make_shared<Block>(partition_strategy->getFormatHeader()),
-        getContext());
+        getContext(),
+        write_format,
+        write_compression_method);
 }
 
 void DeltaLakePartitionedSink::onFinish()

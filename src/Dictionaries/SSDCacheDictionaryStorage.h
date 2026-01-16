@@ -1158,7 +1158,7 @@ private:
             for (size_t column_index = 0; column_index < columns_to_serialize_size; ++column_index)
             {
                 auto & column = columns[column_index];
-                temporary_column_data[column_index] = column->serializeValueIntoArena(key_index, temporary_values_pool, block_start);
+                temporary_column_data[column_index] = column->serializeValueIntoArena(key_index, temporary_values_pool, block_start, nullptr);
                 allocated_size_for_columns += temporary_column_data[column_index].size();
             }
 

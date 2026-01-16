@@ -5,7 +5,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationStringSize.h>
 #include <Formats/FormatSettings.h>
@@ -768,7 +767,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    /// Check if the whole String column is already serialized and we have it in the cache.
+    /// Check if the whole String column is already deserialized and we have it in the cache.
     settings.path.push_back(Substream::Regular);
 
     if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))

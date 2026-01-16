@@ -110,6 +110,8 @@ public:
 
     bool isExceedingMemorySoftLimit() const;
 
+    int64_t getLeaderID() const;
+
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 
     /// @return follower count if node is not leader return 0
@@ -136,7 +138,7 @@ public:
     };
 
     ConfigUpdateState applyConfigUpdate(
-        const ClusterUpdateAction& action,
+        const ClusterUpdateAction & action,
         bool last_command_was_leader_change = false);
 
     // TODO (myrrc) these functions should be removed once "reconfig" is stabilized

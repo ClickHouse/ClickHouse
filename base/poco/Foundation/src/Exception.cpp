@@ -56,6 +56,14 @@ Exception::Exception(const Exception& exc):
 	_pNested = exc._pNested ? exc._pNested->clone() : 0;
 }
 
+Exception::Exception(Exception&& exc):
+    std::exception(std::move(exc)),
+    _msg(std::move(exc._msg)),
+    _code(exc._code)
+{
+    _pNested = exc._pNested ? exc._pNested->clone() : 0;
+}
+
 
 Exception::~Exception() throw()
 {
@@ -72,8 +80,24 @@ Exception& Exception::operator = (const Exception& exc)
 		_msg     = exc._msg;
 		_pNested = newPNested;
 		_code    = exc._code;
+	    std::exception::operator=(std::move(exc));
 	}
 	return *this;
+}
+
+Exception& Exception::operator = (Exception&& exc)
+{
+    if (&exc != this)
+    {
+        Exception* newPNested = exc._pNested ? exc._pNested->clone() : 0;
+        delete _pNested;
+        _msg     = std::move(exc._msg);
+        _pNested = newPNested;
+        _code    = exc._code;
+        std::exception::operator=(std::move(exc));
+
+    }
+    return *this;
 }
 
 

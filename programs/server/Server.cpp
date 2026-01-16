@@ -114,12 +114,12 @@
 #include <Server/CloudPlacementInfo.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
-#include <Server/KeeperReadinessHandler.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
+#include <Server/KeeperHTTPHandlerFactory.h>
 #include <Server/ArrowFlightHandler.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
@@ -164,9 +164,11 @@
 #endif
 
 
-#include <incbin.h>
 /// A minimal file used when the server is run without installation
-INCBIN(resource_embedded_xml, SOURCE_DIR "/programs/server/embedded.xml");
+constexpr unsigned char resource_embedded_xml[] =
+{
+#embed "embedded.xml"
+};
 
 namespace DB
 {
@@ -220,6 +222,7 @@ namespace ServerSetting
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
+    extern const ServerSettingsUInt64 disk_connections_hard_limit;
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
@@ -231,6 +234,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
     extern const ServerSettingsUInt64 http_connections_soft_limit;
     extern const ServerSettingsUInt64 http_connections_store_limit;
+    extern const ServerSettingsUInt64 http_connections_hard_limit;
     extern const ServerSettingsUInt64 http_connections_warn_limit;
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
@@ -303,6 +307,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_view_num_to_warn;
     extern const ServerSettingsUInt64 max_waiting_queries;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsDouble memory_worker_purge_dirty_pages_threshold_ratio;
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
@@ -320,6 +325,7 @@ namespace ServerSetting
     extern const ServerSettingsBool shutdown_wait_unfinished_queries;
     extern const ServerSettingsUInt64 storage_connections_soft_limit;
     extern const ServerSettingsUInt64 storage_connections_store_limit;
+    extern const ServerSettingsUInt64 storage_connections_hard_limit;
     extern const ServerSettingsUInt64 storage_connections_warn_limit;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
@@ -656,7 +662,7 @@ int Server::run()
 
 void Server::initialize(Poco::Util::Application & self)
 {
-    ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(gresource_embedded_xmlData), gresource_embedded_xmlSize));
+    ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(resource_embedded_xml), std::size(resource_embedded_xml)));
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
@@ -1366,6 +1372,7 @@ try
 
     MemoryWorker memory_worker(
         server_settings[ServerSetting::memory_worker_period_ms],
+        server_settings[ServerSetting::memory_worker_purge_dirty_pages_threshold_ratio],
         server_settings[ServerSetting::memory_worker_correct_memory_tracker],
         global_context->getServerSettings()[ServerSetting::memory_worker_use_cgroup],
         global_context->getPageCache());
@@ -1704,7 +1711,7 @@ try
     if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
     {
         auto cancellation_task_holder = global_context->getSchedulePool().createTask(
-            "CancellationChecker",
+            StorageID::createEmpty(), "CancellationChecker",
             [] { CancellationChecker::getInstance().workerFunction(); }
         );
         cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
@@ -1736,6 +1743,7 @@ try
         }
     }
 
+#if defined(RLIMIT_NPROC)
     /// Try to increase limit on number of threads.
     {
         rlimit rlim;
@@ -1770,6 +1778,7 @@ try
                     "Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries."));
         }
     }
+#endif
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
@@ -2053,6 +2062,29 @@ try
             extra_paths.emplace_back(cert_path);
         if (!key_path.empty())
             extra_paths.emplace_back(key_path);
+    }
+
+    /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
+    /// and thus this object must be created after the SCOPE_EXIT object where shared
+    /// context is destroyed.
+    /// In addition this object has to be created before any scenario that requires
+    /// DNS resolution (e.g. the loading of tables and clusters config).
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (server_settings[ServerSetting::disable_internal_dns_cache])
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+        LOG_DEBUG(log, "DNS caching disabled");
+    }
+    else
+    {
+        DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
+        DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
+
+        /// Initialize a watcher periodically updating DNS cache
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
+        dns_cache_updater->start();
     }
 
     auto main_config_reloader = std::make_unique<ConfigReloader>(
@@ -2343,16 +2375,19 @@ try
                     new_server_settings[ServerSetting::disk_connections_soft_limit],
                     new_server_settings[ServerSetting::disk_connections_warn_limit],
                     new_server_settings[ServerSetting::disk_connections_store_limit],
+                    new_server_settings[ServerSetting::disk_connections_hard_limit],
                 },
                 HTTPConnectionPools::Limits{
                     new_server_settings[ServerSetting::storage_connections_soft_limit],
                     new_server_settings[ServerSetting::storage_connections_warn_limit],
                     new_server_settings[ServerSetting::storage_connections_store_limit],
+                    new_server_settings[ServerSetting::storage_connections_hard_limit],
                 },
                 HTTPConnectionPools::Limits{
                     new_server_settings[ServerSetting::http_connections_soft_limit],
                     new_server_settings[ServerSetting::http_connections_warn_limit],
                     new_server_settings[ServerSetting::http_connections_store_limit],
+                    new_server_settings[ServerSetting::http_connections_hard_limit],
                 });
 
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
@@ -2472,10 +2507,11 @@ try
                     "HTTP Control: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         std::move(http_context),
-                        createKeeperHTTPControlMainHandlerFactory(
-                            config_getter(),
-                            global_context->getKeeperDispatcher(),
-                            "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params));
+                        createKeeperHTTPHandlerFactory(
+                            *this, config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
             });
         }
 #else
@@ -2658,29 +2694,6 @@ try
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
-
-    /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
-    /// and thus this object must be created after the SCOPE_EXIT object where shared
-    /// context is destroyed.
-    /// In addition this object has to be created before the loading of the tables.
-    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
-    if (server_settings[ServerSetting::disable_internal_dns_cache])
-    {
-        /// Disable DNS caching at all
-        DNSResolver::instance().setDisableCacheFlag();
-        LOG_DEBUG(log, "DNS caching disabled");
-    }
-    else
-    {
-        DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
-
-        /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
-            global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
-    }
-
-    if (dns_cache_updater)
-        dns_cache_updater->start();
 
     auto replicas_reconnector = ReplicasReconnector::init(global_context);
 

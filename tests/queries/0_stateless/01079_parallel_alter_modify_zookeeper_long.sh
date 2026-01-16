@@ -55,7 +55,7 @@ function insert_thread()
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % 5 + 1))
         VALUE=${VALUES[$RANDOM % ${#VALUES[@]} ]}
-        $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_alter_mt_$REPLICA VALUES($RANDOM, $VALUE, $VALUE)"
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "INSERT INTO concurrent_alter_mt_$REPLICA VALUES($RANDOM, $VALUE, $VALUE)"
         sleep 0.$RANDOM
     done
 }
@@ -66,7 +66,7 @@ function select_thread()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % 5 + 1))
-        $CLICKHOUSE_CLIENT --query "SELECT SUM(toUInt64(value1)) FROM concurrent_alter_mt_$REPLICA" 1>/dev/null
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT SUM(toUInt64(value1)) FROM concurrent_alter_mt_$REPLICA" 1>/dev/null
         sleep 0.$RANDOM
     done
 }

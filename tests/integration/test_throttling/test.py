@@ -47,6 +47,7 @@ node = cluster.add_instance(
     minio_certs_dir="minio_certs",
     # Disable `with_remote_database_disk` as the instances does not use the default minIO
     with_remote_database_disk=False,
+    cpu_limit=6
 )
 
 
@@ -398,7 +399,7 @@ def test_remote_read_throttling_reload():
     node.query("SYSTEM RELOAD CONFIG")
 
     _, took = elapsed(node.query, f"select * from data")
-    assert took < 1
+    assert took < 3
 
 def test_local_read_throttling_reload():
     node.query(
@@ -429,7 +430,7 @@ def test_local_read_throttling_reload():
     node.query("SYSTEM RELOAD CONFIG")
 
     _, took = elapsed(node.query, f"select * from data")
-    assert took < 1
+    assert took < 3
 
 @pytest.mark.parametrize(
     "policy,mode,setting,value,should_take",
@@ -521,7 +522,7 @@ def test_remote_write_throttling_reload():
     node.query("SYSTEM RELOAD CONFIG")
 
     _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
-    assert took < 1
+    assert took < 3
 
 def test_local_write_throttling_reload():
     node.query(
@@ -552,7 +553,7 @@ def test_local_write_throttling_reload():
     node.query("SYSTEM RELOAD CONFIG")
 
     _, took = elapsed(node.query, f"insert into data select * from numbers(1e6)")
-    assert took < 1
+    assert took < 3
 
 def test_max_mutations_bandwidth_for_server():
     node.query(

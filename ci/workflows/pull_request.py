@@ -133,7 +133,8 @@ workflow = Workflow.Config(
     enable_merge_ready_status=True,
     enable_gh_summary_comment=True,
     enable_commit_status_on_failure=False,
-    enable_flaky_tests_catalog=True,
+    enable_open_issues_check=True,
+    enable_slack_feed=True,
     pre_hooks=[
         can_be_trusted,
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
