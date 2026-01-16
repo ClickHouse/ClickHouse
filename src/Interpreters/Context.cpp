@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
@@ -394,6 +395,7 @@ namespace ErrorCodes
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
+    extern const int TYPE_MISMATCH;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -979,13 +981,14 @@ struct ContextSharedPart : boost::noncopyable
             trace_collector.reset();
         }
 
+        zkutil::ZooKeeperPtr delete_zookeeper;
         {
             /// Stop zookeeper connection
             std::lock_guard lock(zookeeper_mutex);
-            if (zookeeper)
-                zookeeper->finalize("shutdown");
-            zookeeper.reset();
+            delete_zookeeper = std::move(zookeeper);
         }
+        if (delete_zookeeper)
+            delete_zookeeper->finalize("shutdown");
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
@@ -2781,7 +2784,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 }
 
 
-StoragePtr Context::buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values)
+StoragePtr Context::buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const
 {
     if (table_name.empty())
         return nullptr;
@@ -2808,9 +2811,32 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
+
+    /* Check that the actual schema matches the defined one (if any) */
+    auto actual_names_and_types = sample_block->getNamesAndTypesList();
+    const auto original_defined_columns = original_view_metadata->getColumns();
+    if (!original_defined_columns.empty())
+    {
+        auto throw_schema_mismatch = [table_name]()
+        {
+            throw Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "After parameters substitution of parameterized view {} the actual schema does not match the defined one",
+                backQuote(table_name));
+        };
+        if (original_defined_columns.size() != actual_names_and_types.size())
+            throw_schema_mismatch();
+
+        for (const auto [defined_column, actual_column] : std::views::zip(original_defined_columns.getAll(), actual_names_and_types))
+        {
+            if (defined_column.name != actual_column.name || defined_column.type->getName() != actual_column.type->getName())
+                throw_schema_mismatch();
+        }
+    }
+
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
-                                                ColumnsDescription(sample_block->getNamesAndTypesList()),
+                                                ColumnsDescription(actual_names_and_types),
             /* comment */ "",
             /* is_parameterized_view */ true);
     res->startup();
