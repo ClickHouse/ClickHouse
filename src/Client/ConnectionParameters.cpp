@@ -2,13 +2,11 @@
 
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
-#include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
-#include <base/scope_guard.h>
 #include <Client/ClientBaseHelpers.h>
 
 #include <readpassphrase/readpassphrase.h>

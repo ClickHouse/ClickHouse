@@ -1,7 +1,7 @@
+#include <Common/isValidUTF8.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringOrArrayToT.h>
-#include <Common/isValidUTF8.h>
 
 namespace DB
 {

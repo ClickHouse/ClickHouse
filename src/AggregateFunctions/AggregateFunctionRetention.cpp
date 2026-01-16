@@ -10,7 +10,6 @@
 #include <base/range.h>
 
 #include <bitset>
-#include <unordered_set>
 
 
 namespace DB

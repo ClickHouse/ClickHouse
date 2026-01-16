@@ -8,13 +8,9 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/BitHelpers.h>
 
-#include <bitset>
 #include <cstring>
-#include <algorithm>
-#include <type_traits>
 
 
 namespace DB
