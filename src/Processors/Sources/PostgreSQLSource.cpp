@@ -98,23 +98,7 @@ void PostgreSQLSource<T>::onStart()
         }
     }
 
-    LOG_DEBUG(getLogger("PostgreSQLSource"), "before starting stream");
-
-    try
-    {
-        stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
-    }
-    catch (...)
-    {
-        LOG_DEBUG(getLogger("PostgreSQLSource"), "exception during starting stream");
-        throw;
-    }
-    if (stream)
-        LOG_DEBUG(getLogger("PostgreSQLSource"), "stream not empty");
-    else
-    {
-        LOG_DEBUG(getLogger("PostgreSQLSource"), "stream empty");
-    }
+    stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
 }
 
 template<typename T>
@@ -149,15 +133,12 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 template<typename T>
 Chunk PostgreSQLSource<T>::generate()
 {
-    LOG_DEBUG(getLogger("PostgreSQLSource"), "in generate()");
     /// Check if pqxx::stream_from is finished
     if (!stream || !(*stream))
         return {};
 
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
-
-    LOG_DEBUG(getLogger("PostgreSQLSource"), "before while loop");
 
     while (!isCancelled())
     {
@@ -219,9 +200,6 @@ void PostgreSQLSource<T>::onCancel() noexcept
     tx->conn().cancel_query();
     if (stream)
     {
-        // LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel cancelling query");
-        // tx->conn().cancel_query();
-
         LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel closing stream");
         stream->close();
 
@@ -248,8 +226,6 @@ PostgreSQLSource<T>::~PostgreSQLSource()
         LOG_DEBUG(getLogger("PostgreSQLSource"), "is not completed");
         try
         {
-            // LOG_DEBUG(getLogger("PostgreSQLSource"), "cancel query outside");
-            // tx->conn().cancel_query();
             if (stream)
             {
                 LOG_DEBUG(getLogger("PostgreSQLSource"), "in stream canceling query");
@@ -271,9 +247,6 @@ PostgreSQLSource<T>::~PostgreSQLSource()
             LOG_DEBUG(getLogger("PostgreSQLSource"), "in destructor catch");
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-
-        // LOG_DEBUG(getLogger("PostgreSQLSource"), "aborting trans");
-        // tx->abort();
 
         LOG_DEBUG(getLogger("PostgreSQLSource"), "reset stream and trans");
         stream.reset();
