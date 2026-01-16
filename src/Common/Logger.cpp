@@ -25,3 +25,28 @@ bool hasLogger(const std::string & name)
 {
     return Poco::Logger::has(name);
 }
+
+static constinit std::atomic<bool> allow_audit_logging{false};
+
+LoggerPtr getAuditLogger()
+{
+    if (isAuditLogEnabled())
+        return getLogger("AUDIT");
+
+    return nullptr;
+}
+
+void enableAuditLogging()
+{
+    allow_audit_logging.store(true);
+}
+
+void disableAuditLogging()
+{
+    allow_audit_logging.store(false);
+}
+
+bool isAuditLogEnabled()
+{
+    return allow_audit_logging.load();
+}
