@@ -154,11 +154,13 @@ class HtmlRunnerHooks:
         ).add_ext_key_value(
             "pr_number", env.PR_NUMBER
         ).add_ext_key_value(
-            "related_prs", [env.LINKED_PR_NUMBER] if env.LINKED_PR_NUMBER else []
-        ).add_ext_key_value(
             "run_url", env.RUN_URL
         ).add_ext_key_value(
             "change_url", env.CHANGE_URL
+        ).add_ext_key_value(
+            "workflow_name", env.WORKFLOW_NAME
+        ).add_ext_key_value(
+            "base_branch", env.BASE_BRANCH
         )
 
         summary_result.dump()

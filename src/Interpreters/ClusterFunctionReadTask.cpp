@@ -88,8 +88,8 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_METADATA)
     {
         SerializedSetsRegistry registry;
-        if (data_lake_metadata.transform)
-            data_lake_metadata.transform->serialize(out, registry);
+        if (data_lake_metadata.schema_transform)
+            data_lake_metadata.schema_transform->serialize(out, registry);
         else
             ActionsDAG().serialize(out, registry);
     }
@@ -145,7 +145,7 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
 
         if (!path.empty() && !transform->getInputs().empty())
         {
-            data_lake_metadata.transform = std::move(transform);
+            data_lake_metadata.schema_transform = std::move(transform);
         }
     }
 
