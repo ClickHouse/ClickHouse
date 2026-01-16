@@ -916,14 +916,14 @@ std::string ReadManager::collectDeadlockDiagnostics() const
 {
     std::string result;
     result += "Deadlock diagnostics:\n";
-    
+
     result += "  first_incomplete_row_group: " + std::to_string(first_incomplete_row_group.load(std::memory_order_relaxed)) + "\n";
     {
         std::lock_guard lock(delivery_mutex);
         result += "  delivery_queue.size(): " + std::to_string(delivery_queue.size()) + "\n";
     }
     result += "  total_row_groups: " + std::to_string(reader.row_groups.size()) + "\n";
-    
+
     result += "  Stages:\n";
     for (size_t i = 0; i < size_t(ReadStage::Deallocated); ++i)
     {
@@ -943,7 +943,7 @@ std::string ReadManager::collectDeadlockDiagnostics() const
             tasks_to_schedule += tasks.size();
         result += "      tasks_to_schedule: " + std::to_string(tasks_to_schedule) + "\n";
     }
-    
+
     result += "  Row groups:\n";
     for (size_t rg_idx = 0; rg_idx < reader.row_groups.size(); ++rg_idx)
     {
@@ -959,7 +959,7 @@ std::string ReadManager::collectDeadlockDiagnostics() const
             result += std::to_string(row_group.next_subgroup_for_step[s].load(std::memory_order_relaxed));
         }
         result += "]\n";
-        
+
         size_t subgroups_in_progress = 0;
         size_t subgroups_delivered = 0;
         size_t subgroups_deallocated = 0;
@@ -976,12 +976,12 @@ std::string ReadManager::collectDeadlockDiagnostics() const
             else
                 subgroups_not_started++;
         }
-        result += "      subgroups: not_started=" + std::to_string(subgroups_not_started) + 
-                  ", in_progress=" + std::to_string(subgroups_in_progress) + 
-                  ", delivered=" + std::to_string(subgroups_delivered) + 
+        result += "      subgroups: not_started=" + std::to_string(subgroups_not_started) +
+                  ", in_progress=" + std::to_string(subgroups_in_progress) +
+                  ", delivered=" + std::to_string(subgroups_delivered) +
                   ", deallocated=" + std::to_string(subgroups_deallocated) + "\n";
     }
-    
+
     return result;
 }
 
