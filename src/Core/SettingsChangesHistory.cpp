@@ -1012,13 +1012,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
+            {"add_minmax_index_for_numeric_columns", false, true, "Should give benefits."},
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
             {"materialize_statistics_on_merge", true, true, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
             {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
-            {"add_minmax_index_for_numeric_columns", false, true, "Should give benefits."},
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, false, "New setting"},
             {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", 5, 5, "New setting"},
             {"nullable_serialization_version", "basic", "basic", "New setting"},
