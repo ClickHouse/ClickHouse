@@ -239,6 +239,17 @@ public:
 
         if (can_replace_with_dictgetkeys)
         {
+            /// Preserve the original result type of the comparison node.
+            /// For example, original "equals(...)" might have result type Nullable(UInt8),
+            /// while "IN" might return UInt8.
+            DataTypePtr original_result_type = node_function->getResultType();
+            auto preserve_result_type = [&](QueryTreeNodePtr replacement_node)
+            {
+                if (original_result_type && replacement_node && !replacement_node->getResultType()->equals(*original_result_type))
+                    return createCastFunction(std::move(replacement_node), original_result_type, getContext());
+                return replacement_node;
+            };
+
             /// Build dictGetKeys('dict_name', 'attr_name', value_expr)
             auto dict_get_keys_fn = std::make_shared<FunctionNode>("dictGetKeys");
             auto & dict_get_keys_args = dict_get_keys_fn->getArguments().getNodes();
@@ -271,7 +282,7 @@ public:
             {
                 auto zero_type = std::make_shared<DataTypeUInt8>();
                 auto zero_node = std::make_shared<ConstantNode>(Field(UInt8(0)), zero_type);
-                node = zero_node;
+                node = preserve_result_type(zero_node);
                 return;
             }
 
@@ -289,7 +300,7 @@ public:
                 equals_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, single_key_const};
                 resolveOrdinaryFunctionNodeByName(*equals_node, "equals", getContext());
 
-                node = equals_node;
+                node = preserve_result_type(equals_node);
                 return;
             }
 
@@ -302,7 +313,7 @@ public:
             in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
             resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
 
-            node = in_function_node;
+            node = preserve_result_type(in_function_node);
             return;
         }
 
