@@ -189,8 +189,8 @@ def main():
         ),
         "max_number_alters": (1 if random.randint(1, 2) == 1 else random.randint(1, 4)),
         "fuzz_floating_points": random.choice([True, False]),
-        "enable_fault_injection_settings": random.choice([True, False]),
-        "enable_force_settings": random.choice([True, False]),
+        "enable_fault_injection_settings": random.randint(1, 4) == 1,
+        "enable_force_settings": random.randint(1, 4) == 1,
         # Don't compare for correctness yet, false positives maybe
         "use_dump_table_oracle": random.randint(1, 3) == 1,
         "test_with_fill": False,  # Creating too many issues
@@ -243,6 +243,7 @@ def main():
             "merge_max_block_size",
             "min_bytes_for_full_part_storage",
             "min_bytes_for_wide_part",
+            "nullable_serialization_version",
             "ratio_of_defaults_for_sparse_serialization",
             "string_serialization_version",
             "vertical_merge_algorithm_min_bytes_to_activate",
