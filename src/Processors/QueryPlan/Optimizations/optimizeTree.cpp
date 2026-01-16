@@ -431,6 +431,11 @@ void considerEnablingParallelReplicas(
         return;
     }
     const auto rows = analysis->selected_rows;
+    if (!rows)
+    {
+        LOG_DEBUG(&Poco::Logger::get("optimizeTree"), "Index analysis result doesn't contain selected rows. Skipping optimization");
+        return;
+    }
 
     bool skip_stats_collection = false;
 
@@ -438,7 +443,7 @@ void considerEnablingParallelReplicas(
     if (const auto stats = stats_cache.getStats(single_replica_plan_node_hash))
     {
         bool skip_optimization = optimization_settings.automatic_parallel_replicas_mode == 2;
-        if (std::max(stats->total_rows_from_storage, rows) > std::min(stats->total_rows_from_storage, rows) * 2)
+        if (std::max<size_t>(stats->total_rows_from_storage, rows) > std::min<size_t>(stats->total_rows_from_storage, rows) * 2)
         {
             LOG_DEBUG(
                 getLogger("optimizeTree"),
