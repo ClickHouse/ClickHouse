@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTWithAlias.h>
-#include <IO/Operators.h>
 
 namespace DB
 {
@@ -30,8 +29,12 @@ public:
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
+
+        ostr << (settings.hilite ? hilite_identifier : "");
         settings.writeIdentifier(ostr, column_name, /*ambiguous=*/false);
-        ostr << " = ";
+        ostr << (settings.hilite ? hilite_none : "");
+
+        ostr << (settings.hilite ? hilite_operator : "") << " = " << (settings.hilite ? hilite_none : "");
 
         if (auto ast = std::dynamic_pointer_cast<ASTWithAlias>(expression()); ast && !ast->alias.empty())
         {

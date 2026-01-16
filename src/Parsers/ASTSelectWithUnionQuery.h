@@ -20,7 +20,9 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Select; }
 
     SelectUnionMode union_mode;
+
     SelectUnionModes list_of_modes;
+
     bool is_normalized = false;
 
     ASTPtr list_of_selects;
@@ -31,8 +33,6 @@ public:
     bool hasNonDefaultUnionMode() const;
 
     bool hasQueryParameters() const;
-
-    NameToNameMap getQueryParameters() const;
 
 private:
     /// This variable is optional as we want to set it on the first call to hasQueryParameters

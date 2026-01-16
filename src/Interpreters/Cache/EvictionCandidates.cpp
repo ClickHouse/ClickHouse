@@ -86,7 +86,6 @@ void EvictionCandidates::add(
     it->second.candidates.push_back(candidate);
     candidate->setEvictingFlag(locked_key, lock);
     ++candidates_size;
-    candidates_bytes += candidate->size();
 }
 
 void EvictionCandidates::removeQueueEntries(const CachePriorityGuard::Lock & lock)
@@ -138,8 +137,8 @@ void EvictionCandidates::evict()
         auto locked_key = key_candidates.key_metadata->tryLock();
         if (!locked_key)
         {
-            /// key could become invalid (meaning all cache by this key was dropped)
-            /// after we released the key lock above, just skip it.
+            /// key could become invalid after we released
+            /// the key lock above, just skip it.
             continue;
         }
 
@@ -264,7 +263,6 @@ void EvictionCandidates::finalize(
     {
         auto iterator = queue_entries_to_invalidate.back();
         iterator->invalidate();
-        iterator->check(lock);
         queue_entries_to_invalidate.pop_back();
 
         /// Remove entry from per query priority queue.

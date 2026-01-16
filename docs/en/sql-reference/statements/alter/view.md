@@ -4,7 +4,6 @@ sidebar_label: 'VIEW'
 sidebar_position: 50
 slug: /sql-reference/statements/alter/view
 title: 'ALTER TABLE ... MODIFY QUERY Statement'
-doc_type: 'reference'
 ---
 
 # ALTER TABLE ... MODIFY QUERY Statement
@@ -28,7 +27,7 @@ FROM events
 GROUP BY ts, event_type;
 
 INSERT INTO events
-SELECT DATE '2020-01-01' + interval number * 900 second,
+SELECT Date '2020-01-01' + interval number * 900 second,
        ['imp', 'click'][number%2+1]
 FROM numbers(100);
 
@@ -135,6 +134,7 @@ CREATE TABLE test.events_by_day
 ENGINE = SummingMergeTree
 PRIMARY KEY (event_type, ts)
 ORDER BY (event_type, ts, browser)
+SETTINGS index_granularity = 8192
 
 -- !!! The columns' definition is unchanged but it does not matter, we are not querying
 -- MATERIALIZED VIEW, we are querying TO (storage) table.
@@ -192,6 +192,10 @@ SELECT * FROM mv;
 │ 2 │
 └───┘
 ```
+
+## ALTER LIVE VIEW Statement {#alter-live-view-statement}
+
+`ALTER LIVE VIEW ... REFRESH` statement refreshes a [Live view](/sql-reference/statements/create/view#live-view). See [Force Live View Refresh](/sql-reference/statements/create/view#live-view).
 
 ## ALTER TABLE ... MODIFY REFRESH Statement {#alter-table--modify-refresh-statement}
 

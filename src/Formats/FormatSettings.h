@@ -25,7 +25,6 @@ struct FormatSettings
     bool with_names_use_header = false;
     bool with_types_use_header = false;
     bool write_statistics = true;
-    bool into_outfile_create_parent_directories = false;
     bool import_nested_json = false;
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
@@ -46,21 +45,6 @@ struct FormatSettings
     bool try_infer_datetimes = true;
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
-
-    bool allow_special_serialization_kinds = false;
-
-    inline static const String FORMAT_SCHEMA_SOURCE_FILE = "file";
-    inline static const String FORMAT_SCHEMA_SOURCE_STRING = "string";
-    inline static const String FORMAT_SCHEMA_SOURCE_QUERY = "query";
-
-    enum class AggregateFunctionInputFormat : uint8_t
-    {
-        State,
-        Value,
-        Array,
-    };
-
-    AggregateFunctionInputFormat aggregate_function_input_format = AggregateFunctionInputFormat::State;
 
     enum class DateTimeInputFormat : uint8_t
     {
@@ -100,7 +84,10 @@ struct FormatSettings
         Numeric
     };
 
-    IntervalOutputFormat interval_output_format = IntervalOutputFormat::Numeric;
+    struct
+    {
+        IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
+    } interval{};
 
     enum class DateTimeOverflowBehavior : uint8_t
     {
@@ -115,7 +102,6 @@ struct FormatSettings
 
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
-    bool check_conversion_from_numbers_to_enum = false;
 
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
@@ -125,10 +111,6 @@ struct FormatSettings
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
     size_t max_threads = 1;
-
-    size_t max_block_size_bytes = 0;
-
-    bool pretty_format = false;
 
     enum class ArrowCompression : uint8_t
     {
@@ -146,7 +128,6 @@ struct FormatSettings
         bool read_json_as_string = false;
         bool write_json_as_string = false;
         bool read_bool_field_as_int = false;
-        UInt64 max_object_size = 100000;
     } binary{};
 
     struct
@@ -175,8 +156,6 @@ struct FormatSettings
 
     String bool_true_representation = "true";
     String bool_false_representation = "false";
-    bool allow_special_bool_values = true;
-    bool allow_special_bool_values_inside_variant = false;
 
     struct CSV
     {
@@ -232,7 +211,7 @@ struct FormatSettings
     {
         size_t max_depth = 1000;
         bool array_of_rows = false;
-        bool quote_64bit_integers = false;
+        bool quote_64bit_integers = true;
         bool quote_64bit_floats = false;
         bool quote_denormals = true;
         bool quote_decimals = false;
@@ -252,6 +231,8 @@ struct FormatSettings
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
+        bool allow_deprecated_object_type = false;
+        bool allow_json_type = false;
         bool valid_output_on_exception = false;
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
@@ -259,17 +240,10 @@ struct FormatSettings
         bool throw_on_bad_escape_sequence = true;
         bool ignore_unnecessary_fields = true;
         bool empty_as_default = false;
-        bool type_json_skip_invalid_typed_paths = false;
         bool type_json_skip_duplicated_paths = false;
-        bool type_json_allow_duplicated_key_with_literal_and_nested_object = false;
-        bool type_json_use_partial_match_to_skip_paths_by_regexp = true;
         bool pretty_print = true;
         char pretty_print_indent = ' ';
         size_t pretty_print_indent_multiplier = 4;
-        bool infer_array_of_dynamic_from_array_of_different_values = true;
-        bool write_map_as_array_of_tuples = false;
-        bool read_map_as_array_of_tuples = false;
-        bool json_type_escape_dots_in_keys = false;
     } json{};
 
     struct
@@ -297,51 +271,36 @@ struct FormatSettings
 
     struct
     {
-        /// Read.
+        UInt64 row_group_rows = 1000000;
+        UInt64 row_group_bytes = 512 * 1024 * 1024;
         bool allow_missing_columns = false;
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
-        bool page_filter_push_down = true;
-        bool use_offset_index = true;
-        bool use_native_reader_v3 = false;
-        bool enable_json_parsing = true;
-        bool preserve_order = false;
-        bool enable_row_group_prefetch = true;
-        bool verify_checksums = true;
-        bool local_time_as_utc = true;
-        std::unordered_set<int> skip_row_groups = {};
-        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
-        size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
-        size_t local_read_min_bytes_for_seek = 8192;
-        size_t memory_low_watermark = 2ul << 20;
-        size_t memory_high_watermark = 4ul << 30;
-
-        /// Write.
-        UInt64 row_group_rows = 1000000;
-        UInt64 row_group_bytes = 512 * 1024 * 1024;
+        bool use_native_reader = false;
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool output_datetime_as_uint32 = false;
         bool output_date_as_uint16 = false;
-        bool output_enum_as_byte_array = false;
+        bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
         bool output_compliant_nested_types = true;
         bool write_page_index = false;
         bool write_bloom_filter = false;
-        bool write_checksums = true;
-        ParquetVersion output_version = ParquetVersion::V2_LATEST;
+        bool enable_row_group_prefetch = true;
+        std::unordered_set<int> skip_row_groups = {};
+        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+        size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
+        ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
+        size_t local_read_min_bytes_for_seek = 8192;
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
-        bool allow_geoparquet_parser = true;
-        bool write_geometadata = true;
-        size_t max_dictionary_size = 1024 * 1024;
     } parquet{};
 
     struct Pretty
@@ -365,15 +324,11 @@ struct FormatSettings
 
         UInt64 squash_consecutive_ms = 50;
         UInt64 squash_max_wait_ms = 1000;
-        /// Set to 2 for auto
-        UInt64 glue_chunks = 2;
 
         bool fallback_to_vertical = true;
         UInt64 fallback_to_vertical_max_rows_per_chunk = 100;
         UInt64 fallback_to_vertical_min_columns = 5;
         UInt64 fallback_to_vertical_min_table_width = 250;
-
-        bool named_tuples_as_json = true;
 
         enum class Charset : uint8_t
         {
@@ -399,7 +354,6 @@ struct FormatSettings
         bool skip_fields_with_unsupported_types_in_schema_inference = false;
         bool use_autogenerated_schema = true;
         std::string google_protos_path;
-        bool oneof_presence =  false;
     } protobuf{};
 
     struct
@@ -426,9 +380,7 @@ struct FormatSettings
 
     struct
     {
-        std::string format_schema_source = FORMAT_SCHEMA_SOURCE_FILE;
         std::string format_schema;
-        std::string format_schema_message_name;
         std::string format_schema_path;
         bool is_server = false;
         std::string output_format_schema;
@@ -491,7 +443,6 @@ struct FormatSettings
         bool dictionary_as_low_cardinality = true;
         String writer_time_zone_name = "GMT";
         double output_dictionary_key_size_threshold = 0.0;
-        UInt64 output_compression_block_size = 256 * 1024; /// 256 KiB
     } orc{};
 
     /// For capnProto format we should determine how to
@@ -508,7 +459,6 @@ struct FormatSettings
         CapnProtoEnumComparingMode enum_comparing_mode = CapnProtoEnumComparingMode::BY_VALUES;
         bool skip_fields_with_unsupported_types_in_schema_inference = false;
         bool use_autogenerated_schema = true;
-        UInt64 max_message_size = 1_GiB; /// Maximum size of a single CapnProto message
     } capn_proto{};
 
     enum class MsgPackUUIDRepresentation : uint8_t
@@ -551,7 +501,6 @@ struct FormatSettings
         bool encode_types_in_binary_format = false;
         bool decode_types_in_binary_format = false;
         bool write_json_as_string = false;
-        bool use_flattened_dynamic_and_json_serialization = false;
     } native{};
 
     struct
@@ -563,7 +512,6 @@ struct FormatSettings
     {
         bool escape_special_characters = false;
     } markdown{};
-
 };
 
 }

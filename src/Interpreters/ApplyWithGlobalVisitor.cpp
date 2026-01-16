@@ -88,7 +88,7 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
                     if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
                         exprs[ast_with_alias->alias] = child;
                 }
-                for (auto it = node_union->list_of_selects->children.begin() + 1; it != node_union->list_of_selects->children.end(); ++it)
+                for (auto * it = node_union->list_of_selects->children.begin() + 1; it != node_union->list_of_selects->children.end(); ++it)
                 {
                     if (auto * union_child = (*it)->as<ASTSelectWithUnionQuery>())
                         visit(*union_child, exprs, with_expression_list);

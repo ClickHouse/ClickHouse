@@ -30,8 +30,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTime.h>
-#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -61,6 +59,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int INCORRECT_DATA;
 }
 
 template <typename JSONParser>
@@ -368,6 +367,7 @@ public:
                 WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
                 jsonElementToString<JSONParser>(element, buf, format_settings);
             }
+            chars.push_back(0);
             col_str.getOffsets().push_back(chars.size());
         }
         else
@@ -578,7 +578,7 @@ public:
 
     static bool tryParse(UUID & uuid, std::string_view data)
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadUUIDText(uuid, buf) && buf.eof();
     }
 };
@@ -609,7 +609,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         UUID uuid;
         if (!tryReadUUIDText(uuid, buf) || !buf.eof())
         {
@@ -648,7 +648,7 @@ public:
         }
 
         auto data = element.getString();
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         DateType date;
         if (!tryReadDateText(date, buf) || !buf.eof())
         {
@@ -705,7 +705,7 @@ public:
 
     bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -721,60 +721,6 @@ public:
                     return true;
                 break;
         }
-
-        return false;
-    }
-};
-
-template <typename JSONParser>
-class TimeNode : public JSONExtractTreeNode<JSONParser>
-{
-public:
-    explicit TimeNode(const DataTypeTime &) { }
-
-    bool insertResultToColumn(
-        IColumn & column,
-        const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings & insert_settings,
-        const FormatSettings & format_settings,
-        String & error) const override
-    {
-        if (element.isNull() && format_settings.null_as_default)
-        {
-            column.insertDefault();
-            return true;
-        }
-
-        time_t value;
-        if (element.isString())
-        {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
-            {
-                error = fmt::format("cannot parse Time value here: {}", element.getString());
-                return false;
-            }
-        }
-        else if (element.isUInt64() && insert_settings.allow_type_conversion)
-        {
-            value = element.getUInt64();
-        }
-        else
-        {
-            error = fmt::format("cannot read Time value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
-            return false;
-        }
-
-        assert_cast<ColumnTime &>(column).insert(value);
-        return true;
-    }
-
-    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
-    {
-        ReadBufferFromMemory buf(data);
-        const auto & date_lut = DateLUT::instance();
-
-        if (tryReadTimeText(value, buf, date_lut) && buf.eof())
-            return true;
 
         return false;
     }
@@ -798,22 +744,8 @@ public:
         switch (element.type())
         {
             case ElementType::DOUBLE:
-            {
-                // Try to preserve precision by converting to string first
-                // This avoids floating-point precision loss during decimal conversion
-                String str_value = jsonElementToString<JSONParser>(element, format_settings);
-                auto rb = ReadBufferFromMemory{str_value};
-
-                if (SerializationDecimal<DecimalType>::tryReadText(value, rb, DecimalUtils::max_precision<DecimalType>, scale))
-                {
-                    break;
-                }
-
-                // Fallback to original conversion if string parsing fails
-                // This ensures backward compatibility and robustness
                 value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DecimalType>>(element.getDouble(), scale);
                 break;
-            }
             case ElementType::UINT64:
                 value = convertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DecimalType>>(element.getUInt64(), scale);
                 break;
@@ -913,7 +845,7 @@ public:
 
     bool tryParse(DateTime64 & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         switch (date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
@@ -929,77 +861,6 @@ public:
                     return true;
                 break;
         }
-
-        return false;
-    }
-
-private:
-    UInt32 scale;
-};
-
-template <typename JSONParser>
-class Time64Node : public JSONExtractTreeNode<JSONParser>
-{
-public:
-    explicit Time64Node(const DataTypeTime64 & time64_type) : scale(time64_type.getScale())
-    {
-    }
-
-    bool insertResultToColumn(
-        IColumn & column,
-        const typename JSONParser::Element & element,
-        const JSONExtractInsertSettings & insert_settings,
-        const FormatSettings & format_settings,
-        String & error) const override
-    {
-        if (element.isNull() && format_settings.null_as_default)
-        {
-            column.insertDefault();
-            return true;
-        }
-
-        Time64 value;
-        if (element.isString())
-        {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
-            {
-                error = fmt::format("cannot parse Time64 value here: {}", element.getString());
-                return false;
-            }
-        }
-        else
-        {
-            if (!insert_settings.allow_type_conversion)
-                return false;
-
-            switch (element.type())
-            {
-                case ElementType::DOUBLE:
-                    value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<Time64>>(element.getDouble(), scale);
-                    break;
-                case ElementType::UINT64:
-                    value.value = element.getUInt64();
-                    break;
-                case ElementType::INT64:
-                    value.value = element.getInt64();
-                    break;
-                default:
-                    error = fmt::format("cannot read Time64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
-                    return false;
-            }
-        }
-
-        assert_cast<ColumnTime64 &>(column).insert(value);
-        return true;
-    }
-
-    bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
-    {
-        ReadBufferFromMemory buf(data);
-        const auto & date_lut = DateLUT::instance();
-
-        if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
-            return true;
 
         return false;
     }
@@ -1126,7 +987,7 @@ public:
 
     static bool tryParse(IPv4 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadIPv4Text(value, buf) && buf.eof();
     }
 };
@@ -1169,7 +1030,7 @@ public:
 
     static bool tryParse(IPv6 & value, std::string_view data)
     {
-        ReadBufferFromMemory buf(data);
+        ReadBufferFromMemory buf(data.data(), data.size());
         return tryReadIPv6Text(value, buf) && buf.eof();
     }
 };
@@ -1575,49 +1436,40 @@ public:
         const auto & variant_info = column_dynamic.getVariantInfo();
         const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
 
-        if (insert_settings.try_existing_variants_in_dynamic_first)
+        /// Try to insert element into current variants but with no types conversion.
+        /// We want to avoid inferring the type on each row, so if we can insert this element into
+        /// any existing variant with no types conversion (like Integer -> String, Double -> Integer, etc)
+        /// we will do it and won't try to infer the type.
+        auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
+        auto insert_settings_with_no_type_conversion = insert_settings;
+        insert_settings_with_no_type_conversion.allow_type_conversion = false;
+        auto order = SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants());
+        for (size_t i : order)
         {
-            /// Try to insert element into current variants but with no types conversion.
-            /// We want to avoid inferring the type on each row, so if we can insert this element into
-            /// any existing variant with no types conversion (like Integer -> String, Double -> Integer, etc)
-            /// we will do it and won't try to infer the type.
-            auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
-            auto insert_settings_with_no_type_conversion = insert_settings;
-            insert_settings_with_no_type_conversion.allow_type_conversion = false;
-
-            /// Check if we already have variants order for this Variant type in cache.
-            auto variants_order_it = variants_order_cache.find(variant_info.variant_name);
-            if (variants_order_it == variants_order_cache.end())
-                variants_order_it = variants_order_cache.emplace(variant_info.variant_name, SerializationVariant::getVariantsDeserializeTextOrder(assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants())).first;
-
-            for (size_t i : variants_order_it->second)
+            if (i != shared_variant_discr)
             {
-                if (i != shared_variant_discr)
-                {
-                    auto it = json_extract_nodes_cache.find(variant_info.variant_names[i]);
-                    if (it == json_extract_nodes_cache.end())
-                        it = json_extract_nodes_cache.emplace(variant_info.variant_names[i], buildJSONExtractTree<JSONParser>(variant_types[i], "Dynamic inference")).first;
+                auto it = json_extract_nodes_cache.find(variant_info.variant_names[i]);
+                if (it == json_extract_nodes_cache.end())
+                    it = json_extract_nodes_cache.emplace(variant_info.variant_names[i], buildJSONExtractTree<JSONParser>(variant_types[i], "Dynamic inference")).first;
 
-                    if (it->second->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
-                    {
-                        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(i));
-                        variant_column.getOffsets().push_back(variant_column.getVariantByGlobalDiscriminator(i).size() - 1);
-                        return true;
-                    }
+                if (it->second->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
+                {
+                    variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(i));
+                    variant_column.getOffsets().push_back(variant_column.getVariantByGlobalDiscriminator(i).size() - 1);
+                    return true;
                 }
             }
         }
 
-        /// We couldn't insert element into current variants (or skipped it intentionally),
-        /// infer ClickHouse type for this element and add it as a new variant.
+        /// We couldn't insert element into current variants, infer ClickHouse type for this element and add it as a new variant.
         auto element_type = removeNullable(elementToDataType(element, format_settings));
         if (!checkIfTypeIsComplete(element_type))
         {
-            error = fmt::format(
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
                 "Cannot infer the type of JSON element {}, because it contains only nulls. To use String type for elements with incomplete "
                 "type, enable setting input_format_json_infer_incomplete_types_as_strings",
                 jsonElementToString<JSONParser>(element, format_settings));
-            return false;
         }
 
         auto element_type_name = element_type->getName();
@@ -1722,12 +1574,7 @@ private:
                 }
 
                 auto types_copy = types;
-                /// Disable read_numbers_as_strings in json settings to avoid
-                /// inferring array with numbers and strings as Array(String) here.
-                /// It will be done later if needed in transformFinal*.
-                auto format_settings_copy = format_settings;
-                format_settings_copy.json.read_numbers_as_strings = false;
-                transformInferredJSONTypesIfNeeded(types_copy, format_settings_copy, &json_inference_info);
+                transformInferredJSONTypesIfNeeded(types_copy, format_settings, &json_inference_info);
 
                 if (checkIfTypesAreEqual(types_copy))
                     return std::make_shared<DataTypeArray>(types_copy.back());
@@ -1743,8 +1590,6 @@ private:
 
     /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
     mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
-    /// Avoid calling getVariantsDeserializeTextOrder for the same data types on each row by using cache.
-    mutable std::unordered_map<String, std::vector<size_t>> variants_order_cache;
 };
 
 template <typename JSONParser>
@@ -1790,9 +1635,7 @@ public:
         /// Instead we collect all paths and values that should go to shared data, sort them and insert later.
         /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
         std::vector<std::pair<String, String>> paths_and_values_for_shared_data;
-        /// Temporary Dynamic column that will be used to create and serialize values in shared data.
-        MutableColumnPtr tmp_dynamic_column;
-        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, tmp_dynamic_column, true))
+        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true))
         {
             /// If there was an error, restore previous state.
             SerializationObject::restoreColumnObject(column_object, prev_size);
@@ -1849,56 +1692,20 @@ private:
         std::vector<std::pair<String, String>> & paths_and_values_for_shared_data,
         size_t current_size,
         String & error,
-        MutableColumnPtr & tmp_dynamic_column,
         bool is_root) const
     {
-        if (shouldSkipPath(current_path, insert_settings))
+        if (shouldSkipPath(current_path))
             return true;
 
         if (element.isObject() && !typed_path_nodes.contains(current_path))
         {
-            std::unordered_map<std::string_view, std::unordered_set<JSONElementType>> visited_keys;
             for (auto [key, value] : element.getObject())
             {
                 String path = current_path;
                 if (!is_root)
                     path.append(".");
-                if (insert_settings.escape_dots_in_json_keys)
-                    path += escapeDotInJSONKey(String(key));
-                else
-                    path += key;
-
-                auto it = visited_keys.find(key);
-                auto value_element_type = getJSONElementType(value);
-                if (it != visited_keys.end())
-                {
-                    if (format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object)
-                    {
-                        /// We can't have duplicated key with the same type (literal/object).
-                        if (it->second.contains(value_element_type))
-                        {
-                            if (format_settings.json.type_json_skip_duplicated_paths)
-                                continue;
-                            error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert", path);
-                            return false;
-                        }
-
-                        it->second.insert(value_element_type);
-                    }
-                    else
-                    {
-                        if (format_settings.json.type_json_skip_duplicated_paths)
-                            continue;
-                        error = fmt::format("Duplicate path found during parsing JSON object: {}. You can enable setting type_json_skip_duplicated_paths to skip duplicated paths during insert or setting type_json_allow_duplicated_key_with_literal_and_nested_object to allow duplicated path with literal and nested object", path);
-                        return false;
-                    }
-                }
-                else
-                {
-                    visited_keys[key].insert(value_element_type);
-                }
-
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, tmp_dynamic_column, false))
+                path += key;
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
                     return false;
             }
 
@@ -1921,12 +1728,8 @@ private:
             }
             else if (!typed_path_nodes.at(current_path)->insertResultToColumn(*typed_it->second, element, insert_settings, format_settings, error))
             {
-                if (!insert_settings.skip_invalid_typed_paths)
-                {
-                    error += fmt::format(" (while reading path {})", current_path);
-                    return false;
-                }
-                /// Otherwise skip this field and continue
+                error += fmt::format(" (while reading path {})", current_path);
+                return false;
             }
         }
         /// Check if we have this path in dynamic paths.
@@ -1964,33 +1767,25 @@ private:
         /// Otherwise this path should go to the shared data.
         else
         {
-            if (!tmp_dynamic_column)
-                tmp_dynamic_column = ColumnDynamic::create();
-
-            JSONExtractInsertSettings insert_settings_for_shared_data = insert_settings;
-            /// We use single temporary Dynamic column for all shared data paths because
-            /// creating it every time is very slow. And so we need to always infer
-            /// new type for new value and don't reuse existing variants.
-            insert_settings_for_shared_data.try_existing_variants_in_dynamic_first = false;
-            if (dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings_for_shared_data, format_settings, error))
-            {
-                paths_and_values_for_shared_data.emplace_back(current_path, "");
-                WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
-                /// Use default format settings for binary serialization. Non-default settings may change
-                /// the binary representation of the values and break the future deserialization.
-                dynamic_serialization->serializeBinary(*tmp_dynamic_column, tmp_dynamic_column->size() - 1, buf, getDefaultFormatSettings());
-            }
-            else
+            auto tmp_dynamic_column = ColumnDynamic::create();
+            tmp_dynamic_column->reserve(1);
+            if (!dynamic_node->insertResultToColumn(*tmp_dynamic_column, element, insert_settings, format_settings, error))
             {
                 error += fmt::format(" (while reading path {})", current_path);
                 return false;
             }
+
+            paths_and_values_for_shared_data.emplace_back(current_path, "");
+            WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
+            /// Use default format settings for binary serialization. Non-default settings may change
+            /// the binary representation of the values and break the future deserialization.
+            dynamic_serialization->serializeBinary(*tmp_dynamic_column, 0, buf, getDefaultFormatSettings());
         }
 
         return true;
     }
 
-    bool shouldSkipPath(const String & path, const JSONExtractInsertSettings & insert_settings) const
+    bool shouldSkipPath(const String & path) const
     {
         if (paths_to_skip.contains(path))
             return true;
@@ -2004,16 +1799,8 @@ private:
 
         for (const auto & regexp : path_regexps_to_skip)
         {
-            if (insert_settings.use_partial_match_to_skip_paths_by_regexp)
-            {
-                if (re2::RE2::PartialMatch(path, regexp))
-                    return true;
-            }
-            else
-            {
-                if (re2::RE2::FullMatch(path, regexp))
-                    return true;
-            }
+            if (re2::RE2::FullMatch(path, regexp))
+                return true;
         }
 
         return false;
@@ -2032,23 +1819,6 @@ private:
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     std::shared_ptr<SerializationDynamic> dynamic_serialization;
-
-    enum class JSONElementType
-    {
-        LITERAL = 0,
-        OBJECT = 1,
-    };
-
-    JSONElementType getJSONElementType(const typename JSONParser::Element & element) const
-    {
-        switch (element.type())
-        {
-            case ElementType::OBJECT:
-                return JSONElementType::OBJECT;
-            default:
-                return JSONElementType::LITERAL;
-        }
-    }
 };
 
 }
@@ -2104,10 +1874,6 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             return std::make_unique<DateTimeNode<JSONParser>>(assert_cast<const DataTypeDateTime &>(*type));
         case TypeIndex::DateTime64:
             return std::make_unique<DateTime64Node<JSONParser>>(assert_cast<const DataTypeDateTime64 &>(*type));
-        case TypeIndex::Time:
-            return std::make_unique<TimeNode<JSONParser>>(assert_cast<const DataTypeTime &>(*type));
-        case TypeIndex::Time64:
-            return std::make_unique<Time64Node<JSONParser>>(assert_cast<const DataTypeTime64 &>(*type));
         case TypeIndex::Decimal32:
             return std::make_unique<DecimalNode<JSONParser, Decimal32>>(type);
         case TypeIndex::Decimal64:
@@ -2177,7 +1943,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             elements.reserve(tuple_elements.size());
             for (const auto & tuple_element : tuple_elements)
                 elements.emplace_back(buildJSONExtractTree<JSONParser>(tuple_element, source_for_exception_message));
-            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.hasExplicitNames() ? tuple.getElementNames() : Strings{});
+            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.haveExplicitNames() ? tuple.getElementNames() : Strings{});
         }
         case TypeIndex::Map:
         {

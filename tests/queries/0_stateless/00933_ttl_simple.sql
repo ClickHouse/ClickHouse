@@ -1,4 +1,3 @@
--- Tags: log-engine
 -- disable timezone randomization since otherwise TTL may fail at particular datetime, i.e.:
 --
 --     SELECT

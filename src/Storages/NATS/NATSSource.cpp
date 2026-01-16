@@ -6,7 +6,7 @@
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Storages/NATS/INATSConsumer.h>
+#include <Storages/NATS/NATSConsumer.h>
 
 namespace DB
 {
@@ -51,7 +51,7 @@ NATSSource::NATSSource(
     const Names & columns,
     size_t max_block_size_,
     StreamingHandleErrorMode handle_error_mode_)
-    : ISource(std::make_shared<const Block>(getSampleBlock(headers.first, headers.second)))
+    : ISource(getSampleBlock(headers.first, headers.second))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -61,16 +61,16 @@ NATSSource::NATSSource(
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
 {
+    storage.incrementReader();
 }
 
 
 NATSSource::~NATSSource()
 {
+    storage.decrementReader();
+
     if (!consumer)
         return;
-
-    if (unsubscribe_on_destroy)
-        consumer->unsubscribe();
 
     storage.pushConsumer(consumer);
 }
@@ -94,12 +94,8 @@ Chunk NATSSource::generate()
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::rabbitmq_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
-
-        if (consumer && !consumer->isSubscribed())
-        {
+        if (consumer)
             consumer->subscribe();
-            unsubscribe_on_destroy = true;
-        }
     }
 
     if (!consumer || is_finished)
@@ -110,13 +106,7 @@ Chunk NATSSource::generate()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(),
-        empty_buf,
-        non_virtual_header,
-        context,
-        max_block_size,
-        std::nullopt,
-        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
+        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, 1);
     std::optional<String> exception_message;
     size_t total_rows = 0;
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
@@ -160,8 +150,8 @@ Chunk NATSSource::generate()
                 if (exception_message)
                 {
                     const auto & current_message = consumer->getCurrentMessage();
-                    virtual_columns[1]->insertData(current_message);
-                    virtual_columns[2]->insertData(*exception_message);
+                    virtual_columns[1]->insertData(current_message.data(), current_message.size());
+                    virtual_columns[2]->insertData(exception_message->data(), exception_message->size());
 
                 }
                 else

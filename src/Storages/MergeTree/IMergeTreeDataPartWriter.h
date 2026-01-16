@@ -7,7 +7,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -57,11 +56,8 @@ public:
     PlainMarksByName releaseCachedMarks();
 
     MergeTreeIndexGranularityPtr getIndexGranularity() const { return index_granularity; }
-    MergeTreeWriterSettings getWriterSettings() const { return settings; }
 
     virtual const Block & getColumnsSample() const = 0;
-
-    virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
 protected:
     SerializationPtr getSerialization(const String & column_name) const;
