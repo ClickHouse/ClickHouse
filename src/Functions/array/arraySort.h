@@ -73,7 +73,7 @@ struct NameArrayPartialReverseSort
 
 using FunctionArraySort = FunctionArrayMapped<ArraySortImpl<true, false>, NameArraySort>;
 using FunctionArrayReverseSort = FunctionArrayMapped<ArraySortImpl<false, false>, NameArrayReverseSort>;
-using FunctionArrayPartialSort = FunctionArrayMapped<ArraySortImpl<true, true>, NameArrayPartialSort>;
-using FunctionArrayPartialReverseSort = FunctionArrayMapped<ArraySortImpl<false, true>, NameArrayPartialReverseSort>;
+using FunctionArrayPartialSort = FunctionArrayMapped<ArraySortImpl<true, true>, NameArrayPartialSort, /*IsDeterministic=*/ false>;
+using FunctionArrayPartialReverseSort = FunctionArrayMapped<ArraySortImpl<false, true>, NameArrayPartialReverseSort, /*IsDeterministic=*/ false>;
 
 }

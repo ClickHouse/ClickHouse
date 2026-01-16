@@ -11,6 +11,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_LARGE_STRING_SIZE;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -49,16 +51,25 @@ public:
         std::optional<SearchSymbols> custom_trim_characters;
         if (arguments.size() == 2 && input_rows_count > 0)
         {
+            String trim_characters_string;
             if (const ColumnString * col_trim_characters = checkAndGetColumn<ColumnString>(arguments[1].column.get()))
             {
-                const String trim_characters_string{col_trim_characters->getDataAt(0)};
-                custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
+                trim_characters_string = String(col_trim_characters->getDataAt(0));
             }
             else if (const ColumnConst * col_trim_characters_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
             {
-                const String trim_characters_string{col_trim_characters_const->getDataAt(0)};
-                custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
+                trim_characters_string = String(col_trim_characters_const->getDataAt(0));
             }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column type of argument 2 of function {}: {}", getName(), arguments[1].column->getName());
+            }
+
+            /// Throw a nicer exception type than SearchSymbols constructor.
+            if (trim_characters_string.size() > SearchSymbols::BUFFER_SIZE)
+                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Function {} supports at most {} trim characters, but {} were provided.", getName(), std::to_string(SearchSymbols::BUFFER_SIZE), trim_characters_string.size());
+
+            custom_trim_characters = std::make_optional<SearchSymbols>(trim_characters_string);
         }
 
         ColumnPtr col_input_full;

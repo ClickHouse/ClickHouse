@@ -461,7 +461,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"));
+    signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"), [this](int, bool) { onTerminateRequestSignal(); });
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     build_id = SymbolIndex::instance().getBuildIDHex();
@@ -519,36 +519,15 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
     Poco::Util::ServerApplication::defineOptions(new_options);
 }
 
-void BaseDaemon::handleSignal(int signal_id)
+void BaseDaemon::onTerminateRequestSignal()
 {
-    if (!(signal_id == SIGINT ||
-        signal_id == SIGQUIT ||
-        signal_id == SIGTERM))
-        throw Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
-    std::lock_guard lock(signal_handler_mutex);
-    {
-        ++terminate_signals_counter;
-        signal_event.notify_all();
-    }
-
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
-
-    if (terminate_signals_counter >= 2)
-    {
-        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
-        call_default_signal_handler(signal_id);
-        /// If the above did not help.
-        _exit(128 + signal_id);
-    }
 }
 
 void BaseDaemon::waitForTerminationRequest()
 {
     /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
-    std::unique_lock<std::mutex> lock(signal_handler_mutex);
-    signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
+    signal_listener->waitForTerminationRequest();
 }
 
 

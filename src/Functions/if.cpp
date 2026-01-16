@@ -92,7 +92,7 @@ inline void fillVectorVector(const ArrayCond & cond, const ArrayA & a, const Arr
             res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b[i]);
         else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b[i], res[i])
+            BRANCHFREE_IF_FLOAT(ResultType, !!cond[i], a[i], b[i], res[i])
         }
         else
         {
@@ -111,7 +111,7 @@ inline void fillVectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Ar
             res[i] = !!cond[i] * static_cast<ResultType>(a[i]) + (!cond[i]) * static_cast<ResultType>(b);
         else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a[i], b, res[i])
+            BRANCHFREE_IF_FLOAT(ResultType, !!cond[i], a[i], b, res[i])
         }
         else
             res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
@@ -128,7 +128,7 @@ inline void fillConstantVector(const ArrayCond & cond, A a, const ArrayB & b, Ar
             res[i] = !!cond[i] * static_cast<ResultType>(a) + (!cond[i]) * static_cast<ResultType>(b[i]);
         else if constexpr (std::is_floating_point_v<ResultType>)
         {
-            BRANCHFREE_IF_FLOAT(ResultType, cond[i], a, b[i], res[i])
+            BRANCHFREE_IF_FLOAT(ResultType, !!cond[i], a, b[i], res[i])
         }
         else
             res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);

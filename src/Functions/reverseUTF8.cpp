@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int UNICODE_ERROR;
 }
 
 namespace
@@ -40,33 +41,42 @@ struct ReverseUTF8Impl
         res_data.resize(data.size());
         res_offsets.assign(offsets);
 
+        /// If the input is not valid UTF8, we may read and write up to 3 bytes out of bounds.
+        /// That's ok because ColumnString buffer is padded on both ends, but we have to opt out of
+        /// bounds checking asserts, and also use ssize_t for indices that may be negative
+        /// (just to satisfy UBSAN, the actual CPU doesn't care about signed vs unsigned).
+        const UInt8 * data_ptr = data.data();
+        UInt8 * res_data_ptr = res_data.data();
+
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset j = prev_offset;
             while (j < offsets[i])
             {
-                if (data[j] < 0xC0)
+                if (data_ptr[j] < 0xC0)
                 {
-                    res_data[offsets[i] + prev_offset - 1 - j] = data[j];
+                    res_data_ptr[offsets[i] + prev_offset - 1 - j] = data_ptr[j];
                     j += 1;
                 }
-                else if (data[j] < 0xE0)
+                else if (data_ptr[j] < 0xE0)
                 {
-                    memcpy(&res_data[offsets[i] + prev_offset - 1 - j - 1], &data[j], 2);
+                    memcpy(&res_data_ptr[ssize_t(offsets[i] + prev_offset - 1 - j - 1)], &data_ptr[j], 2);
                     j += 2;
                 }
-                else if (data[j] < 0xF0)
+                else if (data_ptr[j] < 0xF0)
                 {
-                    memcpy(&res_data[offsets[i] + prev_offset - 1 - j - 2], &data[j], 3);
+                    memcpy(&res_data_ptr[ssize_t(offsets[i] + prev_offset - 1 - j - 2)], &data_ptr[j], 3);
                     j += 3;
                 }
                 else
                 {
-                    memcpy(&res_data[offsets[i] + prev_offset - 1 - j - 3], &data[j], 4);
+                    memcpy(&res_data_ptr[ssize_t(offsets[i] + prev_offset - 1 - j - 3)], &data_ptr[j], 4);
                     j += 4;
                 }
             }
+            if (j > offsets[i])
+                throw Exception(ErrorCodes::UNICODE_ERROR, "String ends in the middle of a UTF8 character");
 
             prev_offset = offsets[i];
         }

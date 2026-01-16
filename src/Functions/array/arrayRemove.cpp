@@ -130,6 +130,7 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         filter_col = BuildAndExecuteFunction("not", {equality_check_arg}, context, arr_elements_count);
     }
 
+    filter_col = filter_col->convertToFullIfNeeded();
     const auto * filter_col_uint8 = checkAndGetColumn<ColumnUInt8>(filter_col.get());
     if (!filter_col_uint8)
         throw Exception(ErrorCodes::LOGICAL_ERROR,

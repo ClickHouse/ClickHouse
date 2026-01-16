@@ -125,7 +125,18 @@ struct ModuloByConstantImpl
             // gcc libdivide doesn't work well for pow2 division
             auto mask = b - 1;
             for (size_t i = 0; i < size; ++i)
-                dst[i] = static_cast<ResultType>(src[i] & mask);
+            {
+                A a = src[i];
+                ResultType r = static_cast<ResultType>(a & mask);
+                if constexpr (std::is_signed_v<A> && std::is_signed_v<ResultType>)
+                {
+                    /// Sign-extend the result to match the behavior of %, to make the const and non-const
+                    /// versions of the modulo function behave the same way.
+                    ResultType sign_ext = -static_cast<ResultType>((a < 0) & (r != 0));
+                    r |= sign_ext & ~static_cast<ResultType>(mask);
+                }
+                dst[i] = r;
+            }
         }
     }
 

@@ -110,7 +110,7 @@ private:
         size_t getNextPosition(size_t iterator) const
         {
             if constexpr (is_utf8)
-                return iterator + UTF8::seqLength(data[iterator]);
+                return std::min(size_t(end - data), iterator + UTF8::seqLength(data[iterator]));
             else
                 return iterator + 1;
         }

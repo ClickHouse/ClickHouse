@@ -243,8 +243,8 @@ void blockSignals(const std::vector<int> & signals)
 }
 
 
-SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_)
-    : daemon(daemon_), log(log_)
+SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRequestCallback terminate_request_callback_)
+    : daemon(daemon_), log(log_), terminate_request_callback(std::move(terminate_request_callback_))
 {
 }
 
@@ -305,8 +305,31 @@ void SignalListener::run()
         }
         else if (sig == SIGINT || sig == SIGQUIT || sig == SIGTERM)
         {
-            if (daemon)
-                daemon->handleSignal(sig);
+            bool crashing;
+            {
+                std::lock_guard lock(terminate_request_mutex);
+                ++terminate_requested;
+
+                crashing = terminate_requested > 1;
+                if (crashing)
+                    LOG_INFO(log, "Received termination signal ({})", strsignal(sig)); // NOLINT(concurrency-mt-unsafe)
+                else
+                    LOG_INFO(log, "Received second termination signal ({}). Immediately terminate.", strsignal(sig)); // NOLINT(concurrency-mt-unsafe)
+
+                if (terminate_request_callback)
+                    terminate_request_callback(sig, crashing);
+            }
+
+            if (crashing)
+            {
+                call_default_signal_handler(sig);
+                /// If the above did not help.
+                _exit(128 + sig);
+            }
+            else
+            {
+                terminate_request_cv.notify_all();
+            }
         }
         else if (sig == SIGCHLD)
         {
@@ -334,6 +357,21 @@ void SignalListener::run()
             onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr);
         }
     }
+}
+
+bool SignalListener::waitForTerminationRequest(std::chrono::milliseconds timeout)
+{
+    std::unique_lock lock(terminate_request_mutex);
+    auto condition = [&] { return terminate_requested > 0; };
+    bool res = true;
+
+    /// condition_variable::wait_for probably doesn't check for overflow, so we can't just pass max() to it.
+    if (timeout == std::chrono::milliseconds::max())
+        terminate_request_cv.wait(lock, condition);
+    else
+        res = terminate_request_cv.wait_for(lock, timeout, condition);
+
+    return res;
 }
 
 void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) const

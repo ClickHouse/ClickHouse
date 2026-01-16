@@ -19,6 +19,15 @@ struct ContextHolder
     }
 };
 
+struct TestCommandLineOptions
+{
+    int argc = 0;
+    const char * const * argv = nullptr;
+};
+
 const ContextHolder & getContext();
 
 ContextHolder & getMutableContext();
+
+// Command line with gtest's flags removed.
+TestCommandLineOptions & getTestCommandLineOptions();
