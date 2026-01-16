@@ -3917,6 +3917,9 @@ void MergeTreeData::dropAllData()
         if (disk->existsDirectory(fs::path(relative_data_path) / MOVING_DIR_NAME))
             disk->removeRecursive(fs::path(relative_data_path) / MOVING_DIR_NAME);
 
+        if ((*getSettings())[MergeTreeSetting::table_disk])
+            dropMutationsOnDisk(disk);
+
         try
         {
             if (!isSharedStorage() && !disk->isDirectoryEmpty(relative_data_path) &&
