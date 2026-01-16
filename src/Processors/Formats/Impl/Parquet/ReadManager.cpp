@@ -912,7 +912,7 @@ void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff &
         col.column_and_offsets_memory.reset(&diff);
 }
 
-std::string ReadManager::collectDeadlockDiagnostics() const
+std::string ReadManager::collectDeadlockDiagnostics()
 {
     std::string result;
     result += "Deadlock diagnostics:\n";
@@ -929,9 +929,9 @@ std::string ReadManager::collectDeadlockDiagnostics() const
     {
         const auto & stage = stages[i];
         size_t schedulable_count = 0;
-        for (size_t j = 0; j < stage.schedulable_row_groups.a.size(); ++j)
+        for (const auto & atomic_bits : stage.schedulable_row_groups.a)
         {
-            UInt64 bits = stage.schedulable_row_groups.a[j].load(std::memory_order_relaxed);
+            UInt64 bits = atomic_bits.load(std::memory_order_relaxed);
             schedulable_count += __builtin_popcountll(bits);
         }
         result += "    stage " + std::to_string(i) + " (" + std::string(magic_enum::enum_name(ReadStage(i))) + "):\n";
@@ -964,9 +964,9 @@ std::string ReadManager::collectDeadlockDiagnostics() const
         size_t subgroups_delivered = 0;
         size_t subgroups_deallocated = 0;
         size_t subgroups_not_started = 0;
-        for (size_t sg_idx = 0; sg_idx < row_group.subgroups.size(); ++sg_idx)
+        for (const auto & subgroup : row_group.subgroups)
         {
-            ReadStage sg_stage = row_group.subgroups[sg_idx].stage.load(std::memory_order_relaxed);
+            ReadStage sg_stage = subgroup.stage.load(std::memory_order_relaxed);
             if (sg_stage == ReadStage::Deliver)
                 subgroups_delivered++;
             else if (sg_stage == ReadStage::Deallocated)
@@ -976,9 +976,9 @@ std::string ReadManager::collectDeadlockDiagnostics() const
             else
                 subgroups_not_started++;
         }
-        result += "      subgroups: not_started=" + std::to_string(subgroups_not_started) +
-                  ", in_progress=" + std::to_string(subgroups_in_progress) +
-                  ", delivered=" + std::to_string(subgroups_delivered) +
+        result += "      subgroups: not_started=" + std::to_string(subgroups_not_started) + 
+                  ", in_progress=" + std::to_string(subgroups_in_progress) + 
+                  ", delivered=" + std::to_string(subgroups_delivered) + 
                   ", deallocated=" + std::to_string(subgroups_deallocated) + "\n";
     }
 
