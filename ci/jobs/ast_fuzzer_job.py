@@ -65,7 +65,7 @@ def analyze_job_logs(
     if server_died:
         # Server died - status will be determined after OOM checks
         is_failed = True
-    elif fuzzer_exit_code in (0, 143):
+    elif fuzzer_exit_code in (0, 143, 210):
         # normal exit with timeout
         is_failed = False
         status = Result.Status.SUCCESS

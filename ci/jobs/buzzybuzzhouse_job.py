@@ -190,21 +190,33 @@ def main():
     workspace_path = temp_dir / "workspace"
     workspace_path.mkdir(parents=True, exist_ok=True)
 
-    dolor_log = workspace_path / "dolor.log"
-    buzzconfig = workspace_path / "fuzz.json"
-    fuzzer_log = workspace_path / "fuzzer.log"
-    dmesg_log = workspace_path / "dmesg.log"
-    fatal_log = workspace_path / "fatal.log"
-    server_log = workspace_path / "server.log"
-    stderr_log = workspace_path / "stderr.log"
-    buzz_out = workspace_path / "fuzzerout.sql"
-    server_cmd = workspace_path / "server.sh"
+    core_file = workspace_path / "core.zst"  # Core dump file
+    dolor_log = workspace_path / "dolor.log"  # La Casa del Dolor log file
+    buzzconfig = workspace_path / "fuzz.json"  # BuzzHouse config file
+    fuzzer_log = (
+        workspace_path / "fuzzer.log"
+    )  # La Casa del Dolor stdout and stderr (BuzzHouse output)
+    dmesg_log = workspace_path / "dmesg.log"  # dmesg log file
+    fatal_log = (
+        workspace_path / "fatal.log"
+    )  # Fatal log file if ClickHouse server crashes
+    server_log = (
+        workspace_path / "server.log"
+    )  # ClickHouse server log file (after final restart)
+    server_err_log = (
+        workspace_path / "server.err.log"
+    )  # ClickHouse server error log file (after final restart)
+    stdout_log = workspace_path / "stdout.log"  # ClickHouse server stdout log file
+    stderr_log = workspace_path / "stderr.log"  # ClickHouse server stderr log file
+    buzz_out = workspace_path / "fuzzerout.sql"  # BuzzHouse generated queries
+    server_cmd = workspace_path / "server.sh"  # Command line used for La Casa del Dolor
     paths = [
-        workspace_path / "core.zst",
-        workspace_path / "dmesg.log",
+        core_file,
         fatal_log,
+        stdout_log,
         stderr_log,
         server_log,
+        server_err_log,
         fuzzer_log,
         dmesg_log,
         buzzconfig,
@@ -237,6 +249,7 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
 --time-between-shutdowns=180,180 --restart-clickhouse-prob=75
 --compare-table-dump-prob=0 --set-locales-prob=80 --set-timezones-prob=80
 --keeper-settings-prob=0 --mem-limit=16g --set-shared-mergetree-disk
+2>&1 | tee {fuzzer_log}
 """
 
     base_command = base_command.replace("\n", " ").strip()
@@ -253,10 +266,12 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
         )
     ]
 
+    is_failed = False
     server_died = False
     server_exit_code = 0
     fuzzer_exit_code = 0
 
+    attached_files = []
     if not test_results[-1].is_ok():
         try:
             pattern1 = re.compile(r"Load generator exited with code:\s*(\d+)")
@@ -295,9 +310,11 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
         )
         if is_failed:
             test_results.append(result)
+            attached_files.extend(
+                [str(p) for p in paths if p.exists() and p.stat().st_size > 0]
+            )
 
-    attached_files = [str(p) for p in paths if p.exists() and p.stat().st_size > 0]
-    if not info.is_local_run:
+    if is_failed and not info.is_local_run:
         # TODO: collect needed logs
         if Path("./ci/tmp/docker-in-docker.log").exists():
             attached_files.append("./ci/tmp/docker-in-docker.log")
