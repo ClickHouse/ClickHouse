@@ -1,9 +1,7 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 
@@ -16,21 +14,21 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Function timeSeriesIdToTags(id) returns Array(Tuple(String, String)) containing the names and values of tags associated with
-/// a specified identifier `id`.
-class FunctionTimeSeriesIdToTags : public IFunction
+/// Function timeSeriesIdToGroup(id) converts the specified identifier of a time series to its group index.
+/// Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.
+class FunctionTimeSeriesIdToGroup : public IFunction
 {
 public:
-    static constexpr auto name = "timeSeriesIdToTags";
+    static constexpr auto name = "timeSeriesIdToGroup";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesIdToTags>(context); }
-    explicit FunctionTimeSeriesIdToTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesIdToGroup>(context); }
+    explicit FunctionTimeSeriesIdToGroup(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    /// Function timeSeriesIdToTags returns information stored in the query context, it's deterministic in the scope of the current query.
+    /// Function timeSeriesIdToGroup returns information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
 
@@ -39,7 +37,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkArgumentTypes(arguments);
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}));
+        return std::make_shared<DataTypeUInt64>();
     }
 
     static void checkArgumentTypes(const ColumnsWithTypeAndName & arguments)
@@ -68,10 +66,10 @@ public:
     {
         auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<IDType>(name, arguments, 0);
 
-        auto tags = tags_collector->getTagsByID(ids);
-        chassert(tags.size() == input_rows_count);
+        auto groups = tags_collector->getGroupByID(ids);
+        chassert(groups.size() == input_rows_count);
 
-        return TimeSeriesTagsFunctionHelpers::makeColumnForTagNamesAndValues(tags);
+        return TimeSeriesTagsFunctionHelpers::makeColumnForGroup(groups);
     }
 
 private:
@@ -79,22 +77,18 @@ private:
 };
 
 
-REGISTER_FUNCTION(TimeSeriesIdToTags)
+REGISTER_FUNCTION(TimeSeriesIdToGroup)
 {
     FunctionDocumentation::Description description = R"(
-Returns tags associated with a specified identifier of a time series.
+Returns the names and values of the tags associated with a specified identifier of a time series.
 See also function [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).
     )";
-    FunctionDocumentation::Syntax syntax = "timeSeriesIdToTags(id)";
+    FunctionDocumentation::Syntax syntax = "timeSeriesIdToGroup(id)";
     FunctionDocumentation::Arguments arguments = {
         {"id", "Identifier of a time series.", {"UInt64", "UInt128", "UUID", "FixedString(16)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        R"(
-Returns an array of pairs `(tag_name, tag_value)`.
-The returned array is always sorted by `tag_name` and never contains the same `tag_name` more than once.
-        )",
-        {"Array(Tuple(String, String))"}
+        "Returns a group of tags associated with the identifier `id` of a time series.", {"UInt64"}
     };
     FunctionDocumentation::Examples examples = {
     {
@@ -103,20 +97,22 @@ The returned array is always sorted by `tag_name` and never contains the same `t
 SELECT 8374283493092 AS id,
        timeSeriesStoreTags(id, [('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS same_id,
        throwIf(same_id != id),
-       timeSeriesIdToTags(same_id)
+       timeSeriesIdToGroup(same_id) AS group,
+       timeSeriesGroupToTags(group)
         )",
         R"(
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─timeSeriesIdToTags(same_id)────────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                        0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴──────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTimeSeriesIdToTags>(documentation);
+    factory.registerFunction<FunctionTimeSeriesIdToGroup>(documentation);
+    factory.registerAlias("timeSeriesIdToTagsGroup", "timeSeriesIdToGroup");
 }
 
 }
