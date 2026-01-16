@@ -484,6 +484,7 @@ def main():
                 "hits100": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_100m_single.tar",
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
+                "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
             }
             cmds = []
             for dataset_path in dataset_paths.values():
