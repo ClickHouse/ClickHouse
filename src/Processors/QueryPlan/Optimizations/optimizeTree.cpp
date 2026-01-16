@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -15,6 +16,7 @@
 #include <Poco/Logger.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 
 #include <memory>
 #include <stack>
@@ -321,7 +323,7 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
     }
 }
 
-SourceStepWithFilter * findReadingStep(const QueryPlan::Node * top_of_single_replica_plan)
+IQueryPlanStep * findReadingStep(const QueryPlan::Node * top_of_single_replica_plan)
 {
     if (!top_of_single_replica_plan)
         return nullptr;
@@ -355,15 +357,7 @@ SourceStepWithFilter * findReadingStep(const QueryPlan::Node * top_of_single_rep
         return nullptr;
     }
 
-    auto * const source_reading_step = dynamic_cast<SourceStepWithFilter *>(reading_step->step.get());
-    if (!source_reading_step)
-    {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "Expected SourceStepWithFilter as reading step, got {}. Skipping statistics collection",
-            reading_step->step->getName());
-    }
-    return source_reading_step;
+    return reading_step->step.get();
 }
 
 
@@ -418,18 +412,25 @@ void considerEnablingParallelReplicas(
         = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
 
     /// Now we need to identify the reading step that should be instrumented for statistics collection
-    SourceStepWithFilter * const source_reading_step = findReadingStep(corresponding_node_in_single_replica_plan);
-    if (!source_reading_step)
-        return;
-
-    size_t rows = 0;
-    if (auto snapshot = source_reading_step->getStorageSnapshot())
-        rows = snapshot->storage.totalRows(nullptr).value_or(0);
-    if (rows == 0)
+    ReadFromMergeTree * source_reading_step = nullptr;
+    if (auto * reading = findReadingStep(corresponding_node_in_single_replica_plan); reading && typeid_cast<ReadFromMergeTree *>(reading))
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "Storage doesn't provide total rows information. Skipping optimization");
+        source_reading_step = static_cast<ReadFromMergeTree *>(reading);
+    }
+    else
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "Cannot find ReadFromMergeTree step in single-replica plan. Skipping optimization");
         return;
     }
+
+    const auto analysis
+        = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
+    if (!analysis)
+    {
+        LOG_DEBUG(&Poco::Logger::get("optimizeTree"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
+        return;
+    }
+    const auto rows = analysis->selected_rows;
 
     bool skip_stats_collection = false;
 
