@@ -1001,6 +1001,8 @@ void TCPHandler::runImpl()
                 return;
             }
 
+            /// We close the connection after an exception if there is something wrong with the connection,
+            /// otherwise we try to preserve it and reuse for other queries.
             if (exception->code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT || exception->code() == ErrorCodes::USER_EXPIRED
                 || exception->code() == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED)
             {
@@ -1008,10 +1010,15 @@ void TCPHandler::runImpl()
                 query_state->finalizeOut(out);
                 return;
             }
-            else
+
+            if (in->isCanceled())
             {
-                LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
+                LOG_DEBUG(log, "Going to close connection because the input stream was canceled");
+                query_state->finalizeOut(out);
+                return;
             }
+
+            LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
         }
 
         query_state->finalizeOut(out);
