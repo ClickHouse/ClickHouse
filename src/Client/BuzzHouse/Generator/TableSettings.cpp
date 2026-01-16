@@ -356,7 +356,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"primary_key_compression_codec", compressSetting},
     {"primary_key_lazy_load", trueOrFalseSetting},
     {"primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns", probRangeSetting},
-    {"ratio_of_defaults_for_sparse_serialization", probRangeSetting},
+    {"ratio_of_defaults_for_sparse_serialization", CHSetting(probRange, {"0", "0.0001", "0.001", "0.003", "0.005", "0.01", "0.1"}, false)},
     {"refresh_parts_interval",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 5)); },
