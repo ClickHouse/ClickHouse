@@ -7,7 +7,10 @@ then verifies each removal by attempting to compile the file. Only headers
 that can be safely removed (compilation still succeeds) are reported.
 
 This is similar to how CLion detects unused headers - it only flags headers
-that are truly not needed for successful compilation.
+that are truly not needed for successful compilation. But not quite so - some headers
+may alter the behavior of the code that still compiles without them.
+
+That's why this tool can't guarantee 100% correctness.
 
 Usage:
     ./find_unused_headers.py <source_file.cpp> [--build-dir BUILD_DIR] [--apply]
