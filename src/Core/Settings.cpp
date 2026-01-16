@@ -5398,6 +5398,9 @@ For how many elements it is allowed to preallocate space in all hash tables in t
     DECLARE(Bool, collect_hash_table_stats_during_joins, true, R"(
 Enable collecting hash table statistics to optimize memory allocation
 )", 0) \
+    DECLARE(Bool, use_hash_table_stats_for_join_reordering, true, R"(
+Enable using collected hash table statistics for cardinality estimation during join reordering
+)", 0) \
     DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, R"(
 For how many elements it is allowed to preallocate space in all hash tables in total before join
 )", 0) \

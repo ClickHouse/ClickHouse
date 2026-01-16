@@ -118,7 +118,7 @@ Example:
 ```
 
 The NATS server configuration can be added using the ClickHouse config file.
-More specifically you can add Redis password for NATS engine:
+More specifically you can add your password for the NATS engine:
 
 ```xml
 <nats>

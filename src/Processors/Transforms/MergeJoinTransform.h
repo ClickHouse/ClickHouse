@@ -9,10 +9,12 @@
 #include <utility>
 #include <vector>
 #include <array>
+#include <absl/container/inlined_vector.h>
 
 #include <boost/core/noncopyable.hpp>
 
 #include <Common/PODArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <IO/ReadBuffer.h>
@@ -31,8 +33,6 @@ class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
 class FullMergeJoinCursor;
-
-using FullMergeJoinCursorPtr = std::unique_ptr<FullMergeJoinCursor>;
 
 /// Used instead of storing previous block
 struct JoinKeyRow
@@ -182,44 +182,45 @@ public:
 /*
  * Wrapper for SortCursorImpl
  */
-class FullMergeJoinCursor : boost::noncopyable
+class FullMergeJoinCursor
 {
 public:
-    explicit FullMergeJoinCursor(const Block & sample_block_, const SortDescription & description_, bool is_asof = false);
+    constexpr static bool has_null_maps = true;
+
+    FullMergeJoinCursor() = default;
+    explicit FullMergeJoinCursor(std::vector<size_t> key_indices_, bool is_asof_);
+
+    FullMergeJoinCursor(FullMergeJoinCursor &&) = default;
+    FullMergeJoinCursor & operator=(FullMergeJoinCursor &&) noexcept = default;
+    FullMergeJoinCursor(const FullMergeJoinCursor &) = delete;
+    FullMergeJoinCursor & operator=(const FullMergeJoinCursor &) = delete;
 
     bool fullyCompleted() const;
-    void setChunk(Chunk && chunk);
+    void setCompleted() { recieved_all_blocks = true; }
     const Chunk & getCurrent() const;
-    Chunk detach();
+    void setChunk(Chunk && chunk);
 
-    SortCursorImpl * operator-> () { return &cursor; }
-    const SortCursorImpl * operator-> () const { return &cursor; }
+    absl::InlinedVector<ColumnPtr, 4> sort_columns;
+    absl::InlinedVector<ColumnPtr, 4> null_maps;
+    ColumnPtr asof_column = nullptr;
+    size_t pos = 0;
+    size_t rows = 0;
 
-    SortCursorImpl & operator* () { return cursor; }
-    const SortCursorImpl & operator* () const { return cursor; }
+    bool empty() const { return rows == 0; }
+    size_t getRow() const { return pos; }
+    bool isLast() const { return pos + 1 >= rows; }
+    bool isValid() const { return pos < rows; }
+    void next() { ++pos; }
+    size_t rowsLeft() const { return rows - pos; }
 
-    SortCursorImpl cursor;
-
-    const Block & sampleBlock() const { return sample_block; }
-    Columns sampleColumns() const { return sample_block.getColumns(); }
-
-    const IColumn * getAsofColumn() const
-    {
-        if (!asof_column_position)
-            return nullptr;
-        return cursor.all_columns[*asof_column_position];
-    }
-
-    String dump() const;
+    const IColumn & getSortColumn(size_t index) const { return *sort_columns[index]; }
 
 private:
-    Block sample_block;
-    SortDescription desc;
-
     Chunk current_chunk;
     bool recieved_all_blocks = false;
 
-    std::optional<size_t> asof_column_position;
+    std::vector<size_t> key_indices;
+    bool is_asof = false;
 };
 
 /*
@@ -257,14 +258,19 @@ private:
     std::optional<Status> handleAsofJoinState();
     Status asofJoin();
 
+    void getEmptyResultColumns(MutableColumns & result_cols, size_t pos) const;
     MutableColumns getEmptyResultColumns() const;
+    Columns getEmptyResultColumns(size_t pos) const;
+
     Chunk createBlockWithDefaults(size_t source_num);
     Chunk createBlockWithDefaults(size_t source_num, size_t start, size_t num_rows) const;
+
+    SharedHeaders input_headers;
 
     /// For `USING` join key columns should have values from right side instead of defaults
     std::unordered_map<size_t, size_t> left_to_right_key_remap;
 
-    std::array<FullMergeJoinCursorPtr, 2> cursors;
+    std::array<FullMergeJoinCursor, 2> cursors;
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::None;
 
     /// Keep some state to make handle data from different blocks
