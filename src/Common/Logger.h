@@ -64,3 +64,12 @@ LoggerRawPtr createRawLogger(const std::string & name, Poco::Channel * channel, 
   * Otherwise, returns false.
   */
 bool hasLogger(const std::string & name);
+
+/// Get Logger for audit
+LoggerPtr getAuditLogger();
+
+bool isAuditLogEnabled();
+
+void enableAuditLogging();
+
+void disableAuditLogging();

@@ -140,13 +140,20 @@ void OwnSplitChannel::logSplit(
     const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
+    const bool is_audit_msg = (msg.getSource() == "AUDIT");
 
     try
     {
         /// Log data to child channels
-        for (auto & channel : channels | std::views::values)
+        for (auto & [name, channel] : channels)
         {
             auto priority = channel->getPriority();
+
+            /// Log audit data to audit channel only
+            const bool is_audit_channel = (name == "AuditFileLog");
+            if (is_audit_channel != is_audit_msg)
+                continue;
+
             if (priority >= msg.getPriority())
                 channel->logExtended(msg_ext);
         }
@@ -413,8 +420,19 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         if (channels.empty() && !text_log_max_priority_loaded)
             return;
 
+        const bool is_audit_msg = (notification->msg.getSource() == "AUDIT");
+
+        OwnFormattingChannel * audit_channel = nullptr;
+        if (auto it = name_to_channels.find("AuditFileLog"); it != name_to_channels.end())
+            audit_channel = it->second.get();
+
         for (size_t i = 0; i < queues.size(); i++)
         {
+            /// Log audit message to audit channel only
+            const bool is_audit_channel = (channels[i] == audit_channel);
+            if (is_audit_channel != is_audit_msg)
+                continue;
+
             if (channels[i]->getPriority() >= msg_priority)
                 queues[i]->enqueueMessage(notification);
         }
