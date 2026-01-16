@@ -4865,7 +4865,7 @@ def parse_args():
     parser.add_argument(
         "--replace-replicated-with-shared",
         action="store_true",
-        default=os.environ.get("REPLACE_RMT_WITH_SMT", True),
+        default=os.environ.get("REPLACE_RMT_WITH_SMT", False),
         help="Replace ReplicatedMergeTree engine with SharedMergeTree",
     )
     parser.add_argument(
