@@ -32,7 +32,10 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 unstable_backward_incompatible_queries = 0
-benchmarks = {"clickbench"}
+benchmarks = {
+    "clickbench",
+    "tpch" # already fast enough, here for consistency
+}
 
 # max seconds to run one query by itself, not counting preparation
 # by default it's 2 seconds, but for benchmarks it's 5 seconds
