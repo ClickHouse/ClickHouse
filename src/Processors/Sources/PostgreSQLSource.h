@@ -41,6 +41,8 @@ protected:
 
     Chunk generate() override;
 
+    void onCancel() noexcept override;
+
     void onStart();
 
 private:
