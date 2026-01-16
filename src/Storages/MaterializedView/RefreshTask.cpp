@@ -74,6 +74,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
+    extern const int TABLE_UUID_MISMATCH;
+    extern const int UNKNOWN_TABLE;
 }
 
 RefreshTask::RefreshTask(
@@ -1073,7 +1075,21 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
             }
         }
 
-        StoragePtr storage = DatabaseCatalog::instance().getTable(storage_id, context);
+        StoragePtr storage;
+        try
+        {
+            storage = DatabaseCatalog::instance().getTable(storage_id, context);
+        }
+        catch (const Exception & error)
+        {
+            if (error.code() == ErrorCodes::TABLE_UUID_MISMATCH || error.code() == ErrorCodes::UNKNOWN_TABLE)
+            {
+                exception = std::current_exception();
+                continue;
+            }
+
+            throw;
+        }
 
         if (storage == prev_storage)
         {
