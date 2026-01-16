@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Optional
 
 from environment import set_environment_variables
-from integration.helpers.client import CommandRequest
-from integration.helpers.cluster import ClickHouseInstance
-from integration.helpers.config_cluster import (
+from tests.integration.helpers.client import CommandRequest
+from tests.integration.helpers.cluster import ClickHouseInstance
+from tests.integration.helpers.config_cluster import (
     pg_pass,
     mysql_pass,
     mongo_pass,
@@ -29,6 +29,10 @@ class Generator:
 
     @abstractmethod
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
+        pass
+
+    @abstractmethod
+    def validate_exit_code(self, exit_code: int) -> bool:
         pass
 
     def run_generator(self, server: ClickHouseInstance, logger, args) -> CommandRequest:
@@ -214,3 +218,6 @@ class BuzzHouseGenerator(Generator):
             "--max_memory_usage_in_client=1000000000",
             f"--buzz-house-config={self.temp.name}",
         ]
+
+    def validate_exit_code(self, exit_code: int) -> bool:
+        return exit_code in (0, 137, 143)

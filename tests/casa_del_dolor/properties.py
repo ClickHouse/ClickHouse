@@ -7,7 +7,7 @@ import string
 import typing
 
 from environment import get_system_timezones
-from integration.helpers.cluster import ClickHouseCluster
+from tests.integration.helpers.cluster import ClickHouseCluster
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
