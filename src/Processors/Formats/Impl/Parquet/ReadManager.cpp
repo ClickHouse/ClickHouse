@@ -644,11 +644,14 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
                 n += 1;
                 ++i;
             }
-            funcs.push_back([this, _batch = std::move(batch), _shutdown = shutdown]
+            funcs.push_back([this, _batch = std::move(batch), _shutdown = shutdown, _stage_idx = stage_idx]
             {
                 std::shared_lock shutdown_lock(*_shutdown, std::try_to_lock);
                 if (!shutdown_lock.owns_lock())
+                {
+                    stages.at(size_t(_stage_idx)).batches_in_progress.fetch_sub(1, std::memory_order_relaxed);
                     return;
+                }
                 runBatchOfTasks(_batch);
             });
         }
