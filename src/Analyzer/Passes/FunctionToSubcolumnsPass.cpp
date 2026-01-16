@@ -64,13 +64,26 @@ bool sourceHasColumn(QueryTreeNodePtr column_source, const String & column_name)
     return storage_snapshot->tryGetColumn(GetColumnsOptions::All, column_name).has_value();
 }
 
+/// Sometimes we cannot optimize function to subcolumn because there is no such subcolumn in the table.
+/// For example, for column "a Array(Tuple(b UInt32))" function length(a.b) cannot be replaced to
+/// a.b.size0, because there is no such subcolumn, even though a.b has type Array(UInt32)
+bool sourceHasSubcolumn(QueryTreeNodePtr column_source, const String & subcolumn_name)
+{
+    auto * table_node = column_source->as<TableNode>();
+    if (!table_node)
+        return {};
+
+    const auto & storage_snapshot = table_node->getStorageSnapshot();
+    return storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), subcolumn_name).has_value();
+}
+
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace `length(argument)` with `argument.size`.
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name) || !sourceHasSubcolumn(ctx.column_source, column.name))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
@@ -83,7 +96,7 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name) || !sourceHasSubcolumn(ctx.column_source, column.name))
         return;
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -101,7 +114,7 @@ void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnConte
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name) || !sourceHasSubcolumn(ctx.column_source, column.name))
         return;
 
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -115,7 +128,7 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name) || !sourceHasSubcolumn(ctx.column_source, column.name))
         return;
 
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
@@ -235,7 +248,7 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
         return;
 
     NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
-    if (sourceHasColumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name) || !sourceHasSubcolumn(ctx.column_source, column.name))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
