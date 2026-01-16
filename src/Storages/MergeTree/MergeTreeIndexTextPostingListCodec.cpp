@@ -159,7 +159,7 @@ void PostingListCodecBitpackingImpl::encodeBlock(std::span<uint32_t> segment)
     std::span<char> compressed_data_span(compressed_data.data() + offset, needed_bytes_with_header);
     encodeU8(static_cast<uint8_t>(max_bits), compressed_data_span);
     auto used_memory = BitpackingBlockCodec::encode(segment, max_bits, compressed_data_span);
-    if(used_memory != needed_bytes_without_header || !compressed_data_span.empty())
+    if(!(used_memory == needed_bytes_without_header && compressed_data_span.empty()))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
         "Bitpacking encode size mismatch: expected {} bytes payload with {} bits encoding for {} integers, "
         "but actually used {} bytes with {} bytes remaining in buffer",

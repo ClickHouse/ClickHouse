@@ -26,7 +26,20 @@ CREATE TABLE tab_bitpacking
     )
 )
 ENGINE = MergeTree
-ORDER BY ts;
+ORDER BY ts
+SETTINGS
+   min_rows_for_wide_part = 0,
+   min_bytes_for_wide_part= 0,
+   index_granularity = 8192,
+   index_granularity_bytes = 0,
+   enable_block_offset_column = 0,
+   enable_block_number_column = 0,
+   string_serialization_version = 'with_size_stream',
+   primary_key_compress_block_size = 65536,
+   marks_compress_block_size = 65536,
+   ratio_of_defaults_for_sparse_serialization = 0.95,
+   serialization_info_version = 'basic',
+   auto_statistics_types = 'minmax';
 
 CREATE TABLE table_uncompressed
 (
@@ -37,7 +50,20 @@ CREATE TABLE table_uncompressed
     )
 )
 ENGINE = MergeTree
-ORDER BY ts;
+ORDER BY ts
+SETTINGS
+   min_rows_for_wide_part = 0,
+   min_bytes_for_wide_part= 0,
+   index_granularity = 8192,
+   index_granularity_bytes = 0,
+   enable_block_offset_column = 0,
+   enable_block_number_column = 0,
+   string_serialization_version = 'with_size_stream',
+   primary_key_compress_block_size = 65536,
+   marks_compress_block_size = 65536,
+   ratio_of_defaults_for_sparse_serialization = 0.95,
+   serialization_info_version = 'basic',
+   auto_statistics_types = 'minmax';
 
 INSERT INTO tab_bitpacking
 SELECT
@@ -105,8 +131,8 @@ OPTIMIZE TABLE table_uncompressed FINAL;
 -- Validates that a very large/high-frequency posting list is decoded correctly by checking the count in the compressed table matches the uncompressed baseline.
 
 SELECT
-    (SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'aa')) AS count_bitpacking,
     (SELECT count() FROM table_uncompressed WHERE hasToken(str, 'aa')) AS count_uncompressed,
+    (SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'aa')) AS count_bitpacking,
     (count_bitpacking = count_uncompressed) AS ok_aa;
 
 -- Tests the block-boundary case (expected 129 hits, i.e. one full 128-value block plus a 1-value tail) and verifies compressed vs uncompressed counts are identical.
