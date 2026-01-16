@@ -9,7 +9,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ColumnsHashing.h>
-#include "base/types.h"
+#include <base/types.h>
 
 #include <unordered_map>
 
@@ -25,10 +25,10 @@ public:
         UInt64 limit_hint_,
         const Names & columns_,
         bool is_pre_distinct_,
-        UInt64 predistinct_set_limit_,
-        UInt64 predistinct_bloom_filter_bytes_,
-        Float64 predistinct_pass_ratio_threshold_for_disabling_,
-        Float64 predistinct_max_ratio_of_set_bits_in_bloom_filter_,
+        UInt64 set_limit_for_enabling_bloom_filter_,
+        UInt64 bloom_filter_bytes_,
+        Float64 pass_ratio_threshold_for_disabling_bloom_filter_,
+        Float64 max_ratio_of_set_bits_in_bloom_filter_,
         size_t max_threads_);
 
     String getName() const override { return "DistinctTransform"; }
