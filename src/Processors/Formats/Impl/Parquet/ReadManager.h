@@ -128,6 +128,7 @@ private:
     void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     void advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDiff & diff);
     void flushMemoryUsageDiff(MemoryUsageDiff && diff);
+    std::string collectDeadlockDiagnostics() const;
 };
 
 }

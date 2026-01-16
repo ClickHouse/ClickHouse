@@ -8,6 +8,7 @@
 
 #include <mutex>
 #include <shared_mutex>
+#include <string>
 #include <thread>
 #include <unordered_set>
 
@@ -365,6 +366,13 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
                 else
                 {
                     /// Subgroup was filtered out, skip to next subgroup.
+                    size_t prev = row_group.next_subgroup_for_step[step_idx].exchange(row_subgroup_idx + 1);
+                    chassert(prev == row_subgroup_idx);
+                    advanced_ptr = prev + 1;
+                    delivery_cv.notify_one();
+
+                    row_subgroup.stage.store(ReadStage::Deallocated);
+                    clearRowSubgroup(row_subgroup, diff);
                     break;
                 }
             }
@@ -904,6 +912,79 @@ void ReadManager::clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff &
         col.column_and_offsets_memory.reset(&diff);
 }
 
+std::string ReadManager::collectDeadlockDiagnostics() const
+{
+    std::string result;
+    result += "Deadlock diagnostics:\n";
+    
+    result += "  first_incomplete_row_group: " + std::to_string(first_incomplete_row_group.load(std::memory_order_relaxed)) + "\n";
+    {
+        std::lock_guard lock(delivery_mutex);
+        result += "  delivery_queue.size(): " + std::to_string(delivery_queue.size()) + "\n";
+    }
+    result += "  total_row_groups: " + std::to_string(reader.row_groups.size()) + "\n";
+    
+    result += "  Stages:\n";
+    for (size_t i = 0; i < size_t(ReadStage::Deallocated); ++i)
+    {
+        const auto & stage = stages[i];
+        size_t schedulable_count = 0;
+        for (size_t j = 0; j < stage.schedulable_row_groups.a.size(); ++j)
+        {
+            UInt64 bits = stage.schedulable_row_groups.a[j].load(std::memory_order_relaxed);
+            schedulable_count += __builtin_popcountll(bits);
+        }
+        result += "    stage " + std::to_string(i) + " (" + std::string(magic_enum::enum_name(ReadStage(i))) + "):\n";
+        result += "      memory_usage: " + std::to_string(stage.memory_usage.load(std::memory_order_relaxed)) + "\n";
+        result += "      batches_in_progress: " + std::to_string(stage.batches_in_progress.load(std::memory_order_relaxed)) + "\n";
+        result += "      schedulable_row_groups: " + std::to_string(schedulable_count) + "\n";
+        size_t tasks_to_schedule = 0;
+        for (const auto & tasks : stage.row_group_tasks_to_schedule)
+            tasks_to_schedule += tasks.size();
+        result += "      tasks_to_schedule: " + std::to_string(tasks_to_schedule) + "\n";
+    }
+    
+    result += "  Row groups:\n";
+    for (size_t rg_idx = 0; rg_idx < reader.row_groups.size(); ++rg_idx)
+    {
+        const auto & row_group = reader.row_groups[rg_idx];
+        result += "    row_group[" + std::to_string(rg_idx) + "]:\n";
+        result += "      stage: " + std::string(magic_enum::enum_name(row_group.stage.load(std::memory_order_relaxed))) + "\n";
+        result += "      delivery_ptr: " + std::to_string(row_group.delivery_ptr.load(std::memory_order_relaxed)) + "/" + std::to_string(row_group.subgroups.size()) + "\n";
+        result += "      next_subgroup_for_step: [";
+        for (size_t s = 0; s < row_group.next_subgroup_for_step.size(); ++s)
+        {
+            if (s > 0)
+                result += ", ";
+            result += std::to_string(row_group.next_subgroup_for_step[s].load(std::memory_order_relaxed));
+        }
+        result += "]\n";
+        
+        size_t subgroups_in_progress = 0;
+        size_t subgroups_delivered = 0;
+        size_t subgroups_deallocated = 0;
+        size_t subgroups_not_started = 0;
+        for (size_t sg_idx = 0; sg_idx < row_group.subgroups.size(); ++sg_idx)
+        {
+            ReadStage sg_stage = row_group.subgroups[sg_idx].stage.load(std::memory_order_relaxed);
+            if (sg_stage == ReadStage::Deliver)
+                subgroups_delivered++;
+            else if (sg_stage == ReadStage::Deallocated)
+                subgroups_deallocated++;
+            else if (sg_stage >= ReadStage::OffsetIndex)
+                subgroups_in_progress++;
+            else
+                subgroups_not_started++;
+        }
+        result += "      subgroups: not_started=" + std::to_string(subgroups_not_started) + 
+                  ", in_progress=" + std::to_string(subgroups_in_progress) + 
+                  ", delivered=" + std::to_string(subgroups_delivered) + 
+                  ", deallocated=" + std::to_string(subgroups_deallocated) + "\n";
+    }
+    
+    return result;
+}
+
 ReadManager::ReadResult ReadManager::read()
 {
     Task task;
@@ -956,7 +1037,10 @@ ReadManager::ReadResult ReadManager::read()
                 /// else's task, and someone else may execute our task.
                 /// Hence the thread_pool_was_idle check.
                 if (!parser_shared_resources->parsing_runner.runTaskInline() && thread_pool_was_idle)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (single-threaded)");
+                {
+                    std::string diagnostics = collectDeadlockDiagnostics();
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (single-threaded). {}", diagnostics);
+                }
                 lock.lock();
             }
             else if (thread_pool_was_idle)
@@ -964,7 +1048,9 @@ ReadManager::ReadResult ReadManager::read()
                 /// Task scheduling code is complicated and error-prone. In particular it's easy to
                 /// have a bug where tasks stop getting scheduled under some conditions
                 /// (see is_privileged_task). So we specifically check for getting stuck.
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (thread pool)");
+                lock.unlock();
+                std::string diagnostics = collectDeadlockDiagnostics();
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (thread pool). {}", diagnostics);
             }
             else
             {
