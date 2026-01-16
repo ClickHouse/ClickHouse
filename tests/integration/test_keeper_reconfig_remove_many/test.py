@@ -147,6 +147,8 @@ def test_reconfig_remove_2_and_leader(started_cluster):
 
     zk2.stop()
 
+    # we just removed leader so we need to make sure new leader is elected
+    # before continuing with the checks
     for i in range(100):
         if any(
             "leader" in ku.send_4lw_cmd(cluster, node, f"mntr")
