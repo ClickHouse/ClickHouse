@@ -319,7 +319,7 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
         /// Remove unused base columns from projection (those that were only accessed via subcolumns).
         /// We need to remove from highest index to lowest to avoid invalidating indices.
         std::vector<size_t> indices_to_remove(optimized_projection_indices.begin(), optimized_projection_indices.end());
-        std::sort(indices_to_remove.begin(), indices_to_remove.end(), std::greater<size_t>());
+        std::sort(indices_to_remove.begin(), indices_to_remove.end(), std::greater<>());
 
         for (size_t idx : indices_to_remove)
         {
