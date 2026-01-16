@@ -5,7 +5,12 @@
 namespace DB
 {
 
-/// Implements WHERE operation.
+/// Implements WHERE condition only to filter objects in object storage
+/// Difference with FilterStep is that ObjectFilterStep is added only for distributed calls
+/// (table functions like `s3Cluster`) and is used only to filter objects,
+/// not to filter data after reading, because initiator can have not this column
+/// In query like `SELECT count() FROM s3Cluster('cluster', ...) WHERE key=42`
+/// column `key` does not exists in blocks getting from cluster replicas.
 class ObjectFilterStep : public IQueryPlanStep
 {
 public:
