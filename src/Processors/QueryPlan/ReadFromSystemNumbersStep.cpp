@@ -87,9 +87,9 @@ protected:
         UInt64 real_block_size = block_size;
         if (end.has_value())
         {
-            /// Detect wraparound case: end is very small and next is very large
-            /// This means we should generate from next to UINT64_MAX, then the source stops
-            bool is_wraparound = (end.value() < step_between_chunks && next > std::numeric_limits<UInt64>::max() / 2);
+             /// Detect wraparound case where end is very small and next is very large
+            /// This means we should generate from next to UINT64_MAX, then wrap around and continue to end
+            bool is_wraparound = (end.value() < next && next > std::numeric_limits<UInt64>::max() / 2);
 
             if (!is_wraparound && end.value() <= next)
                 return {};
@@ -126,9 +126,8 @@ protected:
             /// We should only continue if this is a wraparound source (end is small indicating wraparound)
             if (end.has_value() && end.value() < next)
             {
-                /// This is a wraparound source, calculate wrapped position
-                UInt64 overflow_amount = step_between_chunks - (std::numeric_limits<UInt64>::max() - next) - 1;
-                next = overflow_amount;
+                /// This is a wraparound source, wrap to 0 to continue generating from the start
+                next = 0;
             }
             else
             {
@@ -674,6 +673,10 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         }
     }
 
+    /// For overflow cases, use single stream to ensure step_between_chunks doesn't jump past overflow_end after wraparound
+    if (has_overflow)
+        num_streams = 1;
+
     /// Range in a single block
     const auto block_range = max_block_size * numbers_storage.step;
     /// Step between chunks in a single source.
@@ -688,15 +691,18 @@ Pipe ReadFromSystemNumbersStep::makePipe()
 
         const auto source_start = numbers_storage.offset + source_offset;
 
+        /// For overflow case, use overflow_end as the end marker so the source knows when to stop after wraparound
+        const auto source_end = has_overflow ? overflow_end : end;
+
         auto source = std::make_shared<NumbersSource>(
             max_block_size,
             source_start,
-            end,
+            source_end,
             numbers_storage.column_name,
             numbers_storage.step,
             step_between_chunks);
 
-        if (end && i == 0)
+        if (source_end && i == 0)
         {
             UInt64 total_rows = numbers_storage.limit.has_value() ? *numbers_storage.limit : 0;
             if (limit > 0 && limit < total_rows)
@@ -705,29 +711,6 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         }
 
         pipe.addSource(std::move(source));
-    }
-
-    /// If we have overflow, add sources for the wrapped range [0, overflow_end)
-    if (has_overflow && overflow_end.has_value())
-    {
-        for (size_t i = 0; i < num_streams; ++i)
-        {
-            const auto source_offset = i * block_range;
-
-            /// Check if this source would start beyond the overflow range
-            if (source_offset >= overflow_end.value())
-                break;
-
-            auto source = std::make_shared<NumbersSource>(
-                max_block_size,
-                source_offset,
-                overflow_end,
-                numbers_storage.column_name,
-                numbers_storage.step,
-                step_between_chunks);
-
-            pipe.addSource(std::move(source));
-        }
     }
 
     return pipe;
