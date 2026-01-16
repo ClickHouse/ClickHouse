@@ -1,0 +1,9 @@
+<clickhouse>
+    <profiles>
+        <default>
+           <allow_experimental_full_text_index>1</allow_experimental_full_text_index>
+           <use_skip_indexes_on_data_read>0</use_skip_indexes_on_data_read>
+           <use_query_condition_cache>0</use_query_condition_cache>
+        </default>
+    </profiles>
+</clickhouse>

@@ -9,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Normalize the requested block size to a multiple of BLOCK_SIZE.
@@ -42,7 +43,10 @@ void PostingListCodecBitpackingImpl::insert(uint32_t row_id)
     ++total_row_ids;
 
     if (current_segment.size() == BLOCK_SIZE)
+    {
         encodeBlock(current_segment);
+        current_segment.clear();
+    }
 
     if (row_ids_in_current_segment == max_rowids_in_segment)
         flushCurrentSegment();
@@ -59,9 +63,9 @@ void PostingListCodecBitpackingImpl::insert(std::span<uint32_t> row_ids)
         segment_descriptors.back().compressed_data_offset = compressed_data.size();
 
         prev_row_id = row_ids.front();
-        row_ids_in_current_segment += BLOCK_SIZE;
-        total_row_ids += BLOCK_SIZE;
     }
+    row_ids_in_current_segment += BLOCK_SIZE;
+    total_row_ids += BLOCK_SIZE;
 
     auto last_row = row_ids.back();
     std::adjacent_difference(row_ids.begin(), row_ids.end(), row_ids.begin());
@@ -153,26 +157,47 @@ void PostingListCodecBitpackingImpl::encodeBlock(std::span<uint32_t> segment)
     size_t offset = compressed_data.size();
     compressed_data.resize(compressed_data.size() + needed_bytes_with_header);
     std::span<char> compressed_data_span(compressed_data.data() + offset, needed_bytes_with_header);
-    encodeU8(max_bits, compressed_data_span);
+    encodeU8(static_cast<uint8_t>(max_bits), compressed_data_span);
     auto used_memory = BitpackingBlockCodec::encode(segment, max_bits, compressed_data_span);
-    chassert(used_memory == needed_bytes_without_header && compressed_data_span.empty());
+    if(used_memory != needed_bytes_without_header || !compressed_data_span.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Bitpacking encode size mismatch: expected {} bytes payload with {} bits encoding for {} integers, "
+        "but actually used {} bytes with {} bytes remaining in buffer",
+        needed_bytes_without_header,
+        max_bits,
+        segment.size(),
+        used_memory,
+        compressed_data_span.size());
 
     segment_descriptor.compressed_data_size = compressed_data.size() - segment_descriptor.compressed_data_offset;
-    current_segment.clear();
 }
 
 void PostingListCodecBitpackingImpl::decodeBlock(
         std::span<const std::byte> & in, size_t count, uint32_t & prev_row_id, std::vector<uint32_t> & current_segment)
 {
+    chassert(count <= BLOCK_SIZE);
     if (in.empty())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
 
     uint8_t bits = decodeU8(in);
+    if (bits > 32)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
     current_segment.resize(count);
+
+    size_t required_size = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
+    if (in.size() < required_size)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected data size {}, but got {}", required_size, in.size());
 
     /// Decode postings to buffer named temp.
     std::span<uint32_t> current_span(current_segment.data(), current_segment.size());
-    BitpackingBlockCodec::decode(in, count, bits, current_span);
+    size_t consumed_size = BitpackingBlockCodec::decode(in, count, bits, current_span);
+    if (required_size != consumed_size)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+        "Bitpacking decode size mismatch: expected to consume {} bytes for {} integers with {} bits, but actually consumed {} bytes",
+        required_size,
+        count,
+        bits,
+        consumed_size);
 
     /// Restore the original array from the decompressed delta values.
     std::inclusive_scan(current_segment.begin(), current_segment.end(), current_segment.begin(), std::plus<uint32_t>{}, prev_row_id);

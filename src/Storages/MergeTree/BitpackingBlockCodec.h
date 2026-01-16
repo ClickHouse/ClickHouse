@@ -33,6 +33,10 @@ static constexpr bool has_simdcomp = true;
 template<>
 struct BitpackingBlockCodecImpl<true>
 {
+    static size_t bitpackingCompressedBytes(size_t count, uint32_t bits) noexcept
+    {
+        return simdpack_compressedbytes(count, bits);
+    }
     /// Returns {compressed_bytes, bits} where bits is the max bit-width required
     /// to represent all values in [0..n).
     static std::pair<size_t, size_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data) noexcept
@@ -108,15 +112,15 @@ struct BitpackingBlockCodecImpl<false>
             return 32u - static_cast<uint32_t>(__builtin_clz(xored_in));
     }
 
-    [[maybe_unused]] static size_t bitpackingCompressedBytes(int length, uint32_t bit) noexcept
+    [[maybe_unused]] static size_t bitpackingCompressedBytes(size_t count, uint32_t bits) noexcept
     {
-        if (bit == 0)
+        if (bits == 0)
             return 0;
-        if (bit == 32)
-            return length * sizeof(uint32_t);
+        if (bits == 32)
+            return count * sizeof(uint32_t);
 
-        size_t groups = (length + 3) / 4;
-        size_t words32 = (groups * static_cast<size_t>(bit) + 31) / 32;
+        size_t groups = (count + 3) / 4;
+        size_t words32 = (groups * static_cast<size_t>(bits) + 31) / 32;
 
         return words32 * 16;
     }
@@ -127,6 +131,7 @@ struct BitpackingBlockCodecImpl<false>
     {
         size_t n = data.size();
         size_t bits = maxbitsLength(data);
+        chassert(bits >= 0 && bits <= 32);
         size_t bytes = bitpackingCompressedBytes(n, bits);
         return {bytes, bits};
     }
@@ -170,7 +175,6 @@ struct BitpackingBlockCodecImpl<false>
     [[maybe_unused]] static uint32_t maskForBits(size_t bits) noexcept
     {
         return (bits == 32) ? 0xFFFFFFFFu :
-            (bits == 31) ? 0x7FFFFFFFu :
             (bits == 0)  ? 0u :
             static_cast<uint32_t>((static_cast<uint64_t>(1) << bits) - 1u);
     }
