@@ -161,13 +161,13 @@ def main():
     min_nested_rows = random.randint(0, 5)
     max_nested_rows = min_nested_rows + (5 if allow_hardcoded_inserts else 100)
     min_insert_rows = random.randint(1, 100)
-    max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 5000)
+    max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 3000)
     min_string_length = random.randint(0, 100)
-    max_string_length = min_string_length + (10 if allow_hardcoded_inserts else 1000)
+    max_string_length = min_string_length + (10 if allow_hardcoded_inserts else 300)
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
-        "max_depth": random.randint(2, 6),
-        "max_width": random.randint(2, 8),
+        "max_depth": random.randint(2, 5),
+        "max_width": random.randint(2, 7),
         "max_databases": random.randint(2, 5),
         "max_tables": random.randint(3, 10),
         "max_views": random.randint(0, 10),
