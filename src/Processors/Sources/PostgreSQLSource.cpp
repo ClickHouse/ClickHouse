@@ -98,6 +98,7 @@ void PostgreSQLSource<T>::onStart()
         }
     }
 
+    /*
     // Check for cancellation before starting any async operations
     if (isCancelled())
     {
@@ -108,6 +109,8 @@ void PostgreSQLSource<T>::onStart()
 
     // Run stream_from in separate thread with timeout
     LOG_DEBUG(getLogger("PGinit"), "before fut");
+    */
+
     /*
     std::future<std::unique_ptr<pqxx::stream_from>> fut =
         std::async(std::launch::async, [&] {
@@ -115,6 +118,8 @@ void PostgreSQLSource<T>::onStart()
         });
 
     */
+
+    /*
     std::promise<std::unique_ptr<pqxx::stream_from>> promise;
     auto fut = promise.get_future();
     std::atomic<bool> task_cancelled{false};
@@ -236,8 +241,27 @@ void PostgreSQLSource<T>::onStart()
                            "Failed to create PostgreSQL stream: {}", e.what());
         }
     }
+    */
 
-    // stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
+    LOG_DEBUG(getLogger("PGinit"), "before starting stream");
+
+    try
+    {
+        stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
+    }
+    catch (...)
+    {
+        LOG_DEBUG(getLogger("PGinit"), "exception during starting stream");
+        throw;
+    }
+    if (stream)
+        LOG_DEBUG(getLogger("PGinit"), "stream not empty");
+    else
+    {
+        LOG_DEBUG(getLogger("PGinit"), "stream empty");
+        finished = true;
+    }
+
 }
 
 template<typename T>
@@ -265,7 +289,7 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
             // if (finished)
             //     throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "PostgreSQLSource query was finished");
 
-
+            /*
             if (isCancelled())
             {
                 LOG_DEBUG(getLogger("PGinit"), "Query was cancelled after start");
@@ -280,6 +304,9 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
                 // throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "PostgreSQLSource test exception 3");
             }
             else
+                started = true;
+            */
+            if (!finished)
                 started = true;
         /*
         }
@@ -415,6 +442,7 @@ void PostgreSQLSource<T>::onCancel() noexcept
     LOG_DEBUG(getLogger("PGinit"), "onCancel aborting transcation");
     tx->abort();
     LOG_DEBUG(getLogger("PGinit"), "onCancel transaction aborted");
+    is_completed = true;
 }
 
 template<typename T>
@@ -450,7 +478,11 @@ PostgreSQLSource<T>::~PostgreSQLSource()
         tx.reset();
 
         if (connection_holder)
+        {
+            LOG_DEBUG(getLogger("PGinit"), "setBroken");
             connection_holder->setBroken();
+        }
+
     }
     LOG_DEBUG(getLogger("PGinit"), "exiting destructor");
 }
