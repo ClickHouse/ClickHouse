@@ -506,7 +506,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     /// {"exact_rows_before_limit", trueOrFalseSetting}, cannot use with generateRandom
     {"except_default_mode", setSetting},
     {"exclude_materialize_skip_indexes_on_insert",
-     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2", "i3"}); }, {}, false)},
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2"}); }, {}, false)},
     {"extremes", trueOrFalseSettingNoOracle},
     {"fallback_to_stale_replicas_for_distributed_queries", trueOrFalseSetting},
     {"filesystem_cache_allow_background_download", trueOrFalseSettingNoOracle},
@@ -1375,7 +1375,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"empty_result_for_aggregation_by_empty_set", trueOrFalseSettingNoOracle}, /// the oracle doesn't get output
              {"external_table_functions_use_nulls", trueOrFalseSettingNoOracle},
              {"external_table_strict_query", trueOrFalseSettingNoOracle},
-             {"ignore_data_skipping_indices", trueOrFalseSettingNoOracle},
+             {"ignore_data_skipping_indices",
+              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2"}); }, {}, false)},
              {"optimize_using_constraints", trueOrFalseSettingNoOracle},
              {"parallel_replica_offset",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
@@ -1386,9 +1387,9 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"wait_for_async_insert", trueOrFalseSettingNoOracle}}); /// breaks table dump oracle
         max_block_sizes.insert(
             max_block_sizes.end(),
-            {/// "max_analyze_depth",
-             /// "max_ast_depth",
-             /// "max_ast_elements",
+            {/*"max_analyze_depth",
+             "max_ast_depth",
+             "max_ast_elements",*/
              "max_autoincrement_series",
              "max_backup_bandwidth",
              "max_distributed_connections",
@@ -1400,9 +1401,9 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_network_bandwidth",
              "max_network_bandwidth_for_all_users",
              "max_network_bandwidth_for_user",
-             /// "max_parser_backtracks",
-             /// "max_parser_depth",
-             /// "max_partitions_to_read",
+             /*"max_parser_backtracks",
+             "max_parser_depth",
+             "max_partitions_to_read",*/
              "max_sessions_for_user",
              "max_streams_for_merge_tree_reading",
              "max_streams_multiplier_for_merge_tables"/*,
@@ -1502,7 +1503,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         serverSettings.insert(
             {{"force_aggregation_in_order", trueOrFalseSettingNoOracle},
              {"force_data_skipping_indices",
-              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2", "i3"}); }, {}, false)},
+              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2"}); }, {}, false)},
              {"force_grouping_standard_compatibility", trueOrFalseSettingNoOracle},
              {"force_index_by_date", trueOrFalseSettingNoOracle},
              {"force_optimize_projection", trueOrFalseSettingNoOracle},
