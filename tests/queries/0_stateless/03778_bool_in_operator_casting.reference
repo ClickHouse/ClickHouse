@@ -22,3 +22,16 @@ Testing Bool with materialized values:
 1
 1
 1
+Testing Nullable(Bool) with IN operator:
+1
+1
+1
+1
+1
+0
+Testing LowCardinality(Bool) with IN operator:
+1
+1
+1
+1
+0

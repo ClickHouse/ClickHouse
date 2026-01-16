@@ -41,3 +41,19 @@ SELECT CAST(materialize(1), 'Bool') IN (10);   -- Should be 1
 SELECT CAST(materialize(1), 'Bool') IN (255);  -- Should be 1
 SELECT CAST(materialize(0), 'Bool') IN (0);    -- Should be 1
 
+-- Test Nullable(Bool) - values wrapped in Nullable should also convert correctly
+SELECT 'Testing Nullable(Bool) with IN operator:';
+SELECT CAST(1, 'Nullable(Bool)') IN (toNullable(10));    -- Should be 1
+SELECT CAST(1, 'Nullable(Bool)') IN (toNullable(255));   -- Should be 1
+SELECT CAST(1, 'Nullable(Bool)') IN (toNullable(256));   -- Should be 1
+SELECT CAST(1, 'Nullable(Bool)') IN (toNullable(1000));  -- Should be 1
+SELECT CAST(0, 'Nullable(Bool)') IN (toNullable(0));     -- Should be 1
+SELECT CAST(0, 'Nullable(Bool)') IN (toNullable(10));    -- Should be 0
+
+-- Test LowCardinality(Bool) - values wrapped in LowCardinality should also convert correctly
+SELECT 'Testing LowCardinality(Bool) with IN operator:';
+SELECT toLowCardinality(CAST(1, 'Bool')) IN (10);   -- Should be 1
+SELECT toLowCardinality(CAST(1, 'Bool')) IN (255);  -- Should be 1
+SELECT toLowCardinality(CAST(1, 'Bool')) IN (256);  -- Should be 1
+SELECT toLowCardinality(CAST(0, 'Bool')) IN (0);    -- Should be 1
+SELECT toLowCardinality(CAST(0, 'Bool')) IN (10);   -- Should be 0
