@@ -188,6 +188,8 @@ def main():
 
     temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
     workspace_path = temp_dir / "workspace"
+    workspace_path.mkdir(parents=True, exist_ok=True)
+
     dolor_log = workspace_path / "dolor.log"
     buzzconfig = workspace_path / "fuzz.json"
     fuzzer_log = workspace_path / "fuzzer.log"
@@ -196,6 +198,7 @@ def main():
     server_log = workspace_path / "server.log"
     stderr_log = workspace_path / "stderr.log"
     buzz_out = workspace_path / "fuzzerout.sql"
+    server_cmd = workspace_path / "server.sh"
     paths = [
         workspace_path / "core.zst",
         workspace_path / "dmesg.log",
@@ -206,6 +209,7 @@ def main():
         dmesg_log,
         buzzconfig,
         buzz_out,
+        server_cmd,
         dolor_log,
     ]
 
@@ -215,25 +219,37 @@ def main():
     session_seed = secrets.randbits(64)
     print(f"Using seed {session_seed} for La Casa del Dolor")
 
+    # Set up and run La Casa del Dolor
+    base_command = f"""
+python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzhouse
+--server-config=./ci/jobs/scripts/server_fuzzer/config.xml
+--user-config=./ci/jobs/scripts/server_fuzzer/users.xml
+--client-binary={clickhouse_path}
+--server-binaries={clickhouse_path}
+--client-config={buzzconfig}
+--log-path={dolor_log}
+--timeout=30 --server-settings-prob=0
+--kill-server-prob=50 --without-monitoring
+--replica-values=1 --shard-values=1
+--add-remote-server-settings-prob=0
+--add-disk-settings-prob=99 --number-disks=1,3 --add-policy-settings-prob=80
+--add-filesystem-caches-prob=80 --number-caches=1,1
+--time-between-shutdowns=180,180 --restart-clickhouse-prob=75
+--compare-table-dump-prob=0 --set-locales-prob=80 --set-timezones-prob=80
+--keeper-settings-prob=0 --mem-limit=16g --set-shared-mergetree-disk
+"""
+
+    base_command = base_command.replace("\n", " ").strip()
+    print(f"Using server fuzzer command: {base_command}")
+    with open(server_cmd, "w") as outfile:
+        outfile.write("#!/bin/bash\n")
+        outfile.write(base_command)
+        outfile.write("\n")
+
     test_results = [
         Result.from_commands_run(
             name="dolor",
-            command=f"python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzhouse \
-                --server-config=./ci/jobs/scripts/server_fuzzer/config.xml \
-                --user-config=./ci/jobs/scripts/server_fuzzer/users.xml \
-                --client-binary={clickhouse_path} \
-                --server-binaries={clickhouse_path} \
-                --client-config={buzzconfig} \
-                --log-path={dolor_log} \
-                --timeout=30 --server-settings-prob=0 \
-                --kill-server-prob=50 --without-monitoring \
-                --replica-values=1 --shard-values=1 \
-                --add-remote-server-settings-prob=0 \
-                --add-disk-settings-prob=99 --number-disks=1,3 --add-policy-settings-prob=80 \
-                --add-filesystem-caches-prob=80 --number-caches=1,1 \
-                --time-between-shutdowns=180,180 --restart-clickhouse-prob=75 \
-                --compare-table-dump-prob=0 --set-locales-prob=80 --set-timezones-prob=80 \
-                --keeper-settings-prob=0 --mem-limit=16g --set-shared-mergetree-disk",
+            command=base_command,
         )
     ]
 
@@ -280,7 +296,7 @@ def main():
         if is_failed:
             test_results.append(result)
 
-    attached_files = []
+    attached_files = [str(p) for p in paths if p.exists() and p.stat().st_size > 0]
     if not info.is_local_run:
         # TODO: collect needed logs
         if Path("./ci/tmp/docker-in-docker.log").exists():
