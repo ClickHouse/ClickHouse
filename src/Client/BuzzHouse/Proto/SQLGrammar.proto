@@ -2784,6 +2784,7 @@ message MergeTreeProjectionFunc {
 message MergeTreeAnalyzeIndexesFunc {
     required ExprSchemaTable est = 1;
     optional Expr pred = 2;
+    optional string part = 3;
 }
 
 message GenerateRandomFunc {
