@@ -8,6 +8,7 @@
 #include <iostream>
 #include <sstream>
 
+#include <Common/Logger.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
@@ -33,6 +34,9 @@ extern const Event AsyncLoggingErrorFileLogTotalMessages;
 
 extern const Event AsyncLoggingSyslogDroppedMessages;
 extern const Event AsyncLoggingSyslogTotalMessages;
+
+extern const Event AsyncLoggingAuditFileLogDroppedMessages;
+extern const Event AsyncLoggingAuditFileLogTotalMessages;
 }
 
 namespace DB
@@ -198,6 +202,39 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             ProfileEvents::AsyncLoggingErrorFileLogTotalMessages,
             ProfileEvents::AsyncLoggingErrorFileLogDroppedMessages);
     }
+
+    const auto auditlog_path_prop = config.getString("logger.auditlog", "");
+    if (!auditlog_path_prop.empty())
+    {
+        const auto auditlog_path = renderFileNameTemplate(now, auditlog_path_prop);
+        createDirectory(auditlog_path);
+
+        audit_log_file = new Poco::FileChannel;
+        audit_log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(auditlog_path));
+        audit_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.rotation", config.getRawString("logger.size", "100M")));
+        audit_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "timestamp");
+        audit_log_file->setProperty(Poco::FileChannel::PROP_TIMES, "local");
+        audit_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
+        audit_log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, config.getRawString("logger.stream_compress", "false"));
+        audit_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
+        audit_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
+        audit_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
+
+        Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config, "auditlog");
+        auto auditlog = std::make_shared<DB::OwnFormattingChannel>(pf, audit_log_file);
+        auditlog->open();
+        split->addChannel(
+            auditlog,
+            "AuditFileLog",
+            Poco::Message::Priority::PRIO_NOTICE,
+            ProfileEvents::AsyncLoggingAuditFileLogTotalMessages,
+            ProfileEvents::AsyncLoggingAuditFileLogDroppedMessages);
+
+        /// Enable audit logging
+        enableAuditLogging();
+    }
+    else
+        disableAuditLogging();
 
     if (config.getBool("logger.use_syslog", false))
     {

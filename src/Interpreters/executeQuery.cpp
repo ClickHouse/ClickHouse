@@ -740,6 +740,9 @@ void logQueryFinishImpl(
 
     if (!query_pipeline_finalized_info.processors_profile_infos.empty())
         logProcessorProfile(context, query_pipeline_finalized_info.processors_profile_infos, query_pipeline_finalized_info.pipeline_dump);
+
+    if (!internal)
+        auditLog(elem, context);
 }
 
 void logQueryFinish(
@@ -842,6 +845,9 @@ void logQueryException(
         query_span->addAttribute("clickhouse.exception_code", elem.exception_code);
         query_span->finish(time_now);
     }
+
+    if (!internal)
+        auditLog(elem, context);
 }
 
 void logExceptionBeforeStart(
@@ -986,6 +992,74 @@ void logExceptionBeforeStart(
         query_span->addAttribute("clickhouse.query_id", elem.client_info.current_query_id);
         query_span->finish(query_end_time);
     }
+
+    auditLog(elem, context);
+}
+
+void auditLog(const QueryLogElement & elem, const ContextPtr context)
+{
+    auto audit_log = getAuditLogger();
+    if (!audit_log)
+        return;
+
+    /// Get audit type from query_kind
+    Context::AuditLogTypes audit_type;
+    switch (elem.query_kind)
+    {
+        case IAST::QueryKind::Select:
+        case IAST::QueryKind::Insert:
+        case IAST::QueryKind::Delete:
+        case IAST::QueryKind::Update:
+        case IAST::QueryKind::Optimize:
+        case IAST::QueryKind::Show:
+        case IAST::QueryKind::Explain:
+            audit_type = Context::AuditLogTypes::DML;
+            break;
+        case IAST::QueryKind::Create:
+        case IAST::QueryKind::Drop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Alter:
+            audit_type = Context::AuditLogTypes::DDL;
+            break;
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+            audit_type = Context::AuditLogTypes::DCL;
+            break;
+        case IAST::QueryKind::System:
+        case IAST::QueryKind::Set:
+        case IAST::QueryKind::Use:
+        case IAST::QueryKind::KillQuery:
+        default:
+            audit_type = Context::AuditLogTypes::MISC;
+            break;
+    }
+
+    /// Check if audit type enabled for logging
+    if (!context->isEnabledAuditType(audit_type))
+        return;
+
+    String object_names; /// tables / views
+    if (audit_type == Context::AuditLogTypes::DDL || audit_type == Context::AuditLogTypes::DML)
+    {
+        for (const auto & table : elem.query_tables)
+        {
+            if (!object_names.empty())
+                object_names += ",";
+            object_names += table;
+        }
+
+        for (const auto & view : elem.query_views)
+        {
+            if (!object_names.empty())
+                object_names += ",";
+            object_names += view;
+        }
+    }
+
+    /// TYPE, COMMAND, EXCEPTION_CODE, USER_NAME, CLIENT_IP, OBJECT_NAMES, QUERY
+    LOG_AUDIT(audit_log, "{}, {}, {}, {}, {}, {}, {}",
+            audit_type, elem.query_kind, elem.exception_code, elem.client_info.current_user,
+            elem.client_info.current_address->host().toString(), object_names, elem.query);
 }
 
 void validateAnalyzerSettings(ASTPtr ast, bool context_value)

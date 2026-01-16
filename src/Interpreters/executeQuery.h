@@ -132,4 +132,6 @@ void logExceptionBeforeStart(
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
     bool internal);
+
+void auditLog(const QueryLogElement & elem, const ContextPtr context);
 }

@@ -1673,6 +1673,21 @@ public:
 
     const ServerSettings & getServerSettings() const;
 
+    enum class AuditLogTypes : uint8_t
+    {
+        USER,
+        DDL,
+        DML,
+        DCL,
+        MISC,
+        ALL
+    };
+
+    /// Used for audit log
+    bool isEnabledAuditType(const AuditLogTypes & audit_type) const;
+    void setAuditTypes(const std::unordered_set<AuditLogTypes> & audit_types_) const;
+    void resetAuditTypes() const;
+
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 

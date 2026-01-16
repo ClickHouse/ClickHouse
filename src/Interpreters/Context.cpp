@@ -459,6 +459,9 @@ struct ContextSharedPart : boost::noncopyable
     /// However, the DB metadata files are still stored on this `default_db_disk`. So the instance can load its DBs during starting up.
     std::shared_ptr<IDisk> default_db_disk TSA_GUARDED_BY(mutex);
 
+    /// Types enabled to audit
+    mutable std::unordered_set<Context::AuditLogTypes> audit_types TSA_GUARDED_BY(mutex);
+
     /// All temporary files that occur when processing the requests accounted here.
     /// Child scopes for more fine-grained accounting are created per user/query/etc.
     /// Initialized once during server startup.
@@ -7324,6 +7327,30 @@ PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uu
 const ServerSettings & Context::getServerSettings() const
 {
     return shared->server_settings;
+}
+
+bool Context::isEnabledAuditType(const Context::AuditLogTypes & audit_type) const
+{
+    std::unordered_set<Context::AuditLogTypes> enabled_audit_types;
+    {
+        std::lock_guard lock(shared->mutex);
+        enabled_audit_types = shared->audit_types;
+    }
+
+    return enabled_audit_types.contains(audit_type) || enabled_audit_types.contains(AuditLogTypes::ALL);
+}
+
+void Context::setAuditTypes(const std::unordered_set<Context::AuditLogTypes> & audit_types) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->audit_types.clear();
+    shared->audit_types = audit_types;
+}
+
+void Context::resetAuditTypes() const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->audit_types.clear();
 }
 
 uint64_t HTTPContext::getMaxHstsAge() const
