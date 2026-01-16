@@ -169,6 +169,9 @@ private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
     void cleanupPersistentProcessingNodes();
+    void cleanupProcessedNodes();
+    void cleanupFailedNodes();
+    void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description);
 
     void migrateToBucketsInKeeper(size_t value);
 
@@ -184,6 +187,10 @@ private:
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
 
+    const bool cleanup_processed_files = false;
+    const bool cleanup_failed_files = false;
+    const bool cleanup_processing_files = false;
+
     std::atomic<size_t> cleanup_interval_min_ms;
     std::atomic<size_t> cleanup_interval_max_ms;
     std::atomic<bool> use_persistent_processing_nodes;
@@ -196,7 +203,7 @@ private:
 
     std::atomic_bool shutdown_called = false;
     std::atomic_bool startup_called = false;
-    BackgroundSchedulePoolTaskHolder task;
+    BackgroundSchedulePoolTaskHolder cleanup_task;
 
     class LocalFileStatuses;
     std::shared_ptr<LocalFileStatuses> local_file_statuses;
