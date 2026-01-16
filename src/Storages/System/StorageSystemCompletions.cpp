@@ -126,7 +126,7 @@ void fillDataWithDatabasesTablesColumns(MutableColumns & res_columns, const Cont
         if (database_ptr->getEngineName() == "Lazy")
             continue;
 
-        for (auto iterator = database_ptr->getLightweightTablesIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = database_ptr->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             const auto & table_name = iterator->name();
             const auto & table = iterator->table();

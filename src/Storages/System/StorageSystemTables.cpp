@@ -47,11 +47,8 @@ namespace
 
 /// Avoid heavy operation on tables if we only queried columns that we can get without table object.
 /// Otherwise it will require table initialization for Lazy database.
-bool needTable(const DatabasePtr & database, const Block & header)
+bool needTable(const Block & header)
 {
-    if (database->getEngineName() != "Lazy")
-        return true;
-
     static const std::set<std::string> columns_without_table = {"database", "name", "uuid", "metadata_modification_time"};
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
@@ -135,7 +132,7 @@ ColumnPtr getFilteredTables(
         }
         else
         {
-            auto table_it = database->getLightweightTablesIterator(context,
+            auto table_it = database->getTablesIterator(context,
                                                                    /* filter_by_table_name */ {},
                                                                    /* skip_not_loaded */ false);
             for (; table_it->isValid(); table_it->next())
@@ -304,6 +301,25 @@ protected:
         }
     }
 
+    void showTablesQuery(MutableColumns & res_columns)
+	{
+		auto table_details = database->getLightweightTablesIterator(context,
+                        /* filter_by_table_name */ {},
+                        /* skip_not_loaded */ false);
+
+		for (auto & table_detail: table_details)
+		{
+			size_t src_index = 0;
+			size_t res_index = 0;
+
+			if (columns_mask[src_index++])
+				res_columns[res_index++]->insert(database_name);
+
+			if (columns_mask[src_index++])
+				gres_columns[res_index++]->insert(table_detail.name);
+		}
+	}
+
     Chunk generate() override
     {
         if (done)
@@ -462,12 +478,21 @@ protected:
 
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
+			/// This is for queries similar to 'show tables', where only name of the table is needed
+			auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
+			if (needed_columns.size() == 1 && needed_columns[0].name == "name")
+			{
+				showTablesQuery(res_columns);
+				UInt64 num_rows = res_columns.at(0)->size();
+				return Chunk(std::move(res_columns), num_rows);
+			}
+
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getLightweightTablesIterator(context,
+                tables_it = database->getTablesIterator(context,
                         /* filter_by_table_name */ {},
                         /* skip_not_loaded */ false);
 
-            const bool need_table = needTable(database, getPort().getHeader());
+            const bool need_table = needTable(getPort().getHeader());
 
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
@@ -866,7 +891,6 @@ protected:
                 }
             }
         }
-
         UInt64 num_rows = res_columns.at(0)->size();
         return Chunk(std::move(res_columns), num_rows);
     }
