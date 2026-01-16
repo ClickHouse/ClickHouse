@@ -1014,6 +1014,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
             {"materialize_statistics_on_merge", true, true, "New setting"},
+            {"escape_index_filenames", false, true, "Escape non-ascii characters in filenames created for indices"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {

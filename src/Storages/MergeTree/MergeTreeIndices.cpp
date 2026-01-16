@@ -2,8 +2,6 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <Columns/IColumn.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Common/escapeForFileName.h>
@@ -13,15 +11,24 @@
 namespace DB
 {
 
+constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
 
+String getIndexFileName(const String & index_name, bool escape_filename)
+{
+    if (escape_filename)
+        return escapeForFileName(INDEX_FILE_PREFIX + index_name);
+    return INDEX_FILE_PREFIX + index_name;
+}
+
 String IMergeTreeIndex::getFileName() const
 {
-    return escapeForFileName(INDEX_FILE_PREFIX + index.name);
+    return getIndexFileName(index.name, index.escape_filenames);
 }
 
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const

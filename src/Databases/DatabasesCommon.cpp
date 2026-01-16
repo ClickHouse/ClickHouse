@@ -101,10 +101,12 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (default_expr_info.expr_list)
         validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc.getAll(), context);
 
+    constexpr bool escape_index_filenames = true; /// We don't care, we are only doing validation and discarding the result
+    bool is_implicitly_created = false; /// Same
     if (columns.indices)
     {
         for (const auto & child : columns.indices->children)
-            IndexDescription::getIndexFromAST(child, columns_desc, /* is_implicitly_created */ false, context);
+            IndexDescription::getIndexFromAST(child, columns_desc, is_implicitly_created, escape_index_filenames, context);
     }
     if (columns.constraints)
     {

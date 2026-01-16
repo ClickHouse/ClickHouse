@@ -2549,9 +2549,9 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
     return total_secondary_indices_size;
 }
 
-bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name) const
+bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
 {
-    auto file_name = escapeForFileName(INDEX_FILE_PREFIX + index_name);
+    auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
     return checksums.has(file_name + ".idx") || checksums.has(file_name + ".idx2");
 }
 

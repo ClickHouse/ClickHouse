@@ -56,6 +56,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsBool escape_index_filenames;
 }
 
 namespace ServerSetting
@@ -721,11 +722,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];
         metadata.add_minmax_index_for_string_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns];
+        metadata.escape_index_filenames = (*storage_settings)[MergeTreeSetting::escape_index_filenames];
         if (args.query.columns_list && args.query.columns_list->indices)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, context));
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
                 if (args.mode <= LoadingStrictnessLevel::CREATE
