@@ -230,6 +230,7 @@ def main():
     if is_llvm_coverage:
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
         runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long"
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%8m.profraw"
 
     rerun_count = 1
     if args.count:
@@ -444,8 +445,8 @@ def main():
         step_name = "Start ClickHouse Server"
         print(step_name)
 
-        if is_llvm_coverage:
-            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%8m.profraw"
+        # if is_llvm_coverage:
+        #     os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%8m-%p-%h-%t-%b-%c.profraw"
 
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
@@ -484,8 +485,8 @@ def main():
         )
         res = results[-1].is_ok()
 
-    if is_llvm_coverage:
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%8m.profraw"
+    # if is_llvm_coverage:
+    #     os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%8m-%p-%h-%t-%b-%c.profraw"
     test_result = None
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
@@ -591,8 +592,8 @@ def main():
                 )
             )
         elif failed_tests:
-            if is_llvm_coverage:
-                os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-rerun-%8m.profraw"
+            # if is_llvm_coverage:
+            #     os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-rerun-%8m-%p-%h-%t-%b-%c.profraw"
             ft_res_processor = FTResultsProcessor(wd=temp_dir)
             run_tests(
                 batch_num=0,
@@ -709,6 +710,7 @@ def main():
 
     if is_llvm_coverage:
         print("Collecting and merging LLVM coverage files...")
+        Shell.get_output("pwd", verbose=True).strip().split('\n')
         profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
         profraw_files = [f.strip() for f in profraw_files if f.strip()]
         

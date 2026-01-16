@@ -2998,7 +2998,7 @@ def run_tests_array(
         process_index
     ) = all_tests_with_params
 
-    os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-{process_index}-%8m-.profraw"
+    # os.environ["LLVM_PROFILE_FILE"] = f"clickhouse-client-{process_index}-%8m-.profraw"
 
     OP_SQUARE_BRACKET = colored("[", args, attrs=["bold"])
     CL_SQUARE_BRACKET = colored("]", args, attrs=["bold"])

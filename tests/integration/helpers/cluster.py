@@ -4455,7 +4455,7 @@ class ClickHouseInstance:
     
     def is_built_with_llvm_coverage(self):
         with_coverage = self.query(
-            "SELECT value FROM system.build_options WHERE name = 'LLVM_BUILD_INSTRUMENTED_COVERAGE'"
+            "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
         )
         print("in is_built_with_llvm_coverage: ", with_coverage)
         return "ON" == with_coverage.upper()
