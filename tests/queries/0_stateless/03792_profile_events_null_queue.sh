@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 # This test reproduces a segfault that occurs when send_profile_events is enabled
 # via SQL SETTINGS clause after being disabled at the connection level.
 #
