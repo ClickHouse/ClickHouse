@@ -2085,6 +2085,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 if (sanitizeBlock(before_where_sample))
                 {
                     auto dag = before_where->dag.clone();
+                    /// We could have subcolumns used in the WHERE that are not present in before_where_sample.
+                    /// ExpressionActions doesn't know anything about sybcolumns, so we have to extract them beforehand.
                     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(before_where_sample, dag.getRequiredColumnsNames(), context);
                     if (!extracting_subcolumns_dag.getNodes().empty())
                         dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(dag));
