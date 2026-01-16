@@ -125,8 +125,9 @@ def test_insert_stops_when_disk_full(start_cluster):
         msg = str(e)
         assert any(
             s in msg
-            for s in ("Could not perform insert", "Cannot reserve", "NOT_ENOUGH_SPACE", "None of the disks in volume have enough free space")
+            for s in ("Could not perform insert", "Cannot reserve", "NOT_ENOUGH_SPACE")
         )
+        assert "None of the disks in volume 'main' have enough free space" in msg
 
     free_space = int(
         node.query("SELECT free_space FROM system.disks WHERE name = 'disk1'").strip()
