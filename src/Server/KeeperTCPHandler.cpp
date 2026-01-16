@@ -27,7 +27,7 @@
 #    include <Common/HistogramMetrics.h>
 #    include <Common/OpenTelemetryTracingContext.h>
 #    include <Coordination/KeeperCommon.h>
-#    include <Coordination/KeeperSpans.h>
+#    include <Common/ZooKeeper/KeeperSpans.h>
 
 #    include <Compression/CompressionFactory.h>
 
