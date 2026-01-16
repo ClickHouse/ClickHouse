@@ -13,9 +13,6 @@
 namespace DB
 {
 
-struct LazilyReadInfo;
-using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
-
 class Pipe;
 class ParallelReadingExtension;
 
@@ -23,6 +20,9 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
+
+class LazilyReadFromMergeTree;
+struct QueryIdHolder;
 
 struct MergeTreeDataSelectSamplingData
 {
@@ -199,6 +199,12 @@ public:
         {}
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
+
+        /// Check query limits: max_partitions_to_read, max_concurrent_queries.
+        /// Also, return QueryIdHolder. If not null, we should keep it until query finishes.
+        std::shared_ptr<QueryIdHolder>
+        checkLimits(const Context & context_, const MergeTreeData & data_, const MergeTreeSettings & data_settings_) const;
+
         bool isUsable() const { return !exceeded_row_limits; }
     };
 
@@ -209,6 +215,7 @@ public:
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
         Names all_column_names_,
         const MergeTreeData & data_,
+        MergeTreeSettingsPtr data_settings_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context_,
@@ -285,6 +292,7 @@ public:
         size_t num_streams,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read,
         const MergeTreeData & data,
+        const MergeTreeSettingsPtr & data_settings_,
         const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes,
@@ -295,7 +303,6 @@ public:
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
-    const LazilyReadInfoPtr & getLazilyReadInfo() const { return lazily_read_info; }
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t limit);
@@ -305,7 +312,6 @@ public:
     const SortDescription & getSortDescription() const override { return result_sort_description; }
 
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
-    void updateLazilyReadInfo(const LazilyReadInfoPtr & lazily_read_info_value);
     bool isQueryWithSampling() const;
 
     /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
@@ -341,7 +347,7 @@ public:
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
 
-    bool supportsDataflowStatisticsCollection() const override { return true; }
+    bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
@@ -350,6 +356,17 @@ public:
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
 
+    static void buildIndexes(
+        std::optional<ReadFromMergeTree::Indexes> & indexes,
+        const ActionsDAG * filter_actions_dag_,
+        const MergeTreeData & data,
+        const RangesInDataParts & parts,
+        [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
+        [[maybe_unused]] std::optional<TopKFilterInfo> top_k_filter_info,
+        const ContextPtr & query_context,
+        const SelectQueryInfo & query_info_,
+        const StorageMetadataPtr & metadata_snapshot);
+
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
@@ -357,7 +374,11 @@ public:
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
 
+    std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
+    void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
+
 private:
+    MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 
     RangesInDataPartsPtr prepared_parts;
@@ -366,7 +387,6 @@ private:
     Names all_column_names;
 
     const MergeTreeData & data;
-    LazilyReadInfoPtr lazily_read_info;
     ExpressionActionsSettings actions_settings;
 
     const MergeTreeReadTask::BlockSizeParams block_size;

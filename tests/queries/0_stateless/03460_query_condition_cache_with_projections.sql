@@ -1,5 +1,6 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
+-- add_minmax_index_for_numeric_columns=0: Would use indices instead of the projections that we want to test
 
 -- { echo ON }
 
@@ -10,7 +11,7 @@ set optimize_use_projection_filtering = 1;
 drop table if exists t;
 
 create table t (i int, j int, projection p (select * order by j)) engine MergeTree order by tuple()
-settings index_granularity = 1, max_bytes_to_merge_at_max_space_in_pool = 1; -- disable merge
+settings index_granularity = 1, add_minmax_index_for_numeric_columns=0, max_bytes_to_merge_at_max_space_in_pool = 1; -- disable merge
 
 -- The following data is constructed in a way to verifies that query condition
 -- cache no longer has key collisions for projection parts

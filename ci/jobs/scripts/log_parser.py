@@ -53,6 +53,7 @@ class FuzzerLogParser:
         self.stack_trace_str = stack_trace_str
 
     def parse_failure(self):
+        files = []
         is_logical_error = False
         is_sanitizer_error = False
         is_killed_by_signal = False
@@ -123,7 +124,11 @@ class FuzzerLogParser:
                 break
 
         if not error_output:
-            return self.UNKNOWN_ERROR, "Lost connection to server. See the logs.\n"
+            return (
+                self.UNKNOWN_ERROR,
+                "Lost connection to server. See the logs.\n",
+                files,
+            )
 
         error_lines = error_output.splitlines()
         result_name = error_lines[0].removesuffix(".")
@@ -168,6 +173,11 @@ class FuzzerLogParser:
                     )
                     letter_index += 1
                 result_name = f"Logical error: {format_message}"
+            # For most logical errors, the Stack Trace ID is redundant since the error message
+            # is sufficient to identify the issue. However, for certain errors, different stack
+            # traces may indicate different root causes - include STID in the failure name to
+            # distinguish them.
+            result_name += f" (STID: {stack_trace_id})"
         elif is_killed_by_signal or is_segfault:
             result_name += f" (STID: {stack_trace_id})"
         elif is_memory_limit_exceeded:
@@ -258,11 +268,11 @@ class FuzzerLogParser:
         if reproduce_commands:
             info += "---\n\nReproduce commands (auto-generated; may require manual adjustment):\n"
             if len(reproduce_commands) > self.MAX_INLINE_REPRODUCE_COMMANDS:
-                reproduce_file_sql = workspace_path / "reproduce_commands.sql"
+                reproduce_file_sql = "reproduce_commands.sql"
                 try:
                     with open(reproduce_file_sql, "w") as f:
                         f.write("\n".join(reproduce_commands))
-                    paths.append(reproduce_file_sql)
+                    files.append(reproduce_file_sql)
                     info += f"See file: {reproduce_file_sql}\n"
                 except IOError as write_error:
                     info += f"Failed to write reproduce commands file: {write_error}\n"
@@ -272,15 +282,12 @@ class FuzzerLogParser:
             info += "---\n\nStack trace:\n"
             info += stack_trace + "\n"
 
-        return result_name, info
+        return result_name, info, files
 
     def get_sanitizer_stack_trace(self):
         # return all lines after Sanitizer error starting with "    #DIGITS "
         def _extract_sanitizer_trace(log_file):
             lines = []
-            sanitizer_pattern = re.compile(
-                r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:"
-            )
             stack_frame_pattern = re.compile(r"^\s+#\d+\s+")
             stack_frame_pattern_1st_line = re.compile(r"^\s+#0\s")
             # Pattern to remove ANSI escape codes (colors from tools like ripgrep)
@@ -565,6 +572,6 @@ if __name__ == "__main__":
     server_log = "./no_stid/server.log"
     FTG = FuzzerLogParser(server_log, fuzzer_log)
     # FTG2 = FuzzerLogParser("", "", stack_trace_str="...")
-    result_name, info = FTG.parse_failure()
+    result_name, info, files = FTG.parse_failure()
     print("Result name:", result_name)
     print("Info:\n", info)

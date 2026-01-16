@@ -43,6 +43,8 @@ public:
     int64_t getConnectionXid() const override { return 0; }
     int64_t getSessionID() const override { return 0; }
     int64_t getLastZXIDSeen() const override { return 0; }
+    bool isFeatureEnabled(DB::KeeperFeatureFlag flag) const override { return keeper_feature_flags.isEnabled(flag); }
+    const DB::KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
     void create(
             const String & path,
@@ -112,11 +114,6 @@ public:
 
     void finalize(const String & reason) override;
 
-    bool isFeatureEnabled(DB::KeeperFeatureFlag) const override
-    {
-        return false;
-    }
-
     struct Node
     {
         String data;
@@ -148,6 +145,7 @@ private:
     std::atomic<bool> expired{false};
 
     int64_t zxid = 0;
+    DB::KeeperFeatureFlags keeper_feature_flags;
 
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).

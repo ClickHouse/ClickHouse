@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 SerializationObject::SerializationObject(
@@ -815,6 +816,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         return;
     }
 
+    column_object.validateDynamicPathsSizes();
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data = column_object.getSharedDataPtr();
 
@@ -1046,6 +1048,20 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
     settings.path.pop_back();
 
+    /// Verify that all typed paths, dynamic paths and shared data has consistent sizes
+    size_t expected_size = shared_data->size();
+    for (const auto & [path, path_column] : typed_paths)
+    {
+        if (path_column->size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of typed path {}: {}. Expected size {}", path, path_column->size(), expected_size);
+    }
+
+    for (const auto & [path, path_column] : dynamic_paths)
+    {
+        if (path_column->size() != expected_size)
+            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {}. Expected size {}", path, path_column->size(), expected_size);
+    }
+
     column_object.repairDuplicatesInDynamicPathsAndSharedData(shared_data_previous_size);
 }
 
@@ -1118,6 +1134,14 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
     Object object;
     size_t number_of_paths;
     readVarUInt(number_of_paths, istr);
+    if (settings.binary.max_object_size && number_of_paths > settings.binary.max_object_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+            "Too many paths in a single object: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_object_size",
+            number_of_paths,
+            settings.binary.max_object_size);
+
     /// Read pairs (path, value).
     for (size_t i = 0; i != number_of_paths; ++i)
     {

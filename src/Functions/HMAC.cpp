@@ -242,6 +242,7 @@ SELECT
         description,
         syntax,
         arguments,
+        {},
         returned_value,
         examples,
         introduced_in,

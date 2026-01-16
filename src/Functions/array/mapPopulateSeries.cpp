@@ -259,7 +259,7 @@ private:
 
             for (KeyType current_key = min_key; current_key <= max_key; ++current_key)
             {
-                size_t key_offset_index = current_key - min_key;
+                size_t key_offset_index = static_cast<size_t>(current_key - min_key);
                 size_t insert_index = result_value_data_size + key_offset_index;
 
                 result_key_data[insert_index] = current_key;
@@ -521,7 +521,7 @@ In case keys repeat, only the first value (in order of appearance) is associated
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Map;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionMapPopulateSeries>(documentation);
 }
 

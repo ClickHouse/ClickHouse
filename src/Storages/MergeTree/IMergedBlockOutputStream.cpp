@@ -16,14 +16,14 @@ namespace MergeTreeSetting
 }
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    const MergeTreeSettingsPtr & storage_settings_,
+    MergeTreeSettingsPtr storage_settings_,
     MutableDataPartStoragePtr data_part_storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
-    : storage_settings(storage_settings_)
+    : storage_settings(std::move(storage_settings_))
     , metadata_snapshot(metadata_snapshot_)
-    , data_part_storage(data_part_storage_)
+    , data_part_storage(std::move(data_part_storage_))
     , reset_columns(reset_columns_)
     , info_settings
     {

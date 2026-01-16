@@ -566,7 +566,6 @@ std::optional<String> optimizeUseAggregateProjections(
     const auto & query_info = reading->getQueryInfo();
     const auto metadata = reading->getStorageMetadata();
     ContextPtr context = reading->getContext();
-    MergeTreeDataSelectExecutor reader(reading->getMergeTreeData());
     AggregateProjectionCandidate * best_candidate = nullptr;
 
     /// Stores row count from exact ranges of parts.
@@ -696,6 +695,7 @@ std::optional<String> optimizeUseAggregateProjections(
                 projection_query_info.prewhere_info = nullptr;
                 projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(candidate.dag.clone());
 
+                MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), candidate.projection);
                 bool analyzed = analyzeProjectionCandidate(
                     candidate,
                     reader,
@@ -858,6 +858,7 @@ std::optional<String> optimizeUseAggregateProjections(
         projection_query_info.prewhere_info = nullptr;
         projection_query_info.filter_actions_dag = nullptr;
 
+        MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), best_candidate->projection);
         projection_reading = reader.readFromParts(
             /* parts = */ {},
             reading->getMutationsSnapshot()->cloneEmpty(),

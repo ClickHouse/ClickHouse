@@ -11,6 +11,7 @@ from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .event import EventFeed
 from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
@@ -105,15 +106,8 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_STATUS_DATA={
-                Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
-                    "outputs": {
-                        "data": json.dumps(
-                            {"workflow_config": dataclasses.asdict(workflow_config)}
-                        )
-                    }
-                }
-            },
+            WORKFLOW_STATUS_DATA={},
+            WORKFLOW_CONFIG=workflow_config,
         ).dump()
 
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
@@ -134,8 +128,12 @@ class Runner:
             os.environ[key] = value
             print(f"Set environment variable {key}.")
 
-        print("Read GH Environment")
-        env = _Environment.from_env()
+        if job.name == Settings.CI_CONFIG_JOB_NAME:
+            print("Read GH Environment from GH context")
+            env = _Environment.from_env()
+        else:
+            print("Read GH Environment from workflow data")
+            env = _Environment.from_workflow_data()
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
@@ -406,6 +404,20 @@ class Runner:
                     ).set_info("---")
             result.dump()
 
+        # When running Docker containers as root (non-rootless mode), any files created
+        # by the job will be owned by root. This causes issues when:
+        # 1. Files need to be read/compressed/uploaded by subsequent steps
+        # 2. Root-owned files remain in the repository working directory
+        # The ownership fix below ensures all root-owned files are changed to the current user
+        if job.run_in_docker and not no_docker and from_root:
+            print(f"--- Fixing file ownership after running docker as root")
+            # Get host user's UID and GID (not from inside the container)
+            uid = os.getuid()
+            gid = os.getgid()
+            chown_cmd = f"docker run --rm --user root --volume ./:{current_dir} --workdir={current_dir} {docker} sh -c 'find {Settings.TEMP_DIR} -user root -exec chown {uid}:{gid} {{}} +'"
+            print(f"--- Run ownership fix command [{chown_cmd}]")
+            Shell.check(chown_cmd, verbose=True)
+
         return exit_code
 
     def _post_run(
@@ -464,16 +476,13 @@ class Runner:
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
+        if result.is_error() and result.get_on_error_hook():
+            print(f"--- Run on_error_hook [{result.get_on_error_hook()}]")
+            # Add hook timeout once it's needed
+            Shell.check(result.get_on_error_hook(), verbose=True)
+
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
-
-        job_outputs = env.JOB_KV_DATA
-        print(f"Job's output: [{list(job_outputs.keys())}]")
-        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
-            print(
-                f"data={json.dumps(job_outputs)}",
-                file=f,
-            )
 
         if job.post_hooks:
             sw_ = Utils.Stopwatch()
@@ -486,6 +495,23 @@ class Runner:
                 results_.append(Result.from_commands_run(name=name, command=check))
             result.results.append(
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
+            )
+
+        is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+        is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
+
+        # run after post hooks as they might modify workflow kv data
+        job_outputs = env.JOB_KV_DATA
+        print(f"Job's output: [{list(job_outputs.keys())}]")
+        if is_initial_job:
+            output = dataclasses.asdict(env)
+            output["pipeline_status"] = "success"
+        else:
+            output = job_outputs
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+            print(
+                f"data={json.dumps(output)}",
+                file=f,
             )
 
         if run_exit_code == 0:
@@ -506,11 +532,11 @@ class Runner:
                     if artifact.compress_zst:
                         if isinstance(artifact.path, (tuple, list)):
                             Utils.raise_with_error(
-                                "TODO: list of paths is not supported with comress = True"
+                                "TODO: list of paths is not supported with compress = True"
                             )
                         if "*" in artifact.path:
                             Utils.raise_with_error(
-                                "TODO: globe is not supported with comress = True"
+                                "TODO: globe is not supported with compress = True"
                             )
                         print(f"Compress artifact file [{artifact.path}]")
                         artifact.path = Utils.compress_zst(artifact.path)
@@ -585,9 +611,15 @@ class Runner:
                                 "cidb",
                                 ci_db.get_link_to_test_case_statistics(
                                     test_case_result.name,
+                                    failure_patterns=Settings.TEST_FAILURE_PATTERNS,
+                                    test_output=test_case_result.info,
                                     url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
                                     job_name=job.name,
+                                    pr_base_branches=[
+                                        env.BASE_BRANCH,
+                                        Settings.MAIN_BRANCH,
+                                    ],
                                 ),
                             )
                     result.dump()
@@ -608,32 +640,27 @@ class Runner:
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
-        workflow_result = None
+        if workflow.enable_open_issues_check:
+            # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            #   to upload updated job and workflow results to S3
+            try:
+                if is_final_job:
+                    # re-check entire workflow in the final job as some new issues may appear
+                    workflow_result = Result.from_fs(workflow.name)
+                    _check_and_link_open_issues(workflow_result, job_name="")
+                else:
+                    _check_and_link_open_issues(result, job_name=job.name)
+            except Exception as e:
+                print(f"ERROR: failed to check open issues: {e}")
+                traceback.print_exc()
+                if is_final_job:
+                    env.add_info(ResultInfo.OPEN_ISSUES_CHECK_ERROR)
 
-        # always in the end
+        # Always run report generation at the end to finalize workflow status with latest job result
         if workflow.enable_report:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
             workflow_result = Result.from_fs(workflow.name)
-            is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
-
-            if workflow.enable_open_issues_check:
-                if is_final_job:
-                    result_to_check = workflow_result
-                    job_name_to_check = ""
-                else:
-                    result_to_check = result
-                    job_name_to_check = job.name
-                try:
-                    _check_and_link_open_issues(
-                        result_to_check, job_name=job_name_to_check
-                    )
-                except Exception as e:
-                    print(f"ERROR: failed to check open issues: {e}")
-                    traceback.print_exc()
-                    if is_final_job:
-                        workflow_result.set_info("Open issues check failed")
-
             if is_final_job and ci_db:
                 # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
                 workflow_storage_usage = StorageUsage.from_dict(
@@ -653,12 +680,14 @@ class Runner:
                     )
                     ci_db.insert_compute_usage(workflow_compute_usage)
 
-        report_url = Info().get_job_report_url(latest=False)
+        info = Info()
+        report_url = info.get_job_report_url(latest=False)
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
         ):
             _GH_Auth(workflow)
+            workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
                     workflow_result
@@ -691,7 +720,7 @@ class Runner:
 
         if (
             workflow.enable_automerge
-            and job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+            and is_final_job
             and workflow.is_event_pull_request()
         ):
             try:
@@ -721,6 +750,32 @@ class Runner:
                 f"pipeline_status={pipeline_status}",
                 file=f,
             )
+
+        # Send Slack notifications after workflow status is finalized by HtmlRunnerHooks.post_run()
+        if workflow.enable_slack_feed and (
+            is_final_job or is_initial_job or not result.is_ok()
+        ):
+            updated_emails = []
+            commit_authors = info.get_kv_data("commit_authors")
+            for commit_author in commit_authors:
+                try:
+                    EventFeed.update(
+                        commit_author,
+                        workflow_result.to_event(info=info),
+                        s3_path=Settings.EVENT_FEED_S3_PATH,
+                    )
+                    updated_emails.append(commit_author)
+                except Exception as e:
+                    traceback.print_exc()
+                    print(f"ERROR: failed to update events for {commit_author}: {e}")
+
+            # Invoke Lambda once with all successfully updated emails
+            if updated_emails:
+                try:
+                    EventFeed.notify_slack_users(updated_emails)
+                except Exception as e:
+                    traceback.print_exc()
+                    print(f"ERROR: failed to notify Slack users: {e}")
 
         return is_ok
 

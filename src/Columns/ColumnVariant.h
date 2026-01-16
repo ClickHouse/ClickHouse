@@ -223,6 +223,7 @@ public:
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -353,6 +354,7 @@ private:
     void insertManyFromImpl(const IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
 
     void initIdentityGlobalToLocalDiscriminatorsMapping();
+    void constructOffsetsFromDiscriminators();
 
     template <bool inverted>
     void applyNullMapImpl(const ColumnVector<UInt8>::Container & null_map);

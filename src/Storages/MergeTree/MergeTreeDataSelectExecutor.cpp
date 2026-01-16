@@ -24,10 +24,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -36,20 +34,17 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <base/sleep.h>
 #include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 
-#include <IO/WriteBufferFromOStream.h>
 
 namespace CurrentMetrics
 {
@@ -66,6 +61,7 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event FilterPartsByVirtualColumnsMicroseconds;
 }
 
 namespace DB
@@ -78,7 +74,6 @@ namespace Setting
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -104,13 +99,6 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 max_concurrent_queries;
-    extern const MergeTreeSettingsInt64 max_partitions_to_read;
-    extern const MergeTreeSettingsUInt64 min_marks_to_honor_max_concurrent_queries;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -119,15 +107,16 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_PARSE_TEXT;
-    extern const int TOO_MANY_PARTITIONS;
     extern const int TOO_MANY_ROWS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
 }
 
 
-MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
-    : data(data_), log(getLogger(data.getLogName() + " (SelectExecutor)"))
+MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_, ProjectionDescriptionRawPtr projection)
+    : data(data_)
+    , data_settings(data.getSettings(projection))
+    , log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
 }
 
@@ -566,9 +555,31 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     if (!dag)
         return {};
 
+    /// Check if the extracted DAG actually uses any virtual columns.
+    /// If it only contains constants (e.g., "greater(45, 0)"), skip the parts filtering that can be expensive
+    /// if there are many parts (because it does a linear search over all parts).
+    bool has_virtual_column_input = false;
+    for (const auto & input : dag->getInputs())
+    {
+        if (sample.has(input->result_name))
+        {
+            has_virtual_column_input = true;
+            break;
+        }
+    }
+    if (!has_virtual_column_input)
+        return {};
+
+    auto start_time = std::chrono::steady_clock::now();
+
     auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
     VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), virtual_columns_block);
-    return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+    auto result = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+
+    auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_time).count();
+    ProfileEvents::increment(ProfileEvents::FilterPartsByVirtualColumnsMicroseconds, elapsed_us);
+
+    return result;
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
@@ -775,6 +786,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
                                 && !settings[Setting::use_skip_indexes_on_data_read] &&
                                 key_condition.getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
         /// Vector similarity indexes are not applicable on data reads.
@@ -1161,6 +1173,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .name = index_name,
                     .part_name = parts_with_ranges[part_index].data_part->name,
                     .description = std::move(description),
+                    .condition = index_and_condition.condition->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
@@ -1170,6 +1183,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     .type = ReadFromMergeTree::IndexType::Skip,
                     .name = index_name,
                     .description = std::move(description),
+                    .condition = index_and_condition.condition->getDescription(),
                     .num_parts_after = stat.total_parts - stat.parts_dropped,
                     .num_granules_after = stat.total_granules - stat.granules_dropped});
             }
@@ -1412,41 +1426,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     }
 }
 
-
-std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
-    const MergeTreeData & data,
-    const ReadFromMergeTree::AnalysisResult & result,
-    const ContextPtr & context)
-{
-    const auto & settings = context->getSettingsRef();
-    const auto data_settings = data.getSettings();
-    auto max_partitions_to_read = settings[Setting::max_partitions_to_read].changed
-        ? settings[Setting::max_partitions_to_read].value
-        : (*data_settings)[MergeTreeSetting::max_partitions_to_read].value;
-    if (max_partitions_to_read > 0)
-    {
-        std::set<String> partitions;
-        for (const auto & part_with_ranges : result.parts_with_ranges)
-            partitions.insert(part_with_ranges.data_part->info.getPartitionId());
-        if (partitions.size() > static_cast<size_t>(max_partitions_to_read))
-            throw Exception(
-                ErrorCodes::TOO_MANY_PARTITIONS,
-                "Too many partitions to read. Current {}, max {}",
-                partitions.size(),
-                max_partitions_to_read);
-    }
-
-    if ((*data_settings)[MergeTreeSetting::max_concurrent_queries] > 0
-        && (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries] > 0
-        && result.selected_marks >= (*data_settings)[MergeTreeSetting::min_marks_to_honor_max_concurrent_queries])
-    {
-        auto query_id = context->getCurrentQueryId();
-        if (!query_id.empty())
-            return data.getQueryIdHolder(query_id, (*data_settings)[MergeTreeSetting::max_concurrent_queries]);
-    }
-    return nullptr;
-}
-
 ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMarksToRead(
     RangesInDataParts parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
@@ -1473,6 +1452,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         num_streams,
         max_block_numbers_to_read,
         data,
+        data_settings,
         column_names_to_return,
         log,
         indexes,
@@ -1512,6 +1492,7 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         std::move(mutations_snapshot),
         column_names_to_return,
         data,
+        data_settings,
         query_info,
         storage_snapshot,
         context,
@@ -1962,7 +1943,6 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
     size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
 
-
     /// The vector similarity index can only be used if the PK did not prune some ranges within the part.
     /// (the vector index is built on the entire part).
     const bool all_match  = (marks_count == ranges.getNumberOfMarks());
@@ -1993,11 +1973,53 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     size_t ranges_size = ranges.size();
     RangesInDataPartReadHints read_hints = in_read_hints;
 
-    if (bulk_filtering)
+    auto create_update_partial_disjunction_result_fn = [&](size_t range_begin) -> KeyCondition::UpdatePartialDisjunctionResultFn
+    {
+        if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
+        {
+            return [range_begin, &partial_disjunction_result](size_t position, bool element_result, bool is_unknown)
+            {
+                if (!is_unknown)
+                    partial_disjunction_result[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position] = element_result;
+            };
+        }
+        return nullptr;
+    };
+
+    if (index_helper->isTextIndex())
+    {
+        MergeTreeIndexGranulePtr granule;
+        reader.read(0, condition.get(), granule);
+        auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+
+        for (const auto & range : ranges)
+        {
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                size_t row_begin = part->index_granularity->getMarkStartingRow(mark);
+                size_t row_end = part->index_granularity->getMarkStartingRow(mark + 1);
+
+                if (row_begin == row_end)
+                    continue;
+
+                granule_text.setCurrentRange(RowsRange(row_begin, row_end - 1));
+                bool may_be_true = condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(mark));
+
+                if (may_be_true)
+                {
+                    if (res.empty() || mark - res.back().end > min_marks_for_seek)
+                        res.push_back(MarkRange(mark, mark + 1));
+                    else
+                        res.back().end = mark + 1;
+                }
+            }
+        }
+    }
+    else if (bulk_filtering)
     {
         MergeTreeIndexBulkGranulesPtr granules;
-
         size_t current_granule_num = 0;
+
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
@@ -2098,24 +2120,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 }
                 else
                 {
-                    bool result = true;
-                    if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
-                    {
-                        auto range_begin = std::max(ranges[i].begin, index_mark * index_granularity);
+                    size_t range_begin = std::max(ranges[i].begin, index_mark * index_granularity);
+                    bool may_be_true = condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(range_begin));
 
-                        auto update_partial_disjunction_result_fn = [&](size_t position, bool element_result, bool is_unknown)
-                        {
-                            if (!is_unknown)
-                                partial_disjunction_result[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position] = element_result;
-                        };
-                        result = condition->mayBeTrueOnGranule(granule, update_partial_disjunction_result_fn);
-                    }
-                    else
-                    {
-                        result = condition->mayBeTrueOnGranule(granule, nullptr);
-                    }
-
-                    if (!result)
+                    if (!may_be_true)
                         continue;
 
                     MarkRange data_range(
@@ -2503,7 +2511,11 @@ MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
                 }
                 else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
                 {
-                    rpn_stack.back() = !rpn_stack.back();
+                    /// NOT x = 'acd' is always True with BloomFilter even if x = 'acd' was True.
+                    /// Hence rpn_stack.back() = !rpn_stack.back() will be wrong. We will
+                    /// push True by default for NOT. This could cause false positives for
+                    /// other skip indexes if NOT is used.
+                    rpn_stack.back() = true;
                 }
                 else if (element.function == KeyCondition::RPNElement::FUNCTION_OR)
                 {

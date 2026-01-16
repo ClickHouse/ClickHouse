@@ -147,7 +147,7 @@ struct HasSystemTablesMatcher
                             if (const auto * literal = expression_list_children[1]->as<ASTLiteral>())
                             {
                                 const auto & value = literal->value;
-                                database_table = toString(value);
+                                database_table = fieldToString(value);
                             }
                         }
                     }

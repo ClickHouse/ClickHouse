@@ -165,7 +165,6 @@ CREATE TABLE system.azure_queue_log
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_date)
 ORDER BY (event_date, event_time)
-SETTINGS index_granularity = 8192
 COMMENT 'Contains logging entries with the information files processes by S3Queue engine.'
 
 ```

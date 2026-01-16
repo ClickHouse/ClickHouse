@@ -18,81 +18,8 @@ if TYPE_CHECKING:
     pass
 
 
-def parse_issue_body_fields(body: str) -> dict:
-    """
-    Parse structured fields from issue body.
-
-    Expected format in body:
-    - Test name: <content>
-    - Failure reason: <content>
-    - Failure flags: <flag1>, <flag2>, ...
-    - CI action: <content>
-    - Test pattern: <content>
-    - Job pattern: <content>
-
-    Returns:
-        Dictionary with parsed fields
-    """
-    fields = {
-        "test_name": "",
-        "failure_reason": "",
-        "failure_flags": [],
-        "ci_action": "",
-        "test_pattern": "",
-        "job_pattern": "",
-    }
-
-    if not body:
-        return fields
-
-    # Parse each field with regex
-    # Pattern: field name followed by colon, then content until end of line
-    patterns = {
-        "test_name": r"Test name:\s*(.+?)(?:\n|$)",
-        "failure_reason": r"Failure reason:\s*(.+?)(?:\n|$)",
-        "ci_action": r"CI action:\s*(.+?)(?:\n|$)",
-        "test_pattern": r"Test pattern:\s*(.+?)(?:\n|$)",
-        "job_pattern": r"Job pattern:\s*(.+?)(?:\n|$)",
-    }
-
-    for field, pattern in patterns.items():
-        match = re.search(pattern, body, re.IGNORECASE)
-        if match:
-            fields[field] = match.group(1).strip()
-
-    # Parse failure flags (comma-separated list)
-    flags_match = re.search(r"Failure flags:\s*(.+?)(?:\n|$)", body, re.IGNORECASE)
-    if flags_match:
-        flags_str = flags_match.group(1).strip()
-        # Split by comma and strip whitespace from each flag
-        fields["failure_flags"] = [
-            flag.strip() for flag in flags_str.split(",") if flag.strip()
-        ]
-
-    return fields
-
-
-def extract_test_name(title: str) -> Optional[str]:
-    pattern1 = r"\b(\d{5}_\S+)"
-    match1 = re.search(pattern1, title)
-    if match1:
-        test_name = match1.group(1)
-        # Strip trailing quotes, backticks, and other punctuation
-        return test_name.rstrip("`'\",.;:!?)")
-
-    # Pattern 2: pytest-style names that start with test_, allowing rich suffixes
-    # Use a negated class to stop at whitespace or closing punctuation/quotes.
-    pattern2 = r"\b(test_[^\s`'\",]+)"
-    match2 = re.search(pattern2, title)
-    if match2:
-        test_name = match2.group(1)
-        # Strip trailing quotes, backticks, and other punctuation
-        return test_name.rstrip("`'\",.;:!?)")
-    return None
-
-
 def fetch_github_issues(
-    label: str, state: str = "open", hours_back: float = None
+    label: str, state: str = "open", hours_back: float = None, repo: str = ""
 ) -> List[dict]:
     """
     Fetch issues from GitHub using gh CLI with manual pagination.
@@ -101,6 +28,7 @@ def fetch_github_issues(
         label: GitHub label to filter by
         state: Issue state (open or closed)
         hours_back: For closed issues, only fetch those closed within this many hours (default: None for all)
+        repo: GitHub repository in format owner/repo (default: empty string uses current repo)
 
     Returns:
         List of issue dictionaries
@@ -108,6 +36,7 @@ def fetch_github_issues(
     if isinstance(label, str):
         label = [label]
     all_issues = []
+    repo_arg = f"--repo {repo}" if repo else ""
     limit_per_request = 1000  # Maximum we'll fetch per request
 
     # Build base command
@@ -117,13 +46,13 @@ def fetch_github_issues(
         )
         label_query = " ".join([f'label:"{lbl}"' for lbl in label])
         search_query = f"{label_query} is:closed closed:>{date_threshold}"
-        base_cmd = f"gh issue list --search '{search_query}' --json number,title,body,closedAt,labels --limit {limit_per_request}"
+        base_cmd = f"gh issue list {repo_arg} --search '{search_query}' --json number,title,body,closedAt,labels --limit {limit_per_request}"
         print(
             f"Fetching {state} issues with label '{label}' closed in last {hours_back} hours (since {date_threshold})..."
         )
     else:
         label_args = " ".join([f'--label "{lbl}"' for lbl in label])
-        base_cmd = f"gh issue list {label_args} --state {state} --json number,title,body,closedAt,labels --limit {limit_per_request}"
+        base_cmd = f"gh issue list {repo_arg} {label_args} --state {state} --json number,title,body,closedAt,labels --limit {limit_per_request}"
         print(f"Fetching {state} issues with label '{label}'...")
 
     try:
@@ -161,6 +90,7 @@ class IssueLabels:
     FLAKY_TEST = "flaky test"
     FUZZ = "fuzz"
     INFRASTRUCTURE = "infrastructure"
+    SANITIZER = "sanitizer"
 
 
 @dataclass
@@ -196,8 +126,66 @@ class Issue:
     def has_test_pattern(self):
         return bool(self.test_pattern) and self.test_pattern != "%"
 
+    @staticmethod
+    def parse_issue_body_fields(body: str) -> dict:
+        fields = {
+            "test_name": "",
+            "failure_reason": "",
+            "failure_flags": [],
+            "ci_action": "",
+            "test_pattern": "",
+            "job_pattern": "",
+        }
+
+        if not body:
+            return fields
+
+        patterns = {
+            "test_name": r"Test name:\s*([^\n]*)",
+            "failure_reason": r"Failure reason:\s*([^\n]*)",
+            "ci_action": r"CI action:\s*([^\n]*)",
+            "test_pattern": r"Test pattern:\s*([^\n]*)",
+            "job_pattern": r"Job pattern:\s*([^\n]*)",
+        }
+
+        for field, pattern in patterns.items():
+            match = re.search(pattern, body, re.IGNORECASE)
+            if match:
+                fields[field] = match.group(1).strip()
+
+        flags_match = re.search(
+            r"^Failure flags:[ \t]*(.*)$", body, re.IGNORECASE | re.MULTILINE
+        )
+        fields["failure_flags"] = []
+        if flags_match:
+            flags_str = flags_match.group(1).strip()
+            if flags_str:
+                fields["failure_flags"] = [
+                    flag.strip() for flag in flags_str.split(",") if flag.strip()
+                ]
+
+        return fields
+
+    @staticmethod
+    def extract_test_name(title) -> Optional[str]:
+        """
+        Temporary helper method until all CI issues following the same pattern with test name in the body
+        """
+        pattern1 = r"\b(\d{5}_\S+)"
+        match1 = re.search(pattern1, title)
+        if match1:
+            test_name = match1.group(1)
+            return test_name.rstrip("`'\",.;:!?)")
+
+        pattern2 = r"\b(test_[^\s`'\",]+)"
+        match2 = re.search(pattern2, title)
+        if match2:
+            test_name = match2.group(1)
+            return test_name.rstrip("`'\",.;:!?)")
+        return None
+
     def validate(self, verbose=True):
-        if not self.test_name:
+        if not self.test_name and not self.is_infrastructure():
             if verbose:
                 print(f"WARNING: Invalid issue [{self.url}] must have test_name")
             return False
@@ -238,42 +226,42 @@ class Issue:
         if result.is_ok() or result.has_label("issue"):
             return False
 
-        # Recursively check sub-results first
+        # Recursively check sub-results first.
+        # If called for the workflow result, its sub-results are jobs and their names should be used
+        # for job_pattern matching.
         if result.results:
             marked = False
+            is_workflow_level_call = not job_name
             for sub_result in result.results:
-                if not job_name:
-                    # it's a call for entire workflow result - subresults are jobs
-                    job_name = sub_result.name
-                if self.check_result(sub_result, job_name=job_name):
+                sub_job_name = sub_result.name if is_workflow_level_call else job_name
+                if self.check_result(sub_result, job_name=sub_job_name):
                     marked = True
             return marked
 
-        # This is a leaf result - check if it matches
-        if self.is_infrastructure():
-            return self._check_infrastructure_match(result, job_name)
-        else:
-            return self._check_flaky_test_match(result)
+        # Leaf result - check if it matches.
+        return (
+            self._check_infrastructure_match(result, job_name)
+            if self.is_infrastructure()
+            else self._check_flaky_test_match(result)
+        )
 
     def _check_flaky_test_match(self, result: Result) -> bool:
         """Check if this flaky test issue matches the result."""
-        # Only check flaky tests and fuzz issues
-        if not any(
-            l in self.labels for l in [IssueLabels.FLAKY_TEST, IssueLabels.FUZZ]
-        ):
-            return False
-
         name_in_report = result.name
         test_name = self.test_name
 
         # Normalize pytest parameterized names
-        if ".py" in name_in_report:
+        if ".py" in name_in_report and ".py" in test_name:
             if "[" in test_name:
                 # Issue mentions a specific parametrization: keep full name for exact match
                 pass
             elif "[" in name_in_report:
                 # Issue mentions only the base test: compare against the base part
                 name_in_report = name_in_report.split("[")[0]
+
+            if "::" not in test_name:
+                # Issue mentions only the module path without function: extract module path from report test name
+                name_in_report = name_in_report.split("::")[0]
 
         # Check if test name matches
         if not name_in_report.endswith(test_name):
@@ -293,7 +281,7 @@ class Issue:
         print(
             f"Marking '{result.name}' as flaky (matched: {test_name}, issue: #{self.number})"
         )
-        result.set_clickable_label(label="issue", link=self.url)
+        result.set_clickable_label(label=Result.Label.ISSUE, link=self.url)
         return True
 
     def _check_infrastructure_match(
@@ -310,13 +298,13 @@ class Issue:
                 return False
 
         # Check test_pattern (SQL style %name%) with result.name
-        if self.test_pattern:
+        if self.test_pattern and self.test_pattern != "%":
             pattern_parts = [p for p in self.test_pattern.split("%") if p]
             if not any(part in result.name for part in pattern_parts):
                 return False
 
         # Check job_pattern (SQL style %name%) with top level result name
-        if self.job_pattern:
+        if self.job_pattern and self.job_pattern != "%":
             job_pattern_parts = [p for p in self.job_pattern.split("%") if p]
             if not any(part in top_level_result_name for part in job_pattern_parts):
                 return False
@@ -336,12 +324,12 @@ class Issue:
         closed_at="",
         number=0,
     ):
-        body_fields = parse_issue_body_fields(body)
+        body_fields = cls.parse_issue_body_fields(body)
         test_name = body_fields["test_name"]
         if not test_name:
             if IssueLabels.FLAKY_TEST in labels:
                 # Extract test name from title or body
-                test_name = extract_test_name(title)
+                test_name = cls.extract_test_name(title)
             else:
                 test_name = title
         issue_url = (
@@ -430,9 +418,13 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
         return res
 
     @classmethod
-    def from_gh(cls, verbose=True):
+    def from_gh(cls, verbose=True, repo=""):
         """
         Fetch and organize all CI test issues from GitHub.
+
+        Args:
+            verbose: Enable verbose output
+            repo: GitHub repository in format owner/repo (default: empty string uses current repo)
 
         Returns:
             TestCaseIssueCatalog with active issues (including recently closed)
@@ -443,7 +435,9 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
         # Fetch open issues with label "testing" (CI_ISSUE) first
         if verbose:
             print("\n--- Fetching active testing issues ---")
-        testing_issues = fetch_github_issues(label=IssueLabels.CI_ISSUE, state="open")
+        testing_issues = fetch_github_issues(
+            label=IssueLabels.CI_ISSUE, state="open", repo=repo
+        )
         catalog.active_test_issues = cls.process_issue(testing_issues, verbose=verbose)
         if verbose:
             print(f"Processed {len(catalog.active_test_issues)} testing issues")
@@ -452,7 +446,7 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
         if verbose:
             print("--- Fetching closed testing issues from last 8 hours ---")
         closed_testing_issues = fetch_github_issues(
-            label=IssueLabels.CI_ISSUE, state="closed", hours_back=8
+            label=IssueLabels.CI_ISSUE, state="closed", hours_back=8, repo=repo
         )
         closed_testing_processed = cls.process_issue(
             closed_testing_issues, verbose=verbose
@@ -541,8 +535,13 @@ if __name__ == "__main__":
     Path(temp_path).mkdir(exist_ok=True)
 
     def collect_and_upload():
-        TestCaseIssueCatalog.from_gh().dump()  # .to_s3()
-        return True
+        print(f"Fetching active testing issues...")
+        c = TestCaseIssueCatalog.from_gh()
+        c.dump()
+        print(f"Uploading to S3...")
+        url = c.to_s3()
+        print(f"Catalog uploaded to S3: {url}")
+        return bool(url)
 
     def download():
         TestCaseIssueCatalog.from_s3().dump()
@@ -557,6 +556,7 @@ if __name__ == "__main__":
                 command=lambda: collect_and_upload(),
             )
         )
+        # collect_and_upload()
     elif "--download" in sys.argv:
         results.append(
             Result.from_commands_run(
@@ -567,4 +567,4 @@ if __name__ == "__main__":
         print("ERROR: No action specified")
         raise
 
-    Result.create_from(status=Result.Status.SUCCESS).complete_job()
+    Result.create_from(results=results).complete_job()

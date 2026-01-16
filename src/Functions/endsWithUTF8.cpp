@@ -35,7 +35,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionEndsWithUTF8>(documentation);
 }
@@ -66,7 +66,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionEndsWithCaseInsensitiveUTF8>(documentation);
 }
