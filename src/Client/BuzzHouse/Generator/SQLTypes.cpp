@@ -1,5 +1,3 @@
-#include <cstdint>
-
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
 #include <Client/BuzzHouse/Utils/HugeInt.h>

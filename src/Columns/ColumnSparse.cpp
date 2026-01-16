@@ -300,7 +300,7 @@ void ColumnSparse::insertManyDefaults(size_t length)
 
 void ColumnSparse::popBack(size_t n)
 {
-    assert(n < _size);
+    assert(n <= _size);
 
     auto & offsets_data = getOffsetsData();
     size_t new_size = _size - n;
