@@ -1156,6 +1156,13 @@ void MergeTreeData::setProperties(
     setVirtuals(createVirtuals(new_metadata));
     projection_virtuals.set(std::make_unique<VirtualColumnsDescription>(createProjectionVirtuals(new_metadata)));
 
+    /// Recalculate minmax_idx_date_column_pos and minmax_idx_time_column_pos
+    /// because ALTER TABLE can change the column order in the partition key expression.
+    /// The minmax index files are stored per-column (order-independent), but the hyperrectangle
+    /// is populated at load time based on the current metadata's column order.
+    if (new_metadata.hasPartitionKey())
+        checkPartitionKeyAndInitMinMax(new_metadata.partition_key);
+
     std::lock_guard lock(patch_parts_metadata_mutex);
     patch_parts_metadata_cache.clear();
 }
