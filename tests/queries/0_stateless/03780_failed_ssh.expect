@@ -40,6 +40,7 @@ QQDbVchcKjXrhsYklDvJQ4xyGkUH6+xMRVINwzjP3JQ1akUF/MJAYg5vr8j4gibWysVwWV
 -----END OPENSSH PRIVATE KEY-----' > id_rsa_03780_failed_ssh"
 
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CURL -sS \$CLICKHOUSE_URL -d 'CREATE USER IF NOT EXISTS user_03780_\$CLICKHOUSE_TEST_UNIQUE_NAME'"
+expect eof
 
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --ssh-key-file id_rsa_03780_failed_ssh --user user_03780_\$CLICKHOUSE_TEST_UNIQUE_NAME"
 
@@ -50,5 +51,4 @@ expect "Code: 516. *"
 expect eof
 
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CURL -sS \$CLICKHOUSE_URL -d 'DROP USER IF EXISTS user_03780_\$CLICKHOUSE_TEST_UNIQUE_NAME'"
-
 expect eof
