@@ -1386,9 +1386,9 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"wait_for_async_insert", trueOrFalseSettingNoOracle}}); /// breaks table dump oracle
         max_block_sizes.insert(
             max_block_sizes.end(),
-            {"max_analyze_depth",
-             "max_ast_depth",
-             "max_ast_elements",
+            {/// "max_analyze_depth",
+             /// "max_ast_depth",
+             /// "max_ast_elements",
              "max_autoincrement_series",
              "max_backup_bandwidth",
              "max_distributed_connections",
@@ -1401,12 +1401,12 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_network_bandwidth_for_all_users",
              "max_network_bandwidth_for_user",
              "max_parser_backtracks",
-             "max_parser_depth",
+             ///"max_parser_depth",
              "max_partitions_to_read",
              "max_sessions_for_user",
              "max_streams_for_merge_tree_reading",
-             "max_streams_multiplier_for_merge_tables",
-             "max_subquery_depth"});
+             "max_streams_multiplier_for_merge_tables"/*,
+             "max_subquery_depth"*/});
         max_bytes_values.insert(
             max_bytes_values.end(),
             {"max_bytes_in_distinct",
@@ -1416,7 +1416,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_bytes_to_read_leaf",
              "max_bytes_to_sort",
              "max_bytes_to_transfer",
-             "max_execution_speed_bytes",
+             /// "max_execution_speed_bytes",
              "max_hyperscan_regexp_length",
              "max_hyperscan_regexp_total_length",
              "max_network_bytes",
@@ -1430,7 +1430,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
             {"limit",
              "max_concurrent_queries_for_all_users",
              "max_concurrent_queries_for_user",
-             "max_execution_speed",
+             /// "max_execution_speed",
              "max_result_rows",
              "max_rows_in_distinct",
              "max_rows_in_join",
@@ -1439,8 +1439,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_rows_to_group_by",
              "max_rows_to_read",
              "max_rows_to_read_leaf",
-             "max_rows_to_sort",
-             "min_execution_speed"});
+             "max_rows_to_sort"/*,
+             "min_execution_speed"*/});
         /*max_columns_values.insert( too many errors on queries
             max_columns_values.end(), {"max_columns_to_read", "max_temporary_columns", "max_temporary_non_const_columns"});*/
     }
