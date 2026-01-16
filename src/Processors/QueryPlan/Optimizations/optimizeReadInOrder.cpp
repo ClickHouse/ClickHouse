@@ -683,12 +683,18 @@ InputOrder buildInputOrderFromUnorderedKeys(
     using ReverseMatches = std::unordered_map<const ActionsDAG::Node *, MatchedTrees::Matches::const_iterator>;
     ReverseMatches reverse_matches;
 
+    // LOG_DEBUG(getLogger(__func__), "dag:\n{}", dag ? dag.value().dumpDAG() : "");
+    //
+    // LOG_DEBUG(getLogger(__func__), "sorting_key_dag:\n{}", sorting_key_dag.dumpDAG());
+
     if (dag)
     {
         matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
 
         for (const auto & [node, match] : matches)
         {
+            // LOG_DEBUG(getLogger(__func__), "match:\n{} : {}", node->result_name, match.node ? match.node->result_name : "nullptr");
+
             if (!match.monotonicity || match.monotonicity->strict)
             {
                 if (match.node && fixed_columns.contains(node))
@@ -704,6 +710,12 @@ InputOrder buildInputOrderFromUnorderedKeys(
             const MatchedTrees::Match * match = &it->second;
             if (match->node)
             {
+                // ensure that output is in keys
+                // the output can be removed for filters, so it'll not be present in corresponding header,
+                // and parent aggregation step will have no such column/expr in keys
+                if (std::find(begin(unordered_keys), end(unordered_keys), output->result_name) == unordered_keys.end())
+                    continue;
+
                 auto [jt, inserted] = reverse_matches.emplace(match->node, it);
                 if (!inserted)
                 {
@@ -722,6 +734,9 @@ InputOrder buildInputOrderFromUnorderedKeys(
                 }
             }
         }
+
+        // for(auto [node, it] : reverse_matches)
+        //     LOG_DEBUG(getLogger(__func__), "reverse_matches\n{}", node->result_name);
     }
 
     /// This is a result direction we will read from MergeTree
@@ -733,6 +748,8 @@ InputOrder buildInputOrderFromUnorderedKeys(
     int read_direction = 0;
     size_t next_sort_key = 0;
     std::unordered_set<std::string_view> not_matched_keys(unordered_keys.begin(), unordered_keys.end());
+    // for(const auto k : not_matched_keys)
+    //     LOG_DEBUG(getLogger(__func__), "not_matched_keys: {}", k);
 
     SortDescription sort_description;
     sort_description.reserve(unordered_keys.size());
