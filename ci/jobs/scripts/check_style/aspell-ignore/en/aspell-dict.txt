@@ -1,7 +1,8 @@
-personal_ws-1.1 en 3452
+personal_ws-1.1 en 3453
 aarch
 AArch
 ACLs
+ADLS
 ALTERs
 AMPLab
 AMQP
@@ -741,6 +742,7 @@ Milovidov
 MinHash
 MinIO
 MinMax
+MinMaxIndexPruned
 MindsDB
 Mongo
 Mongodb
@@ -795,6 +797,7 @@ NewSetting
 Noaa
 NodeJs
 NonMonotonic
+NotPruned
 NonZeroUInt
 NuRaft
 NumHexagons
@@ -907,6 +910,7 @@ ParquetMetadata
 ParquetVersion
 Parsers
 PartMutation
+PartitionPruned
 Partitioner
 PartsActive
 PartsCommitted
@@ -1200,6 +1204,7 @@ TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Tauri
+TcpExtListenOverflows
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
