@@ -488,6 +488,11 @@ CachedOnDiskReadBufferFromFile::getImplementationBuffer(FileSegment & file_segme
     /// (same different threads of the same query), it will allow read buffer to be reused,
     /// reducing number of s3 requests. This does apply however only to case when
     /// those different threads hold the file segment at the same time, making its ref count > 2.
+    ///
+    /// We add min with getFileSize here, because only in case of DistributedCache
+    /// we do not resize file segment when write-through cache buffer is destructed,
+    /// because we do not know at that moment if all data was fully sent or we just disconnected (this is in TODO to fix).
+    /// So here we can have file segment size bigger than actual object size.
     read_buffer_for_file_segment->setReadUntilPosition(std::min(range.right + 1, getFileSize())); /// [..., range.right]
 
     switch (read_type)
