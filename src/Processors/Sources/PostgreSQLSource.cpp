@@ -98,151 +98,6 @@ void PostgreSQLSource<T>::onStart()
         }
     }
 
-    /*
-    // Check for cancellation before starting any async operations
-    if (isCancelled())
-    {
-        LOG_DEBUG(getLogger("PGinit"), "Query was cancelled before async start");
-        finished = true;
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "PostgreSQLSource query was cancelled before start");
-    }
-
-    // Run stream_from in separate thread with timeout
-    LOG_DEBUG(getLogger("PGinit"), "before fut");
-    */
-
-    /*
-    std::future<std::unique_ptr<pqxx::stream_from>> fut =
-        std::async(std::launch::async, [&] {
-            return std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, query_str);
-        });
-
-    */
-
-    /*
-    std::promise<std::unique_ptr<pqxx::stream_from>> promise;
-    auto fut = promise.get_future();
-    std::atomic<bool> task_cancelled{false};
-
-    ThreadFromGlobalPool thread([this, &promise, &task_cancelled]() {
-    // ThreadFromGlobalPool thread([&promise, &task_cancelled]() {
-        LOG_DEBUG(getLogger("PGinit"), "started stream init thread...");
-        try
-        {
-            if (task_cancelled)
-                throw Exception( ErrorCodes::QUERY_WAS_CANCELLED, "Task cancelled");
-
-            auto stream_ = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, query_str);
-            // std::unique_ptr<pqxx::stream_from> stream_{nullptr};
-            // std::this_thread::sleep_for(std::chrono::seconds(30));
-
-            if (task_cancelled)
-            {
-                stream_->close();
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Task cancelled");
-            }
-
-            promise.set_value(std::move(stream_));
-
-        }
-        catch (...)
-        {
-            promise.set_exception(std::current_exception());
-        }
-        LOG_DEBUG(getLogger("PGinit"), "finished stream init thread");
-    });
-
-    thread.detach();
-
-    LOG_DEBUG(getLogger("PGinit"), "before wait");
-    auto status = fut.wait_for(std::chrono::seconds(10));
-    LOG_DEBUG(getLogger("PGinit"), "after wait");
-    if (status != std::future_status::ready) {
-        task_cancelled = true;
-
-        finished = true;
-
-        // Check if query was cancelled before proceeding with cancellation
-        LOG_DEBUG(getLogger("PGinit"), "Checking isCancelled()");
-        if (isCancelled())
-        {
-            LOG_DEBUG(getLogger("PGinit"), "Query was cancelled after timeout");
-            // finished = true;
-            // throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "PostgreSQLSource query was cancelled");
-            // return;
-        }
-
-        // Cancel PostgreSQL query
-        LOG_DEBUG(getLogger("PGinit"), "before cancelling PostgreSQL query");
-        try
-        {
-            LOG_DEBUG(getLogger("PGinit"), "cancelling query");
-            tx->conn().cancel_query();
-            if (stream)
-            {
-                LOG_DEBUG(getLogger("PGinit"), "closing stream");
-                stream->close();
-
-            }
-            LOG_DEBUG(getLogger("PGinit"), "waiting more time");
-            fut.wait_for(std::chrono::milliseconds(100));
-            LOG_DEBUG(getLogger("PGinit"), "aborting transcation");
-            tx->abort();
-            LOG_DEBUG(getLogger("PGinit"), "transaction aborted");
-        }
-        catch (...)
-        {
-            LOG_DEBUG(getLogger("PGinit"), "exception in cancelling PostgreSQL query");
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
-        // stream.reset();
-        // tx.reset();
-
-        // if (connection_holder)
-        //     connection_holder->setBroken();
-
-
-
-        LOG_DEBUG(getLogger("PGinit"), "wait not OK");
-        // finished = true;
-
-        // throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "PostgreSQL query timeout");
-
-        // throw Exception(ErrorCodes::POSTGRESQL_CONNECTION_FAILURE, "PostgreSQL query timeout");
-    }
-    else
-    {
-        // Stream created successfully
-        LOG_DEBUG(getLogger("PGinit"), "wait OK");
-        try
-        {
-            stream = fut.get();
-            LOG_DEBUG(getLogger("PGinit"), "got stream");
-
-            // Check if async thread threw an exception
-            // if (async_exception)
-            //     std::rethrow_exception(async_exception);
-
-        }
-        catch (const pqxx::broken_connection & e)
-        {
-            throw Exception(ErrorCodes::POSTGRESQL_CONNECTION_FAILURE,
-                           "PostgreSQL connection broken: {}", e.what());
-        }
-        catch (const pqxx::sql_error & e)
-        {
-            throw Exception(ErrorCodes::POSTGRESQL_CONNECTION_FAILURE,
-                           "PostgreSQL SQL error: {} (Query: {})", e.what(), e.query());
-        }
-        catch (const std::exception & e)
-        {
-            throw Exception(ErrorCodes::POSTGRESQL_CONNECTION_FAILURE,
-                           "Failed to create PostgreSQL stream: {}", e.what());
-        }
-    }
-    */
-
     LOG_DEBUG(getLogger("PGinit"), "before starting stream");
 
     try
@@ -269,65 +124,10 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 {
     if (!started)
     {
-        /*
-        try
-        {
-            // Check if query was cancelled before starting
-            if (isCancelled())
-            {
-                LOG_DEBUG(getLogger("PGinit"), "Query was cancelled before start");
-
-                // finished = true;
-                // return Status::Finished;
-
-                // throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "PostgreSQLSource query was cancelled");
-            }
-            */
-
-            onStart();
-            LOG_DEBUG(getLogger("PGinit"), "Check after onStart");
-            // if (finished)
-            //     throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "PostgreSQLSource query was finished");
-
-            /*
-            if (isCancelled())
-            {
-                LOG_DEBUG(getLogger("PGinit"), "Query was cancelled after start");
-
-                finished = true;
-
-                is_completed = true;
-                // return Status::Finished;
-
-                // throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "PostgreSQLSource query was cancelled");
-
-                // throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "PostgreSQLSource test exception 3");
-            }
-            else
-                started = true;
-            */
-            if (!finished)
-                started = true;
-        /*
-        }
-        catch (Exception &)
-        {
-            LOG_DEBUG(getLogger("PGinit"), "inside Exception catch");
-            finished = true;
-            throw;
-        }
-        catch (...)
-        {
-            LOG_DEBUG(getLogger("PGinit"), "inside catch");
-            // getPort().finish();
-            // is_completed = true;
-            // is_cancelled = true;
-            finished = true;
-            // return Status::Finished;
-            throw;
-            // throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "PostgreSQLSource query was cancelled by timeout");
-        }
-        */
+        onStart();
+        LOG_DEBUG(getLogger("PGinit"), "Check after onStart");
+        if (!finished)
+            started = true;
     }
 
     LOG_DEBUG(getLogger("PGinit"), "before ISource::prepare()");
@@ -346,8 +146,6 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
         LOG_DEBUG(getLogger("PGinit"), "after finished");
     }
 
-    // throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "PostgreSQLSource test exception 2");
-
     return status;
 }
 
@@ -358,8 +156,6 @@ Chunk PostgreSQLSource<T>::generate()
     /// Check if pqxx::stream_from is finished
     if (!stream || !(*stream))
         return {};
-
-    // throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "PostgreSQLSource test exception 1");
 
     MutableColumns columns = description.sample_block.cloneEmptyColumns();
     size_t num_rows = 0;
@@ -425,10 +221,6 @@ void PostgreSQLSource<T>::onCancel() noexcept
     tx->conn().cancel_query();
     if (stream)
     {
-        /** Internally libpqxx::stream_from runs PostgreSQL copy query `COPY query TO STDOUT`.
-             * During transaction abort we try to execute PostgreSQL `ROLLBACK` command and if
-             * copy query is not cancelled, we wait until it finishes.
-             */
         // LOG_DEBUG(getLogger("PGinit"), "cancelling query");
         // tx->conn().cancel_query();
 
