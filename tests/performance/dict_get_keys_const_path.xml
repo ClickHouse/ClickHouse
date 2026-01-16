@@ -41,7 +41,14 @@
     </create_query>
 
     <query>
-        SELECT length(dictGetKeys('dict_const_path', 'value', 1));
+        SELECT dictGetKeys('dict_const_path', 'value', 1) FORMAT NULL;
+    </query>
+
+    <query>
+        SELECT groupArray(id)
+        FROM dict_src_const_path
+        WHERE dictGetUInt32('dict_const_path', 'value', id) = 1
+        FORMAT NULL;
     </query>
 
     <drop_query>
