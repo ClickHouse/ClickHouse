@@ -63,12 +63,10 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , columns(columns_.toString(true))
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
     , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
-    , partitioning_mode([&]() {
-        // Handle backward compatibility: use_hive_partitioning → partitioning_mode='hive'
-        if (engine_settings[ObjectStorageQueueSetting::use_hive_partitioning])
-            return std::string("hive");
-        return engine_settings[ObjectStorageQueueSetting::partitioning_mode].toString();
-    }())
+    , partitioning_mode(
+          engine_settings[ObjectStorageQueueSetting::use_hive_partitioning]
+              ? "hive"
+              : engine_settings[ObjectStorageQueueSetting::partitioning_mode].toString())
     , partition_regex(engine_settings[ObjectStorageQueueSetting::partition_regex])
     , partition_component(engine_settings[ObjectStorageQueueSetting::partition_component])
     , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing])
