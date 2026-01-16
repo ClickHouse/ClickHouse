@@ -1409,19 +1409,19 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_subquery_depth"*/});
         max_bytes_values.insert(
             max_bytes_values.end(),
-            {"max_bytes_in_distinct",
+            {/*"max_bytes_in_distinct",
              "max_bytes_in_join",
              "max_bytes_in_set",
              "max_bytes_to_read",
              "max_bytes_to_read_leaf",
              "max_bytes_to_sort",
              "max_bytes_to_transfer",
-             /// "max_execution_speed_bytes",
+             "max_execution_speed_bytes",*/
              "max_hyperscan_regexp_length",
              "max_hyperscan_regexp_total_length",
              "max_network_bytes",
-             /// "max_query_size",
-             /// "max_result_bytes",
+             /*"max_query_size",
+             "max_result_bytes",*/
              "max_size_to_preallocate_for_aggregation",
              "max_size_to_preallocate_for_joins"/*,
              "min_execution_speed_bytes"*/});
@@ -1429,9 +1429,9 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
             max_rows_values.end(),
             {"limit",
              "max_concurrent_queries_for_all_users",
-             "max_concurrent_queries_for_user",
-             /// "max_execution_speed",
-             /// "max_result_rows",
+             "max_concurrent_queries_for_user"/*,
+             "max_execution_speed",
+             "max_result_rows",
              "max_rows_in_distinct",
              "max_rows_in_join",
              "max_rows_in_set",
@@ -1439,7 +1439,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_rows_to_group_by",
              "max_rows_to_read",
              "max_rows_to_read_leaf",
-             "max_rows_to_sort"/*,
+             "max_rows_to_sort",
              "min_execution_speed"*/});
         /*max_columns_values.insert( too many errors on queries
             max_columns_values.end(), {"max_columns_to_read", "max_temporary_columns", "max_temporary_non_const_columns"});*/
