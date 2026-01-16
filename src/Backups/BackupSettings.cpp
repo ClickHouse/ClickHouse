@@ -41,6 +41,7 @@ namespace ErrorCodes
     M(Bool, write_access_entities_dependents) \
     M(Bool, allow_checksums_from_remote_paths) \
     M(BackupDataFileNameGeneratorType, data_file_name_generator) \
+    M(Bool, backup_data_from_refreshable_materialized_view_targets) \
     M(Bool, internal) \
     M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \

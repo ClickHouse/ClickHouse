@@ -343,12 +343,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 /// Do not add parentheses for tuple and array literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`, `-[1]` -> `-([1])`
                 bool literal_need_parens = literal && !is_tuple && !is_array;
 
-                /// Negate always requires parentheses, otherwise -(-1) will be printed as --1, UNLESS the inner statement has an alias e.g. -(-1 AS a)
+                /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
                 /// Also extra parentheses are needed for subqueries and tuple, because NOT can be parsed as a function:
                 /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
                 /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
-                bool inside_parens = (name == "negate" && !has_alias && (literal_need_parens || (function && function->name == "negate")))
-                    || (subquery && name == "not") || (is_tuple && name == "not");
+                /// Note: If the arg to negate/not/- has an alias, we never need the inside parens
+                bool inside_parens = !has_alias
+                    && ((name == "negate" && (literal_need_parens || (function && function->name == "negate")))
+                        || (subquery && name == "not") || (is_tuple && name == "not"));
 
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
@@ -453,15 +455,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
                 /** Conditions for extra parens:
                  *  1. Is IN operator
-                 *  2. 2nd arg is not subquery
-                 *  3. 2nd arg is not function or literal tuple or array
-                 *  4. If the 2nd argument has alias, we ignore condition 3 and add extra parens if other conditions are satisfied
+                 *  2. 2nd arg is not subquery, function, or literal tuple or array
+                 *  3. If the 2nd argument has alias, we ignore condition 2 and add extra parens
                  *
-                 *  Condition 4 is needed to avoid inconsistency in format-parse-format debug check in executeQuery.cpp
+                 *  Condition 3 is needed to avoid inconsistency in format-parse-format debug check in executeQuery.cpp
                  */
                 bool extra_parents_around_in_rhs = is_in_operator
-                    && !arguments->children[1]->as<ASTSubquery>()
-                    && ((!second_arg_func && !is_literal_tuple_or_array) || !arguments->children[1]->tryGetAlias().empty());
+                    && ((!arguments->children[1]->as<ASTSubquery>() && !second_arg_func && !is_literal_tuple_or_array)
+                        || !arguments->children[1]->tryGetAlias().empty());
 
                 if (extra_parents_around_in_rhs)
                 {

@@ -1279,10 +1279,9 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         {
             index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), context);
         }
-        catch (Exception & exception)
+        catch (const Exception & exception)
         {
-            exception.addMessage("Cannot apply mutation because it breaks skip index " + index.name);
-            throw;
+            throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
         }
     }
 
@@ -1302,10 +1301,9 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             performRequiredConversions(old_projection_block, new_projection.sample_block.getNamesAndTypesList(), context, metadata_copy.getColumns().getDefaults());
             new_projections.add(std::move(new_projection));
         }
-        catch (Exception & exception)
+        catch (const Exception & exception)
         {
-            exception.addMessage("Cannot apply mutation because it breaks projection " + projection.name);
-            throw;
+            throw Exception(exception.code(), "Cannot apply ALTER because it breaks projection {}: {}", projection.name, exception.message());
         }
     }
     metadata_copy.projections = std::move(new_projections);

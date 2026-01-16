@@ -22,9 +22,13 @@ void ProjectionIndexBasic::fillProjectionDescription(
 }
 
 Block ProjectionIndexBasic::calculate(
-    const ProjectionDescription & projection_desc, const Block & block, ContextPtr context, const IColumnPermutation * perm_ptr) const
+    const ProjectionDescription & projection_desc,
+    const Block & block,
+    UInt64 starting_offset,
+    ContextPtr context,
+    const IColumnPermutation * perm_ptr) const
 {
-    return projection_desc.calculateByQuery(block, context, perm_ptr);
+    return projection_desc.calculateByQuery(block, starting_offset, context, perm_ptr);
 }
 
 }
