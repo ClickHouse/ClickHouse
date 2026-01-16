@@ -31,6 +31,10 @@ class Generator:
     def get_run_cmd(self, server: ClickHouseInstance) -> list[str]:
         pass
 
+    @abstractmethod
+    def validate_exit_code(self, exit_code: int) -> bool:
+        pass
+
     def run_generator(self, server: ClickHouseInstance, logger, args) -> CommandRequest:
         return CommandRequest(
             self.get_run_cmd(server),
@@ -214,3 +218,6 @@ class BuzzHouseGenerator(Generator):
             "--max_memory_usage_in_client=1000000000",
             f"--buzz-house-config={self.temp.name}",
         ]
+
+    def validate_exit_code(self, exit_code: int) -> bool:
+        return exit_code in (0, 137, 143)

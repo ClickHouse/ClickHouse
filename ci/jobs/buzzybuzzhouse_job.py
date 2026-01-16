@@ -309,7 +309,7 @@ python3 ./tests/casa_del_dolor/dolor.py --seed={session_seed} --generator=buzzho
             fatal_log,
         )
         if is_failed:
-            test_results.append(result)
+            test_results = [result]
             attached_files.extend(
                 [str(p) for p in paths if p.exists() and p.stat().st_size > 0]
             )

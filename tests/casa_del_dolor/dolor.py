@@ -617,6 +617,7 @@ if args.with_kafka:
 
 # This is the main loop, run while client and server are running
 all_running = True
+good_exit = True
 tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
 # Shutdown info
 lower_bound, upper_bound = args.time_between_shutdowns
@@ -666,11 +667,14 @@ while all_running and (not reached_limit):
                 f"Load generator finished {explain_returncode(client.process.returncode)}"
             )
             all_running = False
+            good_exit = good_exit and generator.validate_exit_code(
+                client.process.returncode
+            )
         for server in servers:
             pid = server.get_process_pid("clickhouse")
             if pid is None:
                 logger.info(f"The server {server.name} is not running")
-                all_running = False
+                all_running = good_exit = False
         reached_limit = test_limit is not None and time.time() >= test_limit
         if reached_limit:
             logger.info("Test timeout reached, stopping the fuzzer")
@@ -706,11 +710,17 @@ while all_running and (not reached_limit):
             f"Restarting the server {next_pick.name} with {'kill' if kill_server else 'manual shutdown'}"
         )
 
-        next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
+        try:
+            next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
+        except Exception as ex:
+            logger.error(f"Failed to stop ClickHouse: {ex}")
+            logger.info(f"The server {next_pick.name} is not running")
+            all_running = good_exit = False
         time.sleep(1)
         # Replace server binary, using a new temporary symlink
         if (
-            len(sorted_binaries) > 1
+            all_running
+            and len(sorted_binaries) > 1
             and random.randint(1, 100) <= args.change_server_version_prob
         ):
             if len(servers) == 1 and len(sorted_binaries) == 2:
@@ -732,11 +742,17 @@ while all_running and (not reached_limit):
                 user="root",
             )
             server_versions[next_pick.name] = next_server
-        time.sleep(3)  # Let the keeper session expire
-        next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
-        if args.with_leak_detection and next_pick.name == "node0":
-            # Has to reset leak detector
-            leak_detector.reset_and_capture_baseline(cluster)
+        if all_running:
+            time.sleep(3)  # Let the keeper session expire
+            try:
+                next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
+            except Exception as ex:
+                logger.error(f"Failed to start ClickHouse: {ex}")
+                logger.info(f"The server {next_pick.name} is not running")
+                all_running = good_exit = False
+            if all_running and args.with_leak_detection and next_pick.name == "node0":
+                # Has to reset leak detector
+                leak_detector.reset_and_capture_baseline(cluster)
     elif len(integrations) > 0:
         # Restart any other integration
         next_pick = random.choice(integrations)
@@ -766,5 +782,7 @@ while all_running and (not reached_limit):
         )
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
+    if all_running:
+        tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 
-    tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
+sys.exit(0 if good_exit else 1)
