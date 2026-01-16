@@ -1,4 +1,6 @@
--- Tags: stateful
+-- Tags: no-tsan, no-msan, no-asan, no-parallel, stateful
+-- Tag no san & no-parallel: plumbing of a large dataset within the strict time expectation might get unpredictalbe with sanitizers and under heavy concurrency
+
 SET max_execution_speed = 8000000;
 SET timeout_before_checking_execution_speed = 0;
 
