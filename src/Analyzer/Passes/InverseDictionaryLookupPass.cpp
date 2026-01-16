@@ -14,6 +14,8 @@
 #include <Interpreters/Context.h>
 
 #include <Functions/FunctionsExternalDictionaries.h>
+#include <Storages/StorageDictionary.h>
+#include <TableFunctions/ITableFunction.h>
 
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
@@ -323,8 +325,15 @@ public:
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
         dict_table_function->getArguments().getNodes().push_back(dictget_function_info.dict_name_node);
 
-        QueryTreeNodePtr dict_table_function_ptr = dict_table_function;
-        QueryAnalysisPass(/*only_analyze*/ false).run(dict_table_function_ptr, getContext());
+        auto dict_table_storage = std::make_shared<StorageDictionary>(
+            StorageID(ITableFunction::getDatabaseName(), "dictionary"),
+            dict_name,
+            ColumnsDescription{StorageDictionary::getNamesAndTypes(dict_structure, /*validate_id_type*/ false)},
+            String{},
+            StorageDictionary::Location::Custom,
+            getContext());
+
+        dict_table_function->resolve({}, std::move(dict_table_storage), getContext(), {});
 
         NameAndTypePair attr_col{attr_col_name, dict_attr_col_type};
         auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
