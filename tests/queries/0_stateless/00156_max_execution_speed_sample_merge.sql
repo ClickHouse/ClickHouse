@@ -5,9 +5,11 @@
 -- NOTE: This test uses simple synthetic data to validate the fact throttling was applied.
 -- If throttling works as expected - each execution will take >= 1 second, as we allow not more than {max_execution_speed} records/seconds
 -- If it doesn't - each select will finish immediately, and the test will fail
+-- NOTE: Setting max_block_size=1 to ensure sleepEachRow(..) applies per each row guaranteed and the resulting timing is predictable [2-3] seconds
 
-SET max_execution_speed = 5;
+SET max_execution_speed = 10;
 SET timeout_before_checking_execution_speed = 0;
+SET max_block_size = 1;
 
 CREATE TEMPORARY TABLE times (t DateTime);
 
