@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
@@ -94,6 +95,10 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                     {
                         /// Don't consider bool as similar to something (like number).
                         if (isBool(variants[i]) || isBool(variants[j]))
+                            continue;
+
+                        const auto * custom_name = variant_type->getCustomName();
+                        if (custom_name && custom_name->getName() == "Geometry")
                             continue;
 
                         if (auto supertype = tryGetLeastSupertype(DataTypes{variants[i], variants[j]}))

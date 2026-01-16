@@ -63,6 +63,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_statistics_optimize;
+    extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
 
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
@@ -568,7 +569,7 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     RelationStats stats = estimateReadRowsCount(*node);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
-    if (num_rows_from_cache)
+    if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
         stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
 
     if (!label.empty())

@@ -226,13 +226,14 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
-    def set_files(self, files) -> "Result":
+    def set_files(self, files, strict=True) -> "Result":
         if isinstance(files, (str, Path)):
             files = [files]
-        for file in files:
-            assert Path(
-                file
-            ).is_file(), f"Not valid file [{file}] from file list [{files}]"
+        if strict:
+            for file in files:
+                assert Path(
+                    file
+                ).is_file(), f"Not valid file [{file}] from file list [{files}]"
         if not self.files:
             self.files = []
         for file in self.files:
@@ -244,6 +245,30 @@ class Result(MetaClasses.Serializable):
         self.files += files
         self.dump()
         return self
+
+    def set_on_error_hook(self, hook: str) -> "Result":
+        """
+        Sets a bash script to execute when the job encounters a critical error.
+
+        This hook runs on job-level failures such as:
+        - Hard timeout exceeded
+        - Job killed or terminated by the system
+        - Infrastructure failures
+
+        The hook script should handle cleanup, log collection, or any other
+        recovery actions needed before the job terminates.
+
+        Args:
+            hook: Bash script/commands to execute on error
+
+        Returns:
+            Self for method chaining
+        """
+        self.ext["on_error_hook"] = hook
+        return self
+
+    def get_on_error_hook(self) -> str:
+        return self.ext.get("on_error_hook", "")
 
     def set_info(self, info: str) -> "Result":
         if self.info:
