@@ -43,6 +43,9 @@ struct CacheUsage
 
     bool operator <(const CacheUsage & other) const;
     bool operator ==(const CacheUsage & other) const;
+
+    bool lessWithAssumption(const CacheUsage & other, size_t released_size_assumption, size_t other_released_size_assumption) const;
+
 };
 using CacheUsagePtr = std::shared_ptr<CacheUsage>;
 

@@ -13,6 +13,9 @@ namespace DB
 ///   and will now be "held" as reserved, while we are evicting remaining space.
 /// If releaseHoldSpace() is not called,
 /// held space will be automatically released in destructor of HoldSpacePtr.
+struct QueueEvictionInfo;
+using QueueEvictionInfoPtr = std::unique_ptr<QueueEvictionInfo>;
+
 struct QueueEvictionInfo
 {
     explicit QueueEvictionInfo(
@@ -26,6 +29,8 @@ struct QueueEvictionInfo
     size_t elements_to_evict = 0;
     IFileCachePriority::HoldSpacePtr hold_space;
 
+    void merge(QueueEvictionInfoPtr other);
+
     std::string toString() const;
     /// Whether actual eviction is needed to be done.
     bool requiresEviction() const { return size_to_evict || elements_to_evict; }
@@ -34,7 +39,6 @@ struct QueueEvictionInfo
     /// Release hold space if still hold.
     void releaseHoldSpace(const CacheStateGuard::Lock & lock);
 };
-using QueueEvictionInfoPtr = std::unique_ptr<QueueEvictionInfo>;
 using QueueID = size_t;
 
 class EvictionInfo;
@@ -56,6 +60,7 @@ public:
     /// Add eviction info under the queue_id.
     /// Throws exception if eviction info with the same queue_id already exists.
     void add(EvictionInfoPtr && info);
+    void addOrUpdate(EvictionInfoPtr && info);
 
     size_t getSizeToEvict() const { return size_to_evict; }
     size_t getElementsToEvict() const { return elements_to_evict; }
@@ -72,7 +77,7 @@ public:
     std::vector<CacheUsagePtr> getCacheUsage() const { return sorted_cache_usage; }
 
 private:
-    void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info);
+    void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info, bool update_if_exists);
 
     size_t size_to_evict = 0; /// Total size to evict among all eviction infos.
     size_t elements_to_evict = 0; /// Total elements to evict among all eviction infos.
@@ -140,8 +145,6 @@ public:
     };
 
     FailedCandidates getFailedCandidates() const { return failed_candidates; }
-
-    void resetHoldSpace() { hold_space.reset(); }
 
 private:
 

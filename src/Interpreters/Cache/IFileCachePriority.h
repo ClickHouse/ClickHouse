@@ -245,6 +245,8 @@ public:
     };
     virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
 
+    struct HoldSpace;
+    using HoldSpacePtr = std::unique_ptr<HoldSpace>;
     /// A space holder implementation, which allows to take hold of
     /// some space in cache given that this space was freed.
     /// Takes hold of the space in constructor and releases it in destructor.
@@ -262,27 +264,33 @@ public:
 
         void release(const CacheStateGuard::Lock &) { releaseUnlocked(); }
 
+        void merge(HoldSpacePtr other)
+        {
+            size += other->size;
+            elements += other->elements;
+            other->size = other->elements = 0;
+        }
+
         ~HoldSpace()
         {
             if (!released)
                 releaseUnlocked();
         }
 
-        const size_t size;
-        const size_t elements;
+        size_t size;
+        size_t elements;
     private:
         IFileCachePriority & priority;
         bool released = false;
 
         void releaseUnlocked()
         {
-            if (released)
+            if (released || (!size && !elements))
                 return;
             released = true;
             priority.releaseImpl(size, elements);
         }
     };
-    using HoldSpacePtr = std::unique_ptr<HoldSpace>;
 
     virtual size_t getHoldSize() = 0;
 

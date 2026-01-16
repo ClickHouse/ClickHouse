@@ -41,12 +41,17 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     bool isEvictingOrRemoved(const LockedKey & lock) const
     {
-        if (removed)
+        if (isRemoved(lock))
             return true;
         auto iterator = getQueueIterator();
         if (!iterator)
             return false; /// Iterator is set only on first space reservation attempt.
         return iterator->getEntry()->isEvicting(lock);
+    }
+
+    bool isRemoved(const LockedKey &) const
+    {
+        return removed;
     }
 
     void setEvictingFlag(const LockedKey & locked_key) const
@@ -57,9 +62,9 @@ struct FileSegmentMetadata : private boost::noncopyable
         iterator->getEntry()->setEvictingFlag(locked_key);
     }
 
-    void setRemovedFlag(const LockedKey &)
+    void setRemovedFlag(const LockedKey &, bool value = true)
     {
-        removed = true;
+        removed = value;
     }
 
     void resetEvictingFlag() const

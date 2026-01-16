@@ -2353,6 +2353,7 @@ bool FileCache::doDynamicResizeImpl(
                 &state_lock,
                 false);
 
+            candidate->setRemovedFlag(*locked_key, /* value */false);
             file_segment->setQueueIterator(main_priority_iterator);
         }
     }

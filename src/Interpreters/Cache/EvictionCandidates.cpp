@@ -50,9 +50,22 @@ std::string QueueEvictionInfo::toString() const
     return wb.str();
 }
 
+void QueueEvictionInfo::merge(QueueEvictionInfoPtr other)
+{
+    size_to_evict += other->size_to_evict;
+    elements_to_evict += other->elements_to_evict;
+    if (other->hold_space)
+    {
+        if (hold_space)
+            hold_space->merge(std::move(other->hold_space));
+        else
+            hold_space = std::move(other->hold_space);
+    }
+}
+
 EvictionInfo::EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info)
 {
-    addImpl(queue_id, std::move(info));
+    addImpl(queue_id, std::move(info), /* update_if_exists */false);
 }
 
 std::string EvictionInfo::toString() const
@@ -84,16 +97,32 @@ void EvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
 void EvictionInfo::add(EvictionInfoPtr && info)
 {
     for (auto && [queue_id, info_] : *info)
-        addImpl(queue_id, std::move(info_));
+        addImpl(queue_id, std::move(info_), /* update_if_exists */false);
 }
 
-void EvictionInfo::addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info)
+void EvictionInfo::addOrUpdate(EvictionInfoPtr && info)
+{
+    for (auto && [queue_id, info_] : *info)
+        addImpl(queue_id, std::move(info_), /* update_if_exists */true);
+}
+
+void EvictionInfo::addImpl(
+    const QueueID & queue_id,
+    QueueEvictionInfoPtr info,
+    bool update_if_exists)
 {
     size_to_evict += info->size_to_evict;
     elements_to_evict += info->elements_to_evict;
-    const bool inserted = emplace(queue_id, std::move(info)).second;
+    auto [it, inserted] = emplace(queue_id, std::move(info));
     if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
+    {
+        if (!update_if_exists)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
+
+        if (it->second)
+            it->second->merge(std::move(info));
+    }
 }
 
 const QueueEvictionInfo & EvictionInfo::get(const QueueID & queue_id) const

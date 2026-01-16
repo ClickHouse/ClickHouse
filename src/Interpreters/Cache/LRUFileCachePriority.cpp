@@ -218,6 +218,8 @@ LRUFileCachePriority::iterateImpl(
 
         const auto & entry = **it;
 
+        //LOG_TEST(log, "Entry: {}", entry.toString());
+
         if (entry.invalidated)
         {
             /// entry.size == 0 means that queue entry was invalidated,
@@ -276,10 +278,17 @@ LRUFileCachePriority::iterateImpl(
 
         if (metadata->isEvictingOrRemoved(*locked_key))
         {
+            if (metadata->isRemoved(*locked_key))
+            {
+                stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Invalidated);
+            }
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
+                stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Evicting);
+            }
             /// Skip queue entries which are in evicting state.
             /// We threat them the same way as deleted entries.
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
-            stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Evicting);
             ++it;
             continue;
         }
@@ -663,8 +672,10 @@ void LRUFileCachePriority::shuffle(const CachePriorityGuard::WriteLock &)
 
 std::string LRUFileCachePriority::getStateInfoForLog(const CacheStateGuard::Lock & lock) const
 {
-    return fmt::format("size: {}/{}, elements: {}/{} (description: {})",
-                       getSize(lock), max_size.load(), getElementsCount(lock), max_elements.load(), description);
+    return fmt::format(
+        "size: {}/{}, elements: {}/{}, hold size: {}, hold elements: {}, description: {}",
+        getSize(lock), max_size.load(), getElementsCount(lock),
+        total_hold_size.load(), total_hold_elements.load(), max_elements.load(), description);
 }
 
 std::string LRUFileCachePriority::getApproxStateInfoForLog() const
