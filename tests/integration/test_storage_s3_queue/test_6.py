@@ -500,3 +500,117 @@ def test_ordered_mode_with_regex_partitioning(started_cluster, engine_name, proc
     # Expected partition keys are hostnames
     expected_nodes = ["server-1", "server-2", "server-3", "server-4"]
     assert processed_nodes == expected_nodes, f"Expected nodes: {expected_nodes}, got: {processed_nodes}"
+
+
+@pytest.mark.parametrize("hosts", [2])
+@pytest.mark.parametrize("processing_threads_num", [16])
+@pytest.mark.parametrize("buckets", [8])
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+def test_ordered_mode_with_regex_partitioning_large_num_files(started_cluster, engine_name, processing_threads_num, buckets, hosts):
+    """
+    Test regex-based partitioning with large number of files across multiple hosts.
+    This test ensures concurrent processing works correctly at scale.
+    """
+    instances = [started_cluster.instances["instance"], started_cluster.instances["instance2"]]
+
+    table_name = f"test_regex_large_{engine_name}_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    # Regex patterns for hostname-based partitioning
+    partition_regex = r'(?P<hostname>server-\d+)_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)'
+    partition_component = 'hostname'
+
+    # Generate large number of files (500) across multiple partitions (hostnames)
+    num_hosts = 10
+    files_per_host = 50
+    total_files = num_hosts * files_per_host
+
+    print(f"Creating {total_files} files across {num_hosts} partitions...")
+
+    expected_sum = 0
+    for host_id in range(1, num_hosts + 1):
+        for seq in range(1, files_per_host + 1):
+            # Generate unique data: host_id * 1000 + seq
+            value = host_id * 1000 + seq
+            expected_sum += value
+
+            filename = f"{files_path}/server-{host_id}_20251217T100000.000000Z_{seq:04d}.csv"
+            content = f"{value},{host_id},{seq}\n".encode()
+            put_file_content(started_cluster, engine_name, filename, content)
+
+    print(f"Files created. Expected sum: {expected_sum}")
+
+    # Create tables on all instances
+    for node in instances:
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "ordered",
+            files_path,
+            additional_settings={
+                "s3queue_loading_retries": 3,
+                "keeper_path": keeper_path,
+                "polling_max_timeout_ms": 5000,
+                "polling_backoff_ms": 1000,
+                "processing_threads_num": processing_threads_num,
+                "buckets": buckets,
+            },
+            engine_name=engine_name,
+            partitioning_mode="regex",
+            partition_regex=partition_regex,
+            partition_component=partition_component,
+        )
+        create_mv(node, table_name, dst_table_name)
+
+    # Wait for tables to be created
+    for node in instances:
+        for _ in range(10):
+            try:
+                node.query(f"EXISTS TABLE {table_name}_mv")
+                break
+            except:
+                time.sleep(0.5)
+
+    # Wait for all files to be processed (allow up to 120 seconds)
+    print("Waiting for all files to be processed...")
+    for i in range(120):
+        total_count = 0
+        for node in instances:
+            total_count += int(node.query(f"SELECT count() FROM {dst_table_name}"))
+        print(f"Progress: {total_count}/{total_files}")
+        if total_count >= total_files:
+            break
+        time.sleep(1)
+
+    # Verify all files were processed exactly once
+    total_count = 0
+    for node in instances:
+        total_count += int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    assert total_count == total_files, f"Expected {total_files} rows, got {total_count}"
+
+    # Verify data integrity - sum should match expected
+    actual_sum = 0
+    for node in instances:
+        actual_sum += int(node.query(f"SELECT sum(column1) FROM {dst_table_name}"))
+
+    assert actual_sum == expected_sum, f"Expected sum {expected_sum}, got {actual_sum}"
+
+    # Verify all partitions were created in ZooKeeper
+    zk = started_cluster.get_kazoo_client("zoo1")
+    processed_nodes = []
+    for i in range(buckets):
+        if not zk.exists(f"{keeper_path}/buckets/{i}/processed"):
+            continue
+        bucket_nodes = zk.get_children(f"{keeper_path}/buckets/{i}/processed")
+        for node in bucket_nodes:
+            if node not in processed_nodes:
+                processed_nodes.append(node)
+
+    processed_nodes.sort()
+    expected_partition_keys = [f"server-{i}" for i in range(1, num_hosts + 1)]
+    expected_partition_keys.sort()  # Sort lexicographically to match processed_nodes sorting
+    assert processed_nodes == expected_partition_keys, f"Expected {num_hosts} partitions, got {len(processed_nodes)}: {processed_nodes}"
