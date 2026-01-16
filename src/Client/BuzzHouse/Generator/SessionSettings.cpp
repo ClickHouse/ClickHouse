@@ -705,13 +705,14 @@ std::unordered_map<String, CHSetting> serverSettings = {
          false)},
     {"deduplicate_insert_select",
      CHSetting(
-        [](RandomGenerator & rg, FuzzConfig &)
-        {
-            static const DB::Strings & choices = {"enable_when_possible", "force_enable", "disable", "enable_even_for_bad_queries"};
-            return rg.pickRandomly(choices);
-        },
-        {},
-        false)},
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings & choices
+                 = {"'enable_when_possible'", "'force_enable'", "'disable'", "'enable_even_for_bad_queries'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"insert_distributed_one_random_shard", trueOrFalseSettingNoOracle},
     {"insert_null_as_default", trueOrFalseSettingNoOracle},
     {"insert_quorum",
@@ -1180,6 +1181,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_text_index_header_cache", trueOrFalseSetting},
     {"use_text_index_postings_cache", trueOrFalseSetting},
     {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
+    {"use_variant_default_implementation_for_comparisons", trueOrFalseSettingNoOracle},
     {"use_with_fill_by_sorting_prefix", trueOrFalseSetting},
     {"validate_enum_literals_in_operators", trueOrFalseSettingNoOracle},
     {"validate_experimental_and_suspicious_types_inside_nested_types", trueOrFalseSettingNoOracle},
@@ -1499,7 +1501,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     {
         serverSettings.insert(
             {{"force_aggregation_in_order", trueOrFalseSettingNoOracle},
-             {"force_data_skipping_indices", trueOrFalseSettingNoOracle},
+             {"force_data_skipping_indices",
+              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2", "i3"}); }, {}, false)},
              {"force_grouping_standard_compatibility", trueOrFalseSettingNoOracle},
              {"force_index_by_date", trueOrFalseSettingNoOracle},
              {"force_optimize_projection", trueOrFalseSettingNoOracle},

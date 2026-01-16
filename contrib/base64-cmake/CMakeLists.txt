@@ -5,7 +5,7 @@ if (NOT ENABLE_BASE64)
     return()
 endif()
 
-SET(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/aklomp-base64")
+SET(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/base64")
 
 if (ARCH_AMD64)
     # These defines enable/disable SIMD codecs in base64's runtime codec dispatch.
