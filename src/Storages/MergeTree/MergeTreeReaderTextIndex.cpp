@@ -13,7 +13,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event TextIndexReaderTotalMicroseconds;
     extern const Event TextIndexUseHint;
     extern const Event TextIndexDiscardHint;
 }
@@ -211,8 +210,6 @@ void MergeTreeReaderTextIndex::initializePostingStreams()
 
 bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
-
     auto rows_range = getRowsRangeForMark(mark);
     if (!rows_range.has_value())
         return true;
@@ -243,7 +240,6 @@ size_t MergeTreeReaderTextIndex::readRows(
     size_t rows_offset,
     Columns & res_columns)
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
 
     size_t from_row;
