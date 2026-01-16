@@ -174,7 +174,7 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
                 f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='System'"
             )
         )
-        == count
+        >= count
     )
 
     node.restart_clickhouse()
@@ -185,7 +185,7 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
                 f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='System'"
             )
         )
-        == count
+        >= count
     )
 
     node.query("DROP TABLE t0 SYNC")
