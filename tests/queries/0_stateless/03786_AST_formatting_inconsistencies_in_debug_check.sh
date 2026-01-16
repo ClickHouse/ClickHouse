@@ -43,3 +43,9 @@ format_query "SELECT NOT ((1, 1, 1))"
 format_query "select (((1), (2)))"
 format_query "select * from tuple('42', '3141592')"
 format_query "SELECT 1 FROM VALUES (1, (NOT 1 IS NULL)) tx"
+
+# Test that INSERT INTO with EXCEPT does not crash debug build
+format_query "INSERT INTO tab2 SELECT * FROM tab EXCEPT SELECT * FROM tab;"
+
+# Test weird SELECT/EXCEPT/SELECT statement
+format_query "SELECT 1,2,3 EXCEPT SELECT 1,2,3;"

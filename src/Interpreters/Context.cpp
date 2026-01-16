@@ -984,13 +984,14 @@ struct ContextSharedPart : boost::noncopyable
             trace_collector.reset();
         }
 
+        zkutil::ZooKeeperPtr delete_zookeeper;
         {
             /// Stop zookeeper connection
             std::lock_guard lock(zookeeper_mutex);
-            if (zookeeper)
-                zookeeper->finalize("shutdown");
-            zookeeper.reset();
+            delete_zookeeper = std::move(zookeeper);
         }
+        if (delete_zookeeper)
+            delete_zookeeper->finalize("shutdown");
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
