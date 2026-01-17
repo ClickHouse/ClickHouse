@@ -1,9 +1,9 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #if USE_AVRO
 
-#include <numeric>
-
 #include <Core/Field.h>
+
+#include <Common/Allocator.h>
 
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
@@ -1028,6 +1028,182 @@ std::unique_ptr<AvroDeserializer> AvroDeserializerFactory::create() const
 {
     return std::make_unique<AvroDeserializer>(
         header, schema, allow_missing_fields, null_as_default, settings);
+}
+
+
+/// Segmentation engine for Avro format.
+/// Reads complete Avro blocks from input into memory segment.
+/// Each block is stored as: objectCount (varint) + byteCount (varint) + compressedData
+/// Sync markers are verified and consumed but NOT stored in the segment.
+std::pair<bool, size_t> avroFileSegmentationEngine(
+    ReadBuffer & in,
+    DB::Memory<> & memory,
+    size_t min_bytes,
+    size_t max_rows,
+    const std::shared_ptr<AvroHeaderState> & header_state)
+{
+    size_t total_rows = 0;
+    size_t initial_size = memory.size();
+
+    while (!in.eof())
+    {
+        /// Check termination conditions
+        if ((memory.size() - initial_size >= min_bytes) && total_rows > 0)
+            break;
+        if (max_rows > 0 && total_rows >= max_rows)
+            break;
+
+        /// Read block: objectCount (varint) + byteCount (varint) + compressedData
+        auto [object_count, block_data] = AvroBlockReader::readBlock(in);
+
+        if (in.eof() && block_data.empty())
+            break;
+
+        /// Re-encode block header and append to memory segment
+        std::string header_bytes;
+        AvroBlockReader::writeVarInt(object_count, header_bytes);
+        AvroBlockReader::writeVarInt(static_cast<int64_t>(block_data.size()), header_bytes);
+
+        size_t old_size = memory.size();
+        memory.resize(old_size + header_bytes.size() + block_data.size());
+        memcpy(memory.data() + old_size, header_bytes.data(), header_bytes.size());
+        memcpy(memory.data() + old_size + header_bytes.size(), block_data.data(), block_data.size());
+
+        /// Verify and consume sync marker (16 bytes)
+        if (!AvroBlockReader::verifySyncMarker(in, header_state->sync_marker))
+        {
+            /// EOF after reading block data - this is fine, we got the last block
+            break;
+        }
+
+        total_rows += static_cast<size_t>(object_count);
+    }
+
+    return {!in.eof(), total_rows};
+}
+
+
+/// AvroSegmentInputFormat implementation
+
+namespace
+{
+/// Adapter to create avro::InputStream from std::string
+class AvroStringInputStream : public avro::InputStream
+{
+public:
+    explicit AvroStringInputStream(const std::string & str) : data(str), pos(0) {}
+
+    bool next(const uint8_t ** data_ptr, size_t * len) override
+    {
+        if (pos >= data.size())
+        {
+            *len = 0;
+            return false;
+        }
+        *data_ptr = reinterpret_cast<const uint8_t *>(data.data() + pos);
+        *len = data.size() - pos;
+        pos = data.size();
+        return true;
+    }
+
+    void backup(size_t len) override
+    {
+        pos -= len;
+    }
+
+    void skip(size_t len) override
+    {
+        pos += len;
+    }
+
+    size_t byteCount() const override
+    {
+        return pos;
+    }
+
+private:
+    const std::string & data;
+    size_t pos;
+};
+}
+
+AvroSegmentInputFormat::AvroSegmentInputFormat(
+    ReadBuffer & in_,
+    const Block & header_,
+    std::shared_ptr<AvroHeaderState> header_state_,
+    std::shared_ptr<AvroDeserializerFactory> deserializer_factory_,
+    const FormatSettings & format_settings_)
+    : IInputFormat(std::make_shared<const Block>(header_), &in_)
+    , header_state(std::move(header_state_))
+    , deserializer(deserializer_factory_->create())
+    , format_settings(format_settings_)
+{
+}
+
+Chunk AvroSegmentInputFormat::read()
+{
+    if (segment_finished)
+        return {};
+
+    auto & segment_buf = getReadBuffer();
+
+    const auto & header = getPort().getHeader();
+    MutableColumns columns = header.cloneEmptyColumns();
+    size_t num_rows = 0;
+
+    /// Read all rows from all blocks in the segment
+    while (true)
+    {
+        /// Need to read a new block?
+        if (current_block_remaining_rows == 0)
+        {
+            if (segment_buf.eof())
+            {
+                segment_finished = true;
+                break;
+            }
+
+            /// Read block header from segment: objectCount + byteCount + compressedData
+            int64_t object_count = AvroBlockReader::readVarInt(segment_buf);
+            int64_t byte_count = AvroBlockReader::readVarInt(segment_buf);
+
+            if (byte_count < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid Avro block: negative byte count {}", byte_count);
+
+            /// Read compressed data
+            std::string compressed_data;
+            compressed_data.resize(static_cast<size_t>(byte_count));
+            segment_buf.readStrict(compressed_data.data(), static_cast<size_t>(byte_count));
+
+            /// Decompress
+            AvroBlockReader::decompressBlock(
+                compressed_data.data(),
+                compressed_data.size(),
+                header_state->codec,
+                decompressed_data);
+
+            /// Create decoder for decompressed data
+            input_stream = std::make_unique<AvroStringInputStream>(decompressed_data);
+            decoder = avro::binaryDecoder();
+            decoder->init(*input_stream);
+
+            current_block_remaining_rows = object_count;
+        }
+
+        /// Deserialize all remaining rows from current block
+        while (current_block_remaining_rows > 0)
+        {
+            RowReadExtension ext;
+            deserializer->deserializeRow(columns, *decoder, ext);
+            ++num_rows;
+            --current_block_remaining_rows;
+        }
+    }
+
+    if (num_rows == 0)
+        return {};
+
+    return Chunk(std::move(columns), num_rows);
 }
 
 
