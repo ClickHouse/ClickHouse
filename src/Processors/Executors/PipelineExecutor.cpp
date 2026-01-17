@@ -226,6 +226,7 @@ void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
 void PipelineExecutor::finalizeExecution()
 {
     single_thread_cpu_slot.reset();
+    tasks.freeCPU();
     {
         std::lock_guard lock(spawn_mutex);
         cpu_slots.reset();
@@ -408,6 +409,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
                 try
                 {
                     // Preemption point. Renewal could block execution due to CPU overload.
+                    // It may trigger callbacks to tasks.preempt() and tasks.resume()
                     if (!cpu_helper.renew())
                     {
                         tasks.downscale(cpu_helper.id());
@@ -437,7 +439,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, IAcquiredSlot * cpu_sl
 }
 
 /// Properly allocate CPU slots or lease for the thread pool
-static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_control, bool trace_cpu_scheduling)
+SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurrency_control)
 {
     // The first thread is called master thread.
     // It is NOT the thread that handles async tasks (unless query has max_threads=1).
@@ -494,6 +496,8 @@ static SlotAllocationPtr allocateCPU(size_t num_threads, bool concurrency_contro
                             .quantum_ns = static_cast<ResourceCost>(quantum_ns),
                             .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
                             .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
+                            .on_preempt = [this](size_t slot_id) { tasks.preempt(slot_id); },
+                            .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
                             .workload = query_context->getSettingsRef()[Setting::workload],
                             .trace_cpu_scheduling = trace_cpu_scheduling,
                         });
@@ -521,7 +525,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     is_execution_initialized = true;
     tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
-    cpu_slots = allocateCPU(num_threads, concurrency_control, trace_cpu_scheduling);
+    cpu_slots = allocateCPU(num_threads, concurrency_control);
 
     Queue queue;
     Queue async_queue;
@@ -530,7 +534,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     /// use_threads should reflect number of thread spawned and can grow with tasks.upscale(...).
     /// Starting from 1 instead of 0 is to tackle the single thread scenario, where no upscale() will
     /// be invoked but actually 1 thread used.
-    tasks.init(num_threads, 1, profile_processors, trace_processors, read_progress_callback.get());
+    tasks.init(num_threads, 1, cpu_slots, profile_processors, trace_processors, read_progress_callback.get());
     tasks.fill(queue, async_queue);
 
     if (num_threads > 1)
@@ -554,7 +558,7 @@ void PipelineExecutor::spawnThreads(AcquiredSlotPtr slot)
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
         {
-            ThreadGroupSwitcher switcher(thread_group, "QueryPipelineEx");
+            ThreadGroupSwitcher switcher(thread_group, ThreadName::QUERY_ASYNC_EXECUTOR);
 
             try
             {

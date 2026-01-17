@@ -42,8 +42,8 @@ void writeNumpyStrings(const ColumnPtr & column, size_t length, WriteBuffer & bu
     for (size_t i = 0; i < string_column->size(); ++i)
     {
         auto data = string_column->getDataAt(i);
-        buf.write(data.data, data.size);
-        writeChar(0, length - data.size, buf);
+        buf.write(data.data(), data.size());
+        writeChar(0, length - data.size(), buf);
     }
 }
 
@@ -188,7 +188,7 @@ void NpyOutputFormat::updateSizeIfTypeString(const ColumnPtr & column)
         const auto & string_offsets = assert_cast<const ColumnString *>(column.get())->getOffsets();
         for (size_t i = 0; i < string_offsets.size(); ++i)
         {
-            size_t string_length = static_cast<size_t>(string_offsets[i] - 1 - string_offsets[i - 1]);
+            size_t string_length = static_cast<size_t>(string_offsets[i] - string_offsets[i - 1]);
             if (numpy_data_type->getSize() < string_length)
                 numpy_data_type->setSize(string_length);
         }
@@ -259,7 +259,8 @@ void registerOutputFormatNpy(FormatFactory & factory)
     factory.registerOutputFormat("Npy",[](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &)
+        const FormatSettings &,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<NpyOutputFormat>(buf, std::make_shared<const Block>(sample));
     });

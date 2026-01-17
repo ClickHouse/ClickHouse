@@ -4,7 +4,6 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeObject.h>
 
 namespace DB
@@ -74,9 +73,7 @@ public:
 
     NamesAndTypesList readSchema() override
     {
-        if (settings.json.allow_json_type)
-            return {{"json", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)}};
-        return {{"json", std::make_shared<DataTypeObjectDeprecated>("json", false)}};
+        return {{"json", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)}};
     }
 
 private:

@@ -30,7 +30,7 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeAttachThread)")
     , log(getLogger(log_name))
 {
-    task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
+    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); });
     const auto storage_settings = storage.getSettings();
     retry_period = (*storage_settings)[MergeTreeSetting::initialization_retry_period].totalSeconds();
 }

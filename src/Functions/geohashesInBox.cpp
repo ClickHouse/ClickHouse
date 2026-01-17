@@ -131,7 +131,7 @@ public:
             }
 
             res_strings_offsets.reserve(res_strings_offsets.size() + prepared_args.items_count);
-            res_strings_chars.resize(res_strings_chars.size() + prepared_args.items_count * (prepared_args.precision + 1));
+            res_strings_chars.resize(res_strings_chars.size() + prepared_args.items_count * prepared_args.precision);
             const auto starting_offset = res_strings_offsets.empty() ? 0 : res_strings_offsets.back();
             char * out = reinterpret_cast<char *>(res_strings_chars.data() + starting_offset);
 
@@ -139,7 +139,7 @@ public:
             geohashesInBox(prepared_args, out);
 
             for (UInt64 i = 1; i <= prepared_args.items_count ; ++i)
-                res_strings_offsets.push_back(starting_offset + (prepared_args.precision + 1) * i);
+                res_strings_offsets.push_back(starting_offset + prepared_args.precision * i);
             res_offsets.push_back(res_offsets.back() + prepared_args.items_count);
         }
 
@@ -213,7 +213,7 @@ This function throws an exception if the size of the resulting array exceeds mor
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionGeohashesInBox>(documentation);
 }
 

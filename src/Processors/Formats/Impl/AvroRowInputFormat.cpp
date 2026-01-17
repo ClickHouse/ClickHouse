@@ -75,6 +75,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 bool AvroInputStreamReadBufferAdapter::next(const uint8_t ** data, size_t * len)
@@ -191,7 +192,7 @@ static AvroDeserializer::DeserializeFn createDecimalDeserializeFn(const avro::No
 
         if (tmp.size() > field_type_size || tmp.empty())
             throw Exception(
-                ErrorCodes::CANNOT_PARSE_UUID,
+                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                 "Cannot parse type {}, expected non-empty binary data with size equal to or less than {}, got {}",
                 target_type->getName(),
                 field_type_size,
@@ -406,7 +407,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                         if (union_index == non_null_union_index)
                         {
                             nested_deserialize(col.getNestedColumn(), decoder);
-                            col.getNullMapData().push_back(0);
+                            col.getNullMapData().push_back(false);
                         }
                         else
                         {
@@ -700,7 +701,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
         {
             ColumnNullable & col = assert_cast<ColumnNullable &>(column);
             nested_deserialize(col.getNestedColumn(), decoder);
-            col.getNullMapData().push_back(0);
+            col.getNullMapData().push_back(false);
             return true;
         };
     }
@@ -1083,7 +1084,10 @@ private:
                     .withReceiveTimeout(1);
 
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-                request.setHost(url.getHost());
+                if (url.getPort())
+                    request.setHost(url.getHost(), url.getPort());
+                else
+                    request.setHost(url.getHost());
 
                 if (!url.getUserInfo().empty())
                 {

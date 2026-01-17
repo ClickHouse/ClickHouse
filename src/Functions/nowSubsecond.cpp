@@ -1,6 +1,5 @@
 #include <Common/intExp10.h>
 #include <Core/DecimalFunctions.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <Functions/nowSubsecond.h>
 
 namespace DB
@@ -31,7 +30,7 @@ Field nowSubsecond(UInt32 scale)
     else if (adjust_scale > 0)
         components.fractional /= intExp10(adjust_scale);
 
-    return DecimalField<DateTime64>(DecimalUtils::decimalFromComponents<DateTime64>(components, scale), scale);
+    return DecimalField<DateTime64>(DecimalUtils::dateTimeFromComponents(components.whole, components.fractional, scale), scale);
 }
 
 }

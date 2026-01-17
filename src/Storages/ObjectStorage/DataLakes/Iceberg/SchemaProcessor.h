@@ -7,18 +7,20 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <base/defines.h>
-
-
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 #include <Common/SharedMutex.h>
 
 #include <unordered_map>
-namespace DB
+namespace DB::Iceberg
 {
+
+ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object);
 
 /**
  * Iceberg supports the following data types (see https://iceberg.apache.org/spec/#schemas-and-data-types):
@@ -95,6 +97,8 @@ public:
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
     std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
+
+    ColumnMapperPtr getColumnMapperById(Int32 id) const;
 
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);

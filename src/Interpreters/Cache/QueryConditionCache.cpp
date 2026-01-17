@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 
 namespace ProfileEvents
@@ -39,8 +40,8 @@ size_t QueryConditionCache::KeyHasher::operator()(const Key & key) const
 size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
 {
     /// Estimate the memory size of `std::vector<bool>` (it uses bit-packing internally)
-    size_t memory = (entry.capacity() + 7) / 8; /// round up to bytes.
-    return memory + sizeof(decltype(entry));
+    size_t memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
+    return memory + sizeof(decltype(entry.matching_marks));
 }
 
 QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
@@ -48,18 +49,77 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 {
 }
 
-void QueryConditionCache::write(const Key & key, const Entry & entry)
+void QueryConditionCache::write(
+    const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
+    const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
-    cache.set(key, std::make_shared<Entry>(entry));
+    if (table_id == UUIDHelpers::Nil)
+        return; /// Issue #92863: Certain database engines provide no table UUIDs
+
+    Key key = {table_id, part_name, condition_hash, condition};
+
+    auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
+    auto [entry, inserted] = cache.getOrSet(key, load_func);
+
+    /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
+    {
+        std::shared_lock shared_lock(entry->mutex); /// cheap
+
+        bool need_not_update_marks = true;
+        for (const auto & mark_range : mark_ranges)
+        {
+            /// If the bits are already in the desired state (false), we don't need to update them.
+            need_not_update_marks = std::all_of(entry->matching_marks.begin() + mark_range.begin,
+                                                entry->matching_marks.begin() + mark_range.end,
+                                                [](auto b) { return b == false; });
+            if (!need_not_update_marks)
+                break;
+        }
+
+        /// Do we either have no final mark or final mark is already in the desired state?
+        bool need_not_update_final_mark = !has_final_mark || entry->matching_marks[marks_count - 1] == false;
+
+        if (need_not_update_marks && need_not_update_final_mark)
+            return;
+    }
+
+    {
+        std::lock_guard lock(entry->mutex); /// (*)
+
+        chassert(marks_count == entry->matching_marks.size());
+
+        /// The input mark ranges are the areas which the scan can skip later on.
+        for (const auto & mark_range : mark_ranges)
+            std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
+
+        if (has_final_mark)
+            entry->matching_marks[marks_count - 1] = false;
+    }
+
+    LOG_TEST(
+        logger,
+        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, condition: {}, marks_count: {}, has_final_mark: {}",
+        inserted ? "Inserted" : "Updated",
+        table_id,
+        part_name,
+        condition_hash,
+        condition,
+        marks_count,
+        has_final_mark);
 }
 
-QueryConditionCache::EntryPtr QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash)
+std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash)
 {
+    if (table_id == UUIDHelpers::Nil)
+        return {}; /// Issue #92864: Certain database engines provide no table UUIDs
+
     Key key = {table_id, part_name, condition_hash, ""};
 
     if (auto entry = cache.get(key))
     {
         ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
+
+        std::shared_lock lock(entry->mutex);
 
         LOG_TEST(
             logger,
@@ -68,7 +128,7 @@ QueryConditionCache::EntryPtr QueryConditionCache::read(const UUID & table_id, c
             part_name,
             condition_hash);
 
-        return {entry};
+        return {entry->matching_marks};
     }
     else
     {
@@ -106,96 +166,9 @@ size_t QueryConditionCache::maxSizeInBytes() const
     return cache.maxSizeInBytes();
 }
 
-QueryConditionCacheWriter::QueryConditionCacheWriter(
-    QueryConditionCache & query_condition_cache_,
-    size_t condition_hash_,
-    const String & condition_,
-    double selectivity_threshold_)
-    : query_condition_cache(query_condition_cache_)
-    , condition_hash(condition_hash_)
-    , condition(condition_)
-    , selectivity_threshold(selectivity_threshold_)
-    /// Implementation note: It would be nicer to pass in the table_id as well ...
-{}
-
-QueryConditionCacheWriter::~QueryConditionCacheWriter()
+QueryConditionCache::Entry::Entry(size_t mark_count)
+    : matching_marks(mark_count, true) /// by default, all marks potentially are potential matches, i.e. we can't skip them
 {
-    finalize();
-}
-
-void QueryConditionCacheWriter::addRanges(const UUID & table_id, const String & part_name, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
-{
-    QueryConditionCache::Key key = {table_id, part_name, condition_hash, condition};
-
-    std::lock_guard<std::mutex> lock(mutex);
-
-    bool is_insert;
-
-    /// ClickHouse scans ranges within the same part in parallel.
-    /// The first scan thread which calls addRanges creates and inserts an entry.
-    /// The other scan threads update existing entry and update it.
-    if (auto it = new_entries.find(key); it == new_entries.end())
-    {
-        /// By default, all marks potentially are potential matches, i.e. we can't skip them.
-        /// Treat all marks for the new entry of the part as potential matches, i.e. don't skip them during read.
-        /// This is important for error handling: Imagine an exception is thrown during query execution and the stack is unwound. At that
-        /// point, a new entry may not have received updates for all scanned ranges within the part. As a result, future scans queries could
-        /// skip too many ranges, causing wrong results. This situation is prevented by initializing all marks of each entry as non-matching.
-        /// Even if there is an exception, future scans will not skip them.
-        QueryConditionCache::Entry entry(marks_count, true);
-
-        for (const auto & mark_range : mark_ranges)
-            std::fill(entry.begin() + mark_range.begin, entry.begin() + mark_range.end, false);
-
-        if (has_final_mark)
-            entry[marks_count - 1] = false;
-
-        new_entries[key] = std::move(entry);
-
-        is_insert = true;
-    }
-    else
-    {
-        QueryConditionCache::Entry & matching_marks = it->second;
-
-        chassert(marks_count == matching_marks.size());
-
-        /// The input mark ranges are the areas which the scan can skip later on.
-        for (const auto & mark_range : mark_ranges)
-            std::fill(matching_marks.begin() + mark_range.begin, matching_marks.begin() + mark_range.end, false);
-
-        if (has_final_mark)
-            matching_marks[marks_count - 1] = false;
-
-        is_insert = false;
-    }
-
-    LOG_TEST(
-        logger,
-        "{} entry for table_id: {}, part_name: {}, condition_hash: {}, condition: {}, marks_count: {}, has_final_mark: {}",
-        is_insert ? "Inserted" : "Updated",
-        table_id,
-        part_name,
-        condition_hash,
-        condition,
-        marks_count,
-        has_final_mark);
-}
-
-void QueryConditionCacheWriter::finalize()
-{
-    std::lock_guard<std::mutex> lock(mutex);
-
-    for (const auto & [key, entry] : new_entries)
-    {
-        if (entry.empty())
-            continue;
-
-        size_t matching_marks = std::count(entry.begin(), entry.end(), true);
-        double selectivity = static_cast<double>(matching_marks) / entry.size();
-        if (selectivity <= selectivity_threshold)
-            query_condition_cache.write(key, entry);
-    }
 }
 
 }

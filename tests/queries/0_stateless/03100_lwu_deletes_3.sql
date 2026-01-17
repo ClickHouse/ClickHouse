@@ -8,7 +8,7 @@ SETTINGS
     enable_block_offset_column = 1;
 
 SET apply_patch_parts = 1;
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 SET lightweight_delete_mode = 'lightweight_update_force';
 
 SYSTEM STOP MERGES t_lwu_deletes_3;

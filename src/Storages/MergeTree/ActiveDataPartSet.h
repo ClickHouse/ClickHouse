@@ -65,9 +65,14 @@ public:
     /// Remove part and all covered parts from active set
     bool removePartAndCoveredParts(const String & part_name)
     {
-        Strings parts_covered_by = getPartsCoveredBy(MergeTreePartInfo::fromPartName(part_name, format_version));
+        return removePartAndCoveredParts(MergeTreePartInfo::fromPartName(part_name, format_version));
+    }
+
+    bool removePartAndCoveredParts(const MergeTreePartInfo & part_info)
+    {
+        Strings parts_covered_by = getPartsCoveredBy(part_info);
         bool result = true;
-        result &= remove(part_name);
+        result &= remove(part_info);
         for (const auto & part : parts_covered_by)
             result &= remove(part);
 

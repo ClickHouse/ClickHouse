@@ -5,6 +5,7 @@
 
 #include <Client/BuzzHouse/Generator/FuzzConfig.h>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
+#include <Client/BuzzHouse/Utils/BackgroundWorker.h>
 
 #if USE_MYSQL
 #    if __has_include(<mysql.h>)
@@ -32,22 +33,10 @@
 #if USE_SQLITE
 #    include <sqlite3.h>
 #endif
-
+#include <Poco/Net/HTTPClientSession.h>
 
 namespace BuzzHouse
 {
-
-enum class IntegrationCall
-{
-    MySQL = 1,
-    PostgreSQL = 2,
-    SQLite = 3,
-    Redis = 4,
-    MongoDB = 5,
-    MinIO = 6,
-    Azurite = 7,
-    HTTP = 8
-};
 
 class ClickHouseIntegration
 {
@@ -61,9 +50,19 @@ public:
     {
     }
 
-    virtual void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) { }
+    virtual void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *) { }
 
-    virtual bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) { return false; }
+    virtual bool performDatabaseIntegration(RandomGenerator &, SQLDatabase &) { return false; }
+
+    virtual void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) { }
+
+    virtual bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return false; }
+
+    virtual bool performExternalCommand(uint64_t, bool, const String &, const String &, const String &) { return false; }
+
+    virtual bool reRunCreateDatabase(const String &) { return false; }
+
+    virtual bool reRunCreateTable(const String &) { return false; }
 
     virtual ~ClickHouseIntegration() = default;
 };
@@ -84,7 +83,7 @@ public:
 
     virtual String columnTypeAsString(RandomGenerator &, bool, SQLType *) const { return String(); }
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     bool dropPeerTableOnRemote(const SQLTable & t);
 
@@ -125,7 +124,7 @@ public:
     static std::unique_ptr<MySQLIntegration>
     testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCredentials & scc, bool read_log, const String & server);
 
-    void setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te) override;
+    void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase> db, uint32_t tname) override;
 
@@ -169,7 +168,7 @@ public:
     static std::unique_ptr<PostgreSQLIntegration>
     testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const ServerCredentials & scc, bool read_log);
 
-    void setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te) override;
+    void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
 
@@ -211,7 +210,7 @@ public:
 
     static std::unique_ptr<SQLiteIntegration> testAndAddSQLiteIntegration(FuzzConfig & fcc, const ServerCredentials & scc);
 
-    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te) override;
 
     String getTableName(std::shared_ptr<SQLDatabase>, uint32_t tname) override;
 
@@ -242,9 +241,9 @@ public:
     {
     }
 
-    void setTableEngineDetails(RandomGenerator & rg, const SQLBase &, const String &, TableEngine * te) override;
+    void setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te) override;
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~RedisIntegration() override = default;
 };
@@ -276,9 +275,9 @@ public:
 
     static std::unique_ptr<MongoDBIntegration> testAndAddMongoDBIntegration(FuzzConfig & fcc, const ServerCredentials & scc);
 
-    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te) override;
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te) override;
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~MongoDBIntegration() override = default;
 #else
@@ -296,19 +295,17 @@ public:
 
 class MinIOIntegration : public ClickHouseIntegration
 {
-private:
-    bool sendRequest(const String & resource);
-
 public:
-    explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc);
+    explicit MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+        : ClickHouseIntegration(fcc, ssc)
+    {
+    }
 
-    void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *);
-
-    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
     void setBackupDetails(const String &, BackupRestore *);
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~MinIOIntegration() override = default;
 };
@@ -321,11 +318,11 @@ public:
     {
     }
 
-    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
     void setBackupDetails(const String &, BackupRestore *);
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~AzuriteIntegration() override = default;
 };
@@ -338,11 +335,39 @@ public:
     {
     }
 
-    void setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine *) override;
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
 
-    bool performIntegration(RandomGenerator &, SQLBase &, bool, std::vector<ColumnPathChain> &) override;
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
     ~HTTPIntegration() override = default;
+};
+
+class DolorIntegration : public ClickHouseIntegration
+{
+private:
+    bool httpPut(const String & path, const String & body);
+
+public:
+    explicit DolorIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
+        : ClickHouseIntegration(fcc, ssc)
+    {
+    }
+
+    void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *) override;
+
+    bool performDatabaseIntegration(RandomGenerator &, SQLDatabase &) override;
+
+    void setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine *) override;
+
+    bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
+
+    bool performExternalCommand(uint64_t, bool, const String &, const String &, const String &) override;
+
+    bool reRunCreateDatabase(const String &) override;
+
+    bool reRunCreateTable(const String &) override;
+
+    ~DolorIntegration() override = default;
 };
 
 class ExternalIntegrations
@@ -357,11 +382,14 @@ private:
     std::unique_ptr<MinIOIntegration> minio;
     std::unique_ptr<AzuriteIntegration> azurite;
     std::unique_ptr<HTTPIntegration> http;
+    std::unique_ptr<DolorIntegration> dolor;
     std::unique_ptr<MySQLIntegration> clickhouse;
 
     std::filesystem::path default_sqlite_path;
     size_t requires_external_call_check = 0;
     std::vector<bool> next_calls_succeeded;
+
+    BackgroundWorker worker;
 
     std::filesystem::path getDatabaseDataDir(PeerTableDatabase pt, bool server) const;
 
@@ -388,13 +416,17 @@ public:
 
     bool hasMinIOConnection() const { return minio != nullptr; }
 
-    bool hasGlueCatalog() const { return hasMinIOConnection() && minio->sc.glue_catalog.has_value(); }
+    bool hasDolorConnection() const { return dolor != nullptr; }
 
-    bool hasHiveCatalog() const { return hasMinIOConnection() && minio->sc.hive_catalog.has_value(); }
+    bool hasGlueCatalog() const { return hasDolorConnection() && dolor->sc.glue_catalog.has_value(); }
 
-    bool hasRestCatalog() const { return hasMinIOConnection() && minio->sc.rest_catalog.has_value(); }
+    bool hasHiveCatalog() const { return hasDolorConnection() && dolor->sc.hive_catalog.has_value(); }
 
-    bool hasAnyCatalog() const { return hasGlueCatalog() || hasHiveCatalog() || hasRestCatalog(); }
+    bool hasRestCatalog() const { return hasDolorConnection() && dolor->sc.rest_catalog.has_value(); }
+
+    bool hasUnityCatalog() const { return hasDolorConnection() && dolor->sc.unity_catalog.has_value(); }
+
+    bool hasAnyCatalog() const { return hasGlueCatalog() || hasHiveCatalog() || hasRestCatalog() || hasUnityCatalog(); }
 
     bool hasAzuriteConnection() const { return azurite != nullptr; }
 
@@ -412,10 +444,16 @@ public:
 
     explicit ExternalIntegrations(FuzzConfig & fcc);
 
-    void createExternalDatabaseTable(
-        RandomGenerator & rg, IntegrationCall dc, SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te);
+    void createExternalDatabaseTable(RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te);
 
-    void createExternalDatabase(RandomGenerator & rg, IntegrationCall dc, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
+    void createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de);
+
+    bool performExternalCommand(
+        uint64_t seed, bool async, IntegrationCall ic, const String & engine, const String & cname, const String & tname);
+
+    bool reRunCreateDatabase(IntegrationCall ic, const String & body);
+
+    bool reRunCreateTable(IntegrationCall ic, const String & body);
 
     void createPeerTable(
         RandomGenerator & rg, PeerTableDatabase pt, SQLTable & t, const CreateTable * ct, std::vector<ColumnPathChain> & entries);

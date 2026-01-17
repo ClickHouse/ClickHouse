@@ -28,7 +28,10 @@ namespace ErrorCodes
     extern const int USER_SESSION_LIMIT_EXCEEDED;
 }
 
-static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion, UInt64 server_revision)
+static constexpr const UInt64 CLICKHOUSE_SERVER_MIN_MAJOR_VERSION_WITH_SYSTEM_COMPLETIONS = 25;
+static constexpr const UInt64 CLICKHOUSE_SERVER_MIN_MINOR_VERSION_WITH_SYSTEM_COMPLETIONS = 8;
+
+static String getLoadSuggestionQueryUsingSystemTables(Int32 suggestion_limit, bool basic_suggestion, UInt64 server_revision)
 {
     /// NOTE: Once you will update the completion list,
     /// do not forget to update 01676_clickhouse_client_autocomplete.sh
@@ -89,6 +92,57 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
     return query;
 }
 
+static String getLoadSuggestionQueryUsingSystemCompletionsTable(Int32 suggestion_limit, bool basic_suggestion, UInt64 server_revision)
+{
+    /// NOTE: Once you will update the completion list,
+    /// do not forget to update 01676_clickhouse_client_autocomplete.sh
+    /// TODO: Use belongs column for better contextual suggestions
+    String unlimited_contexts = fmt::format(
+        "('function', 'table engine', 'format', 'table function', 'data type', 'merge tree setting', 'setting', 'aggregate function combinator pair'{}{})",
+        (server_revision >= DBMS_MIN_REVISION_WITH_SYSTEM_KEYWORDS_TABLE ? ", 'keyword'" : ""),
+        (basic_suggestion ? "" : ", 'cluster', 'macro', 'policy'")
+    );
+    String query = fmt::format(
+        "SELECT word FROM system.completions WHERE context IN {}",
+        unlimited_contexts
+    );
+
+    /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
+    if (suggestion_limit > 0)
+    {
+        String limited_contexts = fmt::format(
+            "('database', 'table', 'column'{})",
+            (basic_suggestion ? "" : ", 'dictionary'")
+        );
+        query += fmt::format(
+            " UNION ALL SELECT word FROM ("
+            " SELECT word, context, ROW_NUMBER() OVER (PARTITION BY context ORDER BY word) AS rn FROM "
+            " (SELECT DISTINCT word, context FROM system.completions WHERE context IN {})"
+            ") WHERE rn <= {}",
+            limited_contexts,
+            suggestion_limit
+        );
+    }
+
+    query = "SELECT DISTINCT arrayJoin(extractAll(word, '[\\\\w_]{2,}')) AS res FROM (" + query + ") WHERE notEmpty(res)";
+    return query;
+}
+
+static String getLoadSuggestionQuery(IServerConnection & connection, Int32 suggestion_limit, bool basic_suggestion, const ConnectionTimeouts & timeouts)
+{
+
+    String server_name;
+    UInt64 server_major_version = 0;
+    UInt64 server_minor_version = 0;
+    UInt64 server_patch_version = 0;
+    UInt64 server_revision = 0;
+    connection.getServerVersion(timeouts, server_name, server_major_version, server_minor_version, server_patch_version, server_revision);
+    if (server_major_version > CLICKHOUSE_SERVER_MIN_MAJOR_VERSION_WITH_SYSTEM_COMPLETIONS || (server_major_version == CLICKHOUSE_SERVER_MIN_MAJOR_VERSION_WITH_SYSTEM_COMPLETIONS && server_minor_version >= CLICKHOUSE_SERVER_MIN_MINOR_VERSION_WITH_SYSTEM_COMPLETIONS))
+        return getLoadSuggestionQueryUsingSystemCompletionsTable(suggestion_limit, basic_suggestion, server_revision);
+
+    return getLoadSuggestionQueryUsingSystemTables(suggestion_limit, basic_suggestion, server_revision);
+}
+
 template <typename ConnectionType>
 void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit, bool wait_for_load)
 {
@@ -101,20 +155,18 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
         if constexpr (!std::is_same_v<ConnectionType, LocalConnection>)
             query_scope.emplace(my_context);
 
-        setThreadName("Suggest");
+        setThreadName(ThreadName::SUGGEST);
 
         for (size_t retry = 0; retry < 10; ++retry)
         {
             try
             {
                 auto connection = ConnectionType::createConnection(connection_parameters, my_context);
+                const auto basic_suggestion = std::is_same_v<ConnectionType, LocalConnection>;
+                auto suggestion_query = getLoadSuggestionQuery(*connection, suggestion_limit, basic_suggestion, connection_parameters.timeouts);
                 fetch(*connection,
                     connection_parameters.timeouts,
-                    getLoadSuggestionQuery(
-                        suggestion_limit,
-                        std::is_same_v<ConnectionType, LocalConnection>,
-                        connection->getServerRevision(connection_parameters.timeouts)
-                    ),
+                    suggestion_query,
                     my_context->getClientInfo());
             }
             catch (const Exception & e)
@@ -159,7 +211,8 @@ void Suggest::load(IServerConnection & connection,
 {
     try
     {
-        fetch(connection, timeouts, getLoadSuggestionQuery(suggestion_limit, true, connection.getServerRevision(timeouts)), client_info);
+        auto suggestion_query = getLoadSuggestionQuery(connection, suggestion_limit, true, timeouts);
+        fetch(connection, timeouts, suggestion_query, client_info);
     }
     catch (...)
     {

@@ -13,7 +13,6 @@ $CLICKHOUSE_CLIENT -q "SELECT 'TESTING THE FILE HIVE PARTITIONING'"
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 1;
-set parallel_replicas_for_cluster_engines=0; -- FIXME
 
 SELECT column0, column1 FROM file('$DATA_DIR/data_hive/partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 
@@ -28,7 +27,6 @@ SELECT count(*) FROM file('$DATA_DIR/data_hive/partitioning/number=42/date=2020-
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 1;
-set parallel_replicas_for_cluster_engines=0; -- FIXME
 
 SELECT identifier FROM file('$DATA_DIR/data_hive/partitioning/identifier=*/email.csv') ORDER BY identifier DESC LIMIT 2;
 SELECT a FROM file('$DATA_DIR/data_hive/partitioning/a=b/a=b/sample.parquet') LIMIT 1;
@@ -54,7 +52,6 @@ $CLICKHOUSE_CLIENT -q "SELECT 'TESTING THE URL PARTITIONING'"
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 1;
-set parallel_replicas_for_cluster_engines=0; -- FIXME
 
 SELECT * FROM url('http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 
@@ -73,7 +70,6 @@ $CLICKHOUSE_CLIENT -q "SELECT 'TESTING THE S3 PARTITIONING'"
 
 $CLICKHOUSE_CLIENT -q """
 set use_hive_partitioning = 1;
-set parallel_replicas_for_cluster_engines=0; -- FIXME
 
 SELECT * FROM s3('http://localhost:11111/test/hive_partitioning/column0=Elizabeth/sample.parquet') LIMIT 10;
 

@@ -12,6 +12,7 @@
 
 #include <bech32.h>
 
+
 namespace
 {
 /** Max length of Bech32 or Bech32m encoding is 90 chars, this includes:
@@ -79,8 +80,6 @@ bool convertbits(bech32_data & out, const bech32_data & in)
 
 void finalizeRow(DB::ColumnString::Offsets & offsets, char *& pos, const char * const begin, const size_t i)
 {
-    *pos = '\0';
-    ++pos;
     offsets[i] = pos - begin;
 }
 
@@ -239,17 +238,13 @@ private:
         ColumnString::Offsets & out_offsets = out_col->getOffsets();
 
         out_offsets.resize(input_rows_count);
-        out_vec.resize((max_address_len + 1 /* trailing 0 */) * input_rows_count);
+        out_vec.resize(max_address_len * input_rows_count);
 
         char * out_begin = reinterpret_cast<char *>(out_vec.data());
         char * out_pos = out_begin;
 
         size_t human_readable_part_prev_offset = 0;
         size_t data_prev_offset = 0;
-
-        /// In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
-        size_t human_readable_part_zero_offset = human_readable_part_width == 0 ? 1 : 0;
-        size_t data_zero_offset = data_width == 0 ? 1 : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -262,8 +257,8 @@ private:
 
             /// max encodable data to stay within 90-char limit on Bech32 output
             /// human_readable_part must be at least 1 character and no more than 83
-            auto data_len = data_new_offset - data_prev_offset - data_zero_offset;
-            auto human_readable_part_len = human_readable_part_new_offset - human_readable_part_prev_offset - human_readable_part_zero_offset;
+            auto data_len = data_new_offset - data_prev_offset;
+            auto human_readable_part_len = human_readable_part_new_offset - human_readable_part_prev_offset;
             if (data_len > max_data_len || human_readable_part_len > max_human_readable_part_len || human_readable_part_len < 1)
             {
                 finalizeRow(out_offsets, out_pos, out_begin, i);
@@ -275,13 +270,13 @@ private:
 
             std::string human_readable_part(
                 reinterpret_cast<const char *>(&human_readable_part_vec[human_readable_part_prev_offset]),
-                reinterpret_cast<const char *>(&human_readable_part_vec[human_readable_part_new_offset - human_readable_part_zero_offset]));
+                reinterpret_cast<const char *>(&human_readable_part_vec[human_readable_part_new_offset]));
 
             bech32_data input(
                 reinterpret_cast<const uint8_t *>(&data_vec[data_prev_offset]),
-                reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset - data_zero_offset]));
+                reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset]));
 
-            uint8_t witness_version = have_witness_version ? witness_version_col->getUInt(i) : default_witness_version;
+            uint8_t witness_version = have_witness_version ? static_cast<uint8_t>(witness_version_col->getUInt(i)) : default_witness_version;
 
             bech32_data input_5bit;
             input_5bit.push_back(witness_version);
@@ -392,8 +387,8 @@ private:
         human_readable_part_offsets.resize(input_rows_count);
         data_offsets.resize(input_rows_count);
 
-        human_readable_part_vec.resize((max_human_readable_part_len + 1 /* trailing 0 */) * input_rows_count);
-        data_vec.resize((max_data_len + 1 /* trailing 0 */) * input_rows_count);
+        human_readable_part_vec.resize(max_human_readable_part_len * input_rows_count);
+        data_vec.resize(max_data_len * input_rows_count);
 
         char * human_readable_part_begin = reinterpret_cast<char *>(human_readable_part_vec.data());
         char * human_readable_part_pos = human_readable_part_begin;
@@ -403,21 +398,16 @@ private:
 
         size_t prev_offset = 0;
 
-        /// In ColumnString each value ends with a trailing 0, in ColumnFixedString there is no trailing 0
-        size_t trailing_zero_offset = col_width == 0 ? 1 : 0;
-
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t new_offset = col_width == 0 ? (*in_offsets)[i] : prev_offset + col_width;
 
             /// NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
             while (col_width > 0 && in_vec[new_offset - 1] == 0 && new_offset > prev_offset)
-            {
                 --new_offset;
-            }
 
             /// enforce char limit
-            if ((new_offset - prev_offset - trailing_zero_offset) > max_address_len)
+            if (new_offset - prev_offset > max_address_len)
             {
                 finalizeRow(human_readable_part_offsets, human_readable_part_pos, human_readable_part_begin, i);
                 finalizeRow(data_offsets, data_pos, data_begin, i);
@@ -428,7 +418,7 @@ private:
 
             std::string input(
                 reinterpret_cast<const char *>(&in_vec[prev_offset]),
-                reinterpret_cast<const char *>(&in_vec[new_offset - trailing_zero_offset]));
+                reinterpret_cast<const char *>(&in_vec[new_offset]));
 
             const auto dec = bech32::decode(input);
 
@@ -526,7 +516,7 @@ SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6')
     };
     FunctionDocumentation::IntroducedIn bech32Encode_introduced_in = {25, 6};
     FunctionDocumentation::Category bech32Encode_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation bech32Encode_documentation = {bech32Encode_description, bech32Encode_syntax, bech32Encode_arguments, bech32Encode_returned_value, bech32Encode_examples, bech32Encode_introduced_in, bech32Encode_category};
+    FunctionDocumentation bech32Encode_documentation = {bech32Encode_description, bech32Encode_syntax, bech32Encode_arguments, {}, bech32Encode_returned_value, bech32Encode_examples, bech32Encode_introduced_in, bech32Encode_category};
 
     FunctionDocumentation::Description bech32Decode_description = R"(
 Decodes a Bech32 address string generated by either the bech32 or bech32m algorithms.
@@ -546,7 +536,7 @@ Unlike the encode function, `Bech32Decode` will automatically handle padded Fixe
     };
     FunctionDocumentation::IntroducedIn bech32Decode_introduced_in = {25, 6};
     FunctionDocumentation::Category bech32Decode_category = FunctionDocumentation::Category::Encoding;
-    FunctionDocumentation bech32Decode_documentation = {bech32Decode_description, bech32Decode_syntax, bech32Decode_arguments, bech32Decode_returned_value, bech32Decode_examples, bech32Decode_introduced_in, bech32Decode_category};
+    FunctionDocumentation bech32Decode_documentation = {bech32Decode_description, bech32Decode_syntax, bech32Decode_arguments, {}, bech32Decode_returned_value, bech32Decode_examples, bech32Decode_introduced_in, bech32Decode_category};
 
     factory.registerFunction<EncodeToBech32Representation>(bech32Encode_documentation);
     factory.registerFunction<DecodeFromBech32Representation>(bech32Decode_documentation);

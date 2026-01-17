@@ -11,6 +11,7 @@ SELECT timeSeriesDerivToGrid(10, 120, 10, 10)(timestamps, values) FROM ts_data; 
 SELECT timeSeriesPredictLinearToGrid(10, 120, 10, 10, 60)(timestamps, values) FROM ts_data; -- {serverError BAD_ARGUMENTS}
 
 -- Filter out invalid rows where timestamp and values arrays lengths do not match
+SELECT 'staleness = 60:';
 SELECT timeSeriesDerivToGrid(10, 120, 10, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
 SELECT timeSeriesDerivToGridIf(10, 120, 10, 60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
 SELECT timeSeriesDerivToGridIf(10, 120, 10, 60)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
@@ -27,6 +28,11 @@ SELECT timeSeriesPredictLinearToGrid(10, 120, 10, 60, -60)(timestamps, values) F
 SELECT timeSeriesPredictLinearToGridIf(10, 120, 10, 60, -60)(timestamps, values, length(timestamps) = length(values)) FROM ts_data;
 SELECT timeSeriesPredictLinearToGridIf(10, 120, 10, 60, -60)(timestamps, values, toNullable(length(timestamps) = length(values))) FROM ts_data;
 
+SELECT 'staleness = 61:';
+SELECT timeSeriesDerivToGrid(10, 120, 10, 61)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesPredictLinearToGrid(10, 120, 10, 61, 60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesPredictLinearToGrid(10, 120, 10, 61, 60.5)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
+SELECT timeSeriesPredictLinearToGrid(10, 120, 10, 61, -60)(timestamps, values) FROM ts_data WHERE length(timestamps) = length(values);
 
 SELECT * FROM ts_data_nullable WHERE value IS NULL AND id < 5;
 

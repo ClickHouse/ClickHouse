@@ -72,7 +72,7 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String
     {
         auto element_id = type->getValue<Int64>(Iceberg::f_element_id);
         if (type->isObject(Iceberg::f_element))
-            traverseComplexType(type->getObject(Iceberg::f_element), result, Nested::concatenateName(current_path, "list.element"));
+            traverseComplexType(type->getObject(Iceberg::f_element), result, current_path);
         result[current_path] = element_id;
         return;
     }
@@ -138,6 +138,9 @@ std::pair<size_t, size_t> parseDecimal(const String & type_name)
 }
 
 }
+
+namespace Iceberg
+{
 
 std::string IcebergSchemaProcessor::default_link{};
 
@@ -301,10 +304,11 @@ IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr &
                 (current_full_name += ".").append(element_names.back());
                 scope_guard guard([&] { current_full_name.resize(current_full_name.size() - element_names.back().size() - 1); });
                 element_types.push_back(getFieldType(field, f_type, required, current_full_name, true));
-                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)[{schema_id, field->getValue<Int32>(f_id)}]
-                    = NameAndTypePair{current_full_name, element_types.back()};
+                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_types_by_source_ids)
+                [{schema_id, field->getValue<Int32>(f_id)}] = NameAndTypePair{current_full_name, element_types.back()};
 
-                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)[{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
+                TSA_SUPPRESS_WARNING_FOR_WRITE(clickhouse_ids_by_source_names)
+                [{schema_id, current_full_name}] = field->getValue<Int32>(f_id);
             }
             else
             {
@@ -419,7 +423,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 }
                 else if (allowPrimitiveTypeConversion(old_type, new_type))
                 {
-                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name);
+                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name, nullptr);
                 }
                 outputs.push_back(node);
             }
@@ -549,4 +553,22 @@ std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::J
     return result;
 }
 
+ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
+{
+    auto schema = getIcebergTableSchemaById(id);
+    if (!schema)
+        return nullptr;
+    return createColumnMapper(schema);
+}
+
+ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object)
+{
+    auto column_mapper = std::make_shared<ColumnMapper>();
+    std::unordered_map<String, Int64> column_name_to_parquet_field_id
+        = IcebergSchemaProcessor::traverseSchema(schema_object->getArray(Iceberg::f_fields));
+    column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
+    return column_mapper;
+}
+
+}
 }

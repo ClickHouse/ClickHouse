@@ -4,14 +4,14 @@ if(NOT USE_MONGODB)
     return()
 endif()
 
-set(libbson_VERSION_MAJOR 1)
-set(libbson_VERSION_MINOR 27)
-set(libbson_VERSION_PATCH 0)
-set(libbson_VERSION 1.27.0)
-set(libmongoc_VERSION_MAJOR 1)
-set(libmongoc_VERSION_MINOR 27)
-set(libmongoc_VERSION_PATCH 0)
-set(libmongoc_VERSION 1.27.0)
+set(libbson_VERSION_MAJOR 2)
+set(libbson_VERSION_MINOR 1)
+set(libbson_VERSION_PATCH 2)
+set(libbson_VERSION 2.1.2)
+set(libmongoc_VERSION_MAJOR 2)
+set(libmongoc_VERSION_MINOR 1)
+set(libmongoc_VERSION_PATCH 2)
+set(libmongoc_VERSION 2.1.2)
 
 set(LIBBSON_SOURCES_ROOT "${ClickHouse_SOURCE_DIR}/contrib/mongo-c-driver/src")
 set(LIBBSON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/libbson/src")
@@ -102,12 +102,12 @@ set(MONGOC_HAVE_SCHED_GETCPU 0)
 set(MONGOC_HAVE_SS_FAMILY 0)
 
 configure_file(
-        ${LIBBSON_SOURCE_DIR}/bson/bson-config.h.in
-        ${LIBBSON_BINARY_DIR}/bson/bson-config.h
+        ${LIBBSON_SOURCE_DIR}/bson/config.h.in
+        ${LIBBSON_BINARY_DIR}/bson/config.h
 )
 configure_file(
-        ${LIBBSON_SOURCE_DIR}/bson/bson-version.h.in
-        ${LIBBSON_BINARY_DIR}/bson/bson-version.h
+        ${LIBBSON_SOURCE_DIR}/bson/version.h.in
+        ${LIBBSON_BINARY_DIR}/bson/version.h
 )
 
 set(COMMON_SOURCE_DIR "${LIBBSON_SOURCES_ROOT}/common/src")

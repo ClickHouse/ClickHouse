@@ -81,7 +81,7 @@ public:
             if (length > (1 << 30))
                 throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
-            IColumn::Offset next_offset = offset + length + 1;
+            IColumn::Offset next_offset = offset + length;
             data_to.resize(next_offset);
             offsets_to[row_num] = next_offset;
 
@@ -90,9 +90,9 @@ public:
             {
                 UInt64 rand = rng();
 
-                UInt16 rand1 = rand;
-                UInt16 rand2 = rand >> 16;
-                UInt16 rand3 = rand >> 32;
+                UInt16 rand1 = static_cast<UInt16>(rand);
+                UInt16 rand2 = static_cast<UInt16>(rand >> 16);
+                UInt16 rand3 = static_cast<UInt16>(rand >> 32);
                 UInt16 rand4 = rand >> 48;
 
                 /// Printable characters are from range [32; 126].
@@ -104,10 +104,7 @@ public:
                 data_to_ptr[pos + 3] = 32 + ((rand4 * 95) >> 16);
 
                 /// NOTE gcc failed to vectorize this code (aliasing of char?)
-                /// TODO Implement SIMD optimizations from Danila Kutenin.
             }
-
-            data_to[offset + length] = 0;
 
             offset = next_offset;
         }
@@ -128,7 +125,7 @@ If you pass `length < 0`, the behavior of the function is undefined.
     FunctionDocumentation::Syntax syntax = "randomPrintableASCII(length[, x])";
     FunctionDocumentation::Arguments arguments = {
         {"length", "String length in bytes.", {"(U)Int*"}},
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string with a random set of ASCII printable characters.", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -142,7 +139,7 @@ If you pass `length < 0`, the behavior of the function is undefined.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomPrintableASCII>(documentation);
 }

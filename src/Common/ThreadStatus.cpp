@@ -4,8 +4,10 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Core/Settings.h>
 #include <base/getPageSize.h>
 #include <Interpreters/Context.h>
 
@@ -105,10 +107,6 @@ static thread_local ThreadStack alt_stack;
 static thread_local bool has_alt_stack = false;
 #endif
 
-ThreadGroup::ThreadGroup()
-    : master_thread_id(CurrentThread::get().thread_id)
-    , memory_spill_scheduler(std::make_shared<MemorySpillScheduler>(false))
-{}
 
 ThreadStatus::ThreadStatus()
     : thread_id(getThreadId())
@@ -349,7 +347,7 @@ MainThreadStatus::~MainThreadStatus()
     /// the file descriptors are closed, which will throw errors.
     /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
     /// implicit ~ThreadStatus is called here
-    getInstance().taskstats.reset();
+    getInstance().taskstats = nullptr;
     main_thread = nullptr;
 }
 

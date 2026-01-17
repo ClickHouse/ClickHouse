@@ -536,14 +536,14 @@ static size_t rawSize(T &)
     return sizeof(T);
 }
 template <>
-const char * rawData(const StringRef & t)
+const char * rawData(const std::string_view & t)
 {
-    return t.data;
+    return t.data();
 }
 template <>
-size_t rawSize(const StringRef & t)
+size_t rawSize(const std::string_view & t)
 {
-    return t.size;
+    return t.size();
 }
 
 class JoinSource : public ISource
@@ -727,7 +727,7 @@ private:
             if (j == key_pos)
                 columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
             else
-                columns[j]->insertFrom(*(*it->getMapped().columns)[column_indices[j]], it->getMapped().row_num);
+                columns[j]->insertFrom(*it->getMapped().columns_info->columns[column_indices[j]], it->getMapped().row_num);
         ++rows_added;
     }
 
@@ -741,7 +741,7 @@ private:
                 if (j == key_pos)
                     columns[j]->insertData(rawData(it->getKey()), rawSize(it->getKey()));
                 else
-                    columns[j]->insertFrom(*(*ref_it->columns)[column_indices[j]], ref_it->row_num);
+                    columns[j]->insertFrom(*ref_it->columns_info->columns[column_indices[j]], ref_it->row_num);
             ++rows_added;
         }
     }

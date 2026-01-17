@@ -4,6 +4,7 @@ sidebar_label: 'COLUMN'
 sidebar_position: 37
 slug: /sql-reference/statements/alter/column
 title: 'Column Manipulations'
+doc_type: 'reference'
 ---
 
 A set of queries that allow changing the table structure.

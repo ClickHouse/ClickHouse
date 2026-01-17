@@ -78,7 +78,7 @@ public:
         {
             const UInt64 hindex = data[row];
 
-            UInt8 res = getResolution(hindex);
+            auto res = static_cast<UInt8>(getResolution(hindex));
 
             dst_data[row] = res;
         }
@@ -92,30 +92,30 @@ public:
 REGISTER_FUNCTION(H3GetResolution)
 {
     FunctionDocumentation::Description description = R"(
-Defines the resolution of the given [H3](https://h3geo.org/docs/core-library/h3Indexing/) index.
+Returns the resolution of the [H3](#h3-index) index.
     )";
-    FunctionDocumentation::Syntax syntax = "h3GetResolution(h3index)";
+    FunctionDocumentation::Syntax syntax = "h3GetResolution(index)";
     FunctionDocumentation::Arguments arguments = {
-        {"h3index", "Hexagon index number.", {"UInt64"}}
+        {"index", "Hexagon index number.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the resolution of the index with range `[0, 15]` if the index is valid, otherwise returns a random value.",
+        "Returns the resolution of the H3 index with range `[0, 15]`.",
         {"UInt8"}
     };
     FunctionDocumentation::Examples examples = {
         {
-            "Get resolution of H3 index",
-            "SELECT h3GetResolution(639821929606596015) AS resolution",
+            "Get resolution of an H3 index",
+            "SELECT h3GetResolution(617420388352917503) AS res",
             R"(
-┌─resolution─┐
-│         14 │
-└────────────┘
+┌─res─┐
+│   9 │
+└─────┘
             )"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetResolution>(documentation);
 }
 

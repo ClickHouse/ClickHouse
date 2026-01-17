@@ -3,6 +3,7 @@ description: 'System table containing logging entries.'
 keywords: ['system table', 'text_log']
 slug: /operations/system-tables/text_log
 title: 'system.text_log'
+doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

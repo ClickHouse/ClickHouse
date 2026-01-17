@@ -4,6 +4,7 @@ sidebar_label: 'Tuple(T1, T2, ...)'
 sidebar_position: 34
 slug: /sql-reference/data-types/tuple
 title: 'Tuple(T1, T2, ...)'
+doc_type: 'reference'
 ---
 
 # Tuple(T1, T2, ...)
@@ -147,8 +148,6 @@ WHERE (year, month, day) > (2010, 1, 1);
 ┌─year─┬─month─┬─day─┐
 │ 2022 │    12 │  31 │
 └──────┴───────┴─────┘
-
-
 CREATE TABLE test
 (
     `key` Int64,

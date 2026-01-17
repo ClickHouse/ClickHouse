@@ -42,5 +42,10 @@
     <query>SELECT count() FROM test_lwu_join WHERE NOT ignore(str_1p)</query>
     <query>SELECT count() FROM test_lwu_join WHERE NOT ignore(str_10p)</query>
 
+    <query>SELECT uint_1p FROM test_lwu_join WHERE id = 5000000</query>
+    <query>SELECT uint_10p FROM test_lwu_join WHERE id = 5000000</query>
+    <query>SELECT str_1p FROM test_lwu_join WHERE id = 5000000</query>
+    <query>SELECT str_10p FROM test_lwu_join WHERE id = 5000000</query>
+
     <drop_query>DROP TABLE IF EXISTS test_lwu_join</drop_query>
 </test>

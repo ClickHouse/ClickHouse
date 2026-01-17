@@ -1,6 +1,8 @@
-personal_ws-1.1 en 3452 
+personal_ws-1.1 en 3453
+aarch
 AArch
 ACLs
+ADLS
 ALTERs
 AMPLab
 AMQP
@@ -33,6 +35,7 @@ AppleClang
 Approximative
 ArrayJoin
 ArrowCompression
+ArrowFlight
 ArrowStream
 AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
@@ -204,6 +207,24 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
+conversio
+convertCharset
+cooldown
+coroutines
+corrmatrix
+corrMatrix
+corrstable
+corrStable
+cors
+CORS
+cosineDistance
+countDigits
+countDistinctIf
+countEqual
+counterintuitively
+countIf
+countMatches
+countMatchesCaseInsensitive
 CountMin
 Covid
 Cramer
@@ -280,6 +301,7 @@ DiskSpaceReservedForMerge
 DiskTotal
 DiskUnreserved
 DiskUsed
+DistanceTransposed
 DistributedCacheLogMode
 DistributedCachePoolBehaviourOnLimit
 DistributedDDLOutputMode
@@ -292,6 +314,7 @@ Doxygen
 Dresseler
 Durre
 ECMA
+EntryAndExit
 ETag
 EachRow
 Ecto
@@ -305,9 +328,11 @@ Encodings
 Enum
 Enums
 Eoan
+epilog
 EphemeralNode
 EscapingRule
 Ethereum
+Eval
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
@@ -393,6 +418,8 @@ HNSW
 HSTS
 HTTPConnection
 HTTPThreads
+HTTPs
+HTTPSecureThreads
 HashedDictionary
 HashedDictionaryThreads
 HashedDictionaryThreadsActive
@@ -464,6 +491,39 @@ IntervalQuarter
 IntervalSecond
 IntervalWeek
 IntervalYear
+InterserverSecureThreads
+intExp
+intHash
+IntN
+invalidCertificateHandler
+invariants
+invertedindexes
+INVOKER
+IOPrefetchThreads
+IOPrefetchThreadsActive
+IOThreads
+IOThreadsActive
+IOUringInFlightEvents
+IOUringPendingEvents
+IOWriterThreads
+IOWriterThreadsActive
+IProcessor
+IPTrie
+IPv
+irate
+isAdjustedToUTC
+isConstant
+isDecimalOverflow
+isFinite
+isInfinite
+isIPAddressInRange
+isIPv
+isMergeTreePartCoveredBy
+isNaN
+isNotDistinctFrom
+isNotNull
+isNull
+isNullable
 IsPentagon
 IsResClassIII
 IsValid
@@ -516,6 +576,7 @@ JSONExtractStringCaseInsensitive
 JSONExtractUInt
 JSONExtractUIntCaseInsensitive
 JSONHas
+JSONL
 JSONLength
 JSONLines
 JSONObjectEachRow
@@ -533,6 +594,7 @@ JavaHash
 Jemalloc
 Jepsen
 JetBrains
+JetStream
 Jitter
 Joda
 JoinAlgorithm
@@ -554,6 +616,8 @@ Keccak
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequests
+KeeperTCPSecureThreads
+KeeperTCPThreads
 Kerberos
 Khanna
 Kibana
@@ -569,6 +633,8 @@ LGPL
 LIMITs
 LINEITEM
 LLDB
+LLM
+LLMs
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
@@ -676,6 +742,7 @@ Milovidov
 MinHash
 MinIO
 MinMax
+MinMaxIndexPruned
 MindsDB
 Mongo
 Mongodb
@@ -730,6 +797,7 @@ NewSetting
 Noaa
 NodeJs
 NonMonotonic
+NotPruned
 NonZeroUInt
 NuRaft
 NumHexagons
@@ -806,6 +874,7 @@ Observability
 Octonica
 Ok
 OnTime
+OneLake
 OpenAI
 OpenCelliD
 OpenFileForRead
@@ -831,6 +900,7 @@ PROXYv
 PRQL
 PSUN
 PagerDuty
+Paimon
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
@@ -840,6 +910,7 @@ ParquetMetadata
 ParquetVersion
 Parsers
 PartMutation
+PartitionPruned
 Partitioner
 PartsActive
 PartsCommitted
@@ -855,12 +926,14 @@ PeerDB
 PendingAsyncInsert
 Percona
 PerfEventInfo
+Perfetto
 PhpStorm
 PlantUML
 Poess
 PointDistKm
 PointDistM
 PointDistRads
+PolygonToCells
 PostHistory
 PostLink
 PostLinks
@@ -893,6 +966,7 @@ PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
+prolog
 PromHouse
 PromQL
 Promql
@@ -904,7 +978,7 @@ ProxySQL
 Punycode
 PyArrow
 PyCharm
-QATlib
+QBit
 QEMU
 QTCreator
 Quantile
@@ -940,6 +1014,7 @@ RawBLOB
 RawSum
 RawWithNames
 RawWithNamesAndTypes
+REPL
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -1098,6 +1173,7 @@ TAVG
 TCPConnection
 TCPHandler
 TCPThreads
+TCPSecureThreads
 TDigest
 TINYINT
 TLSv
@@ -1128,6 +1204,7 @@ TablesLoaderForegroundThreadsActive
 TablesToDropQueueSize
 TargetSpecific
 Tauri
+TcpExtListenOverflows
 Telegraf
 TemplateIgnoreSpaces
 TemporaryFilesForAggregation
@@ -1146,8 +1223,10 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
+Tiering
 TimeSeries
 TimescaleDB's
+TimestampType
 Timeunit
 TinyLog
 Tkachenko
@@ -1182,6 +1261,7 @@ UDFs
 UInt
 UIntN
 ULID
+ULIDs
 ULIDStringToDateTime
 UMTS
 UNDROP
@@ -1214,6 +1294,7 @@ Uptime
 Uptrace
 UserID
 Util
+VARBINARY
 VARCHAR
 VIEWs
 Vadim
@@ -1252,6 +1333,8 @@ XORs
 Xeon
 YAML
 YAMLRegExpTree
+YTsaurus
+YTsaurus
 YYYY
 YYYYMMDD
 YYYYMMDDToDate
@@ -1259,11 +1342,11 @@ YYYYMMDDhhmmssToDateTime
 Yandex
 Yasm
 ZCurve
-ZSTDQAT
 Zabbix
 Zipkin
 ZooKeeper
 ZooKeeper's
+ZooKeeperClientLastZXIDSeen
 ZooKeeperRequest
 ZooKeeperSession
 ZooKeeperWatch
@@ -1328,10 +1411,14 @@ appendTrailingCharIfAbsent
 approximative
 approxtopk
 approxtopsum
+areaCartesian
+areaSpherical
 argMax
 argMin
 argmax
 argmin
+argAndMax
+argAndMin
 arrayAUC
 arrayAUCPR
 arrayAll
@@ -1406,6 +1493,7 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
+arrowFlight
 ascii
 asin
 asinh
@@ -1418,6 +1506,7 @@ atanh
 atomicity
 auth
 authType
+authenticatedUser
 authenticator
 authenticators
 autocompletion
@@ -1447,6 +1536,7 @@ backupview
 balancer
 basename
 bcrypt
+bcrypt's
 bech
 benchmarked
 benchmarking
@@ -1627,6 +1717,7 @@ const
 constexpr
 consumptio
 contrib
+conv
 conversio
 convertCharset
 cooldown
@@ -1679,6 +1770,7 @@ csv
 csvwithnames
 csvwithnamesandtypes
 ctukey
+cume
 curdate
 currentDatabase
 currentProfiles
@@ -1790,6 +1882,7 @@ dictGetAll
 dictGetChildren
 dictGetDescendant
 dictGetHierarchy
+dictGetKeys
 dictGetOrDefault
 dictGetOrNull
 dictGetUUID
@@ -1850,6 +1943,7 @@ enqueued
 enum
 enum's
 enums
+ephemerals
 erfc
 errorCodeToName
 estimateCompressionRatio
@@ -1915,6 +2009,8 @@ flamegraph
 flatbuffers
 flattenTuple
 flink
+Flink
+flipCoordinates
 fluentd
 fmtlib
 formatDateTime
@@ -2057,6 +2153,8 @@ gtid
 gunzip
 gzip
 gzipped
+GRPCThreads
+hackernews
 hadoop
 halfMD
 halfday
@@ -2065,7 +2163,9 @@ hardlinked
 hardlinking
 hardlinks
 hasAll
+hasAllTokens
 hasAny
+hasAnyTokens
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -2167,6 +2267,7 @@ isNotDistinctFrom
 isNotNull
 isNull
 isNullable
+isValidASCII
 isValidJSON
 isValidUTF
 isZeroOrNull
@@ -2427,6 +2528,8 @@ multiline
 multilinestring
 multiplyDecimal
 multipolygon
+multipolygons
+multiquery
 multiread
 multisearchany
 multisets
@@ -2437,6 +2540,7 @@ multiword
 munmap
 murmurHash
 murmurhash
+musl
 musqldump
 mutex
 mydb
@@ -2446,6 +2550,9 @@ mysql
 mysqldump
 mysqljs
 mytable
+Nagios
+naiveBayesClassifier
+Nambiar
 namedatabases
 namenetworks
 namenode
@@ -2535,6 +2642,7 @@ observability
 odbc
 ok
 omclickhouse
+oneof
 onstraints
 ontime
 onwards
@@ -2555,6 +2663,8 @@ overparallelization
 packetpool
 packetsize
 pageviews
+paimon
+paimonCluster
 parallelization
 parallelize
 parallelized
@@ -2587,6 +2697,8 @@ pclmulqdq
 pcre
 perf
 performant
+perimeterCartesian
+perimeterSpherical
 perkey
 perl
 persistency
@@ -2681,6 +2793,9 @@ profiler
 projectio
 proleptic
 prometheus
+prometheusQuery
+prometheusQueryRange
+PrometheusThreads
 proportionsZTest
 proto
 protobuf
@@ -2700,6 +2815,7 @@ punycodeEncode
 pushdown
 pwrite
 py
+qbit
 qryn
 quantile
 quantileBFloat
@@ -2714,6 +2830,7 @@ quantileExactWeighted
 quantileExactWeightedInterpolated
 quantileGK
 quantileInterpolatedWeighted
+quantilePrometheusHistogram
 quantileTDigest
 quantileTDigestWeighted
 quantileTiming
@@ -2772,6 +2889,7 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
+readWkt
 readahead
 readline
 readme
@@ -2886,8 +3004,6 @@ satisfiable
 scala
 sccache
 schemas
-searchAll
-searchAny
 sectio
 seekable
 seektable
@@ -3016,7 +3132,9 @@ structs
 structureToCapnProtoSchema
 structureToProtobufSchema
 studentTTest
+studentTTestOneSample
 studentttest
+studentttestonesample
 subBitmap
 subDate
 subarray
@@ -3044,6 +3162,7 @@ subqueries
 subquery
 subranges
 subreddits
+subsecond
 subseconds
 subsequence
 substream
@@ -3122,6 +3241,7 @@ throwIf
 throwif
 timeDiff
 timeSeries
+timeSeriesChangesToGrid
 timeSeriesData
 timeSeriesDeltaToGrid
 timeSeriesDerivToGrid
@@ -3136,6 +3256,8 @@ timeSeriesPredictLinearToGrid
 timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesResetsToGrid
+timeSeriesSelector
 timeSeriesTags
 timeSlot
 timeSlots
@@ -3247,6 +3369,8 @@ tokenization
 tokenize
 tokenized
 tokenizer
+tokenizers
+tokenizes
 tokenizing
 toml
 toolchain
@@ -3268,6 +3392,7 @@ transactionally
 translateUTF
 translocality
 trie
+trigrams
 trimBoth
 trimLeft
 trimRight
@@ -3437,11 +3562,14 @@ xeus
 xkcd
 xlarge
 xml
+XRay
+xray
 xxHash
 xz
 yaml
 yandex
 youtube
+ytsaurus
 zLib
 zLinux
 zabbix
@@ -3451,3 +3579,8 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+zxid
+readWKT
+readWKB
+WKT
+WKB

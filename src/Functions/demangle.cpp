@@ -78,15 +78,15 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef source = column_concrete->getDataAt(i);
-            auto demangled = tryDemangle(source.data);
+            String source{column_concrete->getDataAt(i)};
+            auto demangled = tryDemangle(source.c_str());
             if (demangled)
             {
                 result_column->insertData(demangled.get(), strlen(demangled.get()));
             }
             else
             {
-                result_column->insertData(source.data, source.size);
+                result_column->insertData(source.data(), source.size());
             }
         }
 
@@ -100,7 +100,7 @@ REGISTER_FUNCTION(Demangle)
 {
     FunctionDocumentation::Description description = R"(
 Converts a symbol to a C++ function name.
-The symbol is usually returned by function [`addressToSymbol`](../../sql-reference/functions/introspection.md#addresstosymbol).
+The symbol is usually returned by function `addressToSymbol`.
     )";
     FunctionDocumentation::Syntax syntax = "demangle(symbol)";
     FunctionDocumentation::Arguments arguments = {
@@ -179,7 +179,7 @@ clone
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionDemangle>(documentation);
 }

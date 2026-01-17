@@ -5,7 +5,6 @@
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -16,25 +15,26 @@ namespace ErrorCodes
 extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
-Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info)
+Block SourceStepWithFilter::applyPrewhereActions(Block block, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info)
 {
-    if (prewhere_info)
+    if (row_level_filter)
     {
-        if (prewhere_info->row_level_filter)
+        block = row_level_filter->actions.updateHeader(block);
+        auto & row_level_column = block.getByName(row_level_filter->column_name);
+        if (!row_level_column.type->canBeUsedInBooleanContext())
         {
-            block = prewhere_info->row_level_filter->updateHeader(block);
-            auto & row_level_column = block.getByName(prewhere_info->row_level_column_name);
-            if (!row_level_column.type->canBeUsedInBooleanContext())
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                    "Invalid type for filter in PREWHERE: {}",
-                    row_level_column.type->getName());
-            }
-
-            block.erase(prewhere_info->row_level_column_name);
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
+                "Invalid type for filter in PREWHERE: {}",
+                row_level_column.type->getName());
         }
 
+        if (row_level_filter->do_remove_column)
+            block.erase(row_level_filter->column_name);
+    }
+
+    if (prewhere_info)
+    {
         {
             block = prewhere_info->prewhere_actions.updateHeader(block);
 
@@ -93,73 +93,81 @@ void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
 void SourceStepWithFilter::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
     query_info.prewhere_info = prewhere_info_value;
-    prewhere_info = prewhere_info_value;
-    output_header = std::make_shared<const Block>(applyPrewhereActions(*output_header, prewhere_info));
+    output_header = std::make_shared<const Block>(applyPrewhereActions(*output_header, query_info.row_level_filter, query_info.prewhere_info));
 }
 
 void SourceStepWithFilter::describeActions(FormatSettings & format_settings) const
 {
     std::string prefix(format_settings.offset, format_settings.indent_char);
 
-    if (prewhere_info)
+    if (query_info.prewhere_info || query_info.row_level_filter)
     {
         format_settings.out << prefix << "Prewhere info" << '\n';
-        format_settings.out << prefix << "Need filter: " << prewhere_info->need_filter << '\n';
+        if (query_info.prewhere_info)
+            format_settings.out << prefix << "Need filter: " << query_info.prewhere_info->need_filter << '\n';
 
         prefix.push_back(format_settings.indent_char);
         prefix.push_back(format_settings.indent_char);
+    }
 
-        {
-            format_settings.out << prefix << "Prewhere filter" << '\n';
-            format_settings.out << prefix << "Prewhere filter column: " << prewhere_info->prewhere_column_name;
-            if (prewhere_info->remove_prewhere_column)
-                format_settings.out << " (removed)";
-            format_settings.out << '\n';
+    if (query_info.prewhere_info)
+    {
+        format_settings.out << prefix << "Prewhere filter" << '\n';
+        format_settings.out << prefix << "Prewhere filter column: " << query_info.prewhere_info->prewhere_column_name;
+        if (query_info.prewhere_info->remove_prewhere_column)
+            format_settings.out << " (removed)";
+        format_settings.out << '\n';
 
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone());
-            expression->describeActions(format_settings.out, prefix);
-        }
+        auto expression = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone());
+        expression->describeActions(format_settings.out, prefix);
+    }
 
-        if (prewhere_info->row_level_filter)
-        {
-            format_settings.out << prefix << "Row level filter" << '\n';
-            format_settings.out << prefix << "Row level filter column: " << prewhere_info->row_level_column_name << '\n';
+    if (query_info.row_level_filter)
+    {
+        format_settings.out << prefix << "Row level filter" << '\n';
+        format_settings.out << prefix << "Row level filter column: " << query_info.row_level_filter->column_name;
+        if (query_info.row_level_filter->do_remove_column)
+            format_settings.out << " (removed)";
+        format_settings.out << '\n';
 
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter->clone());
-            expression->describeActions(format_settings.out, prefix);
-        }
+        auto expression = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone());
+        expression->describeActions(format_settings.out, prefix);
     }
 }
 
 void SourceStepWithFilter::describeActions(JSONBuilder::JSONMap & map) const
 {
-    if (prewhere_info)
+    std::unique_ptr<JSONBuilder::JSONMap> prewhere_info_map;
+    if (query_info.prewhere_info || query_info.row_level_filter)
     {
-        std::unique_ptr<JSONBuilder::JSONMap> prewhere_info_map = std::make_unique<JSONBuilder::JSONMap>();
-        prewhere_info_map->add("Need filter", prewhere_info->need_filter);
-
-        {
-            std::unique_ptr<JSONBuilder::JSONMap> prewhere_filter_map = std::make_unique<JSONBuilder::JSONMap>();
-            prewhere_filter_map->add("Prewhere filter column", prewhere_info->prewhere_column_name);
-            prewhere_filter_map->add("Prewhere filter remove filter column", prewhere_info->remove_prewhere_column);
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions.clone());
-            prewhere_filter_map->add("Prewhere filter expression", expression->toTree());
-
-            prewhere_info_map->add("Prewhere filter", std::move(prewhere_filter_map));
-        }
-
-        if (prewhere_info->row_level_filter)
-        {
-            std::unique_ptr<JSONBuilder::JSONMap> row_level_filter_map = std::make_unique<JSONBuilder::JSONMap>();
-            row_level_filter_map->add("Row level filter column", prewhere_info->row_level_column_name);
-            auto expression = std::make_shared<ExpressionActions>(prewhere_info->row_level_filter->clone());
-            row_level_filter_map->add("Row level filter expression", expression->toTree());
-
-            prewhere_info_map->add("Row level filter", std::move(row_level_filter_map));
-        }
-
-        map.add("Prewhere info", std::move(prewhere_info_map));
+        prewhere_info_map = std::make_unique<JSONBuilder::JSONMap>();
+        if (query_info.prewhere_info)
+            prewhere_info_map->add("Need filter", query_info.prewhere_info->need_filter);
     }
+
+    if (query_info.prewhere_info)
+    {
+        std::unique_ptr<JSONBuilder::JSONMap> prewhere_filter_map = std::make_unique<JSONBuilder::JSONMap>();
+        prewhere_filter_map->add("Prewhere filter column", query_info.prewhere_info->prewhere_column_name);
+        prewhere_filter_map->add("Prewhere filter remove filter column", query_info.prewhere_info->remove_prewhere_column);
+        auto expression = std::make_shared<ExpressionActions>(query_info.prewhere_info->prewhere_actions.clone());
+        prewhere_filter_map->add("Prewhere filter expression", expression->toTree());
+
+        prewhere_info_map->add("Prewhere filter", std::move(prewhere_filter_map));
+    }
+
+    if (query_info.row_level_filter)
+    {
+        std::unique_ptr<JSONBuilder::JSONMap> row_level_filter_map = std::make_unique<JSONBuilder::JSONMap>();
+        row_level_filter_map->add("Row level filter column", query_info.row_level_filter->column_name);
+        auto expression = std::make_shared<ExpressionActions>(query_info.row_level_filter->actions.clone());
+        row_level_filter_map->add("Row level filter expression", expression->toTree());
+
+        prewhere_info_map->add("Row level filter", std::move(row_level_filter_map));
+    }
+
+    if (prewhere_info_map)
+        map.add("Prewhere info", std::move(prewhere_info_map));
 }
 
 }

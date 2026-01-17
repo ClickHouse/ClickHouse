@@ -47,9 +47,9 @@ namespace FailPoints
 {
     extern const char database_replicated_delay_recovery[];
     extern const char database_replicated_delay_entry_execution[];
+    extern const char database_replicated_stop_entry_execution[];
 }
 
-static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
 
 DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_)
     : DDLWorker(
@@ -537,7 +537,7 @@ bool DatabaseReplicatedDDLWorker::shouldSkipCreatingRMVTempTable(
         return false;
 
     LOG_TEST(log, "ddl_log_ctime {}, stats.mtime {}", ddl_log_ctime, stats.mtime);
-    // It is possible the the temporary table is created and replciated before the the coordiation info is updated.
+    // It is possible the the temporary table is created and replicated before the coordiation info is updated.
     // So if ddl_log_ctime >= stats.mtime, the table is new and should not be skip.
     return ddl_log_ctime < stats.mtime;
 }
@@ -579,9 +579,10 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     fiu_do_on(FailPoints::database_replicated_delay_entry_execution,
     {
-        std::chrono::milliseconds sleep_time{thread_local_rng() % 2000};
+        std::chrono::milliseconds sleep_time{1000 + thread_local_rng() % 1000};
         std::this_thread::sleep_for(sleep_time);
     });
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_stop_entry_execution);
 
     if (unsynced_after_recovery)
     {
@@ -603,7 +604,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     auto task = std::make_unique<DatabaseReplicatedTask>(entry_name, entry_path, database);
 
     String initiator_name;
-    zkutil::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
+    Coordination::EventPtr wait_committed_or_failed = std::make_shared<Poco::Event>();
 
     String try_node_path = fs::path(entry_path) / "try";
     if (!dry_run && zookeeper->tryGet(try_node_path, initiator_name, nullptr, wait_committed_or_failed))

@@ -65,3 +65,7 @@ drop table rmt sync;
 system flush logs zookeeper_log;
 select 'duration_microseconds';
 select count()>0 from system.zookeeper_log where path like '/test/01158/' || currentDatabase() || '/rmt%' and duration_microseconds > 0;
+
+system flush logs aggregated_zookeeper_log;
+select 'aggregated_zookeeper_log';
+select sum(errors[0]) > 0, sum(average_latency) > 0 from system.aggregated_zookeeper_log where parent_path = '/test/01158/' || currentDatabase() || '/rmt' and operation = 'Create';

@@ -29,6 +29,7 @@ const char * toString(JoinKind kind);
 
 constexpr bool isLeft(JoinKind kind)         { return kind == JoinKind::Left; }
 constexpr bool isRight(JoinKind kind)        { return kind == JoinKind::Right; }
+constexpr bool isLeftOrRight(JoinKind kind)  { return kind == JoinKind::Left || kind == JoinKind::Right; }
 constexpr bool isInner(JoinKind kind)        { return kind == JoinKind::Inner; }
 constexpr bool isFull(JoinKind kind)         { return kind == JoinKind::Full; }
 constexpr bool isCrossOrComma(JoinKind kind) { return kind == JoinKind::Comma || kind == JoinKind::Cross; }
@@ -138,5 +139,14 @@ enum class JoinTableSide : uint8_t
 };
 
 const char * toString(JoinTableSide join_table_side);
+
+enum class JoinOrderAlgorithm : uint8_t
+{
+    GREEDY = 0,
+    DPSIZE,
+};
+
+const char * toString(JoinOrderAlgorithm join_order_algorithm);
+
 
 }

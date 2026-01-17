@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Working with Dates and Times'
 sidebar_label: 'Dates and time'
 slug: /sql-reference/functions/date-time-functions
 title: 'Functions for Working with Dates and Times'
+doc_type: 'reference'
 ---
 
 # Functions for working with dates and times

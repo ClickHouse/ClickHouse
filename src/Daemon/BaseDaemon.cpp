@@ -282,6 +282,22 @@ void BaseDaemon::initialize(Application & self)
         }
     }
 
+#if defined(OS_LINUX)
+    /// Configure RLIMIT_SIGPENDING
+    /// (query profiler creates lots of timers - timer_create(), and this requires slot in pending signals)
+    if (auto pending_signals = config().getUInt64("pending_signals", 0); pending_signals > 0)
+    {
+        struct rlimit rlim;
+        if (getrlimit(RLIMIT_SIGPENDING, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+        rlim.rlim_cur = pending_signals;
+        if (setrlimit(RLIMIT_SIGPENDING, &rlim))
+        {
+            std::cerr << "Cannot set pending signals to " + std::to_string(rlim.rlim_cur) << std::endl;
+        }
+    }
+#endif
+
     /// This must be done before any usage of DateLUT. In particular, before any logging.
     if (config().has("timezone"))
     {
@@ -419,7 +435,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         && CrashWriter::initialized())
     {
         LOG_DEBUG(&logger(), "Sending logical errors is enabled");
-        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
+        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::Trace & trace)
         {
             if (!remote && code == ErrorCodes::LOGICAL_ERROR)
             {
@@ -609,7 +625,7 @@ void BaseDaemon::setupWatchdog()
         notify_sync.close();
 
         /// Change short thread name and process name.
-        setThreadName("clckhouse-watch");   /// 15 characters
+        DB::setThreadName(ThreadName::CLICKHOUSE_WATCH);
 
         if (argv0)
         {
@@ -621,11 +637,7 @@ void BaseDaemon::setupWatchdog()
         /// If streaming compression of logs is used then we write watchdog logs to cerr
         if (config().getRawString("logger.stream_compress", "false") == "true")
         {
-            Poco::AutoPtr<OwnPatternFormatter> pf;
-            if (config().getString("logger.formatting.type", "") == "json")
-                pf = new OwnJSONPatternFormatter(config());
-            else
-                pf = new OwnPatternFormatter;
+            Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config(), "console");
             Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
             logger().setChannel(log);
         }

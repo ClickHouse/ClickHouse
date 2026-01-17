@@ -39,11 +39,25 @@ def send_preset_to_clickhouse():
 test_queries = [
     (
         'up{instance=~"demo-service-0:.*"}',
-        '{"resultType": "vector", "result": [{"metric": {"__name__": "up", "instance": "demo-service-0:10000", "job": "demo"}, "value": [1753199684.626, "1"]}]}'
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "up", "instance": "demo-service-0:10000", "job": "demo"}, "value": [1753199684.626, "1"]}]}',
+        [
+            [
+                "[('__name__','up'),('instance','demo-service-0:10000'),('job','demo')]",
+                "2025-07-22 15:54:44.626",
+                "1",
+            ]
+        ],
     ),
     (
         'irate(prometheus_http_requests_total{code="200",handler="/api/v1/query"}[30s])',
-        '{"resultType": "vector", "result": [{"metric": {"code": "200", "handler": "/api/v1/query", "instance": "prometheus:9090", "job": "prometheus"}, "value": [1753199684.626, "0.2"]}]}'
+        '{"resultType": "vector", "result": [{"metric": {"code": "200", "handler": "/api/v1/query", "instance": "prometheus:9090", "job": "prometheus"}, "value": [1753199684.626, "0.2"]}]}',
+        [
+            [
+                "[('__name__','prometheus_http_requests_total'),('code','200'),('handler','/api/v1/query'),('instance','prometheus:9090'),('job','prometheus')]",
+                "2025-07-22 15:54:44.626",
+                "0.2",
+            ]
+        ],
     ),
 ]
 
@@ -51,7 +65,7 @@ test_queries = [
 # Executes the test queries in the "prometheus_receiver" service and check the results.
 # We send data to the "prometheus_receiver" directly via RemoteWrite protocol.
 def check_queries_in_prometheus_receiver():
-    for query, result in test_queries:
+    for query, result, _ in test_queries:
         assert (
             execute_query_via_http_api(
                 cluster.prometheus_receiver_ip,
@@ -68,7 +82,7 @@ def check_queries_in_prometheus_receiver():
 # We send data to ClickHouse via RemoteWrite protocol and
 # then "prometheus_reader" reads data from ClickHouse via RemoteRead protocol.
 def check_queries_in_prometheus_reader():
-    for query, result in test_queries:
+    for query, result, _ in test_queries:
         assert (
             execute_query_via_http_api(
                 cluster.prometheus_reader_ip,
@@ -79,6 +93,14 @@ def check_queries_in_prometheus_reader():
             )
             == result
         )
+
+
+# Executes the test queries in ClickHouse and test the results.
+def check_queries_in_clickhouse():
+    for query, _, chresult in test_queries:
+        assert node.query(
+            f"SELECT * FROM prometheusQuery(prometheus, '{query}', {timestamp})"
+        ) == TSV(chresult)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -96,6 +118,7 @@ def start_cluster():
 def check():
     send_preset_to_clickhouse()
     check_queries_in_prometheus_reader()
+    check_queries_in_clickhouse()
 
 
 @pytest.fixture(autouse=True)

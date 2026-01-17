@@ -8,12 +8,9 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadHelpersArena.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
 
@@ -64,15 +61,36 @@ protected:
     bool include_counts;
     bool is_approx_top_k;
 
+    using Base = IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>;
+
 public:
-    AggregateFunctionTopK(UInt64 threshold_, UInt64 reserved_, bool include_counts_, bool is_approx_top_k_, const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types_, params, createResultType(argument_types_, include_counts_))
-        , threshold(threshold_), reserved(reserved_), include_counts(include_counts_), is_approx_top_k(is_approx_top_k_)
+    AggregateFunctionTopK(
+        UInt64 threshold_,
+        UInt64 reserved_,
+        bool include_counts_,
+        bool is_approx_top_k_,
+        const DataTypes & argument_types_,
+        const Array & params)
+        : Base(argument_types_, params, createResultType(argument_types_, include_counts_))
+        , threshold(threshold_)
+        , reserved(reserved_)
+        , include_counts(include_counts_)
+        , is_approx_top_k(is_approx_top_k_)
     {}
 
-        AggregateFunctionTopK(UInt64 threshold_, UInt64 reserved_, bool include_counts_, bool is_approx_top_k_, const DataTypes & argument_types_, const Array & params, const DataTypePtr & result_type_)
-        : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types_, params, result_type_)
-        , threshold(threshold_), reserved(reserved_), include_counts(include_counts_), is_approx_top_k(is_approx_top_k_)
+    AggregateFunctionTopK(
+        UInt64 threshold_,
+        UInt64 reserved_,
+        bool include_counts_,
+        bool is_approx_top_k_,
+        const DataTypes & argument_types_,
+        const Array & params,
+        const DataTypePtr & result_type_)
+        : Base(argument_types_, params, result_type_)
+        , threshold(threshold_)
+        , reserved(reserved_)
+        , include_counts(include_counts_)
+        , is_approx_top_k(is_approx_top_k_)
     {}
 
     String getName() const override
@@ -110,11 +128,106 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    void ensureCapacity(AggregateFunctionTopKData<T>::Set & set) const
+    {
+        if (unlikely(set.capacity() != reserved))
+            set.resize(reserved);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t if_argument_pos)
+        const override
+    {
+        auto & set = this->data(place).value;
+        ensureCapacity(set);
+
+        auto & data = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (flags[i])
+                {
+                    if constexpr (is_weighted)
+                        set.insert(data[i], columns[1]->getUInt(i));
+                    else
+                        set.insert(data[i]);
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if constexpr (is_weighted)
+                    set.insert(data[i], columns[1]->getUInt(i));
+                else
+                    set.insert(data[i]);
+            }
+        }
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena *,
+        ssize_t if_argument_pos) const override
+    {
+        auto & set = this->data(place).value;
+        ensureCapacity(set);
+
+        auto & data = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (!null_map[i] && flags[i])
+                {
+                    if constexpr (is_weighted)
+                        set.insert(data[i], columns[1]->getUInt(i));
+                    else
+                        set.insert(data[i]);
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (!null_map[i])
+                {
+                    if constexpr (is_weighted)
+                        set.insert(data[i], columns[1]->getUInt(i));
+                    else
+                        set.insert(data[i]);
+                }
+            }
+        }
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * /*arena*/) const override
+    {
+        auto & set = this->data(place).value;
+        ensureCapacity(set);
+
+        auto & data = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
+        if constexpr (is_weighted)
+            set.insert(data[0], length * columns[1]->getUInt(0));
+        else
+            set.insert(data[0], length);
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & set = this->data(place).value;
-        if (set.capacity() != reserved)
-            set.resize(reserved);
+        ensureCapacity(set);
 
         if constexpr (is_weighted)
             set.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], columns[1]->getUInt(row_num));
@@ -124,9 +237,11 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
+        if (this->data(rhs).value.empty())
+            return;
+
         auto & set = this->data(place).value;
-        if (set.capacity() != reserved)
-            set.resize(reserved);
+        ensureCapacity(set);
         set.merge(this->data(rhs).value);
     }
 
@@ -138,8 +253,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
         auto & set = this->data(place).value;
-        set.resize(reserved);
-        set.read(buf);
+        set.read(buf, reserved);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -175,7 +289,8 @@ public:
                 column_error[old_size + i] = it->error;
             }
 
-        } else
+        }
+        else
         {
 
             auto & column_key = assert_cast<ColumnVector<T> &>(data_to).getData();
@@ -194,7 +309,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionTopKGenericData
 {
-    using Set = SpaceSaving<StringRef, StringRefHash>;
+    using Set = SpaceSaving<std::string_view, StringViewHash>;
 
     Set value;
 };
@@ -225,6 +340,12 @@ public:
         if (is_approx_top_k)
             return  is_weighted ? "approx_top_sum" : "approx_top_k";
         return is_weighted ? "topKWeighted" : "topK";
+    }
+
+    void ensureCapacity(AggregateFunctionTopKGenericData::Set & set) const
+    {
+        if (unlikely(set.capacity() != reserved))
+            set.resize(reserved);
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, bool include_counts_)
@@ -264,41 +385,16 @@ public:
         this->data(place).value.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         auto & set = this->data(place).value;
-        set.clear();
-
-        // Specialized here because there's no deserialiser for StringRef
-        size_t size = 0;
-        readVarUInt(size, buf);
-        if (unlikely(size > TOP_K_MAX_SIZE))
-            throw Exception(
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "Too large size ({}) for aggregate function '{}' state (maximum is {})",
-                size,
-                getName(),
-                TOP_K_MAX_SIZE);
-        set.resize(std::min(size + 1, size_t(reserved)));
-        for (size_t i = 0; i < size; ++i)
-        {
-            auto ref = readStringBinaryInto(*arena, buf);
-            UInt64 count;
-            UInt64 error;
-            readVarUInt(count, buf);
-            readVarUInt(error, buf);
-            set.insert(ref, count, error);
-            arena->rollback(ref.size);
-        }
-
-        set.readAlphaMap(buf);
+        set.read(buf, reserved);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto & set = this->data(place).value;
-        if (set.capacity() != reserved)
-            set.resize(reserved);
+        ensureCapacity(set);
 
         if constexpr (is_plain_column)
         {
@@ -310,23 +406,24 @@ public:
         else
         {
             const char * begin = nullptr;
-            StringRef str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin);
+            auto settings = IColumn::SerializationSettings::createForAggregationState();
+            auto str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin, &settings);
             if constexpr (is_weighted)
                 set.insert(str_serialized, columns[1]->getUInt(row_num));
             else
                 set.insert(str_serialized);
-            arena->rollback(str_serialized.size);
+            arena->rollback(str_serialized.size());
         }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        if (!this->data(rhs).value.size())
+        if (this->data(rhs).value.empty())
             return;
 
         auto & set = this->data(place).value;
-        if (set.capacity() != reserved)
-            set.resize(reserved);
+        ensureCapacity(set);
+
         set.merge(this->data(rhs).value);
     }
 
@@ -354,7 +451,8 @@ public:
                 column_error.insert(elem.error);
                 deserializeAndInsert<is_plain_column>(elem.key, column_key);
             }
-        } else
+        }
+        else
         {
             for (auto & elem : result_vec)
             {
@@ -476,7 +574,8 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
                 if (reserved < 1)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                                     "Too small parameter 'reserved' for aggregate function '{}' (got {}, minimum is 1)", name, reserved);
-            } else
+            }
+            else
             {
                 load_factor = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
 
@@ -497,7 +596,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
         }
 
-        if (!is_approx_top_k)
+        if (!is_approx_top_k || params.size() == 1)
         {
             reserved = threshold * load_factor;
         }
@@ -528,10 +627,194 @@ void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("topK", { createAggregateFunctionTopK<false, false>, properties });
-    factory.registerFunction("topKWeighted", { createAggregateFunctionTopK<true, false>, properties });
-    factory.registerFunction("approx_top_k", { createAggregateFunctionTopK<false, true>, properties }, AggregateFunctionFactory::Case::Insensitive);
-    factory.registerFunction("approx_top_sum", { createAggregateFunctionTopK<true, true>, properties }, AggregateFunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description_topK = R"(
+Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
+
+Implements the [Filtered Space-Saving](https://doi.org/10.1016/j.ins.2010.08.024) algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://doi.org/10.1016/j.ins.2015.09.003).
+
+This function does not provide a guaranteed result. In certain situations, errors might occur and it might return frequent values that aren't the most frequent values.
+
+**See Also**
+
+- [topKWeighted](../../../sql-reference/aggregate-functions/reference/topKWeighted.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
+- [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approx_top_sum.md)
+    )";
+    FunctionDocumentation::Syntax syntax_topK = R"(
+topK(N)(column)
+topK(N, load_factor)(column)
+topK(N, load_factor, 'counts')(column)
+    )";
+    FunctionDocumentation::Parameters parameters_topK = {
+        {"N", "The number of elements to return. Default value: 10. Maximum value of `N = 65536`.", {"UInt64"}},
+        {"load_factor", "Optional. Defines, how many cells reserved for values. If `uniq(column) > N * load_factor`, result of topK function will be approximate. Default value: 3.", {"UInt64"}},
+        {"counts", "Optional. Defines whether the result should contain an approximate count and error value.", {"Bool"}}
+    };
+    FunctionDocumentation::Arguments arguments_topK = {
+        {"column", "The name of the column for which to find the most frequent values.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_topK = {"Returns an array of the approximately most frequent values, sorted in descending order of approximate frequency.", {"Array"}};
+    FunctionDocumentation::Examples examples_topK = {
+    {
+        "Usage example",
+        R"(
+SELECT topK(3)(AirlineID) AS res
+FROM ontime;
+        )",
+        R"(
+┌─res─────────────────┐
+│ [19393,19790,19805] │
+└─────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_topK = {1, 1};
+    FunctionDocumentation::Category category_topK = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_topK = {description_topK, syntax_topK, arguments_topK, parameters_topK, returned_value_topK, examples_topK, introduced_in_topK, category_topK};
+
+    factory.registerFunction("topK", { createAggregateFunctionTopK<false, false>, properties, documentation_topK });
+
+    FunctionDocumentation::Description description_topKWeighted = R"(
+Returns an array of the approximately most frequent values in the specified column.
+The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
+Additionally, the weight of the value is taken into account.
+
+**See Also**
+
+- [topK](../../../sql-reference/aggregate-functions/reference/topK.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
+- [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approx_top_sum.md)
+    )";
+    FunctionDocumentation::Syntax syntax_topKWeighted = R"(
+topKWeighted(N)(column, weight)
+topKWeighted(N, load_factor)(column, weight)
+topKWeighted(N, load_factor, 'counts')(column, weight)
+    )";
+    FunctionDocumentation::Parameters parameters_topKWeighted = {
+        {"N", "The number of elements to return. Default value: 10.", {"UInt64"}},
+        {"load_factor", "Optional. Defines, how many cells reserved for values. If `uniq(column) > N * load_factor`, result of topK function will be approximate. Default value: 3.", {"UInt64"}},
+        {"counts", "Optional. Defines whether the result should contain an approximate count and error value.", {"Bool"}}
+    };
+    FunctionDocumentation::Arguments arguments_topKWeighted = {
+        {"column", "The name of the column for which to find the most frequent values.", {}},
+        {"weight", "The weight. Every value is accounted `weight` times for frequency calculation.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_topKWeighted = {"Returns an array of the values with maximum approximate sum of weights.", {"Array"}};
+    FunctionDocumentation::Examples examples_topKWeighted = {
+    {
+        "Usage example",
+        R"(
+SELECT topKWeighted(2)(k, w) FROM
+VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10));
+        )",
+        R"(
+┌─topKWeighted(2)(k, w)──┐
+│ ['z','x']              │
+└────────────────────────┘
+        )"
+    },
+    {
+        "With counts parameter",
+        R"(
+SELECT topKWeighted(2, 10, 'counts')(k, w)
+FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10));
+        )",
+        R"(
+┌─topKWeighted(2, 10, 'counts')(k, w)─┐
+│ [('z',10,0),('x',5,0)]              │
+└─────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_topKWeighted = {1, 1};
+    FunctionDocumentation::Category category_topKWeighted = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_topKWeighted = {description_topKWeighted, syntax_topKWeighted, arguments_topKWeighted, parameters_topKWeighted, returned_value_topKWeighted, examples_topKWeighted, introduced_in_topKWeighted, category_topKWeighted};
+
+    factory.registerFunction("topKWeighted", { createAggregateFunctionTopK<true, false>, properties, documentation_topKWeighted });
+
+    FunctionDocumentation::Description description_approx_top_k = R"(
+Returns an array of the approximately most frequent values and their counts in the specified column.
+The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
+
+This function does not provide a guaranteed result.
+In certain situations, errors might occur and it might return frequent values that aren't the most frequent values.
+    )";
+    FunctionDocumentation::Syntax syntax_approx_top_k = R"(
+approx_top_k(N[, reserved])(column)
+    )";
+    FunctionDocumentation::Arguments arguments_approx_top_k = {
+        {"column", "The name of the column for which to find the most frequent values.", {"String"}}
+    };
+    FunctionDocumentation::Parameters parameters_approx_top_k = {
+        {"N", "The number of elements to return. Default value: `10`. Maximum value of `N = 65536`.", {"UInt64"}},
+        {"reserved", "Optional. Defines how many cells reserved for values. If `uniq(column) > reserved`, the result will be approximate. Default value: `N * 3`.", {"UInt64"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value_approx_top_k = {"Returns an array of the approximately most frequent values and their counts, sorted in descending order of approximate frequency.", {"Array"}};
+    FunctionDocumentation::Examples examples_approx_top_k = {
+    {
+        "Usage example",
+        R"(
+SELECT approx_top_k(2)(k)
+FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10));
+        )",
+        R"(
+┌─approx_top_k(2)(k)────┐
+│ [('y',3,0),('x',1,0)] │
+└───────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_approx_top_k = {1, 1};
+    FunctionDocumentation::Category category_approx_top_k = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_approx_top_k = {description_approx_top_k, syntax_approx_top_k, arguments_approx_top_k, parameters_approx_top_k, returned_value_approx_top_k, examples_approx_top_k, introduced_in_approx_top_k, category_approx_top_k};
+
+    factory.registerFunction("approx_top_k", { createAggregateFunctionTopK<false, true>, properties, documentation_approx_top_k }, AggregateFunctionFactory::Case::Insensitive);
+
+    FunctionDocumentation::Description description_approx_top_sum = R"(
+Returns an array of the approximately most frequent values and their counts in the specified column.
+The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
+Additionally, the weight of the value is taken into account.
+
+This function does not provide a guaranteed result.
+In certain situations, errors might occur and it might return frequent values that aren't the most frequent values.
+
+**See Also**
+
+- [topK](../../../sql-reference/aggregate-functions/reference/topK.md)
+- [topKWeighted](../../../sql-reference/aggregate-functions/reference/topKWeighted.md)
+- [approx_top_k](../../../sql-reference/aggregate-functions/reference/approx_top_k.md)
+    )";
+    FunctionDocumentation::Syntax syntax_approx_top_sum = R"(
+approx_top_sum(N[, reserved])(column, weight)
+    )";
+    FunctionDocumentation::Parameters parameters_approx_top_sum = {
+        {"N", "The number of elements to return. Optional. Default value: 10.", {"UInt64"}},
+        {"reserved", "Optional. Defines, how many cells reserved for values. If `uniq(column) > reserved`, result of topK function will be approximate. Default value: `N * 3`. Maximum value of `N = 65536`.", {"UInt64"}}
+    };
+    FunctionDocumentation::Arguments arguments_approx_top_sum = {
+        {"column", "The name of the column for which to find the most frequent values.", {"String"}},
+        {"weight", "The weight. Every value is accounted `weight` times for frequency calculation.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_approx_top_sum = {"Returns an array of the approximately most frequent values and their counts, sorted in descending order of approximate frequency.", {"Array"}};
+    FunctionDocumentation::Examples examples_approx_top_sum = {
+    {
+        "Usage example",
+        R"(
+SELECT approx_top_sum(2)(k, w)
+FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10));
+        )",
+        R"(
+┌─approx_top_sum(2)(k, w)─┐
+│ [('z',10,0),('x',5,0)]  │
+└─────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_approx_top_sum = {1, 1};
+    FunctionDocumentation::Category category_approx_top_sum = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_approx_top_sum = {description_approx_top_sum, syntax_approx_top_sum, arguments_approx_top_sum, parameters_approx_top_sum, returned_value_approx_top_sum, examples_approx_top_sum, introduced_in_approx_top_sum, category_approx_top_sum};
+
+    factory.registerFunction("approx_top_sum", { createAggregateFunctionTopK<true, true>, properties, documentation_approx_top_sum }, AggregateFunctionFactory::Case::Insensitive);
     factory.registerAlias("approx_top_count", "approx_top_k", AggregateFunctionFactory::Case::Insensitive);
 }
 

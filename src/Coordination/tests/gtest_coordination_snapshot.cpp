@@ -5,7 +5,6 @@
 
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/SnapshotableHashTable.h>
-#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperStorage.h>
 
 #include <Common/SipHash.h>
@@ -539,7 +538,6 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
 {
-
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
@@ -551,7 +549,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
     DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
 
     Storage storage(500, "", this->keeper_context);
-    static constexpr StringRef path = "/hello";
+    static constexpr std::string_view path = "/hello";
     static constexpr uint64_t acl_id = 42;
     addNode(storage, std::string{path}, "world", /*ephemeral_owner=*/0, acl_id);
     DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50);

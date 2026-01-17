@@ -10,6 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DateLUT.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 
@@ -49,10 +50,12 @@ KafkaConsumer::KafkaConsumer(
     size_t poll_timeout_,
     bool intermediate_commit_,
     const std::atomic<bool> & stopped_,
-    const Names & _topics)
+    const Names & _topics,
+    size_t skip_bytes_)
     : log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
+    , skip_bytes(skip_bytes_)
     , intermediate_commit(intermediate_commit_)
     , stopped(stopped_)
     , current(messages.begin())
@@ -101,7 +104,6 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
     // called (synchronously, during poll) when we leave the consumer group
     consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
-        CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, topic_partitions.size());
         ProfileEvents::increment(ProfileEvents::KafkaRebalanceRevocations);
 
         // Rebalance is happening now, and now we have a chance to finish the work
@@ -125,7 +127,8 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         stalled_status = REBALANCE_HAPPENED;
         last_rebalance_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
-        assignment.reset();
+        assert(!assignment.has_value() || topic_partitions.size() == assignment->size());
+        cleanAssignment();
         waited_for_assignment = 0;
 
         // for now we use slower (but reliable) sync commit in main loop, so no need to repeat
@@ -152,7 +155,7 @@ ConsumerPtr && KafkaConsumer::moveConsumer()
 {
     // messages & assignment should be destroyed before consumer
     cleanUnprocessed();
-    assignment.reset();
+    cleanAssignment();
 
     StorageKafkaUtils::consumerGracefulStop(
         *consumer,
@@ -169,7 +172,7 @@ KafkaConsumer::~KafkaConsumer()
         return;
 
     cleanUnprocessed();
-    assignment.reset();
+    cleanAssignment();
 
     StorageKafkaUtils::consumerGracefulStop(
         *consumer,
@@ -359,6 +362,17 @@ void KafkaConsumer::cleanUnprocessed()
     offsets_stored = 0;
 }
 
+void KafkaConsumer::cleanAssignment()
+{
+    if (assignment.has_value())
+    {
+        CurrentMetrics::sub(CurrentMetrics::KafkaAssignedPartitions, assignment->size());
+        if (!assignment->empty())
+            CurrentMetrics::sub(CurrentMetrics::KafkaConsumersWithAssignment, 1);
+        assignment.reset();
+    }
+}
+
 void KafkaConsumer::markDirty()
 {
     LOG_TRACE(log, "Marking consumer as dirty after failure, so it will rejoin consumer group on the next usage.");
@@ -509,8 +523,8 @@ ReadBufferPtr KafkaConsumer::getNextMessage()
     size_t size = current->get_payload().get_size();
     ++current;
 
-    if (data)
-        return std::make_shared<ReadBufferFromMemory>(data, size);
+    if (data && size >= skip_bytes)
+        return std::make_shared<ReadBufferFromMemory>(data + skip_bytes, size - skip_bytes);
 
     return getNextMessage();
 }

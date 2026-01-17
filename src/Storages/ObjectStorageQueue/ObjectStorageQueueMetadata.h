@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/SettingsChanges.h>
 
 namespace fs = std::filesystem;
@@ -59,7 +60,10 @@ public:
         const ObjectStorageQueueTableMetadata & table_metadata_,
         size_t cleanup_interval_min_ms_,
         size_t cleanup_interval_max_ms_,
-        size_t keeper_multiread_batch_size_);
+        bool use_persistent_processing_nodes_,
+        size_t persistent_processing_nodes_ttl_seconds_,
+        size_t keeper_multiread_batch_size_,
+        bool path_with_hive_partitioning_);
 
     ~ObjectStorageQueueMetadata();
 
@@ -83,6 +87,7 @@ public:
         const std::string & format,
         const ContextPtr & context,
         bool is_attach,
+        bool is_path_with_hive_partitioning,
         LoggerPtr log);
     /// Alter settings in keeper metadata
     /// (rewrites what we write in syncWithKeeper()).
@@ -141,16 +146,29 @@ public:
     size_t getBucketsNum() const { return buckets_num; }
     /// Get bucket by file path in case of bucket-based processing.
     Bucket getBucketForPath(const std::string & path) const;
+    static Bucket getBucketForPath(const std::string & path, size_t buckets_num);
     /// Acquire (take unique ownership of) bucket for processing.
-    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
-    tryAcquireBucket(const Bucket & bucket, const Processor & processor);
+    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
+
+    static std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper(LoggerPtr log);
+    static ZooKeeperRetriesControl getKeeperRetriesControl(LoggerPtr log);
 
     /// Set local ref count for metadata.
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
 
+    bool isPathWithHivePartitioning() const { return is_path_with_hive_partitioning; }
+
+    void updateSettings(const SettingsChanges & changes);
+
+    std::pair<size_t, size_t> getCleanupIntervalMS() const { return {cleanup_interval_min_ms, cleanup_interval_max_ms }; }
+
+    bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
+    size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
+
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
+    void cleanupPersistentProcessingNodes();
 
     void migrateToBucketsInKeeper(size_t value);
 
@@ -164,8 +182,13 @@ private:
     const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
     const fs::path zookeeper_path;
-    const size_t cleanup_interval_min_ms, cleanup_interval_max_ms;
     const size_t keeper_multiread_batch_size;
+
+    std::atomic<size_t> cleanup_interval_min_ms;
+    std::atomic<size_t> cleanup_interval_max_ms;
+    std::atomic<bool> use_persistent_processing_nodes;
+    std::atomic<size_t> persistent_processing_node_ttl_seconds;
+
     size_t buckets_num;
     std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;
 
@@ -192,6 +215,8 @@ private:
     /// Number of S3(Azure)Queue tables on the same
     /// clickhouse server instance referencing the same metadata object.
     std::atomic<size_t> * metadata_ref_count = nullptr;
+
+    const bool is_path_with_hive_partitioning = false;
 };
 
 using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;

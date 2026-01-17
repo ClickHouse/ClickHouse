@@ -33,7 +33,8 @@ void registerOutputFormatJSONCompactColumns(FormatFactory & factory)
     factory.registerOutputFormat("JSONCompactColumns", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings)
+        const FormatSettings & format_settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<JSONCompactColumnsBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
     });

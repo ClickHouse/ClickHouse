@@ -3,9 +3,7 @@
 
 -- Basic tests for vector similarity index stored in compact vs. wide format, respectively full vs. packed parts
 
-SET enable_vector_similarity_index = 1;
-
-SET parallel_replicas_local_plan=1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
+SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 
 DROP TABLE IF EXISTS tab_compact_full;
 DROP TABLE IF EXISTS tab_wide_full;

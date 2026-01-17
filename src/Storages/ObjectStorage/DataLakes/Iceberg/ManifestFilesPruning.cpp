@@ -40,7 +40,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
         return std::make_shared<ASTIdentifier>(column_name);
 
     if (transform_name == "void")
-        return makeASTFunction("tuple");
+        return makeASTOperator("tuple");
 
     if (transform_and_argument->argument.has_value())
     {
@@ -96,7 +96,7 @@ std::unique_ptr<DB::ActionsDAG> ManifestFilesPruner::transformFilterDagForManife
 
 
 ManifestFilesPruner::ManifestFilesPruner(
-    const DB::IcebergSchemaProcessor & schema_processor_,
+    const IcebergSchemaProcessor & schema_processor_,
     Int32 current_schema_id_,
     Int32 initial_schema_id_,
     const DB::ActionsDAG * filter_dag,
@@ -124,10 +124,10 @@ ManifestFilesPruner::ManifestFilesPruner(
     if (manifest_file.hasBoundsInfoInManifests() && transformed_dag != nullptr)
     {
         {
-            const auto & bounded_colums = manifest_file.getColumnsIDsWithBounds();
+            const auto & bounded_columns = manifest_file.getColumnsIDsWithBounds();
             for (Int32 used_column_id : used_columns_in_filter)
             {
-                if (!bounded_colums.contains(used_column_id))
+                if (!bounded_columns.contains(used_column_id))
                     continue;
 
                 auto name_and_type = schema_processor.tryGetFieldCharacteristics(initial_schema_id, used_column_id);
@@ -146,11 +146,11 @@ ManifestFilesPruner::ManifestFilesPruner(
     }
 }
 
-PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & entry) const
+PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntryPtr & entry) const
 {
     if (partition_key_condition.has_value())
     {
-        const auto & partition_value = entry.partition_key_value;
+        const auto & partition_value = entry->partition_key_value;
         std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
         for (auto & field : index_value)
         {
@@ -178,15 +178,15 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(const ManifestFileEntry & e
             continue;
         }
 
-        auto it = entry.columns_infos.find(column_id);
-        if (it == entry.columns_infos.end())
+        auto it = entry->columns_infos.find(column_id);
+        if (it == entry->columns_infos.end())
         {
             continue;
         }
 
 
         auto hyperrectangle = it->second.hyperrectangle;
-        if (hyperrectangle.has_value() && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
+        if (hyperrectangle.has_value() && it->second.nulls_count.has_value() && *it->second.nulls_count == 0 && !key_condition.mayBeTrueInRange(1, &hyperrectangle->left, &hyperrectangle->right, {name_and_type->type}))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
         }

@@ -1,27 +1,28 @@
 #include <cinttypes>
 #include <cstring>
 #include <ctime>
-#include <netdb.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 
 #include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
 #include <Client/BuzzHouse/Generator/RandomSettings.h>
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <base/scope_guard.h>
-#include <Common/ShellCommand.h>
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/URI.h>
 
 namespace BuzzHouse
 {
 
-bool ClickHouseIntegratedDatabase::performIntegration(
-    RandomGenerator & rg, SQLBase & b, const bool can_shuffle, std::vector<ColumnPathChain> & entries)
+bool ClickHouseIntegratedDatabase::performTableIntegration(
+    RandomGenerator & rg, SQLTable & t, const bool can_shuffle, std::vector<ColumnPathChain> & entries)
 {
-    const String str_tname = getTableName(b.db, b.tname);
+    const String str_tname = getTableName(t.db, t.tname);
 
     if (!performQuery(fmt::format("DROP TABLE IF EXISTS {};", str_tname)))
     {
@@ -40,7 +41,7 @@ bool ClickHouseIntegratedDatabase::performIntegration(
                 "{}{} {} {}NULL",
                 first ? "" : ", ",
                 entry.getBottomName(),
-                columnTypeAsString(rg, b.is_deterministic, tp),
+                columnTypeAsString(rg, t.is_deterministic, tp),
                 ((entry.nullable.has_value() && entry.nullable.value()) || hasType<Nullable>(false, false, false, tp)) ? "" : "NOT ");
             first = false;
         }
@@ -70,7 +71,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         {
             SetValue & sv = const_cast<SetValue &>(i == 0 ? svs.set_value() : svs.other_values(i - 1));
 
-            if (allSettings.find(sv.property()) != allSettings.end())
+            if (allSettings.contains(sv.property()))
             {
                 const CHSetting & chs = allSettings.at(sv.property());
 
@@ -84,19 +85,27 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                     }
                     else
                     {
-                        sv.set_value(rg.pickRandomly(chs.oracle_values));
+                        const String ovalue = sv.value();
+                        String nvalue = rg.pickRandomly(chs.oracle_values);
+
+                        for (uint32_t j = 0; j < 4 && ovalue == nvalue; j++)
+                        {
+                            /// Pick another value until they are different
+                            nvalue = rg.pickRandomly(chs.oracle_values);
+                        }
+                        sv.set_value(nvalue);
                     }
                 }
             }
         }
     }
-    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree)
+    if (te.has_partition_by() && rg.nextSmallNumber() < 5)
     {
-        if (te.has_partition_by() && rg.nextSmallNumber() < 5)
-        {
-            /// Remove partition by
-            te.clear_partition_by();
-        }
+        /// Remove partition by
+        te.clear_partition_by();
+    }
+    if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree)
+    {
         if (te.has_primary_key() && te.has_order() && rg.nextSmallNumber() < 5)
         {
             /// Remove primary key or order by clause
@@ -133,13 +142,16 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
     }
     if (newt.has_table_def())
     {
-        const TableDef & def = newt.table_def();
+        std::vector<TableDefItem> items_to_keep;
+        TableDef & def = const_cast<TableDef &>(newt.table_def());
 
-        for (int i = 0; i < def.other_defs_size() + 1; i++)
+        for (int i = 0; i < def.table_defs_size(); i++)
         {
-            if (i == 0 || def.other_defs(i - 1).has_col_def())
+            const auto & next = def.table_defs(i);
+
+            if (next.has_col_def())
             {
-                ColumnDef & cdef = const_cast<ColumnDef &>(i == 0 ? def.col_def() : def.other_defs(i - 1).col_def());
+                ColumnDef & cdef = const_cast<ColumnDef &>(next.col_def());
                 TopTypeName & ttn = const_cast<TopTypeName &>(cdef.type().type());
 
                 if (cdef.has_codecs() && rg.nextBool())
@@ -177,7 +189,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                         {
                             SetValue & sv = const_cast<SetValue &>(j == 0 ? svs.set_value() : svs.other_values(j - 1));
 
-                            if (allSettings.find(sv.property()) != allSettings.end())
+                            if (allSettings.contains(sv.property()))
                             {
                                 const CHSetting & chs = allSettings.at(sv.property());
 
@@ -190,11 +202,23 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                         }
                     }
                 }
+                /// Keep all columns
+                items_to_keep.emplace_back(next);
             }
+            else if (rg.nextSmallNumber() < 8)
+            {
+                items_to_keep.emplace_back(next);
+            }
+        }
+        def.clear_table_defs();
+        for (const auto & item : items_to_keep)
+        {
+            *def.add_table_defs() = item;
         }
     }
     if (newt.has_cluster() && rg.nextSmallNumber() < 4)
     {
+        /// Remove cluster
         newt.clear_cluster();
     }
     else if (!fc.clusters.empty() && rg.nextSmallNumber() < 4)
@@ -242,7 +266,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             {
                 t.db->setName(est.mutable_database());
             }
-            if (rg.nextMediumNumber() < 91)
+            if (!fc.measure_performance && !fc.compare_explains && rg.nextMediumNumber() < 91)
             {
                 this->swapTableDefinitions(rg, newt);
             }
@@ -253,7 +277,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
     }
     else if (res)
     {
-        res &= performIntegration(rg, t, false, entries);
+        res &= performTableIntegration(rg, t, false, entries);
     }
     return res;
 }
@@ -261,7 +285,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 bool ClickHouseIntegratedDatabase::truncatePeerTableOnRemote(const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    return !performQuery(fmt::format("{} {};", truncateStatement(), getTableName(t.db, t.tname)));
+    return !performQuery(fmt::format("{} {} SYNC;", truncateStatement(), getTableName(t.db, t.tname)));
 }
 
 bool ClickHouseIntegratedDatabase::performQueryOnServerOrRemote(const PeerTableDatabase pt, const String & query)
@@ -325,18 +349,18 @@ MySQLIntegration::testAndAddMySQLConnection(FuzzConfig & fcc, const ServerCreden
     return nullptr;
 }
 
-void MySQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te)
+void MySQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
-    if (b.isExternalDistributedEngine())
+    if (t.isExternalDistributedEngine())
     {
         te->add_params()->set_svalue("MySQL");
     }
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.mysql_port ? sc.mysql_port : sc.port));
     te->add_params()->set_svalue(sc.database);
-    te->add_params()->set_svalue(tname);
+    te->add_params()->set_svalue(t.getTableName());
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
-    if (!b.isExternalDistributedEngine() && rg.nextBool())
+    if (!t.isExternalDistributedEngine() && rg.nextBool())
     {
         te->add_params()->set_num(rg.nextBool() ? 1 : 0);
     }
@@ -356,10 +380,11 @@ String MySQLIntegration::truncateStatement()
 bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
 {
     chassert(t.hasDatabasePeer());
-    if (is_clickhouse)
+    if (is_clickhouse && t.isMergeTreeFamily())
     {
         /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
-        const auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
+        const auto u = performQueryOnServerOrRemote(
+            pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK SETTINGS mutations_sync = 2;", getTableName(t.db, t.tname)));
         const auto v = performQueryOnServerOrRemote(
             pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
         UNUSED(u);
@@ -567,19 +592,19 @@ PostgreSQLIntegration::testAndAddPostgreSQLIntegration(FuzzConfig & fcc, const S
     return nullptr;
 }
 
-void PostgreSQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String & tname, TableEngine * te)
+void PostgreSQLIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
-    if (b.isExternalDistributedEngine())
+    if (t.isExternalDistributedEngine())
     {
         te->add_params()->set_svalue("PostgreSQL");
     }
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
-    te->add_params()->set_svalue(tname);
+    te->add_params()->set_svalue(t.getTableName());
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
     te->add_params()->set_svalue("test");
-    if (!b.isExternalDistributedEngine() && !b.isMaterializedPostgreSQLEngine() && rg.nextSmallNumber() < 4)
+    if (!t.isExternalDistributedEngine() && !t.isMaterializedPostgreSQLEngine() && rg.nextSmallNumber() < 4)
     {
         te->add_params()->set_svalue("ON CONFLICT DO NOTHING");
     }
@@ -700,7 +725,7 @@ String PostgreSQLIntegration::columnTypeAsString(RandomGenerator & rg, const boo
         if (rg.nextSmallNumber() < 3)
         {
             /// Generate array type
-            const uint32_t ndimensions = rg.nextMediumNumber() < 81 ? 1 : (rg.nextMediumNumber() % 4) + 1;
+            const uint32_t ndimensions = rg.nextMediumNumber() < 81 ? 1 : rg.randomInt<uint32_t>(1, 4);
 
             for (uint32_t i = 0; i < ndimensions; i++)
             {
@@ -756,10 +781,10 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
     }
 }
 
-void SQLiteIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
+void SQLiteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
 {
     te->add_params()->set_svalue(sqlite_path.generic_string());
-    te->add_params()->set_svalue(tname);
+    te->add_params()->set_svalue(t.getTableName());
 }
 
 String SQLiteIntegration::getTableName(std::shared_ptr<SQLDatabase>, const uint32_t tname)
@@ -836,15 +861,15 @@ std::unique_ptr<SQLiteIntegration> SQLiteIntegration::testAndAddSQLiteIntegratio
 }
 #endif
 
-void RedisIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLBase &, const String &, TableEngine * te)
+void RedisIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable &, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
-    te->add_params()->set_num(rg.nextBool() ? 0 : rg.nextLargeNumber() % 16);
+    te->add_params()->set_num(rg.nextBool() ? 0 : rg.randomInt<uint32_t>(0, 15));
     te->add_params()->set_svalue(sc.password);
-    te->add_params()->set_num(rg.nextBool() ? 16 : rg.nextLargeNumber() % 33);
+    te->add_params()->set_num(rg.nextBool() ? 16 : rg.randomInt<uint32_t>(0, 33));
 }
 
-bool RedisIntegration::performIntegration(RandomGenerator &, SQLBase &, const bool, std::vector<ColumnPathChain> &)
+bool RedisIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
 {
     return true;
 }
@@ -903,11 +928,11 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
     }
 }
 
-void MongoDBIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase &, const String & tname, TableEngine * te)
+void MongoDBIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable & t, TableEngine * te)
 {
     te->add_params()->set_svalue(sc.server_hostname + ":" + std::to_string(sc.port));
     te->add_params()->set_svalue(sc.database);
-    te->add_params()->set_svalue(tname);
+    te->add_params()->set_svalue(t.getTableName());
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
 }
@@ -1022,7 +1047,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((dttp = dynamic_cast<DateTimeType *>(tp)))
     {
-        String buf = dttp->extended ? rg.nextDateTime64(rg.nextBool()) : rg.nextDateTime(rg.nextBool());
+        String buf = dttp->extended ? rg.nextDateTime64("", false, rg.nextBool()) : rg.nextDateTime("", false, rg.nextBool());
 
         if constexpr (is_document<T>)
         {
@@ -1181,7 +1206,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 }
 
@@ -1327,19 +1352,19 @@ void MongoDBIntegration::documentAppendAnyValue(
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 }
 
-bool MongoDBIntegration::performIntegration(
-    RandomGenerator & rg, SQLBase & b, const bool can_shuffle, std::vector<ColumnPathChain> & entries)
+bool MongoDBIntegration::performTableIntegration(
+    RandomGenerator & rg, SQLTable & t, const bool can_shuffle, std::vector<ColumnPathChain> & entries)
 {
     try
     {
         const bool permute = can_shuffle && rg.nextBool();
         const bool miss_cols = rg.nextBool();
         const uint32_t ndocuments = rg.nextMediumNumber();
-        const String str_tname = "t" + std::to_string(b.tname);
+        const String & str_tname = t.getTableName();
         mongocxx::collection coll = database[str_tname];
 
         for (uint32_t j = 0; j < ndocuments; j++)
@@ -1386,283 +1411,9 @@ std::unique_ptr<MongoDBIntegration> MongoDBIntegration::testAndAddMongoDBIntegra
 }
 #endif
 
-MinIOIntegration::MinIOIntegration(FuzzConfig & fcc, const ServerCredentials & ssc)
-    : ClickHouseIntegration(fcc, ssc)
+void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te)
 {
-    if (ssc.glue_catalog.has_value() && !sendRequest(ssc.glue_catalog.value().endpoint))
-    {
-        LOG_WARNING(fcc.log, "Failed to create Glue catalog endpoint");
-    }
-    if (ssc.hive_catalog.has_value() && !sendRequest(ssc.hive_catalog.value().endpoint))
-    {
-        LOG_WARNING(fcc.log, "Failed to create Hive catalog endpoint");
-    }
-    if (ssc.rest_catalog.has_value() && !sendRequest(ssc.rest_catalog.value().endpoint))
-    {
-        LOG_WARNING(fcc.log, "Failed to create REST catalog endpoint");
-    }
-}
-
-bool MinIOIntegration::sendRequest(const String & resource)
-{
-    struct tm ttm;
-    ssize_t nbytes = 0;
-    int sock = -1;
-    int error = 0;
-    char buffer[1024];
-    char found_ip[1024];
-    const std::time_t time = std::time({});
-    DB::WriteBufferFromOwnString sign_cmd;
-    DB::WriteBufferFromOwnString sign_out;
-    DB::WriteBufferFromOwnString sign_err;
-    DB::WriteBufferFromOwnString http_request;
-    struct addrinfo hints = {};
-    struct addrinfo * result = nullptr;
-
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
-
-    if (!std::sprintf(buffer, "%" PRIu32 "", sc.port))
-    {
-        LOG_ERROR(fc.log, "Buffer size was to small to fit result");
-        return false;
-    }
-    if ((error = getaddrinfo(sc.client_hostname.c_str(), buffer, &hints, &result)) != 0)
-    {
-        if (error == EAI_SYSTEM)
-        {
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "getaddrinfo error: {}", buffer);
-        }
-        else
-        {
-            LOG_ERROR(fc.log, "getaddrinfo error: {}", gai_strerror(error));
-        }
-        return false;
-    }
-
-    /// Loop through results
-    for (const struct addrinfo * p = result; p; p = p->ai_next)
-    {
-        if ((sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
-        {
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "Could not connect: {}", buffer);
-            return false;
-        }
-        if (connect(sock, p->ai_addr, p->ai_addrlen) == 0)
-        {
-            if ((error = getnameinfo(p->ai_addr, p->ai_addrlen, found_ip, sizeof(found_ip), nullptr, 0, NI_NUMERICHOST)) != 0)
-            {
-                if (error == EAI_SYSTEM)
-                {
-                    strerror_r(errno, buffer, sizeof(buffer));
-                    LOG_ERROR(fc.log, "getnameinfo error: {}", buffer);
-                }
-                else
-                {
-                    LOG_ERROR(fc.log, "getnameinfo error: {}", gai_strerror(error));
-                }
-                close(sock);
-                return false;
-            }
-            break;
-        }
-        close(sock);
-        sock = -1;
-    }
-    if (sock == -1)
-    {
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not connect: {}", buffer);
-        freeaddrinfo(result);
-        return false;
-    }
-    freeaddrinfo(result);
-    SCOPE_EXIT({
-        if (sock > -1)
-        {
-            close(sock);
-        }
-    });
-    if (!gmtime_r(&time, &ttm))
-    {
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not convert time: {}", buffer);
-        return false;
-    }
-    if (!std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S %z", &ttm))
-    {
-        LOG_ERROR(fc.log, "Buffer size was to small to fit result");
-        return false;
-    }
-    sign_cmd << R"(printf "PUT\n\napplication/octet-stream\n)" << buffer << "\\n"
-             << resource << "\""
-             << " | openssl sha1 -hmac " << sc.password << " -binary | base64";
-    auto res = DB::ShellCommand::execute(sign_cmd.str());
-    res->in.close();
-    copyData(res->out, sign_out);
-    copyData(res->err, sign_err);
-    res->wait();
-    if (!sign_err.str().empty())
-    {
-        LOG_ERROR(fc.log, "Error while executing shell command: {}", sign_err.str());
-        return false;
-    }
-
-    http_request << "PUT " << resource << " HTTP/1.1\n"
-                 << "Host: " << found_ip << ":" << std::to_string(sc.port) << "\n"
-                 << "Accept: */*\n"
-                 << "Date: " << buffer << "\n"
-                 << "Content-Type: application/octet-stream\n"
-                 << "Authorization: AWS " << sc.user << ":" << sign_out.str() << "Content-Length: 0\n\n\n";
-
-    if (send(sock, http_request.str().c_str(), http_request.str().length(), 0) != static_cast<int>(http_request.str().length()))
-    {
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Error sending request \"{}\": {}", http_request.str(), buffer);
-        return false;
-    }
-    if ((nbytes = read(sock, buffer, sizeof(buffer))) < 0)
-    {
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Error reading request \"{}\" result: {}", http_request.str(), buffer);
-        return false;
-    }
-    if (nbytes < 13 || std::memcmp(buffer + 9, "200", 3) != 0)
-    {
-        LOG_ERROR(fc.log, "Request \"{}\" was not successful", http_request.str());
-        return false;
-    }
-    return true;
-}
-
-void MinIOIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase &, DatabaseEngine * de, SettingValues * svs)
-{
-    const Catalog * cat = nullptr;
-    SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-    SetValue * sv2 = svs->add_other_values();
-    SetValue * sv3 = svs->add_other_values();
-
-    const uint32_t glue_cat = 5 * static_cast<uint32_t>(sc.glue_catalog.has_value());
-    const uint32_t hive_cat = 5 * static_cast<uint32_t>(sc.hive_catalog.has_value());
-    const uint32_t rest_cat = 5 * static_cast<uint32_t>(sc.rest_catalog.has_value());
-
-    const uint32_t prob_space = glue_cat + hive_cat + rest_cat;
-    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
-    const uint32_t nopt = next_dist(rg.generator);
-
-    sv1->set_property("catalog_type");
-    sv2->set_property("warehouse");
-    if (glue_cat && (nopt < glue_cat + 1))
-    {
-        cat = &sc.glue_catalog.value();
-
-        de->add_params()->set_svalue(fmt::format("http://{}:{}", cat->server_hostname, cat->port));
-        sv1->set_value("'glue'");
-        sv2->set_value("'gtest'");
-    }
-    else if (hive_cat && (nopt < glue_cat + hive_cat + 1))
-    {
-        cat = &sc.hive_catalog.value();
-
-        de->add_params()->set_svalue(fmt::format("thrift://{}:{}", cat->server_hostname, cat->port));
-        sv1->set_value("'hive'");
-        sv2->set_value("'htest'");
-    }
-    else if (rest_cat && (nopt < glue_cat + hive_cat + rest_cat + 1))
-    {
-        cat = &sc.rest_catalog.value();
-
-        de->add_params()->set_svalue(fmt::format("http://{}:{}/v1", cat->server_hostname, cat->port));
-        sv1->set_value("'rest'");
-        sv2->set_value("'rtest'");
-    }
-    else
-    {
-        chassert(0);
-    }
-    de->add_params()->set_svalue(sc.user);
-    de->add_params()->set_svalue(sc.password);
-    sv3->set_property("storage_endpoint");
-    sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, cat->endpoint));
-    if (!cat->region.empty())
-    {
-        SetValue * sv4 = svs->add_other_values();
-
-        sv4->set_property("storage_region");
-        sv4->set_value("'" + cat->region + "'");
-    }
-    if (rg.nextSmallNumber() < 4)
-    {
-        SetValue * sv5 = svs->add_other_values();
-
-        sv5->set_property("vended_credentials");
-        sv5->set_value(rg.nextBool() ? "1" : "0");
-    }
-}
-
-void MinIOIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase & b, const String &, TableEngine * te)
-{
-    const Catalog * cat = nullptr;
-
     te->add_params()->set_rvalue(sc.named_collection);
-    switch (b.catalog)
-    {
-        case CatalogTable::Glue:
-            cat = &sc.glue_catalog.value();
-            break;
-        case CatalogTable::Hive:
-            cat = &sc.hive_catalog.value();
-            break;
-        case CatalogTable::REST:
-            cat = &sc.rest_catalog.value();
-            break;
-        default:
-            break;
-    }
-    if (cat)
-    {
-        SettingValues * svs = te->mutable_setting_values();
-        SetValue * sv1 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-        SetValue * sv2 = svs->add_other_values();
-        SetValue * sv3 = svs->add_other_values();
-        SetValue * sv4 = svs->add_other_values();
-
-        sv1->set_property("storage_catalog_type");
-        sv2->set_property("storage_warehouse");
-        sv3->set_property("object_storage_endpoint");
-        sv4->set_property("storage_catalog_url");
-        sv3->set_value(fmt::format("'http://{}:{}/{}'", sc.server_hostname, sc.port, cat->endpoint));
-        switch (b.catalog)
-        {
-            case CatalogTable::Glue:
-                sv1->set_value("'glue'");
-                sv2->set_value("'gtest'");
-                sv4->set_value(fmt::format("'http://{}:{}'", cat->server_hostname, cat->port));
-                break;
-            case CatalogTable::Hive:
-                sv1->set_value("'hive'");
-                sv2->set_value("'htest'");
-                sv4->set_value(fmt::format("'thrift://{}:{}'", cat->server_hostname, cat->port));
-                break;
-            case CatalogTable::REST:
-                sv1->set_value("'rest'");
-                sv2->set_value("'rtest'");
-                sv4->set_value(fmt::format("'http://{}:{}/v1'", cat->server_hostname, cat->port));
-                break;
-            default:
-                break;
-        }
-        if (!cat->region.empty())
-        {
-            SetValue * sv5 = svs->add_other_values();
-
-            sv5->set_property("storage_region");
-            sv5->set_value("'" + cat->region + "'");
-        }
-    }
 }
 
 void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
@@ -1671,12 +1422,12 @@ void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore *
     br->mutable_params()->add_out_params()->set_svalue(filename);
 }
 
-bool MinIOIntegration::performIntegration(RandomGenerator & rg, SQLBase & b, const bool, std::vector<ColumnPathChain> &)
+bool MinIOIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
 {
-    return b.catalog != CatalogTable::None || sendRequest(fmt::format("{}/{}", sc.database, b.getTablePath(rg, fc, true)));
+    return true;
 }
 
-void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLBase &, const String &, TableEngine * te)
+void AzuriteIntegration::setTableEngineDetails(RandomGenerator &, const SQLTable &, TableEngine * te)
 {
     te->add_params()->set_rvalue(sc.named_collection);
 }
@@ -1687,19 +1438,410 @@ void AzuriteIntegration::setBackupDetails(const String & filename, BackupRestore
     br->mutable_params()->add_out_params()->set_svalue(filename);
 }
 
-bool AzuriteIntegration::performIntegration(RandomGenerator &, SQLBase &, const bool, std::vector<ColumnPathChain> &)
+bool AzuriteIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
 {
     return true;
 }
 
-void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLBase & b, const String &, TableEngine * te)
+void HTTPIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
 {
-    te->add_params()->set_svalue(b.getTablePath(rg, fc, true));
+    te->add_params()->set_svalue(t.getTablePath(rg, fc, false));
 }
 
-bool HTTPIntegration::performIntegration(RandomGenerator &, SQLBase &, const bool, std::vector<ColumnPathChain> &)
+bool HTTPIntegration::performTableIntegration(RandomGenerator &, SQLTable &, const bool, std::vector<ColumnPathChain> &)
 {
     return true;
+}
+
+bool DolorIntegration::httpPut(const String & path, const String & body)
+{
+    /// Build URI
+    Poco::URI uri;
+    uri.setScheme("http");
+    uri.setHost(sc.server_hostname);
+    uri.setPort(static_cast<uint16_t>(sc.port));
+    uri.setPath(path);
+
+    /// Build PUT request
+    Poco::Net::HTTPClientSession session = Poco::Net::HTTPClientSession(uri.getHost(), uri.getPort());
+    Poco::Net::HTTPRequest req(Poco::Net::HTTPRequest::HTTP_PUT, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
+    req.setContentType("application/json");
+    req.setContentLength(static_cast<int>(body.size()));
+
+    try
+    {
+        /// Send body
+        std::ostream & os = session.sendRequest(req);
+        os.write(body.data(), body.size());
+
+        /// Receive response
+        Poco::Net::HTTPResponse res;
+        const auto & u = session.receiveResponse(res);
+        UNUSED(u);
+        if (res.getStatus() == Poco::Net::HTTPResponse::HTTP_OK)
+        {
+            return true;
+        }
+        LOG_ERROR(fc.log, "Request \"{}\" did not return 200: status: {} reason: \"{}\"", path, res.getStatus(), res.getReason());
+        return false;
+    }
+    catch (const std::exception & e)
+    {
+        LOG_ERROR(fc.log, "Request \"{}\" was not successful: \"{}\"", path, e.what());
+        return false;
+    }
+}
+
+bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatabase & d)
+{
+    String buf;
+    String catalog = "none";
+
+    switch (d.catalog)
+    {
+        case LakeCatalog::Glue:
+            catalog = "glue";
+            break;
+        case LakeCatalog::Hive:
+            catalog = "hive";
+            break;
+        case LakeCatalog::REST:
+            catalog = "rest";
+            break;
+        case LakeCatalog::Unity:
+            catalog = "unity";
+            break;
+        default:
+            UNREACHABLE();
+    }
+    buf += fmt::format(
+        R"({{"seed":{},"database_name":"{}","storage":"{}","engine":"{}","catalog":"{}"}})",
+        rg.nextInFullRange(),
+        d.getSparkCatalogName(),
+        d.storage == LakeStorage::S3 ? "s3" : (d.storage == LakeStorage::Azure ? "azure" : "local"),
+        d.format == LakeFormat::DeltaLake ? "deltalake" : "iceberg",
+        catalog);
+    fc.outf << "--External database " << buf << std::endl;
+    return httpPut("/sparkdatabase", buf);
+}
+
+bool DolorIntegration::reRunCreateDatabase(const String & body)
+{
+    return httpPut("/sparkdatabase", body);
+}
+
+static const DB::Strings & catalogs = {"glue", "hive", "rest", "unity"};
+
+void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabase & d, DatabaseEngine * de)
+{
+    String catalog_str;
+    const Catalog * cat = nullptr;
+
+    chassert(d.storage == LakeStorage::S3);
+    switch (d.catalog)
+    {
+        case LakeCatalog::Glue:
+            cat = &sc.glue_catalog.value();
+            de->add_params()->set_svalue(fmt::format("http://{}:{}", cat->server_hostname, cat->port));
+            catalog_str = "glue";
+            break;
+        case LakeCatalog::Hive:
+            cat = &sc.hive_catalog.value();
+            if (d.format != LakeFormat::DeltaLake)
+            {
+                de->add_params()->set_svalue(fmt::format("thrift://{}:{}", cat->server_hostname, cat->port));
+            }
+            catalog_str = "hive";
+            break;
+        case LakeCatalog::REST:
+            cat = &sc.rest_catalog.value();
+            de->add_params()->set_svalue(fmt::format("http://{}:{}{}", cat->server_hostname, cat->port, cat->path));
+            catalog_str = "rest";
+            break;
+        case LakeCatalog::Unity:
+            cat = &sc.unity_catalog.value();
+            de->add_params()->set_svalue(
+                fmt::format(
+                    "http://{}:{}{}{}", cat->server_hostname, cat->port, cat->path, d.format == LakeFormat::Iceberg ? "/iceberg" : ""));
+            catalog_str = d.format == LakeFormat::Iceberg ? "rest" : "unity";
+            break;
+        default:
+            UNREACHABLE();
+    }
+
+    if (rg.nextMediumNumber() < 6)
+    {
+        /// Mess up with the catalog
+        catalog_str = rg.pickRandomly(catalogs);
+    }
+    uint32_t added_type = 0;
+    uint32_t added_warehouse = 0;
+    uint32_t added_endpoint = 0;
+    uint32_t added_region = 0;
+    uint32_t added_credentials = 0;
+    const uint32_t toadd_type = rg.nextMediumNumber() < 96;
+    const uint32_t toadd_warehouse = rg.nextMediumNumber() < 96;
+    const uint32_t toadd_endpoint = d.format == LakeFormat::Iceberg && rg.nextMediumNumber() < 96;
+    const uint32_t toadd_region = !cat->region.empty() && rg.nextMediumNumber() < 96;
+    const uint32_t toadd_credentials = rg.nextSmallNumber() < 4;
+    const uint32_t total_to_add = toadd_type + toadd_warehouse + toadd_endpoint + toadd_region + toadd_credentials;
+
+    for (uint32_t i = 0; i < total_to_add; i++)
+    {
+        SettingValues * svs = de->mutable_setting_values();
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+        const uint32_t add_type = 3 * static_cast<uint32_t>(added_type < toadd_type);
+        const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
+        const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
+        const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
+        const uint32_t add_credentials = 3 * static_cast<uint32_t>(added_credentials < toadd_credentials);
+        const uint32_t prob_space = add_type + add_warehouse + add_endpoint + add_region + add_credentials;
+        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+        const uint32_t nopt = next_dist(rg.generator);
+
+        if (add_type && nopt < (add_type + 1))
+        {
+            sv->set_property("catalog_type");
+            sv->set_value("'" + catalog_str + "'");
+            added_type++;
+        }
+        else if (add_warehouse && nopt < (add_type + add_warehouse + 1))
+        {
+            sv->set_property("warehouse");
+            sv->set_value("'" + d.getName() + "'");
+            added_warehouse++;
+        }
+        else if (add_endpoint && nopt < (add_type + add_warehouse + add_endpoint + 1))
+        {
+            const ServerCredentials & minio = fc.minio_server.value();
+
+            de->add_params()->set_svalue(minio.user);
+            de->add_params()->set_svalue(minio.secret);
+            sv->set_property("storage_endpoint");
+            sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+            added_endpoint++;
+        }
+        else if (add_region && nopt < (add_type + add_warehouse + add_endpoint + add_region + 1))
+        {
+            sv->set_property("region");
+            sv->set_value("'" + cat->region + "'");
+            added_region++;
+        }
+        else if (add_credentials && nopt < (add_type + add_warehouse + add_endpoint + add_region + add_credentials + 1))
+        {
+            sv->set_property("vended_credentials");
+            sv->set_value(rg.nextBool() ? "1" : "0");
+            added_credentials++;
+        }
+        else
+        {
+            UNREACHABLE();
+        }
+    }
+}
+
+extern void collectColumnPaths(String cname, SQLType * tp, uint32_t flags, ColumnPathChain & next, std::vector<ColumnPathChain> & paths);
+
+bool DolorIntegration::performTableIntegration(RandomGenerator & rg, SQLTable & t, const bool, std::vector<ColumnPathChain> &)
+{
+    String buf;
+    bool first = true;
+    std::vector<ColumnPathChain> entries;
+
+    for (const auto & [key, val] : t.cols)
+    {
+        ColumnPathChain cpc(val.nullable, val.special, val.dmod, {});
+
+        collectColumnPaths("c" + std::to_string(key), val.tp, 0, cpc, entries);
+    }
+    /// Common information
+    buf += fmt::format(
+        R"({{"seed":{},"database_name":"{}","table_name":"{}","format":"{}","deterministic":{},"columns":[)",
+        rg.nextInFullRange(),
+        t.getDatabaseName(),
+        t.getTableName(false),
+        t.file_format.has_value() ? InOutFormat_Name(t.file_format.value()).substr(6) : "any",
+        t.is_deterministic ? "1" : "0");
+    for (const auto & entry : entries)
+    {
+        buf += fmt::format(
+            R"({}{{"name":"{}","type":"{}"}})", first ? "" : ",", entry.getBottomName(), entry.getBottomType()->typeName(false, true));
+        first = false;
+    }
+    buf += "]";
+    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
+    {
+        buf += fmt::format(
+            R"(,"engine":"{}","catalog_name":"{}","storage":"{}")",
+            t.isAnyDeltaLakeEngine() ? "deltalake" : "iceberg",
+            t.getSparkCatalogName(),
+            t.isOnS3() ? "s3" : (t.isOnAzure() ? "azure" : "local"));
+    }
+    else if (t.isKafkaEngine())
+    {
+        buf += fmt::format(R"(,"engine":"kafka","topic":"{}","group":"{}")", t.topic.value(), t.group.value());
+    }
+    buf += "}";
+    fc.outf << "--External table " << buf << std::endl;
+    return httpPut("/sparktable", buf);
+}
+
+bool DolorIntegration::reRunCreateTable(const String & body)
+{
+    return httpPut("/sparktable", body);
+}
+
+void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTable & t, TableEngine * te)
+{
+    if (t.isAnyIcebergEngine() || t.isAnyDeltaLakeEngine())
+    {
+        const LakeCatalog catalog = t.getLakeCatalog();
+
+        if (catalog == LakeCatalog::None)
+        {
+            te->add_params()->set_rvalue(
+                t.isOnS3() ? fc.minio_server.value().named_collection
+                           : (t.isOnAzure() ? fc.azurite_server.value().named_collection : "local"));
+        }
+        else
+        {
+            const Catalog * cat = nullptr;
+            String catalog_url;
+            String catalog_str;
+
+            switch (catalog)
+            {
+                case LakeCatalog::Glue:
+                    cat = &sc.glue_catalog.value();
+                    catalog_str = "glue";
+                    catalog_url = fmt::format("http://{}:{}", cat->server_hostname, cat->port);
+                    break;
+                case LakeCatalog::REST:
+                    cat = &sc.rest_catalog.value();
+                    catalog_str = "rest";
+                    catalog_url = fmt::format("http://{}:{}{}", cat->server_hostname, cat->port, cat->path);
+                    break;
+                case LakeCatalog::Hive:
+                    cat = &sc.hive_catalog.value();
+                    catalog_str = "hive";
+                    catalog_url = fmt::format("thrift://{}:{}", cat->server_hostname, cat->port);
+                    break;
+                case LakeCatalog::Unity:
+                    cat = &sc.unity_catalog.value();
+                    catalog_str = t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "rest" : "unity";
+                    catalog_url = fmt::format(
+                        "http://{}:{}{}{}",
+                        cat->server_hostname,
+                        cat->port,
+                        cat->path,
+                        t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "/iceberg" : "");
+                    break;
+                default:
+                    UNREACHABLE();
+            }
+
+            /// The other storages are not tested yet
+            chassert(t.isOnS3());
+            if (rg.nextMediumNumber() < 6)
+            {
+                /// Mess up with the catalog
+                catalog_str = rg.pickRandomly(catalogs);
+            }
+            uint32_t added_sct = 0;
+            uint32_t added_warehouse = 0;
+            uint32_t added_endpoint = 0;
+            uint32_t added_region = 0;
+            uint32_t added_url = 0;
+            const uint32_t toadd_sct = rg.nextMediumNumber() < 96;
+            const uint32_t toadd_warehouse = rg.nextMediumNumber() < 96;
+            const uint32_t toadd_endpoint = rg.nextMediumNumber() < 96;
+            const uint32_t toadd_region = !cat->region.empty() && rg.nextMediumNumber() < 96;
+            const uint32_t toadd_url = rg.nextMediumNumber() < 96;
+            const uint32_t total_to_add = toadd_sct + toadd_warehouse + toadd_endpoint + toadd_region + toadd_url;
+
+            for (uint32_t i = 0; i < total_to_add; i++)
+            {
+                SettingValues * svs = te->mutable_setting_values();
+                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+                const uint32_t add_sct = 3 * static_cast<uint32_t>(added_sct < toadd_sct);
+                const uint32_t add_warehouse = 3 * static_cast<uint32_t>(added_warehouse < toadd_warehouse);
+                const uint32_t add_endpoint = 3 * static_cast<uint32_t>(fc.minio_server.has_value() && added_endpoint < toadd_endpoint);
+                const uint32_t add_region = 3 * static_cast<uint32_t>(added_region < toadd_region);
+                const uint32_t add_url = 3 * static_cast<uint32_t>(added_url < toadd_url);
+                const uint32_t prob_space = add_sct + add_warehouse + add_endpoint + add_region + add_url;
+                std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+                const uint32_t nopt = next_dist(rg.generator);
+
+                if (add_sct && nopt < (add_sct + 1))
+                {
+                    sv->set_property("storage_catalog_type");
+                    sv->set_value("'" + catalog_str + "'");
+                    added_sct++;
+                }
+                else if (add_warehouse && nopt < (add_sct + add_warehouse + 1))
+                {
+                    sv->set_property("storage_warehouse");
+                    sv->set_value("'" + t.getDatabaseName() + "'");
+                    added_warehouse++;
+                }
+                else if (add_endpoint && nopt < (add_sct + add_warehouse + add_endpoint + 1))
+                {
+                    /// The key-value format is not well supported for catalogs at the moment
+                    const ServerCredentials & minio = fc.minio_server.value();
+
+                    te->add_params()->set_svalue(t.getTablePath(fc));
+                    te->add_params()->set_svalue(minio.password);
+                    te->add_params()->set_svalue(minio.secret);
+                    if (t.isAnyIcebergEngine() && t.file_format.has_value() && rg.nextMediumNumber() < 96)
+                    {
+                        te->add_params()->set_svalue(InOutFormat_Name(t.file_format.value()).substr(6));
+                        if (t.file_comp.has_value() && rg.nextMediumNumber() < 96)
+                        {
+                            te->add_params()->set_svalue(t.file_comp.value());
+                        }
+                    }
+                    sv->set_property("object_storage_endpoint");
+                    sv->set_value(fmt::format("'http://{}:{}/{}'", minio.server_hostname, minio.port, cat->warehouse));
+                    added_endpoint++;
+                }
+                else if (add_region && nopt < (add_sct + add_warehouse + add_endpoint + add_region + 1))
+                {
+                    sv->set_property("storage_region");
+                    sv->set_value("'" + cat->region + "'");
+                    added_region++;
+                }
+                else if (add_url && nopt < (add_sct + add_warehouse + add_endpoint + add_region + add_url + 1))
+                {
+                    sv->set_property("storage_catalog_url");
+                    sv->set_value("'" + catalog_url + "'");
+                    added_url++;
+                }
+                else
+                {
+                    UNREACHABLE();
+                }
+            }
+        }
+    }
+    else if (t.isKafkaEngine())
+    {
+        const String & host = fc.kafka_server.has_value() ? fc.kafka_server.value().server_hostname : "localhost";
+        const uint16_t & port = static_cast<uint16_t>(fc.kafka_server.has_value() ? fc.kafka_server.value().port : 9092);
+
+        te->add_params()->set_svalue(fmt::format("{}:{}", host, port));
+        te->add_params()->set_svalue(t.topic.value()); /// topic
+        te->add_params()->set_svalue(t.group.value()); /// group
+        te->add_params()->set_in_out(t.file_format.has_value() ? t.file_format.value() : InOutFormat::INOUT_CSV);
+    }
+}
+
+bool DolorIntegration::performExternalCommand(
+    const uint64_t seed, const bool async, const String & engine, const String & cname, const String & tname)
+{
+    return httpPut(
+        "/sparkupdate",
+        fmt::format(
+            R"({{"seed":{},"async":{},"engine":"{}","catalog_name":"{}","table_name":"{}"}})", seed, async ? 1 : 0, engine, cname, tname));
 }
 
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
@@ -1737,32 +1879,39 @@ ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     {
         http = std::make_unique<HTTPIntegration>(fc, fc.http_server.value());
     }
+    if (fc.dolor_server.has_value())
+    {
+        dolor = std::make_unique<DolorIntegration>(fc, fc.dolor_server.value());
+    }
     if (fc.clickhouse_server.has_value())
     {
         clickhouse = MySQLIntegration::testAndAddMySQLConnection(fc, fc.clickhouse_server.value(), fc.read_log, "ClickHouse");
     }
 }
 
-void ExternalIntegrations::createExternalDatabase(
-    RandomGenerator & rg, const IntegrationCall dc, const SQLDatabase & d, DatabaseEngine * de, SettingValues * svs)
-{
-    switch (dc)
-    {
-        case IntegrationCall::MinIO:
-            minio->setDatabaseDetails(rg, d, de, svs);
-            break;
-        default:
-            chassert(0);
-            break;
-    }
-}
-
-void ExternalIntegrations::createExternalDatabaseTable(
-    RandomGenerator & rg, const IntegrationCall dc, SQLBase & b, std::vector<ColumnPathChain> & entries, TableEngine * te)
+void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de)
 {
     ClickHouseIntegration * next = nullptr;
 
-    switch (dc)
+    switch (d.integration)
+    {
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            UNREACHABLE();
+    }
+    requires_external_call_check++;
+    next_calls_succeeded.emplace_back(next->performDatabaseIntegration(rg, d));
+    next->setDatabaseDetails(rg, d, de);
+}
+
+void ExternalIntegrations::createExternalDatabaseTable(
+    RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te)
+{
+    ClickHouseIntegration * next = nullptr;
+
+    switch (t.integration)
     {
         case IntegrationCall::MySQL:
             next = mysql.get();
@@ -1788,10 +1937,70 @@ void ExternalIntegrations::createExternalDatabaseTable(
         case IntegrationCall::HTTP:
             next = http.get();
             break;
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            UNREACHABLE();
     }
     requires_external_call_check++;
-    next_calls_succeeded.emplace_back(next->performIntegration(rg, b, true, entries));
-    next->setTableEngineDetails(rg, b, "t" + std::to_string(b.tname), te);
+    next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
+    next->setTableEngineDetails(rg, t, te);
+}
+
+bool ExternalIntegrations::reRunCreateDatabase(const IntegrationCall ic, const String & body)
+{
+    ClickHouseIntegration * next = nullptr;
+
+    switch (ic)
+    {
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            UNREACHABLE();
+    }
+    return next ? next->reRunCreateDatabase(body) : false;
+}
+
+bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const String & body)
+{
+    ClickHouseIntegration * next = nullptr;
+
+    switch (ic)
+    {
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            UNREACHABLE();
+    }
+    return next ? next->reRunCreateTable(body) : false;
+}
+
+bool ExternalIntegrations::performExternalCommand(
+    const uint64_t seed, const bool async, const IntegrationCall ic, const String & engine, const String & cname, const String & tname)
+{
+    ClickHouseIntegration * next = nullptr;
+
+    switch (ic)
+    {
+        case IntegrationCall::Dolor:
+            next = dolor.get();
+            break;
+        default:
+            UNREACHABLE();
+    }
+    if (next)
+    {
+        if (async)
+        {
+            worker.enqueue([next, seed, engine, cname, tname]() { next->performExternalCommand(seed, true, engine, cname, tname); });
+            return true;
+        }
+        return next->performExternalCommand(seed, false, engine, cname, tname);
+    }
+    return false;
 }
 
 ClickHouseIntegratedDatabase * ExternalIntegrations::getPeerPtr(const PeerTableDatabase pt) const
@@ -1855,8 +2064,7 @@ void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const Stri
             azurite->setBackupDetails(filename, br);
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
 }
 

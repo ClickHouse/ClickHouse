@@ -152,7 +152,7 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
         {
             Tuple pair;
             pair.push_back(change.name);
-            pair.push_back(toString(change.value));
+            pair.push_back(fieldToString(change.value));
             settings_map.push_back(std::move(pair));
         }
     }
@@ -255,8 +255,8 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         ddl_task_status_paths.push_back(ddl_zookeeper_path / task_path / "finished");
     }
 
-    auto ddl_tasks_info = zookeeper->get(ddl_task_full_paths);
-    auto ddl_task_statuses = zookeeper->getChildren(ddl_task_status_paths);
+    auto ddl_tasks_info = zookeeper->tryGet(ddl_task_full_paths);
+    auto ddl_task_statuses = zookeeper->tryGetChildren(ddl_task_status_paths);
 
     for (size_t i = 0; i < ddl_task_paths.size(); ++i)
     {

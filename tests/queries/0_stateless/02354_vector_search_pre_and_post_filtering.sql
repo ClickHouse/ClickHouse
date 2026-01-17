@@ -2,7 +2,6 @@
 
 -- Tests pre vs. post-filtering for vector search.
 
-SET enable_vector_similarity_index = 1;
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
 

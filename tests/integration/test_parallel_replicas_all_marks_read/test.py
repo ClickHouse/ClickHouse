@@ -90,7 +90,7 @@ def _get_expected_amount_of_marks_to_read(query):
 
 def _get_number_of_marks_read_by_replicas(query_id):
     nodes[0].query("SYSTEM FLUSH LOGS")
-    return (
+    return int(
         nodes[0]
         .query(
             f"""

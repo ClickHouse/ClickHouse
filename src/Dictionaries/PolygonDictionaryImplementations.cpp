@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>

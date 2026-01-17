@@ -22,7 +22,6 @@ RUN addgroup --gid 1001 clickhouse2 && adduser --uid 1001 --gid 1001 --disabled-
 # Install additional packages not included in test-base
 RUN apt-get update -y \
     && apt-get install --yes --no-install-recommends \
-        awscli \
         brotli \
         lz4 \
         expect \
@@ -55,6 +54,11 @@ RUN apt-get update -y \
         parallel \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
+    && unzip -q awscliv2.zip \
+    && ./aws/install \
+    && rm awscliv2.zip
 
 # Install Node.js 20 from NodeSource (azurite 3.34 fails with 24)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \

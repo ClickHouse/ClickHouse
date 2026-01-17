@@ -113,15 +113,15 @@ if __name__ == "__main__":
     cidb = CIDB(
         url=Secret.Config(
             name="clickhouse-test-stat-url",
-            type=Secret.Type.AWS_SSM_VAR,
+            type=Secret.Type.AWS_SSM_PARAMETER,
         ).get_value(),
         user=Secret.Config(
             name="clickhouse-test-stat-login",
-            type=Secret.Type.AWS_SSM_VAR,
+            type=Secret.Type.AWS_SSM_PARAMETER,
         ).get_value(),
         passwd=Secret.Config(
             name="clickhouse-test-stat-password",
-            type=Secret.Type.AWS_SSM_VAR,
+            type=Secret.Type.AWS_SSM_PARAMETER,
         ).get_value(),
     )
 
