@@ -54,6 +54,8 @@ class Workflow:
         set_latest_for_docker_merged_manifest: bool = False
         # if enabled, Finish job will fetch open gh issues and match failed tests with them
         enable_open_issues_check: bool = False
+        # If enabled, CI events will be accumulated and stored, allowing users to subscribe to notifications via the Slack Praktika app
+        enable_slack_feed: bool = False
         # Job aliases for easy job reference with `praktika run job_alias --test TEST_NAME` in local environment
         job_aliases: Dict[str, str] = field(default_factory=dict)
 

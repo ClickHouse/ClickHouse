@@ -159,14 +159,14 @@ inline void ALWAYS_INLINE readVarUInt(UInt16 & x, ReadBuffer & istr)
 {
     UInt64 tmp;
     readVarUInt(tmp, istr);
-    x = tmp;
+    x = static_cast<UInt16>(tmp);
 }
 
 inline void ALWAYS_INLINE readVarInt(Int16 & x, ReadBuffer & istr)
 {
     Int64 tmp;
     readVarInt(tmp, istr);
-    x = tmp;
+    x = static_cast<Int16>(tmp);
 }
 
 template <typename T>
@@ -175,7 +175,7 @@ inline void ALWAYS_INLINE readVarUInt(T & x, ReadBuffer & istr)
 {
     UInt64 tmp;
     readVarUInt(tmp, istr);
-    x = tmp;
+    x = static_cast<T>(tmp);
 }
 
 inline size_t getLengthOfVarUInt(UInt64 x)

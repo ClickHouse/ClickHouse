@@ -35,7 +35,6 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
     extern const SettingsBool http_write_exception_in_output_format;
-    extern const SettingsBool input_format_parallel_parsing;
     extern const SettingsBool log_queries;
     extern const SettingsUInt64 max_download_buffer_size;
     extern const SettingsSeconds max_execution_time;
@@ -44,13 +43,15 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
-    extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
-    extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
+
+    extern SettingsBool input_format_parallel_parsing;
+    extern SettingsBool output_format_parallel_formatting;
+    extern SettingsUInt64 output_format_compression_level;
 }
 
 namespace ErrorCodes
@@ -147,6 +148,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.interval_output_format = settings[Setting::interval_output_format];
     format_settings.input_format_ipv4_default_on_conversion_error = settings[Setting::input_format_ipv4_default_on_conversion_error];
     format_settings.input_format_ipv6_default_on_conversion_error = settings[Setting::input_format_ipv6_default_on_conversion_error];
+    format_settings.check_conversion_from_numbers_to_enum = settings[Setting::check_conversion_from_numbers_to_enum];
     format_settings.bool_true_representation = settings[Setting::bool_true_representation];
     format_settings.bool_false_representation = settings[Setting::bool_false_representation];
     format_settings.import_nested_json = settings[Setting::input_format_import_nested_json];
@@ -182,6 +184,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_invalid_typed_paths = settings[Setting::type_json_skip_invalid_typed_paths];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
     format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
     format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.json.infer_array_of_dynamic_from_array_of_different_values = settings[Setting::input_format_json_infer_array_of_dynamic_from_array_of_different_types];
