@@ -43,16 +43,49 @@ inline UInt64 integerSqrt(UInt64 x)
 class OddPrimesCache
 {
 public:
+    /// Seed the cache with an initial small, valid odd-only sieve [3..7]. Then, we can start extending it on demand.
+    ///
+    /// We seed up to 7 (not just 3) so that there are fewer sqrt-recursion steps in some cases.
+    /// For example, `ensureUpTo(1000000)` will round the limit down to 999999 and walk this recursion chain:
+    /// - seed [3..7]: `999999 -> 999 -> 31`
+    /// - seed [3]: `999999 -> 999 -> 31 -> 5`
+    OddPrimesCache()
+        : current_limit(7)
+        , composite_bits(1, 0)
+        , primes{3, 5, 7}
+    {
+#ifndef NDEBUG
+        chassert((current_limit & 1) == 1);
+        chassert(current_limit >= 3);
+
+        const UInt64 num_odds = ((current_limit - 3) >> 1) + 1;
+        chassert(num_odds == 3);
+        chassert(composite_bits.size() == (num_odds + 63) / 64);
+
+        auto is_composite = [&](UInt64 idx) { return (composite_bits[idx >> 6] >> (idx & 63)) & 1ULL; };
+        chassert(!is_composite(0) && "expected number 3 to be prime");
+        chassert(!is_composite(1) && "expected number 5 to be prime");
+        chassert(!is_composite(2) && "expected number 7 to be prime");
+
+        chassert(composite_bits[0] == 0);
+
+        chassert(primes.size() == 3);
+        chassert(primes[0] == 3);
+        chassert(primes[1] == 5);
+        chassert(primes[2] == 7);
+        chassert(std::is_sorted(primes.begin(), primes.end()));
+#endif
+    }
+
     /// Ensure that the cache contains all odd primes up to `limit` (inclusive).
     ///
     /// The cache stores only odd numbers starting from 3, so bit index `i` corresponds to the value `3 + 2*i`.
-    /// This function rounds `limit` down to an odd value and either builds the initial sieve or extends the existing one.
+    /// The cache is seeded with [3, 5, 7] and then extended on demand.
     ///
     /// High-level steps:
     /// - Round `limit` down to an odd number and validate it is within supported range.
     /// - Fast-path: return if the cache already covers the requested limit.
-    /// - First call: build an odd-only sieve up to `limit` and collect primes.
-    /// - Subsequent calls: extend the sieve range and mark composites using already known base primes.
+    /// - Extend the sieve range and mark composites using already known base primes.
     void ensureUpTo(UInt64 limit)
     {
         /// 2 is not covered by this cache
@@ -74,47 +107,6 @@ public:
         /// We already have enough primes cached
         if (limit_odd <= current_limit)
             return;
-
-        /// Initially `current_limit` is 1, so the first call with `limit >= 3` will always enter here
-        if (current_limit < 3)
-        {
-            current_limit = limit_odd;
-
-            const UInt64 num_odds = ((current_limit - 3) >> 1) + 1; /// odds: 3,5,7,...
-            composite_bits.assign((num_odds + 63) / 64, 0);
-
-            const UInt64 sqrt_limit = integerSqrt(current_limit);
-            if (sqrt_limit >= 3)
-            {
-                /// Convert to odd number position (e.g., 3->0,5->1,7->2,...)
-                const UInt64 sqrt_index = ((sqrt_limit - 3) >> 1);
-
-                /// Sieve algorithm with odd-only representation with compressed bits
-                for (UInt64 odd_index = 0; odd_index <= sqrt_index; ++odd_index)
-                {
-                    if (getBit(composite_bits, odd_index)) /// a composite
-                        continue;
-
-                    const UInt64 prime = 3 + (odd_index << 1);
-
-                    const UInt64 multiple_start_index = ((prime * prime) - 3) >> 1;
-
-                    /// Mark odd multiples of prime as composite (index step `prime` corresponds to value step `2*prime`)
-                    for (UInt64 j = multiple_start_index; j < num_odds; j += prime)
-                        setBit(composite_bits, j);
-                }
-            }
-
-            primes.clear();
-            primes.reserve(static_cast<size_t>(num_odds / 10));
-
-            for (UInt64 odd_index = 0; odd_index < num_odds; ++odd_index)
-                if (!getBit(composite_bits, odd_index))
-                    primes.push_back(static_cast<UInt32>(3 + (odd_index << 1))); /// convert index back to odd number
-
-            chassert(std::is_sorted(primes.begin(), primes.end()));
-            return;
-        }
 
         const UInt64 sqrt_limit = integerSqrt(limit_odd);
 
