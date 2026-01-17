@@ -1010,6 +1010,26 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
     }
 }
 
+AvroDeserializerFactory::AvroDeserializerFactory(
+    const Block & header_,
+    avro::ValidSchema schema_,
+    bool allow_missing_fields_,
+    bool null_as_default_,
+    const FormatSettings & settings_)
+    : header(header_)
+    , schema(std::move(schema_))
+    , allow_missing_fields(allow_missing_fields_)
+    , null_as_default(null_as_default_)
+    , settings(settings_)
+{
+}
+
+std::unique_ptr<AvroDeserializer> AvroDeserializerFactory::create() const
+{
+    return std::make_unique<AvroDeserializer>(
+        header, schema, allow_missing_fields, null_as_default, settings);
+}
+
 
 AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_), format_settings(format_settings_)

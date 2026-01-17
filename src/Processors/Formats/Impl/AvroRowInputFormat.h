@@ -154,6 +154,33 @@ private:
     const FormatSettings & settings;
 };
 
+/// Factory for creating per-thread AvroDeserializer instances.
+/// Thread-safe: stores only immutable configuration.
+/// Each call to create() returns an independent deserializer instance.
+class AvroDeserializerFactory
+{
+public:
+    AvroDeserializerFactory(
+        const Block & header,
+        avro::ValidSchema schema,
+        bool allow_missing_fields,
+        bool null_as_default,
+        const FormatSettings & settings);
+
+    /// Create a new deserializer instance (call once per parser thread)
+    std::unique_ptr<AvroDeserializer> create() const;
+
+    /// Get the output block header
+    const Block & getHeader() const { return header; }
+
+private:
+    Block header;
+    avro::ValidSchema schema;
+    bool allow_missing_fields;
+    bool null_as_default;
+    FormatSettings settings;  // Copy, not reference (thread safety)
+};
+
 class AvroRowInputFormat final : public IRowInputFormat
 {
 public:
