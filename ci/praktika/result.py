@@ -554,6 +554,7 @@ class Result(MetaClasses.Serializable):
             if result_.status in (
                 self.Status.ERROR,
                 self.Status.FAILED,
+                self.Status.DROPPED,
                 self.StatusExtended.FAIL,
             ):
                 has_failed = True
@@ -931,6 +932,7 @@ class Result(MetaClasses.Serializable):
                 "run_id": info.run_id,
                 "run_url": info.run_url,
                 "commit_authors": info.commit_authors,
+                "is_cancelled": self.ext.get("is_cancelled", False),
             },
         )
 

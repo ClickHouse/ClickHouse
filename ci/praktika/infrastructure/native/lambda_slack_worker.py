@@ -222,6 +222,7 @@ def format_event_text(event, pr_status, indent="", include_related_prs: bool = T
 
     # Get change URL from event.ext
     change_url = event.ext.get("change_url", "")
+    is_cancelled = bool(event.ext.get("is_cancelled", False))
 
     # Check if any job has failed or errored
     has_failures = False
@@ -235,7 +236,10 @@ def format_event_text(event, pr_status, indent="", include_related_prs: bool = T
     if event.ci_status in ["pending", "running"]:
         ci_running_status_emoji = ":job_running:"
     else:
-        ci_running_status_emoji = ":checkered_flag:"
+        if not is_cancelled:
+            ci_running_status_emoji = ":checkered_flag:"
+        else:
+            ci_running_status_emoji = ":job_cancelled:"
 
     if event.ci_status == "success":
         ci_status_emoji = ":success_sign:"
@@ -368,24 +372,23 @@ def _format_notification_text(event, notify_type: str) -> str:
     base = format_event_text(event, pr_status, indent="", include_related_prs=False)
 
     failed_names = []
-    if notify_type == "failure":
-        result = getattr(event, "result", None)
-        if isinstance(result, dict):
-            results = result.get("results", []) or []
-        elif result is not None and hasattr(result, "results"):
-            results = getattr(result, "results") or []
-        else:
-            results = []
+    result = getattr(event, "result", None)
+    if isinstance(result, dict):
+        results = result.get("results", []) or []
+    elif result is not None and hasattr(result, "results"):
+        results = getattr(result, "results") or []
+    else:
+        results = []
 
-        for r in results:
-            if not isinstance(r, dict):
-                continue
-            status = (r.get("status") or "").lower()
-            if status not in ("failure", "error"):
-                continue
-            name = r.get("name") or ""
-            if name:
-                failed_names.append(name)
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        status = (r.get("status") or "").lower()
+        if status not in ("failure", "error"):
+            continue
+        name = r.get("name") or ""
+        if name:
+            failed_names.append(name)
 
     extra = ""
     if failed_names:
@@ -528,7 +531,7 @@ def publish_home_view(
                     "toggle_hide_merges",
                 ),
                 _btn(
-                    f"Secondary PRs: {'On' if not prefs.get('hide_secondary_prs') else 'Off'}",
+                    f"Auxilary PRs: {'On' if not prefs.get('hide_secondary_prs') else 'Off'}",
                     "toggle_hide_secondary_prs",
                 ),
                 _btn(

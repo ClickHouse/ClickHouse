@@ -99,7 +99,7 @@ The Home tab renders interactive toggle buttons (stored in `FeedSubscription.use
   - Merge-result entries (PR-less events where `pr_number == 0`) are still shown unless `Merges` is turned **On**.
 - `Merges: On/Off` (`hide_merges`)
   - When **On**, hides merge-result entries.
-- `Secondary PRs: On/Off` (`hide_secondary_prs`)
+- `Auxilary PRs: On/Off` (`hide_secondary_prs`)
   - When **On**, hides nested PR entries (events with `parent_pr_number > 0` and `pr_number > 0`).
 - `< 7d: On/Off` (`show_last_7d`)
   - When **On**, shows only events within the last 7 days.

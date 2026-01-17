@@ -78,14 +78,28 @@ class EventFeed:
         import time
 
         cutoff_timestamp = int(time.time()) - (MAX_TIMELINE_DAYS * 24 * 60 * 60)
+        running_cutoff_timestamp = int(time.time()) - (12 * 60 * 60)
+
+        def sanitize_event(e: Event) -> None:
+            if e.timestamp < running_cutoff_timestamp and e.ci_status in (
+                "running",
+                "pending",
+            ):
+                e.ci_status = "failure"
+                if not isinstance(e.ext, dict):
+                    e.ext = {}
+                e.ext["is_cancelled"] = True
 
         # Remove existing events that match the incoming event
         event_pr_number = event.ext.get("pr_number", 0)
         event_repo_name = event.ext.get("repo_name", "")
         event_sha = event.sha
 
+        sanitize_event(event)
+
         filtered_events = []
         for e in self.events:
+            sanitize_event(e)
             e_pr_number = e.ext.get("pr_number", 0)
             e_repo_name = e.ext.get("repo_name", "")
             e_sha = e.sha
@@ -150,6 +164,9 @@ class EventFeed:
 
         # Sort events by timestamp (newest first)
         self.events.sort(key=lambda e: e.timestamp, reverse=True)
+
+        for e in self.events:
+            sanitize_event(e)
 
         # Apply retention policy based on parent_pr_number grouping
         # Build a map of parent_pr_number -> list of events
