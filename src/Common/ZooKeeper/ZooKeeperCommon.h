@@ -706,12 +706,12 @@ struct ZooKeeperSetWatch2Response : SetWatches2Response, ZooKeeperResponse
     size_t bytesSize() const override { return SetWatches2Response::bytesSize(); }
 };
 
-struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
+struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeeperRequest
 {
     OpNum getOpNum() const override;
     ZooKeeperMultiRequest() = default;
 
-    ZooKeeperMultiRequest(const MultiRequest & base, const ACLs & default_acls);
+    ZooKeeperMultiRequest(const MultiRequest<ZooKeeperRequestPtr> & base, const ACLs & default_acls);
     ZooKeeperMultiRequest(const Requests & generic_requests, const ACLs & default_acls);
     ZooKeeperMultiRequest(std::span<const Coordination::RequestPtr> generic_requests, const ACLs & default_acls);
 
@@ -740,19 +740,19 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
 
 private:
     void checkOperationType(OperationType type);
-    void setRequests(std::span<const Coordination::RequestPtr> generic_requests, const ACLs & default_acls);
+    void addRequest(const Coordination::RequestPtr & generic_request, const ACLs & default_acls);
 };
 
 struct ZooKeeperMultiResponse : MultiResponse, ZooKeeperResponse
 {
     ZooKeeperMultiResponse() = default;
 
-    explicit ZooKeeperMultiResponse(const Requests & requests)
+    explicit ZooKeeperMultiResponse(const std::vector<ZooKeeperRequestPtr> & requests)
     {
         responses.reserve(requests.size());
 
         for (const auto & request : requests)
-            responses.emplace_back(std::dynamic_pointer_cast<ZooKeeperRequest>(request)->makeResponse());
+            responses.emplace_back(request->makeResponse());
     }
 
     explicit ZooKeeperMultiResponse(const Responses & responses_)

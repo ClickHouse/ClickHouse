@@ -1117,11 +1117,10 @@ void ZooKeeper::receiveEvent()
 
             for (const auto [subrequest, subresponse] : std::views::zip(multi_read_request->requests, multi_read_response->responses))
             {
-                const auto zk_subrequest = std::dynamic_pointer_cast<ZooKeeperRequest>(subrequest);
-                if (zk_subrequest->watch_callback)
+                if (subrequest->watch_callback)
                 {
                     chassert(isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES));
-                    update_watch_callbacks(zk_subrequest, subresponse, zk_subrequest->watch_callback);
+                    update_watch_callbacks(subrequest, subresponse, subrequest->watch_callback);
                 }
             }
         }
@@ -1796,11 +1795,8 @@ void ZooKeeper::multi(
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "MultiRead request type cannot be used because it's not supported by the server");
 
         for (const auto & subrequest : request.requests)
-        {
-            const auto zk_subrequest = std::dynamic_pointer_cast<ZooKeeperRequest>(subrequest);
-            if (zk_subrequest->watch_callback && !isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES))
+            if (subrequest->watch_callback && !isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES))
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
-        }
     }
 
     if (request.getOpNum() == OpNum::NonAtomicMulti)
@@ -1994,7 +1990,7 @@ void ZooKeeper::observeOperation(const ZooKeeperRequest * request, const ZooKeep
 
     for (const auto [subrequest, subresponse] : std::views::zip(multi_request->requests, multi_response->responses))
     {
-        observeOperation(dynamic_cast<const ZooKeeperRequest *>(subrequest.get()), dynamic_cast<const ZooKeeperResponse *>(subresponse.get()), elapsed_microseconds);
+        observeOperation(subrequest.get(), dynamic_cast<const ZooKeeperResponse *>(subresponse.get()), elapsed_microseconds);
     }
 }
 

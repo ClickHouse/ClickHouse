@@ -85,9 +85,8 @@ namespace
 Int64 calculateMemoryDelta(const Coordination::ZooKeeperMultiRequest & multi_req)
 {
     Int64 memory_delta = 0;
-    for (const auto & sub_req : multi_req.requests)
+    for (const auto & sub_zk_request : multi_req.requests)
     {
-        auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_req);
         switch (sub_zk_request->getOpNum())
         {
             case Coordination::OpNum::Create:

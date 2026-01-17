@@ -599,10 +599,11 @@ struct ReconfigResponse : virtual Response
     size_t bytesSize() const override { return value.size() + sizeof(stat); }
 };
 
+template <typename T>
 struct MultiRequest : virtual Request
 {
     bool atomic = true;
-    std::vector<RequestPtr> requests;
+    std::vector<T> requests;
 
     void addRootPath(const String & root_path) override
     {

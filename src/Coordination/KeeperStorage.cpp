@@ -3017,8 +3017,7 @@ bool checkAuth(const Coordination::ZooKeeperMultiRequest & zk_request, Storage &
     for (const auto & concrete_request : zk_request.requests)
     {
         const bool check_subrequest_auth = callOnConcreteRequestType(
-            dynamic_cast<const Coordination::ZooKeeperRequest &>(*concrete_request),
-            [&](const auto & subrequest) { return checkAuth(subrequest, storage, session_id, is_local); });
+            *concrete_request, [&](const auto & subrequest) { return checkAuth(subrequest, storage, session_id, is_local); });
 
         if (!check_subrequest_auth)
             return false;
@@ -3054,11 +3053,9 @@ std::list<KeeperStorageBase::Delta> preprocess(
     std::list<KeeperStorageBase::Delta> new_deltas;
     for (size_t i = 0; i < subrequests.size(); ++i)
     {
-        const auto zk_subrequest = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(subrequests[i]);
-
         uint64_t subrequest_digest = current_digest;
         auto new_subdeltas = callOnConcreteRequestType(
-            *zk_subrequest,
+            *subrequests[i],
             [&](const auto & subrequest)
             { return preprocess(subrequest, storage, zxid, session_id, time, &subrequest_digest, keeper_context); });
 
@@ -3106,7 +3103,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
         /// Manually add deltas so that the result of previous request in the transaction is used in the next request
         /// Multi requests already applied their deltas to uncommitted state.
-        if (!isMultiRequest(*zk_subrequest))
+        if (!isMultiRequest(*subrequests[i]))
             storage.uncommitted_state.applyDeltas(new_subdeltas, &current_digest);
         else
             current_digest = subrequest_digest;
@@ -3179,8 +3176,7 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
     {
         auto subdeltas = extractSubdeltas(deltas);
         response->responses.push_back(callOnConcreteRequestType(
-            dynamic_cast<const Coordination::ZooKeeperRequest &>(*multi_subrequest),
-            [&](const auto & subrequest) { return process(subrequest, storage, std::move(subdeltas), session_id); }));
+            *multi_subrequest, [&](const auto & subrequest) { return process(subrequest, storage, std::move(subdeltas), session_id); }));
     }
 
     return response;
@@ -3200,8 +3196,7 @@ Coordination::ZooKeeperResponsePtr processLocal(const Coordination::ZooKeeperMul
     {
         auto subdeltas = extractSubdeltas(deltas);
         response->responses.push_back(callOnConcreteRequestType(
-            dynamic_cast<const Coordination::ZooKeeperRequest &>(*multi_subrequest),
-            [&](const auto & subrequest) { return processLocal(subrequest, storage, std::move(subdeltas), session_id); }));
+            *multi_subrequest, [&](const auto & subrequest) { return processLocal(subrequest, storage, std::move(subdeltas), session_id); }));
     }
 
     response->error = Coordination::Error::ZOK;
@@ -3233,7 +3228,7 @@ std::pair<KeeperResponsesForSessions, Int64> processWatches(
     {
         auto subdeltas = extractSubdeltas(deltas);
         auto responses = callOnConcreteRequestType(
-            dynamic_cast<const Coordination::ZooKeeperRequest &>(*generic_request),
+            *generic_request,
             [&](const auto & subrequest)
             {
                 auto [rsp, removed_watches] = processWatches(subrequest, subdeltas, storage, session_id);
@@ -3875,10 +3870,9 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
                 for (const auto [subrequest, subresponse] : std::views::zip(multi_read_request->requests, multi_read_response->responses))
                 {
-                    const auto zk_subrequest = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(subrequest);
-                    if (zk_subrequest->has_watch)
+                    if (subrequest->has_watch)
                     {
-                        update_watches(zk_subrequest, subresponse);
+                        update_watches(subrequest, subresponse);
                     }
                 }
             }
