@@ -63,10 +63,7 @@ private:
 class NativeParquetSchemaReader : public ISchemaReader
 {
 public:
-    NativeParquetSchemaReader(
-        ReadBuffer & in_,
-        const FormatSettings & format_settings,
-        ParquetMetadataCachePtr metadata_cache_);
+    NativeParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);
 
     NamesAndTypesList readSchema() override;
     std::optional<size_t> readNumberOrRows() override;
@@ -77,7 +74,6 @@ private:
     Parquet::ReadOptions read_options;
     parquet::format::FileMetaData file_metadata;
     bool initialized = false;
-    ParquetMetadataCachePtr metadata_cache;
 };
 
 }

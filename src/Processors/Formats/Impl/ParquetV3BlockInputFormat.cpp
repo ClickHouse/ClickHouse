@@ -181,13 +181,9 @@ void ParquetV3BlockInputFormat::resetParser()
     IInputFormat::resetParser();
 }
 
-NativeParquetSchemaReader::NativeParquetSchemaReader(
-    ReadBuffer & in_,
-    const FormatSettings & format_settings_,
-    ParquetMetadataCachePtr metadata_cache_)
+NativeParquetSchemaReader::NativeParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : ISchemaReader(in_)
     , read_options(convertReadOptions(format_settings_))
-    , metadata_cache(metadata_cache_)
 {
 }
 
