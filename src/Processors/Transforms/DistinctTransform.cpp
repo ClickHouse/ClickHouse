@@ -1,8 +1,12 @@
+#include <vector>
 #include <Processors/Transforms/DistinctTransform.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Common/assert_cast.h>
+#include <Columns/ColumnsNumber.h>
 #include <base/types.h>
 
 static inline size_t intHash32(UInt64 x)
@@ -23,9 +27,6 @@ namespace CurrentMetrics
     extern const Metric DistinctThreadsActive;
     extern const Metric DistinctThreadsScheduled;
 }
-
-#include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -306,23 +307,46 @@ void DistinctTransform::buildSetParallelFilter(
     /// 1. Allocate index buffer and per-row bucket ids
     PODArray<size_t> all_indices(rows);
     PODArray<UInt8> coarse_bucket_ids(rows); /// UInt8 is sufficient for ≤ 256 buckets
-    PODArray<size_t> bucket_sizes(num_coarse_buckets, 0);
+    std::vector<std::atomic<size_t>> bucket_sizes(num_coarse_buckets);
     PODArray<KeyHolder> keys(rows);
     PODArray<size_t> hashes(rows);
+    const size_t block = 1024;
 
-    /// 2. First pass: hash each row once, assign to coarse bucket, count per-bucket size
-    for (size_t i = 0; i < rows; ++i)
-    {
-        auto key_holder = state.getKeyHolder(i, variants.string_pool);
-        auto hash = method.data.hash(keyHolderGetKey(key_holder));
-        auto fine_bucket = method.data.getBucketFromHash(hash);        // 0..255
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::DISTINCT_FINAL);
+    try {
+        auto next_row = std::make_shared<std::atomic<size_t>>(0);
 
-        size_t coarse_bucket = fine_bucket % num_coarse_buckets;
-        coarse_bucket_ids[i] = static_cast<UInt8>(coarse_bucket);
-        keys[i] = key_holder;
-        hashes[i] = hash;
-        ++bucket_sizes[coarse_bucket];
+        auto thread_func = [next_row, rows, &variants, &state, &coarse_bucket_ids, &bucket_sizes, num_coarse_buckets, &hashes, &keys, &method]()
+        {
+            while (true)
+            {
+                const size_t start = next_row->fetch_add(block, std::memory_order_relaxed);
+                if (start >= rows)
+                    return;
+
+                const size_t end = std::min(start + block, rows);
+                for (size_t i = start; i < end; ++i)
+                {
+                    auto key_holder = state.getKeyHolder(i, variants.string_pool);
+                    auto hash = method.data.hash(keyHolderGetKey(key_holder));
+                    auto fine_bucket = method.data.getBucketFromHash(hash);        // 0..255
+
+                    size_t coarse_bucket = fine_bucket % num_coarse_buckets;
+                    coarse_bucket_ids[i] = static_cast<UInt8>(coarse_bucket);
+                    keys[i] = key_holder;
+                    hashes[i] = hash;
+                    bucket_sizes[coarse_bucket].fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        };
+        for (size_t i = 0; i < thread_pool.getMaxThreads(); ++i)
+            runner.enqueueAndKeepTrack(thread_func, Priority{});
     }
+    catch (...)
+    {
+        throw;
+    }
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     /// 3. Compute start offset for each bucket
     std::vector<size_t> bucket_offsets(num_coarse_buckets + 1, 0);
@@ -338,13 +362,11 @@ void DistinctTransform::buildSetParallelFilter(
     }
 
     /// 5. Parallel processing by bucket
-    auto next_bucket = std::make_shared<std::atomic<size_t>>(0);
-    for (size_t thread_id = 0; thread_id < num_coarse_buckets; ++thread_id)
-    {
-        thread_pool.scheduleOrThrowOnError(
-            [next_bucket, &bucket_offsets, &all_indices, &hashes, &keys, &method, &filter, thread_group]()
+    try {
+        auto next_bucket = std::make_shared<std::atomic<size_t>>(0);
+
+        auto thread_func = [next_bucket, &bucket_offsets, &all_indices, &hashes, &keys, &method, &filter, thread_group]()
         {
-            ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTINCT_FINAL);
             typename std::remove_reference_t<decltype(method.data)>::LookupResult it;
 
             while (true)
@@ -368,9 +390,16 @@ void DistinctTransform::buildSetParallelFilter(
                     filter[i] = inserted;
                 }
             }
-        });
+        };
+
+        for (size_t i = 0; i < thread_pool.getMaxThreads(); ++i)
+            runner.enqueueAndKeepTrack(thread_func, Priority{});
     }
-    thread_pool.wait();
+    catch (...)
+    {
+        throw;
+    }
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 void DistinctTransform::transform(Chunk & chunk)
@@ -463,7 +492,7 @@ void DistinctTransform::transform(Chunk & chunk)
             \
             if constexpr (SetVariants::Type::NAME == SetVariants::Type::hashed_two_level) \
             { \
-                if (old_set_size > parallel_threshold && pool) \
+                if (old_set_size > parallel_threshold && pool && num_rows > 10000) \
                     buildSetParallelFilter(*data.NAME, column_ptrs, filter, num_rows, data, *pool); \
                 else \
                     build(); \
