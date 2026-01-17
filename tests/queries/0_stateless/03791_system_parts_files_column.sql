@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS test_parts_files;
 
 CREATE TABLE test_parts_files (x UInt64) ENGINE = MergeTree ORDER BY x;
