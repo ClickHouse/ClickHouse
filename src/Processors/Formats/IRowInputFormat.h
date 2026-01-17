@@ -101,10 +101,7 @@ private:
 
     BlockMissingValues block_missing_values;
     size_t approx_bytes_read_for_chunk = 0;
-<<<<<<< Updated upstream
-=======
     bool got_connection_exception = false;
->>>>>>> Stashed changes
 };
 
 }
