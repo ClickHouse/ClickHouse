@@ -2402,8 +2402,8 @@ BlockIO InterpreterCreateQuery::execute()
     auto & create = query_ptr->as<ASTCreateQuery &>();
 
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
-    bool is_create_database = create.database && !create.table;
 
+    bool is_create_database = create.database && !create.table;
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.database)
@@ -2447,7 +2447,6 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     AccessRightsElements required_access;
     const auto & create = query_ptr->as<const ASTCreateQuery &>();
-    const auto & context = getContext();
 
     if (!create.table)
     {
@@ -2489,7 +2488,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         for (const auto & target : create.targets->targets)
         {
             const auto & target_id = target.table_id;
-            if (target.table_id && !requireTemporaryDatabaseAccessIfNeeded(required_access, target_id.database_name, context))
+            if (target_id)
                 required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, target_id.database_name, target_id.table_name);
         }
     }

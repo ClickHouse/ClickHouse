@@ -25,8 +25,6 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path);
 void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, std::string_view content, bool fsync_metadata);
 
-bool requireTemporaryDatabaseAccessIfNeeded(AccessRightsElements & required_access, const String & database_name, ContextPtr context);
-bool requireTemporaryDatabaseAccessIfNeeded(AccessRightsElements & required_access, const DatabasePtr & db);
 void throwIfTemporaryDatabaseUsedOnCluster(const String & database_name, const ContextPtr & context);
 void throwIfTemporaryDatabaseUsedOnCluster(const DatabasePtr & db);
 

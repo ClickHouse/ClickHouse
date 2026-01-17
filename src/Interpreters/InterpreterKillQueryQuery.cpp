@@ -293,7 +293,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                         getContext()->getSettingsRef()[Setting::max_parser_depth],
                         getContext()->getSettingsRef()[Setting::max_parser_backtracks]);
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
-                        command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name, getContext());
+                        command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
                     if (!access->isGranted(required_access_rights))
                     {
                         access_denied = true;
@@ -357,7 +357,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                     alter_command.type = ASTAlterCommand::MOVE_PARTITION;
                     alter_command.move_destination_type = DataDestinationType::SHARD;
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
-                        alter_command, table_id.database_name, table_id.table_name, getContext());
+                        alter_command, table_id.database_name, table_id.table_name);
                     if (!access->isGranted(required_access_rights))
                     {
                         access_denied = true;

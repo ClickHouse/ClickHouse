@@ -79,12 +79,11 @@ BlockIO InterpreterUpdateQuery::execute()
     const auto & context = getContext();
 
     AccessRightsElements required_access;
-    if (!requireTemporaryDatabaseAccessIfNeeded(required_access, update_query.getDatabase(), context))
-        required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
+    required_access.emplace_back(AccessType::ALTER_UPDATE, update_query.getDatabase(), update_query.getTable());
 
     if (!update_query.cluster.empty())
     {
-        throwIfTemporaryDatabaseUsedOnCluster(update_query.getDatabase(), context); // todo: triple database lookup here
+        throwIfTemporaryDatabaseUsedOnCluster(update_query.getDatabase(), context);
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(query_ptr, context, params);

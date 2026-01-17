@@ -62,7 +62,7 @@ Result:
 ```
 
 ### TEMPORARY {#temporary}
-Creates a temporary database that will be automatically deleted when the current session ends. The creator is automatically granted full access to the database.
+Creates a temporary database that will be automatically deleted when the current session ends.
 
 Temporary databases are available to access only in the current session but may be visible to others in the system tables depending
 on the [show_temporary_databases_from_other_sessions_in_system_tables](/operations/settings/settings.md#show_temporary_databases_from_other_sessions_in_system_tables) setting.

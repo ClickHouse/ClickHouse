@@ -11,7 +11,6 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
-#include <Databases/DatabasesCommon.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -142,16 +141,10 @@ void InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(RowPolicy & polic
 AccessRightsElements InterpreterCreateRowPolicyQuery::getRequiredAccess() const
 {
     const auto & query = query_ptr->as<const ASTCreateRowPolicyQuery &>();
-    const auto & context = getContext();
     AccessRightsElements res;
     auto access_type = (query.alter ? AccessType::ALTER_ROW_POLICY : AccessType::CREATE_ROW_POLICY);
-
     for (const auto & row_policy_name : query.names->full_names)
-    {
-        // todo: is it right?
-        if (!requireTemporaryDatabaseAccessIfNeeded(res, row_policy_name.database, context))
-            res.emplace_back(access_type, row_policy_name.database, row_policy_name.table_name);
-    }
+        res.emplace_back(access_type, row_policy_name.database, row_policy_name.table_name);
     return res;
 }
 

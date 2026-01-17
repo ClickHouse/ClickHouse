@@ -30,7 +30,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Databases/DatabasesCommon.h>
 #include <base/range.h>
 #include <base/sort.h>
 
@@ -404,25 +403,17 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
         }
         case AccessEntityType::ROW_POLICY:
         {
-            // todo: ensure that row policy will not leave DB scope
-            const auto & context = getContext();
             if (show_query.row_policy_names)
             {
                 for (const auto & row_policy_name : show_query.row_policy_names->full_names)
-                {
-                    if (!requireTemporaryDatabaseAccessIfNeeded(res, row_policy_name.database, context))
-                        res.emplace_back(AccessType::SHOW_ROW_POLICIES, row_policy_name.database, row_policy_name.table_name);
-                }
+                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, row_policy_name.database, row_policy_name.table_name);
             }
             else if (show_query.database_and_table_name)
             {
-                if (!requireTemporaryDatabaseAccessIfNeeded(res, show_query.database_and_table_name->first, context))
-                {
-                    if (show_query.database_and_table_name->second.empty())
-                        res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first);
-                    else
-                        res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first, show_query.database_and_table_name->second);
-                }
+                if (show_query.database_and_table_name->second.empty())
+                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first);
+                else
+                    res.emplace_back(AccessType::SHOW_ROW_POLICIES, show_query.database_and_table_name->first, show_query.database_and_table_name->second);
             }
             else
             {

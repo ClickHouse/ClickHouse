@@ -10,7 +10,6 @@
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
-#include <Databases/DatabasesCommon.h>
 
 namespace DB
 {
@@ -105,13 +104,8 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
         {
             if (query.row_policy_names)
             {
-                const auto & context = getContext();
                 for (const auto & row_policy_name : query.row_policy_names->full_names)
-                {
-                    // todo: sure?
-                    if (!requireTemporaryDatabaseAccessIfNeeded(res, row_policy_name.database, context))
-                        res.emplace_back(AccessType::DROP_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
-                }
+                    res.emplace_back(AccessType::DROP_ROW_POLICY, row_policy_name.database, row_policy_name.table_name);
             }
             return res;
         }

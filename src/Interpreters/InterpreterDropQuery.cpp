@@ -681,9 +681,6 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     AccessRightsElements required_access;
     const auto & drop = current_query_ptr->as<const ASTDropQuery &>();
 
-    if (requireTemporaryDatabaseAccessIfNeeded(required_access, drop.getDatabase(), getContext()))
-        return required_access;
-
     if (!drop.table)
     {
         if (drop.kind == ASTDropQuery::Kind::Detach)

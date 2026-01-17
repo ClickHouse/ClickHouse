@@ -212,36 +212,28 @@ AccessRightsElements InterpreterRenameQuery::getRequiredAccess(InterpreterRename
 {
     AccessRightsElements required_access;
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
-    const auto & context = getContext();
     for (const auto & elem : rename.getElements())
     {
-        const bool from_temporary = requireTemporaryDatabaseAccessIfNeeded(required_access, elem.from.getDatabase(), context);
-        const bool to_temporary = requireTemporaryDatabaseAccessIfNeeded(required_access, elem.to.getDatabase(), context);
-
         switch (type)
         {
-            case RenameType::RenameDatabase:
-            {
-                if (!from_temporary)
-                    required_access.emplace_back(AccessType::SELECT | AccessType::DROP_DATABASE, elem.from.getDatabase());
-                if (!to_temporary)
-                    required_access.emplace_back(AccessType::CREATE_DATABASE | AccessType::INSERT, elem.to.getDatabase());
-                break;
-            }
             case RenameType::RenameTable:
             {
-                if (!from_temporary)
+                required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from.getDatabase(), elem.from.getTable());
+                required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.getDatabase(), elem.to.getTable());
+                if (rename.exchange)
                 {
-                    required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.from.getDatabase(), elem.from.getTable());
-                    if (rename.exchange)
-                        required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from.getDatabase(), elem.from.getTable());
+                    required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.from.getDatabase(), elem.from.getTable());
+                    required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.getDatabase(), elem.to.getTable());
                 }
-                if (!to_temporary)
-                {
-                    required_access.emplace_back(AccessType::CREATE_TABLE | AccessType::INSERT, elem.to.getDatabase(), elem.to.getTable());
-                    if (rename.exchange)
-                        required_access.emplace_back(AccessType::SELECT | AccessType::DROP_TABLE, elem.to.getDatabase(), elem.to.getTable());
-                }
+                break;
+            }
+            case RenameType::RenameDatabase:
+            {
+                required_access.emplace_back(AccessType::SELECT | AccessType::DROP_DATABASE, elem.from.getDatabase());
+                required_access.emplace_back(AccessType::INSERT, elem.to.getDatabase());
+
+                const auto & is_temporary = getContext()->hasSessionContext() && getContext()->getSessionContext()->hasTemporaryDatabase(elem.from.getDatabase());
+                required_access.emplace_back(!is_temporary ? AccessType::CREATE_DATABASE : AccessType::CREATE_TEMPORARY_DATABASE, elem.to.getDatabase());
                 break;
             }
         }

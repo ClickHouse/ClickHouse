@@ -29,8 +29,7 @@ BlockIO InterpreterDropIndexQuery::execute()
     const auto & drop_index = query_ptr->as<ASTDropIndexQuery &>();
 
     AccessRightsElements required_access;
-    if (!requireTemporaryDatabaseAccessIfNeeded(required_access, drop_index.getDatabase(), current_context))
-        required_access.emplace_back(AccessType::ALTER_DROP_INDEX, drop_index.getDatabase(), drop_index.getTable());
+    required_access.emplace_back(AccessType::ALTER_DROP_INDEX, drop_index.getDatabase(), drop_index.getTable());
 
     if (!drop_index.cluster.empty())
     {

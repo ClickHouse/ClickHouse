@@ -31,7 +31,6 @@ BlockIO InterpreterOptimizeQuery::execute()
     if (!ast.cluster.empty())
     {
         throwIfTemporaryDatabaseUsedOnCluster(ast.getDatabase(), getContext());
-
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -94,8 +93,7 @@ AccessRightsElements InterpreterOptimizeQuery::getRequiredAccess() const
 {
     const auto & optimize = query_ptr->as<const ASTOptimizeQuery &>();
     AccessRightsElements required_access;
-    if (!requireTemporaryDatabaseAccessIfNeeded(required_access, optimize.getDatabase(), getContext()))
-        required_access.emplace_back(AccessType::OPTIMIZE, optimize.getDatabase(), optimize.getTable());
+    required_access.emplace_back(AccessType::OPTIMIZE, optimize.getDatabase(), optimize.getTable());
     return required_access;
 }
 

@@ -632,10 +632,6 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
         /// which shouldn't be accessed.
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             return access_granted();
-
-        /// Like to the temporary tables, but with temporary databases.
-        if (!database_name.empty() && context->hasSessionContext() && context->getSessionContext()->hasTemporaryDatabase(String(database_name))) // todo: copying here
-            return access_granted();
     }
 
     auto acs = getAccessRightsWithImplicit();

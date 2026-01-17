@@ -59,8 +59,7 @@ BlockIO InterpreterCreateIndexQuery::execute()
     }
 
     AccessRightsElements required_access;
-    if (!requireTemporaryDatabaseAccessIfNeeded(required_access, create_index.getDatabase(), current_context))
-        required_access.emplace_back(AccessType::ALTER_ADD_INDEX, create_index.getDatabase(), create_index.getTable());
+    required_access.emplace_back(AccessType::ALTER_ADD_INDEX, create_index.getDatabase(), create_index.getTable());
 
     if (!create_index.cluster.empty())
     {

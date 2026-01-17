@@ -27,23 +27,16 @@ InterpreterUndropQuery::InterpreterUndropQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterUndropQuery::execute()
 {
+    const auto & context = getContext();
+    context->checkAccess(AccessType::UNDROP_TABLE);
+
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
-
-    DatabasePtr db;
-    if (!undrop.getDatabase().empty())
-        db = DatabaseCatalog::instance().tryGetDatabase(undrop.getDatabase(), getContext());
-
-    if (db && db->isTemporary())
-        getContext()->checkAccess(AccessType::CREATE_TEMPORARY_DATABASE);
-    else
-        getContext()->checkAccess(AccessType::UNDROP_TABLE);
-
-    if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, context))
     {
-        throwIfTemporaryDatabaseUsedOnCluster(db);
+        throwIfTemporaryDatabaseUsedOnCluster(undrop.getDatabase(), context);
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
-        return executeDDLQueryOnCluster(query_ptr, getContext(), params);
+        return executeDDLQueryOnCluster(query_ptr, context, params);
     }
 
     if (undrop.table)
@@ -82,8 +75,7 @@ AccessRightsElements InterpreterUndropQuery::getRequiredAccessForDDLOnCluster() 
     AccessRightsElements required_access;
     const auto & undrop = query_ptr->as<const ASTUndropQuery &>();
 
-    if (!requireTemporaryDatabaseAccessIfNeeded(required_access, undrop.getDatabase(), getContext()))
-        required_access.emplace_back(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
+    required_access.emplace_back(AccessType::UNDROP_TABLE, undrop.getDatabase(), undrop.getTable());
     return required_access;
 }
 
