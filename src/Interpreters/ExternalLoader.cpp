@@ -1081,7 +1081,6 @@ private:
             next_update_time = TimePoint::max();
         }
 
-
         Info * info = getInfo(name);
 
         /// We should check if this is still the same loading as we were doing.
