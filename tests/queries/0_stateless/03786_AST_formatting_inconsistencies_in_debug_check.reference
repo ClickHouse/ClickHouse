@@ -36,3 +36,4 @@ Formatted: SELECT * FROM tuple('42', '3141592')
 
 Original:  SELECT 1 FROM VALUES (1, (NOT 1 IS NULL)) tx
 Formatted: SELECT 1 FROM VALUES(1, NOT (1 IS NULL)) AS tx
+
