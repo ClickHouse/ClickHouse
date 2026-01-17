@@ -460,7 +460,8 @@ InputFormatPtr FormatFactory::getInput(
 
     size_t max_parsing_threads = parser_shared_resources->getParsingThreadsPerReader();
     bool parallel_parsing = max_parsing_threads > 1 && settings[Setting::input_format_parallel_parsing]
-        && creators.file_segmentation_engine_creator && !creators.random_access_input_creator && !need_only_count;
+        && (creators.file_segmentation_engine_creator || creators.file_segmentation_engine_and_parser_creator)
+        && !creators.random_access_input_creator && !need_only_count;
 
     if (settings[Setting::max_memory_usage]
         && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage])
@@ -483,37 +484,79 @@ InputFormatPtr FormatFactory::getInput(
 
     if (parallel_parsing)
     {
-        const auto & input_getter = creators.input_creator;
+        FormatFactory::InternalParserCreator parser_creator;
+        FormatFactory::FileSegmentationEngineCreator segmentation_engine_creator;
 
-        /// Const reference is copied to lambda.
-        auto parser_creator = [input_getter, sample, row_input_format_params, format_settings]
-            (ReadBuffer & input) -> InputFormatPtr
-            { return input_getter(input, sample, row_input_format_params, format_settings); };
+        bool can_do_parallel = false;
 
-        /// TODO: Try using parser_shared_resources->parsing_runner instead of creating a ThreadPool in
-        ///       ParallelParsingInputFormat.
-        ParallelParsingInputFormat::Params params{
-            buf,
-            sample,
-            parser_creator,
-            creators.file_segmentation_engine_creator,
-            name,
-            format_settings,
-            max_parsing_threads,
-            settings[Setting::min_chunk_bytes_for_parallel_parsing],
-            max_block_size,
-            context->getApplicationType() == Context::ApplicationType::SERVER};
+        /// Use the combined creator if available (for formats like Avro that need shared state).
+        /// Otherwise, fall back to the standard input_creator + file_segmentation_engine_creator.
+        if (creators.file_segmentation_engine_and_parser_creator)
+        {
+            auto [seg_engine, custom_parser] = creators.file_segmentation_engine_and_parser_creator(format_settings, sample);
+            /// If the creator returned valid functions, use them.
+            /// Otherwise, the format chose to disable parallel parsing (e.g., based on settings).
+            if (seg_engine && custom_parser)
+            {
+                parser_creator = std::move(custom_parser);
+                /// Wrap the engine in a creator that returns it on each call.
+                /// The engine captures shared state internally and can be reused.
+                segmentation_engine_creator = [captured_engine = std::move(seg_engine)](const FormatSettings &)
+                {
+                    return captured_engine;
+                };
+                can_do_parallel = true;
+            }
+        }
 
-        format = std::make_shared<ParallelParsingInputFormat>(params);
+        if (!can_do_parallel && creators.file_segmentation_engine_creator)
+        {
+            const auto & input_getter = creators.input_creator;
+            /// Const reference is copied to lambda.
+            parser_creator = [input_getter, sample, row_input_format_params, format_settings]
+                (ReadBuffer & input) -> InputFormatPtr
+                { return input_getter(input, sample, row_input_format_params, format_settings); };
+            segmentation_engine_creator = creators.file_segmentation_engine_creator;
+            can_do_parallel = true;
+        }
+
+        if (can_do_parallel)
+        {
+            /// TODO: Try using parser_shared_resources->parsing_runner instead of creating a ThreadPool in
+            ///       ParallelParsingInputFormat.
+            ParallelParsingInputFormat::Params params{
+                buf,
+                sample,
+                parser_creator,
+                segmentation_engine_creator,
+                name,
+                format_settings,
+                max_parsing_threads,
+                settings[Setting::min_chunk_bytes_for_parallel_parsing],
+                max_block_size,
+                context->getApplicationType() == Context::ApplicationType::SERVER};
+
+            format = std::make_shared<ParallelParsingInputFormat>(params);
+        }
+        else
+        {
+            /// The format decided to disable parallel parsing, fall back to sequential.
+            parallel_parsing = false;
+        }
     }
-    else if (creators.random_access_input_creator)
+
+    /// Fall back to sequential parsing or random access input format.
+    if (!format)
     {
-        format = creators.random_access_input_creator(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info);
-    }
-    else
-    {
-        format = creators.input_creator(buf, sample, row_input_format_params, format_settings);
+        if (creators.random_access_input_creator)
+        {
+            format = creators.random_access_input_creator(
+                buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info);
+        }
+        else
+        {
+            format = creators.input_creator(buf, sample, row_input_format_params, format_settings);
+        }
     }
 
     if (owned_buf)
@@ -875,6 +918,14 @@ void FormatFactory::registerFileSegmentationEngineCreator(const String & name, F
     if (target)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: File segmentation engine creator {} is already registered", name);
     target = std::move(file_segmentation_engine_creator);
+}
+
+void FormatFactory::registerFileSegmentationEngineAndParserCreator(const String & name, FileSegmentationEngineAndParserCreator creator)
+{
+    auto & target = getOrCreateCreators(name).file_segmentation_engine_and_parser_creator;
+    if (target)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: File segmentation engine and parser creator {} is already registered", name);
+    target = std::move(creator);
 }
 
 void FormatFactory::registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator)

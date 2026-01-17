@@ -29,6 +29,11 @@ public:
     /// This reuses the Avro library's header parsing (DRY).
     static AvroHeaderState extractHeaderState(avro::DataFileReaderBase & reader);
 
+    /// Parse Avro file header directly from ReadBuffer.
+    /// Positions the buffer at the start of the first block after parsing.
+    /// This avoids issues with the Avro library's stream adapter buffering.
+    static AvroHeaderState parseHeader(ReadBuffer & in);
+
     /// Read a varint-encoded int64 (zigzag encoding) from buffer.
     /// Reuses ClickHouse's VarInt.h which is compatible with Avro.
     static int64_t readVarInt(ReadBuffer & in);
