@@ -1985,26 +1985,53 @@ void DatabaseReplicated::restoreDatabaseMetadataInKeeper(ContextPtr)
 {
     waitDatabaseStarted();
 
-    tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::CREATE);
+    /// Shutdown the DDL worker first to prevent a race condition:
+    /// The old DDL worker might detect ZK reconnection and trigger recovery
+    /// before restoreTablesMetadataInKeeper writes metadata to ZK.
+    /// If recovery runs with empty ZK metadata, it will move local tables
+    /// to the broken_replicated_tables database.
+    /// Note: We only call shutdown() here, not setting ddl_worker to nullptr,
+    /// because other code paths may still try to access ddl_worker.
+    /// The reinitializeDDLWorker() call at the end will handle the full reset.
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (ddl_worker)
+        {
+            LOG_TRACE(log, "Shutting down DDL worker before restore");
+            ddl_worker->shutdown();
+        }
+    }
 
     try
     {
-        restoreTablesMetadataInKeeper();
-    }
-    catch (const zkutil::KeeperMultiException & e)
-    {
-        if (Coordination::Error::ZNODEEXISTS != e.code)
+        tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::CREATE);
+
+        try
         {
-            throw;
+            restoreTablesMetadataInKeeper();
         }
-        LOG_DEBUG(log, "It seems that the metadata was restored previously: {}.", e.what());
+        catch (const zkutil::KeeperMultiException & e)
+        {
+            if (Coordination::Error::ZNODEEXISTS != e.code)
+            {
+                throw;
+            }
+            LOG_DEBUG(log, "It seems that the metadata was restored previously: {}.", e.what());
+        }
+
+        /// Force the database to recover to update the restored metadata
+        auto current_zookeeper = getContext()->getZooKeeper();
+        current_zookeeper->set(replica_path + "/digest", DatabaseReplicatedDDLWorker::FORCE_AUTO_RECOVERY_DIGEST);
+
+        reinitializeDDLWorker();
     }
-
-    /// Force the database to recover to update the restored metadata
-    auto current_zookeeper = getContext()->getZooKeeper();
-    current_zookeeper->set(replica_path + "/digest", DatabaseReplicatedDDLWorker::FORCE_AUTO_RECOVERY_DIGEST);
-
-    reinitializeDDLWorker();
+    catch (...)
+    {
+        /// Ensure DDL worker is restarted even if an exception is thrown.
+        /// Otherwise, subsequent DDL queries will fail.
+        reinitializeDDLWorker();
+        throw;
+    }
 }
 
 void DatabaseReplicated::drop(ContextPtr context_)
