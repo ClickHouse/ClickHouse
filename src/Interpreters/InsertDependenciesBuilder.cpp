@@ -589,7 +589,6 @@ private:
         }
     };
 
-
     QueryPipeline process(Block data_block, Chunk::ChunkInfoCollection && chunk_infos)
     {
         /// We create a table with the same name as original table and the same alias columns,

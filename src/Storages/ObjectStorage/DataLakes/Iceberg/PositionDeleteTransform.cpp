@@ -149,8 +149,8 @@ void IcebergBitmapPositionDeleteTransform::initialize()
     {
         while (auto delete_chunk = delete_source->read())
         {
-            int position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
-            int filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
+            auto position_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::positions_column_name);
+            auto filename_index = getColumnIndex(delete_source, IcebergPositionDeleteTransform::data_file_path_column_name);
 
             auto position_column = delete_chunk.getColumns()[position_index];
             auto filename_column = delete_chunk.getColumns()[filename_index];

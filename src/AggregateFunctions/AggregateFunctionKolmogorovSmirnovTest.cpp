@@ -7,10 +7,8 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/PODArray_fwd.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -294,7 +292,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         Float64 value = columns[0]->getFloat64(row_num);
-        UInt8 is_second = columns[1]->getUInt(row_num);
+        bool is_second = columns[1]->getUInt(row_num);
         if (is_second)
             data(place).addY(value, arena);
         else

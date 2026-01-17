@@ -229,14 +229,14 @@ private:
                 }
                 else if (is_max_key_positive && !is_min_key_positive)
                 {
-                    KeyTypeUnsigned min_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key);
+                    KeyTypeUnsigned min_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(min_key));
                     max_min_key_difference = static_cast<KeyTypeUnsigned>(max_key) + min_key_unsigned;
                 }
                 else
                 {
                     /// Both max and min key are negative
-                    KeyTypeUnsigned min_key_unsigned = -static_cast<KeyTypeUnsigned>(min_key);
-                    KeyTypeUnsigned max_key_unsigned = -static_cast<KeyTypeUnsigned>(max_key);
+                    KeyTypeUnsigned min_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(min_key));
+                    KeyTypeUnsigned max_key_unsigned = static_cast<KeyTypeUnsigned>(-static_cast<KeyTypeUnsigned>(max_key));
                     max_min_key_difference = min_key_unsigned - max_key_unsigned;
                 }
             }
