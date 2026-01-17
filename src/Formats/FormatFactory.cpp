@@ -458,16 +458,28 @@ InputFormatPtr FormatFactory::getInput(
 
     // Decide whether to use ParallelParsingInputFormat.
 
-    size_t max_parsing_threads = parser_shared_resources->getParsingThreadsPerReader();
-    bool parallel_parsing = max_parsing_threads > 1 && settings[Setting::input_format_parallel_parsing]
-        && (creators.file_segmentation_engine_creator || creators.file_segmentation_engine_and_parser_creator)
-        && !creators.random_access_input_creator && !need_only_count;
+    const size_t max_parsing_threads = parser_shared_resources->getParsingThreadsPerReader();
 
-    if (settings[Setting::max_memory_usage]
-        && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage])
-        parallel_parsing = false;
-    if (settings[Setting::max_memory_usage_for_user]
-        && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > settings[Setting::max_memory_usage_for_user])
+    const bool has_multiple_threads = max_parsing_threads > 1;
+    const bool parallel_parsing_enabled = settings[Setting::input_format_parallel_parsing];
+    const bool has_segmentation_engine = creators.file_segmentation_engine_creator
+                                      || creators.file_segmentation_engine_and_parser_creator;
+    const bool is_random_access_format = creators.random_access_input_creator != nullptr;
+
+    bool parallel_parsing = has_multiple_threads
+        && parallel_parsing_enabled
+        && has_segmentation_engine
+        && !is_random_access_format
+        && !need_only_count;
+
+    auto exceeds_memory_limit = [&](UInt64 limit) -> bool
+    {
+        return limit > 0
+            && settings[Setting::min_chunk_bytes_for_parallel_parsing] * max_parsing_threads * 2 > limit;
+    };
+
+    if (exceeds_memory_limit(settings[Setting::max_memory_usage])
+        || exceeds_memory_limit(settings[Setting::max_memory_usage_for_user]))
         parallel_parsing = false;
 
     if (parallel_parsing)
@@ -478,74 +490,28 @@ InputFormatPtr FormatFactory::getInput(
             parallel_parsing = false;
     }
 
-    // Create the InputFormat in one of 3 ways.
+    // Create the InputFormat.
 
     InputFormatPtr format;
 
     if (parallel_parsing)
     {
-        FormatFactory::InternalParserCreator parser_creator;
-        FormatFactory::FileSegmentationEngineCreator segmentation_engine_creator;
+        format = tryCreateParallelParsingFormat(
+            buf,
+            sample,
+            creators,
+            row_input_format_params,
+            format_settings,
+            name,
+            max_parsing_threads,
+            settings[Setting::min_chunk_bytes_for_parallel_parsing],
+            max_block_size,
+            context->getApplicationType() == Context::ApplicationType::SERVER);
 
-        bool can_do_parallel = false;
-
-        /// Use the combined creator if available (for formats like Avro that need shared state).
-        /// Otherwise, fall back to the standard input_creator + file_segmentation_engine_creator.
-        if (creators.file_segmentation_engine_and_parser_creator)
-        {
-            auto [seg_engine, custom_parser] = creators.file_segmentation_engine_and_parser_creator(format_settings, sample);
-            /// If the creator returned valid functions, use them.
-            /// Otherwise, the format chose to disable parallel parsing (e.g., based on settings).
-            if (seg_engine && custom_parser)
-            {
-                parser_creator = std::move(custom_parser);
-                /// Wrap the engine in a creator that returns it on each call.
-                /// The engine captures shared state internally and can be reused.
-                segmentation_engine_creator = [captured_engine = std::move(seg_engine)](const FormatSettings &)
-                {
-                    return captured_engine;
-                };
-                can_do_parallel = true;
-            }
-        }
-
-        if (!can_do_parallel && creators.file_segmentation_engine_creator)
-        {
-            const auto & input_getter = creators.input_creator;
-            /// Const reference is copied to lambda.
-            parser_creator = [input_getter, sample, row_input_format_params, format_settings]
-                (ReadBuffer & input) -> InputFormatPtr
-                { return input_getter(input, sample, row_input_format_params, format_settings); };
-            segmentation_engine_creator = creators.file_segmentation_engine_creator;
-            can_do_parallel = true;
-        }
-
-        if (can_do_parallel)
-        {
-            /// TODO: Try using parser_shared_resources->parsing_runner instead of creating a ThreadPool in
-            ///       ParallelParsingInputFormat.
-            ParallelParsingInputFormat::Params params{
-                buf,
-                sample,
-                parser_creator,
-                segmentation_engine_creator,
-                name,
-                format_settings,
-                max_parsing_threads,
-                settings[Setting::min_chunk_bytes_for_parallel_parsing],
-                max_block_size,
-                context->getApplicationType() == Context::ApplicationType::SERVER};
-
-            format = std::make_shared<ParallelParsingInputFormat>(params);
-        }
-        else
-        {
-            /// The format decided to disable parallel parsing, fall back to sequential.
-            parallel_parsing = false;
-        }
+        if (!format)
+            parallel_parsing = false;  /// Format opted out, fall back to sequential.
     }
 
-    /// Fall back to sequential parsing or random access input format.
     if (!format)
     {
         if (creators.random_access_input_creator)
@@ -638,6 +604,67 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     }
 
     return res;
+}
+
+InputFormatPtr FormatFactory::tryCreateParallelParsingFormat(
+    ReadBuffer & buf,
+    const Block & sample,
+    const Creators & creators,
+    const RowInputFormatParams & row_input_format_params,
+    const FormatSettings & format_settings,
+    const String & format_name,
+    size_t max_parsing_threads,
+    size_t min_chunk_bytes,
+    size_t max_block_size,
+    bool is_server)
+{
+    InternalParserCreator parser_creator;
+    FileSegmentationEngineCreator segmentation_engine_creator;
+
+    /// Try combined creator first (for formats like Avro that need shared state).
+    if (creators.file_segmentation_engine_and_parser_creator)
+    {
+        auto [seg_engine, custom_parser] = creators.file_segmentation_engine_and_parser_creator(format_settings, sample);
+        if (seg_engine && custom_parser)
+        {
+            parser_creator = std::move(custom_parser);
+            /// Wrap the engine in a creator that returns it on each call.
+            /// The engine captures shared state internally and can be reused.
+            segmentation_engine_creator = [captured_engine = std::move(seg_engine)](const FormatSettings &)
+            {
+                return captured_engine;
+            };
+        }
+    }
+
+    /// Fall back to standard segmentation engine.
+    if (!parser_creator && creators.file_segmentation_engine_creator)
+    {
+        const auto & input_getter = creators.input_creator;
+        parser_creator = [input_getter, sample, row_input_format_params, format_settings]
+            (ReadBuffer & input) -> InputFormatPtr
+            { return input_getter(input, sample, row_input_format_params, format_settings); };
+        segmentation_engine_creator = creators.file_segmentation_engine_creator;
+    }
+
+    if (!parser_creator)
+        return nullptr;
+
+    /// TODO: Try using parser_shared_resources->parsing_runner instead of creating a ThreadPool in
+    ///       ParallelParsingInputFormat.
+    ParallelParsingInputFormat::Params params{
+        buf,
+        sample,
+        parser_creator,
+        segmentation_engine_creator,
+        format_name,
+        format_settings,
+        max_parsing_threads,
+        min_chunk_bytes,
+        max_block_size,
+        is_server};
+
+    return std::make_shared<ParallelParsingInputFormat>(params);
 }
 
 static void addExistingProgressToOutputFormat(OutputFormatPtr format, const ContextPtr & context)

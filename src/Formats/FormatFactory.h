@@ -338,6 +338,20 @@ private:
         const Settings & settings,
         bool is_remote_fs,
         const FormatParserSharedResourcesPtr & parser_shared_resources) const;
+
+    /// Attempts to create a ParallelParsingInputFormat using the format's segmentation engine.
+    /// Returns nullptr if parallel parsing is not available or the format opts out.
+    static InputFormatPtr tryCreateParallelParsingFormat(
+        ReadBuffer & buf,
+        const Block & sample,
+        const Creators & creators,
+        const RowInputFormatParams & row_input_format_params,
+        const FormatSettings & format_settings,
+        const String & format_name,
+        size_t max_parsing_threads,
+        size_t min_chunk_bytes,
+        size_t max_block_size,
+        bool is_server);
 };
 
 }
