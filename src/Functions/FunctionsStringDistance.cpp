@@ -265,6 +265,8 @@ struct ByteEditDistanceImpl
 
         PaddedPODArray<ResultType> distances0(haystack_size + 1);
         PaddedPODArray<ResultType> distances1(haystack_size + 1);
+        auto* __restrict prev = distances0.data();
+        auto* __restrict curr = distances1.data();
 
         ResultType substitution = 0;
         ResultType insertion = 0;
@@ -274,7 +276,7 @@ struct ByteEditDistanceImpl
 
         for (size_t pos_needle = 0; pos_needle < needle_size; ++pos_needle)
         {
-            distances1[0] = static_cast<ResultType>(pos_needle + 1);
+            curr[0] = static_cast<ResultType>(pos_needle + 1);
 
             const auto needle_char = [&]{
                 if constexpr (is_utf8)
@@ -287,9 +289,9 @@ struct ByteEditDistanceImpl
             for (; pos_haystack + 1 < haystack_size; pos_haystack += 2)
             {
                 // First:
-                deletion = distances0[pos_haystack + 1] + 1;
-                insertion = distances1[pos_haystack] + 1;
-                substitution = distances0[pos_haystack];
+                deletion = prev[pos_haystack + 1] + 1;
+                insertion = curr[pos_haystack] + 1;
+                substitution = prev[pos_haystack];
 
                 if constexpr (is_utf8)
                 {
@@ -301,11 +303,11 @@ struct ByteEditDistanceImpl
                     if (needle_char != *(haystack + pos_haystack))
                         substitution += 1;
                 }
-                distances1[pos_haystack + 1] = std::min({deletion, substitution, insertion});
+                curr[pos_haystack + 1] = std::min({deletion, substitution, insertion});
                 // Second:
-                deletion = distances0[pos_haystack + 2] + 1;
-                insertion = distances1[pos_haystack + 1] + 1;
-                substitution = distances0[pos_haystack + 1];
+                deletion = prev[pos_haystack + 2] + 1;
+                insertion = curr[pos_haystack + 1] + 1;
+                substitution = prev[pos_haystack + 1];
 
                 if constexpr (is_utf8)
                 {
@@ -317,13 +319,13 @@ struct ByteEditDistanceImpl
                     if (needle_char != *(haystack + pos_haystack + 1))
                         substitution += 1;
                 }
-                distances1[pos_haystack + 2] = std::min({deletion, substitution, insertion});
+                curr[pos_haystack + 2] = std::min({deletion, substitution, insertion});
             }
             if (pos_haystack < haystack_size)
             {
-                deletion = distances0[pos_haystack + 1] + 1;
-                insertion = distances1[pos_haystack] + 1;
-                substitution = distances0[pos_haystack];
+                deletion = prev[pos_haystack + 1] + 1;
+                insertion = curr[pos_haystack] + 1;
+                substitution = prev[pos_haystack];
                 if constexpr (is_utf8)
                 {
                     if (needle_char != haystack_utf8[pos_haystack])
@@ -334,12 +336,12 @@ struct ByteEditDistanceImpl
                     if (needle_char != *(haystack + pos_haystack))
                         substitution += 1;
                 }
-                distances1[pos_haystack + 1] = std::min({deletion, substitution, insertion});
+                curr[pos_haystack + 1] = std::min({deletion, substitution, insertion});
             }
-            distances0.swap(distances1);
+            std::swap(curr, prev);
         }
 
-        return distances0[haystack_size];
+        return prev[haystack_size];
     }
 };
 
