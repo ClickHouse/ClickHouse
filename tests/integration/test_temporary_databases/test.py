@@ -48,8 +48,8 @@ def assert_table_filled(session_id: str, db_name: str, table_name: str = "table1
 
 
 def create_and_fill_table(session_id: str, db_name: str, table_name: str, **kwargs):
-    query(session_id, f"CREATE TABLE `{db_name}`.`{table_name}` (x UInt64) ENGINE=MergeTree() ORDER BY x", **kwargs)
-    query(session_id, f"INSERT INTO `{db_name}`.`{table_name}` SELECT number FROM numbers(10000)", **kwargs)
+    query(session_id, f"CREATE TABLE `{db_name}`.`{table_name}` (x UInt64, x2 UInt64) ENGINE=MergeTree() ORDER BY x", **kwargs)
+    query(session_id, f"INSERT INTO `{db_name}`.`{table_name}` SELECT rand(), rand() FROM numbers(10000)", **kwargs)
     assert_table_filled(session_id, db_name, table_name, **kwargs)
 
 
@@ -61,7 +61,7 @@ def create_db_with_table(session_id: str, db_name: str, table_name: str = "table
 def assert_db_does_not_exist(session_id: str, db_name: str, sql: str = "SELECT count() FROM `{}`.`table1`",
                              modifying: bool = False, **kwargs):
     with pytest.raises(Exception, match=f"Database {db_name} does not exist"):
-        query(session_id, sql.format(db_name), modifying=modifying, **kwargs)
+        query(session_id, sql.replace("{}", db_name), modifying=modifying, **kwargs)
 
 
 def get_dbs_from_system_table(session_id: str, names: list[str], show_others: bool, table: str = "databases", **kwargs):
@@ -83,7 +83,7 @@ def started_cluster():
         cluster.start()
 
         node1.query("CREATE USER user2")
-        node1.query("GRANT CREATE TEMPORARY DATABASE ON *.* TO user2")
+        node1.query("GRANT CURRENT GRANTS ON *.* TO user2")
 
         yield cluster
     finally:
@@ -138,22 +138,22 @@ def test_on_cluster_unsupported(request):
     assert_(f"TRUNCATE DATABASE `{db1}` ON CLUSTER default")
     assert_(f"DETACH DATABASE `{db1}` ON CLUSTER default")
     assert_(f"DROP DATABASE `{db1}` ON CLUSTER default")
-
-
     assert_(f"CREATE TABLE `{db1}`.`table2` ON CLUSTER default (x UInt64) ENGINE=MergeTree() ORDER BY x")
-
     assert_(f"ALTER TABLE `{db1}`.`table1` ON CLUSTER default ADD COLUMN y UInt64")
     assert_(f"ALTER TABLE `{db1}`.`table1` ON CLUSTER default MODIFY COLUMN y UInt64 COMMENT 'test comment'")
     assert_(f"ALTER TABLE `{db1}`.`table1` ON CLUSTER default RENAME COLUMN y TO y2")
     assert_(f"ALTER TABLE `{db1}`.`table1` ON CLUSTER default DROP COLUMN y2")
-
+    assert_(f"ALTER TABLE `{db1}`.`table1` ON CLUSTER default UPDATE x2 = 1 WHERE x2 < 100")
     assert_(f"RENAME TABLE `{db1}`.`table1` TO `{db1}`.`table2` ON CLUSTER default")
     assert_(f"EXCHANGE TABLES `{db1}`.`table2` AND `{db1}`.`table3` ON CLUSTER default")
     assert_(f"DETACH TABLE `{db1}`.`table1` ON CLUSTER default")
     assert_(f"DROP TABLE `{db1}`.`table1` ON CLUSTER default")
-
+    assert_(f"UNDROP TABLE `{db1}`.`table1` ON CLUSTER default")
     assert_(f"TRUNCATE TABLE `{db1}`.`table1` ON CLUSTER default")
     assert_(f"OPTIMIZE TABLE `{db1}`.`table1` ON CLUSTER default")
+
+    assert_(f"UPDATE `{db1}`.`table1` ON CLUSTER default SET x2 = 1 WHERE x2 < 100")
+    assert_(f"DELETE FROM `{db1}`.`table1` ON CLUSTER default WHERE x2 < 100")
 
     drop_db(session1, db1)
 
@@ -167,10 +167,34 @@ def test_inaccessible_from_other_sessions(request, user2: str):
     create_db_with_table(session2, db2, user=user2)
 
     assert_db_does_not_exist(session1, db2)
-    assert_db_does_not_exist(session1, db2, "DROP DATABASE `{}`", True)
-
     assert_db_does_not_exist(session2, db1, user=user2)
-    assert_db_does_not_exist(session2, db1, "DROP DATABASE `{}`", True, user=user2)
+
+    def assert_(sql: str, ddl: bool = True):
+        assert_db_does_not_exist(session2, db1, sql, ddl, user=user2)
+
+    assert_("ALTER DATABASE `{}` MODIFY COMMENT 'test comment'")
+    assert_(f"RENAME DATABASE `{{}}` TO `{db2}`")
+    assert_("TRUNCATE DATABASE `{}`")
+    assert_("DETACH DATABASE `{}`")
+    assert_("DROP DATABASE `{}`")
+    assert_("CREATE TABLE `{}`.`table2` (x UInt64) ENGINE=MergeTree() ORDER BY x")
+    assert_("ALTER TABLE `{}`.`table1` ADD COLUMN y UInt64")
+    assert_("ALTER TABLE `{}`.`table1` MODIFY COLUMN y UInt64 COMMENT 'test comment'")
+    assert_("ALTER TABLE `{}`.`table1` RENAME COLUMN y TO y2")
+    assert_("ALTER TABLE `{}`.`table1` DROP COLUMN y2")
+    assert_("ALTER TABLE `{}`.`table1` UPDATE x2 = 1 WHERE x2 < 100")
+    assert_("RENAME TABLE `{}`.`table1` TO `{}`.`table2`")
+    assert_("EXCHANGE TABLES `{}`.`table2` AND `{}`.`table3`")
+    assert_("DETACH TABLE `{}`.`table1`")
+    assert_("DROP TABLE `{}`.`table1`")
+    assert_("UNDROP TABLE `{}`.`table1`")
+    assert_("TRUNCATE TABLE `{}`.`table1`")
+    assert_("OPTIMIZE TABLE `{}`.`table1`")
+
+    assert_("SELECT count() FROM `{}`.`table1`", False)
+    assert_("INSERT INTO `{}`.`table1` SELECT number FROM numbers(10000)")
+    assert_("UPDATE `{}`.`table1` SET x2 = 1 WHERE x2 < 100")
+    assert_("DELETE FROM `{}`.`table1` WHERE x2 < 100")
 
     drop_db(session1, db1)
     drop_db(session2, db2, user=user2)
@@ -232,6 +256,16 @@ def test_set_comment(request):
 
     drop_db(session1, db1)
 
+def test_create_if_not_exists(request):
+    session1, db1 = get_session_id_with_db_name(request, 1)
+    create_db_with_table(session1, db1)
+
+    query(session1, f"CREATE DATABASE IF NOT EXISTS `{db1}`")
+    with pytest.raises(Exception, match=f"Temporary database {db1} already exists in other session"):
+        query(get_session_id(request, 2), f"CREATE DATABASE IF NOT EXISTS `{db1}`")
+
+    drop_db(session1, db1)
+
 
 def test_drop_if_exists(request):
     session1, db1 = get_session_id_with_db_name(request, 1)
@@ -244,6 +278,30 @@ def test_drop_if_exists(request):
 
     query(session1, f"DROP DATABASE IF EXISTS `{db2}`")
     query(session2, f"DROP DATABASE IF EXISTS `{db2}`")
+
+
+def test_database_hints(request):
+    session1, db1 = get_session_id_with_db_name(request, 1)
+    create_db_with_table(session1, db1)
+
+    with pytest.raises(Exception, match=f"Database {db1}_no does not exist. Maybe you meant {db1}?"):
+        query(session1, f"SELECT count() FROM `{db1}_no`.`table1`", False)
+    with pytest.raises(Exception, match=rf"Database {db1}_no does not exist\. \(UNKNOWN_DATABASE\)"):
+        query(get_session_id(request, 2), f"SELECT count() FROM `{db1}_no`.`table1`", False)
+
+    drop_db(session1, db1)
+
+
+def test_table_hints(request):
+    session1, db1 = get_session_id_with_db_name(request, 1)
+    create_db_with_table(session1, db1)
+
+    with pytest.raises(Exception, match=f"Table {db1}.table1_no does not exist. Maybe you meant {db1}.table1?"):
+        query(session1, f"DROP TABLE `{db1}`.`table1_no`")
+    with pytest.raises(Exception, match=rf"Database {db1} does not exist\. \(UNKNOWN_DATABASE\)"):
+        query(get_session_id(request, 2), f"DROP TABLE `{db1}`.`table1_no`")
+
+    drop_db(session1, db1)
 
 
 def test_session_closed_cleanup(request):

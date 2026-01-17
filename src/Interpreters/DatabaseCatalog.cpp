@@ -374,21 +374,10 @@ bool DatabaseCatalog::isPredefinedDatabase(std::string_view database_name)
 }
 
 
-DatabaseAndTable DatabaseCatalog::tryGetWithTable(const UUID & uuid) const
-{
-    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
-    const UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
-    std::lock_guard lock{map_part.mutex};
-    auto it = map_part.map.find(uuid);
-    if (it == map_part.map.end())
-        return {};
-    return it->second;
-}
-
-
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,
     ContextPtr context_,
+    const GetDatabasesOptions & options,
     std::optional<Exception> * exception) const
 {
     checkStackSize();
@@ -403,13 +392,13 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     if (table_id.hasUUID())
     {
         /// Shortcut for tables which have persistent UUID
-        auto db_and_table = tryGetWithTable(table_id.uuid);
+        auto db_and_table = tryGetTableWithDatabase(table_id.uuid, context_, options);
         if (!db_and_table.first || !db_and_table.second)
         {
             assert(!db_and_table.first && !db_and_table.second);
             if (exception)
             {
-                TableNameHints hints(tryGetDatabase(table_id.getDatabaseName(), context_), context_);
+                TableNameHints hints(tryGetDatabase(table_id.getDatabaseName(), context_, options), context_);
                 std::vector<String> names = hints.getHints(table_id.getTableName());
                 if (names.empty())
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_id.getNameForLogs()));
@@ -472,7 +461,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             database = it->second;
     }
 
-    if (!database)
+    if (!database || !checkDatabaseOptions(database, table_id.getDatabaseName(), options, context_))
     {
         if (exception)
             exception->emplace(makeUnknownDatabaseException(table_id.getDatabaseName()));
@@ -542,7 +531,7 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 
     if (table_id.hasUUID())
     {
-        if (auto storage = tryGetWithTable(table_id.uuid).second)
+        if (auto storage = tryGetTableWithDatabase(table_id.uuid, {}, GetDatabasesOptions{.skip_temporary_owner_check = true}).second)
         {
             if (storage->isSystemStorage())
                 return true;
@@ -618,7 +607,7 @@ bool DatabaseCatalog::checkDatabaseOptions(
     {
         if (!options.with_temporaries)
             return false;
-        if (!(context_->hasSessionContext() && context_->getSessionContext()->hasTemporaryDatabase(database_name)) && !options.skip_temporary_owner_check)
+        if (!(context_ && context_->hasSessionContext() && context_->getSessionContext()->hasTemporaryDatabase(database_name)) && !options.skip_temporary_owner_check)
             return false;
     }
 
@@ -813,7 +802,7 @@ Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options, ContextPtr 
 bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr context_) const
 {
     if (table_id.hasUUID())
-        return tryGetWithTable(table_id.uuid).second != nullptr;
+        return tryGetTableWithDatabase(table_id.uuid, context_, GetDatabasesOptions{.skip_temporary_owner_check = true}).second != nullptr;
 
     DatabasePtr db;
     {
@@ -1024,38 +1013,50 @@ std::optional<std::shared_lock<SharedMutex>> DatabaseCatalog::tryGetLockForResta
 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 {
-    auto storage = tryGetTable(table_id, getContext());
+    auto storage = tryGetTable(table_id, {}, GetDatabasesOptions{.skip_temporary_owner_check = true});
     bool storage_is_dictionary = storage && storage->isDictionary();
 
     return storage_is_dictionary;
 }
 
-StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context) const
+StoragePtr DatabaseCatalog::getTable(const StorageID & table_id, ContextPtr local_context, const GetDatabasesOptions & options) const
 {
-    std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, local_context, &exc);
-    if (!res.second)
-        throw Exception(*exc);
-    return res.second;
+    return getTableWithDatabase(table_id, local_context, options).second;
 }
 
-StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context) const
+StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id, ContextPtr local_context, const GetDatabasesOptions & options) const
 {
-    return getTableImpl(table_id, local_context, nullptr).second;
+    return tryGetTableWithDatabase(table_id, local_context, options).second;
 }
 
-DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
+DatabaseAndTable DatabaseCatalog::getTableWithDatabase(const StorageID & table_id, ContextPtr local_context, const GetDatabasesOptions & options) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, local_context, &exc);
+    auto res = getTableImpl(table_id, local_context, options, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
 }
 
-DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr local_context) const
+DatabaseAndTable DatabaseCatalog::tryGetTableWithDatabase(const StorageID & table_id, ContextPtr local_context, const GetDatabasesOptions & options) const
 {
-    return getTableImpl(table_id, local_context, nullptr);
+    return getTableImpl(table_id, local_context, options, nullptr);
+}
+
+DatabaseAndTable DatabaseCatalog::tryGetTableWithDatabase(const UUID & uuid, ContextPtr context_, const GetDatabasesOptions & options) const
+{
+    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+
+    const UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::lock_guard lock{map_part.mutex};
+    auto it = map_part.map.find(uuid);
+    if (it == map_part.map.end())
+        return {};
+
+    if (checkDatabaseOptions(it->second.first, it->second.first->getDatabaseName(), options, context_))
+        return it->second;
+
+    return {};
 }
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
@@ -1219,6 +1220,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
     assert(table_id.hasUUID());
     assert(!table || table->getStorageID().uuid == table_id.uuid);
     assert(dropped_metadata_path == getMetadataDroppedFilePath(table_id, is_temporary_db));
+    String data_path = getStoreDirPath(table_id.uuid, is_temporary_db);
 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
@@ -1241,7 +1243,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
         if (create)
         {
-            String data_path = getStoreDirPath(table_id.uuid, is_temporary_db);
             create->setDatabase(table_id.database_name);
             create->setTable(table_id.table_name);
             try
@@ -1273,7 +1274,14 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         /// Insert it before first_async_drop_in_queue, so sync drop queries will have priority over async ones,
         /// but the queue will remain fair for multiple sync drop queries.
         tables_marked_dropped.emplace(
-            first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time, is_temporary_db});
+            first_async_drop_in_queue, TableMarkedAsDropped{
+                table_id,
+                table,
+                db_disk,
+                dropped_metadata_path,
+                data_path,
+                drop_time,
+            });
     }
     else
     {
@@ -1282,9 +1290,9 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
              table,
              db_disk,
              dropped_metadata_path,
+             data_path,
              drop_time
-                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec]),
-            is_temporary_db});
+                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec]),});
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
     }
@@ -1547,13 +1555,12 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     /// Even if table is not loaded, try remove its data from disks.
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
-        String data_path = getStoreDirPath(table.table_id.uuid, table.is_temporary_database);
         auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
-        if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
+        if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(table.data_path))
             continue;
 
-        LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
-        disk->removeRecursive(data_path);
+        LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", table.data_path, table.table_id.getNameForLogs(), disk_name);
+        disk->removeRecursive(table.data_path);
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
@@ -2075,21 +2082,6 @@ Exception DatabaseCatalog::makeUnknownDatabaseException(const std::string_view &
     return Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 }
 
-static void maybeUnlockUUID(UUID uuid)
-{
-    if (uuid == UUIDHelpers::Nil)
-        return;
-
-    chassert(DatabaseCatalog::instance().hasUUIDMapping(uuid));
-    auto db_and_table = DatabaseCatalog::instance().tryGetWithTable(uuid);
-    if (!db_and_table.first && !db_and_table.second)
-    {
-        DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
-        return;
-    }
-    chassert(db_and_table.first || !db_and_table.second);
-}
-
 TemporaryLockForUUIDDirectory::TemporaryLockForUUIDDirectory(UUID uuid_)
     : uuid(uuid_)
 {
@@ -2099,7 +2091,7 @@ TemporaryLockForUUIDDirectory::TemporaryLockForUUIDDirectory(UUID uuid_)
 
 TemporaryLockForUUIDDirectory::~TemporaryLockForUUIDDirectory()
 {
-    maybeUnlockUUID(uuid);
+    maybeUnlock();
 }
 
 TemporaryLockForUUIDDirectory::TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept
@@ -2110,10 +2102,27 @@ TemporaryLockForUUIDDirectory::TemporaryLockForUUIDDirectory(TemporaryLockForUUI
 
 TemporaryLockForUUIDDirectory & TemporaryLockForUUIDDirectory::operator = (TemporaryLockForUUIDDirectory && rhs) noexcept
 {
-    maybeUnlockUUID(uuid);
+    maybeUnlock();
     uuid = rhs.uuid;
     rhs.uuid = UUIDHelpers::Nil;
     return *this;
+}
+
+void TemporaryLockForUUIDDirectory::maybeUnlock()
+{
+    if (uuid == UUIDHelpers::Nil)
+        return;
+
+    chassert(DatabaseCatalog::instance().hasUUIDMapping(uuid));
+    auto db_and_table = DatabaseCatalog::instance().tryGetTableWithDatabase(uuid, {}, GetDatabasesOptions{
+        .skip_temporary_owner_check = true,
+    });
+    if (!db_and_table.first && !db_and_table.second)
+    {
+        DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
+        return;
+    }
+    chassert(db_and_table.first || !db_and_table.second);
 }
 
 

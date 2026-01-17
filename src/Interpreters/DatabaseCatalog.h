@@ -229,18 +229,16 @@ public:
     bool isDatabaseExist(std::string_view database_name) const;
 
     /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
+    /// Note: temporary database owner check is skipped here.
     void assertTableDoesntExist(const StorageID & table_id, ContextPtr context) const;
     bool isTableExist(const StorageID & table_id, ContextPtr context) const;
     bool isDictionaryExist(const StorageID & table_id) const;
 
-    /// Note: these methods bypass GetDatabaseOptions check, make sure this check is done before. todo: ?
-    StoragePtr getTable(const StorageID & table_id, ContextPtr context) const;
-    StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getTableImpl(const StorageID & table_id,
-                                  ContextPtr context,
-                                  std::optional<Exception> * exception = nullptr) const;
+    StoragePtr getTable(const StorageID & table_id, ContextPtr context, const GetDatabasesOptions & options = {}) const;
+    StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context, const GetDatabasesOptions & options = {}) const;
+    DatabaseAndTable getTableWithDatabase(const StorageID & table_id, ContextPtr context, const GetDatabasesOptions & options = {}) const;
+    DatabaseAndTable tryGetTableWithDatabase(const StorageID & table_id, ContextPtr context, const GetDatabasesOptions & options = {}) const;
+    DatabaseAndTable tryGetTableWithDatabase(const UUID & uuid, ContextPtr context, const GetDatabasesOptions & options = {}) const;
 
     /// Returns true if a passed table_id refers to one of the predefined tables' names.
     /// All tables in the "system" database with System* table engine are predefined.
@@ -258,7 +256,7 @@ public:
     void addUUIDMapping(const UUID & uuid, const DatabasePtr & database, const StoragePtr & table);
     void removeUUIDMapping(const UUID & uuid);
     void removeUUIDMappingFinally(const UUID & uuid);
-    /// For moving table between databases // todo temporaries
+    /// For moving table between databases.
     void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
     /// This method adds empty mapping (with database and storage equal to nullptr).
     /// It's required to "lock" some UUIDs and protect us from collision.
@@ -269,9 +267,6 @@ public:
     void addUUIDMapping(const UUID & uuid);
 
     bool hasUUIDMapping(const UUID & uuid);
-
-    /// Will bypass temporary databases access check. todo: ?
-    DatabaseAndTable tryGetWithTable(const UUID & uuid) const;
 
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay, bool is_temporary_db);
     void undropTable(StorageID table_id, ContextPtr context);
@@ -304,8 +299,8 @@ public:
         StoragePtr table;
         DiskPtr db_disk;
         String metadata_path;
+        String data_path;
         time_t drop_time{};
-        bool is_temporary_database; // todo: ?
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
@@ -337,6 +332,8 @@ private:
 
     void shutdownImpl(std::function<void()> shutdown_system_logs);
     String getPathForTableMetadata(const StorageID & table_id) const;
+
+    DatabaseAndTable getTableImpl(const StorageID & table_id, ContextPtr context, const GetDatabasesOptions & options, std::optional<Exception> * exception = nullptr) const;
 
     void checkTableCanBeRemovedOrRenamedUnlocked(const StorageID & removing_table, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database) const TSA_REQUIRES(databases_mutex);
 
@@ -449,6 +446,8 @@ public:
 
     TemporaryLockForUUIDDirectory(TemporaryLockForUUIDDirectory && rhs) noexcept;
     TemporaryLockForUUIDDirectory & operator = (TemporaryLockForUUIDDirectory && rhs) noexcept;
+private:
+    void maybeUnlock();
 };
 
 }

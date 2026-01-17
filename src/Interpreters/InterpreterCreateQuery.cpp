@@ -215,8 +215,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
     if (const auto db = DatabaseCatalog::instance().tryGetDatabase(database_name, context, {.skip_temporary_owner_check = true}))
     {
-        if (create.if_not_exists) // todo: case when another session has temporary db with this name? it is exists, but not accessible, so CREATE cannot be executed. it may confuse users.
+        if (create.if_not_exists)
+        {
+            if (db->isTemporary() && !(context->hasSessionContext() && context->getSessionContext()->hasTemporaryDatabase(database_name)))
+                throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Temporary database {} already exists in other session.", database_name);
             return {};
+        }
+
         if (db->isTemporary())
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Temporary database {} already exists.", database_name);
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);

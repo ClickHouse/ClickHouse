@@ -84,6 +84,7 @@ BlockIO InterpreterUpdateQuery::execute()
 
     if (!update_query.cluster.empty())
     {
+        throwIfTemporaryDatabaseUsedOnCluster(update_query.getDatabase(), context); // todo: triple database lookup here
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
         return executeDDLQueryOnCluster(query_ptr, context, params);

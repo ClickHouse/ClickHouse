@@ -27,11 +27,20 @@ InterpreterUndropQuery::InterpreterUndropQuery(const ASTPtr & query_ptr_, Contex
 
 BlockIO InterpreterUndropQuery::execute()
 {
-    getContext()->checkAccess(AccessType::UNDROP_TABLE);
-
     auto & undrop = query_ptr->as<ASTUndropQuery &>();
+
+    DatabasePtr db;
+    if (!undrop.getDatabase().empty())
+        db = DatabaseCatalog::instance().tryGetDatabase(undrop.getDatabase(), getContext());
+
+    if (db && db->isTemporary())
+        getContext()->checkAccess(AccessType::CREATE_TEMPORARY_DATABASE);
+    else
+        getContext()->checkAccess(AccessType::UNDROP_TABLE);
+
     if (!undrop.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
+        throwIfTemporaryDatabaseUsedOnCluster(db);
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccessForDDLOnCluster();
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);

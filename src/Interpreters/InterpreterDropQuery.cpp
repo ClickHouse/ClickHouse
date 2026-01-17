@@ -150,9 +150,9 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
-    /// If table was already dropped by anyone, an exception will be thrown todo: temporary access check
-    auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetDatabaseAndTable(table_id, context_)
-                                             : DatabaseCatalog::instance().getDatabaseAndTable(table_id, context_);
+    /// If table was already dropped by anyone, an exception will be thrown
+    auto [database, table] = query.if_exists ? DatabaseCatalog::instance().tryGetTableWithDatabase(table_id, context_, getDatabaseOptions())
+                                             : DatabaseCatalog::instance().getTableWithDatabase(table_id, context_, getDatabaseOptions());
 
     if (database && table)
     {

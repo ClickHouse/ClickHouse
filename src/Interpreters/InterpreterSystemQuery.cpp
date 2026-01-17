@@ -1082,17 +1082,21 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         throw Exception(ErrorCodes::ABORTED, "Database {} is being dropped or detached, will not restart replica {}",
                         backQuoteIfNeed(replica.getDatabaseName()), replica.getNameForLogs());
 
-    std::optional<Exception> exception;
-    auto [database, table] = DatabaseCatalog::instance().getTableImpl(replica, getContext(), &exception);
-    ASTPtr create_ast;
-
-    if (!table)
+    DatabaseAndTable db_table;
+    auto & [database, table] = db_table;
+    try
+    {
+        db_table = DatabaseCatalog::instance().getTableWithDatabase(replica, getContext());
+    }
+    catch (const Exception & e)
     {
         if (throw_on_error)
-            throw Exception(*exception);
-        LOG_WARNING(getLogger("InterpreterSystemQuery"), "Cannot RESTART REPLICA {}: {}", replica.getNameForLogs(), exception->message());
+            throw;
+        LOG_WARNING(getLogger("InterpreterSystemQuery"), "Cannot RESTART REPLICA {}: {}", replica.getNameForLogs(), e.message());
         return nullptr;
     }
+
+    ASTPtr create_ast;
     const StorageID replica_table_id = table->getStorageID();
     if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
     {
