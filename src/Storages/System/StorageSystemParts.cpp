@@ -69,6 +69,7 @@ Name of the data part. The part naming structure can be used to determine many a
         {"active",                                      std::make_shared<DataTypeUInt8>(),     "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations."},
         {"marks",                                       std::make_shared<DataTypeUInt64>(),    "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                        std::make_shared<DataTypeUInt64>(),    "The number of rows."},
+        {"files",                                       std::make_shared<DataTypeUInt64>(),    "The number of files in the data part."},
         {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>(),    "Total size of all the data part files in bytes."},
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>(),    "Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>(),    "Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
@@ -139,8 +140,6 @@ Name of the data part. The part naming structure can be used to determine many a
 
         {"last_removal_attempt_time",                   std::make_shared<DataTypeDateTime>(), "The last time the server tried to delete this part."},
         {"removal_state",                               std::make_shared<DataTypeString>(), "The current state of part removal process."},
-
-        {"files",                                       std::make_shared<DataTypeUInt64>(), "The number of files in the data part."},
     }
     )
 {
@@ -191,6 +190,8 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->rows_count);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->checksums.files.size());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getBytesOnDisk());
         if (columns_mask[src_index++])
@@ -373,9 +374,6 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(static_cast<UInt64>(part->last_removal_attempt_time.load(std::memory_order_relaxed)));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(getRemovalStateDescription(part->removal_state.load(std::memory_order_relaxed)));
-
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->checksums.files.size());
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread
