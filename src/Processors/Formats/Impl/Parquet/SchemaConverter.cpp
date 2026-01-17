@@ -282,7 +282,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         /// If the requested column is inside some arrays of tuples (requested using `arr.elem`
         /// syntax), add intermediate OutputColumnInfo-s to create those arrays.
         for (size_t i = 0; i < wrap_in_arrays; ++i)
-            make_array(levels[prev_levels_size - 1].rep - i);
+            make_array(static_cast<UInt8>(levels[prev_levels_size - 1].rep - i));
 
         output_columns[node.output_idx.value()].idx_in_output_block = idx_in_output_block;
     }

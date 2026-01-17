@@ -245,7 +245,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return wrapInNullable(res, args, result_type, input_rows_count);
         }
 
-        auto result_null_map = ColumnUInt8::create(input_rows_count, 0);
+        auto result_null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
         auto & result_null_map_data = result_null_map->getData();
         for (const auto & arg : args)
         {

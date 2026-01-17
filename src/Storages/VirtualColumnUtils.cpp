@@ -407,7 +407,7 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 for (size_t i = 0; i < num_indices; ++i)
                     if (!applied_filter.has_value() || applied_filter.value()[i])
                         column->insertValue(i + row_num_offset);
-                auto null_map = ColumnUInt8::create(chunk.getNumRows(), 0);
+                auto null_map = ColumnUInt8::create(chunk.getNumRows(), static_cast<UInt8>(0));
                 chunk.addColumn(ColumnNullable::create(std::move(column), std::move(null_map)));
                 return;
             }

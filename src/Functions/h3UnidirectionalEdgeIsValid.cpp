@@ -77,7 +77,7 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 edge = data_hindex_edge[row];
-            const UInt8 res = isValidDirectedEdge(edge);
+            const auto res = static_cast<UInt8>(isValidDirectedEdge(edge));
             dst_data[row] = res;
         }
 

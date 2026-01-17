@@ -722,7 +722,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 if (!sc)
                     return;
                 // matches the original right block rows referenced by this slot's ScatteredColumns
-                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns_info.columns.at(0)->size(), 0);
+                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns_info.columns.at(0)->size(), static_cast<UInt8>(0));
                 // apply a contiguous [start, end) range from the source mask into the destination mask
                 // fill with 1s if NULLs only
                 auto apply_range = [&](size_t start, size_t end)
