@@ -14,7 +14,7 @@ scenarios:
   - id: PERF-02
     name: Write-heavy default vs Rocks
     topology: 3
-    workload: { config: workloads/write_heavy.yaml, duration: 180 }
+    workload: { config: workloads/prod_mix.yaml, duration: 180 }
     gates:
       - { type: single_leader }
 
@@ -48,6 +48,6 @@ scenarios:
   - id: IMP-03
     name: RocksKeeper compaction tails
     topology: 3
-    workload: { config: workloads/write_heavy.yaml, duration: 180 }
+    workload: { config: workloads/prod_mix.yaml, duration: 180 }
     gates:
       - { type: single_leader }

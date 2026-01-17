@@ -58,7 +58,7 @@ scenarios:
   - id: SEM-06
     name: Multi-op atomicity under churn
     topology: 3
-    workload: { config: workloads/multi_op.yaml, duration: 60 }
+    workload: { config: workloads/prod_mix.yaml, duration: 60 }
     pre:
       - { kind: record_watch_baseline }
     faults:

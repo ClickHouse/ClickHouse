@@ -1,4 +1,4 @@
-from ..framework.core.settings import CLIENT_PORT
+from keeper.framework.core.settings import CLIENT_PORT
 
 
 def servers_arg(nodes):

@@ -1,4 +1,4 @@
-from .base import (
+from keeper.gates.base import (
     apply_gate,
     backlog_drains,
     config_converged,

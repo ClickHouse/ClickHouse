@@ -1,27 +1,17 @@
-import threading
-import time
 import uuid
 
 from kazoo.client import KazooClient
-from kazoo.recipe.watchers import DataWatch
-
-from ..framework.core.registry import register_fault
-from ..workloads.adapter import servers_arg
+from keeper.framework.core.registry import register_fault
+from keeper.workloads.adapter import servers_arg
 
 
 @register_fault("watch_flood")
 def _f_watch_flood(ctx, nodes, leader, step):
-    try:
-        watchers = int(step.get("watchers", 1000))
-    except Exception:
-        watchers = 1000
-    try:
-        depth = int(step.get("depth", 1))
-    except Exception:
-        depth = 1
+    """Create many watchers to stress watch management."""
+    watchers = int(step.get("watchers", 1000))
+    depth = int(step.get("depth", 1))
     prefix = str(step.get("path_prefix", "/watch")).strip() or "/watch"
 
-    # Build host list for Kazoo
     hosts = [h.strip() for h in (servers_arg(nodes) or "").split() if h.strip()]
     hostlist = ",".join(hosts) if hosts else "localhost:9181"
 
@@ -31,91 +21,53 @@ def _f_watch_flood(ctx, nodes, leader, step):
     except Exception:
         return
 
-    # Helper to compute a nested path for i-th watcher
-    def _path_for(i: int) -> str:
+    def _path_for(i):
         base = prefix.rstrip("/")
-        if depth > 1:
-            for d in range(1, max(1, depth)):
-                base = base + f"/d{(i % (d + 3))}"
-        return base + f"/n{i}"
+        for d in range(1, max(1, depth)):
+            base = f"{base}/d{i % (d + 3)}"
+        return f"{base}/n{i}"
 
-    # Ensure a reasonable number of parents exist to avoid heavy retries
-    try:
-        for i in range(min(64, max(1, watchers // 10))):
-            p = _path_for(i)
-            parent = p.rsplit("/", 1)[0]
-            try:
-                zk.ensure_path(parent)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    # Pre-create some parent paths
+    for i in range(min(64, max(1, watchers // 10))):
+        try:
+            zk.ensure_path(_path_for(i).rsplit("/", 1)[0])
+        except Exception:
+            pass
 
     watches = []
 
-    def _make_watch(p: str):
-        try:
-
-            def _cb(event):
-                try:
-                    zk.exists(p, watch=_cb)
-                except Exception:
-                    try:
-                        zk.get(p, watch=_cb)
-                    except Exception:
-                        pass
-                return True
-
+    def _make_watch(p):
+        def _cb(event):
             try:
                 zk.exists(p, watch=_cb)
             except Exception:
-                try:
-                    zk.get(p, watch=_cb)
-                except Exception:
-                    pass
+                pass
+            return True
+
+        try:
+            zk.exists(p, watch=_cb)
             return p
         except Exception:
             return None
 
     for i in range(watchers):
-        p = _path_for(i)
-        w = _make_watch(p)
-        if w is not None:
+        w = _make_watch(_path_for(i))
+        if w:
             watches.append(w)
 
-    # Keep references and client to close in teardown
-    try:
-        arr = ctx.get("_watch_flood_clients") or []
-        arr.append(zk)
-        ctx["_watch_flood_clients"] = arr
-    except Exception:
-        pass
-    try:
-        keep = ctx.get("_watch_flood_watches") or []
-        keep.extend(watches)
-        ctx["_watch_flood_watches"] = keep
-    except Exception:
-        pass
+    # Store references for teardown
+    ctx.setdefault("_watch_flood_clients", []).append(zk)
+    ctx.setdefault("_watch_flood_watches", []).extend(watches)
 
-    # Optionally touch nodes to generate events if requested
+    # Touch nodes to generate events if requested
     if step.get("touch_once"):
-        try:
-            for i in range(min(128, watchers)):
-                p = _path_for(i)
-                parent = p.rsplit("/", 1)[0]
-                try:
-                    zk.ensure_path(parent)
-                except Exception:
-                    pass
+        for i in range(min(128, watchers)):
+            p = _path_for(i)
+            try:
+                zk.ensure_path(p.rsplit("/", 1)[0])
                 try:
                     zk.create(p, b"x", ephemeral=False, makepath=True)
                 except Exception:
-                    try:
-                        zk.set(p, uuid.uuid4().hex.encode("utf-8"))
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-    # Return immediately; watchers persist while zk is alive
-    return
+                    zk.set(p, uuid.uuid4().hex.encode("utf-8"))
+            except Exception:
+                pass

@@ -1,13 +1,19 @@
-import os
+import threading
 import time
 from contextlib import contextmanager
 
-from ..framework.core.registry import register_fault
-from ..framework.core.settings import DEFAULT_FAULT_DURATION_S, RAFT_PORT
-from ..framework.core.util import has_bin, resolve_targets, sh, sh_root
-
-# Always strict enforcement
-STRICT_FAULTS = True
+from keeper.framework.core.registry import register_fault
+from keeper.framework.core.settings import DEFAULT_FAULT_DURATION_S, RAFT_PORT
+from keeper.framework.core.util import (
+    for_each_target,
+    has_bin,
+    resolve_targets,
+    sh,
+    sh_root,
+    sh_root_strict,
+    sh_strict,
+    ts_ms,
+)
 
 
 @contextmanager
@@ -40,12 +46,15 @@ def netem(
         if corrupt:
             args += [f"corrupt {int(corrupt)}%"]
         try:
-            sh_root(
+            sh_root_strict(
                 node,
                 f"tc qdisc replace dev eth0 root netem {' '.join(args) if args else 'delay 0ms'}",
+                timeout=20,
             )
             applied = True
-            v = sh(node, "tc qdisc show dev eth0 | grep -q netem; echo $?")
+            v = sh_strict(
+                node, "tc qdisc show dev eth0 | grep -q netem; echo $?", timeout=10
+            )
             ok = str(v.get("out", " ")).strip().endswith("0")
             if not ok:
                 raise AssertionError("netem verify failed")
@@ -55,34 +64,26 @@ def netem(
     finally:
         if applied:
             try:
-                sh_root(node, "tc qdisc del dev eth0 root || true")
+                sh_root(node, "tc qdisc del dev eth0 root || true", timeout=20)
             except Exception:
                 pass
 
 
 @contextmanager
 def tbf(node, rate="10mbit"):
-    applied = False
+    """Apply token bucket filter for rate limiting."""
+    sh_root_strict(
+        node,
+        f"tc qdisc replace dev eth0 root tbf rate {rate} burst 32kb latency 400ms",
+        timeout=20,
+    )
+    v = sh_strict(node, "tc qdisc show dev eth0 | grep -q tbf; echo $?", timeout=10)
+    if not str(v.get("out", "")).strip().endswith("0"):
+        raise AssertionError("tbf verify failed")
     try:
-        try:
-            sh_root(
-                node,
-                f"tc qdisc replace dev eth0 root tbf rate {rate} burst 32kb latency 400ms",
-            )
-            applied = True
-            v = sh(node, "tc qdisc show dev eth0 | grep -q tbf; echo $?")
-            ok = str(v.get("out", " ")).strip().endswith("0")
-            if not ok:
-                raise AssertionError("tbf verify failed")
-        except Exception as e:
-            raise AssertionError(f"tbf apply failed: {e}")
         yield
     finally:
-        if applied:
-            try:
-                sh_root(node, "tc qdisc del dev eth0 root || true")
-            except Exception:
-                pass
+        sh_root(node, "tc qdisc del dev eth0 root || true", timeout=20)
 
 
 @contextmanager
@@ -384,12 +385,9 @@ def partition_oneway(src, dst):
                     yield
                     return
                 else:
-                    if STRICT_FAULTS:
-                        raise AssertionError(
-                            "partition_oneway: no available method (iptables/ip route/tc)"
-                        )
-                    yield
-                    return
+                    raise AssertionError(
+                        "partition_oneway: no available method (iptables/ip route/tc)"
+                    )
             if _tcp_connect_ok(src, ip, RAFT_PORT, timeout_s=1):
                 try:
                     sh_root(src, "tc qdisc add dev eth0 root handle 1: prio || true")
@@ -433,12 +431,9 @@ def partition_oneway(src, dst):
                 )
             yield
         else:
-            method = "none"
-            if STRICT_FAULTS:
-                raise AssertionError(
-                    "partition_oneway: no available method (iptables/ip route/tc)"
-                )
-            yield
+            raise AssertionError(
+                "partition_oneway: no available method (iptables/ip route/tc)"
+            )
     finally:
         if method == "iptables" and cname:
             sh_root(
@@ -523,67 +518,91 @@ def dns_blackhole(node):
 
 
 def _tcp_connect_ok(node, ip, port, timeout_s=1):
-    try:
-        r = sh(
-            node,
-            f"timeout {int(timeout_s)} bash -c '</dev/tcp/{ip}/{int(port)}' >/dev/null 2>&1; echo $?",
-        )
-        return str(r.get("out", " ")).strip().endswith("0")
-    except Exception:
-        return False
+    """Check if TCP connection to ip:port succeeds."""
+    r = sh(
+        node,
+        f"timeout {timeout_s} bash -c '</dev/tcp/{ip}/{port}' >/dev/null 2>&1; echo $?",
+    )
+    return str(r.get("out", "")).strip().endswith("0")
 
 
-def _for_each_target(step, nodes, leader, run_one):
-    target = resolve_targets(step.get("on", "leader"), nodes, leader)
-    if step.get("target_parallel"):
-        import threading as _th
-
-        errors = []
-
-        def _wrap(t):
-            try:
-                run_one(t)
-            except Exception as e:
-                errors.append(e)
-
-        ths = []
-        for t in target:
-            th = _th.Thread(target=_wrap, args=(t,), daemon=True)
-            th.start()
-            ths.append(th)
-        for th in ths:
-            th.join()
-        if errors:
-            raise errors[0]
-    else:
-        for t in target:
-            run_one(t)
+_NETEM_KEYS = ("delay_ms", "jitter_ms", "loss_pct", "reorder", "duplicate", "corrupt")
 
 
 @register_fault("netem")
 def _f_netem(ctx, nodes, leader, step):
     dur = int(step.get("duration_s", DEFAULT_FAULT_DURATION_S))
+    netem_args = {k: v for k, v in step.items() if k in _NETEM_KEYS}
+
+    lock = threading.Lock()
+
+    def _emit(node, phase, extra=None):
+        try:
+            ev = {
+                "ts": ts_ms(),
+                "kind": "netem",
+                "node": str(getattr(node, "name", "")),
+                "phase": str(phase),
+            }
+            if isinstance(extra, dict) and extra:
+                ev.update(extra)
+            with lock:
+                (ctx.setdefault("fault_events", [])).append(ev)
+        except Exception:
+            pass
+
+    def _qdisc_has_netem(node):
+        r = sh_strict(
+            node, "tc qdisc show dev eth0 | grep -q netem; echo $?", timeout=10
+        )
+        return str((r or {}).get("out", "")).strip().endswith("0")
 
     def _run_one(t):
-        with netem(
-            t,
-            **{
-                k: v
-                for k, v in step.items()
-                if k
-                in (
-                    "delay_ms",
-                    "jitter_ms",
-                    "loss_pct",
-                    "reorder",
-                    "duplicate",
-                    "corrupt",
-                )
-            },
-        ):
-            time.sleep(dur)
+        t0 = time.time()
+        _emit(t, "start", {"duration_s": int(dur), **netem_args})
+        with netem(t, **netem_args):
+            _emit(t, "apply_ok")
+            if dur >= 4:
+                early = min(2.0, float(dur) / 4.0)
+                time.sleep(max(0.0, early))
+                if not _qdisc_has_netem(t):
+                    _emit(t, "active_verify_failed", {"when": "early"})
+                    raise AssertionError("netem active verify failed (early)")
+                _emit(t, "active_ok", {"when": "early"})
 
-    _for_each_target(step, nodes, leader, _run_one)
+                remaining = max(0.0, float(dur) - early)
+                late = min(2.0, max(0.0, remaining / 2.0))
+                time.sleep(max(0.0, remaining - late))
+                if not _qdisc_has_netem(t):
+                    _emit(t, "active_verify_failed", {"when": "late"})
+                    raise AssertionError("netem active verify failed (late)")
+                _emit(t, "active_ok", {"when": "late"})
+                time.sleep(max(0.0, late))
+            else:
+                time.sleep(dur)
+        if _qdisc_has_netem(t):
+            _emit(t, "cleanup_verify_failed")
+            raise AssertionError("netem cleanup verify failed")
+        _emit(t, "cleanup_ok", {"elapsed_s": time.time() - t0})
+
+    targets = resolve_targets(step.get("on", "leader"), nodes, leader)
+    for_each_target(step, nodes, leader, _run_one)
+
+    try:
+        evs = (ctx or {}).get("fault_events") or []
+        cleaned = {
+            e.get("node")
+            for e in evs
+            if e.get("kind") == "netem" and e.get("phase") == "cleanup_ok"
+        }
+        expected = {str(getattr(t, "name", "")) for t in targets}
+        missing = sorted([n for n in expected if n and n not in cleaned])
+        if missing:
+            raise AssertionError(
+                "netem did not complete cleanup for targets: " + ", ".join(missing)
+            )
+    except Exception:
+        raise
 
 
 @register_fault("tbf")
@@ -594,7 +613,7 @@ def _f_tbf(ctx, nodes, leader, step):
         with tbf(t, step.get("rate", "10mbit")):
             time.sleep(dur)
 
-    _for_each_target(step, nodes, leader, _run_one)
+    for_each_target(step, nodes, leader, _run_one)
 
 
 @register_fault("partition_symmetric")
@@ -615,7 +634,7 @@ def _f_partition_oneway(ctx, nodes, leader, step):
         with partition_oneway(src, dst):
             time.sleep(dur)
 
-    _for_each_target(step, nodes, leader, _run_one)
+    for_each_target(step, nodes, leader, _run_one)
 
 
 @register_fault("dns_blackhole")
@@ -626,7 +645,7 @@ def _f_dns_blackhole(ctx, nodes, leader, step):
         with dns_blackhole(t):
             time.sleep(dur)
 
-    _for_each_target(step, nodes, leader, _run_one)
+    for_each_target(step, nodes, leader, _run_one)
 
 
 @register_fault("partition_symmetric_during")

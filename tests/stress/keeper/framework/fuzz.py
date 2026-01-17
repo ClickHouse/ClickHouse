@@ -1,8 +1,8 @@
 import os
 import random
 
-from .core.registry import fault_registry
-from .core.scenario_builder import ScenarioBuilder
+from keeper.framework.core.registry import fault_registry
+from keeper.framework.core.scenario_builder import ScenarioBuilder
 
 _EXCLUDE = {
     # orchestrators / wrappers / non-chaos helpers
@@ -24,23 +24,31 @@ _EXCLUDE = {
     "nbank_transfers",
 }
 
+_FAULT_CANDIDATES = None
+
 
 def _fault_candidates():
-    if isinstance(fault_registry, dict) and fault_registry:
-        return sorted([k for k in fault_registry.keys() if k not in _EXCLUDE])
-    # fallback static list
-    return [
-        "netem",
-        "partition_symmetric",
-        "partition_oneway",
-        "stop_cont",
-        "dm_delay",
-        "dm_error",
-        "cpu_hog",
-        "fd_pressure",
-        "mem_hog",
-        "stress_ng",
-    ]
+    global _FAULT_CANDIDATES
+    if _FAULT_CANDIDATES is None:
+        if isinstance(fault_registry, dict) and fault_registry:
+            _FAULT_CANDIDATES = sorted(
+                [k for k in fault_registry.keys() if k not in _EXCLUDE]
+            )
+        else:
+            # fallback static list
+            _FAULT_CANDIDATES = [
+                "netem",
+                "partition_symmetric",
+                "partition_oneway",
+                "stop_cont",
+                "dm_delay",
+                "dm_error",
+                "cpu_hog",
+                "fd_pressure",
+                "mem_hog",
+                "stress_ng",
+            ]
+    return _FAULT_CANDIDATES
 
 
 def _rand_targets(rnd, names):
@@ -51,15 +59,16 @@ def _rand_targets(rnd, names):
 
 
 def _choose_weighted(rnd, weights):
+    candidates = _fault_candidates()
     kinds = []
     wts = []
-    for k in _fault_candidates():
+    for k in candidates:
         w = int((weights or {}).get(k, 1))
         if w > 0:
             kinds.append(k)
             wts.append(w)
     if not kinds:
-        kinds = _fault_candidates()
+        kinds = candidates
         wts = [1] * len(kinds)
     # Python <3.11: use manual cumulative selection
     s = sum(wts)

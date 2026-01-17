@@ -1,35 +1,8 @@
 import time
 
-from ..framework.core.registry import register_fault
-from ..framework.core.settings import CLIENT_PORT, DEFAULT_FAULT_DURATION_S
-from ..framework.core.util import resolve_targets, sh, sh_root
-
-
-def _for_each_target(step, nodes, leader, run_one):
-    target = resolve_targets(step.get("on", "leader"), nodes, leader)
-    if step.get("target_parallel"):
-        import threading as _th
-
-        errors = []
-
-        def _wrap(t):
-            try:
-                run_one(t)
-            except Exception as e:
-                errors.append(e)
-
-        ths = []
-        for t in target:
-            th = _th.Thread(target=_wrap, args=(t,), daemon=True)
-            th.start()
-            ths.append(th)
-        for th in ths:
-            th.join()
-        if errors:
-            raise errors[0]
-    else:
-        for t in target:
-            run_one(t)
+from keeper.framework.core.registry import register_fault
+from keeper.framework.core.settings import CLIENT_PORT, DEFAULT_FAULT_DURATION_S
+from keeper.framework.core.util import for_each_target, resolve_targets, sh, sh_root
 
 
 def _proc_exists(node):
@@ -118,86 +91,66 @@ def nic_flap(node, down_s=5):
 
 @register_fault("kill")
 def _f_kill(ctx, nodes, leader, step):
-    target = resolve_targets(step.get("on", "leader"), nodes, leader)
-    [kill(t) for t in target]
+    for_each_target(step, nodes, leader, kill)
 
 
 @register_fault("stop")
 def _f_stop(ctx, nodes, leader, step):
-    target = resolve_targets(step.get("on", "leader"), nodes, leader)
-    [stop(t) for t in target]
+    for_each_target(step, nodes, leader, stop)
 
 
 @register_fault("cont")
 def _f_cont(ctx, nodes, leader, step):
-    target = resolve_targets(step.get("on", "leader"), nodes, leader)
-    [cont(t) for t in target]
+    for_each_target(step, nodes, leader, cont)
 
 
 @register_fault("rcvr")
 def _f_rcvr(ctx, nodes, leader, step):
-    target = resolve_targets(step.get("on", "leader"), nodes, leader)
-    [rcvr(t) for t in target]
+    for_each_target(step, nodes, leader, rcvr)
 
 
 @register_fault("rqld")
 def _f_rqld(ctx, nodes, leader, step):
-    target = resolve_targets(step.get("on", "leader"), nodes, leader)
-    [rqld(t) for t in target]
+    for_each_target(step, nodes, leader, rqld)
 
 
 @register_fault("ydld")
 def _f_ydld(ctx, nodes, leader, step):
-    target = resolve_targets(step.get("on", "leader"), nodes, leader)
-    [ydld(t) for t in target]
+    for_each_target(step, nodes, leader, ydld)
 
 
 @register_fault("cpu_hog")
 def _f_cpu_hog(ctx, nodes, leader, step):
     secs = int(step.get("seconds", DEFAULT_FAULT_DURATION_S))
-
-    def _run_one(t):
-        cpu_hog(t, secs)
-
-    _for_each_target(step, nodes, leader, _run_one)
+    for_each_target(step, nodes, leader, lambda t: cpu_hog(t, secs))
 
 
 @register_fault("fd_pressure")
 def _f_fd_pressure(ctx, nodes, leader, step):
-    secs = int(step.get("seconds", DEFAULT_FAULT_DURATION_S))
-    fds = int(step.get("fds", 5000))
-
-    def _run_one(t):
-        fd_pressure(t, fds, secs)
-
-    _for_each_target(step, nodes, leader, _run_one)
+    secs, fds = int(step.get("seconds", DEFAULT_FAULT_DURATION_S)), int(
+        step.get("fds", 5000)
+    )
+    for_each_target(step, nodes, leader, lambda t: fd_pressure(t, fds, secs))
 
 
 @register_fault("mem_hog")
 def _f_mem_hog(ctx, nodes, leader, step):
-    mb = int(step.get("mb", 512))
-    secs = int(step.get("seconds", DEFAULT_FAULT_DURATION_S))
-
-    def _run_one(t):
-        mem_hog_block(t, mb, secs)
-
-    _for_each_target(step, nodes, leader, _run_one)
+    mb, secs = int(step.get("mb", 512)), int(
+        step.get("seconds", DEFAULT_FAULT_DURATION_S)
+    )
+    for_each_target(step, nodes, leader, lambda t: mem_hog_block(t, mb, secs))
 
 
 @register_fault("clock_skew")
 def _f_clock_skew(ctx, nodes, leader, step):
-    target = resolve_targets(step.get("on", "leader"), nodes, leader)
     secs = int(step.get("seconds", 500))
-    for t in target:
-        clock_skew(t, secs)
+    for_each_target(step, nodes, leader, lambda t: clock_skew(t, secs))
 
 
 @register_fault("nic_flap")
 def _f_nic_flap(ctx, nodes, leader, step):
-    target = resolve_targets(step.get("on", "leader"), nodes, leader)
     down_s = int(step.get("down_s", 5))
-    for t in target:
-        nic_flap(t, down_s)
+    for_each_target(step, nodes, leader, lambda t: nic_flap(t, down_s))
 
 
 @register_fault("time_strobe")
@@ -209,32 +162,32 @@ def _f_time_strobe(ctx, nodes, leader, step):
     def _run_one(t):
         time_strobe(t, swings=swings, step_s=step_s, interval_s=interval_s)
 
-    _for_each_target(step, nodes, leader, _run_one)
+    for_each_target(step, nodes, leader, _run_one)
 
 
 @register_fault("stop_cont")
 def _f_stop_cont(ctx, nodes, leader, step):
     target = resolve_targets(step.get("on", "leader"), nodes, leader)
+    sleep_s = step.get("sleep_s", 1.0)
     for _ in range(step.get("count", 10)):
-        [stop(t) for t in target]
-        time.sleep(step.get("sleep_s", 1.0))
-        [cont(t) for t in target]
-        time.sleep(step.get("sleep_s", 1.0))
+        for t in target:
+            stop(t)
+        time.sleep(sleep_s)
+        for t in target:
+            cont(t)
+        time.sleep(sleep_s)
 
 
 @register_fault("stress_ng")
 def _f_stress_ng(ctx, nodes, leader, step):
     secs = int(step.get("seconds", DEFAULT_FAULT_DURATION_S))
-    stress_args = []
-    for k in ("cpu", "vm", "io", "hdd", "sched"):
-        try:
-            v = int(step.get(k, 0))
-        except Exception:
-            v = 0
-        if v and v > 0:
-            stress_args += [f"--{k} {v}"]
+    stress_args = [
+        f"--{k} {int(step.get(k, 0))}"
+        for k in ("cpu", "vm", "io", "hdd", "sched")
+        if int(step.get(k, 0)) > 0
+    ]
     if step.get("vm_bytes"):
-        stress_args += [f"--vm-bytes {step.get('vm_bytes')}"]
+        stress_args.append(f"--vm-bytes {step['vm_bytes']}")
     if not stress_args:
         stress_args = ["--cpu 1"]
     cmd = f"TMPDIR=/tmp stress-ng {' '.join(stress_args)} --temp-path /tmp --timeout {secs}s --metrics-brief"
@@ -243,4 +196,4 @@ def _f_stress_ng(ctx, nodes, leader, step):
         sh(t, "mkdir -p /tmp && chmod 1777 /tmp || true")
         sh(t, cmd)
 
-    _for_each_target(step, nodes, leader, _run_one)
+    for_each_target(step, nodes, leader, _run_one)

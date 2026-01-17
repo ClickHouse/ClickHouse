@@ -1,18 +1,7 @@
 import json
 
-from ..core.settings import CLIENT_PORT, CONTROL_PORT, PROM_PORT
-from ..core.util import has_bin, sh
-
-
-def _first_nonempty_cmd(node, cmds):
-    for c in cmds:
-        try:
-            out = sh(node, c, timeout=5)["out"]
-            if str(out).strip():
-                return out
-        except Exception:
-            continue
-    return ""
+from keeper.framework.core.settings import CLIENT_PORT, CONTROL_PORT, PROM_PORT
+from keeper.framework.core.util import has_bin, sh
 
 
 def four(node, cmd):
@@ -36,9 +25,13 @@ def four(node, cmd):
         f"exec 3<&-; exec 3>&-"
     )
     fb.append(f'timeout 2s bash -lc "{devtcp_inner}"')
-    out = _first_nonempty_cmd(node, fb)
-    if str(out).strip():
-        return out
+    for c in fb:
+        try:
+            out = sh(node, c, timeout=5)["out"]
+            if str(out).strip():
+                return out
+        except Exception:
+            continue
     return ""
 
 
@@ -214,7 +207,4 @@ def ch_trace_log(node, limit_rows=500):
 
 def dirs(node):
     """Return raw output of 4LW 'dirs' command (best-effort)."""
-    try:
-        return four(node, "dirs")
-    except Exception:
-        return ""
+    return four(node, "dirs")

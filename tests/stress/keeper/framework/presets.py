@@ -1,4 +1,4 @@
-from .core.scenario_builder import ScenarioBuilder
+from keeper.framework.core.scenario_builder import ScenarioBuilder
 
 
 def build_gp3_jitter(

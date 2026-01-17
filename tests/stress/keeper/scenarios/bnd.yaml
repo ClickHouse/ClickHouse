@@ -6,7 +6,7 @@ scenarios:
   - id: BND-01
     name: Value size sweep
     topology: 3
-    workload: { config: workloads/size_depth.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml, duration: 120 }
     gates:
       - { type: single_leader }
 

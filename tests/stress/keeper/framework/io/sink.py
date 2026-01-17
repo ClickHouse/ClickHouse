@@ -1,91 +1,54 @@
 import json
 import os
 
-def _sanitize_filename_component(x: object) -> str:
-    try:
-        s = str(x)
-    except Exception:
-        s = ""
-    s = s.strip().replace(" ", "_")
+
+def _sanitize_filename_component(x):
+    """Sanitize string for use in filename."""
+    s = str(x).strip().replace(" ", "_")
     allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
-    res = [ch if ch in allowed else "_" for ch in s]
-    name = "".join(res) or "unknown"
+    name = "".join(ch if ch in allowed else "_" for ch in s) or "unknown"
     return name[:80]
- 
-
-
-def _get_helper():
-    try:
-        from tests.ci.clickhouse_helper import ClickHouseHelper  # type: ignore
-    except Exception:
-        return None
-
-    url = os.environ.get("KEEPER_METRICS_CLICKHOUSE_URL") or None
-    user = os.environ.get("CI_DB_USER") or None
-    password = os.environ.get("CI_DB_PASSWORD") or None
-    if url and user and password:
-        try:
-            return ClickHouseHelper(
-                url=url,
-                auth={
-                    "X-ClickHouse-User": user,
-                    "X-ClickHouse-Key": password,
-                },
-            )
-        except Exception:
-            return None
-    return None
 
 
 def has_ci_sink():
-    """Return True if CI ClickHouse test-stat credentials are available."""
-    try:
-        if os.environ.get("KEEPER_METRICS_FILE"):
-            return True
-    except Exception:
-        pass
-    return _get_helper() is not None
+    """Return True if metrics file path is configured."""
+    return bool(os.environ.get("KEEPER_METRICS_FILE", "").strip())
+
 
 def _write_jsonl_lines(path, rows):
+    """Append rows as JSONL to path."""
     try:
         with open(path, "a", encoding="utf-8") as f:
             for r in rows:
-                try:
-                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
-                except Exception:
-                    pass
-    except Exception:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    except OSError:
         pass
+
+
 def sink_clickhouse(_url_ignored, table, rows):
-    """Write rows to sidecar JSONL for host-side ingestion.
+    """Write rows to sidecar JSONL file.
 
     Supports per-test splitting when KEEPER_METRICS_SPLIT_PER_TEST is truthy.
-    Files are grouped by (run_id, scenario) to limit file size and simplify ingestion.
+    Files are grouped by (run_id, scenario) to limit file size.
     """
     if not rows:
         return
-    try:
-        sidecar = (os.environ.get("KEEPER_METRICS_FILE") or "").strip()
-    except Exception:
-        sidecar = ""
+    sidecar = os.environ.get("KEEPER_METRICS_FILE", "").strip()
     if not sidecar:
         return
-    # Ensure directory exists (host-side preflight)
+    # Ensure directory exists
     try:
-        d = os.path.dirname(sidecar) or "."
-        os.makedirs(d, exist_ok=True)
-    except Exception:
+        os.makedirs(os.path.dirname(sidecar) or ".", exist_ok=True)
+    except OSError:
         pass
-    split = False
-    try:
-        split = os.environ.get(
-            "KEEPER_METRICS_SPLIT_PER_TEST", "0"
-        ).strip().lower() in ("1", "true", "yes", "on")
-    except Exception:
-        split = False
+    split = os.environ.get("KEEPER_METRICS_SPLIT_PER_TEST", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
     if split:
-        base = sidecar
-        ext = ".jsonl"
+        base, ext = sidecar, ".jsonl"
         if base.lower().endswith(ext):
             base = base[: -len(ext)]
         groups = {}
@@ -96,6 +59,5 @@ def sink_clickhouse(_url_ignored, table, rows):
             groups.setdefault(path, []).append(r)
         for path, rs in groups.items():
             _write_jsonl_lines(path, rs)
-        return
-    # Fallback: single file
-    _write_jsonl_lines(sidecar, rows)
+    else:
+        _write_jsonl_lines(sidecar, rows)

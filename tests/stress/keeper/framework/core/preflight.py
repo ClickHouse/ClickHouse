@@ -1,19 +1,33 @@
 import os
 
-from .settings import parse_bool
-from .util import has_bin, sh_root
+import pytest
+from keeper.framework.core.settings import parse_bool
+from keeper.framework.core.util import has_bin, sh_root
+
+# Map tool names to apt packages that provide them
+_TOOL_TO_PACKAGE = {
+    "dmsetup": "dmsetup",
+    "losetup": "mount",  # losetup is in util-linux, but 'mount' package on most systems
+    "tc": "iproute2",
+    "ip": "iproute2",
+    "iptables": "iptables",
+    "ip6tables": "iptables",
+    "stress-ng": "stress-ng",
+    "dd": "coreutils",
+    "fallocate": "util-linux",
+    "curl": "curl",
+    "bash": "bash",
+}
 
 
 def _fault_kinds(faults):
     kinds = set()
     for f in faults or []:
-        if isinstance(f, dict):
-            try:
-                k = str(f.get("kind", "")).strip().lower()
-            except Exception:
-                k = ""
-            if k:
-                kinds.add(k)
+        if not isinstance(f, dict):
+            continue
+        k = str(f.get("kind", "") or "").strip().lower()
+        if k:
+            kinds.add(k)
     return kinds
 
 
@@ -38,23 +52,43 @@ def _tools_for_faults(faults):
     return req
 
 
+def _install_missing_tools(nodes, missing_tools):
+    """Attempt to install missing tools via apt-get on all nodes."""
+    if not missing_tools or not nodes:
+        return True
+    # Dedupe packages to install
+    packages = set()
+    for tool in missing_tools:
+        pkg = _TOOL_TO_PACKAGE.get(tool, tool)
+        packages.add(pkg)
+    if not packages:
+        return True
+    pkg_list = " ".join(sorted(packages))
+    try:
+        for n in nodes:
+            # Update apt cache and install packages (non-interactive)
+            sh_root(n, "apt-get update -qq >/dev/null 2>&1 || true")
+            sh_root(
+                n, f"DEBIAN_FRONTEND=noninteractive apt-get install -y -qq {pkg_list}"
+            )
+        return True
+    except Exception as e:
+        print(f"[keeper][preflight] Failed to install packages: {e}")
+        return False
+
+
 def _bench_present(node):
     try:
         if has_bin(node, "keeper-bench"):
             return True
-        if has_bin(node, "clickhouse"):
-            # Many images ship keeper-bench as a clickhouse subcommand; treat clickhouse presence as sufficient
-            return True
+        # Many images ship keeper-bench as a clickhouse subcommand; treat clickhouse presence as sufficient
+        return has_bin(node, "clickhouse")
     except Exception:
         return False
-    return False
 
 
 def _install_bench_from_url(nodes):
-    try:
-        url = os.environ.get("KEEPER_BENCH_URL", "").strip()
-    except Exception:
-        url = ""
+    url = os.environ.get("KEEPER_BENCH_URL", "").strip()
     if not url:
         return False
     try:
@@ -86,10 +120,7 @@ def _ensure_replay_if_requested(node0, scenario):
         pass
 
 
-def ensure_environment(nodes, scenario):
-    faults = (scenario or {}).get("faults") or []
-    req = _tools_for_faults(faults) or set()
-    # Keeper-bench presence (if workload is requested)
+def _ensure_bench(nodes, scenario):
     if (
         isinstance(scenario, dict)
         and scenario.get("workload")
@@ -106,16 +137,51 @@ def ensure_environment(nodes, scenario):
                 f"install utils/keeper-bench or provide clickhouse keeper-bench"
             )
             raise AssertionError(msg)
-        # If replay is requested, verify the file is accessible inside container
         _ensure_replay_if_requested(n0, scenario)
+
+
+def _collect_missing_tools(nodes, req):
     missing = {}
     for n in nodes or []:
         miss_n = [t for t in req if not has_bin(n, t)]
         if miss_n:
-            missing[n.name] = miss_n
+            missing[getattr(n, "name", "node")] = miss_n
+    return missing
+
+
+def _flatten_missing(missing):
+    all_missing = set()
+    for tools in missing.values():
+        all_missing.update(tools)
+    return all_missing
+
+
+def ensure_environment(nodes, scenario):
+    faults = (scenario or {}).get("faults") or []
+    req = _tools_for_faults(faults) or set()
+    _ensure_bench(nodes, scenario)
+
+    # Check for missing tools
+    missing = _collect_missing_tools(nodes, req)
+
     if missing:
+        all_missing = _flatten_missing(missing)
+
+        # Attempt to install missing tools
+        print(
+            f"[keeper][preflight] Missing tools: {all_missing}, attempting install..."
+        )
+        if _install_missing_tools(nodes, all_missing):
+            # Re-check after installation
+            still_missing = _collect_missing_tools(nodes, req)
+            if not still_missing:
+                print(f"[keeper][preflight] Successfully installed: {all_missing}")
+                return None
+            missing = still_missing
+
+        # Still missing after install attempt - skip gracefully
         msg = ", ".join(
             f"{name}: {', '.join(tools)}" for name, tools in missing.items()
         )
-        raise AssertionError(f"Missing required tools on nodes: {msg}")
+        pytest.skip(f"Missing required tools (install failed): {msg}")
     return None

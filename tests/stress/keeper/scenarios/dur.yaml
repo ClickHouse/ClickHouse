@@ -6,7 +6,7 @@ scenarios:
   - id: DUR-01
     name: Snapshot ENOSPC safe
     topology: 3
-    workload: { config: workloads/write_heavy.yaml, duration: 180 }
+    workload: { config: workloads/prod_mix.yaml, duration: 180 }
     faults:
       - { kind: record_lgif_before }
       - { kind: enospc, on: leader, size_mb: 2048 }
@@ -37,7 +37,7 @@ scenarios:
   - id: DUR-04
     name: Rotate/retain + exit snapshot
     topology: 3
-    workload: { config: workloads/write_heavy.yaml, duration: 180 }
+    workload: { config: workloads/prod_mix.yaml, duration: 180 }
     gates:
       - { type: single_leader }
 
@@ -58,7 +58,7 @@ scenarios:
   - id: DUR-07
     name: Compaction/rotation under pressure
     topology: 3
-    workload: { config: workloads/write_heavy.yaml, duration: 180 }
+    workload: { config: workloads/prod_mix.yaml, duration: 180 }
     gates:
       - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.05 }

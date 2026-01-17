@@ -2,6 +2,12 @@ import os
 import pathlib
 
 import pytest
+from keeper.framework.core.cluster import ClusterBuilder
+from keeper.framework.core.settings import parse_bool
+from keeper.framework.core.util import env_int, wait_until
+from keeper.framework.io.probes import count_leaders
+
+pytest_plugins = ["keeper.pytest_plugins.scenario_loader"]
 
 
 def pytest_addoption(parser):
@@ -13,7 +19,7 @@ def pytest_addoption(parser):
     )
     pa("--commit-sha", action="store", default=os.environ.get("COMMIT_SHA", "local"))
     # Sink URL is resolved via CI ClickHouse helper; no explicit option needed
-    pa("--duration", type=int, default=int(getenv_int("KEEPER_DURATION", 120)))
+    pa("--duration", type=int, default=int(env_int("KEEPER_DURATION", 120)))
     pa(
         "--total-shards",
         type=int,
@@ -70,14 +76,6 @@ def pytest_addoption(parser):
         action="store",
         default=os.environ.get("KEEPER_SEEDS", ""),
     )
-
-
-from ..framework.core.cluster import ClusterBuilder
-from ..framework.core.settings import parse_bool, getenv_int
-from ..framework.core.util import wait_until
-from ..framework.io.probes import count_leaders
-
-pytest_plugins = ["tests.stress.keeper.pytest_plugins.scenario_loader"]
 
 
 @pytest.fixture(scope="session")
@@ -175,7 +173,24 @@ def cluster_factory(request):
             except Exception:
                 pass
             raise e
-        to = float(getenv_int("KEEPER_READY_TIMEOUT", 120))
+        try:
+            if parse_bool(os.environ.get("KEEPER_PRINT_KEEPER_CONFIG")):
+                cname = os.environ.get("KEEPER_CLUSTER_NAME", "")
+                conf_root = (
+                    pathlib.Path(getattr(cluster, "instances_dir", ""))
+                    / "configs"
+                    / (cname or "")
+                )
+                for i in range(1, topology + 1):
+                    p = conf_root / f"keeper_config_keeper{i}.xml"
+                    if p.exists():
+                        try:
+                            print(f"==== keeper{i} config ====\n" + p.read_text()[:800])
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+        to = float(env_int("KEEPER_READY_TIMEOUT", 120))
         wait_until(
             lambda: count_leaders(nodes) == 1,
             timeout_s=to,

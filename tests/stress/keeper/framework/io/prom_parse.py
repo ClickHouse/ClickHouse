@@ -17,7 +17,6 @@ DEFAULT_PREFIXES = (
 def _unescape_label_value(s):
     # Prometheus text format escapes: \\, \", \n, \t, \r
     out = []
-    it = iter(range(len(s)))
     i = 0
     while i < len(s):
         c = s[i]
