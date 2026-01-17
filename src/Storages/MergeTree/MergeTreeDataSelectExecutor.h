@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/PartitionPruner.h>
-#include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -159,7 +158,6 @@ private:
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         const std::optional<PartitionPruner> & partition_pruner,
-        const std::optional<StatisticsPartPruner> & statistics_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         PartFilterCounters & counters,
         QueryStatusPtr query_status);
@@ -172,7 +170,6 @@ private:
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         const std::optional<PartitionPruner> & partition_pruner,
-        const std::optional<StatisticsPartPruner> & statistics_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context,
         PartFilterCounters & counters,
@@ -209,17 +206,27 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
-    /// Filter parts using minmax index and statistics and partition key.
+    /// Filter parts using minmax index and partition key.
     static RangesInDataParts filterPartsByPartition(
         const RangesInDataParts & parts,
         const std::optional<PartitionPruner> & partition_pruner,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const std::optional<std::unordered_set<String>> & part_values,
-        const std::optional<StatisticsPartPruner> & statistics_pruner,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
+        LoggerPtr log,
+        ReadFromMergeTree::IndexStats & index_stats);
+
+    /// Filter parts using column statistics.
+    /// Returns filtered parts and updates index_stats with statistics pruning info.
+    static RangesInDataParts filterPartsByStatistics(
+        const RangesInDataParts & parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context,
         LoggerPtr log,
         ReadFromMergeTree::IndexStats & index_stats);
 

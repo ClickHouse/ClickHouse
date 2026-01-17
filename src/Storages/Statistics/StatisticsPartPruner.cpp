@@ -1,191 +1,232 @@
 #include <Storages/Statistics/StatisticsPartPruner.h>
-#include <Storages/MergeTree/RPNBuilder.h>
-
-#include <cmath>
-#include <limits>
-#include <set>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
 
-/// Statistics stores min/max values as Float64, which may lose precision for large integers.
-/// To ensure correctness of part pruning, we need to expand the range conservatively:
-/// - min is adjusted towards negative infinity using std::nextafter
-/// - max is adjusted towards positive infinity using std::nextafter
-/// This ensures we never incorrectly skip parts that contain matching data.
-static Float64 getConservativeMin(Float64 value)
+/// Float64 can exactly represent integers in the range [-2^53, 2^53].
+static constexpr Float64 MAX_EXACT_FLOAT64 = static_cast<Float64>(1ULL << std::numeric_limits<Float64>::digits);
+
+enum class RangeStatus : uint8_t
 {
-    return std::nextafter(value, -std::numeric_limits<Float64>::infinity());
+    Valid,    /// Valid range, use it for pruning
+    Unknown,  /// Cannot determine range, be conservative don't prune
+    Empty     /// Empty range, should prune this part
+};
+
+struct RangeWithStatus
+{
+    std::optional<Range> range;
+    RangeStatus status = RangeStatus::Unknown;
+};
+
+/// Try to convert Float64 value to target type using strict conversion.
+/// Returns the converted Field if successful, nullopt otherwise.
+static std::optional<Field> tryConvertFloat64Strict(Float64 value, const DataTypePtr & data_type)
+{
+    static const DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
+    return convertFieldToTypeStrict(Field(value), *float64_type, *data_type);
 }
 
-static Float64 getConservativeMax(Float64 value)
+/// Get boundary field for min value when Float64 precision is exceeded.
+/// If value >= 2^53, use 2^53 as conservative lower bound.
+/// If value <= -2^53, we cannot determine a safe lower bound, return nullopt.
+static std::optional<Field> getMinBoundaryField(Float64 value, const DataTypePtr & data_type)
 {
-    return std::nextafter(value, std::numeric_limits<Float64>::infinity());
-}
-
-StatisticsPartPruner::StatisticsPartPruner(std::vector<RPNElement> rpn_)
-    : rpn(std::move(rpn_))
-{
-    for (const auto & element : rpn)
+    if (value >= MAX_EXACT_FLOAT64)
     {
-        if (element.function == RPNElement::FUNCTION_IN_RANGE && !element.column_ranges.empty())
-        {
-            has_minmax_conditions = true;
-            break;
-        }
+        WhichDataType which(data_type);
+        if (which.isUInt())
+            return convertFieldToType(Field(static_cast<UInt64>(MAX_EXACT_FLOAT64)), *data_type);
+        else
+            return convertFieldToType(Field(static_cast<Int64>(MAX_EXACT_FLOAT64)), *data_type);
     }
-    if (has_minmax_conditions)
-        buildDescription();
+
+    return std::nullopt;
 }
 
-std::optional<StatisticsPartPruner> StatisticsPartPruner::build(
+/// Get boundary field for max value when Float64 precision is exceeded.
+/// If value <= -2^53, use -2^53 as conservative upper bound.
+/// If value >= 2^53, we cannot determine a safe upper bound, return nullopt.
+static std::optional<Field> getMaxBoundaryField(Float64 value, const DataTypePtr & data_type)
+{
+    if (value <= -MAX_EXACT_FLOAT64)
+    {
+        WhichDataType which(data_type);
+        if (which.isUInt())
+            return std::nullopt;
+        else
+            return convertFieldToType(Field(static_cast<Int64>(-MAX_EXACT_FLOAT64)), *data_type);
+    }
+
+    return std::nullopt;
+}
+
+/// Check if Float64 value exceeds the exact representable range [-2^53, 2^53].
+static bool exceedsFloat64PrecisionRange(Float64 value)
+{
+    return value >= MAX_EXACT_FLOAT64 || value <= -MAX_EXACT_FLOAT64;
+}
+
+static RangeWithStatus createRangeFromEstimate(const Estimate & est, const DataTypePtr & data_type)
+{
+    if (!est.estimated_min.has_value() || !est.estimated_max.has_value())
+        return {std::nullopt, RangeStatus::Unknown};
+
+    Float64 min_value = est.estimated_min.value();
+    Float64 max_value = est.estimated_max.value();
+
+    /// If min > max, the part has all nulls, should be pruned
+    if (min_value > max_value)
+        return {std::nullopt, RangeStatus::Empty};
+
+    WhichDataType which(data_type);
+    bool needs_precision_handling = which.isInt64() || which.isInt128() || which.isInt256()
+                                 || which.isUInt64() || which.isUInt128() || which.isUInt256()
+                                 || which.isDecimal();
+
+    if (!needs_precision_handling)
+    {
+        /// For types that don't have precision issues, convert Float64 to appropriate integer type first.
+        /// convertFieldToType doesn't support direct Float64 -> Date/DateTime conversion.
+        Field min_src = which.isFloat() ? Field(min_value) : Field(static_cast<Int64>(min_value));
+        Field max_src = which.isFloat() ? Field(max_value) : Field(static_cast<Int64>(max_value));
+
+        Field min_field = convertFieldToType(min_src, *data_type);
+        Field max_field = convertFieldToType(max_src, *data_type);
+
+        if (min_field.isNull() || max_field.isNull())
+            return {std::nullopt, RangeStatus::Unknown};
+
+        return {Range(min_field, true, max_field, true), RangeStatus::Valid};
+    }
+
+    /// For types that may exceed Float64 precision, use strict conversion first
+    std::optional<Field> min_field_opt = tryConvertFloat64Strict(min_value, data_type);
+    std::optional<Field> max_field_opt = tryConvertFloat64Strict(max_value, data_type);
+
+    /// If strict conversion failed, try to use boundary values for out-of-precision-range cases
+    if (!min_field_opt.has_value() && exceedsFloat64PrecisionRange(min_value))
+        min_field_opt = getMinBoundaryField(min_value, data_type);
+
+    if (!max_field_opt.has_value() && exceedsFloat64PrecisionRange(max_value))
+        max_field_opt = getMaxBoundaryField(max_value, data_type);
+
+    if (!min_field_opt.has_value() && !max_field_opt.has_value())
+    {
+        /// Both conversions failed, cannot determine any useful bound
+        return {std::nullopt, RangeStatus::Unknown};
+    }
+    else if (!min_field_opt.has_value())
+    {
+        /// Only max is valid: range is (-inf, max]
+        return {Range::createRightBounded(max_field_opt.value(), true), RangeStatus::Valid};
+    }
+    else if (!max_field_opt.has_value())
+    {
+        /// Only min is valid: range is [min, +inf)
+        return {Range::createLeftBounded(min_field_opt.value(), true), RangeStatus::Valid};
+    }
+    else
+    {
+        /// Both valid: range is [min, max]
+        return {Range(min_field_opt.value(), true, max_field_opt.value(), true), RangeStatus::Valid};
+    }
+}
+
+StatisticsPartPruner::StatisticsPartPruner(
+    KeyCondition key_condition_,
+    std::map<String, DataTypePtr> stats_column_name_to_type_map_,
+    std::vector<String> used_column_names_)
+    : key_condition(std::move(key_condition_))
+    , stats_column_name_to_type_map(std::move(stats_column_name_to_type_map_))
+    , used_column_names(std::move(used_column_names_))
+{
+}
+
+std::optional<StatisticsPartPruner> StatisticsPartPruner::create(
     const StorageMetadataPtr & metadata,
     const ActionsDAG::Node * filter_node,
     ContextPtr context)
 {
-    if (!filter_node)
+    if (!filter_node || !metadata)
         return std::nullopt;
 
-    std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(
-        filter_node,
-        context,
-        [&](const RPNBuilderTreeNode & node, RPNElement & out)
-        {
-            return ConditionSelectivityEstimator::extractAtomFromTree(metadata, node, out);
-        }
-    ).extractRPN();
-    if (rpn.empty())
+    /// Collect columns that have MinMax statistics
+    std::map<String, DataTypePtr> stats_column_name_to_type_map;
+    const auto & columns = metadata->getColumns();
+    for (const auto & column : columns)
+    {
+        if (column.statistics.types_to_desc.contains(StatisticsType::MinMax))
+            stats_column_name_to_type_map[column.name] = column.type;
+    }
+
+    if (stats_column_name_to_type_map.empty())
         return std::nullopt;
 
-    StatisticsPartPruner pruner(std::move(rpn));
-    if (!pruner.hasUsefulConditions())
+    /// Build column names in sorted order
+    Names stats_column_names;
+    for (const auto & [name, type] : stats_column_name_to_type_map)
+        stats_column_names.push_back(name);
+
+    NamesAndTypesList inputs_list;
+    for (const auto & [name, type] : stats_column_name_to_type_map)
+        inputs_list.emplace_back(name, type);
+
+    ActionsDAG actions_dag(inputs_list);
+    auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag));
+
+    ActionsDAGWithInversionPushDown filter_dag(filter_node, context);
+    KeyCondition key_condition(filter_dag, context, stats_column_names, expression);
+
+    if (key_condition.alwaysUnknownOrTrue())
         return std::nullopt;
 
-    return pruner;
+    std::vector<String> used_column_names;
+    for (size_t col_idx : key_condition.getUsedColumns())
+        if (col_idx < stats_column_names.size())
+            used_column_names.push_back(stats_column_names[col_idx]);
+
+    return StatisticsPartPruner(std::move(key_condition), std::move(stats_column_name_to_type_map), std::move(used_column_names));
 }
 
 BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates) const
 {
-    if (rpn.empty())
-        return {true, true};
+    Hyperrectangle hyperrectangle;
+    DataTypes types;
 
-    std::vector<BoolMask> rpn_stack;
-
-    for (const auto & element : rpn)
+    for (const auto & [col_name, col_type] : stats_column_name_to_type_map)
     {
-        switch (element.function)
+        auto est_it = estimates.find(col_name);
+        if (est_it == estimates.end())
         {
-            case RPNElement::FUNCTION_IN_RANGE:
-            {
-                BoolMask result{true, true};
-                for (const auto & [column_name, ranges] : element.column_ranges)
-                {
-                    BoolMask column_result = checkRangeCondition(column_name, ranges, estimates);
-                    result = result & column_result;
-                }
+            hyperrectangle.emplace_back(Range::createWholeUniverse());
+            types.push_back(col_type);
+            continue;
+        }
 
-                rpn_stack.push_back(result);
+        auto [range, status] = createRangeFromEstimate(est_it->second, col_type);
+        switch (status)
+        {
+            case RangeStatus::Valid:
+                hyperrectangle.push_back(std::move(*range));
+                types.push_back(col_type);
                 break;
-            }
-
-            case RPNElement::FUNCTION_AND:
-            {
-                auto arg2 = rpn_stack.back();
-                rpn_stack.pop_back();
-                auto arg1 = rpn_stack.back();
-                rpn_stack.pop_back();
-                rpn_stack.push_back(arg1 & arg2);
+            case RangeStatus::Unknown:
+                hyperrectangle.emplace_back(Range::createWholeUniverse());
+                types.push_back(col_type);
                 break;
-            }
-
-            case RPNElement::FUNCTION_OR:
-            {
-                auto arg2 = rpn_stack.back();
-                rpn_stack.pop_back();
-                auto arg1 = rpn_stack.back();
-                rpn_stack.pop_back();
-                rpn_stack.push_back(arg1 | arg2);
-                break;
-            }
-
-            case RPNElement::FUNCTION_NOT:
-            {
-                auto arg = rpn_stack.back();
-                rpn_stack.pop_back();
-                rpn_stack.push_back(!arg);
-                break;
-            }
-
-            case RPNElement::FUNCTION_UNKNOWN:
-                rpn_stack.emplace_back(true, true);
-                break;
-
-            case RPNElement::ALWAYS_TRUE:
-                rpn_stack.emplace_back(true, false);
-                break;
-
-            case RPNElement::ALWAYS_FALSE:
-                rpn_stack.emplace_back(false, true);
-                break;
+            case RangeStatus::Empty:
+                return {false, true};
         }
     }
 
-    return rpn_stack.empty() ? BoolMask{true, true} : rpn_stack.back();
-}
-
-BoolMask StatisticsPartPruner::checkRangeCondition(
-    const String & column_name,
-    const PlainRanges & condition_ranges,
-    const Estimates & estimates)
-{
-    auto it = estimates.find(column_name);
-    if (it == estimates.end())
-        return {true, true};
-
-    const Estimate & est = it->second;
-    if (!est.estimated_min.has_value() || !est.estimated_max.has_value())
-        return {true, true};
-
-    /// Range comparison between Float64 Field and Decimal Field is incorrect.
-    /// Skip optimization for Decimal types to avoid incorrect results.
-    /// TODO: Remove this workaround after FieldVisitorAccurateLess is fixed.
-    for (const auto & range : condition_ranges.ranges)
-    {
-        if (Field::isDecimal(range.left.getType()) || Field::isDecimal(range.right.getType()))
-            return {true, true};
-    }
-
-    /// Apply conservative bounds to handle Float64 precision loss for large integers.
-    Float64 conservative_min = getConservativeMin(est.estimated_min.value());
-    Float64 conservative_max = getConservativeMax(est.estimated_max.value());
-    Range part_range(Field(conservative_min), true, Field(conservative_max), true);
-
-    bool intersects = false;
-    bool contains = true;
-
-    for (const auto & range : condition_ranges.ranges)
-    {
-        if (range.intersectsRange(part_range))
-            intersects = true;
-        if (!range.containsRange(part_range))
-            contains = false;
-    }
-
-    return {intersects, !contains};
-}
-
-void StatisticsPartPruner::buildDescription()
-{
-    std::set<std::string> columns;
-    for (const auto & element : rpn)
-    {
-        if (element.function == RPNElement::FUNCTION_IN_RANGE)
-        {
-            for (const auto & [column_name, _] : element.column_ranges)
-                columns.insert(column_name);
-        }
-    }
-    used_columns.assign(columns.begin(), columns.end());
+    return key_condition.checkInHyperrectangle(hyperrectangle, types);
 }
 
 }

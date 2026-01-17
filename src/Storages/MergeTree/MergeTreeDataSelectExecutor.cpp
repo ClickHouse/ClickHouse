@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
+#include <Storages/Statistics/StatisticsPartPruner.h>
 #include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTLiteral.h>
@@ -94,6 +95,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
+    extern const SettingsBool use_statistics_part_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
@@ -564,7 +566,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const std::optional<PartitionPruner> & partition_pruner,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const std::optional<std::unordered_set<String>> & part_values,
-    const std::optional<StatisticsPartPruner> & statistics_pruner,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
     const ContextPtr & context,
@@ -603,7 +604,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             minmax_idx_condition,
             minmax_columns_types,
             partition_pruner,
-            statistics_pruner,
             max_block_numbers_to_read,
             query_context,
             part_filter_counters,
@@ -615,7 +615,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             minmax_idx_condition,
             minmax_columns_types,
             partition_pruner,
-            statistics_pruner,
             max_block_numbers_to_read,
             part_filter_counters,
             query_status);
@@ -648,17 +647,69 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
     }
 
-    if (statistics_pruner
-        && part_filter_counters.num_parts_after_statistics_pruner < part_filter_counters.num_parts_after_partition_pruner)
+    return res;
+}
+
+RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
+    const RangesInDataParts & parts,
+    const StorageMetadataPtr & metadata_snapshot,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ContextPtr & context,
+    LoggerPtr log,
+    ReadFromMergeTree::IndexStats & index_stats)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// Disable statistics-based pruning when:
+    /// 1. The setting is disabled
+    /// 2. The query uses FINAL (statistics may not reflect post-merge state)
+    /// 3. There are on-fly mutations or patch parts (statistics only reflects original data)
+    if (!settings[Setting::use_statistics_part_pruning]
+        || query_info.isFinal()
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
     {
+        return parts;
+    }
+
+    const auto * filter_node = query_info.filter_actions_dag ? query_info.filter_actions_dag->getOutputs().front() : nullptr;
+    auto statistics_pruner = StatisticsPartPruner::create(metadata_snapshot, filter_node, context);
+
+    if (!statistics_pruner)
+        return parts;
+
+    RangesInDataParts res_parts;
+    size_t total_parts_before = parts.size();
+
+    for (const auto & part : parts)
+    {
+        auto estimates = part.data_part->getEstimates();
+        if (!estimates.empty() && !statistics_pruner->checkPartCanMatch(estimates).can_be_true)
+        {
+            LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
+            continue;
+        }
+        res_parts.push_back(part);
+    }
+
+    if (res_parts.size() < total_parts_before)
+    {
+        size_t total_granules_after = 0;
+        for (const auto & part : res_parts)
+        {
+            total_granules_after += part.data_part->index_granularity->getMarksCountWithoutFinal();
+        }
+
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Statistics,
             .used_keys = statistics_pruner->getUsedColumns(),
-            .num_parts_after = part_filter_counters.num_parts_after_statistics_pruner,
-            .num_granules_after = part_filter_counters.num_granules_after_statistics_pruner});
+            .num_parts_after = res_parts.size(),
+            .num_granules_after = total_granules_after});
+
+        LOG_DEBUG(log, "Statistics pruning: {} parts -> {} parts", total_parts_before, res_parts.size());
     }
 
-    return res;
+    return res_parts;
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
@@ -2238,7 +2289,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     const std::optional<PartitionPruner> & partition_pruner,
-    const std::optional<StatisticsPartPruner> & statistics_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     PartFilterCounters & counters,
     QueryStatusPtr query_status)
@@ -2287,16 +2337,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_parts_after_partition_pruner += 1;
         counters.num_granules_after_partition_pruner += num_granules;
 
-        if (statistics_pruner)
-        {
-            auto estimates = part_or_projection->getEstimates();
-            if (!estimates.empty() && !statistics_pruner->checkPartCanMatch(estimates).can_be_true)
-                continue;
-        }
-
-        counters.num_parts_after_statistics_pruner += 1;
-        counters.num_granules_after_statistics_pruner += num_granules;
-
         res_parts.push_back(prev_part);
     }
     return res_parts;
@@ -2309,7 +2349,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
     const std::optional<PartitionPruner> & partition_pruner,
-    const std::optional<StatisticsPartPruner> & statistics_pruner,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     ContextPtr query_context,
     PartFilterCounters & counters,
@@ -2364,16 +2403,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
             counters.num_parts_after_partition_pruner += 1;
             counters.num_granules_after_partition_pruner += num_granules;
-
-            if (statistics_pruner)
-            {
-                auto estimates = part_or_projection->getEstimates();
-                if (!estimates.empty() && !statistics_pruner->checkPartCanMatch(estimates).can_be_true)
-                    continue;
-            }
-
-            counters.num_parts_after_statistics_pruner += 1;
-            counters.num_granules_after_statistics_pruner += num_granules;
 
             /// populate UUIDs and exclude ignored parts if enabled
             if (part->uuid != UUIDHelpers::Nil && pinned_part_uuids->contains(part->uuid))

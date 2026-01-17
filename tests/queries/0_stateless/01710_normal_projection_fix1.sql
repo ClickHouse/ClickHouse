@@ -2,7 +2,7 @@
 drop table if exists t;
 
 -- Statistics-based part pruning can skip parts, causing force_optimize_projection to fail.
-SET allow_statistics_optimize = 0;
+SET use_statistics_part_pruning = 0;
 
 create table t (i int, j int) engine MergeTree order by i settings add_minmax_index_for_numeric_columns=0;
 

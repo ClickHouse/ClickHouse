@@ -1,0 +1,349 @@
+-- Case 1: UInt64 both >= 2^53, query value < 2^53, should prune part 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Statistics
+            Keys:
+              val_uint64
+            Parts: 0/1
+            Granules: 0/1
+          PrimaryKey
+            Condition: true
+            Parts: 0/0
+            Granules: 0/0
+          Ranges: 0
+0
+-- Case 1: UInt64 both >= 2^53, query value = 2^53+5, should NOT prune part 1
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Partition
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+1
+-- Case 2: Int64 both <= -2^53, query value > -2^53, should prune part 2
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Statistics
+            Keys:
+              val_int64
+            Parts: 1/2
+            Granules: 1/2
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+0
+-- Case 2: Int64 both <= -2^53, query value = -2^53-5, should NOT prune part 2
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Partition
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Statistics
+            Keys:
+              val_int64
+            Parts: 1/2
+            Granules: 1/2
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+1
+-- Case 3: Int64 min in range, max >= 2^53, query < min, should prune part 3
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Partition
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Statistics
+            Keys:
+              val_int64
+            Parts: 2/3
+            Granules: 2/3
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Ranges: 2
+0
+-- Case 3: Int64 min in range, max >= 2^53, query > 2^53, should NOT prune part 3
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Partition
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          PrimaryKey
+            Condition: true
+            Parts: 3/3
+            Granules: 3/3
+          Ranges: 3
+1
+-- Case 4: Int64 min <= -2^53, max in range, query > max, should prune part 4
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Statistics
+            Keys:
+              val_int64
+            Parts: 2/4
+            Granules: 2/4
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Ranges: 2
+0
+-- Case 4: Int64 min <= -2^53, max in range, query = max, should NOT prune part 4
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Statistics
+            Keys:
+              val_int64
+            Parts: 2/4
+            Granules: 2/4
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Ranges: 2
+0
+-- Case 4: Int64 min <= -2^53, max in range, query < -2^53, should NOT prune part 4
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Partition
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Statistics
+            Keys:
+              val_int64
+            Parts: 2/4
+            Granules: 2/4
+          PrimaryKey
+            Condition: true
+            Parts: 2/2
+            Granules: 2/2
+          Ranges: 2
+2
+-- Case 5: Int64 min <= -2^53 and max >= 2^53, cannot prune
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 5/5
+            Granules: 5/5
+          Partition
+            Condition: true
+            Parts: 5/5
+            Granules: 5/5
+          Statistics
+            Keys:
+              val_int64
+            Parts: 4/5
+            Granules: 4/5
+          PrimaryKey
+            Condition: true
+            Parts: 4/4
+            Granules: 4/4
+          Ranges: 4
+10
+-- Case 6: Decimal128 both >= 2^53, query < 2^53, should prune part 6
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 6/6
+            Granules: 6/6
+          Partition
+            Condition: true
+            Parts: 6/6
+            Granules: 6/6
+          Statistics
+            Keys:
+              val_decimal
+            Parts: 5/6
+            Granules: 5/6
+          PrimaryKey
+            Condition: true
+            Parts: 5/5
+            Granules: 5/5
+          Ranges: 5
+0
+-- Case 6: Decimal128 both >= 2^53, query >= 2^53, should NOT prune part 6
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 6/6
+            Granules: 6/6
+          Partition
+            Condition: true
+            Parts: 6/6
+            Granules: 6/6
+          PrimaryKey
+            Condition: true
+            Parts: 6/6
+            Granules: 6/6
+          Ranges: 6
+1
+-- Case 7: Decimal128 both <= -2^53, query > -2^53, should prune part 7
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 7/7
+            Granules: 7/7
+          Partition
+            Condition: true
+            Parts: 7/7
+            Granules: 7/7
+          Statistics
+            Keys:
+              val_decimal
+            Parts: 1/7
+            Granules: 1/7
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+0
+-- Case 7: Decimal128 both <= -2^53, query <= -2^53, should NOT prune part 7
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.test_stats_exceeds)
+        Indexes:
+          MinMax
+            Condition: true
+            Parts: 7/7
+            Granules: 7/7
+          Partition
+            Condition: true
+            Parts: 7/7
+            Granules: 7/7
+          Statistics
+            Keys:
+              val_decimal
+            Parts: 1/7
+            Granules: 1/7
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 1/1
+          Ranges: 1
+1
