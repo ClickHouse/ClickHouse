@@ -2,26 +2,37 @@ import time
 
 from keeper.framework.core.registry import register_fault
 from keeper.framework.core.settings import CLIENT_PORT, DEFAULT_FAULT_DURATION_S
-from keeper.framework.core.util import for_each_target, resolve_targets, sh, sh_root
+from keeper.framework.core.util import (
+    for_each_target,
+    resolve_targets,
+    sh_strict,
+    sh_root_strict,
+)
+from keeper.framework.io.probes import four
 
 
 def _proc_exists(node):
-    out = sh(
-        node,
-        "pgrep -x clickhouse >/dev/null 2>&1 || pgrep -x clickhouse-server >/dev/null 2>&1; echo $?",
-        timeout=10,
-    )
-    return out.get("out", " ").strip().endswith("0")
+    try:
+        out = sh_strict(
+            node,
+            "pgrep -x clickhouse >/dev/null 2>&1 || pgrep -x clickhouse-server >/dev/null 2>&1; echo $?",
+            timeout=10,
+        )
+        return out.get("out", " ").strip().endswith("0")
+    except Exception as e:
+        raise AssertionError(f"proc_exists check failed: {e}") from e
 
 
 def kill(node):
     if _proc_exists(node):
-        sh(node, "pkill -9 -x clickhouse || pkill -9 clickhouse-server", timeout=10)
+        sh_strict(
+            node, "pkill -9 -x clickhouse || pkill -9 clickhouse-server", timeout=10
+        )
 
 
 def stop(node):
     if _proc_exists(node):
-        sh(
+        sh_strict(
             node,
             "pkill -STOP -x clickhouse || pkill -STOP clickhouse-server",
             timeout=10,
@@ -30,7 +41,7 @@ def stop(node):
 
 def cont(node):
     if _proc_exists(node):
-        sh(
+        sh_strict(
             node,
             "pkill -CONT -x clickhouse || pkill -CONT clickhouse-server",
             timeout=10,
@@ -38,23 +49,29 @@ def cont(node):
 
 
 def rcvr(node):
-    sh(node, f"printf 'rcvr\n' | nc -w1 127.0.0.1 {CLIENT_PORT}", timeout=5)
+    out = four(node, "rcvr")
+    if not str(out or "").strip():
+        raise AssertionError("rcvr failed")
 
 
 def rqld(node):
-    sh(node, f"printf 'rqld\n' | nc -w1 127.0.0.1 {CLIENT_PORT}", timeout=5)
+    out = four(node, "rqld")
+    if not str(out or "").strip():
+        raise AssertionError("rqld failed")
 
 
 def ydld(node):
-    sh(node, f"printf 'ydld\n' | nc -w1 127.0.0.1 {CLIENT_PORT}", timeout=5)
+    out = four(node, "ydld")
+    if not str(out or "").strip():
+        raise AssertionError("ydld failed")
 
 
 def cpu_hog(node, seconds=60):
-    sh(node, f"timeout {seconds} sh -c 'while :; do :; done' &", timeout=10)
+    sh_strict(node, f"timeout {seconds} sh -c 'while :; do :; done' &", timeout=10)
 
 
 def fd_pressure(node, fds=5000, seconds=60):
-    sh(
+    sh_strict(
         node,
         (
             "set -euo pipefail; "
@@ -73,7 +90,7 @@ def fd_pressure(node, fds=5000, seconds=60):
 
 
 def mem_hog_block(node, mb=512, seconds=60):
-    sh(
+    sh_strict(
         node,
         f"python3 - <<'PY'\nimport time\n_ = bytearray({int( max(1, mb) )}*1024*1024)\ntime.sleep({int( max(1, seconds) )})\nPY",
         timeout=int(max(30, seconds + 30)),
@@ -81,23 +98,27 @@ def mem_hog_block(node, mb=512, seconds=60):
 
 
 def clock_skew(node, seconds):
-    sh_root(node, f"date -s '@$(( $(date +%s) + {int(seconds)} ))'")
+    sh_root_strict(
+        node, f"date -s '@$(( $(date +%s) + {int(seconds)} ))'", timeout=20
+    )
 
 
 def time_strobe(node, swings=6, step_s=500, interval_s=5):
     for i in range(swings):
         clock_skew(node, step_s if i % 2 == 0 else -step_s)
-        sh(node, f"sleep {interval_s}", timeout=10)
+        sh_strict(node, f"sleep {interval_s}", timeout=10)
 
 
 def nic_flap(node, down_s=5):
-    sh_root(node, "ip link set eth0 down")
-    v = sh(node, "ip link show dev eth0 | grep -qi 'state down'; echo $?", timeout=10)
+    sh_root_strict(node, "ip link set eth0 down", timeout=20)
+    v = sh_strict(
+        node, "ip link show dev eth0 | grep -qi 'state down'; echo $?", timeout=10
+    )
     ok = str(v.get("out", " ")).strip().endswith("0")
     if not ok:
         raise AssertionError("nic_flap down verify failed")
-    sh(node, f"sleep {int(down_s)}", timeout=int(max(10, down_s + 5)))
-    sh_root(node, "ip link set eth0 up")
+    sh_strict(node, f"sleep {int(down_s)}", timeout=int(max(10, down_s + 5)))
+    sh_root_strict(node, "ip link set eth0 up", timeout=20)
 
 
 @register_fault("kill")
@@ -204,7 +225,7 @@ def _f_stress_ng(ctx, nodes, leader, step):
     cmd = f"TMPDIR=/tmp stress-ng {' '.join(stress_args)} --temp-path /tmp --timeout {secs}s --metrics-brief"
 
     def _run_one(t):
-        sh(t, "mkdir -p /tmp && chmod 1777 /tmp || true", timeout=10)
-        sh(t, cmd, timeout=int(max(30, secs + 60)))
+        sh_strict(t, "mkdir -p /tmp && chmod 1777 /tmp || true", timeout=10)
+        sh_strict(t, cmd, timeout=int(max(30, secs + 60)))
 
     for_each_target(step, nodes, leader, _run_one)
