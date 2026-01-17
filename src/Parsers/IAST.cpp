@@ -35,7 +35,7 @@ namespace boost::sp_adl_block
                     DB::ASTs children;
                     children.swap(ptr->children);
                     ptr->~IAST();
-                    LinkedList * elem = new (reinterpret_cast<void *>(ptr)) LinkedList;
+                    LinkedList * elem = new (dynamic_cast<void *>(ptr)) LinkedList;
                     elem->children.swap(children);
                     return elem;
                 }
@@ -55,7 +55,7 @@ namespace boost::sp_adl_block
                 {
                     LinkedList * next = list_head->next;
                     list_head->~LinkedList();
-                    operator delete(reinterpret_cast<DB::IAST *>(list_head));
+                    operator delete(list_head);
                     list_head = next;
                 }
 
