@@ -240,7 +240,7 @@ class ClusterBuilder:
 
         cluster = ClickHouseCluster(self.file_anchor, name=cname)
         base_dir = pathlib.Path(cluster.base_dir)
-        conf_dir = pathlib.Path(cluster.instances_dir) / "configs" / cname
+        conf_dir = base_dir / "_keeper_configs" / cname
         if conf_dir.exists():
             shutil.rmtree(conf_dir, ignore_errors=True)
         conf_dir.mkdir(parents=True, exist_ok=True)

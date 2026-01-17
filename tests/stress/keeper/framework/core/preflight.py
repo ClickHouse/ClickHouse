@@ -121,12 +121,21 @@ def _ensure_replay_if_requested(node0, scenario):
 
 
 def _ensure_bench(nodes, scenario):
-    if (
-        isinstance(scenario, dict)
-        and scenario.get("workload")
-        and nodes
-        and not parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD"))
-    ):
+    if parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
+        return
+
+    # keeper-bench runs on host; validate CLICKHOUSE_BINARY early.
+    env_bin = str(os.environ.get("CLICKHOUSE_BINARY", "")).strip()
+    if not env_bin:
+        raise AssertionError(
+            "keeper-bench must run on host: env var CLICKHOUSE_BINARY must point to clickhouse binary"
+        )
+    if not os.path.exists(env_bin) or not os.access(env_bin, os.X_OK):
+        raise AssertionError(
+            f"keeper-bench must run on host: CLICKHOUSE_BINARY is not an executable file: {env_bin}"
+        )
+
+    if isinstance(scenario, dict) and scenario.get("workload") and nodes:
         n0 = nodes[0]
         bench_ok = _bench_present(n0)
         if not bench_ok and _install_bench_from_url(nodes):

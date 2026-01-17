@@ -9,39 +9,48 @@ def _proc_exists(node):
     out = sh(
         node,
         "pgrep -x clickhouse >/dev/null 2>&1 || pgrep -x clickhouse-server >/dev/null 2>&1; echo $?",
+        timeout=10,
     )
     return out.get("out", " ").strip().endswith("0")
 
 
 def kill(node):
     if _proc_exists(node):
-        sh(node, "pkill -9 -x clickhouse || pkill -9 clickhouse-server")
+        sh(node, "pkill -9 -x clickhouse || pkill -9 clickhouse-server", timeout=10)
 
 
 def stop(node):
     if _proc_exists(node):
-        sh(node, "pkill -STOP -x clickhouse || pkill -STOP clickhouse-server")
+        sh(
+            node,
+            "pkill -STOP -x clickhouse || pkill -STOP clickhouse-server",
+            timeout=10,
+        )
 
 
 def cont(node):
     if _proc_exists(node):
-        sh(node, "pkill -CONT -x clickhouse || pkill -CONT clickhouse-server")
+        sh(
+            node,
+            "pkill -CONT -x clickhouse || pkill -CONT clickhouse-server",
+            timeout=10,
+        )
 
 
 def rcvr(node):
-    sh(node, f"printf 'rcvr\n' | nc -w1 127.0.0.1 {CLIENT_PORT}")
+    sh(node, f"printf 'rcvr\n' | nc -w1 127.0.0.1 {CLIENT_PORT}", timeout=5)
 
 
 def rqld(node):
-    sh(node, f"printf 'rqld\n' | nc -w1 127.0.0.1 {CLIENT_PORT}")
+    sh(node, f"printf 'rqld\n' | nc -w1 127.0.0.1 {CLIENT_PORT}", timeout=5)
 
 
 def ydld(node):
-    sh(node, f"printf 'ydld\n' | nc -w1 127.0.0.1 {CLIENT_PORT}")
+    sh(node, f"printf 'ydld\n' | nc -w1 127.0.0.1 {CLIENT_PORT}", timeout=5)
 
 
 def cpu_hog(node, seconds=60):
-    sh(node, f"timeout {seconds} sh -c 'while :; do :; done' &")
+    sh(node, f"timeout {seconds} sh -c 'while :; do :; done' &", timeout=10)
 
 
 def fd_pressure(node, fds=5000, seconds=60):
@@ -59,6 +68,7 @@ def fd_pressure(node, fds=5000, seconds=60):
             "for i in $(seq 1 20); do [ -f /tmp/fd_pressure.ready ] && break; sleep 0.1; done; "
             "[ -f /tmp/fd_pressure.ready ]"
         ),
+        timeout=int(max(30, seconds + 60)),
     )
 
 
@@ -66,6 +76,7 @@ def mem_hog_block(node, mb=512, seconds=60):
     sh(
         node,
         f"python3 - <<'PY'\nimport time\n_ = bytearray({int( max(1, mb) )}*1024*1024)\ntime.sleep({int( max(1, seconds) )})\nPY",
+        timeout=int(max(30, seconds + 30)),
     )
 
 
@@ -76,16 +87,16 @@ def clock_skew(node, seconds):
 def time_strobe(node, swings=6, step_s=500, interval_s=5):
     for i in range(swings):
         clock_skew(node, step_s if i % 2 == 0 else -step_s)
-        sh(node, f"sleep {interval_s}")
+        sh(node, f"sleep {interval_s}", timeout=10)
 
 
 def nic_flap(node, down_s=5):
     sh_root(node, "ip link set eth0 down")
-    v = sh(node, "ip link show dev eth0 | grep -qi 'state down'; echo $?")
+    v = sh(node, "ip link show dev eth0 | grep -qi 'state down'; echo $?", timeout=10)
     ok = str(v.get("out", " ")).strip().endswith("0")
     if not ok:
         raise AssertionError("nic_flap down verify failed")
-    sh(node, f"sleep {int(down_s)}")
+    sh(node, f"sleep {int(down_s)}", timeout=int(max(10, down_s + 5)))
     sh_root(node, "ip link set eth0 up")
 
 
@@ -193,7 +204,7 @@ def _f_stress_ng(ctx, nodes, leader, step):
     cmd = f"TMPDIR=/tmp stress-ng {' '.join(stress_args)} --temp-path /tmp --timeout {secs}s --metrics-brief"
 
     def _run_one(t):
-        sh(t, "mkdir -p /tmp && chmod 1777 /tmp || true")
-        sh(t, cmd)
+        sh(t, "mkdir -p /tmp && chmod 1777 /tmp || true", timeout=10)
+        sh(t, cmd, timeout=int(max(30, secs + 60)))
 
     for_each_target(step, nodes, leader, _run_one)
