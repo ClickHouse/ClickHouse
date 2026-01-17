@@ -39,7 +39,7 @@ class IRestoreCoordination;
 
 struct LightWeightTableDetails
 {
-	String name;
+    String name;
 };
 
 class IDatabaseTablesIterator

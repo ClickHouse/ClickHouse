@@ -302,23 +302,23 @@ protected:
     }
 
     void showTablesQuery(MutableColumns & res_columns)
-	{
-		auto table_details = database->getLightweightTablesIterator(context,
-                        /* filter_by_table_name */ {},
-                        /* skip_not_loaded */ false);
+    {
+        auto table_details = database->getLightweightTablesIterator(context,
+                                /* filter_by_table_name */ {},
+                                /* skip_not_loaded */ false);
 
-		for (auto & table_detail: table_details)
-		{
-			size_t src_index = 0;
-			size_t res_index = 0;
+        for (auto & table_detail: table_details)
+        {
+            size_t src_index = 0;
+            size_t res_index = 0;
 
-			if (columns_mask[src_index++])
-				res_columns[res_index++]->insert(database_name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(database_name);
 
-			if (columns_mask[src_index++])
-				gres_columns[res_index++]->insert(table_detail.name);
-		}
-	}
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(table_detail.name);
+        }
+    }
 
     Chunk generate() override
     {
@@ -478,14 +478,14 @@ protected:
 
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-			/// This is for queries similar to 'show tables', where only name of the table is needed
-			auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
-			if (needed_columns.size() == 1 && needed_columns[0].name == "name")
-			{
-				showTablesQuery(res_columns);
-				UInt64 num_rows = res_columns.at(0)->size();
-				return Chunk(std::move(res_columns), num_rows);
-			}
+            /// This is for queries similar to 'show tables', where only name of the table is needed
+            auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
+            if (needed_columns.size() == 1 && needed_columns[0].name == "name")
+            {
+                showTablesQuery(res_columns);
+                UInt64 num_rows = res_columns.at(0)->size();
+                return Chunk(std::move(res_columns), num_rows);
+            }
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesIterator(context,
