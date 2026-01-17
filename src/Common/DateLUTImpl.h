@@ -969,7 +969,7 @@ public:
     }
 
     /// We count all hour-length intervals, unrelated to offset changes.
-    ALWAYS_INLINE Time toRelativeHourNum(Time t) const
+    Time toRelativeHourNum(Time t) const
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return t / 3600;
@@ -980,7 +980,7 @@ public:
     }
 
     template <typename DateOrTime>
-    ALWAYS_INLINE Time toRelativeHourNum(DateOrTime v) const
+    Time toRelativeHourNum(DateOrTime v) const
     {
         return toRelativeHourNum(lut[toLUTIndex(v)].date);
     }

@@ -83,7 +83,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         db_disk->createDirectories(metadata_path);
     }
 
-    cleaner_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
+    cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
 
@@ -529,11 +529,12 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
     {
         auto * engine_define = args.create_query.storage;
         const ASTFunction * engine = engine_define->engine;
-        ASTs & engine_args = engine->arguments->children;
-        const String & engine_name = engine_define->engine->name;
 
         if (!engine->arguments)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `PostgreSQL` must have arguments");
+
+        ASTs & engine_args = engine->arguments->children;
+        const String & engine_name = engine_define->engine->name;
 
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;

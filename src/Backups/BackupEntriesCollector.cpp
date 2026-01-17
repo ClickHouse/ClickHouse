@@ -801,7 +801,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
     for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
-        runner.enqueueAndKeepTrack([&]()
+        runner([&]()
         {
             makeBackupEntriesForTableData(table_name);
         });

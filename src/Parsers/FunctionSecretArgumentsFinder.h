@@ -179,9 +179,7 @@ protected:
                 return;
 
             /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
-            if (findNamedArgument(&uri, "uri", 1) == -1)
-                return;
-
+            findNamedArgument(&uri, "uri", 1);
             result.are_named = true;
             result.start = 1;
         }
@@ -787,7 +785,7 @@ protected:
 
     /// Looks for an argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// Returns -1 if no argument was found.
-    ssize_t findNamedArgument(String * res, std::string_view key, size_t start = 0)
+    ssize_t findNamedArgument(String * res, const std::string_view & key, size_t start = 0)
     {
         for (size_t i = start; i < function->arguments->size(); ++i)
         {
@@ -815,7 +813,7 @@ protected:
 
     /// Looks for a secret argument with a specified name. This function looks for arguments in format `key=value` where the key is specified.
     /// If the argument is found, it is marked as a secret.
-    bool findSecretNamedArgument(std::string_view key, size_t start = 0)
+    bool findSecretNamedArgument(const std::string_view & key, size_t start = 0)
     {
         ssize_t arg_idx = findNamedArgument(nullptr, key, start);
         if (arg_idx >= 0)

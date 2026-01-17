@@ -291,9 +291,6 @@ private:
     /// Applies conditions only to events with strictly increasing timestamps
     bool strict_increase;
 
-    // Allow re-entry/skipping of future steps
-    bool allow_reentry;
-
     /// Loop through the entire events_list, update the event timestamp value
     /// The level path must be 1---2---3---...---check_events_size, find the max event level that satisfied the path in the sliding window.
     /// If found, returns the max event level, else return 0.
@@ -315,7 +312,7 @@ private:
             }
             if (event_idx == 0)
             {
-                events_timestamp[0] = std::make_pair(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
+                events_timestamp[0] = std::make_pair(timestamp, timestamp);
                 first_event = true;
             }
             else if (strict_deduplication && events_timestamp[event_idx].has_value())
@@ -324,10 +321,6 @@ private:
             }
             else if (strict_order && first_event && !events_timestamp[event_idx - 1].has_value())
             {
-                // If allow_reentry is set, we ignore "future steps" that appear too early,
-                if (allow_reentry)
-                    continue;
-
                 for (size_t event = 0; event < events_timestamp.size(); ++event)
                 {
                     if (!events_timestamp[event].has_value())
@@ -342,7 +335,7 @@ private:
                     time_matched = time_matched && events_timestamp[event_idx - 1]->second < timestamp;
                 if (time_matched)
                 {
-                    events_timestamp[event_idx] = std::make_pair(first_timestamp, static_cast<UInt64>(timestamp));
+                    events_timestamp[event_idx] = std::make_pair(first_timestamp, timestamp);
                     if (event_idx + 1 == events_size)
                         return events_size;
                 }
@@ -395,7 +388,7 @@ private:
             }
             else if (event_idx == 0)
             {
-                auto & event_seq = event_sequences[0].emplace_back(static_cast<UInt64>(timestamp), static_cast<UInt64>(timestamp));
+                auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
                 event_seq.event_path[0] = unique_id;
                 has_first_event = true;
             }
@@ -405,10 +398,6 @@ private:
             }
             else if (strict_order && has_first_event && event_sequences[event_idx - 1].empty())
             {
-                // If allow_reentry is set, ignore strict order violation for this specific match.
-                if (allow_reentry)
-                    continue;
-
                 for (size_t event = 0; event < event_sequences.size(); ++event)
                 {
                     if (event_sequences[event].empty())
@@ -447,7 +436,7 @@ private:
                     {
                         prev_path[event_idx] = unique_id;
 
-                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, static_cast<UInt64>(timestamp));
+                        auto & new_seq = event_sequences[event_idx].emplace_back(first_ts, timestamp);
                         new_seq.event_path = std::move(prev_path);
                         if (event_idx + 1 == events_size)
                             return events_size;
@@ -496,7 +485,6 @@ public:
         strict_deduplication = false;
         strict_order = false;
         strict_increase = false;
-        allow_reentry = false;
         for (size_t i = 1; i < params.size(); ++i)
         {
             String option = params.at(i).safeGet<String>();
@@ -506,8 +494,6 @@ public:
                 strict_order = true;
             else if (option == "strict_increase")
                 strict_increase = true;
-            else if (option == "allow_reentry")
-                allow_reentry = true;
             else if (option == "strict_once")
                 /// Checked in factory
                 chassert(Data::strict_once_enabled);
@@ -515,12 +501,6 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "strict is replaced with strict_deduplication in Aggregate function {}", getName());
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} doesn't support a parameter: {}", getName(), option);
-        }
-
-        /// Validate option combinations
-        if (allow_reentry && !strict_order)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "allow_reentry option requires strict_order to be enabled in Aggregate function {}", getName());
         }
     }
 

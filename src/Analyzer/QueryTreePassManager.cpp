@@ -33,8 +33,7 @@
 #include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/Passes/IfTransformStringsToEnumPass.h>
 #include <Analyzer/Passes/InjectRandomOrderIfNoOrderByPass.h>
-#include <Analyzer/Passes/InverseDictionaryLookupPass.h>
-#include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
+#include <Analyzer/Passes/L2DistanceTransposedPartialReadsPass.h>
 #include <Analyzer/Passes/LikePerfectAffixRewritePass.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
 #include <Analyzer/Passes/MultiIfToIfPass.h>
@@ -279,7 +278,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
-    manager.addPass(std::make_unique<DistanceTransposedPartialReadsPass>());
+    manager.addPass(std::make_unique<L2DistanceTransposedPartialReadsPass>());
 
     /// should before AggregateFunctionsArithmericOperationsPass
     manager.addPass(std::make_unique<AggregateFunctionOfGroupByKeysPass>());
@@ -321,8 +320,6 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
 
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
-
-    manager.addPass(std::make_unique<InverseDictionaryLookupPass>());
 
     manager.addPass(std::make_unique<DisableParallelReplicasPass>());
 }

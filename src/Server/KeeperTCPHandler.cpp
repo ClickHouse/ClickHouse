@@ -80,7 +80,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LIMIT_EXCEEDED;
     extern const int AUTHENTICATION_FAILED;
-    extern const int SESSION_REFUSED;
 }
 
 struct PollResult
@@ -332,17 +331,6 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     }
 
     Coordination::read(last_zxid_seen, *in);
-    const int64_t last_processed_zxid = keeper_dispatcher->getStateMachine().getLastProcessedZxid();
-    if (last_zxid_seen > last_processed_zxid)
-    {
-        throw Exception(
-            ErrorCodes::SESSION_REFUSED,
-            "Refusing session as the client has seen zxid {} while our last processed zxid is {}. The client should try another server.",
-            last_zxid_seen,
-            last_processed_zxid
-        );
-    }
-
     Coordination::read(timeout_ms, *in);
 
     Coordination::read(previous_session_id, *in);
@@ -386,7 +374,7 @@ void KeeperTCPHandler::runImpl()
 
     if (in->eof())
     {
-        LOG_WARNING(log, "Client has not sent any data. peer address = {}  address = {}", socket().peerAddress().toString(), socket().address().toString());
+        LOG_WARNING(log, "Client has not sent any data.");
         return;
     }
 
@@ -408,7 +396,7 @@ void KeeperTCPHandler::runImpl()
     if (!isHandShake(four_letter_cmd))
     {
         connected.store(true, std::memory_order_relaxed);
-        tryExecuteFourLetterWordCmd(four_letter_cmd, *in);
+        tryExecuteFourLetterWordCmd(four_letter_cmd);
         return;
     }
 
@@ -609,7 +597,7 @@ bool KeeperTCPHandler::isHandShake(int32_t handshake_length)
     || handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY;
 }
 
-bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer & in_)
+bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
 {
     if (!FourLetterCommandFactory::instance().isKnown(command))
     {
@@ -622,20 +610,12 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer &
         return false;
     }
 
-    std::optional<std::string> maybe_argument;
-    if (FourLetterCommandFactory::instance().supportArguments(command))
-    {
-        String argument;
-        Coordination::read(argument, in_);
-        maybe_argument = argument;
-    }
-
     auto command_ptr = FourLetterCommandFactory::instance().get(command);
     LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
 
     try
     {
-        String res = maybe_argument ? command_ptr->runWithArgument(*maybe_argument) : command_ptr->run();
+        String res = command_ptr->run();
         out->write(res.data(), res.size());
         out->next();
     }
