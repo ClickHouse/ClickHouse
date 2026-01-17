@@ -456,7 +456,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             database = it->second;
     }
 
-    if (!database || !checkDatabaseOptions(database, table_id.getDatabaseName(), options, context_))
+    if (!database || !checkDatabaseOptions(database, options, context_))
     {
         if (exception)
             exception->emplace(makeUnknownDatabaseException(table_id.getDatabaseName()));
@@ -591,7 +591,6 @@ void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_
 
 bool DatabaseCatalog::checkDatabaseOptions(
     const DatabasePtr & db,
-    const String & database_name, // we can't use db->getDatabaseName() because it locks db and can cause deadlock
     const GetDatabasesOptions & options,
     const ContextPtr & context_)
 {
@@ -602,7 +601,10 @@ bool DatabaseCatalog::checkDatabaseOptions(
     {
         if (!options.with_temporaries)
             return false;
-        if (!(context_ && context_->hasSessionContext() && context_->getSessionContext()->hasTemporaryDatabase(database_name)) && !options.skip_temporary_owner_check)
+
+        // it's ok to check ownership of temporary DB by pointer instead of name, because they are always synchronized.
+        // we can't check by name here, because db->getDatabaseName() will cause deadlock in some cases, and database name is not always available to the caller.
+        if (!(context_ && context_->hasSessionContext() && context_->getSessionContext()->hasTemporaryDatabase(db)) && !options.skip_temporary_owner_check)
             return false;
     }
 
@@ -767,7 +769,7 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(std::string_view database_name, Cont
 
     if (const auto it = databases.find(database_name); it != databases.end())
     {
-        if (checkDatabaseOptions(it->second, it->first, options, context_))
+        if (checkDatabaseOptions(it->second, options, context_))
             return it->second;
     }
     return {};
@@ -787,7 +789,7 @@ Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options, ContextPtr 
     Databases results;
     for (const auto & [database_name, database] : databases)
     {
-        if (checkDatabaseOptions(database, database_name, options, context_))
+        if (checkDatabaseOptions(database, options, context_))
             results.emplace(database_name, database);
     }
 
@@ -1048,7 +1050,7 @@ DatabaseAndTable DatabaseCatalog::tryGetTableWithDatabase(const UUID & uuid, Con
     if (it == map_part.map.end())
         return {};
 
-    if (checkDatabaseOptions(it->second.first, it->second.first->getDatabaseName(), options, context_))
+    if (checkDatabaseOptions(it->second.first, options, context_))
         return it->second;
 
     return {};

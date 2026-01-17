@@ -10,7 +10,6 @@ node1 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     user_configs=["configs/users.xml"],
     stay_alive=True,
-    with_zookeeper=True, # for test_unsupported_engines and test_on_cluster_unsupported
     with_remote_database_disk=False, # for test_restart(requires access to local disk)
 )
 

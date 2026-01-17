@@ -918,6 +918,7 @@ public:
 
     void addTemporaryDatabase(const String & database_name, DatabasePtr database);
     bool hasTemporaryDatabase(const String & database_name) const;
+    bool hasTemporaryDatabase(const DatabasePtr & database) const;
     void renameTemporaryDatabase(const String & old_name, const String & new_name);
     void removeTemporaryDatabase(const String & database_name);
 

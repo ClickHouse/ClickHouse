@@ -2389,6 +2389,21 @@ bool Context::hasTemporaryDatabase(const String & database_name) const
     return temporary_databases_mapping.contains(database_name);
 }
 
+bool Context::hasTemporaryDatabase(const DatabasePtr & database) const
+{
+    if (!isSessionContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary databases can exist only in session contexts");
+    std::lock_guard lock(mutex);
+
+    for (const auto & holder : temporary_databases_mapping | std::views::values)
+    {
+        if (holder->getDatabase().get() == database.get())
+            return true;
+    }
+
+    return false;
+}
+
 void Context::renameTemporaryDatabase(const String & old_name, const String & new_name)
 {
     if (!isSessionContext())
