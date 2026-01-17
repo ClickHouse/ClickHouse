@@ -81,8 +81,8 @@ QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
     return nullptr;
 }
 
-/// First pass: collect all getSubcolumn calls that can be optimized.
-/// Groups accesses by their source node so we can clone each source only once.
+/// Collect all getSubcolumn calls that can be optimized, plus all columns referencing each source.
+/// Groups by source node so we can clone each source only once and update all references.
 class CollectSubcolumnAccessesVisitor : public InDepthQueryTreeVisitor<CollectSubcolumnAccessesVisitor>
 {
 public:
@@ -94,6 +94,14 @@ public:
 
     void visitImpl(QueryTreeNodePtr & node)
     {
+        /// Track all columns that reference QueryNode sources (needed to update sources after cloning)
+        if (auto * column_node = node->as<ColumnNode>())
+        {
+            auto column_source = column_node->getColumnSourceOrNull();
+            if (column_source && column_source->as<QueryNode>())
+                all_columns_by_source[column_source.get()].push_back(column_node);
+        }
+
         auto * function_node = node->as<FunctionNode>();
 
         /// We only optimize getSubcolumn function calls (e.g., getSubcolumn(tup, 'a') from tup.a access)
@@ -158,7 +166,7 @@ public:
                 return;
 
             /// Record this access grouped by source for batch processing
-            accesses_by_source[column_source.get()].push_back({
+            subcolumn_accesses_by_source[column_source.get()].push_back({
                 .node_to_replace = &node,
                 .column_node = column_node,
                 .base_column_name = base_column_name,
@@ -171,14 +179,20 @@ public:
         }
     }
 
-    std::unordered_map<IQueryTreeNode *, std::vector<SubcolumnAccess>> & getAccessesBySource()
+    std::unordered_map<IQueryTreeNode *, std::vector<SubcolumnAccess>> & getSubcolumnAccessesBySource()
     {
-        return accesses_by_source;
+        return subcolumn_accesses_by_source;
+    }
+
+    std::unordered_map<IQueryTreeNode *, std::vector<ColumnNode *>> & getAllColumnsBySource()
+    {
+        return all_columns_by_source;
     }
 
 private:
     ContextPtr context;
-    std::unordered_map<IQueryTreeNode *, std::vector<SubcolumnAccess>> accesses_by_source;
+    std::unordered_map<IQueryTreeNode *, std::vector<SubcolumnAccess>> subcolumn_accesses_by_source;
+    std::unordered_map<IQueryTreeNode *, std::vector<ColumnNode *>> all_columns_by_source;
 };
 
 /// Try to clone the target QueryNode if it IS the join_tree root.
@@ -214,18 +228,19 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
     if (!root_query_node)
         return;
 
-    /// First pass: collect all subcolumn accesses grouped by source
+    /// Collect all subcolumn accesses and all columns grouped by source
     CollectSubcolumnAccessesVisitor collector(context);
     collector.visit(query_tree_node);
 
-    auto & accesses_by_source = collector.getAccessesBySource();
+    auto & subcolumn_accesses_by_source = collector.getSubcolumnAccessesBySource();
+    auto & all_columns_by_source = collector.getAllColumnsBySource();
 
     /// Nothing to optimize if no subcolumn accesses were found
-    if (accesses_by_source.empty())
+    if (subcolumn_accesses_by_source.empty())
         return;
 
-    /// Second pass: for each source, clone once and add all needed subcolumns
-    for (auto & [original_source_ptr, accesses] : accesses_by_source)
+    /// For each source with subcolumn accesses, clone once and add all needed subcolumns
+    for (auto & [original_source_ptr, accesses] : subcolumn_accesses_by_source)
     {
         /// Skip empty access lists (shouldn't happen, but defensive check)
         if (accesses.empty())
@@ -245,6 +260,16 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
         /// Skip if cloning failed (e.g., source is inside a JOIN)
         if (!cloned_source)
             continue;
+
+        /// Update all columns that reference the original source to point to the cloned source.
+        /// This is necessary because columns not involved in subcolumn access (e.g., `id` in
+        /// `SELECT id, data.a FROM view`) would otherwise be left with orphaned sources.
+        auto it = all_columns_by_source.find(original_source_ptr);
+        if (it != all_columns_by_source.end())
+        {
+            for (auto * col : it->second)
+                col->setColumnSource(cloned_source);
+        }
 
         auto * cloned_query_source = cloned_source->as<QueryNode>();
 
@@ -302,10 +327,10 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
         /// Replace all getSubcolumn calls with direct column references to the new projection columns
         for (auto & access : accesses)
         {
-            auto it = subcolumn_to_new_index.find(access.full_subcolumn_name);
+            auto subcolumn_it = subcolumn_to_new_index.find(access.full_subcolumn_name);
 
             /// If we couldn't add this subcolumn to projection, just update the source reference
-            if (it == subcolumn_to_new_index.end())
+            if (subcolumn_it == subcolumn_to_new_index.end())
             {
                 access.column_node->setColumnSource(cloned_source);
                 continue;

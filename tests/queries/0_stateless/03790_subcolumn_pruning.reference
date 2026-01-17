@@ -8,6 +8,10 @@ view
 1
 view_system_table
 0
+view_multi_column_with_subcolumn
+1	x
+view_join_using_subcolumn
+test1	1	x
 no_full_tuple_direct
 1
 no_full_tuple_cte

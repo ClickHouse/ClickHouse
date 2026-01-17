@@ -48,6 +48,26 @@ CREATE VIEW test_view_system AS SELECT * FROM system.one;
 SELECT 'view_system_table';
 SELECT dummy IS NULL FROM test_view_system; -- Should work without error (dummy is not nullable but query should execute)
 
+-- VIEW with multiple columns including subcolumn access
+SELECT 'view_multi_column_with_subcolumn';
+SELECT id, tup.a FROM test_view_pruning;
+
+-- VIEW + JOIN USING with subcolumn access
+DROP TABLE IF EXISTS test_join_target;
+CREATE TABLE test_join_target (id UInt64, test String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO test_join_target VALUES (1, 'test1');
+
+DROP VIEW IF EXISTS test_view_join_target;
+CREATE VIEW test_view_join_target AS SELECT * FROM test_join_target;
+
+SELECT 'view_join_using_subcolumn';
+SELECT test, id, tup.a
+FROM test_view_pruning
+JOIN test_view_join_target USING id;
+
+DROP VIEW test_view_join_target;
+DROP TABLE test_join_target;
+
 -- Verify the full Tuple is NOT being read (would show "tup Tuple")
 SELECT 'no_full_tuple_direct';
 SELECT count() == 0 FROM (EXPLAIN header=1 SELECT tup.a FROM test_subcolumn_pruning)
