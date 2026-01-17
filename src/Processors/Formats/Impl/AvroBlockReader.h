@@ -72,19 +72,11 @@ public:
     /// Reuses ClickHouse's VarInt.h which is compatible with Avro.
     static int64_t readVarInt(ReadBuffer & in);
 
-    /// Write a varint-encoded int64 (zigzag encoding) to string.
-    /// Appends the encoded bytes to the output string.
-    static void writeVarInt(int64_t value, std::string & out);
-
     /// Read a complete Avro block directly into Memory<>, avoiding string allocation.
     /// Appends: objectCount (varint) + byteCount (varint) + compressedData.
     /// Does NOT consume the sync marker - caller must verify separately.
     /// Returns object_count.
     static int64_t readBlockInto(ReadBuffer & in, Memory<> & memory);
-
-    /// Read a complete Avro block and return (object_count, block_data).
-    /// Does NOT consume the sync marker - caller must verify separately.
-    static std::pair<int64_t, std::string> readBlock(ReadBuffer & in);
 
     /// Read and verify sync marker matches expected (16 bytes).
     /// Returns true if matches, throws on mismatch.

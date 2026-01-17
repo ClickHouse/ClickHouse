@@ -1056,21 +1056,12 @@ std::pair<bool, size_t> avroFileSegmentationEngine(
         if (max_rows > 0 && total_rows >= max_rows)
             break;
 
-        /// Read block: objectCount (varint) + byteCount (varint) + compressedData
-        auto [object_count, block_data] = AvroBlockReader::readBlock(in);
+        /// Read block directly into memory: objectCount (varint) + byteCount (varint) + compressedData
+        size_t size_before = memory.size();
+        int64_t object_count = AvroBlockReader::readBlockInto(in, memory);
 
-        if (in.eof() && block_data.empty())
+        if (in.eof() && memory.size() == size_before)
             break;
-
-        /// Re-encode block header and append to memory segment
-        std::string header_bytes;
-        AvroBlockReader::writeVarInt(object_count, header_bytes);
-        AvroBlockReader::writeVarInt(static_cast<int64_t>(block_data.size()), header_bytes);
-
-        size_t old_size = memory.size();
-        memory.resize(old_size + header_bytes.size() + block_data.size());
-        memcpy(memory.data() + old_size, header_bytes.data(), header_bytes.size());
-        memcpy(memory.data() + old_size + header_bytes.size(), block_data.data(), block_data.size());
 
         /// Verify and consume sync marker (16 bytes)
         if (!AvroBlockReader::verifySyncMarker(in, header_state->sync_marker))

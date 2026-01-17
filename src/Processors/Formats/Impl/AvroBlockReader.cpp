@@ -20,29 +20,6 @@ int64_t AvroBlockReader::readVarInt(ReadBuffer & in)
     return value;
 }
 
-void AvroBlockReader::writeVarInt(int64_t value, std::string & out)
-{
-    char buf[10];  /// Max 10 bytes for varint-encoded int64
-    char * end = DB::writeVarInt(value, buf);
-    out.append(buf, end - buf);
-}
-
-std::pair<int64_t, std::string> AvroBlockReader::readBlock(ReadBuffer & in)
-{
-    int64_t object_count = readVarInt(in);
-    int64_t byte_count = readVarInt(in);
-
-    if (byte_count < 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "Invalid Avro block: negative byte count {}", byte_count);
-
-    std::string block_data;
-    block_data.resize(static_cast<size_t>(byte_count));
-    in.readStrict(block_data.data(), static_cast<size_t>(byte_count));
-
-    return {object_count, std::move(block_data)};
-}
-
 int64_t AvroBlockReader::readBlockInto(ReadBuffer & in, Memory<> & memory)
 {
     int64_t object_count = readVarInt(in);
