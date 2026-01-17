@@ -912,7 +912,8 @@ private:
         putBackFinishedThreadsToPool();
 
         /// All loadings have unique loading IDs.
-        size_t loading_id = next_id_counter++;
+        size_t loading_id = next_id_counter;
+        ++next_id_counter;
         info.loading_id = loading_id;
         info.loading_start_time = std::chrono::system_clock::now();
         info.loading_end_time = TimePoint{};
