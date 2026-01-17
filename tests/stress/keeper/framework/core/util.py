@@ -1,3 +1,4 @@
+import os
 import shlex
 import shutil
 import subprocess
@@ -11,6 +12,17 @@ def _exec(node, cmd, user=None, privileged=False, timeout=None):
     """Execute command in container, return raw output."""
     args = ["bash", "-lc", cmd] if isinstance(cmd, str) else list(cmd)
     kwargs = {}
+    if timeout is None:
+        to_env = os.environ.get("KEEPER_DOCKER_EXEC_TIMEOUT") or os.environ.get(
+            "KEEPER_PYTEST_TIMEOUT"
+        )
+        if to_env:
+            try:
+                timeout = max(10, min(int(to_env), 3600))
+            except Exception:
+                timeout = 300
+        else:
+            timeout = 300
     if user:
         kwargs["user"] = user
     if privileged:

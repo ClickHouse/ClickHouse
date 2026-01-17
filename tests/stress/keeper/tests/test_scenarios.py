@@ -959,6 +959,16 @@ def _print_manual_znode_counts(nodes):
 def test_scenario(scenario, cluster_factory, request, run_meta):
     topo = scenario.get("topology", 3)
     backend = scenario.get("backend") or request.config.getoption("--keeper-backend")
+    if not parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
+        env_bin = str(os.environ.get("CLICKHOUSE_BINARY", "")).strip()
+        if not env_bin:
+            raise AssertionError(
+                "keeper-bench must run on host: env var CLICKHOUSE_BINARY must point to clickhouse binary"
+            )
+        if not os.path.exists(env_bin) or not os.access(env_bin, os.X_OK):
+            raise AssertionError(
+                f"keeper-bench must run on host: CLICKHOUSE_BINARY is not an executable file: {env_bin}"
+            )
     # Effective run_meta per test with the scenario-selected backend
     run_meta_eff = dict(run_meta or {})
     run_meta_eff["backend"] = backend

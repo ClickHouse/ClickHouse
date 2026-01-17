@@ -90,6 +90,15 @@ def _step_parallel(step, nodes, leader, ctx):
     exp = max(durs) if durs else DEFAULT_FAULT_DURATION_S
     slack = 60
     deadline = time.time() + exp + slack
+    try:
+        pytest_to = float(env_int("KEEPER_PYTEST_TIMEOUT", 0) or 0)
+    except Exception:
+        pytest_to = 0.0
+    if pytest_to > 0:
+        try:
+            deadline = min(deadline, time.time() + max(1.0, pytest_to - 120.0))
+        except Exception:
+            pass
 
     threads = []
     thread_to_sub = {}
@@ -326,8 +335,47 @@ def _step_run_bench(step, nodes, leader, ctx):
     ]
     for t in threads:
         t.start()
+
+    slack = 60
+    deadline = time.time() + float(duration) + float(slack)
+    try:
+        pytest_to = float(env_int("KEEPER_PYTEST_TIMEOUT", 0) or 0)
+    except Exception:
+        pytest_to = 0.0
+    if pytest_to > 0:
+        try:
+            deadline = min(deadline, time.time() + max(1.0, pytest_to - 120.0))
+        except Exception:
+            pass
     for t in threads:
-        t.join()
+        t.join(timeout=max(0.0, deadline - time.time()))
+
+    alive = [t for t in threads if t.is_alive()]
+    if alive:
+        frames = {}
+        try:
+            frames = sys._current_frames() or {}
+        except Exception:
+            frames = {}
+        details = []
+        for t in alive:
+            stack_txt = ""
+            try:
+                fr = frames.get(t.ident)
+                if fr is not None:
+                    stack_txt = "".join(traceback.format_stack(fr)[-12:])
+            except Exception:
+                stack_txt = ""
+            entry = f"thread={t.name} ident={t.ident}"
+            if stack_txt:
+                entry += "\n" + stack_txt
+            details.append(entry)
+        msg = (
+            f"run_bench: exceeded deadline {int(duration) + slack}s; alive_threads={len(alive)}"
+            f"; configs={cfg_paths}\n"
+            + "\n---\n".join(details)
+        )
+        raise AssertionError(msg)
 
     if errors:
         msg = "\n\n".join(
