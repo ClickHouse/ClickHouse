@@ -737,33 +737,14 @@ void Reader::preparePrewhere()
                 step.input_column_idxs.push_back(output_idx.value());
                 step.input_idxs.push_back(idx_in_output_block);
             }
-        }
-
-        /// Find outputs in sample block.
-        for (const auto * node : dag.getOutputs())
-        {
-            auto idx = extended_sample_block.findPositionByName(node->result_name);
-            /// Note: prewhere output may also be an input, if it's just passed through.
-            if (idx.has_value() && !sample_block_to_output_columns_idx.at(*idx).has_value() && !prewhere_output_column_idxs.contains(*idx))
+            if (step.idx_in_output_block.has_value())
             {
-                step.idxs_in_output_block.emplace_back(node->result_name, *idx);
-                prewhere_output_column_idxs.insert(*idx);
+                if (seen_prewhere_outputs.contains(*step.idx_in_output_block))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate PREWHERE output column: {}", extended_sample_block.getByPosition(*step.idx_in_output_block).name);
+                seen_prewhere_outputs.insert(*step.idx_in_output_block);
             }
         }
         steps.push_back(std::move(step));
-    }
-
-    if (row_level_filter)
-        add_step(row_level_filter->actions, row_level_filter->column_name, true);
-    if (prewhere_info)
-        add_step(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, prewhere_info->need_filter);
-
-    /// Assert that we found all columns of the sample block, either in the file or in prewhere outputs.
-    for (size_t i = 0; i < sample_block_to_output_columns_idx.size(); ++i)
-    {
-        /// Column must appear in exactly one of {output_columns, prewhere output}.
-        if (sample_block_to_output_columns_idx[i].has_value() == prewhere_output_column_idxs.contains(i))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column in sample block: {}", extended_sample_block.getByPosition(i).name);
     }
 }
 
@@ -2125,9 +2106,9 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
 
         if (step.idx_in_output_block.has_value())
         {
-            OutputColumnState & state = row_subgroup.output.at(idx);
+            OutputColumnState & state = row_subgroup.output.at(step.idx_in_output_block.value());
             chassert(!state.column);
-            state.column = block.getByName(name).column;
+            state.column = filter_column;
         }
 
         /// If it's the last prewhere step, deallocate the columns that were only needed for prewhere.
@@ -2140,7 +2121,6 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         if (!step.need_filter)
             return;
 
-        ColumnPtr filter_column = block.getByName(step.filter_column_name.value()).column;
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
         chassert(filter.size() == row_subgroup.filter.rows_pass);
