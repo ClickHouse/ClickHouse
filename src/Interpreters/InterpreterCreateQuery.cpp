@@ -923,7 +923,19 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
+        {
+            // For parameterized views, extract columns if explicitly declared
+            if (create.columns_list && create.columns_list->columns)
+            {
+                properties.columns = getColumnsDescription(
+                    *create.columns_list->columns,
+                    getContext(),
+                    mode,
+                    is_restore_from_backup
+                );
+            }
             return properties;
+        }
 
         if (create.aliases_list)
         {

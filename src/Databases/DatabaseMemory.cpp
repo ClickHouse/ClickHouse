@@ -131,7 +131,7 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 void DatabaseMemory::removeDataPath(ContextPtr)
 {
     auto db_disk = getDisk();
-    db_disk->removeDirectoryIfExists(data_path);
+    db_disk->removeRecursive(data_path);
 }
 
 void DatabaseMemory::drop(ContextPtr local_context)

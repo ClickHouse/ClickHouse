@@ -1,13 +1,9 @@
-#include <filesystem>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -18,14 +14,11 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <QueryPipeline/Pipe.h>
 #include <base/sort.h>
-#include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 

@@ -562,6 +562,27 @@ TEST(AccessRights, RevokeWithParameters)
     ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE SELECT(bar*) ON default.foo");
 }
 
+TEST(AccessRights, RevokeWithParametersWithGrantOption)
+{
+    AccessRights root;
+    root.grantWithGrantOption(AccessType::ALL);
+    root.revokeWildcard(AccessType::INTROSPECTION, "system");  // global grant, do nothing for database revoke
+    ASSERT_EQ(root.toString(), "GRANT ALL ON *.* WITH GRANT OPTION");
+
+    root = {};
+    root.grant(AccessType::SELECT);
+    root.grant(AccessType::INTROSPECTION);
+    root.grant(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::CREATE_USER, "system");
+    ASSERT_EQ(root.toString(), "GRANT SELECT, INTROSPECTION ON *.*, GRANT CREATE USER ON *, REVOKE CREATE USER ON system*");
+
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.grantWithGrantOption(AccessType::INTROSPECTION);
+    root.grantWithGrantOption(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::CREATE_USER, "system");
+    ASSERT_EQ(root.toString(), "GRANT SELECT, INTROSPECTION ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE CREATE USER ON system*");
+}
+
 TEST(AccessRights, ParialRevokeWithGrantOption)
 {
     AccessRights root;

@@ -2,15 +2,13 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/ContextAccess.h>
-#include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserAlterQuery.h>
+#include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/AlterCommands.h>

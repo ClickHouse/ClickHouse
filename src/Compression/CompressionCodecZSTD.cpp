@@ -4,13 +4,7 @@
 #include <zstd.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {

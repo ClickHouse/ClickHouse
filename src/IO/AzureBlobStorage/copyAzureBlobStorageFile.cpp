@@ -164,7 +164,53 @@ namespace
     public:
         void performCopy()
         {
-            performMultipartUpload();
+            if (total_size < max_single_part_upload_size)
+            {
+                performSinglepartUpload();
+            }
+            else
+            {
+                performMultipartUpload();
+            }
+        }
+
+        void performSinglepartUpload()
+        {
+            auto block_blob_client = client->GetBlockBlobClient(dest_blob);
+            auto read_buffer = create_read_buffer();
+
+            PODArray<char> memory;
+            {
+                memory.resize(total_size);
+                WriteBufferFromVector<PODArray<char>> wb(memory);
+                copyData(*read_buffer, wb, total_size);
+            }
+
+            Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
+
+            Stopwatch watch;
+            Int32 error_code = 0;
+            String error_message;
+            try
+            {
+                block_blob_client.Upload(stream);
+            }
+            catch (const Azure::Core::RequestFailedException & e)
+            {
+                error_code = static_cast<Int32>(e.StatusCode);
+                error_message = e.Message;
+                if (blob_storage_log)
+                    blob_storage_log->addEvent(
+                        BlobStorageLogElement::EventType::Upload,
+                        /* bucket */ dest_container_for_logging,
+                        /* remote_path */ dest_blob,
+                        /* local_path */ {},
+                        /* data_size */ total_size,
+                        watch.elapsedMicroseconds(),
+                        error_code,
+                        error_message);
+                throw;
+            }
         }
 
         void completeMultipartUpload()
