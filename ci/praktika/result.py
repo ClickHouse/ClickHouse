@@ -906,6 +906,7 @@ class Result(MetaClasses.Serializable):
                 "pr_title": info.pr_title,
                 "branch": info.git_branch,
                 "commit_message": info.commit_message,
+                "linked_pr_number": info.linked_pr_number or 0,
                 "parent_pr_number": info.get_kv_data("parent_pr_number") or 0,
                 "repo_name": info.repo_name,
                 "report_url": info.get_job_report_url(latest=False),
