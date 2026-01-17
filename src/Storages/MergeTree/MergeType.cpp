@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeType.h>
-#include <base/EnumReflection.h>
 #include <Common/Exception.h>
 
 namespace DB

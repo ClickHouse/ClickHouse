@@ -4,13 +4,7 @@
 #include <zstd.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBuffer.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -57,12 +51,13 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
 }
 
 
-void CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
+UInt32 CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     size_t res = ZSTD_decompress(dest, uncompressed_size, source, source_size);
 
     if (ZSTD_isError(res))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: {}", std::string(ZSTD_getErrorName(res)));
+    return res;
 }
 
 CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_)

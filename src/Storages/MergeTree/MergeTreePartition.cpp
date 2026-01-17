@@ -14,7 +14,6 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
-#include <base/hex.h>
 #include <Core/Block.h>
 
 

@@ -187,6 +187,26 @@ private:
     std::optional<Field> single_element_in_set;
 };
 
+class ExactContainsRuntimeFilter : public RuntimeFilterBase<false>
+{
+    using Base = RuntimeFilterBase<false>;
+
+public:
+    ExactContainsRuntimeFilter(
+        size_t filters_to_merge_,
+        const DataTypePtr & filter_column_target_type_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_,
+        UInt64 bytes_limit_,
+        UInt64 exact_values_limit_
+    )
+        : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
+    {}
+
+    void merge(const IRuntimeFilter * source) override;
+
+    void finishInsert() override;
+};
 
 class ExactNotContainsRuntimeFilter : public RuntimeFilterBase<true>
 {
@@ -211,6 +231,8 @@ class ApproximateRuntimeFilter : public RuntimeFilterBase<false>
 {
     using Base = RuntimeFilterBase<false>;
 public:
+    static bool isDataTypeSupported(const DataTypePtr & data_type);
+
     ApproximateRuntimeFilter(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,

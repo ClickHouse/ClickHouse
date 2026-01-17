@@ -13,7 +13,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
-#include <Interpreters/castColumn.h>
 #include <Formats/EscapingRuleUtils.h>
 
 namespace DB
