@@ -895,12 +895,27 @@ class Result(MetaClasses.Serializable):
         return self
 
     def to_event(self, info: "Info"):
+        result_dict = Result.to_dict(self)
+
+        def _prune_result_info(result):
+            if not isinstance(result, dict):
+                return
+            result.pop("info", None)
+
+            results = result.get("results")
+            if not isinstance(results, list):
+                return
+            for r in results:
+                _prune_result_info(r)
+
+        _prune_result_info(result_dict)
+
         return Event(
             type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
             timestamp=int(time.time()),
             sha=info.sha,
             ci_status=self.status,
-            result=Result.to_dict(self),
+            result=result_dict,
             ext={
                 "pr_number": info.pr_number,
                 "pr_title": info.pr_title,

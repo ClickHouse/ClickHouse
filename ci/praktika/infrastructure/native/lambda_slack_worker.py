@@ -968,12 +968,15 @@ def lambda_handler(event, context):
                             getattr(newest_event, "ci_status", "") or ""
                         ).lower()
 
-                        should_notify_failure = newest_has_failures and prefs.get(
-                            "notify_on_failure"
-                        )
                         should_notify_complete = getattr(
                             newest_event, "type", ""
                         ) == "completed" and prefs.get("notify_on_complete")
+
+                        should_notify_failure = (
+                            not should_notify_complete
+                            and newest_has_failures
+                            and prefs.get("notify_on_failure")
+                        )
 
                         for notify_type in ("failure", "complete"):
                             if notify_type == "failure" and not should_notify_failure:
