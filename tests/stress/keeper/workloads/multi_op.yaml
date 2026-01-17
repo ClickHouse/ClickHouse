@@ -1,3 +1,0 @@
-name: multi_op
-clients: 64
-multi: { depth: 8, write_ratio: 0.8 }

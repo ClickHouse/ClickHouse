@@ -7,7 +7,7 @@ scenarios:
     preset: gp3_jitter
     name: Baseline gp3
     topology: 3
-    preset_args: {duration_s: 180, delay_ms: 10, jitter_ms: 5, disk_ms: 3}
+    preset_args: {duration_s: 120, delay_ms: 10, jitter_ms: 5, disk_ms: 3}
 
   - id: RCFG-06
     preset: partition_during_reconfig

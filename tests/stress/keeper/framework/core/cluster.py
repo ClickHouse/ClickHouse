@@ -2,73 +2,69 @@ import os
 import pathlib
 import shutil
 
-from tests.integration.helpers.cluster import ClickHouseCluster
-
-from .settings import (
+from keeper.framework.core.settings import (
     CLIENT_PORT,
     CONTROL_PORT,
     ID_BASE,
     MINIO_ACCESS_KEY,
     MINIO_ENDPOINT,
     MINIO_SECRET_KEY,
-    PROM_PORT,
     RAFT_PORT,
     S3_LOG_ENDPOINT,
     S3_REGION,
     S3_SNAPSHOT_ENDPOINT,
     parse_bool,
 )
+from tests.integration.helpers.cluster import ClickHouseCluster
 
 
 def _feature_flags_xml(flags):
+    """Generate XML for feature flags."""
     if not flags:
         return ""
-    try:
-        parts = []
-        for k, v in (flags or {}).items():
-            try:
-                if isinstance(v, (bool, int)):
-                    val = int(v)
-                elif isinstance(v, float) and v.is_integer():
-                    val = int(v)
-                else:
-                    val = v
-            except Exception:
-                val = v
-            parts.append(f"<{k}>{val}</{k}>")
-        return "<feature_flags>" + "".join(parts) + "</feature_flags>"
-    except Exception:
-        return ""
+    parts = []
+    for k, v in flags.items():
+        val = (
+            int(v)
+            if isinstance(v, (bool, int)) or (isinstance(v, float) and v.is_integer())
+            else v
+        )
+        parts.append(f"<{k}>{val}</{k}>")
+    return "<feature_flags>" + "".join(parts) + "</feature_flags>"
 
 
 def _coord_settings_xml(rocks_backend):
-    try:
-        return (
-            "<coordination_settings>"
-            "<operation_timeout_ms>10000</operation_timeout_ms>"
-            "<session_timeout_ms>30000</session_timeout_ms>"
-            "<heart_beat_interval_ms>500</heart_beat_interval_ms>"
-            "<shutdown_timeout>5000</shutdown_timeout>"
-            + ("<experimental_use_rocksdb>1</experimental_use_rocksdb>" if rocks_backend else "")
-            + "</coordination_settings>"
-        )
-    except Exception:
-        return ""
+    """Generate XML for coordination settings matching cloud production (RFC #41415).
 
+    Args:
+        rocks_backend: If True, enable RocksDB backend
+    """
+    rocks = (
+        "<experimental_use_rocksdb>1</experimental_use_rocksdb>"
+        if rocks_backend
+        else ""
+    )
 
-def _prometheus_block_xml():
-    try:
-        return (
-            "<prometheus>"
-            "<endpoint>/metrics</endpoint>"
-            f"<port>{PROM_PORT}</port>"
-            "<metrics>true</metrics>"
-            "<events>true</events>"
-            "<asynchronous_metrics>true</asynchronous_metrics>"
-            "</prometheus>"
-        )
-    except Exception:
-        return ""
+    # Cloud production settings from RFC #41415 - these should match cloud config
+    cloud_settings = (
+        "<async_replication>1</async_replication>"
+        "<compress_logs>false</compress_logs>"
+        "<max_log_file_size>209715200</max_log_file_size>"
+        "<max_requests_append_size>300</max_requests_append_size>"
+        "<max_requests_batch_bytes_size>307200</max_requests_batch_bytes_size>"
+        "<max_requests_batch_size>300</max_requests_batch_size>"
+        "<reserved_log_items>500000</reserved_log_items>"
+    )
+
+    return (
+        "<coordination_settings>"
+        "<operation_timeout_ms>10000</operation_timeout_ms>"
+        "<session_timeout_ms>30000</session_timeout_ms>"
+        "<heart_beat_interval_ms>500</heart_beat_interval_ms>"
+        "<shutdown_timeout>5000</shutdown_timeout>"
+        f"{cloud_settings}"
+        f"{rocks}</coordination_settings>"
+    )
 
 
 def _listen_hosts_xml():
@@ -80,183 +76,213 @@ def _listen_hosts_xml():
     )
 
 
+def _normalize_backend(backend):
+    return (backend or "default").strip().lower()
+
+
+def _sanitize_cluster_name(name):
+    # Docker-compose project/network names and DNS safe-ish
+    safe = "".join((ch.lower() if ch.isalnum() or ch in "-_" else "_") for ch in name)
+    return safe.strip("_") or "keeper"
+
+
+def _cluster_name_from_env():
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "").strip()
+    cbase = os.environ.get("KEEPER_CLUSTER_NAME", "keeper").strip() or "keeper"
+    cname = f"{cbase}_{worker}" if worker else cbase
+    return _sanitize_cluster_name(cname)
+
+
+def _resolve_use_s3():
+    use_minio = bool(MINIO_ENDPOINT)
+    if parse_bool(os.environ.get("KEEPER_DISABLE_S3")):
+        use_minio = False
+    if parse_bool(os.environ.get("KEEPER_USE_S3")):
+        use_minio = True
+    use_s3 = bool(use_minio or S3_LOG_ENDPOINT or S3_SNAPSHOT_ENDPOINT)
+    return use_s3, use_minio
+
+
+def _build_feature_flags(feature_flags):
+    ff = dict(feature_flags or {})
+    # Do not allow experimental_use_rocksdb under <feature_flags>; it belongs to coordination_settings
+    ff.pop("experimental_use_rocksdb", None)
+    # Cloud feature flags from RFC #41415 - should match cloud config
+    ff.setdefault("check_not_exists", "1")
+    ff.setdefault("create_if_not_exists", "1")
+    ff.setdefault("remove_recursive", "1")
+    return ff
+
+
+def _build_disk_select(use_s3):
+    if not use_s3:
+        return ""
+    return (
+        "<latest_log_storage_disk>local_log_disk</latest_log_storage_disk>"
+        "<latest_snapshot_storage_disk>local_snapshot_disk</latest_snapshot_storage_disk>"
+        "<old_log_storage_disk>local_log_disk</old_log_storage_disk>"
+        "<old_snapshot_storage_disk>local_snapshot_disk</old_snapshot_storage_disk>"
+        "<log_storage_disk>s3_keeper_log_disk</log_storage_disk>"
+        "<snapshot_storage_disk>s3_keeper_snapshot_disk</snapshot_storage_disk>"
+        "<storage_path>/var/lib/clickhouse/coordination</storage_path>"
+    )
+
+
+def _build_disks_xml(use_s3, use_minio):
+    if not use_s3:
+        return []
+    disks_xml = [
+        "<local_log_disk><type>local</type><path>/var/lib/clickhouse/coordination/log/</path></local_log_disk>",
+        "<local_snapshot_disk><type>local</type><path>/var/lib/clickhouse/coordination/snapshots/</path></local_snapshot_disk>",
+    ]
+    ep = (MINIO_ENDPOINT or "").rstrip("/") if use_minio else None
+    ak = MINIO_ACCESS_KEY
+    sk = MINIO_SECRET_KEY
+    s3_log = S3_LOG_ENDPOINT
+    s3_snap = S3_SNAPSHOT_ENDPOINT
+    s3_region = S3_REGION
+    if s3_log or s3_snap:
+        region_tag = f"<region>{s3_region}</region>" if s3_region else ""
+        disks_xml += [
+            f"<s3_keeper_log_disk><type>s3_plain</type><endpoint>{s3_log or ''}</endpoint>{region_tag}<use_environment_credentials>true</use_environment_credentials></s3_keeper_log_disk>",
+            f"<s3_keeper_snapshot_disk><type>s3_plain</type><endpoint>{s3_snap or ''}</endpoint>{region_tag}<use_environment_credentials>true</use_environment_credentials></s3_keeper_snapshot_disk>",
+        ]
+    else:
+        disks_xml += [
+            f"<s3_keeper_log_disk><type>s3_plain</type><endpoint>{ep}/logs/</endpoint><access_key_id>{ak}</access_key_id><secret_access_key>{sk}</secret_access_key></s3_keeper_log_disk>",
+            f"<s3_keeper_snapshot_disk><type>s3_plain</type><endpoint>{ep}/snapshots/</endpoint><access_key_id>{ak}</access_key_id><secret_access_key>{sk}</secret_access_key></s3_keeper_snapshot_disk>",
+        ]
+    return disks_xml
+
+
+def _build_disks_block(disks_xml):
+    if not disks_xml:
+        return ""
+    return (
+        "<storage_configuration><disks>"
+        + "\n".join(disks_xml)
+        + "</disks></storage_configuration>"
+    )
+
+
+def _build_peers_xml(names, start_sid):
+    return "\n".join(
+        [
+            f"        <server><id>{j}</id><hostname>{n}</hostname><port>{RAFT_PORT}</port></server>"
+            for j, n in enumerate(names, start=start_sid)
+        ]
+    )
+
+
+def _configure_startup_wait(enable_ctrl):
+    ready_timeout = os.environ.get("KEEPER_READY_TIMEOUT", "300")
+    os.environ.setdefault("KEEPER_START_TIMEOUT_SEC", ready_timeout)
+    os.environ.setdefault(
+        "KEEPER_CONNECT_TIMEOUT_SEC", str(int(ready_timeout or 300) + 180)
+    )
+    # Only wait for Keeper client port (and control port if enabled)
+    os.environ.setdefault("CH_WAIT_START_PORTS", f"{CLIENT_PORT}")
+    if enable_ctrl:
+        try:
+            os.environ["CH_WAIT_START_PORTS"] = f"{CONTROL_PORT},{CLIENT_PORT}"
+        except Exception:
+            pass
+
+
+def _keeper_server_xml(
+    server_id,
+    peers_xml,
+    path_block,
+    http_ctrl,
+    coord_settings,
+    feature_flags_xml,
+    disk_select,
+):
+    return (
+        "<keeper_server>"
+        f"<tcp_port>{CLIENT_PORT}</tcp_port>"
+        f"<server_id>{server_id}</server_id>"
+        + path_block
+        + http_ctrl
+        + coord_settings
+        + feature_flags_xml
+        + "<raft_configuration>\n"
+        + peers_xml
+        + "\n    </raft_configuration>"
+        + disk_select
+        + "</keeper_server>"
+    )
+
+
+def _write_keeper_config(conf_dir, base_dir, cname, name, full_xml):
+    cfg_path = (conf_dir / f"keeper_config_{name}.xml").resolve()
+    cfg_path.write_text(full_xml)
+    try:
+        legacy_dir = base_dir / "configs" / cname
+        legacy_dir.mkdir(parents=True, exist_ok=True)
+        (legacy_dir / f"keeper_config_{name}.xml").write_text(full_xml)
+    except Exception:
+        pass
+    return cfg_path
+
+
 class ClusterBuilder:
     def __init__(self, file_anchor):
         self.file_anchor = file_anchor
 
     def build(self, topology, backend, opts):
+        opts = opts or {}
         feature_flags = dict(opts.get("feature_flags", {}) or {})
-        # Backend-specific defaults
-        try:
-            b = (backend or "default").strip().lower()
-        except Exception:
-            b = "default"
-        rocks_backend = b == "rocks"
+        rocks_backend = _normalize_backend(backend) == "rocks"
         coord_overrides_xml = opts.get("coord_overrides_xml", "")
-        use_minio = bool(MINIO_ENDPOINT)
-        # Allow explicit override via env: KEEPER_DISABLE_S3=1 to force local disks
-        # or KEEPER_USE_S3=1 to force S3 if endpoints/minio are configured
-        if parse_bool(os.environ.get("KEEPER_DISABLE_S3")):
-            use_minio = False
-        if parse_bool(os.environ.get("KEEPER_USE_S3")):
-            use_minio = True
-
-        # Derive unique cluster name per xdist worker to avoid docker-compose collisions
-        worker = (os.environ.get("PYTEST_XDIST_WORKER", "") or "").strip()
-        cbase = os.environ.get("KEEPER_CLUSTER_NAME", "keeper").strip() or "keeper"
-        cname = f"{cbase}_{worker}" if worker else cbase
-        # Sanitize name to characters safe for docker-compose project/network names and DNS
-        try:
-            cname = (
-                "".join(
-                    (ch.lower() if (ch.isalnum() or ch in "-_") else "_")
-                    for ch in cname
-                ).strip("_")
-                or "keeper"
-            )
-        except Exception:
-            pass
+        use_s3, use_minio = _resolve_use_s3()
+        cname = _cluster_name_from_env()
 
         cluster = ClickHouseCluster(self.file_anchor, name=cname)
         base_dir = pathlib.Path(cluster.base_dir)
         conf_dir = pathlib.Path(cluster.instances_dir) / "configs" / cname
-        try:
-            if conf_dir.exists():
-                shutil.rmtree(conf_dir, ignore_errors=True)
-        except Exception:
-            pass
+        if conf_dir.exists():
+            shutil.rmtree(conf_dir, ignore_errors=True)
         conf_dir.mkdir(parents=True, exist_ok=True)
 
-        # Ensure startup wait knobs are aligned with job env
-        try:
-            # Default keeper start timeout aligns to READY if not set explicitly
-            if not os.environ.get("KEEPER_START_TIMEOUT_SEC"):
-                os.environ["KEEPER_START_TIMEOUT_SEC"] = os.environ.get(
-                    "KEEPER_READY_TIMEOUT", "300"
-                )
-            # Allow longer connection window when logs are progressing
-            if not os.environ.get("KEEPER_CONNECT_TIMEOUT_SEC"):
-                rt = int(os.environ.get("KEEPER_READY_TIMEOUT", "300") or "300")
-                os.environ["KEEPER_CONNECT_TIMEOUT_SEC"] = str(rt + 180)
-            # Prefer probing keeper client port first, then native/http
-            if not os.environ.get("CH_WAIT_START_PORTS"):
-                os.environ["CH_WAIT_START_PORTS"] = f"{CLIENT_PORT},9000,8123"
-        except Exception:
-            pass
+        enable_ctrl = bool(CONTROL_PORT) and parse_bool(
+            os.environ.get("KEEPER_ENABLE_CONTROL", "0")
+        )
+        _configure_startup_wait(enable_ctrl)
 
         # Precompute names and server ids
         names = [f"keeper{i}" for i in range(1, topology + 1)]
 
         # Build shared fragments in-memory (no more separate files)
-        # Feature flags and extra coordination settings
+        # Feature flags and coordination settings
         # Only include explicit feature_flags from scenarios/backends
-        ff = dict(feature_flags or {})
-        # Do not allow experimental_use_rocksdb under <feature_flags>; it belongs to coordination_settings
-        try:
-            ff.pop("experimental_use_rocksdb", None)
-        except Exception:
-            pass
-        extra_coord = (
-            "<async_replication>1</async_replication>"
-            "<compress_logs>false</compress_logs>"
-            "<max_log_file_size>209715200</max_log_file_size>"
-            "<max_requests_append_size>300</max_requests_append_size>"
-            "<max_requests_batch_bytes_size>307200</max_requests_batch_bytes_size>"
-            "<max_requests_batch_size>300</max_requests_batch_size>"
-            "<raft_limits_reconnect_limit>10</raft_limits_reconnect_limit>"
-            "<raft_logs_level>trace</raft_logs_level>"
-            "<reserved_log_items>500000</reserved_log_items>"
-        )
-        if coord_overrides_xml:
-            extra_coord += coord_overrides_xml
-        # Minimal, broadly-supported coordination settings
+        ff = _build_feature_flags(feature_flags)
+        # Coordination settings matching cloud production (RFC #41415)
         coord_settings = _coord_settings_xml(rocks_backend)
+        # If scenario provides a full coordination_settings block, use it as-is
+        if coord_overrides_xml:
+            coord_settings = coord_overrides_xml
         feature_flags_xml = _feature_flags_xml(ff)
-        enable_ctrl = bool(CONTROL_PORT) and parse_bool(
-            os.environ.get("KEEPER_ENABLE_CONTROL", "0")
-        )
         http_ctrl = (
             f"<http_control><port>{CONTROL_PORT}</port><readiness><endpoint>/ready</endpoint></readiness></http_control>"
             if enable_ctrl
             else ""
         )
         # Keeper disk selection tags
-        use_s3 = bool(use_minio or S3_LOG_ENDPOINT or S3_SNAPSHOT_ENDPOINT)
-        if use_s3:
-            disk_select = (
-                "<latest_log_storage_disk>local_log_disk</latest_log_storage_disk>"
-                "<latest_snapshot_storage_disk>local_snapshot_disk</latest_snapshot_storage_disk>"
-                "<old_log_storage_disk>local_log_disk</old_log_storage_disk>"
-                "<old_snapshot_storage_disk>local_snapshot_disk</old_snapshot_storage_disk>"
-                "<log_storage_disk>s3_keeper_log_disk</log_storage_disk>"
-                "<snapshot_storage_disk>s3_keeper_snapshot_disk</snapshot_storage_disk>"
-                "<storage_path>/var/lib/clickhouse/coordination</storage_path>"
-            )
-        else:
-            # Use server defaults for local disks to avoid collisions with base configs
-            disk_select = ""
-        # Zookeeper client nodes xml
-        zk_nodes = "".join(
-            f"<node><host>{h}</host><port>{CLIENT_PORT}</port></node>" for h in names
-        )
-        # Disks definition xml (local + optional S3)
-        disks_xml = []
-        if use_s3:
-            # Define only when using S3 to keep local case minimal
-            disks_xml = [
-                "<local_log_disk><type>local</type><path>/var/lib/clickhouse/coordination/log/</path></local_log_disk>",
-                "<local_snapshot_disk><type>local</type><path>/var/lib/clickhouse/coordination/snapshots/</path></local_snapshot_disk>",
-            ]
-            ep = (MINIO_ENDPOINT or "").rstrip("/") if use_minio else None
-            ak = MINIO_ACCESS_KEY
-            sk = MINIO_SECRET_KEY
-            s3_log = S3_LOG_ENDPOINT
-            s3_snap = S3_SNAPSHOT_ENDPOINT
-            s3_region = S3_REGION
-            if s3_log or s3_snap:
-                region_tag = (lambda r: f"<region>{r}</region>" if r else "")(s3_region)
-                disks_xml += [
-                    f"<s3_keeper_log_disk><type>s3_plain</type><endpoint>{s3_log or ''}</endpoint>{region_tag}<use_environment_credentials>true</use_environment_credentials></s3_keeper_log_disk>",
-                    f"<s3_keeper_snapshot_disk><type>s3_plain</type><endpoint>{s3_snap or ''}</endpoint>{region_tag}<use_environment_credentials>true</use_environment_credentials></s3_keeper_snapshot_disk>",
-                ]
-            else:
-                disks_xml += [
-                    f"<s3_keeper_log_disk><type>s3_plain</type><endpoint>{ep}/logs/</endpoint><access_key_id>{ak}</access_key_id><secret_access_key>{sk}</secret_access_key></s3_keeper_log_disk>",
-                    f"<s3_keeper_snapshot_disk><type>s3_plain</type><endpoint>{ep}/snapshots/</endpoint><access_key_id>{ak}</access_key_id><secret_access_key>{sk}</secret_access_key></s3_keeper_snapshot_disk>",
-                ]
+        disk_select = _build_disk_select(use_s3)
+        disks_xml = _build_disks_xml(use_s3, use_minio)
 
         # Per-instance configs and add instances
         nodes = []
         # Use 1-based server ids by default for raft members
         start_sid = 1 if ID_BASE <= 0 else ID_BASE
-        peers_xml = "\n".join(
-            [
-                f"        <server><id>{j}</id><hostname>{n}</hostname><port>{RAFT_PORT}</port></server>"
-                for j, n in enumerate(names, start=start_sid)
-            ]
-        )
-        disks_block = (
-            (
-                "<storage_configuration><disks>"
-                + "\n".join(disks_xml)
-                + "</disks></storage_configuration>"
-            )
-            if disks_xml
-            else ""
-        )
+        peers_xml = _build_peers_xml(names, start_sid)
+        disks_block = _build_disks_block(disks_xml)
         # Avoid emitting additional top-level sections that may already exist in base config
-        # Explicitly enable Prometheus endpoint for Keeper metrics collection
-        prom_block = _prometheus_block_xml()
+        # Do not inject a Prometheus block; base configs may already enable it
+        prom_block = ""
         # Do not inject <zookeeper> for keeper_server tests to avoid collisions with base configs
         zk_block = ""
-        # If control is enabled, prefer probing the control port first.
-        if enable_ctrl:
-            try:
-                cur = (os.environ.get("CH_WAIT_START_PORTS", "") or "").strip()
-                head = str(CONTROL_PORT)
-                os.environ["CH_WAIT_START_PORTS"] = head if not cur else f"{head},{cur}"
-            except Exception:
-                pass
 
         for i, name in enumerate(names, start=start_sid):
             # Build a single per-node config file with all required sections (minimal to avoid collisions)
@@ -266,20 +292,14 @@ class ClusterBuilder:
                 if not use_s3
                 else ""
             )
-            keeper_server = (
-                "<keeper_server>"
-                f"<tcp_port>{CLIENT_PORT}</tcp_port>"
-                f"<server_id>{i}</server_id>"
-                + path_block
-                + http_ctrl
-                + extra_coord
-                + coord_settings
-                + feature_flags_xml
-                + "<raft_configuration>\n"
-                + peers_xml
-                + "\n    </raft_configuration>"
-                + disk_select
-                + "</keeper_server>"
+            keeper_server = _keeper_server_xml(
+                i,
+                peers_xml,
+                path_block,
+                http_ctrl,
+                coord_settings,
+                feature_flags_xml,
+                disk_select,
             )
             # Ensure server listens on container IPs; do not duplicate tcp_port
             net_block = _listen_hosts_xml()
@@ -291,14 +311,7 @@ class ClusterBuilder:
                 + disks_block
                 + "</clickhouse>"
             )
-            cfg_path = (conf_dir / f"keeper_config_{name}.xml").resolve()
-            cfg_path.write_text(full_xml)
-            try:
-                legacy_dir = base_dir / "configs" / cname
-                legacy_dir.mkdir(parents=True, exist_ok=True)
-                (legacy_dir / f"keeper_config_{name}.xml").write_text(full_xml)
-            except Exception:
-                pass
+            cfg_path = _write_keeper_config(conf_dir, base_dir, cname, name, full_xml)
             cfgs = [str(cfg_path)]
             inst = cluster.add_instance(
                 name,

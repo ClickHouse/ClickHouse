@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import json
 import os
 import pathlib
 import sys
@@ -14,7 +13,7 @@ REPO = pathlib.Path(__file__).parents[4]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from tests.stress.keeper.pytest_plugins import scenario_loader as loader
+from keeper.pytest_plugins import scenario_loader as loader
 
 SCN_BASE = pathlib.Path(__file__).parents[1] / "scenarios"
 
@@ -85,7 +84,7 @@ def main():
             if isinstance(d, dict) and isinstance(d.get("scenarios"), list):
                 scenarios_raw.extend(d["scenarios"])
 
-    include_ids = set([sid for sid in (args.include_ids or "").split(",") if sid])
+    include_ids = {sid for sid in (args.include_ids or "").split(",") if sid}
 
     # parse matrix dimensions (TLS dimension removed)
     mb = [x.strip() for x in (args.matrix_backends or "").split(",") if x.strip()]

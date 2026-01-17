@@ -1,17 +1,15 @@
-import threading
 import json
+import threading
 import time
 
-from ..core.settings import SAMPLER_FLUSH_EVERY, SAMPLER_ROW_FLUSH_THRESHOLD
-from ..io.probes import lgif, mntr, prom_metrics, dirs, srvr_kv
-from ..io.prom_parse import parse_prometheus_text
-from ..io.sink import sink_clickhouse
-
-
-def _ts_ms_str():
-    t = time.time()
-    lt = time.gmtime(t)
-    return time.strftime("%Y-%m-%d %H:%M:%S", lt) + f".{int((t - int(t))*1000):03d}"
+from keeper.framework.core.settings import (
+    SAMPLER_FLUSH_EVERY,
+    SAMPLER_ROW_FLUSH_THRESHOLD,
+)
+from keeper.framework.core.util import ts_ms
+from keeper.framework.io.probes import dirs, lgif, mntr, prom_metrics, srvr_kv
+from keeper.framework.io.prom_parse import parse_prometheus_text
+from keeper.framework.io.sink import sink_clickhouse
 
 
 class MetricsSampler:
@@ -72,10 +70,7 @@ class MetricsSampler:
             if prom_exclude_label_keys
             else DEFAULT_EXCL_LABEL_KEYS
         )
-        try:
-            self._prom_every_n = max(1, int(prom_every_n))
-        except Exception:
-            self._prom_every_n = 1
+        self._prom_every_n = max(1, int(prom_every_n or 1))
         self._stop = False
         self._th = None
         self._metrics_ts_rows = []
@@ -85,13 +80,16 @@ class MetricsSampler:
         self._ctx = ctx
 
     def _append_row(self, node_name, source, name, value, labels_json="{}"):
+        return self._append_row_at(ts_ms(), node_name, source, name, value, labels_json)
+
+    def _append_row_at(self, ts, node_name, source, name, value, labels_json="{}"):
         try:
             val = float(value)
         except Exception:
             val = 0.0
         self._metrics_ts_rows.append(
             {
-                "ts": _ts_ms_str(),
+                "ts": ts,
                 "run_id": self.run_id,
                 "commit_sha": self.run_meta.get("commit_sha", "local"),
                 "backend": self.run_meta.get("backend", "default"),
@@ -105,6 +103,10 @@ class MetricsSampler:
                 "labels_json": labels_json or "{}",
             }
         )
+
+    def _append_kv_rows(self, ts, node_name, source, kv):
+        for k, v in (kv or {}).items():
+            self._append_row_at(ts, node_name, source, k, v)
 
     def _cache_entry(self, node_name):
         if self._ctx is None:
@@ -120,6 +122,18 @@ class MetricsSampler:
         cache = self._ctx.setdefault("_metrics_cache", {})
         cache[node_name] = entry
 
+    def _update_cache(self, node_name, entry, **updates):
+        if entry is None:
+            return
+        entry.update(updates)
+        self._store_entry(node_name, entry)
+
+    def _safe(self, fn):
+        try:
+            fn()
+        except Exception:
+            pass
+
     def _parse_prom(self, text):
         if self.prom_allow_prefixes is None:
             return parse_prometheus_text(
@@ -134,63 +148,56 @@ class MetricsSampler:
             exclude_label_keys=self.prom_exclude_label_keys,
         )
 
+    def _snapshot_node(self, n):
+        ts = ts_ms()
+        entry, base = self._cache_entry(n.name)
+
+        def sample_mntr():
+            m = mntr(n)
+            l = lgif(n)
+            self._append_kv_rows(ts, n.name, "mntr", m)
+            if base is not None and n.name not in (base or {}):
+                base[n.name] = {"lgif": l}
+            self._update_cache(n.name, entry, mntr=m, lgif=l)
+
+        def sample_dirs():
+            # Lightweight 4LW 'dirs': count lines and bytes
+            d_txt = dirs(n)
+            d_lines = len(d_txt.splitlines()) if d_txt else 0
+            d_bytes = len(d_txt.encode("utf-8")) if d_txt else 0
+            self._append_row_at(ts, n.name, "dirs", "lines", d_lines)
+            self._append_row_at(ts, n.name, "dirs", "bytes", d_bytes)
+            self._update_cache(n.name, entry, dirs_lines=d_lines, dirs_bytes=d_bytes)
+
+        def sample_srvr():
+            sk = srvr_kv(n) or {}
+            self._append_kv_rows(ts, n.name, "srvr", sk)
+            self._update_cache(n.name, entry, srvr=sk)
+
+        def sample_prom():
+            if (self._snap_count % self._prom_every_n) != 0:
+                return
+            p = prom_metrics(n)
+            parsed = self._parse_prom(p)
+            for r in parsed:
+                self._append_row_at(
+                    ts,
+                    n.name,
+                    "prom",
+                    r.get("name", ""),
+                    r.get("value", 0.0),
+                    r.get("labels_json", "{}"),
+                )
+            self._update_cache(n.name, entry, prom_rows=parsed)
+
+        self._safe(sample_mntr)
+        self._safe(sample_dirs)
+        self._safe(sample_srvr)
+        self._safe(sample_prom)
+
     def _snapshot_once(self):
         for n in self.nodes:
-            try:
-                m = mntr(n)
-                l = lgif(n)
-                try:
-                    for k, v in (m or {}).items():
-                        self._append_row(n.name, "mntr", k, v)
-                except Exception:
-                    pass
-                entry, base = self._cache_entry(n.name)
-                if entry is not None:
-                    entry["mntr"] = m
-                    entry["lgif"] = l
-                    self._store_entry(n.name, entry)
-                    if n.name not in (base or {}):
-                        base[n.name] = {"lgif": l}
-            except Exception:
-                pass
-            # Sample 4LW 'dirs' in a lightweight way: count lines and bytes
-            try:
-                d_txt = dirs(n)
-                d_lines = len(d_txt.splitlines()) if d_txt else 0
-                d_bytes = len(d_txt.encode("utf-8")) if d_txt else 0
-                self._append_row(n.name, "dirs", "lines", d_lines)
-                self._append_row(n.name, "dirs", "bytes", d_bytes)
-                entry, _ = self._cache_entry(n.name)
-                if entry is not None:
-                    entry["dirs_lines"] = d_lines
-                    entry["dirs_bytes"] = d_bytes
-                    self._store_entry(n.name, entry)
-            except Exception:
-                pass
-            # Sample 4LW 'srvr' counters
-            try:
-                sk = srvr_kv(n) or {}
-                for k, v in sk.items():
-                    self._append_row(n.name, "srvr", k, v)
-                entry, _ = self._cache_entry(n.name)
-                if entry is not None:
-                    entry["srvr"] = sk
-                    self._store_entry(n.name, entry)
-            except Exception:
-                pass
-            try:
-                if (self._snap_count % self._prom_every_n) == 0:
-                    p = prom_metrics(n)
-                    parsed = self._parse_prom(p)
-                    for r in parsed:
-                        name = r.get("name", "")
-                        self._append_row(n.name, "prom", name, r.get("value", 0.0), r.get("labels_json", "{}"))
-                    entry, _ = self._cache_entry(n.name)
-                    if entry is not None:
-                        entry["prom_rows"] = parsed
-                        self._store_entry(n.name, entry)
-            except Exception:
-                pass
+            self._snapshot_node(n)
 
     def _loop(self):
         while not self._stop:
@@ -222,16 +229,10 @@ class MetricsSampler:
     def flush(self):
         if not self._metrics_ts_rows:
             return
-        try:
-            print("[keeper][push-metrics] begin")
-            for r in self._metrics_ts_rows:
-                try:
-                    print(json.dumps(r, ensure_ascii=False))
-                except Exception:
-                    pass
-            print("[keeper][push-metrics] end")
-        except Exception:
-            pass
+        print("[keeper][push-metrics] begin")
+        for r in self._metrics_ts_rows:
+            print(json.dumps(r, ensure_ascii=False))
+        print("[keeper][push-metrics] end")
         if self.sink_url:
             sink_clickhouse(self.sink_url, "keeper_metrics_ts", self._metrics_ts_rows)
         self._metrics_ts_rows = []

@@ -1,23 +1,146 @@
 import copy
 import hashlib
+import inspect
 import os
 import pathlib
 import random
 
 import pytest
 import yaml
-
-from ..framework.core.schema import validate_scenario
-from ..framework.core.settings import DEFAULT_ERROR_RATE, DEFAULT_P99_MS
+from keeper.framework.core.schema import validate_scenario
+from keeper.framework.core.settings import DEFAULT_ERROR_RATE, DEFAULT_P99_MS
 
 _SCN_BASE = pathlib.Path(__file__).parents[1] / "scenarios"
-from ..framework import presets as _presets
-from ..framework.fuzz import generate_fuzz_scenario
+_PREFIX_TAGS = {
+    "sem",
+    "cfg",
+    "dur",
+    "dsk",
+    "ldr",
+    "res",
+    "perf",
+    "sec",
+    "obs",
+    "mig",
+    "int",
+    "lin",
+    "cha",
+    "nbank",
+    "bnd",
+    "df",
+    "clk",
+    "soak",
+    "ops",
+    "load",
+    "imp",
+}
+from keeper.framework import presets as _presets
+from keeper.framework.fuzz import generate_fuzz_scenario
+
+
+def _cap_duration(obj, cap_s):
+    if cap_s is None:
+        return
+    try:
+        cap_i = int(cap_s)
+    except (ValueError, TypeError):
+        return
+    if cap_i <= 0:
+        return
+    if isinstance(obj, dict):
+        if "duration_s" in obj:
+            try:
+                cur = int(obj.get("duration_s") or 0)
+                if cur > 0:
+                    obj["duration_s"] = min(cur, cap_i)
+            except (ValueError, TypeError):
+                pass
+        for v in obj.values():
+            _cap_duration(v, cap_i)
+    elif isinstance(obj, list):
+        for it in obj:
+            _cap_duration(it, cap_i)
+
+
+def _effective_duration(s, defaults, cli_duration=None):
+    if cli_duration is not None:
+        return cli_duration
+    try:
+        w = s.get("workload") or {}
+        wd = w.get("duration")
+        if wd is not None:
+            return int(wd)
+    except Exception:
+        pass
+    try:
+        if isinstance(defaults, dict) and defaults.get("duration") is not None:
+            return int(defaults.get("duration"))
+    except Exception:
+        pass
+    return None
+
+
+def apply_file_defaults_to_scenario(s, defaults):
+    if not isinstance(s, dict) or not isinstance(defaults, dict) or not defaults:
+        return s
+    sc = copy.deepcopy(s)
+    if "topology" not in sc and defaults.get("topology") is not None:
+        sc["topology"] = defaults.get("topology")
+    if "workload" in sc and isinstance(sc.get("workload"), dict):
+        wl = dict(sc.get("workload") or {})
+        if "duration" not in wl and defaults.get("duration") is not None:
+            wl["duration"] = defaults.get("duration")
+        sc["workload"] = wl
+    return sc
+
+
+def build_preset_scenario(s, cli_duration=None):
+    if not isinstance(s, dict) or not s.get("preset") or _presets is None:
+        return s
+    name = str(s.get("preset")).strip()
+    fn = getattr(_presets, f"build_{name}", None)
+    if fn is None:
+        raise AssertionError(f"unknown preset: {name}")
+    args = dict(s.get("preset_args", {}))
+    try:
+        sig = inspect.signature(fn)
+        if cli_duration is not None and "duration_s" in sig.parameters:
+            args["duration_s"] = int(cli_duration)
+    except Exception:
+        pass
+    if s.get("id"):
+        args.setdefault("sid", s.get("id"))
+    if s.get("name"):
+        args.setdefault("name", s.get("name"))
+    if s.get("topology"):
+        args.setdefault("topology", int(s.get("topology", 0)))
+    if s.get("backend"):
+        args.setdefault("backend", s.get("backend"))
+    try:
+        return fn(**args)
+    except TypeError as e:
+        raise AssertionError(f"preset {name} arg error: {e}")
+
+
+def normalize_scenario_durations(s, defaults=None, cli_duration=None):
+    if not isinstance(s, dict):
+        return s
+    out = copy.deepcopy(s)
+    eff_dur = _effective_duration(out, defaults or {}, cli_duration=cli_duration)
+    if eff_dur is None:
+        return out
+    if isinstance(out.get("workload"), dict):
+        wl = dict(out.get("workload") or {})
+        wl["duration"] = int(eff_dur)
+        out["workload"] = wl
+    if isinstance(out.get("faults"), list):
+        _cap_duration(out.get("faults"), eff_dur)
+    return out
 
 
 def _tags_ok(tags):
-    inc = set([t for t in os.environ.get("KEEPER_INCLUDE_TAGS", "").split(",") if t])
-    exc = set([t for t in os.environ.get("KEEPER_EXCLUDE_TAGS", "").split(",") if t])
+    inc = {t for t in os.environ.get("KEEPER_INCLUDE_TAGS", "").split(",") if t}
+    exc = {t for t in os.environ.get("KEEPER_EXCLUDE_TAGS", "").split(",") if t}
     if not inc and not exc:
         return True
     ts = set(tags or [])
@@ -61,20 +184,12 @@ def _inject_gate_macros(s):
         if not _has_gate(s, "config_converged"):
             _append_gate(s, {"type": "config_converged", "timeout_s": 30})
         if not _has_gate(s, "config_members_len_eq"):
-            exp = None
-            try:
-                exp = int((s.get("opts") or {}).get("expected_members"))
-            except Exception:
-                exp = None
+            exp = (s.get("opts") or {}).get("expected_members")
             if exp is None:
-                try:
-                    exp = int(s.get("topology", 3))
-                except Exception:
-                    exp = 3
-                # known special case where we expect two members after a remove
-                if sid == "RCFG-02":
-                    exp = 2
-            _append_gate(s, {"type": "config_members_len_eq", "expected": exp})
+                exp = (
+                    2 if sid == "RCFG-02" else int(s.get("topology", 3))
+                )  # RCFG-02: member removal
+            _append_gate(s, {"type": "config_members_len_eq", "expected": int(exp)})
         if not _has_gate(s, "backlog_drains"):
             _append_gate(s, {"type": "backlog_drains"})
     # INT scenarios: ensure backlog drains after count gate
@@ -102,35 +217,11 @@ def _inject_prefix_tags(s):
     if not sid:
         return
     prefix = sid.split("-", 1)[0].lower()
-    tag_map = {
-        "sem": "sem",
-        "cfg": "cfg",
-        "dur": "dur",
-        "dsk": "dsk",
-        "ldr": "ldr",
-        "res": "res",
-        "perf": "perf",
-        "sec": "sec",
-        "obs": "obs",
-        "mig": "mig",
-        "int": "int",
-        "lin": "lin",
-        "cha": "cha",
-        "nbank": "nbank",
-        "bnd": "bnd",
-        "df": "df",
-        "clk": "clk",
-        "soak": "soak",
-        "ops": "ops",
-        "load": "load",
-        "imp": "imp",
-    }
-    t = tag_map.get(prefix)
-    if not t:
+    if prefix not in _PREFIX_TAGS:
         return
     tags = s.get("tags") or []
-    if t not in tags:
-        s["tags"] = tags + [t]
+    if prefix not in tags:
+        s["tags"] = tags + [prefix]
 
 
 def _getopt(cfg, name, env_name=None, default=""):
@@ -150,6 +241,14 @@ def _getopt(cfg, name, env_name=None, default=""):
 def pytest_generate_tests(metafunc):
     if "scenario" not in metafunc.fixturenames:
         return
+    try:
+        cli_duration = int(
+            _getopt(metafunc.config, "--duration", "KEEPER_DURATION", "") or 0
+        )
+        if cli_duration <= 0:
+            cli_duration = None
+    except (ValueError, TypeError):
+        cli_duration = None
     # accept alt env names; robust to missing CLI options
     total = int(
         _getopt(metafunc.config, "--total-shards", "KEEPER_TOTAL_SHARDS", 1) or 1
@@ -176,56 +275,48 @@ def pytest_generate_tests(metafunc):
         if f.exists():
             d = yaml.safe_load(f.read_text())
             if isinstance(d, dict) and isinstance(d.get("scenarios"), list):
-                scenarios_raw.extend(d["scenarios"])
-    data = {"scenarios": scenarios_raw}
-    include_ids = set(
-        [
-            sid
-            for sid in (
-                _getopt(
-                    metafunc.config, "--keeper-include-ids", "KEEPER_INCLUDE_IDS", ""
+                defaults = (
+                    d.get("defaults") if isinstance(d.get("defaults"), dict) else {}
                 )
-                or ""
-            ).split(",")
-            if sid
-        ]
+                for s in d["scenarios"]:
+                    if not isinstance(s, dict):
+                        continue
+                    sc = apply_file_defaults_to_scenario(s, defaults)
+                    if defaults:
+                        sc["_defaults"] = dict(defaults)
+                    scenarios_raw.append(sc)
+    data = {"scenarios": scenarios_raw}
+    include_ids_str = (
+        _getopt(metafunc.config, "--keeper-include-ids", "KEEPER_INCLUDE_IDS", "") or ""
     )
+    include_ids = set(sid for sid in include_ids_str.split(",") if sid)
     scenarios = []
-    # matrix options (TLS removed) - allow env override via KEEPER_MATRIX_BACKENDS / KEEPER_MATRIX_TOPOLOGIES
-    mb = (
+    # matrix options - allow env override via KEEPER_MATRIX_BACKENDS / KEEPER_MATRIX_TOPOLOGIES
+    # If no matrix specified, fall back to --keeper-backend CLI option
+    mb_raw = (
         _getopt(metafunc.config, "--matrix-backends", "KEEPER_MATRIX_BACKENDS", "")
         or ""
-    ).split(",")
-    mb = [x.strip() for x in mb if x.strip()]
-    mtops = (
+    )
+    mb = [x.strip() for x in mb_raw.split(",") if x.strip()]
+    if not mb:
+        # Fall back to CLI --keeper-backend option
+        cli_backend = _getopt(metafunc.config, "--keeper-backend", "KEEPER_BACKEND", "")
+        if cli_backend:
+            mb = [cli_backend]
+    mtops_raw = (
         _getopt(metafunc.config, "--matrix-topologies", "KEEPER_MATRIX_TOPOLOGIES", "")
         or ""
-    ).split(",")
-    mtops = [int(x.strip()) for x in mtops if x.strip()]
+    )
+    mtops = [int(x.strip()) for x in mtops_raw.split(",") if x.strip()]
 
     params = []
     seen_ids = set()
     for s in data["scenarios"]:
-        # Expand preset-defined scenarios to keep YAML thin
-        if isinstance(s, dict) and s.get("preset") and _presets is not None:
-            name = str(s.get("preset")).strip()
-            fn = getattr(_presets, f"build_{name}", None)
-            if fn is None:
-                raise AssertionError(f"unknown preset: {name}")
-            args = dict(s.get("preset_args", {}))
-            # allow id/name override via top-level keys
-            if s.get("id"):
-                args.setdefault("sid", s.get("id"))
-            if s.get("name"):
-                args.setdefault("name", s.get("name"))
-            if s.get("topology"):
-                args.setdefault("topology", int(s.get("topology", 0)))
-            if s.get("backend"):
-                args.setdefault("backend", s.get("backend"))
-            try:
-                s = fn(**args)
-            except TypeError as e:
-                raise AssertionError(f"preset {name} arg error: {e}")
+        defaults = s.pop("_defaults", {}) if isinstance(s, dict) else {}
+        s = build_preset_scenario(s, cli_duration=cli_duration)
+        s = normalize_scenario_durations(
+            s, defaults=defaults, cli_duration=cli_duration
+        )
         sid_val = s.get("id")
         if sid_val in seen_ids:
             continue
@@ -251,19 +342,15 @@ def pytest_generate_tests(metafunc):
             seed = random.randint(1, 2**31 - 1)
         steps = int(_getopt(metafunc.config, "--fuzz-steps", None, 8) or 8)
         dur = int(_getopt(metafunc.config, "--fuzz-duration", None, 180) or 180)
-        # parse weights
+        # parse weights (format: "key1=val1,key2=val2")
         wstr = _getopt(metafunc.config, "--fuzz-weights", None, "") or ""
         weights = {}
         for part in wstr.split(","):
-            if not part.strip():
-                continue
             if "=" in part:
                 k, v = part.split("=", 1)
-                k = k.strip()
-                v = v.strip()
                 try:
-                    weights[k] = int(v)
-                except Exception:
+                    weights[k.strip()] = int(v.strip())
+                except ValueError:
                     continue
         dmin = int(_getopt(metafunc.config, "--fuzz-dur-min", None, 15) or 15)
         dmax = int(_getopt(metafunc.config, "--fuzz-dur-max", None, 120) or 120)

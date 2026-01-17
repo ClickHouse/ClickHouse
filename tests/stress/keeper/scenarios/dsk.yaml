@@ -6,7 +6,7 @@ scenarios:
   - id: DSK-01
     name: Tiered latest_* disks
     topology: 3
-    workload: { config: workloads/write_heavy.yaml, duration: 180 }
+    workload: { config: workloads/prod_mix.yaml, duration: 180 }
     gates:
       - { type: single_leader }
     requires: [minio]
@@ -14,7 +14,7 @@ scenarios:
   - id: DSK-02
     name: "old_* → new migration"
     topology: 3
-    workload: { config: workloads/write_heavy.yaml, duration: 180 }
+    workload: { config: workloads/prod_mix.yaml, duration: 180 }
     gates:
       - { type: single_leader }
     requires: [minio]
@@ -29,7 +29,7 @@ scenarios:
   - id: DSK-04
     name: S3/tiered move failures
     topology: 3
-    workload: { config: workloads/write_heavy.yaml, duration: 180 }
+    workload: { config: workloads/prod_mix.yaml, duration: 180 }
     faults:
       - { kind: netem, on: all, delay_ms: 500, loss_pct: 5, duration_s: 120 }
     gates:

@@ -1,298 +1,290 @@
 #!/usr/bin/env python3
-import os
-import sys
+"""Keeper stress test CI job runner."""
 import argparse
-import subprocess
-import time
 import json
-from pathlib import Path
-import xml.etree.ElementTree as ET
+import os
+import subprocess
+import sys
+import time
 import traceback
-
+import xml.etree.ElementTree as ET
+from pathlib import Path
 
 # Ensure local invocations can import praktika without requiring PYTHONPATH
-try:
-    _repo_dir = str(Path(__file__).resolve().parents[2])
-    if _repo_dir not in sys.path:
-        sys.path.insert(0, _repo_dir)
-    _ci_dir = os.path.join(_repo_dir, "ci")
-    if _ci_dir not in sys.path:
-        sys.path.insert(0, _ci_dir)
-except Exception:
-    pass
+_repo_dir = str(Path(__file__).resolve().parents[2])
+if _repo_dir not in sys.path:
+    sys.path.insert(0, _repo_dir)
+_ci_dir = os.path.join(_repo_dir, "ci")
+if _ci_dir not in sys.path:
+    sys.path.insert(0, _ci_dir)
 
+from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell, Utils
-from praktika.info import Info
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Constants
+# ─────────────────────────────────────────────────────────────────────────────
+REPO_DIR = _repo_dir
+TEMP_DIR = f"{REPO_DIR}/ci/tmp"
+DEFAULT_XDIST_WORKERS = "16"
+DEFAULT_TIMEOUT = 120
+DEFAULT_READY_TIMEOUT = 600
 
 
-def main():
-    # Parse optional CLI args similar to integration jobs
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--test", nargs="+")
-    parser.add_argument("--keeper-include-ids")
-    parser.add_argument("--faults")
-    parser.add_argument("--duration", type=int)
-    parser.add_argument("--param")
-    args, _ = parser.parse_known_args()
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+def env_int(name, default=0):
+    """Get environment variable as int."""
     try:
-        _repo = str(Path(__file__).resolve().parents[2])
-        _envf = os.path.join(_repo, "ci", "tmp", "praktika_setup_env.sh")
-        if os.path.exists(_envf):
-            with open(_envf, "r", encoding="utf-8") as _f:
-                for _line in _f:
-                    _s = _line.strip()
-                    if not _s or _s.startswith("#"):
-                        continue
-                    if _s.startswith("export "):
-                        _s = _s[7:]
-                    if "=" in _s:
-                        _k, _v = _s.split("=", 1)
-                        _v = _v.strip().strip("'").strip('"')
-                        if _k and _v and _k not in os.environ:
-                            os.environ[_k.strip()] = _v
-    except Exception:
-        pass
+        return int(os.environ.get(name) or default)
+    except (ValueError, TypeError):
+        return default
 
-    # Same suite and defaults for PR and nightly
-    os.environ.setdefault("KEEPER_INCLUDE_IDS", "")
-    os.environ.setdefault("KEEPER_SCENARIO_FILE", "all")
-    os.environ.setdefault("KEEPER_BENCH_ADAPTIVE", "1")
-    os.environ.setdefault("KEEPER_BENCH_CLIENTS", "96")
-    os.environ.setdefault("KEEPER_DEFAULT_P99_MS", "1000")
-    os.environ.setdefault("KEEPER_DEFAULT_ERROR_RATE", "0.01")
-    os.environ.setdefault("KEEPER_ADAPT_TARGET_P99_MS", "600")
-    os.environ.setdefault("KEEPER_ADAPT_MAX_ERROR", "0.01")
-    os.environ.setdefault("KEEPER_ADAPT_STAGE_S", "15")
-    os.environ.setdefault("KEEPER_ADAPT_MIN_CLIENTS", "8")
-    os.environ.setdefault("KEEPER_ADAPT_MAX_CLIENTS", "192")
-    # Always keep containers/logs on fail for local/CI triage unless explicitly disabled
-    os.environ.setdefault("KEEPER_KEEP_ON_FAIL", "1")
-    # Enable faults by default on CI; can be overridden via env/CLI
-    os.environ.setdefault("KEEPER_FAULTS", "on")
-    os.environ.setdefault("KEEPER_DURATION", "600")
-    # Let the test suite parameterize across both backends in a single run
-    os.environ.setdefault("KEEPER_MATRIX_BACKENDS", "default,rocks")
-    # Default per-worker port step for safe xdist parallelism (only used if -n is enabled)
-    os.environ.setdefault("KEEPER_XDIST_PORT_STEP", "100")
-    os.environ.setdefault("KEEPER_COMPOSE_DOWN_TIMEOUT", "30")
-    os.environ.setdefault("KEEPER_CLEAN_ARTIFACTS", "1")
-    os.environ.setdefault("CI_HEARTBEAT_SEC", "60")
-    # Default to running tests with pytest-xdist workers (can be overridden)
-    os.environ.setdefault("KEEPER_PYTEST_XDIST", "auto")
-    # Derive an extended connection window for slow initializations when logs show progress
+
+def safe_int(val, default=0):
+    """Safely convert to int."""
     try:
-        _ready = int(os.environ.get("KEEPER_READY_TIMEOUT", "600") or "600")
-        os.environ.setdefault("KEEPER_CONNECT_TIMEOUT_SEC", str(_ready + 600))
-    except Exception:
-        pass
+        return int(val) if val is not None else default
+    except (ValueError, TypeError):
+        return default
 
-    # Apply custom KEY=VALUE envs passed via --param to mirror integration jobs UX
-    if args.param:
-        for pair in str(args.param).split(","):
-            if not pair.strip():
-                continue
-            if "=" in pair:
-                k, v = pair.split("=", 1)
-                os.environ[str(k).strip()] = str(v)
 
-    stop_watch = Utils.Stopwatch()
-    results = []
-    files_to_attach = []
-    # CI-agnostic: no CIDB preflight here; praktika handles it post-run
-
-    # Ensure docker-in-docker is up for nested compose workloads
-    os.makedirs("./ci/tmp", exist_ok=True)
-    # Force docker CLI to use in-container dockerd socket, not any inherited host DOCKER_HOST
-    try:
-        os.environ["DOCKER_HOST"] = "unix:///var/run/docker.sock"
-        os.environ.pop("DOCKER_TLS_VERIFY", None)
-        os.environ.pop("DOCKER_CERT_PATH", None)
-    except Exception:
-        pass
-    if not Shell.check("docker info > /dev/null", verbose=True):
-        with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
-            dockerd_proc = subprocess.Popen(
-                "./ci/jobs/scripts/docker_in_docker.sh",
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-            )
-        # wait until docker responds
-        for i in range(90):
-            # Prefer probe by socket existence and docker info
-            try:
-                if os.path.exists("/var/run/docker.sock") and Shell.check(
-                    "docker info > /dev/null", verbose=True
-                ):
-                    break
-            except Exception:
-                pass
-            time.sleep(2)
-        if not Shell.check("docker info > /dev/null", verbose=True):
-            results.append(
-                Result.from_commands_run(
-                    name="Docker startup failed",
-                    command=[
-                        "ps ax | grep dockerd | grep -v grep || true",
-                        "ls -l ./ci/tmp/docker-in-docker.log || true",
-                        "tail -n 200 ./ci/tmp/docker-in-docker.log || true",
-                        "df -h || true",
-                    ],
-                )
-            )
-            Result.create_from(results=results, stopwatch=stop_watch).complete_job()
-            return
-
-    results.append(
-        Result.from_commands_run(name="Disk space preflight", command=["df -h || true"])
-    )
-    results.append(
-        Result.from_commands_run(
-            name="Docker aggressive prune",
-            command=[
-                "docker system prune -af --volumes || true",
-                "docker builder prune -af || true",
-                "docker image prune -af || true",
-            ],
-        )
-    )
-    results.append(
-        Result.from_commands_run(
-            name="Docker pre-clean",
-            command=[
-                "docker network prune -f || true",
-                "docker container prune -f || true",
-            ],
-        )
-    )
-
-    # Respect optional duration override from CLI first, then env
-    dur_cli = args.duration
-    dur_env = os.environ.get("KEEPER_DURATION")
-    try:
-        duration_value = (
-            int(dur_cli) if dur_cli else (int(dur_env) if dur_env else None)
-        )
-    except Exception:
-        duration_value = None
-
-    # Install Python dependencies required by Keeper stress framework (PyYAML, etc.)
-    install_cmd = "PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir -r tests/stress/keeper/requirements.txt pytest-reportlog"
-    results.append(
-        Result.from_commands_run(name="Install Keeper Python deps", command=install_cmd)
-    )
-    if not results[-1].is_ok():
-        # Publish aggregated job result (deps install failed)
-        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+def load_praktika_env():
+    """Load environment from praktika setup file if present."""
+    envf = os.path.join(REPO_DIR, "ci", "tmp", "praktika_setup_env.sh")
+    if not os.path.exists(envf):
         return
+    try:
+        with open(envf, "r", encoding="utf-8") as f:
+            for line in f:
+                s = line.strip()
+                if not s or s.startswith("#"):
+                    continue
+                if s.startswith("export "):
+                    s = s[7:]
+                if "=" in s:
+                    k, v = s.split("=", 1)
+                    v = v.strip().strip("'").strip('"')
+                    if k and v and k not in os.environ:
+                        os.environ[k.strip()] = v
+    except Exception:
+        pass
 
-    # Ensure ClickHouse client binary is available for integration helpers
-    repo_dir = str(Path(__file__).resolve().parents[2])
-    temp_dir = f"{repo_dir}/ci/tmp"
-    ch_path = f"{temp_dir}/clickhouse"
-    built_path = f"{repo_dir}/ci/tmp/build/programs/self-extracting/clickhouse"
-    built_non_self = f"{repo_dir}/ci/tmp/build/programs/clickhouse"
-    if Path(built_path).is_file() or Path(built_non_self).is_file():
-        # Use locally built artifact from build jobs
-        ch_path = (
-            built_path if Path(built_non_self).is_file() is False else built_non_self
+
+def set_default_env():
+    """Set default environment variables for keeper stress tests."""
+    defaults = {
+        # Test selection
+        "KEEPER_SCENARIO_FILE": "all",
+        "KEEPER_MATRIX_BACKENDS": "default,rocks",
+        "KEEPER_FAULTS": "on",
+        "KEEPER_DURATION": "600",
+        # Adaptive bench tuning
+        "KEEPER_BENCH_ADAPTIVE": "1",
+        "KEEPER_BENCH_CLIENTS": "96",
+        "KEEPER_ADAPT_TARGET_P99_MS": "600",
+        "KEEPER_ADAPT_MAX_ERROR": "0.01",
+        "KEEPER_ADAPT_STAGE_S": "15",
+        "KEEPER_ADAPT_MIN_CLIENTS": "8",
+        "KEEPER_ADAPT_MAX_CLIENTS": "192",
+        # Gate defaults
+        "KEEPER_DEFAULT_P99_MS": "1000",
+        "KEEPER_DEFAULT_ERROR_RATE": "0.01",
+        # CI behavior
+        "KEEPER_KEEP_ON_FAIL": "1",
+        "KEEPER_CLEAN_ARTIFACTS": "1",
+        "KEEPER_XDIST_PORT_STEP": "100",
+        "KEEPER_PYTEST_XDIST": "auto",
+        "CI_HEARTBEAT_SEC": "60",
+    }
+    for k, v in defaults.items():
+        os.environ.setdefault(k, v)
+
+
+def apply_cli_params(args):
+    """Apply KEY=VALUE params from --param CLI arg."""
+    if not args.param:
+        return
+    for pair in str(args.param).split(","):
+        pair = pair.strip()
+        if "=" in pair:
+            k, v = pair.split("=", 1)
+            os.environ[k.strip()] = str(v)
+
+
+def setup_docker():
+    """Ensure docker is available, starting dockerd if needed. Returns success."""
+    os.makedirs("./ci/tmp", exist_ok=True)
+    os.environ["DOCKER_HOST"] = "unix:///var/run/docker.sock"
+    os.environ.pop("DOCKER_TLS_VERIFY", None)
+    os.environ.pop("DOCKER_CERT_PATH", None)
+
+    if Shell.check("docker info > /dev/null", verbose=True):
+        return True
+
+    # Start docker-in-docker
+    with open("./ci/tmp/docker-in-docker.log", "w") as log_file:
+        subprocess.Popen(
+            "./ci/jobs/scripts/docker_in_docker.sh",
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
         )
+    # Wait for docker to respond
+    for _ in range(90):
+        if os.path.exists("/var/run/docker.sock") and Shell.check(
+            "docker info > /dev/null", verbose=True
+        ):
+            return True
+        time.sleep(2)
+    return Shell.check("docker info > /dev/null", verbose=True)
+
+
+def get_clickhouse_binary():
+    """Locate or download ClickHouse binary. Returns (path, results)."""
+    results = []
+    ch_path = f"{TEMP_DIR}/clickhouse"
+    built_self = f"{REPO_DIR}/ci/tmp/build/programs/self-extracting/clickhouse"
+    built_non_self = f"{REPO_DIR}/ci/tmp/build/programs/clickhouse"
+
+    # Check for locally built binary
+    if Path(built_non_self).is_file():
+        ch_path = built_non_self
+    elif Path(built_self).is_file():
+        ch_path = built_self
+    else:
+        ch_path = None
+
+    if ch_path:
         results.append(
             Result.from_commands_run(
                 name="Use built ClickHouse binary",
                 command=[
                     f"chmod +x {ch_path}",
                     f"{ch_path} --version || true",
-                    f"ln -sf {ch_path} {temp_dir}/clickhouse",
-                    f"ln -sf {ch_path} {temp_dir}/clickhouse-client",
+                    f"ln -sf {ch_path} {TEMP_DIR}/clickhouse",
+                    f"ln -sf {ch_path} {TEMP_DIR}/clickhouse-client",
                 ],
             )
         )
-        if not results[-1].is_ok():
-            Result.create_from(results=results, stopwatch=stop_watch).complete_job()
-            return
-    else:
-        if Utils.is_arm():
-            ch_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
-        else:
-            ch_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
-        if not Path(ch_path).is_file():
-            results.append(
-                Result.from_commands_run(
-                    name="Download ClickHouse client",
-                    command=[
-                        f"wget -nv -P {temp_dir} {ch_url}",
-                        f"chmod +x {ch_path}",
-                        f"{ch_path} --version",
-                        f"ln -sf {ch_path} {temp_dir}/clickhouse",
-                        f"ln -sf {ch_path} {temp_dir}/clickhouse-client",
-                    ],
-                )
-            )
-            if not results[-1].is_ok():
-                Result.create_from(results=results, stopwatch=stop_watch).complete_job()
-                return
+        return ch_path, results
 
-    final_ch = "/usr/local/bin/clickhouse"
-    results.append(
-        Result.from_commands_run(
-            name="Install ClickHouse binary",
-            command=[
-                # Skip cp if source and destination resolve to the same file
-                f'[ "$(readlink -f {ch_path})" = "$(readlink -f {final_ch})" ] && echo \'ClickHouse binary already installed at {final_ch}\' || cp -f {ch_path} {final_ch}',
-                f"chmod +x {final_ch} || true",
-                f"{final_ch} --version",
-                f"ln -sf {final_ch} /usr/local/bin/clickhouse-client || true",
-            ],
+    # Download from S3
+    ch_path = f"{TEMP_DIR}/clickhouse"
+    if not Path(ch_path).is_file():
+        ch_url = (
+            "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
+            if Utils.is_arm()
+            else "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
         )
-    )
-    if not results[-1].is_ok():
-        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
-        return
-    ch_path = final_ch
+        results.append(
+            Result.from_commands_run(
+                name="Download ClickHouse client",
+                command=[
+                    f"wget -nv -P {TEMP_DIR} {ch_url}",
+                    f"chmod +x {ch_path}",
+                    f"{ch_path} --version",
+                    f"ln -sf {ch_path} {TEMP_DIR}/clickhouse",
+                    f"ln -sf {ch_path} {TEMP_DIR}/clickhouse-client",
+                ],
+            )
+        )
+    return ch_path, results
 
-    # Construct pytest command (Result.from_pytest_run adds 'pytest' itself)
-    # - show prints (-s), verbose (-vv), show per-test durations; run selected tests (or whole suite)
+
+def install_clickhouse_binary(ch_path):
+    """Install ClickHouse binary to /usr/local/bin. Returns Result."""
+    final = "/usr/local/bin/clickhouse"
+    return Result.from_commands_run(
+        name="Install ClickHouse binary",
+        command=[
+            f'[ "$(readlink -f {ch_path})" = "$(readlink -f {final})" ] && echo "Already installed" || cp -f {ch_path} {final}',
+            f"chmod +x {final} || true",
+            f"{final} --version",
+            f"ln -sf {final} /usr/local/bin/clickhouse-client || true",
+        ],
+    )
+
+
+def get_commit_sha(env):
+    """Resolve commit SHA from various sources."""
+    if env.get("COMMIT_SHA") and env["COMMIT_SHA"] not in ("", "local"):
+        return env["COMMIT_SHA"]
+
+    # Try Info()
+    try:
+        sha = Info().sha or ""
+        if sha:
+            return sha
+    except Exception:
+        pass
+
+    # Try environment variables
+    for key in ("GITHUB_SHA", "GITHUB_HEAD_SHA", "SHA"):
+        sha = os.environ.get(key, "")
+        if sha:
+            return sha
+
+    # Try PRInfo
+    try:
+        from tests.ci.pr_info import PRInfo
+
+        sha = getattr(PRInfo(), "sha", "")
+        if sha:
+            return sha
+    except Exception:
+        pass
+
+    # Try git
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO_DIR,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        sha = out.strip()
+        if sha:
+            return sha
+    except Exception:
+        pass
+
+    return "local"
+
+
+def build_pytest_command(args):
+    """Build pytest command string. Returns (cmd, timeout_val, xdist_workers)."""
     tests_target = " ".join(args.test) if args.test else "tests/stress/keeper/tests"
     extra = []
+
     if args.keeper_include_ids:
         extra.append(f"--keeper-include-ids={args.keeper_include_ids}")
     if args.faults:
         extra.append(f"--faults={args.faults}")
-    # Global test timeout ~= bench + readiness + overhead
-    try:
-        dur_val = int(args.duration or os.environ.get("KEEPER_DURATION", 120))
-    except Exception:
-        dur_val = 120
-    try:
-        ready_val = int(os.environ.get("KEEPER_READY_TIMEOUT", 600))
-    except Exception:
-        ready_val = 600
-    if ready_val < 600:
-        ready_val = 600
+
+    # Calculate timeout
+    dur_val = safe_int(args.duration) or env_int("KEEPER_DURATION", DEFAULT_TIMEOUT)
+    ready_val = max(
+        DEFAULT_READY_TIMEOUT, env_int("KEEPER_READY_TIMEOUT", DEFAULT_READY_TIMEOUT)
+    )
     timeout_val = max(180, min(1800, dur_val + ready_val + 120))
-    extra.append(f"--timeout={timeout_val}")
-    extra.append("--timeout-method=signal")
-    heuristic_workers = "16"
-    _xd_env = (os.environ.get("KEEPER_PYTEST_XDIST", "").strip() or "").lower()
-    if _xd_env in ("", "auto"):
-        # Use default heuristic unless explicitly overridden
-        xdist_workers = heuristic_workers
-    else:
-        xdist_workers = _xd_env
+    extra.extend([f"--timeout={timeout_val}", "--timeout-method=signal"])
+
+    # xdist workers
+    xd_env = os.environ.get("KEEPER_PYTEST_XDIST", "").strip().lower()
+    xdist_workers = DEFAULT_XDIST_WORKERS if xd_env in ("", "auto") else xd_env
     extra.append(f"-n {xdist_workers}")
-    try:
-        is_parallel = xdist_workers not in ("1", "no", "0")
-    except Exception:
-        is_parallel = True
-    report_file = f"{temp_dir}/pytest.jsonl"
-    junit_file = f"{temp_dir}/keeper_junit.xml"
-    extra.append(f"--junitxml={junit_file}")
-    if duration_value is not None:
-        extra.append(f"--duration={duration_value}")
+    is_parallel = xdist_workers not in ("1", "no", "0")
+
+    extra.append(f"--junitxml={TEMP_DIR}/keeper_junit.xml")
+
+    # Duration override
+    if dur_val:
+        extra.append(f"--duration={dur_val}")
+
     base = ["-vv", tests_target, "--durations=0"]
     if is_parallel:
-        # Reduce report size/noise: disable pytest logging plugin and stdout capture for workers
         extra.extend(
             [
                 "-o",
@@ -309,531 +301,491 @@ def main():
                 "--capture=no",
             ]
         )
-        cmd = (" ".join(base + extra)).rstrip()
+        cmd = " ".join(base + extra)
     else:
-        cmd = (" ".join(["-s"] + base + extra)).rstrip()
+        cmd = " ".join(["-s"] + base + extra)
 
-    # Prepare env for pytest
+    return cmd, timeout_val, xdist_workers
+
+
+def build_pytest_env(ch_path, timeout_val):
+    """Build environment dict for pytest."""
+    ready_val = max(
+        DEFAULT_READY_TIMEOUT, env_int("KEEPER_READY_TIMEOUT", DEFAULT_READY_TIMEOUT)
+    )
     env = os.environ.copy()
+
+    # Timeouts
     env["KEEPER_PYTEST_TIMEOUT"] = str(timeout_val)
-    try:
-        subproc_to = str(max(300, min(timeout_val - 60, 900)))
-    except Exception:
-        subproc_to = "900"
-    env["KEEPER_SUBPROC_TIMEOUT"] = subproc_to
     env["KEEPER_READY_TIMEOUT"] = str(ready_val)
-    # IMPORTANT: containers launched by docker-compose will bind-mount this exact host path
-    # Mount the installed binary to avoid noexec on repo mounts and ensure parity with host-side tools
-    server_bin_for_mount = ch_path
+    env["KEEPER_START_TIMEOUT_SEC"] = str(ready_val)
+
+    # ClickHouse binary paths
     env["CLICKHOUSE_BINARY"] = ch_path
     env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = ch_path
-    env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_bin_for_mount
-    env.setdefault("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", f"{repo_dir}/programs/server")
-    env["PATH"] = f"/usr/local/bin:{env.get('PATH','')}"
-    # Ensure ClickHouseCluster uses the same readiness window when waiting for instances
-    env.setdefault("KEEPER_START_TIMEOUT_SEC", str(ready_val))
-    env.setdefault("KEEPER_SCENARIO_FILE", "all")
-    # Sidecar file for metrics rows emitted by tests; host will ingest post-run
-    env["KEEPER_METRICS_FILE"] = f"{temp_dir}/keeper_metrics.jsonl"
-    env.setdefault("KEEPER_METRICS_SPLIT_PER_TEST", "1")
-    sidecar = env["KEEPER_METRICS_FILE"]
-    try:
-        Path(os.path.dirname(sidecar)).mkdir(parents=True, exist_ok=True)
-        with open(sidecar, "a", encoding="utf-8") as _f:
-            _f.write("")
-        results.append(
-            Result.from_commands_run(
-                name="Keeper metrics sidecar preflight", command=["true"]
-            )
-        )
-    except Exception as _e:
-        results.append(
-            Result.from_commands_run(
-                name=f"Keeper metrics sidecar preflight failed: {str(_e)[:120]}",
-                command=["true"],
-            )
-        )
-    # Ensure repo root and ci/ are on PYTHONPATH so 'tests' and 'praktika' can be imported
-    repo_pythonpath = f"{repo_dir}:{repo_dir}/ci"
-    cur_pp = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = repo_pythonpath if not cur_pp else f"{repo_pythonpath}:{cur_pp}"
-    # Do not pass CIDB credentials/URL into test environment; host-only push handles it
-    for _k in (
+    env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = ch_path
+    env.setdefault("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", f"{REPO_DIR}/programs/server")
+    env["PATH"] = f"/usr/local/bin:{env.get('PATH', '')}"
+
+    # Metrics
+    env["KEEPER_METRICS_FILE"] = f"{TEMP_DIR}/keeper_metrics.jsonl"
+
+    # PYTHONPATH - add repo root and tests/stress for keeper imports
+    env["PYTHONPATH"] = f"{REPO_DIR}:{REPO_DIR}/tests/stress:{REPO_DIR}/ci"
+
+    # Remove CI DB credentials from test environment
+    for k in (
         "CI_DB_USER",
         "CI_DB_PASSWORD",
         "KEEPER_METRICS_CLICKHOUSE_URL",
         "CI_DB_URL",
     ):
-        try:
-            env.pop(_k, None)
-        except Exception:
-            pass
-    # Propagate commit sha for tagging metrics/checks with robust fallbacks
-    try:
-        need = (not env.get("COMMIT_SHA")) or env.get("COMMIT_SHA") in ("", "local")
-        if need:
-            sha = ""
-            try:
-                sha = Info().sha or ""
-            except Exception:
-                sha = ""
-            if not sha:
-                sha = (
-                    os.environ.get("GITHUB_SHA")
-                    or os.environ.get("GITHUB_HEAD_SHA")
-                    or os.environ.get("SHA")
-                    or ""
-                )
-            if not sha:
-                try:
-                    from tests.ci.pr_info import PRInfo  # type: ignore
+        env.pop(k, None)
 
-                    pr = PRInfo()
-                    sha = getattr(pr, "sha", "") or sha
-                except Exception:
-                    pass
-            if not sha:
-                try:
-                    out = subprocess.check_output(
-                        ["git", "rev-parse", "HEAD"],
-                        cwd=repo_dir,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                    )
-                    sha = (out or "").strip()
-                except Exception:
-                    sha = ""
-            env["COMMIT_SHA"] = sha if sha else "local"
-        # Also pass it explicitly to pytest to ensure run_meta tagging
+    # Commit SHA
+    env["COMMIT_SHA"] = get_commit_sha(env)
+
+    # PYTEST_ADDOPTS
+    fh_to = max(600, min(timeout_val - 60, 1800))
+    env["PYTEST_ADDOPTS"] = (
+        f"--ignore-glob=tests/stress/keeper/tests/_instances-* -o faulthandler_timeout={fh_to}"
+    )
+
+    return env
+
+
+def generate_comparison_summary(sidecar_path):
+    """Generate rocks vs default comparison from metrics sidecar. Returns (path, lines)."""
+    cmp_txt = f"{TEMP_DIR}/keeper_compare_summary.txt"
+    rows = []
+
+    if os.path.exists(sidecar_path):
         try:
-            if env.get("COMMIT_SHA") and "--commit-sha=" not in cmd:
-                cmd = f"{cmd} --commit-sha={env['COMMIT_SHA']}"
+            with open(sidecar_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    try:
+                        rows.append(json.loads(line))
+                    except Exception:
+                        continue
         except Exception:
             pass
+
+    # Aggregate by scenario and backend
+    comp = {}
+    for r in rows:
+        if r.get("stage") != "summary" or r.get("source") != "bench":
+            continue
+        scen = str(r.get("scenario", ""))
+        backend = str(r.get("backend", ""))
+        name = str(r.get("name", ""))
+        val = r.get("value")
+        if val is None:
+            continue
+        try:
+            comp.setdefault(scen, {}).setdefault(backend, {})[name] = float(val)
+        except (ValueError, TypeError):
+            continue
+
+    # Format comparison with regression detection
+    lines = []
+    regressions = []
+    improvements = []
+    
+    lines.append("=" * 70)
+    lines.append("KEEPER BACKEND COMPARISON: Default vs RocksDB")
+    lines.append("=" * 70)
+    lines.append("")
+    
+    for scen, backs in sorted(comp.items()):
+        d, rk = backs.get("default", {}), backs.get("rocks", {})
+        if not d or not rk:
+            continue
+        lines.append(f"[scenario] {scen}")
+        lines.append(f"  {'metric':<12} {'default':>12} {'rocks':>12} {'diff%':>10} {'status':>10}")
+        lines.append("  " + "-" * 58)
+        
+        for key in ("ops", "rps", "errors", "p50_ms", "p95_ms", "p99_ms", "error_rate"):
+            if key not in d and key not in rk:
+                continue
+            vd = d.get(key, 0.0)
+            vr = rk.get(key, 0.0)
+            
+            # Calculate percentage difference
+            if vd != 0:
+                pct = (vr - vd) / vd * 100
+            elif vr != 0:
+                pct = 100.0
+            else:
+                pct = 0.0
+            
+            # Determine status (latency/errors: lower is better, ops/rps: higher is better)
+            is_latency = key in ("p50_ms", "p95_ms", "p99_ms", "errors", "error_rate")
+            if is_latency:
+                if pct > 15:
+                    status = "⚠️ WORSE"
+                    regressions.append((scen, key, pct))
+                elif pct < -15:
+                    status = "✅ BETTER"
+                    improvements.append((scen, key, pct))
+                else:
+                    status = "≈"
+            else:
+                if pct < -15:
+                    status = "⚠️ WORSE"
+                    regressions.append((scen, key, pct))
+                elif pct > 15:
+                    status = "✅ BETTER"
+                    improvements.append((scen, key, pct))
+                else:
+                    status = "≈"
+            
+            lines.append(f"  {key:<12} {vd:>12.2f} {vr:>12.2f} {pct:>+9.1f}% {status:>10}")
+        lines.append("")
+    
+    # Summary section
+    lines.append("=" * 70)
+    lines.append("SUMMARY")
+    lines.append("=" * 70)
+    if regressions:
+        lines.append("⚠️  REGRESSIONS (Rocks worse than Default):")
+        for scen, metric, pct in regressions:
+            lines.append(f"    - {scen} / {metric}: {pct:+.1f}%")
+    else:
+        lines.append("✅ No significant regressions detected")
+    
+    if improvements:
+        lines.append("")
+        lines.append("✅ IMPROVEMENTS (Rocks better than Default):")
+        for scen, metric, pct in improvements:
+            lines.append(f"    - {scen} / {metric}: {pct:+.1f}%")
+    lines.append("")
+
+    try:
+        with open(cmp_txt, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) if lines else "No comparable metrics found")
+        return cmp_txt, lines
+    except Exception:
+        return None, []
+
+
+def parse_junit_summary(junit_file):
+    """Parse JUnit XML and return (tests, passed, failures, errors, skipped)."""
+    tests = failures = errors = skipped = 0
+    try:
+        if not Path(junit_file).exists():
+            return 0, 0, 0, 0, 0
+        root = ET.parse(junit_file).getroot()
+        suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+        for ts in suites:
+            tests += int(ts.attrib.get("tests", 0) or 0)
+            failures += int(ts.attrib.get("failures", 0) or 0)
+            errors += int(ts.attrib.get("errors", 0) or 0)
+            skipped += int(ts.attrib.get("skipped", 0) or 0)
     except Exception:
         pass
-    # Generate rocks vs default comparison summary from sidecar metrics
-    try:
-        sidecar_path = env.get(
-            "KEEPER_METRICS_FILE", f"{temp_dir}/keeper_metrics.jsonl"
+    passed = max(0, tests - failures - errors - skipped)
+    return tests, passed, failures, errors, skipped
+
+
+def collect_failure_artifacts(pytest_ok):
+    """Collect debug artifacts on failure. Returns (files, results)."""
+    files = []
+    results = []
+    if pytest_ok:
+        return files, results
+
+    base = Path(REPO_DIR) / "tests/stress/keeper/tests"
+    inst_dirs = sorted(
+        base.glob("_instances-*"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
+    if not inst_dirs:
+        return files, results
+
+    inst = inst_dirs[0]
+    # Collect files
+    for i in range(1, 6):
+        for p in [
+            inst / f"keeper{i}" / "docker-compose.yml",
+            inst / f"keeper{i}" / "logs" / "clickhouse-server.log",
+            inst / f"keeper{i}" / "logs" / "clickhouse-server.err.log",
+            inst
+            / f"keeper{i}"
+            / "configs"
+            / "config.d"
+            / f"keeper_config_keeper{i}.xml",
+        ]:
+            if p.exists():
+                files.append(str(p))
+
+    # Print debug tails
+    tail_cmds = []
+    for i in range(1, 4):
+        err = inst / f"keeper{i}" / "logs" / "clickhouse-server.err.log"
+        log = inst / f"keeper{i}" / "logs" / "clickhouse-server.log"
+        conf = (
+            inst
+            / f"keeper{i}"
+            / "configs"
+            / "config.d"
+            / f"keeper_config_keeper{i}.xml"
         )
-        cmp_txt = f"{temp_dir}/keeper_compare_summary.txt"
-        rows = []
-        try:
-            if os.path.exists(sidecar_path):
-                with open(sidecar_path, "r", encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        try:
-                            obj = json.loads(line)
-                        except Exception:
-                            continue
-                        rows.append(obj)
-        except Exception:
-            rows = []
-        comp = {}
-        for r in rows:
-            try:
-                if (r.get("stage") != "summary") or (r.get("source") != "bench"):
-                    continue
-                scen = str(r.get("scenario") or "")
-                b = str(r.get("backend") or "")
-                nm = str(r.get("name") or "")
-                val = float(r.get("value")) if r.get("value") is not None else None
-                if val is None:
-                    continue
-                comp.setdefault(scen, {}).setdefault(b, {})[nm] = val
-            except Exception:
-                continue
-        lines = []
-        for scen, backs in sorted(comp.items()):
-            d = backs.get("default", {})
-            rk = backs.get("rocks", {})
-            if not d or not rk:
-                continue
-
-            def _fmt(x):
-                try:
-                    return f"{float(x):.3f}"
-                except Exception:
-                    return str(x)
-
-            lines.append(f"[scenario] {scen}")
-            for key in ("ops", "rps", "errors", "p50_ms", "p95_ms", "p99_ms"):
-                if key in d or key in rk:
-                    vd = d.get(key, float("nan"))
-                    vr = rk.get(key, float("nan"))
-                    ratio = (
-                        (vr / vd)
-                        if (
-                            isinstance(vd, (int, float)) and vd not in (0, float("nan"))
-                        )
-                        else float("nan")
-                    )
-                    lines.append(
-                        f"  {key}: default={_fmt(vd)} rocks={_fmt(vr)} ratio(rocks/default)={_fmt(ratio)}"
-                    )
-            lines.append("")
-        try:
-            with open(cmp_txt, "w", encoding="utf-8") as f:
-                f.write(
-                    "\n".join(lines)
-                    if lines
-                    else "No comparable summary metrics found for rocks vs default"
-                )
-        except Exception:
-            cmp_txt = None
-        if cmp_txt and os.path.exists(cmp_txt):
-            files_to_attach.append(str(cmp_txt))
-            results.append(
-                Result.from_commands_run(
-                    name="Keeper Rocks vs Default comparison (bench summary)",
-                    command=[
-                        f"bash -lc \"echo '==== rocks vs default summary ===='; sed -n '1,200p' '{cmp_txt}'\""
-                    ],
-                )
+        if conf.exists():
+            tail_cmds.append(
+                f"echo '==== keeper{i} config ====' && sed -n '1,120p' '{conf}'"
             )
-    except Exception:
-        pass
-    # Avoid pytest collecting generated _instances-* dirs which may be non-readable
-    try:
-        addopts = env.get("PYTEST_ADDOPTS", "").strip()
-        fh_to = str(max(600, min(timeout_val - 60, 1800)))
-        extra_opts = [
-            "--ignore-glob=tests/stress/keeper/tests/_instances-*",
-            "-o",
-            f"faulthandler_timeout={fh_to}",
-        ]
-        for opt in [" ".join(extra_opts)]:
-            if opt not in addopts:
-                addopts = (addopts + " " + opt).strip()
-        env["PYTEST_ADDOPTS"] = addopts
-    except Exception:
-        pass
+        tail_cmds.append(
+            f"echo '==== keeper{i} err ====' && tail -n 400 '{err}' || true"
+        )
+        tail_cmds.append(
+            f"echo '==== keeper{i} log ====' && tail -n 400 '{log}' || true"
+        )
 
-    # Quick preflight to aid debugging in CI artifacts
+    tail_cmds.extend(
+        [
+            "echo '==== docker ps ====' && docker ps -a --format '{{.Names}}\t{{.Status}}' | sed -n '1,200p'",
+            "for n in $(docker ps --format '{{.Names}}' | grep -E 'keeper[0-9]+' || true); do echo '==== docker logs' $n '===='; docker logs --tail 400 $n || true; done",
+        ]
+    )
+
+    if tail_cmds:
+        results.append(
+            Result.from_commands_run(name="Keeper debug tails", command=tail_cmds)
+        )
+
+    return files, results
+
+
+def start_keepalive():
+    """Start keepalive process. Returns process or None."""
+    try:
+        hb = max(10, env_int("CI_HEARTBEAT_SEC", 60))
+        cmd = f"bash -lc 'while true; do echo [keeper-keepalive] $(date -u +%Y-%m-%dT%H:%M:%SZ); sleep {hb}; done'"
+        return subprocess.Popen(cmd, shell=True)
+    except Exception:
+        return None
+
+
+def stop_keepalive(proc):
+    """Stop keepalive process."""
+    if not proc or proc.poll() is not None:
+        return
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────────────────────────
+def main():
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--test", nargs="+")
+    parser.add_argument("--keeper-include-ids")
+    parser.add_argument("--faults")
+    parser.add_argument("--duration", type=int)
+    parser.add_argument("--param")
+    args, _ = parser.parse_known_args()
+
+    load_praktika_env()
+    set_default_env()
+    apply_cli_params(args)
+
+    stop_watch = Utils.Stopwatch()
+    results = []
+    files_to_attach = []
+
+    # Docker setup
+    if not setup_docker():
+        results.append(
+            Result.from_commands_run(
+                name="Docker startup failed",
+                command=[
+                    "ps ax | grep dockerd | grep -v grep || true",
+                    "tail -n 200 ./ci/tmp/docker-in-docker.log || true",
+                    "df -h || true",
+                ],
+            )
+        )
+        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+        return
+
+    # Preflight
+    results.append(
+        Result.from_commands_run(name="Disk space preflight", command=["df -h || true"])
+    )
     results.append(
         Result.from_commands_run(
-            name="Binary preflight",
+            name="Docker prune",
             command=[
-                "which clickhouse || true",
-                "clickhouse --version || true",
-                f"ls -l {server_bin_for_mount} || true",
+                "docker system prune -af --volumes || true",
+                "docker builder prune -af || true",
+                "docker network prune -f || true",
             ],
         )
     )
 
-    try:
-        per_test = timeout_val
-        pytest_proc_timeout = max(3600, min(10200, max(9000, per_test * 4)))
-    except Exception:
-        pytest_proc_timeout = 9000
-    pytest_log_file = f"{temp_dir}/pytest_stdout.log"
-    # Log the resolved execution context for transparency
-    try:
-        results.append(
-            Result.from_commands_run(
-                name="Keeper run context",
-                command=[
-                    "bash -lc \"echo 'resolved_xdist_workers="
-                    + xdist_workers
-                    + "'; echo 'KEEPER_MATRIX_BACKENDS="
-                    + (env.get("KEEPER_MATRIX_BACKENDS", ""))
-                    + "'\"",
-                ],
-            )
+    # Install Python deps
+    results.append(
+        Result.from_commands_run(
+            name="Install Keeper Python deps",
+            command="PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir -r tests/stress/keeper/requirements.txt pytest-reportlog",
         )
-    except Exception:
-        pass
-    # Emit periodic keepalive to avoid runner inactivity disconnects during long, quiet phases
-    keepalive_proc = None
-    try:
-        hb = int(os.environ.get("CI_HEARTBEAT_SEC", "60") or "60")
-        hb = 60 if hb < 10 else hb
-        keepalive_cmd = (
-            "bash -lc 'while true; do echo "
-            + "[keeper-keepalive] $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            + "; sleep "
-            + str(hb)
-            + "; done'"
-        )
-        keepalive_proc = subprocess.Popen(keepalive_cmd, shell=True)
-    except Exception:
-        keepalive_proc = None
+    )
+    if not results[-1].is_ok():
+        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+        return
 
-    # Single pytest invocation; tests parameterize across backends via KEEPER_MATRIX_BACKENDS
+    # ClickHouse binary
+    ch_path, ch_results = get_clickhouse_binary()
+    results.extend(ch_results)
+    if ch_results and not ch_results[-1].is_ok():
+        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+        return
+
+    results.append(install_clickhouse_binary(ch_path))
+    if not results[-1].is_ok():
+        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+        return
+    ch_path = "/usr/local/bin/clickhouse"
+
+    # Build pytest command and env
+    cmd, timeout_val, xdist_workers = build_pytest_command(args)
+    env = build_pytest_env(ch_path, timeout_val)
+
+    # Add commit SHA to command if available
+    if env.get("COMMIT_SHA") and "--commit-sha=" not in cmd:
+        cmd = f"{cmd} --commit-sha={env['COMMIT_SHA']}"
+
+    # Metrics sidecar preflight
+    sidecar = env["KEEPER_METRICS_FILE"]
+    Path(os.path.dirname(sidecar)).mkdir(parents=True, exist_ok=True)
+    Path(sidecar).touch()
+
+    # Preflight info
+    results.append(
+        Result.from_commands_run(
+            name="Preflight",
+            command=[
+                "clickhouse --version || true",
+                f"echo 'xdist_workers={xdist_workers} backends={env.get('KEEPER_MATRIX_BACKENDS', '')}'",
+            ],
+        )
+    )
+
+    # Run pytest
+    report_file = f"{TEMP_DIR}/pytest.jsonl"
+    junit_file = f"{TEMP_DIR}/keeper_junit.xml"
+    pytest_log_file = f"{TEMP_DIR}/pytest_stdout.log"
+    pytest_timeout = max(3600, min(10200, timeout_val * 4))
+
+    keepalive = start_keepalive()
     results.append(
         Result.from_pytest_run(
             command=cmd,
-            cwd=repo_dir,
+            cwd=REPO_DIR,
             name="Keeper Stress",
             env=env,
             pytest_report_file=report_file,
             logfile=pytest_log_file,
-            timeout_seconds=pytest_proc_timeout,
+            timeout_seconds=pytest_timeout,
+        )
+    )
+    stop_keepalive(keepalive)
+    pytest_ok = results[-1].is_ok()
+
+    # Handle large report files
+    max_mb = env_int("KEEPER_ATTACH_PYTEST_JSONL_MAX_MB", 512)
+    try:
+        if (
+            os.path.exists(report_file)
+            and os.path.getsize(report_file) > max_mb * 1024 * 1024
+        ):
+            sz_gb = round(os.path.getsize(report_file) / (1024**3), 2)
+            results.append(
+                Result.from_commands_run(
+                    name=f"Skip large pytest report: {sz_gb} GiB", command=["true"]
+                )
+            )
+    except Exception:
+        pass
+
+    # Fix artifact permissions
+    results.append(
+        Result.from_commands_run(
+            name="Fix permissions",
+            command=[
+                f"chmod -R a+rX {REPO_DIR}/tests/stress/keeper/tests/_instances-* || true"
+            ],
         )
     )
 
-    # Avoid uploading extremely large jsonl report to S3: detach if it exceeds threshold (default 512MB)
-    try:
-        max_mb = int(
-            os.environ.get("KEEPER_ATTACH_PYTEST_JSONL_MAX_MB", "512") or "512"
-        )
-    except Exception:
-        max_mb = 512
-    try:
-        size_bytes = os.path.getsize(report_file) if os.path.exists(report_file) else 0
-        if size_bytes > max_mb * 1024 * 1024:
-            try:
-                if results and isinstance(results[-1], Result):
-                    new_files = []
-                    if os.path.exists(pytest_log_file):
-                        new_files.append(pytest_log_file)
-                    # replace nested pytest result attachments with smaller stdout log only
-                    results[-1].files = new_files
-            except Exception:
-                pass
-            try:
-                sz_gb = round(size_bytes / (1024**3), 2)
-                results.append(
-                    Result.from_commands_run(
-                        name=f"Trim pytest report attachment: {sz_gb} GiB > {max_mb} MB (skipped)",
-                        command=["true"],
-                    )
-                )
-            except Exception:
-                pass
-    except Exception:
-        pass
+    # Attach files
+    for p in [pytest_log_file, junit_file]:
+        if Path(p).exists():
+            files_to_attach.append(str(p))
+    # Skip large report file
+    if Path(report_file).exists():
+        try:
+            if os.path.getsize(report_file) <= max_mb * 1024 * 1024:
+                files_to_attach.append(report_file)
+        except Exception:
+            files_to_attach.append(report_file)
 
-    # Stop keepalive once pytest completes
-    try:
-        if keepalive_proc and keepalive_proc.poll() is None:
-            keepalive_proc.terminate()
-            try:
-                keepalive_proc.wait(timeout=5)
-            except Exception:
-                keepalive_proc.kill()
-    except Exception:
-        pass
-    pytest_result_ok = results[-1].is_ok()
-    # Best-effort: ensure keeper artifacts are world-readable for attachment/triage
-    try:
+    # Metrics sidecar
+    if Path(sidecar).exists():
+        files_to_attach.append(sidecar)
         results.append(
             Result.from_commands_run(
-                name="Fix permissions for keeper artifacts",
-                command=[
-                    f"chmod -R a+rX {repo_dir}/tests/stress/keeper/tests/_instances-* || true",
-                ],
+                name="Keeper Metrics preview",
+                command=[f"wc -l '{sidecar}'", f"sed -n '1,100p' '{sidecar}'"],
             )
         )
-    except Exception:
-        pass
-    try:
-        # Skip attaching gigantic report jsonl to artifacts to prevent multi-GB uploads
-        try:
-            max_mb = int(
-                os.environ.get("KEEPER_ATTACH_PYTEST_JSONL_MAX_MB", "512") or "512"
-            )
-        except Exception:
-            max_mb = 512
-        for p in [pytest_log_file, report_file, junit_file]:
-            try:
-                if Path(p).exists():
-                    if p == report_file:
-                        sz = os.path.getsize(p)
-                        if sz > max_mb * 1024 * 1024:
-                            # attach note instead of the huge file
-                            try:
-                                sz_gb = round(sz / (1024**3), 2)
-                                results.append(
-                                    Result.from_commands_run(
-                                        name=f"Skip attaching pytest.jsonl: {sz_gb} GiB > {max_mb} MB",
-                                        command=["true"],
-                                    )
-                                )
-                            except Exception:
-                                pass
-                            continue
-                    files_to_attach.append(str(p))
-            except Exception:
-                pass
-    except Exception:
-        pass
-    # Metrics ingestion is handled by praktika post-run; attach sidecar preview only
-    try:
-        sidecar_path = env.get(
-            "KEEPER_METRICS_FILE", f"{temp_dir}/keeper_metrics.jsonl"
-        )
-        extracted_rows = 0
-        try:
-            if Path(sidecar_path).exists():
-                with open(sidecar_path, "r", encoding="utf-8", errors="ignore") as f:
-                    for _ in f:
-                        extracted_rows += 1
-        except Exception:
-            extracted_rows = 0
-        try:
-            results.append(
-                Result.from_commands_run(
-                    name=f"Keeper Metrics Extract (sidecar): extracted={extracted_rows}",
-                    command=["true"],
-                )
-            )
-        except Exception:
-            pass
-        try:
-            if Path(sidecar_path).exists():
-                files_to_attach.append(str(sidecar_path))
-                results.append(
-                    Result.from_commands_run(
-                        name="Keeper Metrics (sidecar) preview",
-                        command=(
-                            "bash -lc \"echo '==== Keeper metrics (sidecar) preview ===='; "
-                            f"sed -n '1,200p' '{sidecar_path}'\""
-                        ),
-                    )
-                )
-        except Exception:
-            pass
-    except Exception:
-        pass
-    try:
-        tests = failures = errors = skipped = 0
-        summary_txt = None
-        try:
-            p = Path(junit_file)
-            if p.exists():
-                root = ET.parse(str(p)).getroot()
-                suites = []
-                if root.tag == "testsuite":
-                    suites = [root]
-                else:
-                    suites = list(root.findall("testsuite"))
-                for ts in suites:
-                    tests += int(ts.attrib.get("tests", 0) or 0)
-                    failures += int(ts.attrib.get("failures", 0) or 0)
-                    errors += int(ts.attrib.get("errors", 0) or 0)
-                    skipped += int(ts.attrib.get("skipped", 0) or 0)
-        except Exception:
-            pass
-        passed = max(0, tests - failures - errors - skipped)
-        try:
-            summary_txt = f"{temp_dir}/keeper_summary.txt"
-            with open(summary_txt, "w", encoding="utf-8") as f:
-                f.write(
-                    f"Passed: {passed}, Failed: {failures}, Skipped: {skipped}, Errors: {errors}, Total: {tests}\n"
-                )
-        except Exception:
-            summary_txt = None
+
+    # Comparison summary
+    cmp_path, _ = generate_comparison_summary(sidecar)
+    if cmp_path and os.path.exists(cmp_path):
+        files_to_attach.append(cmp_path)
         results.append(
             Result.from_commands_run(
-                name=f"Keeper Test Summary: Passed {passed}, Failed {failures}, Skipped {skipped}, Errors {errors}, Total {tests}",
-                command=["true"],
+                name="Rocks vs Default", command=[f"cat '{cmp_path}'"]
             )
         )
-    except Exception:
-        pass
-    # CI-agnostic: no direct CIDB verification here; praktika handles reporting
-    # Collect debug artifacts on failure
-    try:
-        if "summary_txt" in locals() and summary_txt:
-            sp = Path(summary_txt)
-            if sp.exists():
-                files_to_attach.append(str(sp))
-    except Exception:
-        pass
-    try:
-        if not pytest_result_ok:
-            base = Path(repo_dir) / "tests/stress/keeper/tests"
-            inst_dirs = sorted(
-                base.glob("_instances-*"),
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
-            if inst_dirs:
-                inst = inst_dirs[0]
-                maybe = [
-                    inst / "docker.log",
-                ]
-                for i in range(1, 6):
-                    maybe.append(inst / f"keeper{i}" / "docker-compose.yml")
-                    maybe.append(inst / f"keeper{i}" / "logs" / "clickhouse-server.log")
-                    maybe.append(
-                        inst / f"keeper{i}" / "logs" / "clickhouse-server.err.log"
-                    )
-                # attach emitted keeper config fragments (per node)
-                for i in range(1, 6):
-                    maybe.append(
-                        inst
-                        / f"keeper{i}"
-                        / "configs"
-                        / "config.d"
-                        / f"keeper_config_keeper{i}.xml"
-                    )
-                for p in maybe:
-                    try:
-                        if p.exists():
-                            files_to_attach.append(str(p))
-                    except Exception:
-                        pass
-                # Print concise tails directly to job output for quick triage
-                tail_cmds = []
-                for i in range(1, 4):
-                    err = inst / f"keeper{i}" / "logs" / "clickhouse-server.err.log"
-                    log = inst / f"keeper{i}" / "logs" / "clickhouse-server.log"
-                    conf = (
-                        inst
-                        / f"keeper{i}"
-                        / "configs"
-                        / "config.d"
-                        / f"keeper_config_keeper{i}.xml"
-                    )
-                    if conf:
-                        tail_cmds.append(
-                            f"echo '==== keeper{i} config ====' && sed -n '1,120p' '{conf}'"
-                        )
-                    tail_cmds.append(
-                        f"echo '==== keeper{i} err ====' && tail -n 400 '{err}' || true"
-                    )
-                    tail_cmds.append(
-                        f"echo '==== keeper{i} log ====' && tail -n 400 '{log}' || true"
-                    )
-                # docker inventory and service logs (best-effort)
-                tail_cmds.append(
-                    "echo '==== docker ps (keepers) ====' && docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' | sed -n '1,200p'"
-                )
-                tail_cmds.append(
-                    "for n in $(docker ps --format '{{.Names}}' | grep -E 'keeper[0-9]+' || true); do echo '==== docker logs' $n '===='; docker logs --tail 400 $n || true; done"
-                )
-                if tail_cmds:
-                    results.append(
-                        Result.from_commands_run(
-                            name="Keeper debug tails", command=tail_cmds
-                        )
-                    )
-    except Exception:
-        pass
 
-    # Also attach docker-in-docker logs if present
-    try:
-        dind_log = Path("./ci/tmp/docker-in-docker.log")
-        if dind_log.exists():
-            files_to_attach.append(str(dind_log))
-    except Exception:
-        pass
+    # Test summary
+    tests, passed, failures, errors, skipped = parse_junit_summary(junit_file)
+    results.append(
+        Result.from_commands_run(
+            name=f"Summary: {passed} passed, {failures} failed, {skipped} skipped, {errors} errors (total {tests})",
+            command=["true"],
+        )
+    )
 
-    # Post-run docker prune to free space for subsequent jobs
+    # Failure artifacts
+    fail_files, fail_results = collect_failure_artifacts(pytest_ok)
+    files_to_attach.extend(fail_files)
+    results.extend(fail_results)
+
+    # Docker-in-docker log
+    dind_log = Path("./ci/tmp/docker-in-docker.log")
+    if dind_log.exists():
+        files_to_attach.append(str(dind_log))
+
+    # Post-clean
     results.append(
         Result.from_commands_run(
             name="Docker post-clean",
             command=[
                 "docker system prune -af --volumes || true",
                 "docker network prune -f || true",
-                "docker container prune -f || true",
             ],
         )
     )
-    # Publish aggregated job result (with nested pytest results)
+
     Result.create_from(
         results=results, stopwatch=stop_watch, files=files_to_attach
     ).complete_job()
@@ -843,21 +795,20 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
+        err_txt = f"{e}\n{traceback.format_exc()}"
+        os.makedirs("./ci/tmp", exist_ok=True)
+        err_path = "./ci/tmp/keeper_job_fatal_error.txt"
         try:
-            err_txt = f"{e}\n{traceback.format_exc()}"
-            tmp_dir = "./ci/tmp"
-            os.makedirs(tmp_dir, exist_ok=True)
-            err_path = f"{tmp_dir}/keeper_job_fatal_error.txt"
             with open(err_path, "w", encoding="utf-8") as f:
                 f.write(err_txt)
-            Result.create_from(
-                results=[
-                    Result.from_commands_run(
-                        name="Keeper Stress fatal error", command=["true"]
-                    )
-                ],
-                stopwatch=Utils.Stopwatch(),
-                files=[err_path],
-            ).complete_job()
         except Exception:
-            raise
+            pass
+        Result.create_from(
+            results=[
+                Result.from_commands_run(
+                    name="Keeper Stress fatal error", command=["true"]
+                )
+            ],
+            stopwatch=Utils.Stopwatch(),
+            files=[err_path] if os.path.exists(err_path) else [],
+        ).complete_job()

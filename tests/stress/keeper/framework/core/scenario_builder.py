@@ -9,23 +9,24 @@ class ScenarioBuilder:
         self._faults = []
         self._gates = []
 
+    def _add_step(self, collection, step):
+        if step:
+            collection.append(step)
+
     def set_workload_config(self, path, duration):
         self._workload = {"config": path, "duration": int(duration)}
 
     def pre(self, step):
-        if step:
-            self._pre.append(step)
+        self._add_step(self._pre, step)
 
     def fault(self, step):
-        if step:
-            self._faults.append(step)
+        self._add_step(self._faults, step)
 
     def during(self, kind, on, steps):
         self._faults.append({"kind": str(kind), "on": on, "steps": list(steps or [])})
 
     def gate(self, gate):
-        if gate:
-            self._gates.append(gate)
+        self._add_step(self._gates, gate)
 
     def build(self):
         out = {

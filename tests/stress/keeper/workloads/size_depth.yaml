@@ -3,3 +3,59 @@ clients: 32
 sweep:
   sizes: [0, 64, 256, 1024, 4096, 65536, 1048576]
   depths: [1, 5, 20, 50, 100]
+
+presets:
+  write_heavy:
+    name: write_heavy
+    concurrency: 64
+    generator:
+      requests:
+        create:
+          path: /e2e/write
+          name_length: 10
+          data: { random_string: { size: 512 } }
+          weight: 50
+        set:
+          path: /e2e/write
+          data: { random_string: { size: 512 } }
+          weight: 45
+        get:
+          path: { children_of: /e2e/write }
+          weight: 5
+
+  safe_mix:
+    name: safe_mix
+    concurrency: 16
+    generator:
+      requests:
+        create:
+          path: /e2e/prod/create
+          name_length: 10
+          data: { random_string: { size: 64 } }
+          weight: 50
+        set:
+          path: /e2e/prod/set
+          data: { random_string: { size: 128 } }
+          weight: 30
+        get:
+          path: { children_of: / }
+          weight: 20
+
+  create_heavy:
+    name: create_heavy
+    concurrency: 64
+    generator:
+      requests:
+        create:
+          path: /bench
+          name_length: 12
+          weight: 100
+        set:
+          path: /bench
+          data: { random_string: { size: 128 } }
+          weight: 10
+
+  multi_op:
+    name: multi_op
+    concurrency: 64
+    multi: { depth: 8, write_ratio: 0.8 }

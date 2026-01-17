@@ -1,16 +1,62 @@
 name: prod_mix
-concurrency: 64
+concurrency: 20
+report_delay: 0.0
+continue_on_error: true
+
+connections:
+  operation_timeout_ms: 3000
+  connection_timeout_ms: 40000
+
+setup:
+  node:
+    name: e2e
+    node:
+      name: prod
+      node:
+      - name: hot
+        data:
+          random_string:
+            size:
+              min_value: 128
+              max_value: 1024
+      - name: pool
+        node:
+        - repeat: 64
+          name:
+            random_string:
+              size: 12
+          data:
+            random_string:
+              size:
+                min_value: 64
+                max_value: 512
+      - name: churn
+
 generator:
   requests:
-    create:
-      path: /e2e/prod/create
-      name_length: 10
-      data: { random_string: { size: 128 } }
-      weight: 20
-    set:
-      path: /e2e/prod/set
-      data: { random_string: { size: 256 } }
-      weight: 35
     get:
-      path: { children_of: /e2e/prod }
-      weight: 40
+      path: /e2e/prod/hot
+      weight: 50
+
+    set:
+      path: /e2e/prod/hot
+      data:
+        random_string:
+          size:
+            min_value: 32
+            max_value: 4096
+      weight: 20
+
+    create:
+      path:
+      - /e2e/prod/churn
+      name_length:
+        min_value: 8
+        max_value: 16
+      data:
+        random_string:
+          size:
+            min_value: 0
+            max_value: 2048
+      remove_factor: 0.8
+      weight: 30
