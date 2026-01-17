@@ -753,6 +753,9 @@ For Avro/AvroConfluent format: when field is not found in schema use default val
     DECLARE(Bool, input_format_avro_null_as_default, false, R"(
 For Avro/AvroConfluent format: insert default in case of null and non Nullable column
 )", 0) \
+    DECLARE(Bool, input_format_avro_parallel_parsing, false, R"(
+Enable parallel parsing of Avro format data. Experimental.
+)", 0) \
     DECLARE(UInt64, format_binary_max_string_size, 1_GiB, R"(
 The maximum allowed size for String in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \

@@ -100,6 +100,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     FormatSettings format_settings;
 
     format_settings.avro.allow_missing_fields = settings[Setting::input_format_avro_allow_missing_fields];
+    format_settings.avro.parallel_parsing = settings[Setting::input_format_avro_parallel_parsing];
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
     format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];
     format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
