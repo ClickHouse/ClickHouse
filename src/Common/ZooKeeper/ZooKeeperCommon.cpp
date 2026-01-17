@@ -1404,7 +1404,7 @@ void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
 }
 
 
-void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t & idx) const
+size_t ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     auto & elem =  elems[idx];
     assert(!elem.xid || elem.xid == xid);
@@ -1418,64 +1418,74 @@ void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t & idx) const
 
     elem.zxid = zxid;
     elem.error = static_cast<Int32>(error);
+
+    return idx + 1;
 }
 
-void ZooKeeperWatchResponse::fillLogElements(LogElements & elems, size_t & idx) const
+size_t ZooKeeperWatchResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.watch_type = type;
     elem.watch_state = state;
     elem.path = path;
+    return idx + 1;
 }
 
-void ZooKeeperCreateResponse::fillLogElements(LogElements & elems, size_t & idx) const
+size_t ZooKeeperCreateResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.path_created = path_created;
+    return idx + 1;
 }
 
-void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t & idx) const
+size_t ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) const
 {
     Coordination::ZooKeeperCreateResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.path_created = path_created;
+    return idx + 1;
 }
 
-void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t & idx) const
+size_t ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.stat = stat;
+    return idx + 1;
 }
 
-void ZooKeeperGetResponse::fillLogElements(LogElements & elems, size_t & idx) const
+size_t ZooKeeperGetResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.data = data;
     elem.stat = stat;
+    return idx + 1;
 }
 
-void ZooKeeperSetResponse::fillLogElements(LogElements & elems, size_t & idx) const
+size_t ZooKeeperSetResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.stat = stat;
+    return idx + 1;
 }
 
-void ZooKeeperListResponse::fillLogElements(LogElements & elems, size_t & idx) const
+size_t ZooKeeperListResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
     auto & elem =  elems[idx];
     elem.stat = stat;
     elem.children = names;
+    return idx + 1;
 }
 
-void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t & idx) const
+size_t ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
-    ZooKeeperResponse::fillLogElements(elems, idx);
+    idx = ZooKeeperResponse::fillLogElements(elems, idx);
+
     for (const auto & response : responses)
     {
         auto & resp = dynamic_cast<ZooKeeperResponse &>(*response);
@@ -1483,8 +1493,10 @@ void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t & idx) 
         assert(!resp.zxid || resp.zxid == zxid);
         resp.xid = xid;
         resp.zxid = zxid;
-        resp.fillLogElements(elems, ++idx);
+        idx = resp.fillLogElements(elems, idx);
     }
+
+    return idx;
 }
 
 

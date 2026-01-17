@@ -31,7 +31,7 @@ struct ZooKeeperResponse : virtual Response
     virtual size_t sizeImpl() const = 0;
     virtual void write(WriteBuffer & out, bool use_xid_64) const;
     virtual OpNum getOpNum() const = 0;
-    virtual void fillLogElements(LogElements & elems, size_t & idx) const;
+    virtual size_t fillLogElements(LogElements & elems, size_t idx) const;
     virtual int32_t tryGetOpNum() const { return static_cast<int32_t>(getOpNum()); }
 
     /// Timestamp of when the response was enqueued for sending by the keeper server
@@ -171,7 +171,7 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
 
     OpNum getOpNum() const override;
 
-    void fillLogElements(LogElements & elems, size_t & idx) const override;
+    size_t fillLogElements(LogElements & elems, size_t idx) const override;
     int32_t tryGetOpNum() const override { return 0; }
 };
 
@@ -267,7 +267,7 @@ struct ZooKeeperCreateResponse : CreateResponse, ZooKeeperResponse
 
     size_t bytesSize() const override { return CreateResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
-    void fillLogElements(LogElements & elems, size_t & idx) const override;
+    size_t fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperCreate2Response : ZooKeeperCreateResponse
@@ -282,7 +282,7 @@ struct ZooKeeperCreate2Response : ZooKeeperCreateResponse
 
     size_t bytesSize() const override { return ZooKeeperCreateResponse::bytesSize() + sizeof(zstat); }
 
-    void fillLogElements(LogElements & elems, size_t & idx) const override;
+    size_t fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperCreateIfNotExistsResponse : ZooKeeperCreateResponse
@@ -373,7 +373,7 @@ struct ZooKeeperExistsResponse final : ExistsResponse, ZooKeeperResponse
 
     size_t bytesSize() const override { return ExistsResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
-    void fillLogElements(LogElements & elems, size_t & idx) const override;
+    size_t fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperGetRequest final : GetRequest, ZooKeeperRequest
@@ -402,7 +402,7 @@ struct ZooKeeperGetResponse final : GetResponse, ZooKeeperResponse
 
     size_t bytesSize() const override { return GetResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
-    void fillLogElements(LogElements & elems, size_t & idx) const override;
+    size_t fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
@@ -432,7 +432,7 @@ struct ZooKeeperSetResponse final : SetResponse, ZooKeeperResponse
 
     size_t bytesSize() const override { return SetResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
-    void fillLogElements(LogElements & elems, size_t & idx) const override;
+    size_t fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperListRequest : ListRequest, ZooKeeperRequest
@@ -479,7 +479,7 @@ struct ZooKeeperListResponse : ListResponse, ZooKeeperResponse
 
     size_t bytesSize() const override { return ListResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
-    void fillLogElements(LogElements & elems, size_t & idx) const override;
+    size_t fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperSimpleListResponse final : ZooKeeperListResponse
@@ -767,7 +767,7 @@ struct ZooKeeperMultiResponse : MultiResponse, ZooKeeperResponse
 
     size_t bytesSize() const override { return MultiResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 
-    void fillLogElements(LogElements & elems, size_t & idx) const override;
+    size_t fillLogElements(LogElements & elems, size_t idx) const override;
 };
 
 struct ZooKeeperMultiWriteResponse final : public ZooKeeperMultiResponse
