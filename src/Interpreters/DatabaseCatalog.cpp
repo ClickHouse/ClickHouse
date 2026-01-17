@@ -1050,7 +1050,7 @@ DatabaseAndTable DatabaseCatalog::tryGetTableWithDatabase(const UUID & uuid, Con
     if (it == map_part.map.end())
         return {};
 
-    if (checkDatabaseOptions(it->second.first, options, context_))
+    if (!it->second.first || checkDatabaseOptions(it->second.first, options, context_))
         return it->second;
 
     return {};
