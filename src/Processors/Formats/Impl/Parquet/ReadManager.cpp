@@ -6,6 +6,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/logger_useful.h>
 
 #include <mutex>
 #include <shared_mutex>
@@ -29,12 +30,6 @@ namespace ProfileEvents
 
 namespace DB::Parquet
 {
-
-static LoggerPtr getLogger()
-{
-    static LoggerPtr logger = getLogger("ParquetReadManager");
-    return logger;
-}
 
 void AtomicBitSet::resize(size_t bits)
 {
@@ -325,7 +320,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
     RowSubgroup & row_subgroup = row_group.subgroups[row_subgroup_idx];
     std::optional<size_t> advanced_ptr;
 
-    LOG_DEBUG(getLogger(), "finishRowSubgroupStage: rg={} sg={} stage={} step={} rows_pass={} rows_total={}",
+    LOG_DEBUG(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} stage={} step={} rows_pass={} rows_total={}",
               row_group_idx, row_subgroup_idx, magic_enum::enum_name(stage), step_idx,
               row_subgroup.filter.rows_pass, row_subgroup.filter.rows_total);
 
@@ -377,7 +372,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
                 else
                 {
                     /// Subgroup was filtered out, skip to next subgroup.
-                    LOG_DEBUG(getLogger(), "finishRowSubgroupStage: rg={} sg={} filtered out on step={}, advancing next_subgroup_for_step[{}]",
+                    LOG_DEBUG(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} filtered out on step={}, advancing next_subgroup_for_step[{}]",
                               row_group_idx, row_subgroup_idx, step_idx, step_idx);
                     size_t prev = row_group.next_subgroup_for_step[step_idx].exchange(row_subgroup_idx + 1);
                     chassert(prev == row_subgroup_idx);
@@ -392,7 +387,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             else if (step_idx == 0)
             {
                 /// Main step finished. Move to Deliver.
-                LOG_DEBUG(getLogger(), "finishRowSubgroupStage: rg={} sg={} main step finished, moving to Deliver, advancing next_subgroup_for_step[0]",
+                LOG_DEBUG(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} main step finished, moving to Deliver, advancing next_subgroup_for_step[0]",
                           row_group_idx, row_subgroup_idx);
                 row_subgroup.stage.store(ReadStage::Deliver, std::memory_order::relaxed);
 
@@ -400,14 +395,14 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
                 {
                     std::lock_guard lock(delivery_mutex);
                     delivery_queue.push(Task {.stage = ReadStage::Deliver, .row_group_idx = row_group_idx, .row_subgroup_idx = row_subgroup_idx});
-                    LOG_DEBUG(getLogger(), "finishRowSubgroupStage: rg={} sg={} added to delivery_queue, size={}",
+                    LOG_DEBUG(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} added to delivery_queue, size={}",
                               row_group_idx, row_subgroup_idx, delivery_queue.size());
                 }
 
                 size_t prev = row_group.next_subgroup_for_step[step_idx].exchange(row_subgroup_idx + 1);
                 chassert(prev == row_subgroup_idx);
                 advanced_ptr = prev + 1;
-                LOG_DEBUG(getLogger(), "finishRowSubgroupStage: rg={} sg={} advanced next_subgroup_for_step[0] {} -> {}",
+                LOG_DEBUG(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} advanced next_subgroup_for_step[0] {} -> {}",
                           row_group_idx, row_subgroup_idx, prev, prev + 1);
                 delivery_cv.notify_one();
                 break;
@@ -437,7 +432,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
     /// Start reading the next row subgroup if ready.
     /// Skip subgroups that were fully filtered out by prewhere.
     size_t main_ptr = row_group.next_subgroup_for_step[0].load();
-    LOG_DEBUG(getLogger(), "finishRowSubgroupStage: rg={} starting next subgroup, main_ptr={} subgroups={} delivery_ptr={}",
+    LOG_DEBUG(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} starting next subgroup, main_ptr={} subgroups={} delivery_ptr={}",
               row_group_idx, main_ptr, row_group.subgroups.size(), row_group.delivery_ptr.load());
 
     /// Start next subgroup to read
@@ -533,7 +528,7 @@ void ReadManager::advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDi
     size_t delivery_ptr = row_group.delivery_ptr.load();
     size_t initial_delivery_ptr = delivery_ptr;
 
-    LOG_DEBUG(getLogger(), "advanceDeliveryPtrIfNeeded: rg={} initial_delivery_ptr={} subgroups={} next_subgroup_for_step[0]={}",
+    LOG_DEBUG(getLogger("ParquetReadManager"), "advanceDeliveryPtrIfNeeded: rg={} initial_delivery_ptr={} subgroups={} next_subgroup_for_step[0]={}",
               row_group_idx, delivery_ptr, row_group.subgroups.size(), row_group.next_subgroup_for_step[0].load());
 
     while (delivery_ptr < row_group.subgroups.size() &&
@@ -544,13 +539,18 @@ void ReadManager::advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDi
         size_t old_delivery_ptr = delivery_ptr;
         delivery_ptr += 1;
 
-        LOG_DEBUG(getLogger(), "advanceDeliveryPtrIfNeeded: rg={} advanced delivery_ptr {} -> {}",
+        if (delivery_ptr == row_group.subgroups.size()) // only if *this thread* incremented it
+            finishRowGroupStage(row_group_idx, ReadStage::Deliver, diff);
+        else if (first_incomplete_row_group.load() == row_group_idx)
+             diff.scheduleAllStages();
+
+        LOG_DEBUG(getLogger("ParquetReadManager"), "advanceDeliveryPtrIfNeeded: rg={} advanced delivery_ptr {} -> {}",
                   row_group_idx, old_delivery_ptr, delivery_ptr);
     }
 
     if (delivery_ptr > initial_delivery_ptr)
     {
-        LOG_DEBUG(getLogger(), "advanceDeliveryPtrIfNeeded: rg={} final delivery_ptr={} next_subgroup_for_step[0]={}",
+        LOG_DEBUG(getLogger("ParquetReadManager"), "advanceDeliveryPtrIfNeeded: rg={} final delivery_ptr={} next_subgroup_for_step[0]={}",
                   row_group_idx, row_group.delivery_ptr.load(), row_group.next_subgroup_for_step[0].load());
     }
 }
@@ -614,7 +614,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
     size_t memory_usage = stage.memory_usage.load(std::memory_order_relaxed);
     size_t batches_in_progress = stage.batches_in_progress.load(std::memory_order_relaxed);
 
-    LOG_DEBUG(getLogger(), "scheduleTasksIfNeeded: stage={} memory_usage={} batches_in_progress={} limits: mem_low={} mem_high={} threads={}",
+    LOG_DEBUG(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} memory_usage={} batches_in_progress={} limits: mem_low={} mem_high={} threads={}",
               magic_enum::enum_name(stage_idx), memory_usage, batches_in_progress,
               limits.memory_low_watermark, limits.memory_high_watermark, limits.parsing_threads);
     /// Need to be careful to avoid getting deadlocked in a situation where tasks can't be scheduled
@@ -635,7 +635,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         auto row_group_maybe = stage.schedulable_row_groups.findFirst();
         if (!row_group_maybe.has_value())
         {
-            LOG_DEBUG(getLogger(), "scheduleTasksIfNeeded: stage={} no schedulable row groups",
+            LOG_DEBUG(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} no schedulable row groups",
                       magic_enum::enum_name(stage_idx));
             break;
         }
@@ -646,7 +646,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
                 batches_in_progress, tasks.size(), limits);
         bool is_privileged = is_privileged_task(row_group_idx);
 
-        LOG_DEBUG(getLogger(), "scheduleTasksIfNeeded: stage={} rg={} can_schedule={} is_privileged={}",
+        LOG_DEBUG(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} rg={} can_schedule={} is_privileged={}",
                   magic_enum::enum_name(stage_idx), row_group_idx, can_schedule, is_privileged);
 
         if (!can_schedule && !is_privileged)
@@ -677,7 +677,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
 
     if (!tasks.empty())
     {
-        LOG_DEBUG(getLogger(), "scheduleTasksIfNeeded: stage={} scheduling {} tasks in {} batches",
+        LOG_DEBUG(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} scheduling {} tasks in {} batches",
                   magic_enum::enum_name(stage_idx), tasks.size(), std::min(tasks.size(), limits.parsing_threads) + 1);
 
         /// Group tiny tasks into batches to reduce scheduling overhead.
@@ -717,7 +717,7 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
     }
     else
     {
-        LOG_DEBUG(getLogger(), "scheduleTasksIfNeeded: stage={} no tasks to schedule",
+        LOG_DEBUG(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: stage={} no tasks to schedule",
                   magic_enum::enum_name(stage_idx));
     }
 }
@@ -1057,14 +1057,14 @@ ReadManager::ReadResult ReadManager::read()
                 (!reader.options.format.parquet.preserve_order ||
                  delivery_queue.top().row_group_idx == first_inc);
 
-            LOG_DEBUG(getLogger(), "read: delivery_queue.size()={} first_incomplete={} thread_pool_idle={} can_deliver={}",
+            LOG_DEBUG(getLogger("ParquetReadManager"), "read: delivery_queue.size()={} first_incomplete={} thread_pool_idle={} can_deliver={}",
                       delivery_queue.size(), first_inc, thread_pool_was_idle, can_deliver);
 
             if (can_deliver)
             {
                 task = delivery_queue.top();
                 delivery_queue.pop();
-                LOG_DEBUG(getLogger(), "read: delivering task rg={} sg={}",
+                LOG_DEBUG(getLogger("ParquetReadManager"), "read: delivering task rg={} sg={}",
                           task.row_group_idx, task.row_subgroup_idx);
                 break;
             }
@@ -1106,10 +1106,10 @@ ReadManager::ReadResult ReadManager::read()
                 /// Task scheduling code is complicated and error-prone. In particular it's easy to
                 /// have a bug where tasks stop getting scheduled under some conditions
                 /// (see is_privileged_task). So we specifically check for getting stuck.
-                LOG_DEBUG(getLogger(), "read: DEADLOCK DETECTED - thread pool idle, collecting diagnostics");
+                LOG_DEBUG(getLogger("ParquetReadManager"), "read: DEADLOCK DETECTED - thread pool idle, collecting diagnostics");
                 lock.unlock();
                 std::string diagnostics = collectDeadlockDiagnostics();
-                LOG_DEBUG(getLogger(), "read: DEADLOCK diagnostics: {}", diagnostics);
+                LOG_DEBUG(getLogger("ParquetReadManager"), "read: DEADLOCK diagnostics: {}", diagnostics);
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Deadlock in Parquet::ReadManager (thread pool).");
             }
             else
