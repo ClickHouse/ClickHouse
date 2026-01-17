@@ -182,7 +182,7 @@ struct ToDateTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
+            d = static_cast<UInt16>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
@@ -244,28 +244,28 @@ struct ToTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
+            d = static_cast<UInt16>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
-        return static_cast<Int32>(time_zone.fromDayNum(DayNum(time_zone.toTime(d))));
+        return static_cast<Int32>(time_zone.fromDayNum(DayNum(static_cast<UInt16>(time_zone.toTime(d)))));
     }
 
     static Int32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
+            d = static_cast<Int32>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (d > MAX_DATETIME_DAY_NUM) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", d);
         }
-        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(time_zone.toTime(d))));
+        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(time_zone.toTime(d)))));
     }
 
     static Int32 execute(UInt32 dt, const DateLUTImpl & time_zone)
     {
-        return static_cast<Int32>(time_zone.fromDayNum((ExtendedDayNum(time_zone.toTime(static_cast<Int32>(dt))))));
+        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(time_zone.toTime(static_cast<Int32>(dt))))));
     }
 
     static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
@@ -322,7 +322,7 @@ struct ToDateTransformFromSecondsOrDays
         /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
         if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_DAY_NUM)
             if (from > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
-                return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+                return static_cast<UInt16>(time_zone.toDayNum(std::min(static_cast<time_t>(from), MAX_DATETIME_TIMESTAMP)));
 
         return static_cast<UInt16>(from);
     }
@@ -5231,14 +5231,14 @@ private:
         const auto & new_variants = to_variant.getVariants();
         std::unordered_map<String, ColumnVariant::Discriminator> new_variant_types_to_new_global_discriminator;
         new_variant_types_to_new_global_discriminator.reserve(new_variants.size());
-        for (size_t i = 0; i != new_variants.size(); ++i)
+        for (ColumnVariant::Discriminator i = 0; i != new_variants.size(); ++i)
             new_variant_types_to_new_global_discriminator[new_variants[i]->getName()] = i;
 
         /// Create set of old variant types.
         const auto & old_variants = from_variant.getVariants();
         std::unordered_map<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
         old_variant_types_to_old_global_discriminator.reserve(old_variants.size());
-        for (size_t i = 0; i != old_variants.size(); ++i)
+        for (ColumnVariant::Discriminator i = 0; i != old_variants.size(); ++i)
             old_variant_types_to_old_global_discriminator[old_variants[i]->getName()] = i;
 
         /// Check that the set of old variants types is a subset of new variant types and collect new global discriminator for each old global discriminator.
@@ -5273,7 +5273,7 @@ private:
             new_variant_columns.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
             std::vector<ColumnVariant::Discriminator> new_local_to_global_discriminators;
             new_local_to_global_discriminators.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
-            for (size_t i = 0; i != num_old_variants; ++i)
+            for (ColumnVariant::Discriminator i = 0; i != num_old_variants; ++i)
             {
                 new_variant_columns.push_back(column_variant.getVariantPtrByLocalDiscriminator(i));
                 new_local_to_global_discriminators.push_back(old_global_discriminator_to_new.at(column_variant.globalDiscriminatorByLocal(i)));
@@ -5450,12 +5450,12 @@ private:
                     if (null_map[i])
                     {
                         discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                        filter.push_back(0);
+                        filter.push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
                         discriminators_data.push_back(variant_discr);
-                        filter.push_back(1);
+                        filter.push_back(static_cast<UInt8>(1));
                         ++variant_size_hint;
                     }
                 }
@@ -5489,12 +5489,12 @@ private:
                     if (indexes.getUInt(i) == null_index)
                     {
                         discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                        filter.push_back(0);
+                        filter.push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
                         discriminators_data.push_back(variant_discr);
-                        filter.push_back(1);
+                        filter.push_back(static_cast<UInt8>(1));
                         ++variant_size_hint;
                     }
                 }

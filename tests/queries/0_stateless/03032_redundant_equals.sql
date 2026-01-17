@@ -1,3 +1,4 @@
+-- add_minmax_index_for_numeric_columns=0: Different plan
 DROP TABLE IF EXISTS test_table;
 
 CREATE TABLE test_table
@@ -5,7 +6,7 @@ CREATE TABLE test_table
     k UInt64,
 )
 ENGINE = MergeTree
-ORDER BY k SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+ORDER BY k SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns=0;
 
 INSERT INTO test_table SELECT number FROM numbers(100000);
 

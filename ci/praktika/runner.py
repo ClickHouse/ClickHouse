@@ -106,15 +106,8 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_STATUS_DATA={
-                Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
-                    "outputs": {
-                        "data": json.dumps(
-                            {"workflow_config": dataclasses.asdict(workflow_config)}
-                        )
-                    }
-                }
-            },
+            WORKFLOW_STATUS_DATA={},
+            WORKFLOW_CONFIG=workflow_config,
         ).dump()
 
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
@@ -135,8 +128,12 @@ class Runner:
             os.environ[key] = value
             print(f"Set environment variable {key}.")
 
-        print("Read GH Environment")
-        env = _Environment.from_env()
+        if job.name == Settings.CI_CONFIG_JOB_NAME:
+            print("Read GH Environment from GH context")
+            env = _Environment.from_env()
+        else:
+            print("Read GH Environment from workflow data")
+            env = _Environment.from_workflow_data()
         env.JOB_NAME = job.name
         os.environ["JOB_NAME"] = job.name
         os.environ["CHECK_NAME"] = job.name
@@ -479,6 +476,11 @@ class Runner:
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
+        if result.is_error() and result.get_on_error_hook():
+            print(f"--- Run on_error_hook [{result.get_on_error_hook()}]")
+            # Add hook timeout once it's needed
+            Shell.check(result.get_on_error_hook(), verbose=True)
+
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
 
@@ -495,12 +497,20 @@ class Runner:
                 Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
             )
 
+        is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
+        is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
+
         # run after post hooks as they might modify workflow kv data
         job_outputs = env.JOB_KV_DATA
         print(f"Job's output: [{list(job_outputs.keys())}]")
+        if is_initial_job:
+            output = dataclasses.asdict(env)
+            output["pipeline_status"] = "success"
+        else:
+            output = job_outputs
         with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
             print(
-                f"data={json.dumps(job_outputs)}",
+                f"data={json.dumps(output)}",
                 file=f,
             )
 
@@ -630,8 +640,6 @@ class Runner:
             if result.is_ok():
                 CacheRunnerHooks.post_run(workflow, job)
 
-        is_final_job = job.name == Settings.FINISH_WORKFLOW_JOB_NAME
-        is_initial_job = job.name == Settings.CI_CONFIG_JOB_NAME
         if workflow.enable_open_issues_check:
             # should be done before HtmlRunnerHooks.post_run(workflow, job, info_errors)
             #   to upload updated job and workflow results to S3

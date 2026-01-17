@@ -94,6 +94,31 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 
+void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
+{
+    if (inserts_are_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
+
+    const auto * source_typed = typeid_cast<const ExactContainsRuntimeFilter *>(source);
+    if (!source_typed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
+
+    insert(source_typed->getValuesColumn());
+    --filters_to_merge;
+}
+
+void ExactContainsRuntimeFilter::finishInsert()
+{
+    Base::finishInsert();
+
+    if (isFull())
+    {
+        /// Some keys were dropped so we cannot filter by partial set of keys
+        setFullyDisabled();
+        releaseExactValues();
+    }
+}
+
 void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 {
     if (inserts_are_finished)
@@ -105,6 +130,13 @@ void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 
     insert(source_typed->getValuesColumn());
     --filters_to_merge;
+}
+
+bool ApproximateRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
+{
+    /// Current BloomFilter implementation relies on IColumn::getDataAt method that returns a string_view of contiguous
+    /// memory chunk containing the value
+    return data_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
 }
 
 ApproximateRuntimeFilter::ApproximateRuntimeFilter(
