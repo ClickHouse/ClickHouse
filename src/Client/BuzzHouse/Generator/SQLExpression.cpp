@@ -137,7 +137,7 @@ void StatementGenerator::addSargableColRef(RandomGenerator & rg, const SQLRelati
     ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
     ExprColumn * ecol = estc->mutable_col();
 
-    if (!rel_col.rel_name.empty())
+    if (!rel_col.rel_name.empty() && rg.nextMediumNumber() < 86)
     {
         estc->mutable_table()->set_table(rel_col.rel_name);
     }
@@ -794,7 +794,7 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
 void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, SQLFuncCall * func_call)
 {
     const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : this->deterministic_funcs_limit;
-    const bool nallow_funcs = allow_funcs && (!allow_aggr || rg.nextSmallNumber() < 8);
+    const bool nallow_funcs = allow_funcs && (!allow_aggr || rg.nextSmallNumber() < (this->inside_projection ? 3 : 7));
     const uint32_t nfuncs = static_cast<uint32_t>(
         (nallow_funcs ? funcs_size : 0)
         + (allow_aggr ? (this->allow_not_deterministic ? CHAggrs.size() : (CHAggrs.size() - this->deterministic_aggrs_limit)) : 0));
@@ -1151,7 +1151,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     const uint32_t subquery_expr = 30 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->allow_subqueries);
     const uint32_t binary_expr = 50 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->fc.max_width > (this->width + 1));
     const uint32_t array_tuple_expr = 50 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->fc.max_width > this->width);
-    const uint32_t func_expr = 150 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
+    const uint32_t func_expr = (this->inside_projection ? 300 : 150) * static_cast<uint32_t>(this->fc.max_depth > this->depth);
     const uint32_t window_func_expr = 75
         * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->levels[this->current_level].allow_window_funcs
                                 && !this->levels[this->current_level].inside_aggregate);
@@ -1357,7 +1357,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         const bool allow_aggr
             = (!this->levels[this->current_level].inside_aggregate && this->levels[this->current_level].allow_aggregates
                && (!this->levels[this->current_level].gcols.empty() || this->levels[this->current_level].global_aggregate))
-            || rg.nextSmallNumber() < 3;
+            || rg.nextSmallNumber() < (this->inside_projection ? 8 : 3);
 
         this->depth++;
         generateFuncCall(rg, true, allow_aggr, expr->mutable_comp_expr()->mutable_func_call());
