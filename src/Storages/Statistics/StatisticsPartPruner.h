@@ -6,6 +6,7 @@
 namespace DB
 {
 
+/// Part pruner based on Column Statistics, now only support MinMax
 class StatisticsPartPruner
 {
 public:

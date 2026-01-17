@@ -4,7 +4,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Common/logger_useful.h>
+#include <DataTypes/IDataType.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -12,18 +13,6 @@ namespace DB
 /// Float64 can exactly represent integers in the range [-2^53, 2^53].
 static constexpr Float64 MAX_EXACT_FLOAT64 = static_cast<Float64>(1ULL << std::numeric_limits<Float64>::digits);
 
-enum class RangeStatus : uint8_t
-{
-    Valid,    /// Valid range, use it for pruning
-    Unknown,  /// Cannot determine range, be conservative don't prune
-    Empty     /// Empty range, should prune this part
-};
-
-struct RangeWithStatus
-{
-    std::optional<Range> range;
-    RangeStatus status = RangeStatus::Unknown;
-};
 
 /// Try to convert Float64 value to target type using strict conversion.
 /// Returns the converted Field if successful, nullopt otherwise.
@@ -81,17 +70,21 @@ static bool exceedsFloat64PrecisionRange(Float64 value)
     return value >= MAX_EXACT_FLOAT64 || value <= -MAX_EXACT_FLOAT64;
 }
 
-static RangeWithStatus createRangeFromEstimate(const Estimate & est, const DataTypePtr & data_type)
+static std::optional<Range> createRangeFromEstimate(const Estimate & est, const DataTypePtr & data_type)
 {
     if (!est.estimated_min.has_value() || !est.estimated_max.has_value())
-        return {std::nullopt, RangeStatus::Unknown};
+        return std::nullopt;
 
     Float64 min_value = est.estimated_min.value();
     Float64 max_value = est.estimated_max.value();
 
-    /// If min > max, the part has all nulls, should be pruned
+    /// If min > max, the part likely has all NULL values, create a range containing only POSITIVE_INFINITY.
     if (min_value > max_value)
-        return {std::nullopt, RangeStatus::Empty};
+    {
+        chassert(min_value == std::numeric_limits<Float64>::max());
+        chassert(max_value == std::numeric_limits<Float64>::min());
+        return Range(POSITIVE_INFINITY);
+    }
 
     WhichDataType which(data_type);
     bool needs_precision_handling = which.isInt64() || which.isInt128() || which.isInt256()
@@ -115,7 +108,7 @@ static RangeWithStatus createRangeFromEstimate(const Estimate & est, const DataT
         {
             /// DateTime and IPv4 require UInt64, negative values are invalid
             if (min_value < 0 || max_value < 0)
-                return {std::nullopt, RangeStatus::Unknown};
+                return std::nullopt;
 
             min_src = Field(static_cast<UInt64>(min_value));
             max_src = Field(static_cast<UInt64>(max_value));
@@ -131,9 +124,9 @@ static RangeWithStatus createRangeFromEstimate(const Estimate & est, const DataT
         Field max_field = convertFieldToType(max_src, *data_type);
 
         if (min_field.isNull() || max_field.isNull())
-            return {std::nullopt, RangeStatus::Unknown};
+            return std::nullopt;
 
-        return {Range(min_field, true, max_field, true), RangeStatus::Valid};
+        return Range(min_field, true, max_field, true);
     }
 
     /// For types that may exceed Float64 precision, use strict conversion first
@@ -150,22 +143,22 @@ static RangeWithStatus createRangeFromEstimate(const Estimate & est, const DataT
     if (!min_field_opt.has_value() && !max_field_opt.has_value())
     {
         /// Both conversions failed, cannot determine any useful bound
-        return {std::nullopt, RangeStatus::Unknown};
+        return std::nullopt;
     }
     else if (!min_field_opt.has_value())
     {
         /// Only max is valid: range is (-inf, max]
-        return {Range::createRightBounded(max_field_opt.value(), true), RangeStatus::Valid};
+        return Range::createRightBounded(max_field_opt.value(), true);
     }
     else if (!max_field_opt.has_value())
     {
         /// Only min is valid: range is [min, +inf)
-        return {Range::createLeftBounded(min_field_opt.value(), true), RangeStatus::Valid};
+        return Range::createLeftBounded(min_field_opt.value(), true);
     }
     else
     {
         /// Both valid: range is [min, max]
-        return {Range(min_field_opt.value(), true, max_field_opt.value(), true), RangeStatus::Valid};
+        return Range(min_field_opt.value(), true, max_field_opt.value(), true);
     }
 }
 
@@ -235,25 +228,25 @@ BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates) co
         auto est_it = estimates.find(col_name);
         if (est_it == estimates.end())
         {
-            hyperrectangle.emplace_back(Range::createWholeUniverse());
+            if (isNullableOrLowCardinalityNullable(col_type))
+                hyperrectangle.emplace_back(Range::createWholeUniverse());
+            else
+                hyperrectangle.emplace_back(Range::createWholeUniverseWithoutNull());
             types.push_back(col_type);
             continue;
         }
 
-        auto [range, status] = createRangeFromEstimate(est_it->second, col_type);
-        switch (status)
+        auto range = createRangeFromEstimate(est_it->second, col_type);
+        if (range.has_value())
+            hyperrectangle.push_back(std::move(*range));
+        else
         {
-            case RangeStatus::Valid:
-                hyperrectangle.push_back(std::move(*range));
-                types.push_back(col_type);
-                break;
-            case RangeStatus::Unknown:
+            if (isNullableOrLowCardinalityNullable(col_type))
                 hyperrectangle.emplace_back(Range::createWholeUniverse());
-                types.push_back(col_type);
-                break;
-            case RangeStatus::Empty:
-                return {false, true};
+            else
+                hyperrectangle.emplace_back(Range::createWholeUniverseWithoutNull());
         }
+        types.push_back(col_type);
     }
 
     return key_condition.checkInHyperrectangle(hyperrectangle, types);
