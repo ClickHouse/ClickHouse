@@ -4,6 +4,13 @@
 # This CMake wrapper builds OpenZL directly using ClickHouse's existing
 # zstd and lz4 libraries instead of OpenZL's bundled dependencies.
 
+option(ENABLE_OPENZL "Enable OpenZL format-aware compression" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_OPENZL)
+    message(STATUS "Not using OpenZL")
+    return()
+endif()
+
 set(OPENZL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/openzl")
 set(OPENZL_SRC_DIR "${OPENZL_SOURCE_DIR}/src")
 set(OPENZL_INCLUDE_DIR "${OPENZL_SOURCE_DIR}/include")
@@ -19,20 +26,6 @@ file(GLOB_RECURSE OPENZL_HEADERS CONFIGURE_DEPENDS "${OPENZL_SRC_DIR}/*.h")
 file(GLOB_RECURSE OPENZL_PUBLIC_HEADERS CONFIGURE_DEPENDS "${OPENZL_INCLUDE_DIR}/*.h")
 
 # Generate zl_config.h
-# Check for variadic macro support
-include(CheckCSourceCompiles)
-check_c_source_compiles("
-    #define F(...) f(__VA_ARGS__)
-    void f(int);
-    int main() { F(0); return 0; }
-" ZL_HAVE_C_VARIADIC_MACROS)
-
-check_c_source_compiles("
-    #define F(a, ...) f(a, ##__VA_ARGS__)
-    void f(int, ...);
-    int main() { F(0); return 0; }
-" ZL_HAVE_C_GNU_ZERO_VARIADIC_MACRO_ARGUMENTS)
-
 # Determine architecture
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     set(ZL_HAVE_X86_64_ASM 1)
