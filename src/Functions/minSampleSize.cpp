@@ -315,7 +315,7 @@ SELECT minSampleSizeContinuous(112.25, 21.1, 0.03, 0.80, 0.05) AS sample_size
     };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
     FunctionDocumentation::Category category_continuous = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_continuous = {description_continuous, syntax_continuous, arguments_continuous, returned_value_continuous, examples_continuous, introduced_in, category_continuous};
+    FunctionDocumentation documentation_continuous = {description_continuous, syntax_continuous, arguments_continuous, {}, returned_value_continuous, examples_continuous, introduced_in, category_continuous};
 
     factory.registerFunction<FunctionMinSampleSize<ContinuousImpl>>(documentation_continuous);
     /// Needed for backward compatibility
@@ -342,7 +342,7 @@ Uses the formula described in [this article](https://towardsdatascience.com/requ
     };
     FunctionDocumentation::IntroducedIn introduced_in_conversion = {22, 6};
     FunctionDocumentation::Category category_conversion = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_conversion = {description_conversion, syntax_conversion, arguments_conversion, returned_value_conversion, examples_conversion, introduced_in_conversion, category_conversion};
+    FunctionDocumentation documentation_conversion = {description_conversion, syntax_conversion, arguments_conversion, {}, returned_value_conversion, examples_conversion, introduced_in_conversion, category_conversion};
 
     factory.registerFunction<FunctionMinSampleSize<ConversionImpl>>(documentation_conversion);
 }

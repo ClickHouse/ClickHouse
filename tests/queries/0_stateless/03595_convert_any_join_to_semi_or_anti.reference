@@ -14,7 +14,7 @@ Positions: 0
       Expression (Post Join Actions)
       Actions: INPUT :: 0 -> __join_result_dummy UInt8 : 0
       Positions: 0
-        Join
+        Join (JOIN FillRightFirst)
         Type: LEFT
         Strictness: SEMI
         Algorithm: ConcurrentHashJoin
@@ -49,7 +49,7 @@ Positions: 0
                 Actions: INPUT :: 0 -> __table1.uid Int16 : 0
                          INPUT :: 1 -> __table4.uid Int16 : 1
                 Positions: 0 1
-                  Join
+                  Join (JOIN FillRightFirst)
                   Type: CROSS
                   Strictness: ALL
                   Algorithm: HashJoin
@@ -85,7 +85,7 @@ Positions: 0
       Expression (Post Join Actions)
       Actions: INPUT :: 0 -> __join_result_dummy UInt8 : 0
       Positions: 0
-        Join
+        Join (JOIN FillRightFirst)
         Type: LEFT
         Strictness: ANTI
         Algorithm: ConcurrentHashJoin
@@ -120,7 +120,7 @@ Positions: 0
                 Actions: INPUT :: 0 -> __table1.uid Int16 : 0
                          INPUT :: 1 -> __table4.uid Int16 : 1
                 Positions: 0 1
-                  Join
+                  Join (JOIN FillRightFirst)
                   Type: CROSS
                   Strictness: ALL
                   Algorithm: HashJoin

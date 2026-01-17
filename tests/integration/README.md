@@ -43,6 +43,7 @@ python -m ci.praktika run "Integration tests (amd_binary, 4/5)" \
 - `--path PATH` custom ClickHouse server binary location (if not in default locations).
 - `--path_1 PATH` custom path to the ClickHouse server config directory (if not in `./programs/server/config/`).
 - `--workers N` to override automatic calculation of the recommended maximum number of parallel pytest workers. The value is passed to pytest-xdist as `-n N`. Use a lower number on resource-constrained machines or increase it to utilize more CPU cores.
+- `--param KEY=VALUE[,KEY=VALUE...]` to inject custom environment variables for pytest. Pass comma-separated KEY=VALUE pairs (e.g., `--param PYTEST_ADDOPTS=-vv,CUSTOM_FLAG=1`).
 ## Running Natively
 
 ### Prerequisites

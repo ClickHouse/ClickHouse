@@ -14,11 +14,10 @@ namespace BuzzHouse
 static const auto compressSetting = CHSetting(
     [](RandomGenerator & rg, FuzzConfig &)
     {
-        static const DB::Strings & choices
-            = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
+        static const DB::Strings & choices = {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"};
         return rg.pickRandomly(choices);
     },
-    {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'ZSTD_QAT'", "'DEFLATE_QPL'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
+    {"'ZSTD'", "'LZ4'", "'LZ4HC'", "'GCD'", "'FPC'", "'AES_128_GCM_SIV'", "'AES_256_GCM_SIV'"},
     false);
 
 static const auto bytesRangeSetting = CHSetting(bytesRange, {"0", "4", "8", "32", "1024", "4096", "16384", "'10M'"}, false);
@@ -248,7 +247,13 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"merge_selector_base",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 0.0, 8.0)); }, {}, false)},
+    {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", trueOrFalseSetting},
     {"merge_selector_enable_heuristic_to_remove_small_parts_at_right", trueOrFalseSetting},
+    {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 1, 100)); },
+         {"0", "1", "2", "8", "10", "100"},
+         false)},
     {"merge_selector_window_size", rowsRangeSetting},
     {"merge_total_max_bytes_to_prewarm_cache", bytesRangeSetting},
     {"min_age_to_force_merge_on_partition_only", trueOrFalseSetting},
@@ -262,6 +267,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"min_bytes_to_prewarm_caches", bytesRangeSetting},
     {"min_bytes_to_rebalance_partition_over_jbod", bytesRangeSetting},
+    {"min_columns_to_activate_adaptive_write_buffer",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
+         {"0", "1", "2", "8", "10", "100"},
+         false)},
     {"min_compress_block_size", bytesRangeSetting},
     {"min_compressed_bytes_to_fsync_after_fetch", bytesRangeSetting},
     {"min_compressed_bytes_to_fsync_after_merge", bytesRangeSetting},
@@ -459,6 +469,15 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          },
          {"'single_stream'", "'with_size_stream'"},
          false)},
+    {"nullable_serialization_version",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings & choices = {"'basic'", "'allow_sparse'"};
+             return rg.pickRandomly(choices);
+         },
+         {"'basic'", "'allow_sparse'"},
+         false)},
     {"table_disk", trueOrFalseSetting},
     {"ttl_only_drop_parts", trueOrFalseSetting},
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},
@@ -615,6 +634,41 @@ static std::unordered_map<String, CHSetting> mySQLTableSettings = {
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(1, 16)); }, {}, false)},
     {"connection_auto_close", trueOrFalseSettingNoOracle}};
 
+static std::unordered_map<String, CHSetting> kafkaTableSettings
+    = {{"kafka_schema_registry_skip_bytes",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 512)); }, {}, false)},
+       {"kafka_num_consumers",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 32)); }, {}, false)},
+       {"kafka_max_block_size", CHSetting(highRange, {}, false)},
+       {"kafka_skip_broken_messages", CHSetting(highRange, {}, false)},
+       {"kafka_commit_every_batch", trueOrFalseSetting},
+       {"kafka_client_id",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 16)); }, {}, false)},
+       {"kafka_poll_max_batch_size", CHSetting(highRange, {}, false)},
+       {"kafka_thread_per_consumer", threadSetting},
+       {"kafka_handle_error_mode",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings & choices = {"'default'", "'stream'", "'dead_letter_queue'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'default'", "'stream'", "'dead_letter_queue'"},
+            false)},
+       {"kafka_commit_on_select", trueOrFalseSetting},
+       {"kafka_max_rows_per_message", CHSetting(rowsRange, {}, false)},
+       {"kafka_compression_codec",
+        CHSetting(
+            [](RandomGenerator & rg, FuzzConfig &)
+            {
+                static const DB::Strings & choices = {"''", "'none'", "'gzip'", "'snappy'", "'lz4'", "'zstd'"};
+                return rg.pickRandomly(choices);
+            },
+            {"''", "'none'", "'gzip'", "'snappy'", "'lz4'", "'zstd'"},
+            false)},
+       {"kafka_compression_level",
+        CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(-1, 12)); }, {}, false)}};
+
 static std::unordered_map<String, CHSetting> mergeTreeColumnSettings
     = {{"min_compress_block_size", highRangeSetting}, {"max_compress_block_size", highRangeSetting}};
 
@@ -652,32 +706,39 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
              {"min_free_disk_ratio_to_perform_insert", CHSetting(probRange, {}, false)}});
     }
 
+    std::unordered_map<String, CHSetting> queueSettings
+        = {{"after_processing",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &)
+                {
+                    static const DB::Strings & choices = {"'keep'", "'delete'", "'move'", "'tag'"};
+                    return rg.pickRandomly(choices);
+                },
+                {"'keep'", "'delete'", "'move'", "'tag'"},
+                false)},
+           {"commit_on_select", trueOrFalseSettingNoOracle},
+           {"enable_hash_ring_filtering", trueOrFalseSetting},
+           {"list_objects_batch_size",
+            CHSetting(
+                [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3000)); },
+                {"0", "1", "2", "8", "10", "100", "1000"},
+                false)},
+           {"max_processed_bytes_before_commit", CHSetting(bytesRange, {}, false)},
+           {"max_processed_files_before_commit", CHSetting(rowsRange, {}, false)},
+           {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
+           {"parallel_inserts", trueOrFalseSetting},
+           {"use_hive_partitioning", trueOrFalseSetting},
+           {"use_persistent_processing_nodes", trueOrFalseSettingNoOracle}};
     s3QueueTableSettings.insert(s3Settings.begin(), s3Settings.end());
-    azureQueueSettings.insert(azureBlobStorageSettings.begin(), azureBlobStorageSettings.end());
+    s3QueueTableSettings.insert(queueSettings.begin(), queueSettings.end());
+    /// s3queue_ settings are exclusive to S3Queue
     s3QueueTableSettings.insert(
-        {{"after_processing",
-          CHSetting(
-              [](RandomGenerator & rg, FuzzConfig &)
-              {
-                  static const DB::Strings & choices = {"'keep'", "'delete'"};
-                  return rg.pickRandomly(choices);
-              },
-              {},
-              false)},
-         {"enable_hash_ring_filtering", trueOrFalseSetting},
-         {"list_objects_batch_size",
-          CHSetting(
-              [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3000)); },
-              {"0", "1", "2", "8", "10", "100", "1000"},
-              false)},
-         {"max_processed_bytes_before_commit", CHSetting(bytesRange, {}, false)},
-         {"max_processed_files_before_commit", CHSetting(rowsRange, {}, false)},
-         {"max_processed_rows_before_commit", CHSetting(rowsRange, {}, false)},
-         {"parallel_inserts", trueOrFalseSetting},
-         {"s3queue_buckets", bucketsRangeSetting},
+        {{"s3queue_buckets", bucketsRangeSetting},
          {"s3queue_enable_logging_to_s3queue_log", trueOrFalseSetting},
          {"s3queue_processing_threads_num", threadSetting},
          {"s3queue_tracked_files_limit", CHSetting(rowsRange, {}, false)}});
+    azureQueueSettings.insert(azureBlobStorageSettings.begin(), azureBlobStorageSettings.end());
+    azureQueueSettings.insert(queueSettings.begin(), queueSettings.end());
 
     for (const auto & entry : fc.disallowed_settings)
     {
@@ -697,6 +758,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         setTableSettings.erase(entry);
         joinTableSettings.erase(entry);
         embeddedRocksDBTableSettings.erase(entry);
+        kafkaTableSettings.erase(entry);
         mySQLTableSettings.erase(entry);
         mergeTreeColumnSettings.erase(entry);
         s3Settings.erase(entry);
@@ -713,6 +775,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {AggregatingMergeTree, mergeTreeTableSettings},
          {CollapsingMergeTree, mergeTreeTableSettings},
          {VersionedCollapsingMergeTree, mergeTreeTableSettings},
+         {GraphiteMergeTree, mergeTreeTableSettings},
          {File, fileTableSettings},
          {Null, {}},
          {Set, setTableSettings},
@@ -748,7 +811,19 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
          {ArrowFlight, {}},
-         {Alias, {}}});
+         {Alias, {}},
+         {TimeSeries, {}},
+         {HDFS, {}},
+         {Hive, {}},
+         {JDBC, {}},
+         {Kafka, kafkaTableSettings},
+         {NATS, {}},
+         {ODBC, {}},
+         {RabbitMQ, {}},
+         {YTsaurus, {}},
+         {Executable, {}},
+         {ExecutablePool, {}},
+         {FileLog, {}}});
 
     allColumnSettings.insert(
         {{MergeTree, mergeTreeColumnSettings},
@@ -758,6 +833,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {AggregatingMergeTree, mergeTreeColumnSettings},
          {CollapsingMergeTree, mergeTreeColumnSettings},
          {VersionedCollapsingMergeTree, mergeTreeColumnSettings},
+         {GraphiteMergeTree, mergeTreeColumnSettings},
          {File, {}},
          {Null, {}},
          {Set, {}},
@@ -793,7 +869,19 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {ExternalDistributed, {}},
          {MaterializedPostgreSQL, {}},
          {ArrowFlight, {}},
-         {Alias, {}}});
+         {Alias, {}},
+         {TimeSeries, {}},
+         {HDFS, {}},
+         {Hive, {}},
+         {JDBC, {}},
+         {Kafka, {}},
+         {NATS, {}},
+         {ODBC, {}},
+         {RabbitMQ, {}},
+         {YTsaurus, {}},
+         {Executable, {}},
+         {ExecutablePool, {}},
+         {FileLog, {}}});
 
     allDictionaryLayoutSettings.insert(
         {{CACHE, cachedLayoutSettings},

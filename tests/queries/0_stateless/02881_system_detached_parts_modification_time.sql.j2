@@ -5,14 +5,21 @@ set mutations_sync=1;
     ("compact", "min_bytes_for_wide_part=1000, min_rows_for_wide_part=100"),
 ]
 %}
-
 drop table if exists data_{{ id }};
 create table data_{{ id }} (key Int) engine=MergeTree() order by tuple() settings {{ settings }};
 insert into data_{{ id }} values (1);
 select 'before detach', modification_time from system.detached_parts where database = currentDatabase() and table = 'data_{{ id }}';
 alter table data_{{ id }} detach partition all;
-system flush logs query_log;
-with (select event_time from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_kind = 'Alter' and tables = [currentDatabase() || '.data_{{ id }}']) as finish_time_
-select 'after detach', max2(abs(dateDiff('seconds', modification_time, finish_time_)), 5) from system.detached_parts where database = currentDatabase() and table = 'data_{{ id }}';
-
 {% endfor %}
+
+system flush logs query_log;
+
+select
+  parts.table,
+  -- make sure that the modification_time is within (query_start_time; query_finish_time) of ALTER query
+  abs(dateDiff('seconds', modification_time, query_finish_time)) <= ceil(query_duration_ms/1e3),
+from system.detached_parts parts
+left join (select tables[1] as table, event_time query_finish_time, query_duration_ms from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_kind = 'Alter') query_log
+  on (query_log.table = database || '.' || parts.table)
+where database = currentDatabase()
+order by parts.table;

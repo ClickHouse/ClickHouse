@@ -1,7 +1,8 @@
 #include <Access/Common/SQLSecurityDefs.h>
-#include <Common/Exception.h>
 #include <Core/SettingsEnums.h>
 #include <base/EnumReflection.h>
+#include <Common/Exception.h>
+#include <Formats/FormatSettings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -56,6 +57,11 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
+
+
+IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
+    {{"greedy",             JoinOrderAlgorithm::GREEDY},
+     {"dpsize",             JoinOrderAlgorithm::DPSIZE}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -115,6 +121,11 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
 IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
+
+IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
+    {{"state", FormatSettings::AggregateFunctionInputFormat::State},
+    {"value", FormatSettings::AggregateFunctionInputFormat::Value},
+    {"array", FormatSettings::AggregateFunctionInputFormat::Array}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
 
@@ -256,7 +267,9 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                        {{"keep", ObjectStorageQueueAction::KEEP},
-                        {"delete", ObjectStorageQueueAction::DELETE}})
+                        {"delete", ObjectStorageQueueAction::DELETE},
+                        {"move", ObjectStorageQueueAction::MOVE},
+                        {"tag", ObjectStorageQueueAction::TAG}})
 
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
@@ -312,7 +325,8 @@ IMPLEMENT_SETTING_ENUM(
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
-     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE}})
+     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -346,6 +360,12 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"single_stream", MergeTreeStringSerializationVersion::SINGLE_STREAM},
      {"with_size_stream", MergeTreeStringSerializationVersion::WITH_SIZE_STREAM}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeNullableSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"basic", MergeTreeNullableSerializationVersion::BASIC},
+     {"allow_sparse", MergeTreeNullableSerializationVersion::ALLOW_SPARSE}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSerializationVersion,

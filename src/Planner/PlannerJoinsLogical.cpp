@@ -53,6 +53,9 @@
 #include <Interpreters/JoinOperator.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/DirectJoinMergeTreeEntity.h>
+#include <Processors/QueryPlan/ReadFromTableStep.h>
+
 
 #include <memory>
 #include <stack>
@@ -258,7 +261,15 @@ void buildJoinCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
     std::string function_name;
     const auto * function_node = node->as<FunctionNode>();
     if (function_node)
-        function_name = function_node->getFunction()->getName();
+    {
+        function_name = function_node->getFunctionName();
+        if (!function_node->isOrdinaryFunction())
+        {
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "Unexpected function '{}' in JOIN ON section, only ordinary functions are supported, in expression: {}",
+                function_name, function_node->formatASTForErrorMessage());
+        }
+    }
 
     if (function_name == "and")
     {
@@ -278,7 +289,7 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinOperatorB
             "JOIN {} join expression expected function",
             node->formatASTForErrorMessage());
 
-    const auto & function_name = function_node->getFunction()->getName();
+    const auto & function_name = function_node->getFunctionName();
 
     if (function_name == "or")
     {

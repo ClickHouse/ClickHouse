@@ -14,7 +14,7 @@ DROP TABLE column_modify_test;
 CREATE TABLE column_modify_test (id UInt64, val Nullable(String), other_col UInt64) engine=MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part=0, auto_statistics_types='uniq,countmin';
 INSERT INTO column_modify_test VALUES (1,'one',0);
 
-ALTER TABLE column_modify_test MODIFY COLUMN val String;
+ALTER TABLE column_modify_test MODIFY COLUMN val String DEFAULT '';
 
 alter table column_modify_test update other_col=1 where id = 1 SETTINGS mutations_sync=1;
 

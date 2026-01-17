@@ -40,7 +40,7 @@ SELECT * FROM test WHERE region = 'us_west' AND user_id = 106 ORDER BY ALL SETTI
 3	2023-01-02	106	https://example.com/page3	us_west
 3	2023-01-02	106	https://example.com/page3	us_west
 3	2023-01-02	106	https://example.com/page3	us_west
--- it's not possible to use different indexes with or filter yet
+-- test with an OR filter - 3 rows/granules for user_id=101 union 3 rows/granules for 'asia'
 SELECT * FROM test WHERE region = 'asia' OR user_id = 101 ORDER BY ALL SETTINGS log_comment = 'test_4';
 1	2023-01-01	101	https://example.com/page1	europe
 1	2023-01-01	101	https://example.com/page1	europe
@@ -56,7 +56,7 @@ SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMain
 SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_3';
 3	3
 SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_4';
-15	15
+6	6
 DROP TABLE test;
 -- check partially materialized index, it should only affect related parts
 
@@ -96,7 +96,11 @@ SELECT * FROM test_partial_index WHERE region = 'us_west' AND user_id = 106 ORDE
 3	2023-01-02	106	https://example.com/page3	us_west
 3	2023-01-02	106	https://example.com/page3	us_west
 3	2023-01-02	106	https://example.com/page3	us_west
--- it's not possible to use different indexes with or filter yet
+-- Skip indexes on OR supported.
+-- All 5 rows from part1 (no skip indexes) +
+-- All 5 rows from part2 (because no index on user_id) +
+-- 2 rows from part3 -> 1 row each for region='asia' and user_id=101.
+-- Total 12
 SELECT * FROM test_partial_index WHERE region = 'asia' OR user_id = 101 ORDER BY ALL SETTINGS log_comment = 'test_partial_4';
 1	2023-01-01	101	https://example.com/page1	europe
 1	2023-01-01	101	https://example.com/page1	europe
@@ -112,5 +116,5 @@ SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMain
 SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_partial_3';
 9	9
 SELECT ProfileEvents['RowsReadByPrewhereReaders'], ProfileEvents['RowsReadByMainReader'] FROM system.query_log WHERE event_date >= yesterday() AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_partial_4';
-15	15
+12	12
 DROP TABLE test_partial_index;

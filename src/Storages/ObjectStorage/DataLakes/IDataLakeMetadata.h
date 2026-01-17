@@ -120,6 +120,7 @@ public:
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(
         const MutationCommands & /*commands*/,
+        StorageObjectStorageConfigurationPtr /*configuration*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
         StorageMetadataPtr /*metadata_snapshot*/,

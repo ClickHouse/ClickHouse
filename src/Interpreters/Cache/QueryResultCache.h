@@ -73,8 +73,10 @@ public:
         /// policies on some table by running the same queries as user B for whom no row policies exist.
         const bool is_shared;
 
-        /// When does the entry expire?
+        /// When was the entry created?
         const std::chrono::time_point<std::chrono::system_clock> created_at;
+
+        /// When does the entry expire?
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
 
         /// Are the chunks in the entry compressed?
@@ -246,23 +248,30 @@ class QueryResultCacheReader
 public:
     using Cache = QueryResultCache::Cache;
 
-    bool hasCacheEntryForKey() const;
+    bool hasCacheEntryForKey(bool update_profile_events = true) const;
+
+    /// Must only be called if hasCacheEntryForKey is true
+    std::chrono::time_point<std::chrono::system_clock> entryCreatedAt();
+    std::chrono::time_point<std::chrono::system_clock> entryExpiresAt();
 
     /// getSource*() moves source processors out of the Reader. Call each of these method just once.
     std::unique_ptr<SourceFromChunks> getSource();
-    std::unique_ptr<SourceFromChunks> getSourceTotals();
     std::unique_ptr<SourceFromChunks> getSourceExtremes();
-    const std::optional<Cache::Key> & getKey() const;
+    std::unique_ptr<SourceFromChunks> getSourceTotals();
 
 private:
     QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
 
-    std::optional<Cache::Key> entry_key;
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
+
+    std::chrono::time_point<std::chrono::system_clock> created_at;
+    std::chrono::time_point<std::chrono::system_clock> expires_at;
+
     LoggerPtr logger = getLogger("QueryResultCache");
+
     friend class QueryResultCache; /// for createReader()
 };
 

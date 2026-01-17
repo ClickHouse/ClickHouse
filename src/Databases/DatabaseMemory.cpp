@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
-    , data_path("data/" + escapeForFileName(database_name) + "/")
+    , data_path(DatabaseCatalog::getDataDirPath(name_) / "")
 {
     /// Temporary database should not have any data on the moment of its creation
     /// In case of sudden server shutdown remove database folder of temporary database

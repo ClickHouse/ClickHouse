@@ -64,7 +64,7 @@ Calculates the [jump consistent hash](https://arxiv.org/pdf/1406.2294.pdf) for a
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionJumpConsistentHash>(documentation);
 }
 

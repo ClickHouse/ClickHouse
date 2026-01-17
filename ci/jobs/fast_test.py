@@ -12,7 +12,7 @@ from ci.praktika.settings import Settings
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
-build_dir = f"{current_directory}/ci/tmp/build"
+build_dir = f"{current_directory}/ci/tmp/fast_build"
 temp_dir = f"{current_directory}/ci/tmp/"
 
 
@@ -52,7 +52,6 @@ def clone_submodules():
         "contrib/simdjson",
         "contrib/liburing",
         "contrib/libfiu",
-        "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
         "contrib/StringZilla",
@@ -163,8 +162,12 @@ def main():
     attach_files = []
     job_info = ""
 
+    if os.getuid() == 0:
+        res = res and Shell.check(
+            f"git config --global --add safe.directory {current_directory}"
+        )
+
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
-        Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
         results.append(
             Result.from_commands_run(
                 name="Checkout Submodules",
@@ -186,8 +189,8 @@ def main():
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
-                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1",
-                workdir=build_dir,
+                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
+                -B {build_dir}",
             )
         )
         res = results[-1].is_ok()
@@ -197,8 +200,8 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command="command time -v ninja clickhouse-bundle clickhouse-stripped lexer_test",
-                workdir=build_dir,
+                command=f"command time -v cmake --build {build_dir} --"
+                " clickhouse-bundle clickhouse-stripped lexer_test",
             )
         )
         Shell.check(f"{build_dir}/rust/chcache/chcache stats")
@@ -274,7 +277,7 @@ def main():
 
     if attach_debug:
         attach_files += [
-            Utils.compress_file(f"{temp_dir}/build/programs/clickhouse-stripped"),
+            clickhouse_bin_path,
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
         ]

@@ -106,7 +106,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
-            {"max_reverse_dictionary_lookup_cache_size_bytes", 100 * 1024 * 1024, 100 * 1024 * 1024, "New setting. Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query."},
             {"query_plan_max_limit_for_lazy_materialization", 10, 100, "More optimal"},
             {"create_table_empty_primary_key_by_default", false, true, "Better usability"},
             {"cluster_table_function_split_granularity", "file", "file", "New setting."},
@@ -116,12 +115,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"into_outfile_create_parent_directories", false, false, "New setting"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
-            {"enable_shared_storage_snapshot_in_query", false, true, "Better consistency guarantees."},
             {"input_format_parquet_use_native_reader_v3", false, true, "Seems stable"},
             {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"use_text_index_dictionary_cache", false, false, "New setting"},
-            {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"use_text_index_header_cache", false, false, "New setting"},
             {"use_text_index_postings_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
@@ -130,14 +127,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
             {"allow_special_serialization_kinds_in_output_formats", false, true, "Enable direct output of special columns representations like Sparse/Replicated in some output formats"},
             {"allow_experimental_alias_table_engine", false, false, "New setting"},
-            {"iceberg_insert_max_partitions", 100, 100, "New setting."},
             {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."},
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
             {"output_format_parquet_write_checksums", false, true, "New setting."},
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
-            {"use_paimon_partition_pruning", false, false, "New setting."},
+            {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -174,6 +170,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
+            {"enable_positional_arguments_for_projections", true, false, "New setting to control positional arguments in projections."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
@@ -257,7 +254,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
             {"allow_experimental_ytsaurus_dictionary_source", false, false, "New setting."},
             {"per_part_index_stats", false, false, "New setting."},
-            {"allow_experimental_iceberg_compaction", 0, 0, "New setting "},
+            {"allow_experimental_iceberg_compaction", 0, 0, "New setting"},
             {"delta_lake_snapshot_version", -1, -1, "New setting"},
             {"use_roaring_bitmap_iceberg_positional_deletes", false, false, "New setting"},
             {"iceberg_metadata_compression_method", "", "", "New setting"},
@@ -269,6 +266,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
+            {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {
@@ -1012,9 +1010,21 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.1",
+        {
+            {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
+            {"materialize_statistics_on_merge", true, true, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
             {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
+            {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, false, "New setting"},
+            {"merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent", 5, 5, "New setting"},
+            {"nullable_serialization_version", "basic", "basic", "New setting"},
+            {"object_serialization_version", "v2", "v3", "Enable v3 serialization version for JSON by default to use advanced shared data serialization"},
+            {"dynamic_serialization_version", "v2", "v3", "Enable v3 serialization version for Dynamic by default for better serialization/deserialization"},
+            {"object_shared_data_serialization_version", "map", "advanced", "Enable advanced shared data serialization version by default"},
+            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map_with_buckets", "Enable map_with_buckets shared data serialization version for zero level parts by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {

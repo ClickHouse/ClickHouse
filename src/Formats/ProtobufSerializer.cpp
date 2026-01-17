@@ -3388,8 +3388,8 @@ namespace
                     throw Exception(
                         ErrorCodes::MULTIPLE_COLUMNS_SERIALIZED_TO_SAME_PROTOBUF_FIELD,
                         "Multiple columns ({}, {}) cannot be serialized to a single protobuf field {}",
-                        backQuote(StringRef{it->second}),
-                        backQuote(StringRef{column_name_}),
+                        backQuote(std::string_view{it->second}),
+                        backQuote(std::string_view{column_name_}),
                         quoteString(field_descriptor_.full_name()));
                 }
 
@@ -4015,13 +4015,13 @@ namespace
             if (!field_descriptor.is_repeated())
                 throw Exception(ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED,
                                 "The field {} must be repeated in the protobuf schema to match the column {}",
-                                quoteString(field_descriptor.full_name()), backQuote(StringRef{column_name}));
+                                quoteString(field_descriptor.full_name()), backQuote(column_name));
 
             throw Exception(ErrorCodes::PROTOBUF_FIELD_NOT_REPEATED,
                             "The field {} is repeated but the level of repeatedness is not enough "
                             "to serialize a multidimensional array from the column {}. "
                             "It's recommended to make the parent field repeated as well.",
-                            quoteString(field_descriptor.full_name()), backQuote(StringRef{column_name}));
+                            quoteString(field_descriptor.full_name()), backQuote(column_name));
         }
 
         const ProtobufReaderOrWriter reader_or_writer;

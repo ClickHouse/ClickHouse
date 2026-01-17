@@ -268,7 +268,7 @@ String getNameForSubstreamPath(
     size_t array_level = 0;
     for (auto it = begin; it != end; ++it)
     {
-        if (it->type == Substream::NullMap)
+        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
             stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
             stream_name += ".size" + toString(array_level);
@@ -602,6 +602,7 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
 
     size_t last_elem = prefix_len - 1;
     return path[last_elem].type == Substream::NullMap
+            || path[last_elem].type == Substream::SparseNullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
             || path[last_elem].type == Substream::StringSizes
@@ -617,7 +618,8 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
         return false;
 
     size_t last_elem = prefix_len - 1;
-    return path[last_elem].type == Substream::VariantElementNullMap || path[last_elem].type == Substream::InlinedStringSizes;
+    return path[last_elem].type == Substream::VariantElementNullMap || path[last_elem].type == Substream::InlinedStringSizes
+        || path[last_elem].type == Substream::SparseNullMap;
 }
 
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
@@ -748,6 +750,28 @@ void ISerialization::insertDataFromCachedColumn(const ISerialization::Deserializ
     {
         result_column = cached_column;
     }
+}
+
+bool ISerialization::isVariantSubcolumn(const SubstreamPath & substream_path)
+{
+    for (const auto & stream : substream_path)
+    {
+        if (stream.type == Substream::VariantElement)
+            return true;
+    }
+
+    return false;
+}
+
+bool ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(const ISerialization::SubstreamPath & substream_path, ISerialization::StreamFileNameSettings & stream_file_name_settings)
+{
+    if (isVariantSubcolumn(substream_path) && stream_file_name_settings.escape_variant_substreams)
+    {
+        stream_file_name_settings.escape_variant_substreams = false;
+        return true;
+    }
+
+    return false;
 }
 
 }

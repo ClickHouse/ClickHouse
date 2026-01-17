@@ -1,9 +1,9 @@
-#include <Processors/Formats/IRowInputFormat.h>
-#include <IO/WriteHelpers.h>    // toString
+#include <Columns/IColumn.h>
 #include <IO/WithFileName.h>
 #include <IO/WithFileSize.h>
+#include <IO/WriteHelpers.h> // toString
+#include <Processors/Formats/IRowInputFormat.h>
 #include <Common/logger_useful.h>
-#include <Columns/IColumn.h>
 
 
 namespace DB
@@ -139,7 +139,7 @@ Chunk IRowInputFormat::read()
     {
         if (need_only_count && supportsCountRows())
         {
-            num_rows = countRows(params.max_block_size);
+            num_rows = countRows(params.max_block_size_rows);
             if (num_rows == 0)
             {
                 readSuffix();
@@ -175,6 +175,19 @@ Chunk IRowInputFormat::read()
              && continue_reading;
              ++rows)
         {
+            return (!min_block_size_rows && !min_block_size_bytes) || rows < min_block_size_rows || bytes < min_block_size_bytes;
+        };
+
+        auto below_all_max_thresholds = [&](size_t rows, size_t bytes)-> bool
+        {
+            return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_bytes || bytes < max_block_size_bytes);
+        };
+
+        for (size_t rows = 0; ((below_some_min_threshold(rows, total_bytes) && below_all_max_thresholds(rows, total_bytes)) || num_rows == 0)
+             && continue_reading;
+             ++rows)
+        {
+
             try
             {
                 for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
@@ -207,7 +220,7 @@ Chunk IRowInputFormat::read()
                 if (columns.empty())
                     ++num_rows;
 
-                if (params.max_block_size_bytes)
+                if (min_block_size_bytes || max_block_size_bytes)
                 {
                     for (const auto & column : columns)
                         total_bytes += column->byteSizeAt(column->size() - 1);
