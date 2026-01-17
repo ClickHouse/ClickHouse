@@ -137,9 +137,14 @@ private:
             return main_instance;
 
         Fiber::DataPtr & ptr = current_fiber->getLocalData(this);
-        /// Initialize instance on first request.
+        /// Initialize instance on first request, copying from main_instance
+        /// to inherit context (e.g., OpenTelemetry trace context).
         if (!ptr)
-            ptr = std::make_unique<DataWrapperImpl>();
+        {
+            auto wrapper = std::make_unique<DataWrapperImpl>();
+            wrapper->impl = main_instance;
+            ptr = std::move(wrapper);
+        }
 
         return dynamic_cast<DataWrapperImpl *>(ptr.get())->impl;
     }
