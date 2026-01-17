@@ -755,33 +755,12 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
     const ContextPtr & context,
     const std::optional<FormatSettings> & _format_settings) const
 {
-    const FormatFactory::Creators & creators = getCreators(name);
-    const SchemaReaderCreator & schema_reader_creator = creators.schema_reader_creator;
+    const auto & schema_reader_creator = getCreators(name).schema_reader_creator;
     if (!schema_reader_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} doesn't support schema inference.", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     auto schema_reader = schema_reader_creator(buf, format_settings);
-    if (schema_reader->needContext())
-        schema_reader->setContext(context);
-    return schema_reader;
-}
-
-/// overload for formats that support object storage metadata
-SchemaReaderPtr FormatFactory::getSchemaReader(
-    const String & name,
-    ReadBuffer & buf,
-    const ContextPtr & context,
-    const RelativePathWithMetadata & metadata,
-    const std::optional<FormatSettings> & _format_settings) const
-{
-    const FormatFactory::Creators & creators = getCreators(name);
-    const SchemaReaderCreatorWithMetadata & schema_reader_creator = creators.schema_reader_creator_with_metadata;
-    if (!schema_reader_creator)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} doesn't support schema inference.", name);
-
-    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-    auto schema_reader = schema_reader_creator(buf, format_settings, metadata);
     if (schema_reader->needContext())
         schema_reader->setContext(context);
     return schema_reader;
@@ -973,14 +952,6 @@ void FormatFactory::registerSchemaReader(const String & name, SchemaReaderCreato
     target = std::move(schema_reader_creator);
 }
 
-void FormatFactory::registerSchemaReaderWithMetadata(const String & name, SchemaReaderCreatorWithMetadata schema_reader_creator)
-{
-    auto & target = getOrCreateCreators(name).schema_reader_creator_with_metadata;
-    if (target)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Schema reader {} is already registered", name);
-    target = std::move(schema_reader_creator);
-}
-
 void FormatFactory::registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator)
 {
     auto & target = getOrCreateCreators(name).external_schema_reader_creator;
@@ -1096,7 +1067,7 @@ bool FormatFactory::isOutputFormat(const String & name) const
 bool FormatFactory::checkIfFormatHasSchemaReader(const String & name) const
 {
     const auto & target = getCreators(name);
-    return bool(target.schema_reader_creator) || bool(target.schema_reader_creator_with_metadata);
+    return bool(target.schema_reader_creator);
 }
 
 bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name) const

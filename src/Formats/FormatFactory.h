@@ -124,10 +124,10 @@ private:
         const RelativePathWithMetadata & metadata)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
-            WriteBuffer & buf,
-            const Block & sample,
-            const FormatSettings & settings,
-            FormatFilterInfoPtr format_filter_info)>;
+        WriteBuffer & buf,
+        const Block & sample,
+        const FormatSettings & settings,
+        FormatFilterInfoPtr format_filter_info)>;
 
     /// Some input formats can have non trivial readPrefix() and readSuffix(),
     /// so in some cases there is no possibility to use parallel parsing.
@@ -144,11 +144,6 @@ private:
     using SchemaReaderCreator = std::function<SchemaReaderPtr(
         ReadBuffer & in,
         const FormatSettings & settings)>;
-
-    using SchemaReaderCreatorWithMetadata = std::function<SchemaReaderPtr(
-        ReadBuffer & in,
-        const FormatSettings & settings,
-        const RelativePathWithMetadata & metadata)>;
 
     using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
 
@@ -176,7 +171,6 @@ private:
         OutputCreator output_creator;
         FileSegmentationEngineCreator file_segmentation_engine_creator;
         SchemaReaderCreator schema_reader_creator;
-        SchemaReaderCreatorWithMetadata schema_reader_creator_with_metadata;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
         bool prefers_large_blocks{false};
@@ -328,7 +322,6 @@ public:
 
     /// Register schema readers for format its name.
     void registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator);
-    void registerSchemaReaderWithMetadata(const String & name, SchemaReaderCreatorWithMetadata schema_reader_creator_with_metadata);
     void registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);

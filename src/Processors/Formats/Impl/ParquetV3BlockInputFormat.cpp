@@ -184,12 +184,10 @@ void ParquetV3BlockInputFormat::resetParser()
 NativeParquetSchemaReader::NativeParquetSchemaReader(
     ReadBuffer & in_,
     const FormatSettings & format_settings_,
-    ParquetMetadataCachePtr metadata_cache_,
-    const std::optional<RelativePathWithMetadata> & metadata_)
+    ParquetMetadataCachePtr metadata_cache_)
     : ISchemaReader(in_)
     , read_options(convertReadOptions(format_settings_))
     , metadata_cache(metadata_cache_)
-    , metadata(metadata_)
 {
 }
 
@@ -200,19 +198,7 @@ void NativeParquetSchemaReader::initializeIfNeeded()
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
     auto log = getLogger("ParquetMetadataCache");
-    if (metadata_cache && metadata.has_value())
-    {
-        String file_name = metadata->getFileName();
-        String etag = metadata->metadata->etag;
-        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-        file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-            return Parquet::Reader::readFileMetaData(prefetcher);
-        });
-    }
-    else
-    {
-        file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
-    }
+    file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
     initialized = true;
 }
 

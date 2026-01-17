@@ -1469,20 +1469,15 @@ void registerParquetSchemaReader(FormatFactory & factory)
         {
             return std::make_shared<ParquetBucketSplitter>();
         });
-    factory.registerSchemaReaderWithMetadata(
-        "Parquet",
-        [](
-            ReadBuffer & buf,
-            const FormatSettings & settings,
-            const std::optional<RelativePathWithMetadata> & metadata) -> SchemaReaderPtr
+    factory.registerSchemaReader(
+        "Parquet", [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
             auto lambda_logger = getLogger("ParquetMetadataCache");
             LOG_DEBUG(lambda_logger, "checking for v3 reader setting in registerSchemaReader");
             if (settings.parquet.use_native_reader_v3)
             {
                 LOG_DEBUG(lambda_logger, "using native reader v3 in ParquetSchemaReader with metadata cache");
-                auto metadata_cache = CurrentThread::getQueryContext()->getParquetMetadataCache();
-                return std::make_shared<NativeParquetSchemaReader>(buf, settings, metadata_cache, metadata);
+                return std::make_shared<NativeParquetSchemaReader>(buf, settings);
             }
             else
             {

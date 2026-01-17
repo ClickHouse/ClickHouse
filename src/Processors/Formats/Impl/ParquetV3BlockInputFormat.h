@@ -66,8 +66,7 @@ public:
     NativeParquetSchemaReader(
         ReadBuffer & in_,
         const FormatSettings & format_settings,
-        ParquetMetadataCachePtr metadata_cache_,
-        const std::optional<RelativePathWithMetadata> & metadata_ = std::nullopt);
+        ParquetMetadataCachePtr metadata_cache_);
 
     NamesAndTypesList readSchema() override;
     std::optional<size_t> readNumberOrRows() override;
@@ -79,7 +78,6 @@ private:
     parquet::format::FileMetaData file_metadata;
     bool initialized = false;
     ParquetMetadataCachePtr metadata_cache;
-    const std::optional<RelativePathWithMetadata> metadata;
 };
 
 }
