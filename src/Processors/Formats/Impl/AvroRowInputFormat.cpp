@@ -1644,96 +1644,95 @@ void registerAvroSchemaReader(FormatFactory & factory)
 
 }
 
+/// AvroParallelParsingContext implementation
+
+AvroParallelParsingContext::AvroParallelParsingContext(const FormatSettings & settings_, const Block & header_)
+    : settings(settings_)
+    , header(header_)
+    , header_state(std::make_shared<AvroHeaderState>())
+    , header_parsed(std::make_shared<std::atomic<bool>>(false))
+    , header_mutex(std::make_shared<std::mutex>())
+    , deserializer_factory(std::make_shared<std::shared_ptr<AvroDeserializerFactory>>())
+{
+}
+
+std::pair<FormatFactory::FileSegmentationEngine, FormatFactory::InternalParserCreator>
+AvroParallelParsingContext::createEngineAndParser()
+{
+    /// Segmentation engine: reads Avro blocks from the file.
+    /// On first call, parses the file header to extract schema, codec, sync_marker.
+    FormatFactory::FileSegmentationEngine segmentation_engine =
+        [ctx_header_state = header_state,
+         ctx_header_parsed = header_parsed,
+         ctx_header_mutex = header_mutex,
+         ctx_deserializer_factory = deserializer_factory,
+         ctx_settings = settings,
+         ctx_header = header]
+        (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows) -> std::pair<bool, size_t>
+    {
+        /// Parse header on first call (thread-safe).
+        if (!ctx_header_parsed->load())
+        {
+            std::lock_guard lock(*ctx_header_mutex);
+            if (!ctx_header_parsed->load())
+            {
+                /// Parse the header directly from the ReadBuffer.
+                *ctx_header_state = AvroBlockReader::parseHeader(in);
+
+                /// Create the deserializer factory now that we have the schema.
+                *ctx_deserializer_factory = std::make_shared<AvroDeserializerFactory>(
+                    ctx_header,
+                    ctx_header_state->schema,
+                    ctx_settings.avro.allow_missing_fields,
+                    ctx_settings.null_as_default,
+                    ctx_settings);
+
+                ctx_header_parsed->store(true);
+            }
+        }
+
+        return avroFileSegmentationEngine(in, memory, min_bytes, max_rows, ctx_header_state);
+    };
+
+    /// Parser creator: creates AvroSegmentInputFormat instances for each segment.
+    FormatFactory::InternalParserCreator parser_creator =
+        [ctx_header_state = header_state,
+         ctx_deserializer_factory = deserializer_factory,
+         ctx_settings = settings,
+         ctx_header = header]
+        (ReadBuffer & segment_buf) -> InputFormatPtr
+    {
+        return std::make_shared<AvroSegmentInputFormat>(
+            segment_buf,
+            ctx_header,
+            ctx_header_state,
+            *ctx_deserializer_factory,
+            ctx_settings);
+    };
+
+    return {std::move(segmentation_engine), std::move(parser_creator)};
+}
+
 void registerFileSegmentationEngineAvro(FormatFactory & factory)
 {
     /// Register a checker that disables parallel parsing when the setting is off.
-    /// When avro.parallel_parsing is false (default), return true to disable parallel parsing.
-    /// When avro.parallel_parsing is true, return false to allow parallel parsing.
     factory.registerNonTrivialPrefixAndSuffixChecker("Avro", [](ReadBuffer &)
     {
-        /// This checker is called before format_settings are available in the check,
-        /// so we can't check the setting here. Instead, we return false to not disable
-        /// parallel parsing based on prefix/suffix, and let the segmentation engine
-        /// creator handle the setting check.
+        /// Return false to not disable parallel parsing based on prefix/suffix.
+        /// The segmentation engine creator handles the setting check.
         return false;
     });
 
     /// Register the combined segmentation engine and parser creator for Avro.
-    /// This creator returns both:
-    /// 1. A segmentation engine that reads Avro blocks (parsing header on first call)
-    /// 2. A custom parser creator that creates AvroSegmentInputFormat instances
     factory.registerFileSegmentationEngineAndParserCreator("Avro",
         [](const FormatSettings & settings, const Block & header)
-            -> std::pair<FormatFactory::FileSegmentationEngine, FormatFactory::InternalParserCreator>
         {
-            /// If parallel parsing is disabled, return empty functions.
-            /// This will cause FormatFactory::getInput to fall back to sequential parsing.
             if (!settings.avro.parallel_parsing)
-                return {{}, {}};
+                return std::pair<FormatFactory::FileSegmentationEngine,
+                                FormatFactory::InternalParserCreator>{{}, {}};
 
-            /// Create shared state that will be populated when parsing the first segment.
-            /// The header_state holds schema, codec, sync_marker extracted from Avro file header.
-            auto header_state = std::make_shared<AvroHeaderState>();
-
-            /// Flag to track whether header has been parsed (protected by mutex for thread safety).
-            auto header_parsed = std::make_shared<std::atomic<bool>>(false);
-            auto header_mutex = std::make_shared<std::mutex>();
-
-            /// The deserializer factory will be created after header parsing.
-            auto deserializer_factory = std::make_shared<std::shared_ptr<AvroDeserializerFactory>>();
-
-            /// Capture settings and header for use in parser creation (copies needed for lambda captures).
-            const FormatSettings captured_settings = settings; // NOLINT(performance-unnecessary-copy-initialization)
-            const Block captured_header = header; // NOLINT(performance-unnecessary-copy-initialization)
-
-            /// Segmentation engine: reads Avro blocks from the file.
-            /// On first call, parses the file header to extract schema, codec, sync_marker.
-            FormatFactory::FileSegmentationEngine segmentation_engine =
-                [header_state, header_parsed, header_mutex, deserializer_factory, captured_settings, captured_header]
-                (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows) -> std::pair<bool, size_t>
-            {
-                /// Parse header on first call (thread-safe).
-                if (!header_parsed->load())
-                {
-                    std::lock_guard lock(*header_mutex);
-                    if (!header_parsed->load())
-                    {
-                        /// Parse the header directly from the ReadBuffer.
-                        /// This positions the buffer at the start of the first block.
-                        *header_state = AvroBlockReader::parseHeader(in);
-
-                        /// Create the deserializer factory now that we have the schema.
-                        *deserializer_factory = std::make_shared<AvroDeserializerFactory>(
-                            captured_header,
-                            header_state->schema,
-                            captured_settings.avro.allow_missing_fields,
-                            captured_settings.null_as_default,
-                            captured_settings);
-
-                        header_parsed->store(true);
-                    }
-                }
-
-                /// Now segment the file (read Avro blocks).
-                return avroFileSegmentationEngine(in, memory, min_bytes, max_rows, header_state);
-            };
-
-            /// Parser creator: creates AvroSegmentInputFormat instances for each segment.
-            FormatFactory::InternalParserCreator parser_creator =
-                [header_state, deserializer_factory, captured_settings, captured_header]
-                (ReadBuffer & segment_buf) -> InputFormatPtr
-            {
-                /// Wait for header to be parsed (should already be done by segmentator thread).
-                /// The deserializer_factory pointer should be valid at this point.
-                return std::make_shared<AvroSegmentInputFormat>(
-                    segment_buf,
-                    captured_header,
-                    header_state,
-                    *deserializer_factory,
-                    captured_settings);
-            };
-
-            return {std::move(segmentation_engine), std::move(parser_creator)};
+            auto context = std::make_shared<AvroParallelParsingContext>(settings, header);
+            return context->createEngineAndParser();
         });
 }
 

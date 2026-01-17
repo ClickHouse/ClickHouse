@@ -10,6 +10,7 @@
 
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -273,6 +274,27 @@ std::pair<bool, size_t> avroFileSegmentationEngine(
     size_t min_bytes,
     size_t max_rows,
     const std::shared_ptr<AvroHeaderState> & header_state);
+
+/// Helper class to manage shared state for Avro parallel parsing.
+/// Encapsulates the synchronization and state sharing between
+/// segmentation engine and parser instances.
+class AvroParallelParsingContext
+{
+public:
+    AvroParallelParsingContext(const FormatSettings & settings_, const Block & header_);
+
+    /// Create both segmentation engine and parser creator with shared state.
+    std::pair<FormatFactory::FileSegmentationEngine, FormatFactory::InternalParserCreator>
+    createEngineAndParser();
+
+private:
+    FormatSettings settings;
+    Block header;
+    std::shared_ptr<AvroHeaderState> header_state;
+    std::shared_ptr<std::atomic<bool>> header_parsed;
+    std::shared_ptr<std::mutex> header_mutex;
+    std::shared_ptr<std::shared_ptr<AvroDeserializerFactory>> deserializer_factory;
+};
 
 class AvroSchemaReader : public ISchemaReader
 {
