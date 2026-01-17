@@ -68,10 +68,6 @@ public:
     /// This avoids issues with the Avro library's stream adapter buffering.
     static AvroHeaderState parseHeader(ReadBuffer & in);
 
-    /// Read a varint-encoded int64 (zigzag encoding) from buffer.
-    /// Reuses ClickHouse's VarInt.h which is compatible with Avro.
-    static int64_t readVarInt(ReadBuffer & in);
-
     /// Read a complete Avro block directly into Memory<>, avoiding string allocation.
     /// Appends: objectCount (varint) + byteCount (varint) + compressedData.
     /// Does NOT consume the sync marker - caller must verify separately.

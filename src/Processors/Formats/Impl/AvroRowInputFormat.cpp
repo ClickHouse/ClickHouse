@@ -1079,48 +1079,6 @@ std::pair<bool, size_t> avroFileSegmentationEngine(
 
 /// AvroSegmentInputFormat implementation
 
-namespace
-{
-/// Adapter to create avro::InputStream from std::string
-class AvroStringInputStream : public avro::InputStream
-{
-public:
-    explicit AvroStringInputStream(const std::string & str) : data(str), pos(0) {}
-
-    bool next(const uint8_t ** data_ptr, size_t * len) override
-    {
-        if (pos >= data.size())
-        {
-            *len = 0;
-            return false;
-        }
-        *data_ptr = reinterpret_cast<const uint8_t *>(data.data() + pos);
-        *len = data.size() - pos;
-        pos = data.size();
-        return true;
-    }
-
-    void backup(size_t len) override
-    {
-        pos -= len;
-    }
-
-    void skip(size_t len) override
-    {
-        pos += len;
-    }
-
-    size_t byteCount() const override
-    {
-        return pos;
-    }
-
-private:
-    const std::string & data;
-    size_t pos;
-};
-}
-
 AvroSegmentInputFormat::AvroSegmentInputFormat(
     ReadBuffer & in_,
     const Block & header_,
@@ -1158,8 +1116,10 @@ Chunk AvroSegmentInputFormat::read()
             }
 
             /// Read block header from segment: objectCount + byteCount + compressedData
-            int64_t object_count = AvroBlockReader::readVarInt(segment_buf);
-            int64_t byte_count = AvroBlockReader::readVarInt(segment_buf);
+            Int64 object_count;
+            Int64 byte_count;
+            DB::readVarInt(object_count, segment_buf);
+            DB::readVarInt(byte_count, segment_buf);
 
             if (byte_count < 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid Avro block: negative byte count {}", byte_count);
@@ -1177,7 +1137,9 @@ Chunk AvroSegmentInputFormat::read()
                 decompressed_data);
 
             /// Create decoder for decompressed data
-            input_stream = std::make_unique<AvroStringInputStream>(decompressed_data);
+            input_stream = avro::memoryInputStream(
+                reinterpret_cast<const uint8_t *>(decompressed_data.data()),
+                decompressed_data.size());
             decoder = avro::binaryDecoder();
             decoder->init(*input_stream);
 

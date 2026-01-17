@@ -13,17 +13,12 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-int64_t AvroBlockReader::readVarInt(ReadBuffer & in)
-{
-    Int64 value;
-    DB::readVarInt(value, in);
-    return value;
-}
-
 int64_t AvroBlockReader::readBlockInto(ReadBuffer & in, Memory<> & memory)
 {
-    int64_t object_count = readVarInt(in);
-    int64_t byte_count = readVarInt(in);
+    Int64 object_count;
+    Int64 byte_count;
+    DB::readVarInt(object_count, in);
+    DB::readVarInt(byte_count, in);
 
     if (byte_count < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA,
