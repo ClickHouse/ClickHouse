@@ -28,6 +28,7 @@ public:
 
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
+    StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
 
     /// Read from target table
     void read(
@@ -106,6 +107,15 @@ public:
     void checkTableCanBeDropped(ContextPtr /*query_context*/) const override {}
     StorageInMemoryMetadata getInMemoryMetadata() const override { return getTargetTable()->getInMemoryMetadata(); }
     StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache) const override { return getTargetTable()->getInMemoryMetadataPtr(bypass_metadata_cache); }
+    std::optional<StorageMetadataPtr> tryGetInMemoryMetadataPtr() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->getInMemoryMetadataPtr();
+    }
+
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
     StorageSnapshotPtr getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
 
@@ -127,6 +137,9 @@ public:
     bool isRemote() const override { return getTargetTable()->isRemote(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
 
+    /// This is important for DatabaseReplicated, avoid not supported by distributed DDL
+    bool supportsReplication() const override { return false; }
+
     bool hasLightweightDeletedMask() const override { return getTargetTable()->hasLightweightDeletedMask(); }
     bool supportsLightweightDelete() const override { return getTargetTable()->supportsLightweightDelete(); }
     std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getTargetTable()->supportsLightweightUpdate(); }
@@ -146,12 +159,83 @@ public:
         SelectQueryInfo & query_info) const override;
 
     Strings getDataPaths() const override { return getTargetTable()->getDataPaths(); }
+    std::optional<Strings> tryGetDataPaths() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->getDataPaths();
+    }
+
+    /// Alias does not store data on disk
+    bool storesDataOnDisk() const override { return false; }
+
+    StoragePolicyPtr getStoragePolicy() const override { return getTargetTable()->getStoragePolicy(); }
+    std::optional<StoragePolicyPtr> tryGetStoragePolicy() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->getStoragePolicy();
+    }
+
+    SerializationInfoByName getSerializationHints() const override { return getTargetTable()->getSerializationHints(); }
+    std::optional<SerializationInfoByName> tryGetSerializationHints() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->getSerializationHints();
+    }
 
     ActionLock getActionLock(StorageActionBlockType type) override { return getTargetTable()->getActionLock(type); }
 
+    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const { return getTargetTable()->lockForShare(query_id, acquire_timeout); }
+    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return nullptr;
+
+        return target->tryLockForShare(query_id, acquire_timeout);
+    }
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getTargetTable()->totalRows(query_context); }
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getTargetTable()->totalBytes(query_context); }
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override { return getTargetTable()->totalBytesUncompressed(settings); }
+    std::optional<UInt64> lifetimeRows() const override { return getTargetTable()->lifetimeRows(); }
+    std::optional<std::optional<UInt64>> tryLifetimeRows() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->lifetimeRows();
+    }
+
+    std::optional<UInt64> lifetimeBytes() const override { return getTargetTable()->lifetimeBytes(); }
+    std::optional<std::optional<UInt64>> tryLifetimeBytes() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->lifetimeBytes();
+    }
+
     ColumnSizeByName getColumnSizes() const override { return getTargetTable()->getColumnSizes(); }
+    std::optional<ColumnSizeByName> tryGetColumnSizes() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->getColumnSizes();
+    }
+
     IndexSizeByName getSecondaryIndexSizes() const override { return getTargetTable()->getSecondaryIndexSizes(); }
 
     CancellationCode killPartMoveToShard(const UUID & task_uuid) override;

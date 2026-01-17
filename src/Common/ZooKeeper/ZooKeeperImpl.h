@@ -228,6 +228,8 @@ public:
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
+    int64_t getLastZXIDSeen() const override { return last_zxid_seen.load(std::memory_order_relaxed); }
+
 private:
     const Int32 send_receive_os_threads_nice_value;
 
@@ -357,10 +359,11 @@ private:
 
     void initFeatureFlags();
 
-
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;
+
+    std::atomic<int64_t> last_zxid_seen;
 
     DB::KeeperFeatureFlags keeper_feature_flags;
 };

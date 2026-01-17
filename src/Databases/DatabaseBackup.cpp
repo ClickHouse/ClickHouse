@@ -78,16 +78,6 @@ public:
     {}
 };
 
-String buildDataPath(const String & database_name)
-{
-    return std::filesystem::path("data") / escapeForFileName(database_name) / "";
-}
-
-String buildReplacementRelativePath(const DatabaseBackup::Configuration & config)
-{
-    return buildDataPath(config.database_name);
-}
-
 String buildStoragePolicyName(const DatabaseBackup::Configuration & config)
 {
     return fmt::format("__database_backup_config_{}_{})", config.database_name, config.backup_info.toString());
@@ -160,7 +150,12 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
 }
 
 DatabaseBackup::DatabaseBackup(const String & name_, const String & metadata_path_, const Configuration & config_, ContextPtr context_)
-    : DatabaseOrdinary(name_, metadata_path_, buildDataPath(name_), "DatabaseBackup(" + name_ + ")", context_)
+    : DatabaseOrdinary(
+        name_,
+        metadata_path_,
+        DatabaseCatalog::getDataDirPath(name_) / "",
+        "DatabaseBackup(" + name_ + ")",
+        context_)
     , config(config_)
 {
 }
@@ -225,7 +220,7 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
     {
         DiskBackup::PathPrefixReplacement path_prefix_replacement;
         path_prefix_replacement.from = data_path;
-        path_prefix_replacement.to = buildReplacementRelativePath(config);
+        path_prefix_replacement.to = DatabaseCatalog::getDataDirPath(config.database_name) / "";
 
         DiskBackupConfiguration disk_backup_config;
 
@@ -367,7 +362,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
     for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
         std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-        runner([batch, &process_metadata_file]() mutable
+        runner.enqueueAndKeepTrack([batch, &process_metadata_file]() mutable
             {
                 for (const auto & file : batch)
                     process_metadata_file(file);
@@ -423,10 +418,10 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
     }
 
     return ast;

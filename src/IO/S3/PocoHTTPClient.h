@@ -195,7 +195,7 @@ private:
         Aws::Utils::RateLimits::RateLimiterInterface * readLimiter,
         Aws::Utils::RateLimits::RateLimiterInterface * writeLimiter) const;
 
-    static S3LatencyType getFirstByteLatencyType(const String & sdk_attempt, const String & ch_attempt);
+    static S3LatencyType getFirstByteLatencyType(size_t sdk_attempt, size_t ch_attempt);
 
 protected:
     virtual void makeRequestInternal(

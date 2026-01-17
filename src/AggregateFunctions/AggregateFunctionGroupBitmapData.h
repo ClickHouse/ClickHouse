@@ -12,8 +12,8 @@
 // garbage that breaks the build (e.g. it changes _POSIX_C_SOURCE).
 // TODO: find out what it is. On github, they have proper interface headers like
 // this one: https://github.com/RoaringBitmap/CRoaring/blob/master/include/roaring/roaring.h
-#include <roaring.hh>
-#include <roaring64map.hh>
+#include <roaring/roaring.hh>
+#include <roaring/roaring64map.hh>
 
 
 namespace DB

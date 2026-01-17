@@ -336,6 +336,43 @@ ColumnPtr ColumnIndex::removeUnusedRowsInIndexedData(const ColumnPtr & indexed_d
     return indexed_data->filter(filter, result_size_hint);
 }
 
+void ColumnIndex::removeUnusedRowsInIndexedData(MutableColumnPtr & indexed_data)
+{
+    /// First, create a filter for indexed data to filter out all unused rows.
+    IColumn::Filter filter(indexed_data->size(), 0);
+    auto create_filter = [&](auto cur_type)
+    {
+        using CurIndexType = decltype(cur_type);
+        const auto & data = getIndexesData<CurIndexType>();
+        for (size_t i = 0; i != data.size(); ++i)
+            filter[data[i]] = 1;
+    };
+
+    callForType(std::move(create_filter), size_of_type);
+
+    /// Second, adjust indexes.
+    auto adjust_indexes = [&](auto cur_type)
+    {
+        using CurIndexType = decltype(cur_type);
+        PaddedPODArray<CurIndexType> indexes_remapping(indexed_data->size());
+        size_t new_index = 0;
+        for (size_t i = 0; i != filter.size(); ++i)
+        {
+            if (filter[i])
+            {
+                indexes_remapping[i] = new_index;
+                ++new_index;
+            }
+        }
+        auto & data = getIndexesData<CurIndexType>();
+        for (size_t i = 0; i != data.size(); ++i)
+            data[i] = indexes_remapping[data[i]];
+    };
+
+    callForType(std::move(adjust_indexes), size_of_type);
+    indexed_data->filter(filter);
+}
+
 void ColumnIndex::getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const
 {
     auto create_filter = [&](auto cur_type)

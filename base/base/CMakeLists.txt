@@ -28,7 +28,6 @@ set (SRCS
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
-    StringRef.cpp
     safeExit.cpp
     throwError.cpp
     Numa.cpp

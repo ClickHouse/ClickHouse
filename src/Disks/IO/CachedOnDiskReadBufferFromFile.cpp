@@ -2,7 +2,7 @@
 #include <algorithm>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
@@ -27,6 +27,7 @@ extern const Event FileSegmentPredownloadMicroseconds;
 extern const Event FileSegmentUsedBytes;
 
 extern const Event CachedReadBufferReadFromSourceMicroseconds;
+extern const Event CachedReadBufferPredownloadedFromSourceMicroseconds;
 extern const Event CachedReadBufferReadFromCacheMicroseconds;
 extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
@@ -47,6 +48,7 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int UNKNOWN_FILE_SIZE;
 }
 
 CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
@@ -62,7 +64,11 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase(
+        /* buf_size */use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size,
+        /* existing_memory */nullptr,
+        /* alignment */0,
+        /* file_size */file_size_ ? std::optional<size_t>(file_size_) : std::nullopt)
 #ifdef DEBUG_OR_SANITIZER_BUILD
     , log(getLogger(fmt::format("CachedOnDiskReadBufferFromFile({})", cache_key_)))
 #else
@@ -83,9 +89,20 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , cache_log(settings.enable_filesystem_cache_log ? cache_log_ : nullptr)
 {
     LOG_TEST(
-        log, "Boundary alignment: {}, external buffer: {}, allow seeks after first read: {}",
+        log, "Cache key: {}, source file path: {}, boundary alignment: {}, "
+        "external buffer: {}, allow seeks after first read: {}, file size: {}",
+        cache_key.toString(), source_file_path,
         settings.filesystem_cache_boundary_alignment.has_value() ? DB::toString(settings.filesystem_cache_boundary_alignment.value()) : "None",
-        use_external_buffer, allow_seeks_after_first_read);
+        use_external_buffer, allow_seeks_after_first_read, file_size_);
+}
+
+std::optional<size_t> CachedOnDiskReadBufferFromFile::tryGetFileSize()
+{
+    if (file_size.has_value())
+        return file_size;
+
+    file_size = implementation_buffer_creator()->tryGetFileSize();
+    return file_size;
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
@@ -143,9 +160,13 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
     }
     else
     {
+        const auto object_size = tryGetFileSize();
+        if (!object_size.has_value())
+            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", source_file_path);
+
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
         file_segments = cache->getOrSet(
-            cache_key, file_offset_of_buffer_end, size, file_size.value(),
+            cache_key, file_offset_of_buffer_end, size, object_size.value(),
             create_settings, settings.filesystem_cache_segments_batch_size, user, settings.filesystem_cache_boundary_alignment);
     }
 
@@ -617,7 +638,7 @@ bool CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                 watch.stop();
                 auto elapsed = watch.elapsedMicroseconds();
                 current_file_segment_counters.increment(ProfileEvents::FileSegmentReadMicroseconds, elapsed);
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceMicroseconds, elapsed);
+                ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedFromSourceMicroseconds, elapsed);
             }
 
             if (!bytes_to_predownload || !has_more_data)
@@ -1137,12 +1158,12 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         std::optional<std::string> impl_read_stop_reason;
         if (read_type != ReadType::CACHED)
         {
-            object_size = implementation_buffer->tryGetFileSize();
 #if USE_AWS_S3
             if (const auto * s3_buf = dynamic_cast<const ReadBufferFromS3 *>(implementation_buffer.get()))
             {
                 impl_read_until_position = s3_buf->getReadUntilPosition();
                 impl_read_stop_reason = s3_buf->getStopReason();
+                object_size = s3_buf->getObjectSizeFromS3();
             }
 #endif
         }

@@ -1,3 +1,5 @@
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageMySQL.h>
 
 #if USE_MYSQL
@@ -106,19 +108,20 @@ ColumnsDescription StorageMySQL::getTableStructureFromData(
     return columns->second;
 }
 
-Pipe StorageMySQL::read(
-    const Names & column_names_,
+void StorageMySQL::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info_,
+    SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    storage_snapshot->check(column_names_);
+    storage_snapshot->check(column_names);
     String query = transformQueryForExternalDatabase(
-        query_info_,
-        column_names_,
+        query_info,
+        column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
         LiteralEscapingStyle::Regular,
@@ -128,7 +131,7 @@ Pipe StorageMySQL::read(
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
-    for (const String & column_name : column_names_)
+    for (const String & column_name : column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
 
@@ -139,10 +142,13 @@ Pipe StorageMySQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-
     StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
             (*mysql_settings)[MySQLSetting::connection_auto_close]);
-    return Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query, sample_block, mysql_input_stream_settings));
+    query_plan.addStep(std::make_unique<ReadFromMySQLStep>(
+        sample_block,
+        pool,
+        query,
+        mysql_input_stream_settings));
 }
 
 
@@ -354,6 +360,26 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
                         "Only one of 'replace_query' and 'on_duplicate_clause' can be specified, or none of them");
 
     return configuration;
+}
+
+ReadFromMySQLStep::ReadFromMySQLStep(
+    const Block & sample_block_,
+    mysqlxx::PoolWithFailoverPtr pool_,
+    const std::string & query_str_,
+    const StreamSettings & mysql_input_stream_settings_
+)
+    : ISourceStep(std::make_shared<const Block>(sample_block_.cloneEmpty()))
+    , pool(std::move(pool_))
+    , query_str(query_str_)
+    , mysql_input_stream_settings(mysql_input_stream_settings_)
+{
+}
+
+void ReadFromMySQLStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
+{
+    auto pipe = Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query_str, *getOutputHeader(), mysql_input_stream_settings));
+
+    pipeline.init(std::move(pipe));
 }
 
 

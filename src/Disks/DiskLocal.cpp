@@ -27,9 +27,14 @@
 #include <IO/WriteHelpers.h>
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
+// On illumos, <sys/regset.h> defines FS as a macro (x86 segment register).
+// Undef it to allow use of the FS:: namespace from filesystemHelpers.h.
+#ifdef FS
+#  undef FS
+#endif
 
 namespace CurrentMetrics
 {
@@ -764,7 +769,7 @@ void DiskLocal::chmod(const String & path, mode_t mode)
 
 ObjectStoragePtr DiskLocal::getObjectStorage()
 {
-    LocalObjectStorageSettings settings_object_storage(disk_path, /* read_only */false);
+    LocalObjectStorageSettings settings_object_storage(name, disk_path, /* read_only */false);
     return std::make_shared<LocalObjectStorage>(settings_object_storage);
 }
 

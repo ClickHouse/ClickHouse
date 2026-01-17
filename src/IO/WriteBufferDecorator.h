@@ -35,9 +35,9 @@ public:
         Base::finalizeImpl();
         try
         {
-            finalizeBefore();
+            finalFlushBefore();
             out->finalize();
-            finalizeAfter();
+            finalFlushAfter();
         }
         catch (...)
         {
@@ -49,18 +49,36 @@ public:
 
     void cancelImpl() noexcept override
     {
-        Base::cancelImpl();
-        out->cancel();
+        try
+        {
+            /// Try to flush compression buffers before cancelling.
+            /// Such buffers don't guarantee that they are flushed on next(), although callers may expect so
+            /// But if the out buffer is cancelled - it will get stuck
+            bool out_buffer_still_valid = !out->isCanceled();
+            if (out_buffer_still_valid)
+                finalFlushBefore();
+            this->next();
+            Base::cancelImpl();
+            out->next();
+            out->cancel();
+            if (out_buffer_still_valid)
+                finalFlushAfter();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("WriteBufferDecorator");
+            out->cancel();
+        }
     }
 
     WriteBuffer * getNestedBuffer() { return out; }
 
 protected:
-    /// Do some finalization before finalization of underlying buffer.
-    virtual void finalizeBefore() {}
+    /// Do some finalization before finalization/cancellation of underlying buffer.
+    virtual void finalFlushBefore() {}
 
-    /// Do some finalization after finalization of underlying buffer.
-    virtual void finalizeAfter() {}
+    /// Do some finalization after finalization/cancellation of underlying buffer.
+    virtual void finalFlushAfter() {}
 
     std::unique_ptr<WriteBuffer> owning_holder;
     WriteBuffer * out;

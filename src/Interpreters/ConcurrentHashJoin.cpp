@@ -1,7 +1,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -13,21 +12,14 @@
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/createBlockSelector.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/DumpASTNode.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Common/BitHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/WeakHash.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
@@ -358,17 +350,23 @@ public:
         if (!current_result)
         {
             if (next_block >= dispatched_blocks.size())
-                return {Block(), true};
+                return {Block(), nullptr, true};
 
             current_result = hash_joins[next_block]->data->joinScatteredBlock(std::move(dispatched_blocks[next_block]));
-            ++next_block;
         }
 
         auto data = current_result->next();
         if (data.is_last)
+        {
+            if (data.next_block)
+                dispatched_blocks[next_block] = std::move(*data.next_block);
+            else
+                ++next_block;
             current_result.reset();
+        }
+
         bool is_last = next_block >= dispatched_blocks.size() && data.is_last;
-        return {std::move(data.block), is_last};
+        return {std::move(data.block), nullptr, is_last};
     }
 };
 
@@ -695,7 +693,18 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                     move_buckets(lhs_map, getData(hash_joins[0])->type, std::get<T>(getData(hash_joins[i])->maps.at(0)), i);
                 },
                 getData(hash_joins[0])->maps.at(0));
+
+            auto & current_columns = getData(hash_joins[0])->columns;
+            current_columns.splice(current_columns.end(), getData(hash_joins[i])->columns);
+            getData(hash_joins[0])->allocated_size += getData(hash_joins[i])->allocated_size;
+            getData(hash_joins[0])->rows_to_join += getData(hash_joins[i])->rows_to_join;
+            getData(hash_joins[0])->keys_to_join += getData(hash_joins[i])->keys_to_join;
+
+            getData(hash_joins[i])->allocated_size = 0;
+            getData(hash_joins[i])->rows_to_join = 0;
+            getData(hash_joins[i])->keys_to_join = 0;
         }
+        getData(hash_joins[0])->sorted = false;
 
         /// rebuild per-slot right-side nullmaps into slot 0 so that
         /// non-joined rows saved due to NULL keys or ON-filtered rows are emitted only once
@@ -794,11 +803,30 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
+        auto common_used_flags = hash_joins[0]->data->getUsedFlags();
+
+        bool use_per_row_flags = std::ranges::any_of(
+            hash_joins,
+            [&](const auto & hash_join)
+            {
+                auto used_flags = hash_join->data->getUsedFlags();
+                return !used_flags->per_row_flags.empty();
+            });
+
         //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
         for (size_t i = 1; i < slots; ++i)
         {
             getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
-            hash_joins[i]->data->setUsedFlags(hash_joins[0]->data->getUsedFlags());
+
+            if (use_per_row_flags)
+            {
+                /// In case flag per row is used, we need to merge flags, rows in different slots can differ.
+                auto current_used_flags = hash_joins[i]->data->getUsedFlags();
+                common_used_flags->per_row_flags.merge(current_used_flags->per_row_flags);
+                if (!current_used_flags->per_row_flags.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "ConcurrentHashJoin: unexpected non-disjoint per_row_flags in slot {}", i);
+            }
+            hash_joins[i]->data->setUsedFlags(common_used_flags);
         }
     }
 
