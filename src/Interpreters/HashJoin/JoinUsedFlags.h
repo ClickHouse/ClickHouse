@@ -13,6 +13,7 @@ namespace JoinStuff
 /// Flags needed to implement RIGHT and FULL JOINs.
 class JoinUsedFlags
 {
+public:
     using RawColumnsPtr = const Columns *;
     using UsedFlagsForColumns = std::vector<std::atomic_bool>;
 
@@ -25,7 +26,6 @@ class JoinUsedFlags
 
     bool need_flags;
 
-public:
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.

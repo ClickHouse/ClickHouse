@@ -1,6 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -10,7 +8,6 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Storages/System/StorageSystemFunctions.h>
-#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 

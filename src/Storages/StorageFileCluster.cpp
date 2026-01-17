@@ -77,7 +77,7 @@ StorageFileCluster::StorageFileCluster(
         context);
 
     storage_metadata.setConstraints(constraints_);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context));
     setInMemoryMetadata(storage_metadata);
 }
 

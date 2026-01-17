@@ -136,7 +136,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
 
     auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
     {
-        StringRef key(chars + offsets[row - 1], offsets[row] - offsets[row - 1]);
+        std::string_view key(reinterpret_cast<const char *>(chars) + offsets[row - 1], offsets[row] - offsets[row - 1]);
 
         if constexpr (place_string_to_arena)
         {
@@ -195,8 +195,7 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
 
     auto getKeyHolder(size_t row, [[maybe_unused]] Arena & pool) const
     {
-        StringRef key(&(*chars)[row * n], n);
-
+        std::string_view key(reinterpret_cast<const char *>(&(*chars)[row * n]), n);
         if constexpr (place_string_to_arena)
         {
             return ArenaKeyHolder{key, pool};

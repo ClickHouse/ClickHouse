@@ -10,8 +10,6 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -284,6 +282,16 @@ public:
             if (function_node->getParametersNode() == child)
                 return false;
         }
+
+        if (auto * query_node = parent->as<QueryNode>())
+        {
+            // Do not visit LIMIT and OFFSET nodes
+            if (query_node->hasLimit() && query_node->getLimit() == child)
+                return false;
+            if (query_node->hasOffset() && query_node->getOffset() == child)
+                return false;
+        }
+
         return true;
     }
 

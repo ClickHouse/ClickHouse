@@ -79,82 +79,71 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
     db_name = "test_" + get_random_string()
     node1.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
     node2.query(f"DROP DATABASE IF EXISTS {db_name}  SYNC")
-    # Make sure that the MV is refreshed on node1
-    node2.query("SYSTEM ENABLE FAILPOINT refresh_task_stop_racing_for_running_refresh")
-    node2.query("SYSTEM ENABLE FAILPOINT database_replicated_delay_entry_execution")
-
-    node1.query(
-        f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
-        + r"'{shard}', '{replica}') "
-        + f" SETTINGS allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views={allow_skipping}"
-    )
-
-    append_clause = "APPEND" if append else ""
-
-    if(with_inner_table):
+    try:
         node1.query(
-            f"CREATE TABLE {db_name}.target (x DateTime) ENGINE ReplicatedMergeTree ORDER BY x"
-        )
-        node1.query(
-            f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 1 HOUR {append_clause} TO {db_name}.target AS SELECT now() AS x"
-        )
-    else:
-        node1.query(
-            f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 1 HOUR {append_clause} (x DateTime) ENGINE ReplicatedMergeTree ORDER BY x AS SELECT now() AS x"
+            f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
+            + r"'{shard}', '{replica}') "
+            + f" SETTINGS allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views={allow_skipping}"
         )
 
-    node2.query(
-        f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
-        + r"'{shard}', '{replica}')"
-        + f" SETTINGS allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views={allow_skipping}"
-    )
+        append_clause = "APPEND" if append else ""
 
-    # Make sure that tables are replicated on node2
-    assert (
-        node2.query_with_retry(
-            f"SELECT count() FROM system.tables WHERE database='{db_name}'",
-            check_callback=lambda x: x.strip() == "2",
-        ).strip()
-        == "2"
-    )
+        if(with_inner_table):
+            node1.query(
+                f"CREATE TABLE {db_name}.target (x DateTime) ENGINE ReplicatedMergeTree ORDER BY x"
+            )
+            node1.query(
+                f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 1 HOUR {append_clause} TO {db_name}.target AS SELECT now() AS x"
+            )
+        else:
+            node1.query(
+                f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 1 HOUR {append_clause} (x DateTime) ENGINE ReplicatedMergeTree ORDER BY x AS SELECT now() AS x"
+            )
 
-    last_log_ts = get_last_ddl_worker_log_ts(node2, db_name)
+        node2.query(
+            f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
+            + r"'{shard}', '{replica}')"
+            + f" SETTINGS allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views={allow_skipping}"
+        )
 
-    last_refresh_time = node1.query(
-        "SELECT last_refresh_time FROM system.view_refreshes WHERE view='mv'"
-    )
-    for i in range(2):
-        node1.query(f"SYSTEM REFRESH VIEW {db_name}.mv")
-    # Ensure that the mv is refresh
-    node1.query_with_retry(
-        "SELECT last_refresh_time FROM system.view_refreshes WHERE view='mv'",
-        check_callback=lambda x: x != last_refresh_time,
-    )
+        # Make sure that tables are replicated on node2
+        assert (
+            node2.query_with_retry(
+                f"SELECT count() FROM system.tables WHERE database='{db_name}'",
+                check_callback=lambda x: x.strip() == "2",
+            ).strip()
+            == "2"
+        )
 
-    # Make sure that the view is not refreshing, and it is scheduled to be refreshed in at least 10 minutes
-    node1.query_with_retry(
-        f"SELECT next_refresh_time FROM system.view_refreshes WHERE view='mv' AND database='{db_name}'",
-        check_callback=lambda x: datetime.now()
-        - datetime.strptime(x.strip(), "%Y-%m-%d %H:%M:%S")
-        > datetime.timedelta(minutes=10),
-    )
+        # Make sure that the MV is refreshed on node1 multiple times without node2 executing the DDL queries
+        node2.query(f"SYSTEM STOP VIEW {db_name}.mv")
+        node2.query("SYSTEM ENABLE FAILPOINT database_replicated_stop_entry_execution")
 
-    node2.query("SYSTEM DISABLE FAILPOINT refresh_task_stop_racing_for_running_refresh")
-    node2.query("SYSTEM DISABLE FAILPOINT database_replicated_delay_entry_execution")
+        last_log_ts = get_last_ddl_worker_log_ts(node2, db_name)
 
-    table_info1 = node1.query(f"SELECT uuid, name FROM system.tables WHERE database='{db_name}'")
-    assert table_info1 == node2.query_with_retry(
-        f"SELECT uuid, name FROM system.tables WHERE database='{db_name}'",
-        check_callback=lambda x: x == table_info1,
-    )
-    data1 = TSV(node1.query(f"SELECT x FROM {db_name}.mv ORDER BY x"))
-    data2 = TSV(node2.query(f"SELECT x FROM {db_name}.mv ORDER BY x"))
-    assert data1 == data2
+        for i in range(2):
+            node1.query(f"SYSTEM WAIT VIEW {db_name}.mv; SYSTEM REFRESH VIEW {db_name}.mv;")
+        node1.query(f"SYSTEM WAIT VIEW {db_name}.mv")
 
-    if append or allow_skipping == 0:
-        assert count_skip_ddls(node2, db_name, last_log_ts) == 0
-    else:
-        assert count_skip_ddls(node2, db_name, last_log_ts) > 0
+        # Make sure that the view is not refreshing
+        node1.query(f"SYSTEM STOP VIEW {db_name}.mv; SYSTEM WAIT VIEW {db_name}.mv;")
 
-    node1.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
-    node2.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+        node2.query("SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution")
+
+        table_info1 = node1.query(f"SELECT uuid, name FROM system.tables WHERE database='{db_name}'")
+        assert table_info1 == node2.query_with_retry(
+            f"SELECT uuid, name FROM system.tables WHERE database='{db_name}'",
+            check_callback=lambda x: x == table_info1,
+        )
+        data1 = TSV(node1.query(f"SELECT x FROM {db_name}.mv ORDER BY x"))
+        data2 = TSV(node2.query(f"SELECT x FROM {db_name}.mv ORDER BY x"))
+        assert data1 == data2
+
+        if append or allow_skipping == 0:
+            assert count_skip_ddls(node2, db_name, last_log_ts) == 0
+        else:
+            assert count_skip_ddls(node2, db_name, last_log_ts) > 0
+    finally:
+        node2.query("SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution")
+        node1.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+        node2.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

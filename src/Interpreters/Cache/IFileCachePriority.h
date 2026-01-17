@@ -92,6 +92,8 @@ public:
 
         virtual const Iterator * getNestedOrThis() const { return this; }
         virtual Iterator * getNestedOrThis() { return this; }
+
+        virtual void check(const CachePriorityGuard::Lock &) const {}
     };
     using IteratorPtr = std::shared_ptr<Iterator>;
 
@@ -112,6 +114,8 @@ public:
     size_t getSizeLimit(const CachePriorityGuard::Lock &) const { return max_size; }
     size_t getSizeLimitApprox() const { return max_size.load(std::memory_order_relaxed); }
     virtual double getSLRUSizeRatio() const { return 0; }
+
+    virtual bool isOvercommitEviction() const { return false; }
 
     virtual size_t getSize(const CachePriorityGuard::Lock &) const = 0;
 
@@ -245,6 +249,10 @@ public:
         bool released = false;
     };
     using HoldSpacePtr = std::unique_ptr<HoldSpace>;
+
+    virtual size_t getHoldSize() = 0;
+
+    virtual size_t getHoldElements() = 0;
 
 protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);

@@ -1,12 +1,9 @@
 #include <memory>
-#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Planner/Planner.h>
 
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnSet.h>
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
@@ -18,15 +15,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
-#include <DataTypes/DataTypeString.h>
-
-#include <Functions/FunctionFactory.h>
-#include <Functions/CastOverloadResolver.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -49,7 +40,6 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
-#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -63,7 +53,6 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
-#include <Storages/StorageMerge.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -72,17 +61,12 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
-#include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/JoinNode.h>
-#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
@@ -91,7 +75,6 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Planner/PlannerActionsVisitor.h>
-#include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -101,7 +84,6 @@
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
-#include <base/Decimal_fwd.h>
 #include <base/types.h>
 
 
@@ -160,6 +142,9 @@ namespace Setting
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_parallel_blocks_marshalling;
     extern const SettingsBool use_variant_as_common_type;
+    extern const SettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const SettingsString temporary_files_codec;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace ServerSetting
@@ -584,6 +569,9 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
+    auto tmp_data_scope = query_context->getTempDataOnDisk();
+    if (tmp_data_scope)
+        tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
@@ -597,7 +585,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
-        query_context->getTempDataOnDisk(),
+        tmp_data_scope,
         settings[Setting::max_threads],
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],
@@ -608,7 +596,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params,
-        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation]);
+        settings[Setting::enable_producing_buckets_out_of_order_in_aggregation],
+        settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     return aggregator_params;
 }
@@ -718,7 +707,8 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         query_analysis_result.aggregate_overflow_row,
         max_threads,
         settings[Setting::max_block_size],
-        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization]);
+        settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
+        settings[Setting::serialize_string_in_memory_with_zero_byte]);
 
     bool is_remote_storage = false;
     bool parallel_replicas_from_merge_tree = false;

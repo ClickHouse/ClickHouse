@@ -1,4 +1,4 @@
-
+SET allow_statistics_optimize = 0;
 SET use_skip_indexes_on_data_read = 0; -- for correct row count estimation in join order planning
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;

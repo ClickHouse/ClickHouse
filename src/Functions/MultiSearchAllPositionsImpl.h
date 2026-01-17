@@ -99,7 +99,7 @@ struct MultiSearchAllPositionsImpl
 
             for (size_t j = prev_needles_offset; j < needles_offsets[i]; ++j)
             {
-                needles.emplace_back(needles_data_string.getDataAt(j).toView());
+                needles.emplace_back(needles_data_string.getDataAt(j));
             }
 
             const size_t needles_size = needles.size();

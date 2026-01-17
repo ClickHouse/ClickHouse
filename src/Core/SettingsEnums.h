@@ -129,6 +129,7 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 
 DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
+DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t
@@ -188,6 +189,8 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeInputFormat, FormatSettings::DateTimeIn
 DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOutputFormat, FormatSettings::DateTimeOutputFormat)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(IntervalOutputFormat, FormatSettings::IntervalOutputFormat)
+
+DECLARE_SETTING_ENUM_WITH_RENAME(AggregateFunctionInputFormat, FormatSettings::AggregateFunctionInputFormat)
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ParquetVersion, FormatSettings::ParquetVersion)
 
@@ -347,6 +350,16 @@ enum class DeduplicateMergeProjectionMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
+enum class AlterColumnSecondaryIndexMode : uint8_t
+{
+    THROW,
+    DROP,
+    REBUILD,
+    COMPATIBILITY,
+};
+
+DECLARE_SETTING_ENUM(AlterColumnSecondaryIndexMode)
+
 DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
@@ -363,6 +376,8 @@ enum class ObjectStorageQueueAction : uint8_t
 {
     KEEP,
     DELETE,
+    MOVE,
+    TAG,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueAction)
@@ -395,6 +410,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     GLUE,
     ICEBERG_HIVE,
     ICEBERG_ONELAKE,
+    PAIMON_REST,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -439,6 +455,14 @@ enum class MergeTreeStringSerializationVersion : uint8_t
 };
 
 DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
+
+enum class MergeTreeNullableSerializationVersion : uint8_t
+{
+    BASIC = 0,
+    ALLOW_SPARSE = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
 
 enum class MergeTreeObjectSerializationVersion : uint8_t
 {
@@ -510,5 +534,15 @@ enum class ArrowFlightDescriptorType : uint8_t
 };
 
 DECLARE_SETTING_ENUM(ArrowFlightDescriptorType)
+
+enum class DeduplicateInsertSelectMode : uint8_t
+{
+    DISABLE = 0,
+    FORCE_ENABLE,
+    ENABLE_WHEN_PROSSIBLE,
+    ENABLE_EVEN_FOR_BAD_QUERIES
+};
+
+DECLARE_SETTING_ENUM(DeduplicateInsertSelectMode)
 
 }

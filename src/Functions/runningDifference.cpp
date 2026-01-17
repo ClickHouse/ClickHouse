@@ -76,7 +76,7 @@ WHERE diff != 1;
     };
     FunctionDocumentation::IntroducedIn introduced_in_runningDifference = {1, 1};
     FunctionDocumentation::Category category_runningDifference = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_runningDifference = {description_runningDifference, syntax_runningDifference, arguments_runningDifference, returned_value_runningDifference, examples_runningDifference, introduced_in_runningDifference, category_runningDifference};
+    FunctionDocumentation documentation_runningDifference = {description_runningDifference, syntax_runningDifference, arguments_runningDifference, {}, returned_value_runningDifference, examples_runningDifference, introduced_in_runningDifference, category_runningDifference};
 
     factory.registerFunction<FunctionRunningDifferenceImpl<true>>(documentation_runningDifference);
 }

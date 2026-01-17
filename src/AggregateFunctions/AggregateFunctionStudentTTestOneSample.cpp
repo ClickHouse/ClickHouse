@@ -69,7 +69,56 @@ AggregateFunctionPtr createAggregateFunctionStudentTTestOneSample(
 
 void registerAggregateFunctionStudentTTestOneSample(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("studentTTestOneSample", createAggregateFunctionStudentTTestOneSample);
+    FunctionDocumentation::Description description_studentTTestOneSample = R"(
+Applies the one-sample Student's t-test to determine whether the mean of a sample differs from a known population mean.
+
+Normality is assumed. The null hypothesis is that the sample mean equals the population mean.
+
+The optional `confidence_level` enables confidence interval calculation.
+
+**Notes:**
+- At least 2 observations are required; otherwise the result is `(nan, nan)` (and intervals if requested are `nan`).
+- Constant or near-constant input will also return `nan` due to zero (or effectively zero) standard error.
+
+**See Also**
+
+- [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
+- [studentTTest function](/sql-reference/aggregate-functions/reference/studentttest)
+    )";
+    FunctionDocumentation::Syntax syntax_studentTTestOneSample = R"(
+studentTTestOneSample([confidence_level])(sample_data, population_mean)
+    )";
+    FunctionDocumentation::Parameters parameters_studentTTestOneSample = {
+        {"confidence_level", "Optional. Confidence level for confidence intervals. Float in (0, 1).", {"Float*"}}
+    };
+    FunctionDocumentation::Arguments arguments_studentTTestOneSample = {
+        {"sample_data", "Sample data.", {"Integer", "Float", "Decimal"}},
+        {"population_mean", "Known population mean to test against (usually a constant).", {"(U)Int*", "Float*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_studentTTestOneSample = {"Returns a tuple with two or four elements (if `confidence_level` is specified): calculated t-statistic, calculated p-value (two-tailed), [calculated confidence-interval-low], [calculated confidence-interval-high]. Confidence intervals are for the sample mean at the given confidence level.", {"Tuple(Float64, Float64)", "Tuple(Float64, Float64, Float64, Float64)"}};
+    FunctionDocumentation::Examples examples_studentTTestOneSample = {
+    {
+        "Without confidence interval",
+        R"(
+SELECT studentTTestOneSample()(value, 20.0) FROM t;
+        )",
+        R"(
+        )"
+    },
+    {
+        "With confidence interval (95%)",
+        R"(
+SELECT studentTTestOneSample(0.95)(value, 20.0) FROM t;
+        )",
+        R"(
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_studentTTestOneSample = {25, 10};
+    FunctionDocumentation::Category category_studentTTestOneSample = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_studentTTestOneSample = {description_studentTTestOneSample, syntax_studentTTestOneSample, arguments_studentTTestOneSample, parameters_studentTTestOneSample, returned_value_studentTTestOneSample, examples_studentTTestOneSample, introduced_in_studentTTestOneSample, category_studentTTestOneSample};
+
+    factory.registerFunction("studentTTestOneSample", {createAggregateFunctionStudentTTestOneSample, {}, documentation_studentTTestOneSample});
 }
 
 }
