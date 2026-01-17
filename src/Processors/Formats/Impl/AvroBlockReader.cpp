@@ -15,15 +15,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-AvroHeaderState AvroBlockReader::extractHeaderState(avro::DataFileReaderBase & reader)
-{
-    AvroHeaderState state;
-    state.schema = reader.dataSchema();
-    state.codec = reader.codec();
-    state.sync_marker = reader.sync();
-    return state;
-}
-
 int64_t AvroBlockReader::readVarInt(ReadBuffer & in)
 {
     Int64 value;
@@ -31,14 +22,7 @@ int64_t AvroBlockReader::readVarInt(ReadBuffer & in)
     return value;
 }
 
-void AvroBlockReader::writeVarInt(int64_t value, std::string & out)
-{
-    char buf[10];  /// Max 10 bytes for int64 varint
-    char * end = DB::writeVarInt(value, buf);
-    out.append(buf, end - buf);
-}
-
-std::pair<int64_t, std::string> AvroBlockReader::readBlock(ReadBuffer & in)
+int64_t AvroBlockReader::readBlockInto(ReadBuffer & in, Memory<> & memory)
 {
     int64_t object_count = readVarInt(in);
     int64_t byte_count = readVarInt(in);
@@ -47,11 +31,20 @@ std::pair<int64_t, std::string> AvroBlockReader::readBlock(ReadBuffer & in)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Invalid Avro block: negative byte count {}", byte_count);
 
-    std::string compressed_data;
-    compressed_data.resize(byte_count);
-    in.readStrict(compressed_data.data(), byte_count);
+    /// Write varints directly to memory using stack buffer
+    char varint_buf[20];  /// Max 10 bytes each for two varints
+    char * ptr = varint_buf;
+    ptr = DB::writeVarInt(object_count, ptr);
+    ptr = DB::writeVarInt(byte_count, ptr);
+    size_t header_size = ptr - varint_buf;
 
-    return {object_count, std::move(compressed_data)};
+    /// Resize memory and append header + compressed data
+    size_t old_size = memory.size();
+    memory.resize(old_size + header_size + static_cast<size_t>(byte_count));
+    memcpy(memory.data() + old_size, varint_buf, header_size);
+    in.readStrict(memory.data() + old_size + header_size, static_cast<size_t>(byte_count));
+
+    return object_count;
 }
 
 bool AvroBlockReader::verifySyncMarker(ReadBuffer & in, const avro::DataFileSync & expected)

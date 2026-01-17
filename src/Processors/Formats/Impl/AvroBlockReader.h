@@ -6,6 +6,7 @@
 
 #include <string>
 #include <IO/ReadBuffer.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <DataFile.hh>
 
 namespace DB
@@ -25,10 +26,6 @@ struct AvroHeaderState
 class AvroBlockReader
 {
 public:
-    /// Extract header state from an initialized DataFileReaderBase.
-    /// This reuses the Avro library's header parsing (DRY).
-    static AvroHeaderState extractHeaderState(avro::DataFileReaderBase & reader);
-
     /// Parse Avro file header directly from ReadBuffer.
     /// Positions the buffer at the start of the first block after parsing.
     /// This avoids issues with the Avro library's stream adapter buffering.
@@ -38,13 +35,11 @@ public:
     /// Reuses ClickHouse's VarInt.h which is compatible with Avro.
     static int64_t readVarInt(ReadBuffer & in);
 
-    /// Write a varint-encoded int64 to a string (for segment reconstruction).
-    static void writeVarInt(int64_t value, std::string & out);
-
-    /// Read a complete Avro block (objectCount + byteCount + compressedData).
+    /// Read a complete Avro block directly into Memory<>, avoiding string allocation.
+    /// Appends: objectCount (varint) + byteCount (varint) + compressedData.
     /// Does NOT consume the sync marker - caller must verify separately.
-    /// Returns {object_count, compressed_data}.
-    static std::pair<int64_t, std::string> readBlock(ReadBuffer & in);
+    /// Returns object_count.
+    static int64_t readBlockInto(ReadBuffer & in, Memory<> & memory);
 
     /// Read and verify sync marker matches expected (16 bytes).
     /// Returns true if matches, throws on mismatch.
