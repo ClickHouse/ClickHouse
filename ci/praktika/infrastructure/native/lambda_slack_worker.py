@@ -472,14 +472,22 @@ def publish_home_view(
         parent_pr_number = ext.get("parent_pr_number", 0) or 0
         repo_name = ext.get("repo_name", "") or ""
 
-        # Workaround: older feed entries may miss pr_status; treat PR as merged if it has a nested merge-result event (pr_number==0)
-        if (
-            not pr_status
-            and pr_number > 0
-            and repo_name
-            and (repo_name, pr_number) in merge_result_parent_keys
-        ):
-            pr_status = "merged"
+        # Workaround (backward compat): older EventFeed entries may miss ext.pr_status.
+        # Populate it here so the rest of the function can rely on it.
+        if not pr_status:
+            if pr_number == 0:
+                pr_status = "merged"
+            elif (
+                pr_number > 0
+                and repo_name
+                and (repo_name, pr_number) in merge_result_parent_keys
+            ):
+                pr_status = "merged"
+            elif pr_number > 0:
+                pr_status = "open"
+
+        if pr_status:
+            ext["pr_status"] = pr_status
 
         if prefs.get("show_last_7d"):
             ts = getattr(e, "timestamp", 0) or 0
@@ -512,15 +520,15 @@ def publish_home_view(
             "type": "actions",
             "elements": [
                 _btn(
-                    f"Merged PRs: {'On' if prefs.get('hide_merged_prs') else 'Off'}",
+                    f"Merged PRs: {'On' if not prefs.get('hide_merged_prs') else 'Off'}",
                     "toggle_hide_merged_prs",
                 ),
                 _btn(
-                    f"Merges: {'On' if prefs.get('hide_merges') else 'Off'}",
+                    f"Merges: {'On' if not prefs.get('hide_merges') else 'Off'}",
                     "toggle_hide_merges",
                 ),
                 _btn(
-                    f"Secondary PRs: {'On' if prefs.get('hide_secondary_prs') else 'Off'}",
+                    f"Secondary PRs: {'On' if not prefs.get('hide_secondary_prs') else 'Off'}",
                     "toggle_hide_secondary_prs",
                 ),
                 _btn(
@@ -606,9 +614,8 @@ def publish_home_view(
             # Determine PR status based on children
             # If any child has pr_number = 0, the PR is merged
             children = children_by_parent.get(pr_number, [])
-            pr_status = "open"
-            if pr_number == 0:
-                pr_status = "merged"
+            ext = getattr(root_event, "ext", {}) or {}
+            pr_status = (ext.get("pr_status") or "").lower()
             for child in children:
                 if child.ext.get("pr_number", 0) == 0:
                     pr_status = "merged"
@@ -989,10 +996,9 @@ def lambda_handler(event, context):
                             msg = _format_notification_text(newest_event, notify_type)
                             _post_dm(
                                 user_id=subscribed_user_id,
-                                text=msg,
-                                prefs=prefs,
-                                email=email,
+                                user_email=email,
                                 s3_path=subscriptions_s3_path,
+                                text=msg,
                             )
                 except Exception as e:
                     print(f"Error publishing to user {subscribed_user_id}: {e}")
