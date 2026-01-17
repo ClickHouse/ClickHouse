@@ -1,7 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.database_disk import replace_text_in_metadata
+from helpers.database_disk import replace_text_in_metadata, get_database_disk_name
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
@@ -33,6 +33,11 @@ def test_attach_substr(started_cluster):
     # Replace substring to substr
     replace_text_in_metadata(node, metadata_path, "substring", "substr")
 
+    # Clear filesystem cache to avoid caching issues
+    db_disk_name = get_database_disk_name(node)
+    if db_disk_name != "default":
+        node.query(f"SYSTEM DROP DISK METADATA CACHE {db_disk_name}")
+
     # Attach table file
     node.query("ATTACH TABLE file")
 
@@ -50,6 +55,11 @@ def test_attach_substr_restart(started_cluster):
 
     # Replace substring to substr
     replace_text_in_metadata(node, metadata_path, "substring", "substr")
+
+    # Clear filesystem cache to avoid caching issues
+    db_disk_name = get_database_disk_name(node)
+    if db_disk_name != "default":
+        node.query(f"SYSTEM DROP DISK METADATA CACHE {db_disk_name}")
 
     # Restart clickhouse
     node.restart_clickhouse(kill=True)

@@ -79,6 +79,7 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
     extern const KafkaSettingsString kafka_replica_name;
     extern const KafkaSettingsString kafka_schema;
+    extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
     extern const KafkaSettingsUInt64 kafka_skip_broken_messages;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
@@ -219,6 +220,14 @@ void registerStorageKafka(StorageFactory & factory)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_poll_max_batch_size can not be lower than 1");
         }
+
+        constexpr size_t MAX_SKIP_BYTES = 255;
+        if ((*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value > MAX_SKIP_BYTES)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                           "kafka_schema_registry_skip_bytes value {} must be between 0 and {}",
+                           (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value, MAX_SKIP_BYTES);
+        }
         NamesAndTypesList supported_columns;
         for (const auto & column : args.columns)
         {
@@ -251,7 +260,8 @@ void registerStorageKafka(StorageFactory & factory)
 
         if (!has_keeper_path || !has_replica_name)
             throw Exception(
-        ErrorCodes::BAD_ARGUMENTS, "Either specify both zookeeper path and replica name or none of them");
+                ErrorCodes::BAD_ARGUMENTS,
+                "To store committed offsets in Keeper both kafka_keeper_path and kafka_replica_name must be specified");
 
         const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
@@ -313,9 +323,45 @@ void registerStorageKafka(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessType::KAFKA,
+            .source_access_type = AccessTypeObjects::Source::KAFKA,
             .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
         });
+}
+
+template <typename RevocationCb, typename AssignmentCb>
+void stopConsumerImpl(
+    cppkafka::Consumer& consumer,
+    RevocationCb revocation_cb,
+    AssignmentCb assignment_cb,
+    const std::chrono::milliseconds drain_timeout,
+    const LoggerPtr& log,
+    StorageKafkaUtils::ErrorHandler error_handler)
+{
+    consumer.set_revocation_callback(revocation_cb);
+
+    consumer.set_assignment_callback(assignment_cb);
+
+    try
+    {
+        auto assignment = consumer.get_assignment();
+
+        if (!assignment.empty())
+        {
+            consumer.pause_partitions(assignment);
+
+            for (const auto& partition : assignment)
+            {
+                // that call disables the forwarding of the messages to the customer queue
+                consumer.get_partition_queue(partition);
+            }
+        }
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Error during pause (stopConsumerImpl): {}", e.what());
+    }
+
+    StorageKafkaUtils::drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
 }
 
 namespace StorageKafkaUtils
@@ -356,14 +402,13 @@ void consumerGracefulStop(
     //   (4) Disconnect the toppar queues to reduce the risk of lock inversion (less cascading locks).
     //   (5) Poll the event queue to process any remaining callbacks.
 
-    consumer.set_revocation_callback(
-        [](const cppkafka::TopicPartitionList &)
+    stopConsumerImpl(
+        consumer,
+        /*revocation*/ [](const cppkafka::TopicPartitionList &)
         {
             // we don't care during the destruction
-        });
-
-    consumer.set_assignment_callback(
-        [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
+        },
+        /*assignment*/ [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
         {
             if (!topic_partitions.empty())
             {
@@ -373,30 +418,24 @@ void consumerGracefulStop(
             // it's not clear if get_partition_queue will work in that context
             // as just after processing the callback cppkafka will call run assign
             // and that can reset the queues
+        },
+        drain_timeout, log, std::move(error_handler));
+}
 
-        });
-
-    try
-    {
-        auto assignment = consumer.get_assignment();
-
-        if (!assignment.empty())
+void consumerStopWithoutRebalance(
+    cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
+{
+    stopConsumerImpl(
+        consumer,
+        /*revocation*/ [](const cppkafka::TopicPartitionList &)
         {
-            consumer.pause_partitions(assignment);
-
-            for (const auto& partition : assignment)
-            {
-                // that call disables the forwarding of the messages to the customer queue
-                consumer.get_partition_queue(partition);
-            }
-        }
-    }
-    catch (const cppkafka::HandleException & e)
-    {
-        LOG_ERROR(log, "Error during pause (consumerGracefulStop): {}", e.what());
-    }
-
-    drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
+            // we don't care during the destruction
+        },
+        /*assignment*/ [](const cppkafka::TopicPartitionList &)
+        {
+            // we don't care during the destruction
+        },
+        drain_timeout, log, std::move(error_handler));
 }
 
 // Needed to drain rest of the messages / queued callback calls from the consumer after unsubscribe, otherwise consumer

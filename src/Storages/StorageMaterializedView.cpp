@@ -11,6 +11,7 @@
 #include <Parsers/queryNormalization.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/ViewDefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -120,6 +121,9 @@ StorageMaterializedView::StorageMaterializedView(
     if (storage_metadata.sql_security_type == SQLSecurityType::INVOKER)
         throw Exception(ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW, "SQL SECURITY INVOKER can't be specified for MATERIALIZED VIEW");
 
+    if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        ViewDefinerDependencies::instance().addViewDependency(*storage_metadata.definer, table_id_);
+
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
 
@@ -224,8 +228,16 @@ StorageMaterializedView::StorageMaterializedView(
             /// Sanity-check permissions. This is just for usability, the main checks are done by the
             /// actual CREATE/INSERT/SELECT/EXCHANGE/DROP interpreters during refresh.
             String inner_db_name = has_inner_table ? table_id_.database_name : to_table_id.database_name;
-            auto refresh_context = storage_metadata.getSQLSecurityOverriddenContext(getContext());
-            refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);
+
+            /// When restoring from backup, the definer user may not be backed up, which will cause the whole backup to be broken.
+            /// To fix this, we don't check the permissions for the target table for the first time.
+            /// If the table is created later when adding a new replica to Replicated database,
+            /// we may also not have the definer, so don't check the permissions to avoid the database becoming stuck.
+            if (!is_restore_from_backup && mode <= LoadingStrictnessLevel::CREATE)
+            {
+                auto refresh_context = storage_metadata.getSQLSecurityOverriddenContext(getContext());
+                refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, inner_db_name);
+            }
         }
 
         refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_restore_from_backup);
@@ -370,8 +382,8 @@ void StorageMaterializedView::read(
 
     if (query_plan.isInitialized())
     {
-        auto mv_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
-        auto target_header = query_plan.getCurrentHeader();
+        auto mv_header = *getHeaderForProcessingStage(column_names, storage_snapshot, query_info, context, processed_stage);
+        auto target_header = *query_plan.getCurrentHeader();
 
         /// No need to convert columns that does not exist in MV
         removeNonCommonColumns(mv_header, target_header);
@@ -387,7 +399,8 @@ void StorageMaterializedView::read(
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
                                                                         mv_header.getColumnsWithTypeAndName(),
-                                                                        ActionsDAG::MatchColumnsMode::Name);
+                                                                        ActionsDAG::MatchColumnsMode::Name,
+                                                                        context);
             /* Leave columns outside from materialized view structure as is.
              * They may be added in case of distributed query with JOIN.
              * In that case underlying table returns joined columns as well.
@@ -432,9 +445,9 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
 void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
-    const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
-    if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, table_id);
+
+    if (getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
+        ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 
     /// Sync flag and the setting make sense for Atomic databases only.
     /// However, with Atomic databases, IStorage::drop() can be called only from a background task in DatabaseCatalog.
@@ -532,7 +545,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
 
-    auto select_query = getInMemoryMetadataPtr()->getSelectQuery().select_query;
+    auto select_query = getInMemoryMetadataPtr()->getSelectQuery().select_query->clone();
     InterpreterSetQuery::applySettingsFromQuery(select_query, refresh_context);
 
     if (!append)
@@ -546,7 +559,8 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         /// Pre-check the permissions. Would be awkward if we create a temporary table and can't drop it.
         refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, db_name);
 
-        auto create_query = std::dynamic_pointer_cast<ASTCreateQuery>(db->getCreateTableQuery(inner_table_id.table_name, getContext()));
+        auto create_query
+            = std::dynamic_pointer_cast<ASTCreateQuery>(db->getCreateTableQuery(inner_table_id.table_name, getContext())->clone());
         create_query->setTable(new_table_name);
         create_query->setDatabase(db_name);
         create_query->create_or_replace = true;
@@ -574,14 +588,14 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     insert_query->setDatabase(target_table.database_name);
     insert_query->table_id = target_table;
 
-    Block header;
+    SharedHeader header;
     if (refresh_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
     else
         header = InterpreterSelectWithUnionQuery(insert_query->select, refresh_context, SelectQueryOptions()).getSampleBlock();
 
     auto columns = std::make_shared<ASTExpressionList>(',');
-    for (const String & name : header.getNames())
+    for (const String & name : header->getNames())
         columns->children.push_back(std::make_shared<ASTIdentifier>(name));
     insert_query->columns = std::move(columns);
 
@@ -631,7 +645,7 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     {
         auto query_for_logging = drop_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
         UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds());
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds(), /*internal*/ true);
         LOG_ERROR(getLogger("StorageMaterializedView"),
             "{}: Failed to drop temporary table after refresh. Table {} is left behind and requires manual cleanup.",
             getStorageID().getFullTableName(), table_id.getFullTableName());
@@ -668,7 +682,15 @@ void StorageMaterializedView::alter(
         checkAllTypesAreAllowedInTable(new_metadata.getColumns().getAll());
     }
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
+
+    auto & instance = ViewDefinerDependencies::instance();
+    if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        instance.removeViewDependencies(table_id);
+
+    if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
+        instance.addViewDependency(*new_metadata.definer, table_id);
+
     setInMemoryMetadata(new_metadata);
 
     if (refresher)

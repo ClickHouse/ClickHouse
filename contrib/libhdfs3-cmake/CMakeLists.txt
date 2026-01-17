@@ -98,6 +98,7 @@ set(SRCS
     "${HDFS3_SOURCE_DIR}/client/RawErasureDecoder.cpp"
     "${HDFS3_SOURCE_DIR}/client/RawErasureEncoder.cpp"
     "${HDFS3_SOURCE_DIR}/client/StatefulStripeReader.cpp"
+    "${HDFS3_SOURCE_DIR}/client/PositionStripeReader.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripeReader.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedBlockUtil.cpp"
     "${HDFS3_SOURCE_DIR}/client/StripedInputStreamImpl.cpp"
@@ -157,6 +158,9 @@ set_source_files_properties("${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp" PROPERTIES C
 add_library(_hdfs3 ${SRCS})
 
 add_dependencies(_hdfs3 protoc)
+target_compile_options(_hdfs3 PRIVATE
+    -include "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src/google/protobuf/stubs/port.h"
+)
 
 if (ENABLE_CLICKHOUSE_BENCHMARK)
     message(STATUS "enable perf checksum")

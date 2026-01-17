@@ -1,4 +1,4 @@
-#include "Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h"
+#include <Functions/UserDefined/UserDefinedSQLObjectsDiskStorage.h>
 
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectsStorageBase.h>
@@ -23,7 +23,6 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Logger.h>
 
 #include <filesystem>
 
@@ -209,7 +208,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     }
 
     WriteBufferFromOwnString create_statement_buf;
-    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite=*/false);
+    IAST::FormatSettings format_settings(/*one_line=*/false);
     create_object_query->format(create_statement_buf, format_settings);
     writeChar('\n', create_statement_buf);
     String create_statement = create_statement_buf.str();

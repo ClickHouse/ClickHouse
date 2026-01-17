@@ -9,9 +9,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -104,7 +101,10 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     UInt64 rows_to_read = 0;
     readBinary(rows_to_read, istr);
     if (rows_to_read == 0)
+    {
+        block.clear();
         return;
+    }
 
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
@@ -373,12 +373,12 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     const auto * filter_actions_dag_node = filter_actions_dag.getOutputs().at(0);
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
-    filter_actions_dag.getOutputs()[0] = &traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
+    const auto & predicate_node = traverseDAG(*filter_actions_dag_node, filter_actions_dag, context, node_to_result_node);
 
-    filter_actions_dag.removeUnusedActions();
+    auto sub_dag = ActionsDAG::cloneSubDAG({&predicate_node}, false);
 
-    actions_output_column_name = filter_actions_dag.getOutputs().at(0)->result_name;
-    actions = std::make_shared<ExpressionActions>(std::move(filter_actions_dag));
+    actions_output_column_name = sub_dag.getOutputs().at(0)->result_name;
+    actions = std::make_shared<ExpressionActions>(std::move(sub_dag));
 }
 
 bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
@@ -386,7 +386,7 @@ bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
     return isUseless();
 }
 
-bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     if (isUseless())
         return true;
@@ -397,19 +397,28 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     if (size == 0 || (max_rows != 0 && size > max_rows))
         return true;
 
-    if (!condition.checkInHyperrectangle(granule.set_hyperrectangle, index_data_types).can_be_true)
+    if (!condition.checkInHyperrectangle(granule.set_hyperrectangle, index_data_types, {}, update_partial_disjunction_result_fn).can_be_true)
         return false;
 
     Block result = granule.block;
     actions->execute(result);
 
     const auto & column = result.getByName(actions_output_column_name).column;
+    const bool nullable = column->isNullable();
 
     for (size_t i = 0; i < size; ++i)
-        if (!column->isNullAt(i) && (column->get64(i) & 1))
+        /// The first part of the condition checks if any of them pass the filter.
+        /// The second part of the conditions checks if column is nullable, in that case there is no need to check null map since filter function possibly handles null values.
+        /// Only in case the column is not nullable, check the null map.
+        if ((column->get64(i) & 1) && (nullable || !column->isNullAt(i)))
             return true;
 
     return false;
+}
+
+std::string MergeTreeIndexConditionSet::getDescription() const
+{
+    return condition.getDescription().condition;
 }
 
 MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const
@@ -451,11 +460,13 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
 
     const auto * col_uint8 = typeid_cast<const ColumnUInt8 *>(column.get());
     const NullMap * null_map = nullptr;
+    bool nullable = false;
 
     if (const auto * col_nullable = checkAndGetColumn<ColumnNullable>(&*column))
     {
         col_uint8 = typeid_cast<const ColumnUInt8 *>(&col_nullable->getNestedColumn());
         null_map = &col_nullable->getNullMapData();
+        nullable = true;
     }
 
     if (!col_uint8)
@@ -483,17 +494,18 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
         {
             /// This granule has set elements - check if any of them pass the filter.
             chassert(current_granule == current_granule_in_block);
-            bool passed = false;
-            while (block_pos < block_size && current_granule_in_block == granule_nums[block_pos])
+            for (bool passed = false; block_pos < block_size && current_granule_in_block == granule_nums[block_pos]; ++block_pos)
             {
                 if (!passed)
                 {
-                    passed = (!null_map || !(*null_map)[block_pos]) && (filter_result[block_pos] & 1);
+                    /// The first part of the condition checks if any of them pass the filter.
+                    /// The second part of the conditions checks if column is nullable, in that case there is no need to check null map since filter function possibly handles null values.
+                    /// Only in case the column is not nullable, check the null map.
+                    passed = (filter_result[block_pos] & 1) && (nullable || !null_map || !(*null_map)[block_pos]);
                     if (passed)
                         res.push_back(current_granule);
                     /// After we found that it passes, we just iterate over the block to the next granule or the end.
                 }
-                ++block_pos;
             }
         }
     }
@@ -690,9 +702,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     }
     if (node.column && isColumnConst(*node.column))
     {
-        Field literal;
-        node.column->get(0, literal);
-        return !atomic && literal.safeGet<bool>();
+        return !atomic && node.column->getBool(0);
     }
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
@@ -703,7 +713,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
         auto function_name = node.function_base->getName();
         const auto & arguments = getArguments(node, nullptr, nullptr);
 
-        if (function_name == "and" || function_name == "indexHint")
+        if (function_name == "and" || function_name == "or" || function_name == "indexHint")
         {
             /// Can't use std::all_of() because we have to call checkDAGUseless() for all arguments
             /// to populate sets_to_prepare.
@@ -715,11 +725,6 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             }
             return all_useless;
         }
-        if (function_name == "or")
-            return std::any_of(
-                arguments.begin(),
-                arguments.end(),
-                [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
         if (function_name == "not")
             return checkDAGUseless(*arguments.at(0), context, sets_to_prepare, atomic);
         return std::any_of(
@@ -743,7 +748,7 @@ MergeTreeIndexBulkGranulesPtr MergeTreeIndexSet::createIndexBulkGranules() const
     return std::make_shared<MergeTreeIndexBulkGranulesSet>(index.sample_block);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorSet>(index.name, index.sample_block, max_rows);
 }
@@ -764,9 +769,9 @@ MergeTreeIndexPtr setIndexCreator(const IndexDescription & index)
 void setIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     if (index.arguments.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument");
     if (index.arguments[0].getType() != Field::Types::UInt64)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index argument must be positive integer.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index argument must be positive integer");
 }
 
 }

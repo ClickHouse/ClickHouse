@@ -241,7 +241,7 @@ public:
             /// we care about.
             IColumn::Filter filter(unfinished_rows);
             for (size_t i = 0; i < prev_selector.size(); ++i)
-                filter[i] = prev_selector[i];
+                filter[i] = static_cast<UInt8>(prev_selector[i]);
             ColumnPtr lambda_col_filtered = lambda_col->filter(filter, lambda_col->size());
             IColumn::MutablePtr lambda_col_filtered_cloned = lambda_col_filtered->cloneResized(lambda_col_filtered->size()); /// clone so we can bind more arguments
             auto * lambda = typeid_cast<ColumnFunction *>(lambda_col_filtered_cloned.get());
@@ -292,11 +292,11 @@ REGISTER_FUNCTION(ArrayFold)
     FunctionDocumentation::Description description = "Applies a lambda function to one or more equally-sized arrays and collects the result in an accumulator.";
     FunctionDocumentation::Syntax syntax = "arrayFold(λ(acc, x1 [, x2, x3, ... xN]), arr1 [, arr2, arr3, ... arrN], acc)";
     FunctionDocumentation::Arguments arguments = {
-        {"λ(x, x1 [, x2, x3, ... xN])", "A lambda function `λ(acc, x1 [, x2, x3, ... xN]) → F(acc, x1 [, x2, x3, ... xN])` where `F` is an operation applied to `acc` and array values from `x` with the result of `acc` re-used. [Lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda)."},
-        {"arr1 [, arr2, arr3, ... arrN]", "N arrays over which to operate. [`Array(T)`](/sql-reference/data-types/array)"},
+        {"λ(x, x1 [, x2, x3, ... xN])", "A lambda function `λ(acc, x1 [, x2, x3, ... xN]) → F(acc, x1 [, x2, x3, ... xN])` where `F` is an operation applied to `acc` and array values from `x` with the result of `acc` re-used.", {"Lambda function"}},
+        {"arr1 [, arr2, arr3, ... arrN]", "N arrays over which to operate.", {"Array(T)"}},
         {"acc", "Accumulator value with the same type as the return type of the Lambda function."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the final `acc` value.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the final `acc` value."};
     FunctionDocumentation::Examples examples = {
 {
 "Usage example",
@@ -337,7 +337,7 @@ SELECT arrayFold(
 };
     FunctionDocumentation::IntroducedIn introduced_in = {23, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayFold>(documentation);
 }

@@ -1,14 +1,15 @@
-#include "FileDictionarySource.h"
+#include <Dictionaries/FileDictionarySource.h>
 #include <Common/logger_useful.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
+#include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IInputFormat.h>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "registerDictionaries.h"
-#include "DictionarySourceHelpers.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/registerDictionaries.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
 
 
 namespace DB
@@ -46,7 +47,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 }
 
 
-QueryPipeline FileDictionarySource::loadAll()
+BlockIO FileDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
@@ -54,7 +55,9 @@ QueryPipeline FileDictionarySource::loadAll()
     source->addBuffer(std::move(in_ptr));
     last_modification = getLastModification();
 
-    return QueryPipeline(std::move(source));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::move(source));
+    return io;
 }
 
 

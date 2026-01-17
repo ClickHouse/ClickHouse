@@ -6,6 +6,7 @@ keywords: ['PrettySpaceMonoBlock']
 output_format: true
 slug: /interfaces/formats/PrettySpaceMonoBlock
 title: 'PrettySpaceMonoBlock'
+doc_type: 'reference'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -19,8 +20,8 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 Differs from the [`PrettySpace`](./PrettySpace.md) format in that up to `10,000` rows are buffered, 
 and then output as a single table, and not by [blocks](/development/architecture#block).
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 <PrettyFormatSettings/>

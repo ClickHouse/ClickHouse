@@ -67,7 +67,7 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
 
         const size_t left_table_pos = 0;
         /// Test each argument of `and` function and select ones related to only left table
-        std::shared_ptr<ASTFunction> new_conj = makeASTFunction("and");
+        std::shared_ptr<ASTFunction> new_conj = makeASTOperator("and");
         for (auto && node : splitConjunctionsAst(where))
         {
             if (membership_collector.getIdentsMembership(node) == left_table_pos)
@@ -92,7 +92,7 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     return true;
 }
 
-Block getHeaderForProcessingStage(
+SharedHeader getHeaderForProcessingStage(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     const SelectQueryInfo & query_info,
@@ -104,8 +104,8 @@ Block getHeaderForProcessingStage(
         case QueryProcessingStage::FetchColumns:
         {
             Block header = storage_snapshot->getSampleBlockForColumns(column_names);
-            header = SourceStepWithFilter::applyPrewhereActions(header, query_info.prewhere_info);
-            return header;
+            header = SourceStepWithFilter::applyPrewhereActions(header, query_info.row_level_filter, query_info.prewhere_info);
+            return std::make_shared<const Block>(std::move(header));
         }
         case QueryProcessingStage::WithMergeableState:
         case QueryProcessingStage::Complete:
@@ -144,7 +144,7 @@ Block getHeaderForProcessingStage(
                 }
             }
 
-            Block result;
+            SharedHeader result;
 
             if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
@@ -157,7 +157,7 @@ Block getHeaderForProcessingStage(
             else
             {
                 auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
-                        storage_snapshot->getSampleBlockForColumns(column_names)));
+                        std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names))));
                 result = InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
             }
 

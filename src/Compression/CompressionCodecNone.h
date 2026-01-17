@@ -19,11 +19,13 @@ public:
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
     bool isCompression() const override { return false; }
     bool isGenericCompression() const override { return false; }
     bool isNone() const override { return true; }
+
+    String getDescription() const override { return "No compression. Can be used on columns that can not be compressed anyway."; }
 };
 
 }

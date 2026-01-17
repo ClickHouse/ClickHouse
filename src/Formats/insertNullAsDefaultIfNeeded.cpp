@@ -45,7 +45,7 @@ bool insertNullAsDefaultIfNeeded(ColumnWithTypeAndName & input_column, const Col
         if (tuple_input_type.getElements().size() != tuple_header_type.getElements().size())
             return false;
 
-        bool has_explicit_names = tuple_input_type.haveExplicitNames();
+        bool has_explicit_names = tuple_input_type.hasExplicitNames();
         Names explicit_names = has_explicit_names ? tuple_input_type.getElementNames() : Names{};
 
         Columns nested_input_columns;

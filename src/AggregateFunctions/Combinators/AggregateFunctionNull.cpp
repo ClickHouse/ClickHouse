@@ -1,10 +1,9 @@
-#include "AggregateFunctionNull.h"
-#include "AggregateFunctionState.h"
-#include "AggregateFunctionSimpleState.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionSimpleState.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 
 #include <AggregateFunctions/AggregateFunctionNothing.h>
-#include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
 
 

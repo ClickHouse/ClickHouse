@@ -502,9 +502,9 @@ For more details, please see [here](https://developers.google.com/machine-learni
 )";
     FunctionDocumentation::Syntax syntax_roc = "arrayROCAUC(scores, labels[, scale[, partial_offsets]])";
     FunctionDocumentation::Arguments arguments_roc = {
-        {"scores", "Scores prediction model gives. [`Array(T)`](/sql-reference/data-types/array) of [Integers](../data-types/int-uint.md) or [Floats](../data-types/float.md)."},
-        {"labels", "Labels of samples, usually 1 for positive sample and 0 for negative sample. [Array](/sql-reference/data-types/array) of [Integers](../data-types/int-uint.md) or [Enums](../data-types/enum.md)."},
-        {"scale", "Decides whether to return the normalized area. If false, returns the area under the TP (true positives) x FP (false positives) curve instead. Default value: true. [Bool](../data-types/boolean.md). Optional."},
+        {"scores", "Scores prediction model gives.", {"Array((U)Int*)", "Array(Float*)"}},
+        {"labels", "Labels of samples, usually 1 for positive sample and 0 for negative sample.", {"Array((U)Int*)", "Enum"}},
+        {"scale", "Optional. Decides whether to return the normalized area. If false, returns the area under the TP (true positives) x FP (false positives) curve instead. Default value: true.", {"Bool"}},
         {"partial_offsets", R"(
 - An array of four non-negative integers for calculating a partial area under the ROC curve (equivalent to a vertical band of the ROC space) instead of the whole AUC. This option is useful for distributed computation of the ROC AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`]. [Array](/sql-reference/data-types/array) of non-negative [Integers](../data-types/int-uint.md). Optional.
     - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
@@ -512,20 +512,20 @@ For more details, please see [here](https://developers.google.com/machine-learni
     - `total_positives`: The total number of positive samples in the entire dataset.
     - `total_negatives`: The total number of negative samples in the entire dataset.
 
-::::note
+:::note
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-::::
+:::
 )"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_roc = "Returns area under the receiver operating characteristic (ROC) curve. [Float64](../data-types/float.md).";
+    FunctionDocumentation::ReturnedValue returned_value_roc = {"Returns area under the receiver operating characteristic (ROC) curve.", {"Float64"}};
     FunctionDocumentation::Examples examples_roc = {{"Usage example", "SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);", "0.75"}};
     FunctionDocumentation::IntroducedIn introduced_in_roc = {20, 4};
     FunctionDocumentation::Category category_roc = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_roc = {description_roc, syntax_roc, arguments_roc, returned_value_roc, examples_roc, introduced_in_roc, category_roc};
+    FunctionDocumentation documentation_roc = {description_roc, syntax_roc, arguments_roc, {}, returned_value_roc, examples_roc, introduced_in_roc, category_roc};
 
     factory.registerFunction<FunctionArrayAUC<false>>(documentation_roc);
     factory.registerAlias("arrayAUC", "arrayROCAUC"); /// Backward compatibility, also ROC AUC is often shorted to just AUC
@@ -540,24 +540,24 @@ For more details, please see [here](https://developers.google.com/machine-learni
 )";
     FunctionDocumentation::Syntax syntax_pr = "arrayAUCPR(scores, labels[, partial_offsets])";
     FunctionDocumentation::Arguments arguments_pr = {
-        {"cores", "Scores prediction model gives. [Array](/sql-reference/data-types/array) of [Integers](../data-types/int-uint.md) or [Floats](../data-types/float.md)."},
-        {"labels", "Labels of samples, usually 1 for positive sample and 0 for negative sample. [Array](/sql-reference/data-types/array) of [Integers](../data-types/int-uint.md) or [Enums](../data-types/enum.md)."},
+        {"cores", "Scores prediction model gives.", {"Array((U)Int*)", "Array(Float*)"}},
+        {"labels", "Labels of samples, usually 1 for positive sample and 0 for negative sample.", {"Array((U)Int*)", "Array(Enum)"}},
         {"partial_offsets", R"(
-- Optional. An [`Array(T)`](/sql-reference/data-types/array) of three non-negative integers for calculating a partial area under the PR curve (equivalent to a vertical band of the PR space) instead of the whole AUC. This option is useful for distributed computation of the PR AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`]. [Array](/sql-reference/data-types/array) of non-negative [Integers](../data-types/int-uint.md). Optional.
+- Optional. An [`Array(T)`](/sql-reference/data-types/array) of three non-negative integers for calculating a partial area under the PR curve (equivalent to a vertical band of the PR space) instead of the whole AUC. This option is useful for distributed computation of the PR AUC. The array must contain the following elements [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`].
     - `higher_partitions_tp`: The number of positive labels in the higher-scored partitions.
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.
 
-::::note
+:::note
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-::::
+:::
 )"}
     };
-    FunctionDocumentation::ReturnedValue returned_value_pr = "Returns area under the precision-recall (PR) curve. [Float64](../data-types/float.md).";
+    FunctionDocumentation::ReturnedValue returned_value_pr = {"Returns area under the precision-recall (PR) curve.", {"Float64"}};
     FunctionDocumentation::Examples examples_pr = {{"Usage example", "SELECT arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);", R"(
 ┌─arrayAUCPR([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
 │                              0.8333333333333333 │
@@ -565,7 +565,7 @@ For example:
 )"}};
     FunctionDocumentation::IntroducedIn introduced_in_pr = {20, 4};
     FunctionDocumentation::Category category_pr = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_pr = {description_pr, syntax_pr, arguments_pr, returned_value_pr, examples_pr, introduced_in_pr, category_pr};
+    FunctionDocumentation documentation_pr = {description_pr, syntax_pr, arguments_pr, {}, returned_value_pr, examples_pr, introduced_in_pr, category_pr};
 
     factory.registerFunction<FunctionArrayAUC<true>>(documentation_pr);
     factory.registerAlias("arrayPRAUC", "arrayAUCPR");

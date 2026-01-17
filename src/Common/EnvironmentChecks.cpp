@@ -66,6 +66,9 @@ sigjmp_buf jmpbuf;
 /// If instruction is unavailable, SIGILL will be sent by kernel.
 void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 {
+//  e2k-Clang can cross-compile Intel Intrinsics, but it can't work with x86-asm
+#if !defined(__e2k__)
+
 #if defined(__SSE3__)
     fail = InstructionFail::SSE3;
     __asm__ volatile ("addsubpd %%xmm0, %%xmm0" : : : "xmm0");
@@ -107,10 +110,12 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
     __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
 #endif
 
-#if defined(__AVX512__)
+#if defined(__AVX512F__)
     fail = InstructionFail::AVX512;
     __asm__ volatile ("vpabsw %%zmm0, %%zmm0" : : : "zmm0");
 #endif
+
+#endif // #if !defined(__e2k__)
 
     fail = InstructionFail::NONE;
 }

@@ -3,6 +3,7 @@ description: 'Overview page for settings.'
 sidebar_position: 1
 slug: /operations/settings/overview
 title: 'Settings Overview'
+doc_type: 'reference'
 ---
 
 # Settings Overview

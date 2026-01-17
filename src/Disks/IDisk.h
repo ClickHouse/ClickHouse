@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
@@ -20,6 +20,8 @@
 #include <filesystem>
 #include <optional>
 #include <sys/stat.h>
+#include <atomic>
+#include <mutex>
 
 #include "config.h"
 
@@ -52,7 +54,7 @@ namespace ErrorCodes
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
-using DisksMap = std::map<String, DiskPtr>;
+using DisksMap = std::map<String, DiskPtr, std::less<>>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
@@ -163,9 +165,6 @@ public:
     /// Create directory and all parent directories if necessary.
     virtual void createDirectories(const String & path) = 0;
 
-    /// Remove all files from the directory. Directories are not removed.
-    virtual void clearDirectory(const String & path) = 0;
-
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const String & from_path, const String & to_path) = 0;
 
@@ -225,16 +224,14 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
+        std::optional<size_t> read_hint = {}) const = 0;
 
     /// Returns nullptr if the file does not exist, otherwise opens it for reading.
     /// This method can save a request. The default implementation will do a separate `exists` call.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists( /// NOLINT
         const String & path,
         const ReadSettings & settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const;
+        std::optional<size_t> read_hint = {}) const;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
@@ -449,8 +446,6 @@ public:
 
     virtual bool supportsHardLinks() const { return true; }
 
-    virtual bool supportsPartitionCommand(const PartitionCommand & command) const;
-
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 
@@ -458,10 +453,10 @@ public:
     virtual void shutdown() {}
 
     /// Performs access check and custom action on disk startup.
-    void startup(ContextPtr context, bool skip_access_check);
+    void startup(bool skip_access_check);
 
     /// Performs custom action on disk startup.
-    virtual void startupImpl(ContextPtr) {}
+    virtual void startupImpl() {}
 
     /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
     /// but don't do it more frequently than the specified parameter.
@@ -480,9 +475,6 @@ public:
     /// Overrode in remote FS disks (s3/hdfs)
     /// Required for remote disk to ensure that the replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return existsFile(id); }
-
-    /// Invoked on partitions freeze query.
-    virtual void onFreeze(const String &) {}
 
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
@@ -575,10 +567,9 @@ public:
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() const { return nullptr; }
 #endif
 
+    bool isCaseInsensitive();
 
 protected:
-    friend class DiskReadOnlyWrapper;
-
     const String name;
 
     /// Base implementation of the function copy().
@@ -598,6 +589,12 @@ private:
     std::unique_ptr<ThreadPool> copying_thread_pool;
     // 0 means the disk is not custom, the disk is predefined in the config
     UInt128 custom_disk_settings_hash = 0;
+
+    /// True if underlying filesystem is case-insensitive,
+    /// e.g. file_name and FILE_NAME are the same files.
+    std::atomic_bool is_case_insensitive = false;
+    std::atomic_bool is_case_sensitivity_checked = false;
+    std::mutex case_sensitivity_check_mutex;
 
     /// Check access to the disk.
     void checkAccess();

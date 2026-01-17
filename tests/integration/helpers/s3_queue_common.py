@@ -93,6 +93,42 @@ def put_azure_file_content(started_cluster, filename, data, bucket=None):
     client.upload_blob(buf, "BlockBlob", len(data))
 
 
+def count_minio_objects(started_cluster, bucket_name, prefix):
+    minio = started_cluster.minio_client
+    objects = list(minio.list_objects(
+        bucket_name,
+        prefix=prefix,
+        recursive=True))
+    return len(objects)
+
+
+def count_azurite_blobs(started_cluster, container_name, prefix):
+    container_client = started_cluster.blob_service_client.get_container_client(
+        container_name
+    )
+    blob_names = list(container_client.list_blob_names(
+        name_starts_with=prefix))
+    return len(blob_names)
+
+
+def recreate_minio_bucket(started_cluster, bucket_name):
+    minio_client = started_cluster.minio_client
+    if minio_client.bucket_exists(bucket_name):
+        logging.debug(f"minio bucket '{bucket_name}' exists, removing to recreate")
+        minio_client.remove_bucket(bucket_name)
+    minio_client.make_bucket(bucket_name)
+
+
+def recreate_azurite_container(started_cluster, container_name):
+    container_client = started_cluster.blob_service_client.get_container_client(
+        container_name
+    )
+    if container_client.exists():
+        logging.debug(f"azurite container '{container_name}' exists, deleting to recreate")
+        container_client.delete_container()
+    container_client.create_container()
+
+
 def create_table(
     started_cluster,
     node,
@@ -108,38 +144,70 @@ def create_table(
     bucket=None,
     expect_error=False,
     database_name="default",
+    replace=False,
     no_settings=False,
+    hive_partitioning_path="",
+    hive_partitioning_columns="",
+    after_processing="keep",
+    move_to_prefix=None,
+    move_to_bucket=None,
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
 
     settings = {
         "s3queue_loading_retries": 0,
-        "after_processing": "keep",
+        "after_processing": after_processing,
         "keeper_path": f"/clickhouse/test_{table_name}",
         "mode": f"{mode}",
     }
     if version is None:
         settings["enable_hash_ring_filtering"] = 1
+        settings["use_persistent_processing_nodes"] = random.choice([True, False])
+
+    if after_processing == "move":
+        assert move_to_prefix or move_to_bucket
+
+        if move_to_prefix:
+            settings["after_processing_move_prefix"] = move_to_prefix
+        if move_to_bucket:
+            if engine_name == "S3Queue":
+                move_uri = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{move_to_bucket}"
+                settings["after_processing_move_uri"] = move_uri
+                minio_access_key_id, minio_secret_access_key = [s.strip("'") for s in DEFAULT_AUTH]
+                settings["after_processing_move_access_key_id"] = minio_access_key_id
+                settings["after_processing_move_secret_access_key"] = minio_secret_access_key
+            else:
+                azurite_connection_string = started_cluster.env_variables['AZURITE_CONNECTION_STRING']
+                settings["after_processing_move_connection_string"] = azurite_connection_string
+                settings["after_processing_move_container"] = move_to_bucket
 
     settings.update(additional_settings)
 
+    if hive_partitioning_columns:
+        hive_partitioning_columns = f", {hive_partitioning_columns}"
+        settings["use_hive_partitioning"] = True
+        settings["allow_experimental_object_storage_queue_hive_partitioning"] = True
+
     engine_def = None
     if engine_name == "S3Queue":
-        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
+        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/{hive_partitioning_path}"
         engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
     else:
-        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
+        azurite_connection_string = started_cluster.env_variables['AZURITE_CONNECTION_STRING']
+        engine_def = f"{engine_name}('{azurite_connection_string}', '{started_cluster.azurite_container}', '{files_path}/{hive_partitioning_path}', 'CSV')"
 
-    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    create = "REPLACE" if replace else "CREATE"
+    if not replace:
+        node.query(f"DROP TABLE IF EXISTS {database_name}.{table_name}")
     if no_settings:
         create_query = f"""
-            CREATE TABLE {database_name}.{table_name} ({format})
+            {create} TABLE {database_name}.{table_name} ({format}{hive_partitioning_columns})
             ENGINE = {engine_def}
             """
     else:
         create_query = f"""
-            CREATE TABLE {database_name}.{table_name} ({format})
+            {create} TABLE {database_name}.{table_name} ({format}{hive_partitioning_columns})
             ENGINE = {engine_def}
             SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
             """
@@ -157,7 +225,10 @@ def create_mv(
     mv_name=None,
     create_dst_table_first=True,
     format="column1 UInt32, column2 UInt32, column3 UInt32",
+    virtual_columns="_path String",
     extra_dst_format=None,
+    dst_table_engine="MergeTree()",
+    dst_table_exists=False
 ):
     if mv_name is None:
         mv_name = f"{src_table_name}_mv"
@@ -166,30 +237,51 @@ def create_mv(
     else:
         extra_dst_format = ""
 
-    node.query(f"""
-        DROP TABLE IF EXISTS {dst_table_name};
-        DROP TABLE IF EXISTS {mv_name};
-    """)
+    if not dst_table_exists:
+        node.query(f"DROP TABLE IF EXISTS {dst_table_name};")
+
+    node.query(f"DROP TABLE IF EXISTS {mv_name};")
+
+    names = ""
+    for column in format.split(","):
+        name, _ = column.strip().rsplit(" ", 1)
+        if names == "":
+            names = name
+        else:
+            names += f", {name}"
+
+    virtual_format = ""
+    virtual_names = ""
+    virtual_columns_list = virtual_columns.split(",")
+    for column in virtual_columns_list:
+        virtual_format += f", {column}"
+        name, _ = column.strip().rsplit(" ", 1)
+        virtual_names += f", {name}"
 
     if create_dst_table_first:
+        if not dst_table_exists:
+            node.query(f"""
+                CREATE TABLE {dst_table_name} ({format}{extra_dst_format}{virtual_format})
+                ENGINE = {dst_table_engine}
+                ORDER BY column1;
+            """)
         node.query(
             f"""
-            CREATE TABLE {dst_table_name} ({format}{extra_dst_format}, _path String)
-            ENGINE = MergeTree()
-            ORDER BY column1;
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT {names} {virtual_names} FROM {src_table_name};
             """
         )
     else:
         node.query(
             f"""
             SET allow_materialized_view_with_bad_select=1;
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
-            CREATE TABLE {dst_table_name} ({format}{extra_dst_format}, _path String)
-            ENGINE = MergeTree()
-            ORDER BY column1;
-            """
-    )
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT {names} {virtual_names} FROM {src_table_name};
+            """)
+        if not dst_table_exists:
+            node.query(f"""
+                CREATE TABLE {dst_table_name} ({format}{extra_dst_format}{virtual_format})
+                ENGINE = {dst_table_engine}
+                ORDER BY column1;
+            """)
 
 
 def generate_random_string(length=6):

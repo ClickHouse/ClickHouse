@@ -11,6 +11,9 @@ namespace DB
 class IMergeTreeReader;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 /// A class which is responsible for creating read tasks
 /// which are later taken by readers via getTask method.
 /// Does prefetching for the read tasks it creates.
@@ -21,14 +24,17 @@ public:
         RangesInDataParts && parts_,
         MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
+        const IndexReadTasks & index_read_tasks_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     String getName() const override { return "PrefetchedReadPool"; }
     bool preservesOrderOfRanges() const override { return false; }
@@ -72,10 +78,7 @@ private:
     {
         using InfoPtr = MergeTreeReadTaskInfoPtr;
 
-        ThreadTask(InfoPtr read_info_, MarkRanges ranges_, Priority priority_)
-            : read_info(std::move(read_info_)), ranges(std::move(ranges_)), priority(priority_)
-        {
-        }
+        ThreadTask(InfoPtr read_info_, MarkRanges ranges_, std::vector<MarkRanges> patches_ranges_, Priority priority_);
 
         ~ThreadTask()
         {
@@ -90,6 +93,7 @@ private:
 
         InfoPtr read_info;
         MarkRanges ranges;
+        std::vector<MarkRanges> patches_ranges;
         Priority priority;
         std::unique_ptr<PrefetchedReaders> readers_future;
     };
@@ -117,6 +121,8 @@ private:
     MergeTreeReadTaskPtr createTask(ThreadTask & thread_task, MergeTreeReadTask * previous_task);
 
     static std::string dumpTasks(const TasksPerThread & tasks);
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     mutable std::mutex mutex;
     ThreadPool & prefetch_threadpool;

@@ -130,7 +130,7 @@ tr:nth-child(odd) td {{filter: brightness(90%);}}
 {{ text-align: right; }}
 
   </style>
-  <title>Clickhouse performance comparison</title>
+  <title>ClickHouse performance comparison</title>
 </head>
 <body>
 <div class="main">
@@ -622,8 +622,6 @@ if args.report == "main":
     </div>
     <p class="links">
     <a href="all-queries.html">All queries</a>
-    <a href="compare.log">Log</a>
-    <a href="output.7z">Test output</a>
     {os.getenv("CHPC_ADD_REPORT_LINKS") or ''}
     </p>
     </body>

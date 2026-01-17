@@ -1,4 +1,4 @@
-#include "StoragePostgreSQL.h"
+#include <Storages/StoragePostgreSQL.h>
 
 #if USE_LIBPQXX
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -133,21 +133,36 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         size_t max_block_size_,
         String remote_table_schema_,
         String remote_table_name_,
-        postgres::ConnectionHolderPtr connection_)
+        postgres::PoolWithFailoverPtr pool_
+    )
         : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
         , remote_table_name(remote_table_name_)
-        , connection(std::move(connection_))
+        , pool(std::move(pool_))
     {
     }
 
     std::string getName() const override { return "ReadFromPostgreSQL"; }
+
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<ReadFromPostgreSQL>(
+            requiredSourceColumns(),
+            query_info,
+            storage_snapshot,
+            context,
+            getOutputHeader(),
+            max_block_size,
+            remote_table_schema,
+            remote_table_name,
+            pool);
+    }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
@@ -169,14 +184,14 @@ public:
             transform_query_limit);
         LOG_TRACE(logger, "Query: {}", query);
 
-        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(std::move(connection), query, getOutputHeader(), max_block_size)));
+        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(pool->get(), query, getOutputHeader(), max_block_size)));
     }
 
     LoggerPtr logger;
     size_t max_block_size;
     String remote_table_schema;
     String remote_table_name;
-    postgres::ConnectionHolderPtr connection;
+    postgres::PoolWithFailoverPtr pool;
 };
 
 }
@@ -208,11 +223,11 @@ void StoragePostgreSQL::read(
         query_info,
         storage_snapshot,
         local_context,
-        sample_block,
+        std::make_shared<const Block>(sample_block),
         max_block_size,
         remote_table_schema,
         remote_table_name,
-        pool->get());
+        pool);
     query_plan.addStep(std::move(reading));
 }
 
@@ -229,7 +244,7 @@ public:
         const String & remote_table_name_,
         const String & remote_table_schema_,
         const String & on_conflict_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , metadata_snapshot(metadata_snapshot_)
         , connection_holder(std::move(connection_holder_))
         , remote_table_name(remote_table_name_)
@@ -416,7 +431,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversion not supported");
 
         if (is_nullable)
-            return ColumnNullable::create(std::move(nested_column), ColumnUInt8::create(nested_column->size(), 0));
+            return ColumnNullable::create(std::move(nested_column), ColumnUInt8::create(nested_column->size(), static_cast<UInt8>(0)));
 
         return nested_column;
     }
@@ -639,7 +654,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     },
     {
         .supports_schema_inference = true,
-        .source_access_type = AccessType::POSTGRES,
+        .source_access_type = AccessTypeObjects::Source::POSTGRES,
     });
 }
 

@@ -18,17 +18,10 @@ inline size_t roundUpToPowerOfTwoOrZero(size_t n)
     // if MSB is set, return n, to avoid return zero
     if (unlikely(n >= 0x8000000000000000ULL))
         return n;
+    else if (n <= 1)
+        return n;
 
-    --n;
-    n |= n >> 1;
-    n |= n >> 2;
-    n |= n >> 4;
-    n |= n >> 8;
-    n |= n >> 16;
-    n |= n >> 32;
-    ++n;
-
-    return n;
+    return size_t(1) << (64 - __builtin_clzl(n - 1));
 }
 
 

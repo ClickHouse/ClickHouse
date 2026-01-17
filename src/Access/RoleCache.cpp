@@ -57,7 +57,7 @@ namespace
 
 
 RoleCache::RoleCache(const AccessControl & access_control_, int expiration_time_seconds)
-    : access_control(access_control_), cache(expiration_time_seconds * 1000 /* 10 minutes by default*/)
+    : access_control(access_control_), cache(expiration_time_seconds * 1000ll /* 10 minutes by default*/)
 {
 }
 

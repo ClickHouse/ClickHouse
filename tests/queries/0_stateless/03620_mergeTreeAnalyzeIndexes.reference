@@ -1,0 +1,24 @@
+-- { echo }
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data);
+all_1_1_0	[(0,12)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data);
+all_1_1_0	[(0,12)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193);
+all_1_1_0	[(1,2)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key >= 8193);
+all_1_1_0	[(1,12)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8192+1 or key = 8192*3+1);
+all_1_1_0	[(1,2),(3,4)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8192+1 or key = 8192*5+1);
+all_1_1_0	[(1,2),(5,6)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, 'all_1_1_0');
+all_1_1_0	[(1,2)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193, 'no_such_part');
+-- Columns not from PK is allowed and ignored.
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, value = 0);
+all_1_1_0	[(0,12)]
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key = 8193 and value = 0);
+all_1_1_0	[(1,2)]
+-- Set
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data, key in (8193, 16385));
+all_1_1_0	[(1,3)]

@@ -33,8 +33,8 @@ Block ColumnPermuteTransform::permute(const Block & block, const std::vector<siz
     return Block(columns);
 }
 
-ColumnPermuteTransform::ColumnPermuteTransform(const Block & header_, const std::vector<size_t> & permutation_)
-    : ISimpleTransform(header_, permute(header_, permutation_), false)
+ColumnPermuteTransform::ColumnPermuteTransform(SharedHeader header_, const std::vector<size_t> & permutation_)
+    : ISimpleTransform(header_, std::make_shared<const Block>(permute(*header_, permutation_)), false)
     , permutation(permutation_)
 {
 }

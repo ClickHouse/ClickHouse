@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include "Functions/hilbertDecode2DLUT.h"
-#include "Functions/hilbertEncode2DLUT.h"
-#include "base/types.h"
+#include <Functions/hilbertDecode2DLUT.h>
+#include <Functions/hilbertEncode2DLUT.h>
+#include <base/types.h>
 
 
 TEST(HilbertLookupTable, EncodeBit1And3Consistency)

@@ -36,7 +36,6 @@ MultipartStreamBuf::MultipartStreamBuf(std::istream& istr, const std::string& bo
 	_boundary(boundary),
 	_lastPart(false)
 {
-	poco_assert (!boundary.empty() && boundary.length() < STREAM_BUFFER_SIZE - 6);
 }
 
 
@@ -47,7 +46,7 @@ MultipartStreamBuf::~MultipartStreamBuf()
 
 int MultipartStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 {
-	poco_assert_dbg (length >= _boundary.length() + 6);
+	poco_assert (!_boundary.empty() && _boundary.length() < length - 6);
 
 	static const int eof = std::char_traits<char>::eof();
 	std::streambuf& buf = *_istr.rdbuf();
@@ -88,7 +87,7 @@ int MultipartStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 					{
 						buf.sbumpc(); // '\n'
 					}
-					return 0;					
+					return 0;
 				}
 				else if (ch == '-' && buf.sgetc() == '-')
 				{
@@ -174,23 +173,21 @@ MultipartInputStream::~MultipartInputStream()
 
 
 MultipartReader::MultipartReader(std::istream& istr):
-	_istr(istr),
-	_pMPI(0)
+	_istr(istr)
 {
 }
 
 
 MultipartReader::MultipartReader(std::istream& istr, const std::string& boundary):
 	_istr(istr),
-	_boundary(boundary),
-	_pMPI(0)
+	_boundary(boundary)
 {
 }
 
 
 MultipartReader::~MultipartReader()
 {
-	delete _pMPI;
+
 }
 
 
@@ -208,8 +205,7 @@ void MultipartReader::nextPart(MessageHeader& messageHeader)
 		throw MultipartException("No more parts available");
 	}
 	parseHeader(messageHeader);
-	delete _pMPI;
-	_pMPI = new MultipartInputStream(_istr, _boundary);
+	_pMPI = std::make_unique<MultipartInputStream>(_istr, _boundary);
 }
 
 
@@ -218,11 +214,11 @@ bool MultipartReader::hasNextPart()
 	return (!_pMPI || !_pMPI->lastPart()) && _istr.good();
 }
 
-	
+
 std::istream& MultipartReader::stream() const
 {
 	poco_check_ptr (_pMPI);
-	
+
 	return *_pMPI;
 }
 

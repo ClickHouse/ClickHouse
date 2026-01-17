@@ -3,6 +3,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Common/UniqueLock.h>
 #include <Interpreters/ClientInfo.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -14,8 +15,8 @@ namespace DB
 
 class Context;
 
-class Throttler;
-using ThrottlerPtr = std::shared_ptr<Throttler>;
+class IThrottler;
+using ThrottlerPtr = std::shared_ptr<IThrottler>;
 
 struct Progress;
 using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -23,18 +24,23 @@ using ProgressCallback = std::function<void(const Progress & progress)>;
 struct ProfileInfo;
 using ProfileInfoCallback = std::function<void(const ProfileInfo & info)>;
 
+struct ClusterFunctionReadTaskResponse;
+using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
+
 class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
-/// This is the same type as StorageS3Source::IteratorWrapper
-using TaskIterator = std::function<String(size_t)>;
+using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor
 {
 public:
     using ReadContext = RemoteQueryExecutorReadContext;
+
+    /// To avoid deadlock in case of OOM and timeout in CancellationChecker
+    using LockAndBlocker = LockAndOverCommitTrackerBlocker<std::lock_guard, std::mutex>;
 
     /// We can provide additional logic for RemoteQueryExecutor
     /// For example for s3Cluster table function we provide an Iterator over tasks to do.
@@ -53,7 +59,7 @@ public:
     RemoteQueryExecutor(
         ConnectionPoolPtr pool,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         ThrottlerPtr throttler = nullptr,
         const Scalars & scalars_ = Scalars(),
@@ -66,32 +72,20 @@ public:
     RemoteQueryExecutor(
         Connection & connection,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr,
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 
-        std::optional<Extension> extension_ = std::nullopt);
-
-    /// Takes already set connection.
-    RemoteQueryExecutor(
-        std::shared_ptr<Connection> connection,
-        const String & query_,
-        const Block & header_,
-        ContextPtr context_,
-        ThrottlerPtr throttler_ = nullptr,
-        const Scalars & scalars_ = Scalars(),
-        const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         std::optional<Extension> extension_ = std::nullopt);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> && connections_,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr,
         const Scalars & scalars_ = Scalars(),
@@ -104,7 +98,7 @@ public:
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr,
         const Scalars & scalars_ = Scalars(),
@@ -173,9 +167,9 @@ public:
             return fd;
         }
 
-        Type type;
+        const Type type;
         Block block;
-        int fd{-1};
+        const int fd{-1};
     };
 
     /// Read next block of data. Returns empty block if query is finished.
@@ -215,7 +209,8 @@ public:
 
     void setLogger(LoggerPtr logger) { log = logger; }
 
-    const Block & getHeader() const { return header; }
+    const Block & getHeader() const { return *header; }
+    const SharedHeader & getSharedHeader() const { return header; }
 
     IConnections & getConnections() { return *connections; }
 
@@ -226,10 +221,12 @@ public:
     /// return true if parallel replica packet was processed
     bool processParallelReplicaPacketIfAny();
 
+    bool isFinished() const { return finished; }
+
 private:
     RemoteQueryExecutor(
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         const Scalars & scalars_,
         const Tables & external_tables_,
@@ -238,7 +235,7 @@ private:
         std::optional<Extension> extension_,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
-    Block header;
+    SharedHeader header;
     Block totals;
     Block extremes;
 

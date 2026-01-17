@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Core/Types.h>
 
 namespace DB
@@ -13,13 +13,13 @@ namespace DB
 class HudiMetadata final : public IDataLakeMetadata, private WithContext
 {
 public:
-    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
-
     static constexpr auto name = "Hudi";
 
-    HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
+    const char * getName() const override { return name; }
 
-    NamesAndTypesList getTableSchema() const override { return {}; }
+    HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationPtr configuration_, ContextPtr context_);
+
+    NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return {}; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
     {
@@ -29,23 +29,39 @@ public:
             && data_files == hudi_metadata->data_files;
     }
 
+    static void createInitial(
+        const ObjectStoragePtr & /*object_storage*/,
+        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
+        const ContextPtr & /*local_context*/,
+        const std::optional<ColumnsDescription> & /*columns*/,
+        ASTPtr /*partition_by*/,
+        ASTPtr /*order_by*/,
+        bool /*if_not_exists*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const StorageID & /*table_id_*/)
+    {
+    }
+
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
-        ConfigurationObserverPtr configuration,
+        StorageObjectStorageConfigurationWeakPtr configuration,
         ContextPtr local_context)
     {
-        return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
+        return std::make_unique<HudiMetadata>(object_storage, configuration.lock(), local_context);
     }
 
 protected:
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
-        size_t list_batch_size) const override;
+        size_t list_batch_size,
+        StorageMetadataPtr storage_metadata_snapshot,
+        ContextPtr context) const override;
 
 private:
     const ObjectStoragePtr object_storage;
-    const ConfigurationObserverPtr configuration;
+    const String table_path;
+    const String format;
     mutable Strings data_files;
 
     Strings getDataFilesImpl() const;

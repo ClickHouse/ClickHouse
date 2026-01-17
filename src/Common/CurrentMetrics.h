@@ -26,9 +26,9 @@ namespace CurrentMetrics
     using Value = Int64;
 
     /// Get name of metric by identifier. Returns statically allocated string.
-    const char * getName(Metric event);
+    const std::string_view & getName(Metric event);
     /// Get text description of metric by identifier. Returns statically allocated string.
-    const char * getDocumentation(Metric event);
+    const std::string_view & getDocumentation(Metric event);
 
     /// Metric identifier -> current value of metric.
     extern std::atomic<Value> values[];
@@ -59,6 +59,11 @@ namespace CurrentMetrics
         add(metric, -value);
     }
 
+    inline bool cas(Metric metric, Value expected, Value desired)
+    {
+        return values[metric].compare_exchange_strong(expected, desired, std::memory_order_relaxed);
+    }
+
     /// For lifetime of object, add amount for specified metric. Then subtract.
     class Increment
     {
@@ -76,7 +81,12 @@ namespace CurrentMetrics
         explicit Increment(Metric metric, Value amount_ = 1)
             : Increment(&values[metric], amount_)
         {
-            assert(metric < CurrentMetrics::end());
+            // in src/Core/tests/gtest_BackgroundSchedulePool.cpp we create pool as
+            // auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
+            // which leads as to creation of Increment with metric == CurrentMetrics::end()
+            // actually this is not a real metric, however it is presented in CurrentMetrics::values array
+            // so we are able to increment it and we should not assert here when metric == CurrentMetrics::end()
+            assert(metric <= CurrentMetrics::end());
         }
 
         ~Increment()

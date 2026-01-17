@@ -1,4 +1,4 @@
-#include "ParquetMetadataInputFormat.h"
+#include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
 
 #if USE_PARQUET
 
@@ -20,7 +20,7 @@
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
 #include <parquet/statistics.h>
-#include "ArrowBufferedStreams.h"
+#include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <DataTypes/NestedUtils.h>
 
 
@@ -136,7 +136,7 @@ static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
     return parquet::ReadMetaData(arrow_file);
 }
 
-ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
+ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &in_), format_settings(format_settings_)
 {
     checkHeader(getPort().getHeader());
@@ -374,14 +374,14 @@ void ParquetMetadataInputFormat::fillColumnStatistics(const std::shared_ptr<parq
     /// num_values
     auto & nullable_num_values = assert_cast<ColumnNullable &>(statistics_column.getColumn(0));
     assert_cast<ColumnUInt64 &>(nullable_num_values.getNestedColumn()).insertValue(statistics->num_values());
-    nullable_num_values.getNullMapData().push_back(0);
+    nullable_num_values.getNullMapData().push_back(false);
 
     /// null_count
     if (statistics->HasNullCount())
     {
         auto & nullable_null_count = assert_cast<ColumnNullable &>(statistics_column.getColumn(1));
         assert_cast<ColumnUInt64 &>(nullable_null_count.getNestedColumn()).insertValue(statistics->null_count());
-        nullable_null_count.getNullMapData().push_back(0);
+        nullable_null_count.getNullMapData().push_back(false);
     }
     else
     {
@@ -402,7 +402,7 @@ void ParquetMetadataInputFormat::fillColumnStatistics(const std::shared_ptr<parq
         else
         {
             assert_cast<ColumnUInt64 &>(nullable_distinct_count.getNestedColumn()).insertValue(distinct_count);
-            nullable_distinct_count.getNullMapData().push_back(0);
+            nullable_distinct_count.getNullMapData().push_back(false);
         }
     }
     else
@@ -471,10 +471,10 @@ void ParquetMetadataInputFormat::fillColumnStatistics(const std::shared_ptr<parq
 
         auto & nullable_min = assert_cast<ColumnNullable &>(statistics_column.getColumn(3));
         assert_cast<ColumnString &>(nullable_min.getNestedColumn()).insertData(min.data(), min.size());
-        nullable_min.getNullMapData().push_back(0);
+        nullable_min.getNullMapData().push_back(false);
         auto & nullable_max = assert_cast<ColumnNullable &>(statistics_column.getColumn(4));
         assert_cast<ColumnString &>(nullable_max.getNestedColumn()).insertData(max.data(), max.size());
-        nullable_max.getNullMapData().push_back(0);
+        nullable_max.getNullMapData().push_back(false);
     }
     else
     {
@@ -504,15 +504,13 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
     factory.registerRandomAccessInputFormat(
         "ParquetMetadata",
         [](ReadBuffer & buf,
-            const Block & sample,
-            const FormatSettings & settings,
-            const ReadSettings &,
-            bool /* is_remote_fs */,
-            size_t /* max_download_threads */,
-            size_t /* max_parsing_threads */)
-        {
-            return std::make_shared<ParquetMetadataInputFormat>(buf, sample, settings);
-        });
+           const Block & sample,
+           const FormatSettings & settings,
+           const ReadSettings &,
+           bool /* is_remote_fs */,
+           FormatParserSharedResourcesPtr,
+           FormatFilterInfoPtr) -> InputFormatPtr
+        { return std::make_shared<ParquetMetadataInputFormat>(buf, std::make_shared<const Block>(sample), settings); });
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 }
 

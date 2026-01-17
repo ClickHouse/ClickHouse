@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Core/DecimalFunctions.h>
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <base/arithmeticOverflow.h>
 

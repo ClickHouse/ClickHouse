@@ -244,7 +244,7 @@ ColumnDefinition getColumnDefinition(const String & column_name, const DataTypeP
             charset = CharacterSet::utf8_general_ci;
             break;
     }
-    return ColumnDefinition(column_name, charset, 0, column_type, flags, decimals);
+    return ColumnDefinition(column_name, charset, 0, column_type, static_cast<uint16_t>(flags), decimals);
 }
 
 }

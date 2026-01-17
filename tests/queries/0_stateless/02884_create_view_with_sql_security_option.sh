@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-async-insert
+# Tags: long, no-replicated-database, no-async-insert
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -145,7 +145,7 @@ ${CLICKHOUSE_CLIENT} --query "
   AS SELECT * FROM $db.test_table;
 "
 
-echo "grand select on test_mv_5 to user2"
+echo "grant select on test_mv_5 to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_5 TO $user2"
 
 echo "alter table test_mv_5"
@@ -155,11 +155,11 @@ ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_5"
 echo "show create table test_mv_5"
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE $db.test_mv_5" | grep -c "SQL SECURITY NONE"
 
-echo "grand select on test_mv_1 to user2"
+echo "grant select on test_mv_1 to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_1 TO $user2"
-echo "grand select on test_mv_3 to user2"
+echo "grant select on test_mv_3 to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_3 TO $user2"
-echo "grand select on test_mv_4 to user2"
+echo "grant select on test_mv_4 to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_4 TO $user2"
 
 echo "select from test_mv_1 as user2"
@@ -180,12 +180,12 @@ echo "grant insert on test_mv_data to user1"
 ${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON $db.test_mv_data TO $user1"
 echo "grant select on test_mv_data to user1"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON $db.test_mv_data TO $user1"
-echo "inseet into test_table"
+echo "insert into test_table"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO $db.test_table VALUES ('foo'), ('bar');"
 echo "select from test_mv_4 as user2"
 ${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT count() FROM $db.test_mv_4"
 
-echo "revote select on test_table from user1"
+echo "revoke select on test_table from user1"
 ${CLICKHOUSE_CLIENT} --query "REVOKE SELECT ON $db.test_table FROM $user1"
 echo "select from test_mv_4"
 (( $(${CLICKHOUSE_CLIENT} --user $user2 --query "SELECT * FROM $db.test_mv_4" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
@@ -227,11 +227,11 @@ FROM $db.destination1;
 EOF
 
 echo "insert into source"
-(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO source SELECT * FROM generateRandom() LIMIT 100" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
+(( $(${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100" 2>&1 | grep -c "Not enough privileges") >= 1 )) && echo "OK" || echo "UNEXPECTED"
 echo "grant insert on source to user2"
 ${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON $db.source TO $user2"
 echo "insert into source as user2"
-${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO source SELECT * FROM generateRandom() LIMIT 100"
+${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.source SELECT * FROM generateRandom() LIMIT 100"
 
 echo "select from destination1"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM destination1"
@@ -363,5 +363,33 @@ EOF
 
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE $db.cluster_mv" | grep -c "DEFINER = $user3"
 
+${CLICKHOUSE_CLIENT} <<EOF
+DROP TABLE $db.test_mv_1;
+DROP TABLE $db.test_mv_3;
+DROP TABLE $db.test_mv_4;
+DROP TABLE $db.test_mv_5;
 
+DROP TABLE $db.mv1;
+DROP TABLE $db.mv2;
+
+DROP TABLE $db.test_view_row_1;
+DROP TABLE $db.test_view_g_1;
+DROP TABLE $db.test_view_g_2;
+DROP TABLE $db.test_mv_row_2;
+
+DROP TABLE $db.test_view_2;
+DROP TABLE $db.test_view_3;
+DROP TABLE $db.test_view_4;
+DROP TABLE $db.test_view_5;
+DROP TABLE $db.test_view_6;
+DROP TABLE $db.test_view_7;
+DROP TABLE $db.test_view_8;
+DROP TABLE $db.test_view_9;
+DROP TABLE $db.test_view_10;
+DROP TABLE $db.test_view_11;
+
+DROP TABLE $db.cluster_mv ON CLUSTER test_shard_localhost;
+
+DROP TABLE $db.materialized_events;
+EOF
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2, $user3";

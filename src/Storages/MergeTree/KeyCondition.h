@@ -9,6 +9,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/Set.h>
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/BoolMask.h>
@@ -50,6 +51,9 @@ struct ActionsDAGWithInversionPushDown
   */
 class KeyCondition
 {
+private:
+    struct ThisIsPrivate {};
+
 public:
     /// Construct key condition from ActionsDAG nodes
     KeyCondition(
@@ -57,12 +61,14 @@ public:
         ContextPtr context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
-        bool single_point_ = false);
+        bool single_point_ = false,
+        bool skip_analysis_ = false); /// Toggled by `use_primary_key` setting. Useful for testing.
 
     struct BloomFilterData
     {
         using HashesForColumns = std::vector<std::vector<uint64_t>>;
         HashesForColumns hashes_per_column;
+        /// Subset of RPNElement::key_columns.
         std::vector<std::size_t> key_columns;
     };
 
@@ -74,11 +80,32 @@ public:
     };
 
     using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
+
+    /// Ref : https://github.com/ClickHouse/ClickHouse/pull/87781
+    /// ClickHouse always supported pruning for conditions with conjunctions/ANDs :
+    ///    A = 5 AND B > 10 AND C < 1000
+    /// The code was oriented towards each skip index application immediately 'throwing out'
+    /// ranges that do not pass the condition and moving on to evaluating the next skip index
+    /// on a reduced set of ranges.
+    ///
+    /// But a condition with ORs is fundamentally different : A = 5 OR B = 5. If a range does
+    /// not match the condition (A = 5) using skip index on A, we cannot throw out or prune away
+    /// that range. We need to 'wait' for skip index B application and see the result of B = 5
+    /// on that range.
+    ///
+    /// Range pruning for mixed AND/OR predicates uses below callback to record each atom's
+    /// evaluation result got by applying corresponding skip index (true or false). This is
+    /// done in MergeTreeDataSelectExecutor::filterMarksUsingIndex(). Each *IndexCondition
+    /// invokes this callback as it is evaluating the predicate. The final result for each
+    /// granule is computed in MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions()
+    using UpdatePartialDisjunctionResultFn = std::function<void (size_t position, bool result, bool is_unknown)>;
+
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
         const DataTypes & data_types,
-        const ColumnIndexToBloomFilter & column_index_to_column_bf = {}) const;
+        const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
+        const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -118,8 +145,7 @@ public:
 
     String toString() const;
 
-    /// Get the key indices of key names used in the condition.
-    const std::vector<size_t> & getKeyIndices() const { return key_indices; }
+    size_t getNumKeyColumns() const { return num_key_columns; }
 
     /// Condition description for EXPLAIN query.
     struct Description
@@ -210,11 +236,13 @@ public:
 
         RPNElement();
         explicit RPNElement(Function function_);
-        RPNElement(Function function_, size_t key_column_);
-        RPNElement(Function function_, size_t key_column_, const Range & range_);
+        RPNElement(Function function_, std::vector<size_t> key_columns_);
+        RPNElement(Function function_, std::vector<size_t> key_columns_, const Range & range_);
 
-        String toString() const;
-        String toString(std::string_view column_name, bool print_constants) const;
+        /// If `key_names` is empty, prints column numbers instead.
+        String toString(const std::vector<String> & key_names = {}) const;
+
+        size_t getKeyColumn() const { chassert(key_columns.size() == 1); return key_columns.at(0); }
 
         Function function = FUNCTION_UNKNOWN;
 
@@ -223,11 +251,22 @@ public:
 
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
-        size_t key_column = 0;
 
-        /// If the key_column is a space filling curve, e.g. mortonEncode(x, y),
-        /// we will analyze expressions of its arguments (x and y) similarly how we do for a normal key columns,
-        /// and this designates the argument number (0 for x, 1 for y):
+        /// Which columns are involved. E.g.:
+        ///  * if FUNCTION[_NOT]_IN_RANGE: exactly one element,
+        ///  * if FUNCTION[_NOT]_IN_SET: one or more elements in nondecreasing order, same as
+        ///    set_index->getIndexesMapping()[..].key_index,
+        ///  * if FUNCTION_POINT_IN_POLYGON: two elements (x, y) describing the point,
+        ///    as in pointInPolygon((x, y), ...).
+        std::vector<size_t> key_columns;
+
+        /// If a key column is a space filling curve, e.g. mortonEncode(x, y),
+        /// we will analyze expressions of its arguments (x and y) similarly how we do for normal
+        /// key columns. This field designates the argument number (0 for x, 1 for y), while
+        /// key_columns[0] points to the encoded column like mortonEncode(x, y).
+        /// Normally this field is only used during KeyCondition construction; by the end of
+        /// construction, such RPNElements get converted to FUNCTION_ARGS_IN_HYPERRECTANGLE operating
+        /// on the key column directly (see findHyperrectanglesForArgumentsOfSpaceFillingCurves).
         std::optional<size_t> argument_num_of_space_filling_curve;
 
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
@@ -238,18 +277,14 @@ public:
         Hyperrectangle space_filling_curve_args_hyperrectangle;
 
         /// For FUNCTION_POINT_IN_POLYGON.
-        /// Function like 'pointInPolygon' has multiple columns.
-        /// This struct description column part of the function, such as (x, y) in 'pointInPolygon'.
-        struct MultiColumnsFunctionDescription
-        {
-            String function_name;
-            std::vector<size_t> key_column_positions;
-            std::vector<String> key_columns;
-        };
-        std::optional<MultiColumnsFunctionDescription> point_in_polygon_column_description;
-
+        /// Function name (e.g. 'pointInPolygon') and the polygon.
+        /// Additionally, `key_columns` has two elements for point coordinates (x, y).
+        std::optional<String> point_in_polygon_function_name;
         std::shared_ptr<Polygon> polygon;
 
+        /// What functions are applied to the key column before doing the range/set/etc check.
+        /// E.g. toDate(key) > '2025-09-12'.
+        /// Applicable only for some FUNCTION_* types and only if key_columns.size() == 1.
         MonotonicFunctionsChain monotonic_functions_chain;
 
         std::optional<BloomFilterData> bloom_filter_data;
@@ -268,10 +303,44 @@ public:
 
     bool isSinglePoint() const { return single_point; }
 
+    /// Does the filter condition have any ORs?
+    bool hasOnlyConjunctions() const;
+
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                 std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
 
+    /// Split the KeyCondition into single-column conditions AND-ed together, plus a remaining
+    /// multi-column KeyCondition.
+    /// E.g. `x AND (y OR z) AND w` is split into out_column_conditions = {`x`, `w`}, out_complex_condition = {`y OR z`}.
+    ///
+    /// All returned KeyCondition-s use the same column numbering and have the same getNumKeyColumns()
+    /// as the original KeyCondition. E.g. when calling checkInHyperrectangle on the single-column
+    /// KeyCondition-s, the passed hyperrectangle must have as many elements as the original key size,
+    /// not just one element.
+    void extractSingleColumnConditions(std::vector<std::pair</*column_idx*/ size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const;
+
+    /// List key columns that are actually used in the condition. E.g. condition `x AND y` doesn't use column `z`.
+    std::unordered_set<size_t> getUsedColumns() const;
+
+    /// Private constructor.
+    KeyCondition(
+        ThisIsPrivate,
+        ColumnIndices key_columns_,
+        size_t num_key_columns_,
+        bool single_point_,
+        bool date_time_overflow_behavior_ignore_,
+        bool relaxed_);
+
 private:
+    /// Information used when building a KeyCondition out of ActionsDAG.
+    struct BuildInfo
+    {
+        /// Expression which is used for key condition.
+        const ExpressionActionsPtr key_expr;
+        /// All intermediate columns are used to calculate key_expr.
+        const NameSet key_subexpr_names;
+    };
+
     BoolMask checkInRange(
         size_t used_key_size,
         const FieldRef * left_key,
@@ -280,7 +349,7 @@ private:
         bool right_bounded,
         BoolMask initial_mask) const;
 
-    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
+    bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
@@ -293,6 +362,7 @@ private:
     /// functions as monotonic, which is useful for partition pruning.
     bool isKeyPossiblyWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
         size_t & out_key_column_num,
         std::optional<size_t> & out_argument_num_of_space_filling_curve,
         DataTypePtr & out_key_res_column_type,
@@ -301,6 +371,7 @@ private:
 
     bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
         size_t & out_key_column_num,
         std::optional<size_t> & out_argument_num_of_space_filling_curve,
         DataTypePtr & out_key_column_type,
@@ -309,6 +380,7 @@ private:
     bool extractMonotonicFunctionsChainFromKey(
         ContextPtr context,
         const String & expr_name,
+        const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         MonotonicFunctionsChain & out_functions_chain,
@@ -316,6 +388,7 @@ private:
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
@@ -323,6 +396,7 @@ private:
 
     bool canConstantBeWrappedByFunctions(
         const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
@@ -335,6 +409,7 @@ private:
     /// into key column values.
     bool canSetValuesBeWrappedByFunctions(
         const RPNBuilderTreeNode & node,
+        const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
         MonotonicFunctionsChain & out_functions_chain);
@@ -342,12 +417,24 @@ private:
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',
     /// do it and return true.
-    bool tryPrepareSetIndex(
+    bool tryPrepareSetIndexForIn(
         const RPNBuilderFunctionTreeNode & func,
+        const BuildInfo & info,
         RPNElement & out,
-        size_t & out_key_column_num,
-        bool & allow_constant_transformation,
-        bool & is_constant_transformed);
+        bool allow_constant_transformation);
+    bool tryPrepareSetIndexForHas(
+        const RPNBuilderFunctionTreeNode & func,
+        const BuildInfo & info,
+        RPNElement & out,
+        bool allow_constant_transformation);
+
+    void analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & arg,
+        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> &indexes_mapping,
+        std::vector<MonotonicFunctionsChain> &set_transforming_chains,
+        DataTypes & data_types,
+        size_t & args_count,
+        const BuildInfo & info,
+        bool allow_constant_transformation);
 
     /// Checks that the index can not be used.
     ///
@@ -378,6 +465,18 @@ private:
       */
     void findHyperrectanglesForArgumentsOfSpaceFillingCurves();
 
+    void getAllSpaceFillingCurves(const BuildInfo & info);
+
+    /// Determines if a function maintains monotonicity.
+    /// Currently only does special checks for toDateTime monotonicity.
+    bool isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const;
+
+    /// Returns the ranges in `rpn` corresponding to subconditions that are AND-ed together.
+    /// E.g. consider condition `x AND (y OR z) AND w`. The `rpn` is [x, y, z, OR, AND, w, AND].
+    /// This function will return [(0, 1), (1, 4), (5, 6)], corresponding to: [x], [y, z, OR], [w].
+    /// The returned vector is not necessarily sorted.
+    std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> topLevelConjunction() const;
+
     RPN rpn;
 
     /// If query has no filter, rpn will has one element with unknown function.
@@ -385,12 +484,9 @@ private:
     bool has_filter;
 
     ColumnIndices key_columns;
-    std::vector<size_t> key_indices;
-
-    /// Expression which is used for key condition.
-    const ExpressionActionsPtr key_expr;
-    /// All intermediate columns are used to calculate key_expr.
-    const NameSet key_subexpr_names;
+    /// `key_columns` may contain all columns of the key tuple or only the columns used in the
+    /// KeyCondition. Either way, num_key_columns is the length of the whole key tuple.
+    size_t num_key_columns = 0;
 
     /// Space-filling curves in the key
     enum class SpaceFillingCurveType
@@ -411,21 +507,11 @@ private:
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
     SpaceFillingCurveDescriptions key_space_filling_curves;
 
-    void getAllSpaceFillingCurves();
-
-    /// Array joined column names
-    NameSet array_joined_column_names;
-
     /// If true, this key condition is used only to validate single value
     /// ranges. It permits key_expr and constant of FunctionEquals to be
     /// transformed by any deterministic functions. It is used by
     /// PartitionPruner.
     bool single_point;
-
-
-    /// Determines if a function maintains monotonicity.
-    /// Currently only does special checks for toDateTime monotonicity.
-    bool isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const;
 
     /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
     /// Used to check toDateTime monotonicity.
@@ -483,7 +569,4 @@ private:
     /// on a given regular expression, which is relaxed for simplicity.
     bool relaxed = false;
 };
-
-std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
-
 }

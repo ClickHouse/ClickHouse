@@ -5,7 +5,6 @@
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
-#include <Common/GWPAsan.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -48,7 +47,9 @@
 #include <filesystem>
 
 #include <Loggers/OwnFormattingChannel.h>
+#include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/OwnSplitChannel.h>
 
 #include <Common/config_version.h>
 
@@ -144,7 +145,7 @@ BaseDaemon::~BaseDaemon()
         tryLogCurrentException(&logger());
     }
 
-    disableLogging();
+    stopLogging();
 }
 
 
@@ -280,6 +281,22 @@ void BaseDaemon::initialize(Application & self)
             std::cerr << "Cannot set max size of core file to " + std::to_string(rlim.rlim_cur) << std::endl;
         }
     }
+
+#if defined(OS_LINUX)
+    /// Configure RLIMIT_SIGPENDING
+    /// (query profiler creates lots of timers - timer_create(), and this requires slot in pending signals)
+    if (auto pending_signals = config().getUInt64("pending_signals", 0); pending_signals > 0)
+    {
+        struct rlimit rlim;
+        if (getrlimit(RLIMIT_SIGPENDING, &rlim))
+            throw Poco::Exception("Cannot getrlimit");
+        rlim.rlim_cur = pending_signals;
+        if (setrlimit(RLIMIT_SIGPENDING, &rlim))
+        {
+            std::cerr << "Cannot set pending signals to " + std::to_string(rlim.rlim_cur) << std::endl;
+        }
+    }
+#endif
 
     /// This must be done before any usage of DateLUT. In particular, before any logging.
     if (config().has("timezone"))
@@ -418,14 +435,14 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         && CrashWriter::initialized())
     {
         LOG_DEBUG(&logger(), "Sending logical errors is enabled");
-        Exception::callback = [](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::Trace & trace)
         {
             if (!remote && code == ErrorCodes::LOGICAL_ERROR)
             {
                 CrashWriter::FramePointers frame_pointers;
                 for (size_t i = 0; i < trace.size(); ++i)
                     frame_pointers[i] = trace[i];
-                CrashWriter::onException(code, msg, frame_pointers, /* offset= */ 0, trace.size());
+                CrashWriter::onException(code, format_string, frame_pointers, /* offset= */ 0, trace.size());
             }
         };
     }
@@ -561,7 +578,14 @@ void BaseDaemon::setupWatchdog()
         Poco::Pipe notify_sync;
 
         static pid_t pid = -1;
+        /// Temporarily close the logging thread and open it in each process later
+        auto * async_channel = dynamic_cast<OwnAsyncSplitChannel *>(logger().getChannel());
+        if (async_channel)
+            async_channel->close();
         pid = fork();
+
+        if (async_channel)
+            async_channel->open();
 
         if (-1 == pid)
             throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot fork");
@@ -601,7 +625,7 @@ void BaseDaemon::setupWatchdog()
         notify_sync.close();
 
         /// Change short thread name and process name.
-        setThreadName("clckhouse-watch");   /// 15 characters
+        DB::setThreadName(ThreadName::CLICKHOUSE_WATCH);
 
         if (argv0)
         {
@@ -613,21 +637,17 @@ void BaseDaemon::setupWatchdog()
         /// If streaming compression of logs is used then we write watchdog logs to cerr
         if (config().getRawString("logger.stream_compress", "false") == "true")
         {
-            Poco::AutoPtr<OwnPatternFormatter> pf;
-            if (config().getString("logger.formatting.type", "") == "json")
-                pf = new OwnJSONPatternFormatter(config());
-            else
-                pf = new OwnPatternFormatter;
+            Poco::AutoPtr<OwnPatternFormatter> pf = getFormatForChannel(config(), "console");
             Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
             logger().setChannel(log);
         }
 
         /// Concurrent writing logs to the same file from two threads is questionable on its own,
         /// but rotating them from two threads is disastrous.
-        if (auto * channel = dynamic_cast<OwnSplitChannel *>(logger().getChannel()))
+        if (auto * channel = dynamic_cast<OwnSplitChannelBase *>(logger().getChannel()))
         {
-            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATION, "never");
-            channel->setChannelProperty("log", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
+            channel->setChannelProperty("FileLog", Poco::FileChannel::PROP_ROTATION, "never");
+            channel->setChannelProperty("FileLog", Poco::FileChannel::PROP_ROTATEONOPEN, "false");
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
