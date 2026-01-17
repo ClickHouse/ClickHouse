@@ -95,8 +95,7 @@ void SchemaConverter::prepareForReading()
     for (const String & name : external_columns)
     {
         size_t idx = sample_block->getPositionByName(name, /* case_insensitive= */ false);
-        if (found_columns.at(idx))
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Name clash between PREWHERE condition and a column in parquet file: {}", name);
+        /// Note: it may already be true, if PREWHERE expression passes a column through.
         found_columns[idx] = true;
     }
 
