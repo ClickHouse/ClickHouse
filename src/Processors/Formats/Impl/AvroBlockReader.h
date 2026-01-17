@@ -21,6 +21,43 @@ struct AvroHeaderState
     avro::Codec codec = avro::NULL_CODEC;
 };
 
+/// Adapter to use ClickHouse ReadBuffer as Avro InputStream.
+/// Used to delegate header parsing to the Avro library.
+class ReadBufferInputStream : public avro::InputStream
+{
+public:
+    explicit ReadBufferInputStream(ReadBuffer & in_) : in(in_), bytes_read(0) {}
+
+    bool next(const uint8_t ** data, size_t * len) override
+    {
+        if (in.eof())
+            return false;
+        *data = reinterpret_cast<const uint8_t *>(in.position());
+        *len = in.available();
+        bytes_read += *len;
+        in.position() += *len;
+        return true;
+    }
+
+    void backup(size_t len) override
+    {
+        in.position() -= len;
+        bytes_read -= len;
+    }
+
+    void skip(size_t len) override
+    {
+        in.ignore(len);
+        bytes_read += len;
+    }
+
+    size_t byteCount() const override { return bytes_read; }
+
+private:
+    ReadBuffer & in;
+    size_t bytes_read;
+};
+
 /// Utility class for reading raw Avro blocks.
 /// Leverages Avro library where possible, adds ClickHouse-specific utilities.
 class AvroBlockReader
@@ -35,11 +72,19 @@ public:
     /// Reuses ClickHouse's VarInt.h which is compatible with Avro.
     static int64_t readVarInt(ReadBuffer & in);
 
+    /// Write a varint-encoded int64 (zigzag encoding) to string.
+    /// Appends the encoded bytes to the output string.
+    static void writeVarInt(int64_t value, std::string & out);
+
     /// Read a complete Avro block directly into Memory<>, avoiding string allocation.
     /// Appends: objectCount (varint) + byteCount (varint) + compressedData.
     /// Does NOT consume the sync marker - caller must verify separately.
     /// Returns object_count.
     static int64_t readBlockInto(ReadBuffer & in, Memory<> & memory);
+
+    /// Read a complete Avro block and return (object_count, block_data).
+    /// Does NOT consume the sync marker - caller must verify separately.
+    static std::pair<int64_t, std::string> readBlock(ReadBuffer & in);
 
     /// Read and verify sync marker matches expected (16 bytes).
     /// Returns true if matches, throws on mismatch.
