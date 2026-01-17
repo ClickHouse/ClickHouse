@@ -705,7 +705,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 evaluateScalarSubqueryIfNeeded(new_exists_argument, scope, true);
                 auto res_col = ColumnUInt8::create();
                 const auto * const_node = new_exists_argument->as<ConstantNode>();
-                res_col->getData().push_back(const_node->getColumn()->isNullAt(0) ? 0 : 1);
+                res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->isNullAt(0) ? 0 : 1));
                 ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
                 auto tme_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
                 auto res = tme_const_node->getValueStringRepresentation();

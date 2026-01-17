@@ -505,7 +505,7 @@ namespace
             }
 
             /// Check if it matches and extract submatches if it is so.
-            if (!regex.Match(src_value, 0, src_value.length(), re2::RE2::ANCHOR_BOTH, submatches.data(), submatches.size()))
+            if (!regex.Match(src_value, 0, src_value.length(), re2::RE2::ANCHOR_BOTH, submatches.data(), static_cast<int>(submatches.size())))
             {
                 /// If the regular expression doesn't match then the original tags are returned unchanged.
                 return old_tags;

@@ -60,7 +60,7 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
 
     for (const auto & ip : instrumented_points)
     {
-        column_id.push_back(ip.id);
+        column_id.push_back(static_cast<UInt32>(ip.id));
         column_function_id.insert(ip.function_id);
         column_function_name.insert(ip.function_name);
         column_handler_name.insert(ip.handler_name);
