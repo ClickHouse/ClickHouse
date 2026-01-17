@@ -1,13 +1,22 @@
+/// Suppress warnings from OpenZL headers, ClickHouse headers, and API calls
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wdocumentation"
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+#pragma clang diagnostic ignored "-Wreserved-macro-identifier"
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#pragma clang diagnostic ignored "-Wnrvo"
+
+#include <openzl/zl_compress.h>
+#include <openzl/zl_decompress.h>
+#include <openzl/zl_errors.h>
+
 #include <Compression/CompressionCodecOpenZL.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/SipHash.h>
-
-#include <openzl/zl_compress.h>
-#include <openzl/zl_decompress.h>
-#include <openzl/zl_errors.h>
 
 namespace DB
 {
@@ -106,3 +115,5 @@ void registerCodecOpenZL(CompressionCodecFactory & factory)
 }
 
 }
+
+#pragma clang diagnostic pop

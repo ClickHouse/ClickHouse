@@ -390,6 +390,9 @@ target_link_libraries (clickhouse_compression
 if (TARGET ch_contrib::fastpfor)
     target_link_libraries (clickhouse_compression PRIVATE ch_contrib::fastpfor)
 endif()
+if (TARGET ch_contrib::openzl)
+    target_link_libraries (clickhouse_compression PRIVATE ch_contrib::openzl)
+endif()
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
 set_source_files_properties(
