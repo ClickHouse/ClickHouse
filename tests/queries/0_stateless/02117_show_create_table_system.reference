@@ -489,6 +489,7 @@ CREATE TABLE system.parts
     `active` UInt8,
     `marks` UInt64,
     `rows` UInt64,
+    `files` UInt64,
     `bytes_on_disk` UInt64,
     `data_compressed_bytes` UInt64,
     `data_uncompressed_bytes` UInt64,
@@ -553,7 +554,6 @@ CREATE TABLE system.parts
     `has_lightweight_delete` UInt8,
     `last_removal_attempt_time` DateTime,
     `removal_state` String,
-    `files` UInt64,
     `bytes` UInt64 ALIAS bytes_on_disk,
     `marks_size` UInt64 ALIAS marks_bytes,
     `part_name` String ALIAS name
