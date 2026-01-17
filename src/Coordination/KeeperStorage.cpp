@@ -35,6 +35,7 @@
 #include <iterator>
 #include <memory>
 #include <shared_mutex>
+#include <utility>
 #include <base/defines.h>
 
 namespace ProfileEvents
@@ -3004,10 +3005,14 @@ processLocal(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & s
 /// MULTI Request ///
 static bool isMultiRequest(const Coordination::ZooKeeperRequest & request)
 {
+    static constexpr std::array multi_op_nums
+    {
+        Coordination::OpNum::Multi,
+        Coordination::OpNum::MultiRead,
+        Coordination::OpNum::NonAtomicMulti
+    };
     const auto op_num = request.getOpNum();
-    return op_num == Coordination::OpNum::Multi
-        || op_num == Coordination::OpNum::MultiRead
-        || op_num == Coordination::OpNum::NonAtomicMulti;
+    return std::ranges::contains(multi_op_nums, op_num);
 }
 
 using OperationType = Coordination::ZooKeeperMultiRequest::OperationType;
@@ -3091,7 +3096,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
             }
             else
             {
-                UNREACHABLE();
+                std::unreachable();
             }
         }
         else
