@@ -1,11 +1,8 @@
 #include <mutex>
-#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Processors/IProcessor.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {

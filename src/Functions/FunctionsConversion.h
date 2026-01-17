@@ -91,6 +91,7 @@ namespace Setting
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
+    extern const SettingsBool check_conversion_from_numbers_to_enum;
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
@@ -132,6 +133,7 @@ struct FunctionConvertSettings
     const bool cast_string_to_dynamic_use_inference;
     const bool input_format_ipv4_default_on_conversion_error;
     const bool input_format_ipv6_default_on_conversion_error;
+    const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
@@ -146,6 +148,7 @@ struct FunctionConvertSettings
         , cast_string_to_dynamic_use_inference(context && context->getSettingsRef()[Setting::cast_string_to_dynamic_use_inference])
         , input_format_ipv4_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv4_default_on_conversion_error])
         , input_format_ipv6_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error])
+        , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
@@ -179,7 +182,7 @@ struct ToDateTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
+            d = static_cast<UInt16>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
@@ -241,28 +244,28 @@ struct ToTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
+            d = static_cast<UInt16>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
-        return static_cast<Int32>(time_zone.fromDayNum(DayNum(time_zone.toTime(d))));
+        return static_cast<Int32>(time_zone.fromDayNum(DayNum(static_cast<UInt16>(time_zone.toTime(d)))));
     }
 
     static Int32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
+            d = static_cast<Int32>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (d > MAX_DATETIME_DAY_NUM) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", d);
         }
-        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(time_zone.toTime(d))));
+        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(time_zone.toTime(d)))));
     }
 
     static Int32 execute(UInt32 dt, const DateLUTImpl & time_zone)
     {
-        return static_cast<Int32>(time_zone.fromDayNum((ExtendedDayNum(time_zone.toTime(static_cast<Int32>(dt))))));
+        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(time_zone.toTime(static_cast<Int32>(dt))))));
     }
 
     static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
@@ -319,7 +322,7 @@ struct ToDateTransformFromSecondsOrDays
         /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
         if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_DAY_NUM)
             if (from > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
-                return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+                return static_cast<UInt16>(time_zone.toDayNum(std::min(static_cast<time_t>(from), MAX_DATETIME_TIMESTAMP)));
 
         return static_cast<UInt16>(from);
     }
@@ -5193,14 +5196,14 @@ private:
         const auto & new_variants = to_variant.getVariants();
         std::unordered_map<String, ColumnVariant::Discriminator> new_variant_types_to_new_global_discriminator;
         new_variant_types_to_new_global_discriminator.reserve(new_variants.size());
-        for (size_t i = 0; i != new_variants.size(); ++i)
+        for (ColumnVariant::Discriminator i = 0; i != new_variants.size(); ++i)
             new_variant_types_to_new_global_discriminator[new_variants[i]->getName()] = i;
 
         /// Create set of old variant types.
         const auto & old_variants = from_variant.getVariants();
         std::unordered_map<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
         old_variant_types_to_old_global_discriminator.reserve(old_variants.size());
-        for (size_t i = 0; i != old_variants.size(); ++i)
+        for (ColumnVariant::Discriminator i = 0; i != old_variants.size(); ++i)
             old_variant_types_to_old_global_discriminator[old_variants[i]->getName()] = i;
 
         /// Check that the set of old variants types is a subset of new variant types and collect new global discriminator for each old global discriminator.
@@ -5235,7 +5238,7 @@ private:
             new_variant_columns.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
             std::vector<ColumnVariant::Discriminator> new_local_to_global_discriminators;
             new_local_to_global_discriminators.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
-            for (size_t i = 0; i != num_old_variants; ++i)
+            for (ColumnVariant::Discriminator i = 0; i != num_old_variants; ++i)
             {
                 new_variant_columns.push_back(column_variant.getVariantPtrByLocalDiscriminator(i));
                 new_local_to_global_discriminators.push_back(old_global_discriminator_to_new.at(column_variant.globalDiscriminatorByLocal(i)));
@@ -5412,12 +5415,12 @@ private:
                     if (null_map[i])
                     {
                         discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                        filter.push_back(0);
+                        filter.push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
                         discriminators_data.push_back(variant_discr);
-                        filter.push_back(1);
+                        filter.push_back(static_cast<UInt8>(1));
                         ++variant_size_hint;
                     }
                 }
@@ -5451,12 +5454,12 @@ private:
                     if (indexes.getUInt(i) == null_index)
                     {
                         discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                        filter.push_back(0);
+                        filter.push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
                         discriminators_data.push_back(variant_discr);
-                        filter.push_back(1);
+                        filter.push_back(static_cast<UInt8>(1));
                         ++variant_size_hint;
                     }
                 }
@@ -5765,19 +5768,45 @@ private:
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (isNativeNumber(from_type) || isEnum(from_type))
+        else if (isNativeNumber(from_type))
+        {
+            if (!settings.check_conversion_from_numbers_to_enum)
+            {
+                auto function = Function::createFromSettings(settings);
+                return createFunctionAdaptor(function, from_type);
+            }
+
+            if (checkAndGetDataType<DataTypeInt8>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt8, EnumType>();
+            else if (checkAndGetDataType<DataTypeInt16>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt16, EnumType>();
+            else if (checkAndGetDataType<DataTypeInt32>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt32, EnumType>();
+            else if (checkAndGetDataType<DataTypeInt64>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnInt64, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt8>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt8, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt16>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt16, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt32>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt32, EnumType>();
+            else if (checkAndGetDataType<DataTypeUInt64>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnUInt64, EnumType>();
+            else if (checkAndGetDataType<DataTypeFloat32>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnFloat32, EnumType>();
+            else if (checkAndGetDataType<DataTypeFloat64>(from_type.get()))
+                return createNumberToEnumWrapper<ColumnFloat64, EnumType>();
+        }
+        else if (isEnum(from_type))
         {
             auto function = Function::createFromSettings(settings);
             return createFunctionAdaptor(function, from_type);
         }
-        else
-        {
-            if (cast_type == CastType::accurateOrNull)
-                return createToNullableColumnWrapper();
-            else
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
-                    from_type->getName(), to_type->getName());
-        }
+        else if (cast_type == CastType::accurateOrNull)
+            return createToNullableColumnWrapper();
+
+        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Conversion from {} to {} is not supported",
+            from_type->getName(), to_type->getName());
     }
 
     template <typename EnumTypeFrom, typename EnumTypeTo>
@@ -5851,6 +5880,58 @@ private:
             else
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
                     first_col->getName(), function_name);
+        };
+    }
+
+    template <typename ColumnNumberType, typename EnumType>
+    WrapperType createNumberToEnumWrapper() const
+    {
+        using FieldType = EnumType::FieldType;
+
+        return [function_name = cast_name] (
+            ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
+        {
+            const auto & first_col = arguments.front().column.get();
+            const auto & result_type = typeid_cast<const EnumType &>(*res_type);
+
+            const ColumnNumberType * col = typeid_cast<const ColumnNumberType *>(first_col);
+
+            if (!col)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column {} as first argument of function {}",
+                    first_col->getName(), function_name);
+
+            if (nullable_col && nullable_col->size() != col->size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnNullable is not compatible with original");
+
+            const auto size = col->size();
+            const auto & in_data = col->getData();
+
+            auto res = result_type.createColumn();
+            auto & out_data = static_cast<typename EnumType::ColumnType &>(*res).getData();
+            out_data.resize(size);
+
+            const auto default_enum_value = result_type.getValues().front().second;
+
+            const NullMap * null_map = nullptr;
+            if (nullable_col)
+                null_map = &nullable_col->getNullMapData();
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                if (null_map && (*null_map)[i])
+                {
+                    out_data[i] = default_enum_value;
+                }
+                else
+                {
+                    // This checks the number value exists in Enum values.
+                    /// If not found, an error is thrown.
+                    result_type.findByValue(static_cast<FieldType>(in_data[i]));
+                    out_data[i] = static_cast<FieldType>(in_data[i]);
+                }
+            }
+
+            return res;
         };
     }
 

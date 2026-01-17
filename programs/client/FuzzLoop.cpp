@@ -641,14 +641,14 @@ bool Client::buzzHouse()
         loadSystemTables(*fuzz_config);
 
         full_query2.reserve(8192);
-        BuzzHouse::StatementGenerator gen(*fuzz_config, *external_integrations, has_cloud_features);
+        BuzzHouse::StatementGenerator gen(rg, *fuzz_config, *external_integrations, has_cloud_features);
         BuzzHouse::QueryOracle qo(*fuzz_config);
         while (server_up && !buzz_done)
         {
             sq1.Clear();
             full_query.resize(0);
 
-            if (total_create_database_tries < 10 && nsuccessfull_create_database < max_initial_databases)
+            if (total_create_database_tries < 20 && nsuccessfull_create_database < max_initial_databases)
             {
                 gen.generateNextCreateDatabase(
                     rg, sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_create_database());
@@ -661,7 +661,7 @@ bool Client::buzzHouse()
                 total_create_database_tries++;
             }
             else if (
-                gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 150
+                gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 300
                 && nsuccessfull_create_table < max_initial_tables)
             {
                 gen.generateNextCreateTable(

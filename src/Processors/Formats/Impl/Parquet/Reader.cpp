@@ -311,10 +311,16 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
     /// Process schema.
     SchemaConverter schemer(file_metadata, options, &extended_sample_block);
-    if (row_level_filter && !row_level_filter->do_remove_column)
-        schemer.external_columns.push_back(row_level_filter->column_name);
-    if (prewhere_info && !prewhere_info->remove_prewhere_column)
-        schemer.external_columns.push_back(prewhere_info->prewhere_column_name);
+    auto add_prewhere_outputs = [&](const ActionsDAG & actions)
+    {
+        for (const auto * node : actions.getOutputs())
+            if (sample_block->has(node->result_name))
+                schemer.external_columns.push_back(node->result_name);
+    };
+    if (row_level_filter)
+        add_prewhere_outputs(row_level_filter->actions);
+    if (prewhere_info)
+        add_prewhere_outputs(prewhere_info->prewhere_actions);
     schemer.column_mapper = format_filter_info->column_mapper.get();
     schemer.prepareForReading();
     primitive_columns = std::move(schemer.primitive_columns);
@@ -732,23 +738,32 @@ void Reader::preparePrewhere()
                 step.input_idxs.push_back(idx_in_output_block);
             }
         }
-        if (step.idx_in_output_block.has_value())
+
+        /// Find outputs in sample block.
+        for (const auto * node : dag.getOutputs())
         {
-            if (seen_prewhere_outputs.contains(*step.idx_in_output_block))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate PREWHERE output column: {}", extended_sample_block.getByPosition(*step.idx_in_output_block).name);
-            seen_prewhere_outputs.insert(*step.idx_in_output_block);
+            auto idx = extended_sample_block.findPositionByName(node->result_name);
+            /// Note: prewhere output may also be an input, if it's just passed through.
+            if (idx.has_value() && !sample_block_to_output_columns_idx.at(*idx).has_value() && !prewhere_output_column_idxs.contains(*idx))
+            {
+                step.idxs_in_output_block.emplace_back(node->result_name, *idx);
+                prewhere_output_column_idxs.insert(*idx);
+            }
         }
         steps.push_back(std::move(step));
     }
 
-    /// Assert that sample_block_to_output_columns_idx is valid.
+    if (row_level_filter)
+        add_step(row_level_filter->actions, row_level_filter->column_name, true);
+    if (prewhere_info)
+        add_step(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, prewhere_info->need_filter);
+
+    /// Assert that we found all columns of the sample block, either in the file or in prewhere outputs.
     for (size_t i = 0; i < sample_block_to_output_columns_idx.size(); ++i)
     {
         /// Column must appear in exactly one of {output_columns, prewhere output}.
-        if (sample_block_to_output_columns_idx[i].has_value() != !seen_prewhere_outputs.contains(i))
-        {
+        if (sample_block_to_output_columns_idx[i].has_value() == prewhere_output_column_idxs.contains(i))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column in sample block: {}", extended_sample_block.getByPosition(i).name);
-        }
     }
 }
 
@@ -1340,7 +1355,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         size_t end_row_idx = start_row_idx + num_rows;
         row_subidx += num_rows;
 
-        skipToRow(start_row_idx, column, column_info);
+        skipToRowOrNextPage(start_row_idx, column, column_info);
 
         while (true) // loop over pages
         {
@@ -1356,7 +1371,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
             /// Advance to next page.
             chassert(page.value_idx == page.num_values);
-            skipToRow(page.next_row_idx, column, column_info);
+            skipToRowOrNextPage(std::nullopt, column, column_info);
             chassert(page.value_idx == 0);
         }
     }
@@ -1394,7 +1409,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (column_info.output_nullable)
     {
         if (!subchunk.null_map)
-            subchunk.null_map = ColumnUInt8::create(subchunk.column->size(), 0);
+            subchunk.null_map = ColumnUInt8::create(subchunk.column->size(), false);
         subchunk.column = ColumnNullable::create(std::move(subchunk.column), std::move(subchunk.null_map));
         subchunk.null_map.reset();
     }
@@ -1412,32 +1427,38 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     }
 }
 
-void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+void Reader::skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
     /// True if column.page is initialized and contains the requested row_idx.
     bool found_page = false;
     auto & page = column.page;
 
-    if (page.initialized && page.value_idx < page.num_values && page.end_row_idx.has_value() && *page.end_row_idx > row_idx)
+    if (!row_idx.has_value())
+        chassert(page.initialized);
+
+    if (row_idx.has_value() && page.initialized && page.value_idx < page.num_values &&
+        page.end_row_idx.has_value() && *page.end_row_idx > *row_idx)
         /// Fast path: we're just continuing reading the same page as before.
         found_page = true;
 
     if (!found_page && !column.data_pages.empty())
     {
         /// If we have offset index, find the row index there and jump to the correct page.
+        if (!row_idx.has_value())
+            row_idx = column.data_pages[column.data_pages_idx].end_row_idx;
         while (column.data_pages_idx < column.data_pages.size() &&
-            column.data_pages[column.data_pages_idx].end_row_idx <= row_idx)
+               column.data_pages[column.data_pages_idx].end_row_idx <= *row_idx)
             ++column.data_pages_idx;
         if (column.data_pages_idx == column.data_pages.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet offset index covers too few rows");
         const auto & page_info = column.data_pages[column.data_pages_idx];
         size_t first_row_idx = size_t(page_info.meta->first_row_index);
-        if (first_row_idx > row_idx)
+        if (first_row_idx > *row_idx)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Row passes filters but its page was not selected for reading. This is a bug.");
 
         auto data = prefetcher.getRangeData(page_info.prefetch);
         const char * ptr = data.data();
-        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, row_idx, column, column_info))
+        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, *row_idx, column, column_info))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Page doesn't contain requested row");
         found_page = true;
     }
@@ -1445,8 +1466,8 @@ void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColu
     while (true)
     {
         /// Skip rows inside the page.
-        if (page.initialized && page.value_idx < page.num_values &&
-            skipRowsInPage(row_idx, page, column, column_info))
+        if (row_idx.has_value() && page.initialized && page.value_idx < page.num_values &&
+            skipRowsInPage(*row_idx, page, column, column_info))
             return;
 
         if (found_page)
@@ -1459,8 +1480,10 @@ void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColu
         chassert(column.next_page_offset <= all_pages.size());
         const char * ptr = all_pages.data() + column.next_page_offset;
         const char * end = all_pages.data() + all_pages.size();
-        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx, column, column_info);
+        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx.value_or(page.next_row_idx), column, column_info);
         column.next_page_offset = ptr - all_pages.data();
+        if (!row_idx.has_value())
+            return;
     }
 }
 
@@ -2027,7 +2050,10 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         MutableColumns columns;
         for (size_t idx : output_info.nested_columns)
             columns.push_back(formOutputColumn(row_subgroup, idx, num_rows));
-        res = ColumnTuple::create(std::move(columns));
+        if (columns.empty())
+            res = ColumnTuple::create(num_rows);
+        else
+            res = ColumnTuple::create(std::move(columns));
     }
     else
     {
@@ -2099,9 +2125,9 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
 
         if (step.idx_in_output_block.has_value())
         {
-            OutputColumnState & state = row_subgroup.output.at(step.idx_in_output_block.value());
+            OutputColumnState & state = row_subgroup.output.at(idx);
             chassert(!state.column);
-            state.column = filter_column;
+            state.column = block.getByName(name).column;
         }
 
         /// If it's the last prewhere step, deallocate the columns that were only needed for prewhere.
@@ -2114,6 +2140,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         if (!step.need_filter)
             return;
 
+        ColumnPtr filter_column = block.getByName(step.filter_column_name.value()).column;
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
         chassert(filter.size() == row_subgroup.filter.rows_pass);

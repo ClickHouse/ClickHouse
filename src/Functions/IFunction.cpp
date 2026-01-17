@@ -1,4 +1,5 @@
 #include <Functions/FunctionDynamicAdaptor.h>
+#include <Functions/FunctionVariantAdaptor.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -6,9 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/MaskOperations.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
@@ -19,7 +18,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -45,6 +43,7 @@ namespace Setting
 {
 extern const SettingsBool short_circuit_function_evaluation_for_nulls;
 extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
+extern const SettingsBool use_variant_default_implementation_for_comparisons;
 }
 
 namespace ErrorCodes
@@ -246,7 +245,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return wrapInNullable(res, args, result_type, input_rows_count);
         }
 
-        auto result_null_map = ColumnUInt8::create(input_rows_count, 0);
+        auto result_null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
         auto & result_null_map_data = result_null_map->getData();
         for (const auto & arg : args)
         {
@@ -666,6 +665,23 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
                 for (size_t i = 0; i < arguments.size(); ++i)
                     data_types[i] = arguments[i].type;
                 return std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types));
+            }
+        }
+    }
+
+    /// Use FunctionBaseVariantAdaptor if default implementation for Variant is enabled and we have Variant type in arguments.
+    if (useDefaultImplementationForVariant())
+    {
+        checkNumberOfArguments(arguments.size());
+
+        for (const auto & arg : arguments)
+        {
+            if (isVariant(arg.type))
+            {
+                DataTypes data_types(arguments.size());
+                for (size_t i = 0; i < arguments.size(); ++i)
+                    data_types[i] = arguments[i].type;
+                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
             }
         }
     }
