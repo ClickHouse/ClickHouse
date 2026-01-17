@@ -628,7 +628,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
-    for (const auto * ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
+    for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
     {
         ColumnDescription column;
 
@@ -887,7 +887,19 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
+        {
+            // For parameterized views, extract columns if explicitly declared
+            if (create.columns_list && create.columns_list->columns)
+            {
+                properties.columns = getColumnsDescription(
+                    *create.columns_list->columns,
+                    getContext(),
+                    mode,
+                    is_restore_from_backup
+                );
+            }
             return properties;
+        }
 
         if (create.aliases_list)
         {
