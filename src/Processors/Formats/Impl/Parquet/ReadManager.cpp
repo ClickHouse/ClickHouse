@@ -518,17 +518,43 @@ void ReadManager::advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDi
             continue;
         delivery_ptr += 1;
 
-        size_t current_step0_ptr = row_group.next_subgroup_for_step[0].load();
-        while (current_step0_ptr < delivery_ptr)
-        {
-            if (row_group.next_subgroup_for_step[0].compare_exchange_weak(current_step0_ptr, delivery_ptr))
-                break;
-        }
-
         if (delivery_ptr == row_group.subgroups.size()) // only if *this thread* incremented it
+        {
             finishRowGroupStage(row_group_idx, ReadStage::Deliver, diff);
-        else if (first_incomplete_row_group.load() == row_group_idx)
-            diff.scheduleAllStages();
+        }
+        else
+        {
+            size_t main_ptr = row_group.next_subgroup_for_step[0].load();
+            while (main_ptr < row_group.subgroups.size() && main_ptr < delivery_ptr)
+            {
+                RowSubgroup & next_subgroup = row_group.subgroups[main_ptr];
+                ReadStage next_subgroup_stage = next_subgroup.stage.load();
+                if (next_subgroup_stage >= ReadStage::OffsetIndex)
+                    break;
+
+                if (!next_subgroup.stage.compare_exchange_strong(
+                        next_subgroup_stage, ReadStage::OffsetIndex))
+                    break;
+
+                if (next_subgroup.filter.rows_pass > 0)
+                {
+                    size_t first_step = reader.steps.empty() ? 0 : 1;
+                    addTasksToReadColumns(row_group_idx, main_ptr, ReadStage::OffsetIndex, first_step, diff);
+                    break;
+                }
+                else
+                {
+                    size_t prev = row_group.next_subgroup_for_step[0].exchange(main_ptr + 1);
+                    chassert(prev == main_ptr);
+                    main_ptr += 1;
+                    next_subgroup.stage.store(ReadStage::Deallocated);
+                    clearRowSubgroup(next_subgroup, diff);
+                }
+            }
+
+            if (first_incomplete_row_group.load() == row_group_idx)
+                diff.scheduleAllStages();
+        }
     }
 }
 
