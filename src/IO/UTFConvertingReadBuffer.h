@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <vector>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 
@@ -9,28 +10,33 @@ namespace DB
 class UTFConvertingReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
-    explicit UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_);
-
-private:
     enum class Encoding
     {
         UTF8,
         UTF16_LE,
         UTF16_BE,
         UTF32_LE,
-        UTF32_BE,
-        UNKNOWN
+        UTF32_BE
     };
 
+    UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_, Encoding encoding_);
+    ~UTFConvertingReadBuffer() override;
+
+private:
     bool nextImpl() override;
 
-    void detectAndProcessBOM();
-    size_t convertUTF16ToUTF8(const char * src, size_t src_size, char * dst, size_t dst_capacity) const;
-    size_t convertUTF32ToUTF8(const char * src, size_t src_size, char * dst, size_t dst_capacity) const;
-
     std::unique_ptr<ReadBuffer> impl;
-    Encoding detected_encoding;
-    bool bom_detected;
+    Encoding encoding;
+
+    struct UConverter;
+    UConverter * source_converter = nullptr;
+    UConverter * target_converter = nullptr;
+
+    std::vector<uint16_t> pivot_buffer; // UChar is 16-bit
+    uint16_t * pivot_source = nullptr;
+    uint16_t * pivot_target = nullptr;
+
+    bool eof = false;
 };
 
 }

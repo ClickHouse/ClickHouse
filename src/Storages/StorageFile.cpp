@@ -492,8 +492,48 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
 
     int zstd_window_log_max = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
     auto compressed_buffer = wrapReadBufferWithCompressionMethod(
-    std::move(nested_buffer), method, zstd_window_log_max);
-    return std::make_unique<UTFConvertingReadBuffer>(std::move(compressed_buffer));
+        std::move(nested_buffer), method, zstd_window_log_max);
+
+    if (compressed_buffer->eof()) /// Checks pending data and triggers prefetch if empty
+        return compressed_buffer;
+
+    size_t available = compressed_buffer->available();
+    const char * pos = compressed_buffer->position();
+    const unsigned char * bytes = reinterpret_cast<const unsigned char *>(pos);
+
+    using Encoding = UTFConvertingReadBuffer::Encoding;
+    Encoding encoding = Encoding::UTF8;
+
+    if (available >= 4 && bytes[0] == 0xFF && bytes[1] == 0xFE && bytes[2] == 0x00 && bytes[3] == 0x00)
+    {
+        encoding = Encoding::UTF32_LE;
+        compressed_buffer->ignore(4);
+    }
+    else if (available >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0xFE && bytes[3] == 0xFF)
+    {
+        encoding = Encoding::UTF32_BE;
+        compressed_buffer->ignore(4);
+    }
+    else if (available >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+    {
+        encoding = Encoding::UTF8;
+        compressed_buffer->ignore(3);
+    }
+    else if (available >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+    {
+        encoding = Encoding::UTF16_LE;
+        compressed_buffer->ignore(2);
+    }
+    else if (available >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+    {
+        encoding = Encoding::UTF16_BE;
+        compressed_buffer->ignore(2);
+    }
+
+    if (encoding == Encoding::UTF8)
+        return compressed_buffer;
+
+    return std::make_unique<UTFConvertingReadBuffer>(std::move(compressed_buffer), encoding);
 }
 
 }
