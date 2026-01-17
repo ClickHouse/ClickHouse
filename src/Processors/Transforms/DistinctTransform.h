@@ -56,6 +56,9 @@ private:
     UInt64 bloom_filter_bytes = 0;
     Float64 pass_ratio_threshold_for_disabling_bloom_filter = 0.7;
     Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
+    UInt64 bf_worthless_last_set_bits = 0;
+    UInt64 bf_worthless_total_set_bits = 0;
+    UInt64 bf_worthless_last_bf_pass = 0;
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;

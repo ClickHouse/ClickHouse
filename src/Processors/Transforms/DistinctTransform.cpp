@@ -3,6 +3,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include "base/types.h"
 
 static inline size_t intHash32(UInt64 x)
 {
@@ -93,6 +94,8 @@ void DistinctTransform::checkBloomFilterWorthiness()
     /// If too many bits are set then it is likely that the filter will not filter out much
     if (set_bits > max_ratio_of_set_bits_in_bloom_filter * total_bits)
         use_bf = false;
+    bf_worthless_last_set_bits = set_bits;
+    bf_worthless_last_bf_pass = total_passed_bf;
 }
 
 template <typename Method>
@@ -390,6 +393,7 @@ void DistinctTransform::transform(Chunk & chunk)
         return;
     }
 
+
     ColumnRawPtrs column_ptrs;
     column_ptrs.reserve(key_columns_pos.size());
     for (auto pos : key_columns_pos)
@@ -415,6 +419,7 @@ void DistinctTransform::transform(Chunk & chunk)
     if (try_init_bf && old_set_size > set_limit_for_enabling_bloom_filter)
     {
         bloom_filter = std::make_unique<BloomFilter>(BloomFilterParameters(bloom_filter_bytes, 1, 0));
+        bf_worthless_total_set_bits = static_cast<UInt64>((bloom_filter_bytes * 8) * max_ratio_of_set_bits_in_bloom_filter);
         try_init_bf = false;
         use_bf = true;
     }
@@ -429,7 +434,12 @@ void DistinctTransform::transform(Chunk & chunk)
             data.init(type);
     }
 
-    auto check_only = (data.getTotalRowCount() > set_limit_for_enabling_bloom_filter * 2) && set_limit_for_enabling_bloom_filter > 0;
+    if ((total_passed_bf - bf_worthless_last_bf_pass)*2 > (bf_worthless_total_set_bits - bf_worthless_last_set_bits))
+        checkBloomFilterWorthiness();
+
+    auto check_only = (old_set_size > set_limit_for_enabling_bloom_filter * 2) && set_limit_for_enabling_bloom_filter > 0;
+    auto * lc_mask_ptr = lc_mask ? &*lc_mask : nullptr;
+    constexpr size_t parallel_threshold = 1000000;
 
     IColumn::Filter filter(num_rows);
 
@@ -437,18 +447,35 @@ void DistinctTransform::transform(Chunk & chunk)
     {
         case SetVariants::Type::EMPTY:
             break;
+
 #define M(NAME) \
-            case SetVariants::Type::NAME: \
-                if constexpr (SetVariants::Type::NAME == SetVariants::Type::hashed_two_level) \
-                { \
-                    data.getTotalRowCount() > set_limit_for_enabling_bloom_filter ? buildSetParallelFilter(*data.NAME, column_ptrs, filter, num_rows, data, *pool): buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr); \
-                } else \
-                { \
-                    is_pre_distinct \
-                    ? check_only ? checkSetFilter(*data.NAME, column_ptrs, filter, num_rows, data, total_passed_bf): use_bf ? buildCombinedFilter(*data.NAME, column_ptrs, filter, num_rows, data, total_passed_bf): buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr) \
-                    : buildSetFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr); \
-                } \
-                break;
+        case SetVariants::Type::NAME: \
+        { \
+            auto & set = *data.NAME; \
+            const auto build = [&] \
+            { \
+                buildSetFilter(set, column_ptrs, filter, num_rows, data, lc_mask_ptr); \
+            }; \
+            \
+            if constexpr (SetVariants::Type::NAME == SetVariants::Type::hashed_two_level) \
+            { \
+                if (old_set_size > parallel_threshold) \
+                    buildSetParallelFilter(*data.NAME, column_ptrs, filter, num_rows, data, *pool); \
+                else \
+                    build(); \
+            } \
+            else if (!is_pre_distinct) \
+                build(); \
+            else if (check_only) \
+                checkSetFilter(set, column_ptrs, filter, num_rows, data, total_passed_bf); \
+            else if (use_bf) \
+                buildCombinedFilter(set, column_ptrs, filter, num_rows, data, total_passed_bf); \
+            else \
+                build(); \
+            \
+            break; \
+        }
+
         APPLY_FOR_SET_VARIANTS(M)
 #undef M
     }
