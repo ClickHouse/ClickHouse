@@ -32,6 +32,11 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_OF_ENUM;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int SOCKET_TIMEOUT;
+    extern const int NETWORK_ERROR;
+    extern const int CANNOT_READ_FROM_SOCKET;
+    extern const int CANNOT_WRITE_TO_SOCKET;
+
 }
 
 
@@ -56,6 +61,15 @@ bool isParseError(int code)
         || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
         || code == ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE
         || code == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+}
+
+bool isConnectionError(int code)
+{
+    return code == ErrorCodes::SOCKET_TIMEOUT
+        || code == ErrorCodes::NETWORK_ERROR
+        || code == ErrorCodes::CANNOT_READ_FROM_SOCKET
+        || code == ErrorCodes::CANNOT_WRITE_TO_SOCKET;
+
 }
 
 IRowInputFormat::IRowInputFormat(SharedHeader header, ReadBuffer & in_, Params params_)
@@ -93,6 +107,9 @@ void IRowInputFormat::logError()
 
 Chunk IRowInputFormat::read()
 {
+    if (got_connection_exception)
+        return {};
+
     if (total_rows == 0)
     {
         try
@@ -135,8 +152,28 @@ Chunk IRowInputFormat::read()
 
         RowReadExtension info;
         bool continue_reading = true;
+        Stopwatch watch(CLOCK_MONOTONIC_COARSE);
         size_t total_bytes = 0;
-        for (size_t rows = 0; ((rows < params.max_block_size && (!params.max_block_size_bytes || total_bytes < params.max_block_size_bytes)) || num_rows == 0) && continue_reading; ++rows)
+
+        size_t max_block_size_rows = params.max_block_size_rows;
+        size_t max_block_size_bytes = params.max_block_size_bytes;
+        size_t min_block_size_rows = params.min_block_size_rows;
+        size_t min_block_size_bytes = params.min_block_size_bytes;
+        size_t max_block_wait_ms = params.max_block_wait_ms;
+
+        auto below_some_min_threshold = [&](size_t rows, size_t bytes)-> bool
+        {
+            return (!min_block_size_rows && !min_block_size_bytes) || rows < min_block_size_rows || bytes < min_block_size_bytes;
+        };
+
+        auto below_all_max_thresholds = [&](size_t rows, size_t bytes)-> bool
+        {
+            return (!max_block_size_rows || rows < max_block_size_rows) && (!max_block_size_bytes || bytes < max_block_size_bytes);
+        };
+
+        for (size_t rows = 0; ((below_some_min_threshold(rows, total_bytes) && below_all_max_thresholds(rows, total_bytes)) || num_rows == 0)
+             && continue_reading;
+             ++rows)
         {
             try
             {
@@ -145,7 +182,6 @@ Chunk IRowInputFormat::read()
 
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);
-
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
                     if (!info.read_columns[column_idx])
@@ -176,6 +212,9 @@ Chunk IRowInputFormat::read()
                     for (const auto & column : columns)
                         total_bytes += column->byteSizeAt(column->size() - 1);
                 }
+
+                if (max_block_wait_ms != 0 && num_rows > 0 && watch.elapsedMilliseconds() >= max_block_wait_ms)
+                    break;
             }
             catch (Exception & e)
             {
@@ -220,26 +259,50 @@ Chunk IRowInputFormat::read()
     }
     catch (Exception & e)
     {
-        if (!isParseError(e.code()))
+        if (isConnectionError(e.code()))
+        {
+            got_connection_exception  = true;
+            bool need_rollback = false;
+
+            for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
+            {
+                if (columns[column_idx]->size() != checkpoints[column_idx]->size)
+                {
+                    need_rollback = true;
+                    break;
+                }
+            }
+
+            if (need_rollback)
+            {
+                for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
+                    columns[column_idx]->rollback(*checkpoints[column_idx]);
+            }
+        }
+        else
+        {
+            if (!isParseError(e.code()))
+                throw;
+
+            String verbose_diagnostic;
+            try
+            {
+                verbose_diagnostic = getDiagnosticInfo();
+            }
+            catch (const Exception & exception)
+            {
+                verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// Error while trying to obtain verbose diagnostic. Ok to ignore.
+            }
+
+            e.addMessage(fmt::format("(at row {})\n", total_rows));
+            e.addMessage(verbose_diagnostic);
             throw;
-
-        String verbose_diagnostic;
-        try
-        {
-            verbose_diagnostic = getDiagnosticInfo();
-        }
-        catch (const Exception & exception)
-        {
-            verbose_diagnostic = "Cannot get verbose diagnostic: " + exception.message();
-        }
-        catch (...) // NOLINT(bugprone-empty-catch)
-        {
-            /// Error while trying to obtain verbose diagnostic. Ok to ignore.
         }
 
-        e.addMessage(fmt::format("(at row {})\n", total_rows));
-        e.addMessage(verbose_diagnostic);
-        throw;
     }
 
     if (columns.empty() || columns[0]->empty())
@@ -259,6 +322,7 @@ Chunk IRowInputFormat::read()
 
     Chunk chunk(std::move(columns), num_rows);
     approx_bytes_read_for_chunk = getDataOffsetMaybeCompressed(getReadBuffer()) - chunk_start_offset;
+
     return chunk;
 }
 

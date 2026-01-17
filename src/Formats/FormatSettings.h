@@ -117,6 +117,7 @@ struct FormatSettings
     size_t max_threads = 1;
 
     size_t max_block_size_bytes = 0;
+    size_t max_block_wait_ms = 0;
 
     enum class ArrowCompression : uint8_t
     {
