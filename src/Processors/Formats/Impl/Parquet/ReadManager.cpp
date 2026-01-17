@@ -517,6 +517,14 @@ void ReadManager::advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDi
         if (!row_group.delivery_ptr.compare_exchange_weak(delivery_ptr, delivery_ptr + 1))
             continue;
         delivery_ptr += 1;
+
+        size_t current_step0_ptr = row_group.next_subgroup_for_step[0].load();
+        while (current_step0_ptr < delivery_ptr)
+        {
+            if (row_group.next_subgroup_for_step[0].compare_exchange_weak(current_step0_ptr, delivery_ptr))
+                break;
+        }
+
         if (delivery_ptr == row_group.subgroups.size()) // only if *this thread* incremented it
             finishRowGroupStage(row_group_idx, ReadStage::Deliver, diff);
         else if (first_incomplete_row_group.load() == row_group_idx)
