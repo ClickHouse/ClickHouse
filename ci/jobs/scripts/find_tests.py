@@ -64,23 +64,8 @@ class Targeting:
         # TODO: add support for integration tests
         result = set()
         if self.info.is_local_run:
-            # Prefer an existing remote base ref without fetching to respect local workflow
-            base_candidates = [
-                "upstream/master",
-                "origin/master",
-                "master",
-            ]
-            base_ref = None
-            for cand in base_candidates:
-                rc, _out, _err = Shell.get_res_stdout_stderr(
-                    f"git rev-parse --verify --quiet {cand}", verbose=False
-                )
-                if rc == 0:
-                    base_ref = cand
-                    break
-            base_ref = base_ref or "master"
             changed_files = Shell.get_output(
-                f"git diff --name-only $(git merge-base {base_ref} HEAD)"
+                "git diff --name-only $(git merge-base master HEAD)"
             ).splitlines()
         else:
             changed_files = self.info.get_changed_files()

@@ -17,7 +17,7 @@ from keeper.framework.core.util import (
     env_int,
     leader_or_first,
     resolve_targets,
-    sh,
+    sh_strict,
     wait_until,
 )
 from keeper.framework.io.probes import count_leaders, four, mntr, ready, wchs_total
@@ -179,10 +179,7 @@ def _step_background_schedule(step, nodes, leader, ctx):
     deadline = time.time() + dur
     while time.time() < deadline:
         sub = random.choice(subs)
-        try:
-            apply_step(sub, nodes, leader, ctx)
-        except Exception:
-            pass
+        apply_step(sub, nodes, leader, ctx)
         now = time.time()
         if now >= deadline:
             break
@@ -204,11 +201,20 @@ def _step_ensure_paths(step, nodes, leader, ctx):
                 continue
             full = full.rstrip("/") + "/" + seg
             # Retry touch twice for reliability
+            ok = False
+            last_out = ""
             for _ in range(2):
-                sh(
+                r = sh_strict(
                     node,
-                    f"timeout 2s HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch '{full}'\" || true",
+                    f"timeout 2s HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch '{full}'\" >/dev/null 2>&1; echo $?",
+                    timeout=5,
                 )
+                last_out = str((r or {}).get("out", "") or "").strip()
+                if last_out.endswith("0"):
+                    ok = True
+                    break
+            if not ok:
+                raise AssertionError(f"ensure_paths: touch failed for {full} (rc={last_out})")
 
     for t in targets:
         for p in paths:

@@ -368,15 +368,24 @@ ORDER BY day DESC
     def insert_keeper_metrics_from_file(
         self,
         file_path: str,
-        db: Optional[str] = None,
-        table: str = "keeper_metrics_ts",
         chunk_size: int = 1000,
         retries: int = 3,
         dedupe_days: int = 7,
     ):
-        metrics_db = (db or os.environ.get("KEEPER_METRICS_DB") or "keeper_stress_tests").strip() or "keeper_stress_tests"
+        metrics_db = Settings.KEEPER_STRESS_METRICS_DB_NAME
+        table = Settings.KEEPER_STRESS_METRICS_TABLE_NAME
         if not file_path or not os.path.exists(file_path):
             return 0, 0
+
+        insert_params = {
+            "database": metrics_db,
+            "query": f"INSERT INTO {metrics_db}.{table} FORMAT JSONEachRow",
+            "date_time_input_format": "best_effort",
+            "send_logs_level": "warning",
+        }
+
+        def _sql_quote(s: str) -> str:
+            return "'" + (s or "").replace("'", "''") + "'"
 
         # Collect (run_id, scenario) pairs for deduplication to support per-test files
         pairs = set()
@@ -388,19 +397,20 @@ ORDER BY day DESC
                         continue
                     try:
                         obj = json.loads(s)
-                        rid = str(obj.get("run_id") or "")
-                        scen = str(obj.get("scenario") or "")
-                        if rid:
-                            pairs.add((rid, scen))
                     except Exception:
                         continue
+                    rid = str(obj.get("run_id") or "")
+                    scen = str(obj.get("scenario") or "")
+                    if rid:
+                        pairs.add((rid, scen))
         except Exception:
             pairs = set()
 
         # Attempt to upgrade ts column to DateTime64(3) if needed (one-time, best-effort)
         try:
             col_q = (
-                f"SELECT type FROM system.columns WHERE database = '{metrics_db}' AND table = '{table}' AND name = 'ts' FORMAT TabSeparated"
+                f"SELECT type FROM system.columns WHERE database = '{metrics_db}' "
+                f"AND table = '{table}' AND name = 'ts' FORMAT TabSeparated"
             )
             r = requests.get(
                 url=self.url,
@@ -408,31 +418,21 @@ ORDER BY day DESC
                 headers=self.auth,
                 timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
             )
-            t = (r.text or "").strip()
-            if t and not t.startswith("DateTime64"):
-                try:
-                    alter = f"ALTER TABLE {metrics_db}.{table} MODIFY COLUMN ts DateTime64(3)"
-                    requests.post(
-                        url=self.url,
-                        params={"query": alter},
-                        headers=self.auth,
-                        timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                    )
-                except Exception:
-                    pass
         except Exception:
             pass
 
         # Dedupe: check if any rows exist for these (run_id, scenario) in recent window
         if pairs:
-            def _q(s: str) -> str:
-                return "'" + s.replace("'", "''") + "'"
-            filt_in = ",".join(f"({_q(rid)}, {_q(scen)})" for rid, scen in sorted(pairs))
+            filt_in = ",".join(
+                f"({_sql_quote(rid)}, {_sql_quote(scen)})" for rid, scen in sorted(pairs)
+            )
             q = (
                 f"SELECT count() FROM {metrics_db}.{table} "
-                f"WHERE (run_id, scenario) IN ({filt_in}) AND ts > now() - INTERVAL {dedupe_days} DAY FORMAT TabSeparated"
+                f"WHERE (run_id, scenario) IN ({filt_in}) "
+                f"AND ts > now() - INTERVAL {dedupe_days} DAY FORMAT TabSeparated"
             )
             try:
+                existing = None
                 for attempt in range(retries):
                     try:
                         r = requests.get(
@@ -443,17 +443,39 @@ ORDER BY day DESC
                         )
                         txt = (r.text or "").strip()
                         existing = int(float(txt.splitlines()[0])) if txt else 0
-                        if existing > 0:
-                            print(
-                                f"INFO: keeper metrics dedupe skip: existing={existing} pairs={len(pairs)}"
-                            )
-                            return 0, 1
                         break
                     except Exception:
                         if attempt == retries - 1:
                             break
+                if existing is not None and existing > 0:
+                    print(
+                        f"INFO: keeper metrics dedupe skip: existing={existing} pairs={len(pairs)}"
+                    )
+                    return 0, 1
             except Exception:
                 pass
+
+        def _insert_chunk(lines: list) -> int:
+            if not lines:
+                return 0
+            body = "\n".join(lines)
+            last_status = None
+            for attempt in range(retries):
+                response = requests.post(
+                    url=self.url,
+                    params=insert_params,
+                    data=body,
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                )
+                last_status = response.status_code
+                if response.ok:
+                    return len(lines)
+                if attempt == retries - 1:
+                    raise RuntimeError(
+                        f"Failed to write keeper metrics, response code [{last_status}]"
+                    )
+            return 0
 
         inserted = 0
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -464,52 +486,9 @@ ORDER BY day DESC
                     continue
                 chunk.append(s)
                 if len(chunk) >= chunk_size:
-                    params = {
-                        "database": metrics_db,
-                        "query": f"INSERT INTO {metrics_db}.{table} FORMAT JSONEachRow",
-                        "date_time_input_format": "best_effort",
-                        "send_logs_level": "warning",
-                    }
-                    body = "\n".join(chunk)
-                    for retry in range(retries):
-                        response = requests.post(
-                            url=self.url,
-                            params=params,
-                            data=body,
-                            headers=self.auth,
-                            timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                        )
-                        if response.ok:
-                            inserted += len(chunk)
-                            break
-                        if retry == retries - 1:
-                            raise RuntimeError(
-                                f"Failed to write keeper metrics, response code [{response.status_code}]"
-                            )
+                    inserted += _insert_chunk(chunk)
                     chunk = []
-            if chunk:
-                params = {
-                    "database": metrics_db,
-                    "query": f"INSERT INTO {metrics_db}.{table} FORMAT JSONEachRow",
-                    "date_time_input_format": "best_effort",
-                    "send_logs_level": "warning",
-                }
-                body = "\n".join(chunk)
-                for retry in range(retries):
-                    response = requests.post(
-                        url=self.url,
-                        params=params,
-                        data=body,
-                        headers=self.auth,
-                        timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                    )
-                    if response.ok:
-                        inserted += len(chunk)
-                        break
-                    if retry == retries - 1:
-                        raise RuntimeError(
-                            f"Failed to write keeper metrics, response code [{response.status_code}]"
-                        )
+            inserted += _insert_chunk(chunk)
 
         print(f"INFO: keeper metrics inserted: {inserted}")
         return inserted, 0

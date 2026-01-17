@@ -647,7 +647,6 @@ class Runner:
                 # Support both single sidecar and per-test split files
                 metrics_files = sorted(glob.glob(f"{temp_abs}/keeper_metrics*.jsonl"))
                 if ci_db and metrics_files:
-                    metrics_db = os.environ.get("KEEPER_METRICS_DB") or "keeper_stress_tests"
                     per_test_mode = any("__" in Path(p).name for p in metrics_files)
                     total_inserted = 0
                     total_skipped = 0
@@ -655,7 +654,6 @@ class Runner:
                         try:
                             inserted, skipped = ci_db.insert_keeper_metrics_from_file(
                                 file_path=path,
-                                db=metrics_db,
                                 chunk_size=(1000000 if per_test_mode else 1000),
                             )
                             total_inserted += int(inserted or 0)

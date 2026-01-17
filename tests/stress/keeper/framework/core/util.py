@@ -59,13 +59,39 @@ def sh_root_strict(node, cmd, timeout=60):
 
 def has_bin(node, name):
     """Check if binary exists in container PATH."""
-    r = sh(node, f"command -v {shlex.quote(name)} >/dev/null 2>&1; echo $?")
+    r = sh(node, f"command -v {shlex.quote(name)} >/dev/null 2>&1; echo $?", timeout=5)
     return str(r.get("out", "")).strip().endswith("0")
 
 
 def host_sh(cmd, timeout=None):
     """Execute a command on the host (not inside container). Returns {"out": ...}."""
     try:
+        if timeout is None:
+            to_env = os.environ.get("KEEPER_HOST_EXEC_TIMEOUT") or os.environ.get(
+                "KEEPER_PYTEST_TIMEOUT"
+            )
+            if to_env:
+                try:
+                    timeout = max(5, min(int(to_env), 3600))
+                except Exception:
+                    timeout = 300
+            else:
+                timeout = 300
+        else:
+            try:
+                timeout = float(timeout)
+            except Exception:
+                timeout = 300
+
+        pt = os.environ.get("KEEPER_PYTEST_TIMEOUT")
+        if pt:
+            try:
+                pt_s = int(pt)
+                max_host = max(5, pt_s - 60)
+                timeout = min(float(timeout), float(max_host))
+            except Exception:
+                pass
+
         args = cmd if isinstance(cmd, list) else ["bash", "-lc", cmd]
         res = subprocess.run(
             args,
@@ -76,6 +102,9 @@ def host_sh(cmd, timeout=None):
             text=True,
         )
         return {"out": res.stdout}
+    except subprocess.TimeoutExpired as ex:
+        print(f"[keeper][host_sh] timeout={timeout} cmd={cmd}")
+        raise ex
     except Exception:
         return {"out": ""}
 

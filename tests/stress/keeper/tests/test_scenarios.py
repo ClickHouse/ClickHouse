@@ -229,6 +229,8 @@ def ensure_default_gates(scenario):
         return
     gs = list(scenario.get("gates") or [])
     gate_types = {g.get("type") for g in gs}
+    if "ops_ge" not in gate_types:
+        gs.append({"type": "ops_ge", "min_ops": 1.0})
     if "error_rate_le" not in gate_types:
         gs.append({"type": "error_rate_le", "max_ratio": float(DEFAULT_ERROR_RATE)})
     if "p99_le" not in gate_types:
@@ -289,6 +291,8 @@ def _resolve_random_faults(request, scenario, rnd_count, seed_val):
 
 
 def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx, faults_mode):
+    if parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
+        return fs_effective, False
     bench_injected = False
     # Read workload config env var once for both branches
     wc_env = os.environ.get("KEEPER_WORKLOAD_CONFIG", "").strip()
@@ -313,6 +317,7 @@ def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx, faults_m
         ctx["bench_servers"] = servers_arg(nodes)
         fs_effective = inject_parallel(fs_effective, rb)
         bench_injected = True
+        ensure_default_gates(scenario)
     if not bench_injected:
         eff_dur_fb = resolve_duration(request, "KEEPER_DURATION", None, 120)
         cfg_name = wc_env or "workloads/prod_mix.yaml"
@@ -684,8 +689,8 @@ def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_
     # For fail stage, only snapshot leader to reduce volume
     snap_nodes = nodes
     if stage == "fail":
-        leaders = [n for n in nodes if is_leader(n)]
-        snap_nodes = leaders[:1] if leaders else nodes[:1]
+        # Do not attempt leader detection on fail path: it can hang if docker exec is wedged.
+        snap_nodes = nodes[:1]
 
     snap_prom = os.environ.get("KEEPER_SNAPSHOT_PROM", "1").strip().lower() in (
         "1",
@@ -1122,10 +1127,12 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         except Exception:
             pass
         # Check if bench was expected to run but didn't
-        if bench_injected and not bench_ran_flag:
-            print(
-                f"[keeper][bench-check] bench did not run for scenario={scenario.get('id','')} backend={backend}"
-            )
+        if bench_injected:
+            ops = _safe_float((summary or {}).get("ops"))
+            if (not bench_ran_flag) or ops <= 0:
+                raise AssertionError(
+                    f"bench did not run (or produced no ops) for scenario={scenario.get('id','')} backend={backend}"
+                )
         if sink_url and not bench_ran_flag:
             try:
                 row = _make_metric_row(
