@@ -284,9 +284,7 @@ def main():
         stages.remove(JobStages.COLLECT_COVERAGE)
     else:
         stages.remove(JobStages.COLLECT_LOGS)
-    if is_coverage or is_bugfix_validation or info.is_local_run:
-        # not needed for these job flavors
-        # moreover it updates/rewrites inverted Tests status for bugfix validation check which should stay inverted
+    if is_coverage or info.is_local_run:
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -535,22 +533,6 @@ def main():
         results.append(test_result)
         debug_files += ft_res_processor.debug_files
 
-        # invert result status for bugfix validation
-        if is_bugfix_validation:
-            has_failure = False
-            for r in results[-1].results:
-                r.set_label("xfail")
-                if r.status == Result.StatusExtended.FAIL:
-                    r.status = Result.StatusExtended.OK
-                    has_failure = True
-                elif r.status == Result.StatusExtended.OK:
-                    r.status = Result.StatusExtended.FAIL
-            if not has_failure:
-                print("Failed to reproduce the bug")
-                results[-1].set_failed().set_info("Failed to reproduce the bug")
-            else:
-                results[-1].set_success()
-
         results[-1].set_timing(stopwatch=stop_watch_)
         if results[-1].info:
             job_info = results[-1].info
@@ -601,6 +583,7 @@ def main():
 
     CH.terminate()
 
+    reset_success = False
     if (
         test_result
         and not test_result.is_error()
@@ -618,6 +601,8 @@ def main():
                 ).do(),
             )
         )
+        if results[-1].is_ok():
+            reset_success = True
 
     if test_result and JobStages.CHECK_ERRORS in stages:
         # must not be performed for a test validation - test must fail and log errors are not respected
@@ -634,6 +619,23 @@ def main():
         # fatal failures found in logs represented as normal test cases
         test_result.extend_sub_results(results[-1].results)
         results[-1].results = []
+
+        # invert result status for bugfix validation
+        if is_bugfix_validation:
+            has_failure = False
+            for r in results[-1].results:
+                r.set_label("xfail")
+                if r.status == Result.StatusExtended.FAIL:
+                    r.status = Result.StatusExtended.OK
+                    has_failure = True
+                elif r.status == Result.StatusExtended.OK:
+                    r.status = Result.StatusExtended.FAIL
+            if not has_failure:
+                print("Failed to reproduce the bug")
+                results[-1].set_failed().set_info("Failed to reproduce the bug")
+            else:
+                results[-1].set_success()
+
         if not results[-1].is_ok():
             results[-1].set_info("Found errors added into Tests results")
 
@@ -670,12 +672,18 @@ def main():
     if test_result:
         test_result.sort()
 
-    Result.create_from(
+    R = Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    ).complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
+    )
+
+    if reset_success:
+        # coverage job ignores test failures
+        R.set_success()
+
+    R.complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":

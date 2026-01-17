@@ -361,7 +361,7 @@ private:
     template <typename S>
     static NO_INLINE void calculateInserts(const std::vector<Instruction> & instructions, size_t rows, PaddedPODArray<S> & inserts)
     {
-        for (S i = instructions.size() - 1; i != static_cast<S>(-1); --i)
+        for (S i = static_cast<S>(instructions.size() - 1); i != static_cast<S>(-1); --i)
         {
             const auto & instruction = instructions[i];
             if (instruction.condition_always_true)

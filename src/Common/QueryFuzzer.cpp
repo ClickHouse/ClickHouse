@@ -1123,7 +1123,8 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
             {
                 /// Move alias to the end of the identifier (most of the time) or somewhere else
                 Strings clone_parts = id->name_parts;
-                const int index = (fuzz_rand() % 2) == 0 ? (id->name_parts.size() - 1) : (fuzz_rand() % id->name_parts.size());
+                int name_parts_size = static_cast<int>(id->name_parts.size());
+                const int index = (fuzz_rand() % 2) == 0 ? (name_parts_size - 1) : (fuzz_rand() % name_parts_size);
 
                 clone_parts[index] = alias;
                 return std::make_shared<ASTIdentifier>(std::move(clone_parts));
