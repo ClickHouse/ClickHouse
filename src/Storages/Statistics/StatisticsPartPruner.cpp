@@ -30,7 +30,15 @@ struct RangeWithStatus
 static std::optional<Field> tryConvertFloat64Strict(Float64 value, const DataTypePtr & data_type)
 {
     static const DataTypePtr float64_type = std::make_shared<DataTypeFloat64>();
-    return convertFieldToTypeStrict(Field(value), *float64_type, *data_type);
+    try
+    {
+        return convertFieldToTypeStrict(Field(value), *float64_type, *data_type);
+    }
+    catch (...)
+    {
+        /// convertFieldToTypeStrict may throw when value exceeds target type's range (e.g., Decimal overflow)
+        return std::nullopt;
+    }
 }
 
 /// Get boundary field for min value when Float64 precision is exceeded.
@@ -96,7 +104,8 @@ static RangeWithStatus createRangeFromEstimate(const Estimate & est, const DataT
         /// - Float types: use Float64 directly
         /// - DateTime, IPv4: require UInt64
         /// - Other integer types: Int64 works
-        Field min_src, max_src;
+        Field min_src;
+        Field max_src;
         if (which.isFloat())
         {
             min_src = Field(min_value);
