@@ -107,7 +107,7 @@ static RangeWithStatus createRangeFromEstimate(const Estimate & est, const DataT
             /// DateTime and IPv4 require UInt64, negative values are invalid
             if (min_value < 0 || max_value < 0)
                 return {std::nullopt, RangeStatus::Unknown};
-            
+
             min_src = Field(static_cast<UInt64>(min_value));
             max_src = Field(static_cast<UInt64>(max_value));
         }
