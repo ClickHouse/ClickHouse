@@ -95,9 +95,9 @@ namespace
         return partitioning_mode != ObjectStorageQueuePartitioningMode::NONE;
     }
 
-    }
+}
 
-std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
+    std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
 {
     WriteBufferFromOwnString wb;
     wb << "bucket " << bucket << ", ";

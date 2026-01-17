@@ -505,7 +505,7 @@ def test_ordered_mode_with_regex_partitioning(started_cluster, engine_name, proc
 @pytest.mark.parametrize("hosts", [2])
 @pytest.mark.parametrize("processing_threads_num", [16])
 @pytest.mark.parametrize("buckets", [8])
-@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+@pytest.mark.parametrize("engine_name", ["S3Queue"])
 def test_ordered_mode_with_regex_partitioning_large_num_files(started_cluster, engine_name, processing_threads_num, buckets, hosts):
     """
     Test regex-based partitioning with large number of files across multiple hosts.

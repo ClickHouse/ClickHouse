@@ -1,5 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
+#include <__filesystem/path.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -11,7 +12,7 @@ ObjectStorageQueueFilenameParser::ObjectStorageQueueFilenameParser(
     : partition_component_name(partition_component)
     , log(getLogger("ObjectStorageQueueFilenameParser"))
 {
-    // Compile partition regex
+    /// Compile partition regex
     if (!partition_regex.empty())
     {
         partition_pattern = std::make_unique<re2::RE2>(partition_regex);
@@ -29,15 +30,12 @@ std::optional<std::string> ObjectStorageQueueFilenameParser::parse(const std::st
     if (!isValid())
         return std::nullopt;
 
-    // Extract basename (filename only) from the full path for regex matching
-    // This ensures regexes match against the filename, not directory/bucket names
-    // Example: "/bucket/path/to/server-1_20250115T103045_0001" -> "server-1_20250115T103045_0001"
-    std::string basename = file_name;
-    auto last_slash = file_name.find_last_of('/');
-    if (last_slash != std::string::npos)
-        basename = file_name.substr(last_slash + 1);
+    /// Extract basename (filename only) from the full path for regex matching
+    /// This ensures regexes match against the filename, not directory/bucket names
+    /// Example: "/bucket/path/to/server-1_20250115T103045_0001" -> "server-1_20250115T103045_0001"
+    std::string basename = std::filesystem::path(file_name).filename().string();
 
-    // Extract all named capture groups from partition_regex
+    /// Extract all named capture groups from partition_regex
     const auto & groups = partition_pattern->NamedCapturingGroups();
     int num_groups = partition_pattern->NumberOfCapturingGroups();
 
@@ -47,7 +45,7 @@ std::optional<std::string> ObjectStorageQueueFilenameParser::parse(const std::st
         return std::nullopt;
     }
 
-    // Enforce that all groups are named (no unnamed groups allowed)
+    /// Enforce that all groups are named (no unnamed groups allowed)
     if (static_cast<int>(groups.size()) != num_groups)
     {
         LOG_ERROR(
@@ -59,25 +57,25 @@ std::optional<std::string> ObjectStorageQueueFilenameParser::parse(const std::st
         return std::nullopt;
     }
 
-    // Create vector to hold all capture groups
-    std::vector<std::string> captures(num_groups + 1); // +1 for full match at index 0
+    /// Create vector to hold all capture groups
+    std::vector<std::string> captures(num_groups + 1); /// +1 for full match at index 0
 
-    // Create RE2::Arg array
+    /// Create RE2::Arg array
     std::vector<RE2::Arg> args(num_groups);
     std::vector<const RE2::Arg *> arg_ptrs(num_groups);
     for (int i = 0; i < num_groups; ++i)
     {
-        args[i] = &captures[i + 1]; // Skip index 0 (full match)
+        args[i] = &captures[i + 1]; /// Skip index 0 (full match)
         arg_ptrs[i] = &args[i];
     }
 
     if (!RE2::PartialMatchN(basename, *partition_pattern, arg_ptrs.data(), num_groups))
     {
-        LOG_DEBUG(log, "Failed to match partition_regex against basename: {}", basename);
+        LOG_TEST(log, "Failed to match partition_regex against basename: {}", basename);
         return std::nullopt;
     }
 
-    // Find the partition key from named capture groups
+    /// Find the partition key from named capture groups
     if (partition_component_name.empty())
     {
         LOG_ERROR(log, "partition_component setting must be specified when using regex partitioning mode");
@@ -93,7 +91,7 @@ std::optional<std::string> ObjectStorageQueueFilenameParser::parse(const std::st
 
     std::string partition_key = captures[it->second];
 
-    LOG_DEBUG(log, "Parsed file: path={}, basename={}, partition={}", file_name, basename, partition_key);
+    LOG_TEST(log, "Parsed file: path={}, basename={}, partition={}", file_name, basename, partition_key);
 
     return partition_key;
 }
