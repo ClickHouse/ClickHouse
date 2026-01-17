@@ -3,7 +3,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
-#include "base/types.h"
+#include <base/types.h>
 
 static inline size_t intHash32(UInt64 x)
 {
@@ -74,11 +74,14 @@ DistinctTransform::DistinctTransform(
     } else
     {
         try_init_bf = false;
-        pool = std::make_unique<ThreadPool>(
-            CurrentMetrics::DistinctThreads,
-            CurrentMetrics::DistinctThreadsActive,
-            CurrentMetrics::DistinctThreadsScheduled,
-            max_threads_);
+        if (max_threads_ > 1)
+            pool = std::make_unique<ThreadPool>(
+                CurrentMetrics::DistinctThreads,
+                CurrentMetrics::DistinctThreadsActive,
+                CurrentMetrics::DistinctThreadsScheduled,
+                max_threads_);
+        else
+            pool = nullptr;
     }
 
     setInputNotNeededAfterRead(true);
@@ -440,6 +443,7 @@ void DistinctTransform::transform(Chunk & chunk)
     auto check_only = (old_set_size > set_limit_for_enabling_bloom_filter * 2) && set_limit_for_enabling_bloom_filter > 0;
     auto * lc_mask_ptr = lc_mask ? &*lc_mask : nullptr;
     constexpr size_t parallel_threshold = 1000000;
+    auto passthrough = false;
 
     IColumn::Filter filter(num_rows);
 
@@ -459,7 +463,7 @@ void DistinctTransform::transform(Chunk & chunk)
             \
             if constexpr (SetVariants::Type::NAME == SetVariants::Type::hashed_two_level) \
             { \
-                if (old_set_size > parallel_threshold) \
+                if (old_set_size > parallel_threshold && pool) \
                     buildSetParallelFilter(*data.NAME, column_ptrs, filter, num_rows, data, *pool); \
                 else \
                     build(); \
@@ -467,7 +471,10 @@ void DistinctTransform::transform(Chunk & chunk)
             else if (!is_pre_distinct) \
                 build(); \
             else if (check_only) \
-                checkSetFilter(set, column_ptrs, filter, num_rows, data, total_passed_bf); \
+                if (pool) \
+                    checkSetFilter(set, column_ptrs, filter, num_rows, data, total_passed_bf); \
+                else \
+                    passthrough = true; \
             else if (use_bf) \
                 buildCombinedFilter(set, column_ptrs, filter, num_rows, data, total_passed_bf); \
             else \
@@ -480,20 +487,24 @@ void DistinctTransform::transform(Chunk & chunk)
 #undef M
     }
 
-    /// Just go to the next chunk if there isn't any new record in the current one.
     size_t new_bf_size = total_passed_bf;
     size_t new_set_size = data.getTotalRowCount();
 
     size_t rows_passed = ((new_set_size - old_set_size) + (new_bf_size - old_bf_size));
 
+    if (passthrough)
+        rows_passed = num_rows;
+
+    /// Just go to the next chunk if there isn't any new record in the current one.
     if (!rows_passed)
         return;
 
     if (!set_size_limits.check(new_set_size, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
         return;
 
-    for (auto & column : columns)
-        column = column->filter(filter, rows_passed);
+    if (rows_passed != num_rows)
+        for (auto & column : columns)
+            column = column->filter(filter, rows_passed);
 
     use_bf = use_bf && (rows_passed > (pass_ratio_threshold_for_disabling_bloom_filter * num_rows)) ? true: false;
 
