@@ -1136,7 +1136,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
         {
             std::unordered_set<int32_t> nodes;
             auto members = preconditions->getArray("members");
-            for (size_t i = 0; i < members->size(); ++i)
+            for (unsigned int i = 0; i < members->size(); ++i)
                 nodes.insert(members->getElement<int32_t>(i));
 
             auto servers_in_config = latest_config->get_servers();
@@ -1159,7 +1159,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
         {
             std::unordered_set<int32_t> leaders;
             auto leaders_array = preconditions->getArray("leaders");
-            for (size_t i = 0; i < leaders_array->size(); ++i)
+            for (unsigned int i = 0; i < leaders_array->size(); ++i)
                 leaders.insert(leaders_array->getElement<int32_t>(i));
 
             if (!server->isLeaderAlive())
@@ -1167,7 +1167,7 @@ void KeeperDispatcher::checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr
                     "Precondition failed: expected leader id {} but there is no leader currently",
                     fmt::join(leaders, ", "));
 
-            if (!leaders.contains(server->getLeaderID()))
+            if (!leaders.contains(static_cast<int32_t>(server->getLeaderID())))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Precondition failed: expected leader id {} does not match actual leader id {}",
                     fmt::join(leaders, ", "),

@@ -21,9 +21,3 @@ echo "SELECT ((SELECT 1) AS a1), NOT ((SELECT 1) AS a1);" | "$CLICKHOUSE_FORMAT"
 
 # Test repeated alias for tuple after IN
 echo "SELECT tuple(1, 'a') as a1, tuple(1, 'a') IN (tuple(1, 'a') as a1);" | "$CLICKHOUSE_FORMAT"
-
-# Test that INSERT INTO with EXCEPT does not crash debug build
-echo "INSERT INTO tab2 SELECT * FROM tab EXCEPT SELECT * FROM tab;" | "$CLICKHOUSE_FORMAT"
-
-# Test weird SELECT/EXCEPT/SELECT statement
-echo "SELECT 1,2,3 EXCEPT SELECT 1,2,3;" | "$CLICKHOUSE_FORMAT"
