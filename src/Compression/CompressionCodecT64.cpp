@@ -763,7 +763,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     {
         T header[4] = {0, 0, 0, 0}; /// positive_mask, negative_mask, positive, negative
         findMasks<T>(src, bytes_size, header[0], header[1], header[2], header[3]);
-        
+
         positive_mask = header[0];
         negative_mask = header[1];
         negative_bit = negative_mask || header[3]; // in-out: has-negtives -> negative-bit-position
