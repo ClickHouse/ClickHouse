@@ -330,7 +330,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
     else if (null_map)
         return ColumnNullable::create(src->convertToFullColumnIfConst(), null_map);
     else
-        return ColumnNullable::create(src->convertToFullColumnIfConst(), ColumnUInt8::create(src->size(), 0));
+        return ColumnNullable::create(src->convertToFullColumnIfConst(), ColumnUInt8::create(src->size(), UInt8(0)));
 }
 
 NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
