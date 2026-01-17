@@ -1,5 +1,4 @@
 DROP TABLE IF EXISTS test_stats_pruning;
-SYSTEM DROP QUERY CONDITION CACHE;
 
 CREATE TABLE test_stats_pruning (
     dt Date,
@@ -15,7 +14,6 @@ ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'minmax';
 
 SET use_statistics_part_pruning = 1;
-SET use_query_condition_cache = 0;
 
 -- Part 1: 202501, id [0, 99], value [0, 99], version [0, 99]
 INSERT INTO test_stats_pruning SELECT '2025-01-11', number, number, number, toDecimal128(number, 0), 'a', number FROM numbers(100);

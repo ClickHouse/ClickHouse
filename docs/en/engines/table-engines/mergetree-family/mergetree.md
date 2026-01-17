@@ -1103,10 +1103,8 @@ ALTER TABLE tab DROP STATISTICS a;
 ```
 
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
-
-When `set allow_statistics_optimize = 1` is enabled, statistics can be used for:
-- **Part pruning**: `MinMax` statistics allow skipping entire parts when the query condition falls outside the column's value range.
-- **Prewhere optimization**: Statistics help estimate the selectivity of filter conditions.
+They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
+When `use_statistics_part_pruning` is enabled, statistics can be used for part pruning, suitable statistics (e.g., `MinMax`) allow skipping entire parts.
 
 ### Available types of column statistics {#available-types-of-column-statistics}
 

@@ -663,7 +663,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
     /// Disable statistics-based pruning when:
     /// 1. The setting is disabled
-    /// 2. The query uses FINAL (statistics may not reflect post-merge state)
+    /// 2. The query uses FINAL
     /// 3. There are on-fly mutations or patch parts (statistics only reflects original data)
     if (!settings[Setting::use_statistics_part_pruning]
         || query_info.isFinal()

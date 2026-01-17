@@ -77,8 +77,6 @@ public:
     };
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
-
-    static bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out);
 private:
     friend class ColumnStatistics;
 
@@ -91,6 +89,7 @@ private:
     };
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn) const;
+    bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.

@@ -92,10 +92,31 @@ static RangeWithStatus createRangeFromEstimate(const Estimate & est, const DataT
 
     if (!needs_precision_handling)
     {
-        /// For types that don't have precision issues, convert Float64 to appropriate integer type first.
-        /// convertFieldToType doesn't support direct Float64 -> Date/DateTime conversion.
-        Field min_src = which.isFloat() ? Field(min_value) : Field(static_cast<Int64>(min_value));
-        Field max_src = which.isFloat() ? Field(max_value) : Field(static_cast<Int64>(max_value));
+        /// Different types require different Field types:
+        /// - Float types: use Float64 directly
+        /// - DateTime, IPv4: require UInt64
+        /// - Other integer types: Int64 works
+        Field min_src, max_src;
+        if (which.isFloat())
+        {
+            min_src = Field(min_value);
+            max_src = Field(max_value);
+        }
+        else if (which.isDateTime() || which.isIPv4())
+        {
+            /// DateTime and IPv4 require UInt64, negative values are invalid
+            if (min_value < 0 || max_value < 0)
+                return {std::nullopt, RangeStatus::Unknown};
+            
+            min_src = Field(static_cast<UInt64>(min_value));
+            max_src = Field(static_cast<UInt64>(max_value));
+        }
+        else
+        {
+            /// Int8/16/32, UInt8/16/32, Date, Date32, Time, Enum - Int64 works for all
+            min_src = Field(static_cast<Int64>(min_value));
+            max_src = Field(static_cast<Int64>(max_value));
+        }
 
         Field min_field = convertFieldToType(min_src, *data_type);
         Field max_field = convertFieldToType(max_src, *data_type);
