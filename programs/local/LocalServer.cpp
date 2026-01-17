@@ -25,6 +25,8 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Access/AccessControl.h>
+#include <Access/DiskAccessStorage.h>
+#include <Access/MemoryAccessStorage.h>
 #include <Common/PoolId.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -581,6 +583,20 @@ void LocalServer::setupUsers()
         global_context->setUsersConfig(users_config);
     else
         throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
+
+    /// Add a writeable storage for SQL-based access management.
+    /// This allows creating users, roles, row policies, etc. via SQL queries.
+    if (getClientConfiguration().has("path"))
+    {
+        /// Use disk storage for persistence when --path is specified.
+        String access_path = fs::path(global_context->getPath()) / "access" / "";
+        access_control.addDiskStorage(DiskAccessStorage::STORAGE_TYPE, access_path, /* readonly= */ false, /* allow_backup= */ false);
+    }
+    else
+    {
+        /// Use in-memory storage for temporary/ephemeral mode.
+        access_control.addMemoryStorage(MemoryAccessStorage::STORAGE_TYPE, /* allow_backup= */ false);
+    }
 }
 
 void LocalServer::connect()
