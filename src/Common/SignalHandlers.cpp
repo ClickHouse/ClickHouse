@@ -527,7 +527,7 @@ try
     if (std::string_view(VERSION_OFFICIAL).contains("official build"))
     {
         /// Approximate support period, upper bound.
-        if (time(nullptr) - makeDate(DateLUT::instance(), 2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
+        if (time(nullptr) - makeDate(DateLUT::instance(), static_cast<UInt8>(2000 + VERSION_MAJOR), static_cast<UInt8>(VERSION_MINOR), 1) < (365 + 30) * 86400)
         {
             LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
         }

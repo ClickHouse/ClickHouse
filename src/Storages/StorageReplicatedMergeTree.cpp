@@ -6773,8 +6773,8 @@ String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const 
         /// The date range is all month long.
         const auto & lut = DateLUT::serverTimezoneInstance();
         time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(part_info.getPartitionId() + "01"));
-        DayNum left_date = DayNum(lut.toDayNum(start_time).toUnderType());
-        DayNum right_date = DayNum(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
+        DayNum left_date = DayNum(static_cast<DayNum::UnderlyingType>(lut.toDayNum(start_time)));
+        DayNum right_date = DayNum(left_date.toUnderType() + lut.daysInMonth(start_time) - 1);
         return part_info.getPartNameV0(left_date, right_date);
     }
 

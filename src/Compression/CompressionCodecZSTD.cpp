@@ -57,7 +57,7 @@ UInt32 CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source
 
     if (ZSTD_isError(res))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: {}", std::string(ZSTD_getErrorName(res)));
-    return res;
+    return static_cast<UInt32>(res);
 }
 
 CompressionCodecZSTD::CompressionCodecZSTD(int level_, int window_log_)
