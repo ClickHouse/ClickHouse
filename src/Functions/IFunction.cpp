@@ -1,4 +1,5 @@
 #include <Functions/FunctionDynamicAdaptor.h>
+#include <Functions/FunctionVariantAdaptor.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -6,9 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/MaskOperations.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
@@ -19,7 +18,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -45,6 +43,7 @@ namespace Setting
 {
 extern const SettingsBool short_circuit_function_evaluation_for_nulls;
 extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
+extern const SettingsBool use_variant_default_implementation_for_comparisons;
 }
 
 namespace ErrorCodes
@@ -246,7 +245,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return wrapInNullable(res, args, result_type, input_rows_count);
         }
 
-        auto result_null_map = ColumnUInt8::create(input_rows_count, 0);
+        auto result_null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
         auto & result_null_map_data = result_null_map->getData();
         for (const auto & arg : args)
         {
@@ -670,6 +669,23 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
         }
     }
 
+    /// Use FunctionBaseVariantAdaptor if default implementation for Variant is enabled and we have Variant type in arguments.
+    if (useDefaultImplementationForVariant())
+    {
+        checkNumberOfArguments(arguments.size());
+
+        for (const auto & arg : arguments)
+        {
+            if (isVariant(arg.type))
+            {
+                DataTypes data_types(arguments.size());
+                for (size_t i = 0; i < arguments.size(); ++i)
+                    data_types[i] = arguments[i].type;
+                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
+            }
+        }
+    }
+
     auto return_type = getReturnType(arguments);
     return buildImpl(arguments, return_type);
 }
@@ -808,32 +824,58 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
 
         std::vector<llvm::Value *> is_null_values;
 
+        auto skip_arguments = getArgumentsThatDontParticipateInCompilation(arguments_types);
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const auto & argument = arguments[i];
             llvm::Value * unwrapped_value = argument.value;
 
+            bool skip_compile = (std::find(skip_arguments.begin(), skip_arguments.end(), i) != skip_arguments.end());
             if (argument.type->isNullable())
             {
-                unwrapped_value = b.CreateExtractValue(argument.value, {0});
-                is_null_values.emplace_back(b.CreateExtractValue(argument.value, {1}));
+                unwrapped_value = skip_compile ? nullptr : b.CreateExtractValue(argument.value, {0});
+                is_null_values.emplace_back(skip_compile ? nullptr : b.CreateExtractValue(argument.value, {1}));
             }
 
             unwrapped_arguments.emplace_back(unwrapped_value, (*denulled_arguments_types)[i]);
         }
 
-        auto * result = compileImpl(builder, unwrapped_arguments, removeNullable(result_type));
-
-        auto * nullable_structure_type = toNativeType(b, makeNullable(getReturnTypeImpl(*denulled_arguments_types)));
+        auto unwrapped_return_type = getReturnTypeImpl(*denulled_arguments_types);
+        auto * result = compileImpl(builder, unwrapped_arguments, unwrapped_return_type);
+        auto * nullable_structure_type = toNativeType(b, makeNullable(unwrapped_return_type));
         auto * nullable_structure_value = llvm::Constant::getNullValue(nullable_structure_type);
 
-        auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
-        auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
+        if (!unwrapped_return_type->isNullable())
+        {
+            auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result, {0});
+            auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
 
-        for (auto * is_null_value : is_null_values)
-            nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+            for (auto * is_null_value : is_null_values)
+            {
+                if (is_null_value)
+                    nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+            }
 
-        return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
+            return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
+        }
+        else
+        {
+            /// In case defaultImplementationForNulls returns a nullable structure, we need to merge the null values.
+            auto * result_value = b.CreateExtractValue(result, {0});
+            auto * result_is_null = b.CreateExtractValue(result, {1});
+
+            auto * nullable_structure_with_result_value = b.CreateInsertValue(nullable_structure_value, result_value, {0});
+            auto * nullable_structure_result_null = b.CreateExtractValue(nullable_structure_with_result_value, {1});
+
+            nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, result_is_null);
+            for (auto * is_null_value : is_null_values)
+            {
+                if (is_null_value)
+                    nullable_structure_result_null = b.CreateOr(nullable_structure_result_null, is_null_value);
+            }
+
+            return b.CreateInsertValue(nullable_structure_with_result_value, nullable_structure_result_null, {1});
+        }
     }
 
     return compileImpl(builder, arguments, result_type);

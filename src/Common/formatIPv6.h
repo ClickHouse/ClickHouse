@@ -433,7 +433,7 @@ inline void formatIPv4(const unsigned char * src, size_t src_size, char *& dst, 
             value = static_cast<uint8_t>(src[IPV4_BINARY_LENGTH - octet - 1]);
         else
             value = static_cast<uint8_t>(src[octet]);
-        const uint8_t len = one_byte_to_string_lookup_table[value].second;
+        const auto len = one_byte_to_string_lookup_table[value].second;
         const char* str = one_byte_to_string_lookup_table[value].first;
 
         memcpy(dst, str, len);

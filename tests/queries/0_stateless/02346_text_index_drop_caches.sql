@@ -5,10 +5,12 @@
 DROP TABLE IF EXISTS tab;
 
 SET enable_full_text_index = 1;
+SET use_skip_indexes_on_data_read = 1;
+
+-- Force-enable text index caches
 SET use_text_index_header_cache = 1;
 SET use_text_index_dictionary_cache = 1;
 SET use_text_index_postings_cache = 1;
-SET use_skip_indexes_on_data_read = 1;
 
 CREATE TABLE tab
 (

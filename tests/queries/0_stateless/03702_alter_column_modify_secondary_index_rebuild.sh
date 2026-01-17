@@ -1,6 +1,7 @@
 #!/bin/bash
 # Tags: no-parallel-replicas
 # no-parallel-replicas: The EXPLAIN output is completely different
+# add_minmax_index_for_numeric_columns=0: Changes the plan and rows read
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -46,7 +47,7 @@ do
     ENGINE = MergeTree()
     ORDER BY id
     PARTITION BY id
-    SETTINGS alter_column_secondary_index_mode = 'rebuild', ${part_type_setting};
+    SETTINGS alter_column_secondary_index_mode = 'rebuild', add_minmax_index_for_numeric_columns=0, ${part_type_setting};
 
     INSERT INTO test_table VALUES (1, '10', '127.0.0.1'), (2, '20', '127.0.0.2'), (3, '300', '127.0.0.3');
 
@@ -55,7 +56,7 @@ do
     SELECT count() FROM test_table WHERE ip = '127.0.0.1';
     -- If we try to modify the column to a type incompatible with the index it should always throw an error and forbid the ALTER,
     -- independently of the alter_column_secondary_index_mode setting.
-    ALTER TABLE test_table MODIFY COLUMN ip IPv4; -- { serverError INCORRECT_QUERY }
+    ALTER TABLE test_table MODIFY COLUMN ip IPv4; -- { serverError BAD_ARGUMENTS }
 
     SELECT 'STRING TO UInt64 tests';
     EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '300';

@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 
 def fetch_github_issues(
-    label: str, state: str = "open", hours_back: float = None
+    label: str, state: str = "open", hours_back: float = None, repo: str = ""
 ) -> List[dict]:
     """
     Fetch issues from GitHub using gh CLI with manual pagination.
@@ -28,6 +28,7 @@ def fetch_github_issues(
         label: GitHub label to filter by
         state: Issue state (open or closed)
         hours_back: For closed issues, only fetch those closed within this many hours (default: None for all)
+        repo: GitHub repository in format owner/repo (default: empty string uses current repo)
 
     Returns:
         List of issue dictionaries
@@ -35,6 +36,7 @@ def fetch_github_issues(
     if isinstance(label, str):
         label = [label]
     all_issues = []
+    repo_arg = f"--repo {repo}" if repo else ""
     limit_per_request = 1000  # Maximum we'll fetch per request
 
     # Build base command
@@ -44,13 +46,13 @@ def fetch_github_issues(
         )
         label_query = " ".join([f'label:"{lbl}"' for lbl in label])
         search_query = f"{label_query} is:closed closed:>{date_threshold}"
-        base_cmd = f"gh issue list --search '{search_query}' --json number,title,body,closedAt,labels --limit {limit_per_request}"
+        base_cmd = f"gh issue list {repo_arg} --search '{search_query}' --json number,title,body,closedAt,labels --limit {limit_per_request}"
         print(
             f"Fetching {state} issues with label '{label}' closed in last {hours_back} hours (since {date_threshold})..."
         )
     else:
         label_args = " ".join([f'--label "{lbl}"' for lbl in label])
-        base_cmd = f"gh issue list {label_args} --state {state} --json number,title,body,closedAt,labels --limit {limit_per_request}"
+        base_cmd = f"gh issue list {repo_arg} {label_args} --state {state} --json number,title,body,closedAt,labels --limit {limit_per_request}"
         print(f"Fetching {state} issues with label '{label}'...")
 
     try:
@@ -88,6 +90,7 @@ class IssueLabels:
     FLAKY_TEST = "flaky test"
     FUZZ = "fuzz"
     INFRASTRUCTURE = "infrastructure"
+    SANITIZER = "sanitizer"
 
 
 @dataclass
@@ -138,11 +141,11 @@ class Issue:
             return fields
 
         patterns = {
-            "test_name": r"Test name:\s*(.+?)(?:\n|$)",
-            "failure_reason": r"Failure reason:\s*(.+?)(?:\n|$)",
-            "ci_action": r"CI action:\s*(.+?)(?:\n|$)",
-            "test_pattern": r"Test pattern:\s*(.+?)(?:\n|$)",
-            "job_pattern": r"Job pattern:\s*(.+?)(?:\n|$)",
+            "test_name": r"Test name:\s*([^\n]*)",
+            "failure_reason": r"Failure reason:\s*([^\n]*)",
+            "ci_action": r"CI action:\s*([^\n]*)",
+            "test_pattern": r"Test pattern:\s*([^\n]*)",
+            "job_pattern": r"Job pattern:\s*([^\n]*)",
         }
 
         for field, pattern in patterns.items():
@@ -248,13 +251,17 @@ class Issue:
         test_name = self.test_name
 
         # Normalize pytest parameterized names
-        if ".py" in name_in_report:
+        if ".py" in name_in_report and ".py" in test_name:
             if "[" in test_name:
                 # Issue mentions a specific parametrization: keep full name for exact match
                 pass
             elif "[" in name_in_report:
                 # Issue mentions only the base test: compare against the base part
                 name_in_report = name_in_report.split("[")[0]
+
+            if "::" not in test_name:
+                # Issue mentions only the module path without function: extract module path from report test name
+                name_in_report = name_in_report.split("::")[0]
 
         # Check if test name matches
         if not name_in_report.endswith(test_name):
@@ -274,7 +281,7 @@ class Issue:
         print(
             f"Marking '{result.name}' as flaky (matched: {test_name}, issue: #{self.number})"
         )
-        result.set_clickable_label(label="issue", link=self.url)
+        result.set_clickable_label(label=Result.Label.ISSUE, link=self.url)
         return True
 
     def _check_infrastructure_match(
@@ -411,9 +418,13 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
         return res
 
     @classmethod
-    def from_gh(cls, verbose=True):
+    def from_gh(cls, verbose=True, repo=""):
         """
         Fetch and organize all CI test issues from GitHub.
+
+        Args:
+            verbose: Enable verbose output
+            repo: GitHub repository in format owner/repo (default: empty string uses current repo)
 
         Returns:
             TestCaseIssueCatalog with active issues (including recently closed)
@@ -424,7 +435,9 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
         # Fetch open issues with label "testing" (CI_ISSUE) first
         if verbose:
             print("\n--- Fetching active testing issues ---")
-        testing_issues = fetch_github_issues(label=IssueLabels.CI_ISSUE, state="open")
+        testing_issues = fetch_github_issues(
+            label=IssueLabels.CI_ISSUE, state="open", repo=repo
+        )
         catalog.active_test_issues = cls.process_issue(testing_issues, verbose=verbose)
         if verbose:
             print(f"Processed {len(catalog.active_test_issues)} testing issues")
@@ -433,7 +446,7 @@ class TestCaseIssueCatalog(MetaClasses.Serializable):
         if verbose:
             print("--- Fetching closed testing issues from last 8 hours ---")
         closed_testing_issues = fetch_github_issues(
-            label=IssueLabels.CI_ISSUE, state="closed", hours_back=8
+            label=IssueLabels.CI_ISSUE, state="closed", hours_back=8, repo=repo
         )
         closed_testing_processed = cls.process_issue(
             closed_testing_issues, verbose=verbose

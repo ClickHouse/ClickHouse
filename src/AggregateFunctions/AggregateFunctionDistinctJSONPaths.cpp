@@ -345,8 +345,106 @@ static AggregateFunctionPtr createAggregateFunctionDistinctJSONPathsAndTypes(
 
 void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("distinctJSONPaths", createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsData>);
-    factory.registerFunction("distinctJSONPathsAndTypes", createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsAndTypesData>);
+    /// distinctJSONPaths documentation
+    FunctionDocumentation::Description description_distinctJSONPaths = R"(
+Calculates a list of distinct paths stored in a [JSON](https://clickhouse.com/docs/sql-reference/data-types/newjson) column.
+    )";
+    FunctionDocumentation::Syntax syntax_distinctJSONPaths = R"(
+distinctJSONPaths(json)
+    )";
+    FunctionDocumentation::Arguments arguments_distinctJSONPaths = {
+        {"json", "JSON column.", {"JSON"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_distinctJSONPaths = {"Returns the sorted list of paths.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_distinctJSONPaths = {
+    {
+        "Basic usage with nested JSON",
+        R"(
+DROP TABLE IF EXISTS test_json;
+CREATE TABLE test_json(json JSON) ENGINE = Memory;
+INSERT INTO test_json VALUES ('{"a" : 42, "b" : "Hello"}'), ('{"b" : [1, 2, 3], "c" : {"d" : {"e" : "2020-01-01"}}}'), ('{"a" : 43, "c" : {"d" : {"f" : [{"g" : 42}]}}}');
+
+SELECT distinctJSONPaths(json) FROM test_json;
+        )",
+        R"(
+┌─distinctJSONPaths(json)───┐
+│ ['a','b','c.d.e','c.d.f'] │
+└───────────────────────────┘
+        )"
+    },
+    {
+        "With declared JSON paths",
+        R"(
+DROP TABLE IF EXISTS test_json;
+CREATE TABLE test_json(json JSON) ENGINE = Memory;
+INSERT INTO test_json VALUES ('{"a" : 42, "b" : "Hello"}'), ('{"b" : [1, 2, 3], "c" : {"d" : {"e" : "2020-01-01"}}}'), ('{"a" : 43, "c" : {"d" : {"f" : [{"g" : 42}]}}}')
+
+SELECT distinctJSONPaths(json) FROM test_json;
+        )",
+        R"(
+┌─distinctJSONPaths(json)─┐
+│ ['a','b','c']           │
+└─────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_distinctJSONPaths = {24, 9};
+    FunctionDocumentation::Category category_distinctJSONPaths = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_distinctJSONPaths = {description_distinctJSONPaths, syntax_distinctJSONPaths, arguments_distinctJSONPaths, {}, returned_value_distinctJSONPaths, examples_distinctJSONPaths, introduced_in_distinctJSONPaths, category_distinctJSONPaths};
+
+    /// distinctJSONPathsAndTypes documentation
+    FunctionDocumentation::Description description_distinctJSONPathsAndTypes = R"(
+Calculates the list of distinct paths and their types stored in [JSON](https://clickhouse.com/docs/sql-reference/data-types/newjson) column.
+
+:::note
+If JSON declaration contains paths with specified types, these paths will be always included in the result of `distinctJSONPaths/distinctJSONPathsAndTypes` functions even if input data didn't have values for these paths.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_distinctJSONPathsAndTypes = R"(
+distinctJSONPathsAndTypes(json)
+    )";
+    FunctionDocumentation::Arguments arguments_distinctJSONPathsAndTypes = {
+        {"json", "JSON column.", {"JSON"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_distinctJSONPathsAndTypes = {"Returns the sorted map of paths and types.", {"Map(String, Array(String))"}};
+    FunctionDocumentation::Examples examples_distinctJSONPathsAndTypes = {
+    {
+        "Basic usage with mixed types",
+        R"(
+DROP TABLE IF EXISTS test_json;
+CREATE TABLE test_json(json JSON) ENGINE = Memory;
+INSERT INTO test_json VALUES ('{"a" : 42, "b" : "Hello"}'), ('{"b" : [1, 2, 3], "c" : {"d" : {"e" : "2020-01-01"}}}'), ('{"a" : 43, "c" : {"d" : {"f" : [{"g" : 42}]}}}');
+
+SELECT distinctJSONPathsAndTypes(json) FROM test_json;
+        )",
+        R"(
+┌─distinctJSONPathsAndTypes(json)───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {'a':['Int64'],'b':['Array(Nullable(Int64))','String'],'c.d.e':['Date'],'c.d.f':['Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))']} │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "With declared JSON paths",
+        R"(
+DROP TABLE IF EXISTS test_json;
+CREATE TABLE test_json(json JSON(a UInt32)) ENGINE = Memory;
+INSERT INTO test_json VALUES ('{"b" : "Hello"}'), ('{"b" : "World", "c" : [1, 2, 3]}');
+
+SELECT distinctJSONPathsAndTypes(json) FROM test_json;
+        )",
+        R"(
+┌─distinctJSONPathsAndTypes(json)────────────────────────────────┐
+│ {'a':['UInt32'],'b':['String'],'c':['Array(Nullable(Int64))']} │
+└────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_distinctJSONPathsAndTypes = {24, 9};
+    FunctionDocumentation::Category category_distinctJSONPathsAndTypes = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_distinctJSONPathsAndTypes = {description_distinctJSONPathsAndTypes, syntax_distinctJSONPathsAndTypes, arguments_distinctJSONPathsAndTypes, {}, returned_value_distinctJSONPathsAndTypes, examples_distinctJSONPathsAndTypes, introduced_in_distinctJSONPathsAndTypes, category_distinctJSONPathsAndTypes};
+
+    factory.registerFunction("distinctJSONPaths", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsData>, {}, documentation_distinctJSONPaths});
+    factory.registerFunction("distinctJSONPathsAndTypes", {createAggregateFunctionDistinctJSONPathsAndTypes<AggregateFunctionDistinctJSONPathsAndTypesData>, {}, documentation_distinctJSONPathsAndTypes});
 }
 
 }

@@ -9,9 +9,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
@@ -417,6 +414,11 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
             return true;
 
     return false;
+}
+
+std::string MergeTreeIndexConditionSet::getDescription() const
+{
+    return condition.getDescription().condition;
 }
 
 MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const

@@ -1,6 +1,7 @@
--- Tags: long, replica, no-replicated-database, no-shared-merge-tree
+-- Tags: long, replica, no-replicated-database, no-shared-merge-tree, no-async-insert
 -- Tag no-replicated-database: Fails due to additional replicas or shards
 -- no-shared-merge-tree: depend on tricks with quorum inserts for replicated mt
+-- Tag no-async-insert: quorum inserts are not supported for async inserts
 
 DROP TABLE IF EXISTS r1 SYNC;
 DROP TABLE IF EXISTS r2 SYNC;

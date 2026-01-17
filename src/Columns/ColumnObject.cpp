@@ -5,7 +5,6 @@
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -2199,6 +2198,17 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
     if (new_shared_data->size() != size)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of new shared data: {} != {}", new_shared_data->size(), size);
     shared_data = std::move(new_shared_data);
+}
+
+void ColumnObject::validateDynamicPathsSizes() const
+{
+    size_t expected_size = shared_data->size();
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        if (column->size() != expected_size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
+    }
+
 }
 
 }
