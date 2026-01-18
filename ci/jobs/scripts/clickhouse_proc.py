@@ -431,7 +431,7 @@ profiles:
         )
         tsan_options = env["TSAN_OPTIONS"]
         print(f"TSAN_OPTIONS = {tsan_options}")
-
+        print('ENV:', env)
         proc = subprocess.Popen(
             command,
             stderr=subprocess.STDOUT,

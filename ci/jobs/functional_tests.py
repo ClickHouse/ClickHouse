@@ -162,7 +162,7 @@ def main():
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             pass
         else:
-            assert False, f"Unknown option [{to}]"           
+            assert False, f"Unknown option [{to}]"
 
         if to in OPTIONS_TO_INSTALL_ARGUMENTS:
             print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
@@ -224,13 +224,13 @@ def main():
     else:
         print(f"Workers count set to optimal value: {nproc}")
         workers = nproc
-    
+
     runner_options += f" --jobs {workers}"
 
     if is_llvm_coverage:
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
         runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long"
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%8m.profraw"
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%3m.profraw"
 
     rerun_count = 1
     if args.count:
@@ -445,8 +445,9 @@ def main():
         step_name = "Start ClickHouse Server"
         print(step_name)
 
-        # if is_llvm_coverage:
-        #     os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%8m-%p-%h-%t-%b-%c.profraw"
+        if is_llvm_coverage:
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%3m.profraw"
+            os.environ["LLVM_PROFILE_VERBOSE_ERRORS"] = "1"
 
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
@@ -592,8 +593,8 @@ def main():
                 )
             )
         elif failed_tests:
-            # if is_llvm_coverage:
-            #     os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-rerun-%8m-%p-%h-%t-%b-%c.profraw"
+            if is_llvm_coverage:
+                os.environ["LLVM_PROFILE_FILE"] = f"ft-rerun-{batch_num}-%2m.profraw"
             ft_res_processor = FTResultsProcessor(wd=temp_dir)
             run_tests(
                 batch_num=0,
@@ -713,12 +714,15 @@ def main():
         Shell.get_output("pwd", verbose=True).strip().split('\n')
         profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
         profraw_files = [f.strip() for f in profraw_files if f.strip()]
-        
+
+
+        profraw_files2 = Shell.get_output("find / -name '*.profraw' 2>/dev/null", verbose=True).strip().split('\n')
+        print('all', profraw_files2)
         if profraw_files:
             print(f"Found {len(profraw_files)} .profraw files:")
             for f in profraw_files:
                 print(f"  {f}")
-            
+
             # Auto-detect available LLVM profdata tool
             llvm_profdata = None
             for ver in ["21", "20", "18", "19", "17", "16", ""]:
@@ -726,24 +730,24 @@ def main():
                 if Shell.check(f"command -v {cmd}", verbose=False):
                     llvm_profdata = cmd
                     break
-            
+
             if not llvm_profdata:
                 print("ERROR: llvm-profdata not found in PATH")
             else:
                 print(f"Using {llvm_profdata} to merge coverage files")
-                
+
                 # Merge all profraw files to current directory
                 merged_file = f"./ft-{batch_num}.profdata"
                 merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
                 merge_output = Shell.get_output(merge_cmd, verbose=True)
-                
+
                 # Check for corrupted files in the output
                 corrupted_files = [line for line in merge_output.split('\n') if 'invalid instrumentation profile' in line or 'file header is corrupt' in line]
                 if corrupted_files:
                     print(f"WARNING: Found {len(corrupted_files)} corrupted profraw files:")
                     for corrupted in corrupted_files:
                         print(f"  {corrupted}")
-                
+
         else:
             print("No .profraw files found for coverage")
 

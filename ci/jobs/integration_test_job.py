@@ -367,7 +367,7 @@ def main():
         "JAVA_PATH": java_path,
     }
     if is_llvm_coverage:
-        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%8m.profraw"
+        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%3m.profraw"
         print(
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
@@ -467,7 +467,7 @@ def main():
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         if is_llvm_coverage:
-            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun-%8m.profraw"
+            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun-%3m.profraw"
             print(
                 f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
             )
@@ -507,7 +507,7 @@ def main():
                 attached_files.append("dmesg.log")
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
-       
+
     if is_llvm_coverage:
         assert is_bugfix_validation is False, "LLVM coverage with bugfix validation is not supported"
         has_failure = False
@@ -552,12 +552,12 @@ def main():
         print("Collecting and merging LLVM coverage files...")
         profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
         profraw_files = [f.strip() for f in profraw_files if f.strip()]
-        
+
         if profraw_files:
             print(f"Found {len(profraw_files)} .profraw files:")
             for f in profraw_files:
                 print(f"  {f}")
-            
+
             # Auto-detect available LLVM profdata tool
             llvm_profdata = None
             for ver in ["21", "20", "18", "19", "17", "16", ""]:
@@ -565,29 +565,29 @@ def main():
                 if Shell.check(f"command -v {cmd}", verbose=False):
                     llvm_profdata = cmd
                     break
-            
+
             if not llvm_profdata:
                 print("ERROR: llvm-profdata not found in PATH")
             else:
                 print(f"Using {llvm_profdata} to merge coverage files")
-                
+
                 # Merge all profraw files to current directory
                 merged_file = f"./it-{batch_num}.profdata"
                 merge_cmd = f"{llvm_profdata} merge -sparse -failure-mode=warn {' '.join(profraw_files)} -o {merged_file} 2>&1"
                 merge_output = Shell.get_output(merge_cmd, verbose=True)
-                
+
                 # Check for corrupted files in the output
                 corrupted_files = [line for line in merge_output.split('\n') if 'invalid instrumentation profile' in line or 'file header is corrupt' in line]
                 if corrupted_files:
                     print(f"WARNING: Found {len(corrupted_files)} corrupted profraw files:")
                     for corrupted in corrupted_files:
                         print(f"  {corrupted}")
-                
-            force_ok_exit = True        
+
+            force_ok_exit = True
             print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
         else:
             print("No .profraw files found for coverage")
-    
+
     R.sort().complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
