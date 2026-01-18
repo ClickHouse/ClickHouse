@@ -10,98 +10,48 @@ doc_type: 'reference'
 # system.parts_columns
 
 Contains information about parts and columns of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-
 Each row describes one data part.
 
-Columns:
-
-- `partition` ([String](../../sql-reference/data-types/string.md)) — The partition name. To learn what a partition is, see the description of the [ALTER](/sql-reference/statements/alter) query.
-
-    Formats:
-
-  - `YYYYMM` for automatic partitioning by month.
-  - `any_string` when partitioning manually.
-
-- `name` ([String](../../sql-reference/data-types/string.md)) — Name of the data part.
-
-- `part_type` ([String](../../sql-reference/data-types/string.md)) — The data part storing format.
-
-    Possible values:
-
-  - `Wide` — Each column is stored in a separate file in a filesystem.
-  - `Compact` — All columns are stored in one file in a filesystem.
-
-    Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table.
-
-- `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
-
-- `marks` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint does not work for adaptive granularity).
-
-- `rows` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of rows.
-
-- `bytes_on_disk` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Total size of all the data part files in bytes.
-
-- `data_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
-
-- `data_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
-
-- `marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The size of the file with marks.
-
-- `modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The time the directory with the data part was modified. This usually corresponds to the time of data part creation.
-
-- `remove_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The time when the data part became inactive.
-
-- `refcount` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
-
-- `min_date` ([Date](../../sql-reference/data-types/date.md)) — The minimum value of the date key in the data part.
-
-- `max_date` ([Date](../../sql-reference/data-types/date.md)) — The maximum value of the date key in the data part.
-
-- `partition_id` ([String](../../sql-reference/data-types/string.md)) — ID of the partition.
-
-- `min_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The minimum number of data parts that make up the current part after merging.
-
-- `max_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The maximum number of data parts that make up the current part after merging.
-
-- `level` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts.
-
-- `data_version` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than `data_version`).
-
-- `primary_key_bytes_in_memory` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The amount of memory (in bytes) used by primary key values.
-
-- `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The amount of memory (in bytes) reserved for primary key values.
-
-- `database` ([String](../../sql-reference/data-types/string.md)) — Name of the database.
-
-- `table` ([String](../../sql-reference/data-types/string.md)) — Name of the table.
-
-- `engine` ([String](../../sql-reference/data-types/string.md)) — Name of the table engine without parameters.
-
-- `disk_name` ([String](../../sql-reference/data-types/string.md)) — Name of a disk that stores the data part.
-
-- `path` ([String](../../sql-reference/data-types/string.md)) — Absolute path to the folder with data part files.
-
-- `column` ([String](../../sql-reference/data-types/string.md)) — Name of the column.
-
-- `type` ([String](../../sql-reference/data-types/string.md)) — Column type.
-
-- `column_position` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Ordinal position of a column in a table starting with 1.
-
-- `default_kind` ([String](../../sql-reference/data-types/string.md)) — Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`) for the default value, or an empty string if it is not defined.
-
-- `default_expression` ([String](../../sql-reference/data-types/string.md)) — Expression for the default value, or an empty string if it is not defined.
-
-- `column_bytes_on_disk` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Total size of the column in bytes.
-
-- `column_data_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Total size of compressed data in the column, in bytes.
-
-- `column_data_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Total size of the decompressed data in the column, in bytes.
-
-- `column_marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The size of the column with marks, in bytes.
-
-- `bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Alias for `bytes_on_disk`.
-
-- `marks_size` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Alias for `marks_bytes`.
+| Column | Type | Description |
+|--------|------|-------------|
+| `partition` | String | The partition name. Formats: `YYYYMM` for automatic partitioning by month, or `any_string` when partitioning manually. |
+| `name` | String | Name of the data part. |
+| `part_type` | String | The data part storing format. Values: `Wide` (each column in separate file) or `Compact` (all columns in one file). Controlled by `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings. |
+| `active` | UInt8 | Flag indicating whether the data part is active. Active parts are used in the table; inactive parts are deleted or remain after merging. |
+| `marks` | UInt64 | The number of marks. Multiply by index granularity (usually 8192) to get approximate row count. |
+| `rows` | UInt64 | The number of rows. |
+| `bytes_on_disk` | UInt64 | Total size of all the data part files in bytes. |
+| `data_compressed_bytes` | UInt64 | Total size of compressed data in the data part (excludes auxiliary files like marks). |
+| `data_uncompressed_bytes` | UInt64 | Total size of uncompressed data in the data part (excludes auxiliary files like marks). |
+| `marks_bytes` | UInt64 | The size of the file with marks. |
+| `modification_time` | DateTime | The time the directory with the data part was modified (usually corresponds to creation time). |
+| `remove_time` | DateTime | The time when the data part became inactive. |
+| `refcount` | UInt32 | The number of places where the data part is used. Value > 2 indicates use in queries or merges. |
+| `min_date` | Date | The minimum value of the date key in the data part. |
+| `max_date` | Date | The maximum value of the date key in the data part. |
+| `partition_id` | String | ID of the partition. |
+| `min_block_number` | UInt64 | The minimum number of data parts that make up the current part after merging. |
+| `max_block_number` | UInt64 | The maximum number of data parts that make up the current part after merging. |
+| `level` | UInt32 | Depth of the merge tree. Zero means created by insert, not by merging. |
+| `data_version` | UInt64 | Number used to determine which mutations should be applied (mutations with version higher than `data_version`). |
+| `primary_key_bytes_in_memory` | UInt64 | The amount of memory (in bytes) used by primary key values. |
+| `primary_key_bytes_in_memory_allocated` | UInt64 | The amount of memory (in bytes) reserved for primary key values. |
+| `database` | String | Name of the database. |
+| `table` | String | Name of the table. |
+| `engine` | String | Name of the table engine without parameters. |
+| `disk_name` | String | Name of a disk that stores the data part. |
+| `path` | String | Absolute path to the folder with data part files. |
+| `column` | String | Name of the column. |
+| `type` | String | Column type. |
+| `column_position` | UInt64 | Ordinal position of a column in a table starting with 1. |
+| `default_kind` | String | Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`) for the default value, or empty string if not defined. |
+| `default_expression` | String | Expression for the default value, or empty string if not defined. |
+| `column_bytes_on_disk` | UInt64 | Total size of the column in bytes. |
+| `column_data_compressed_bytes` | UInt64 | Total size of compressed data in the column, in bytes. Note: this is not calculated for compact parts. |
+| `column_data_uncompressed_bytes` | UInt64 | Total size of the decompressed data in the column, in bytes. Note: this is not calculated for compact parts. |
+| `column_marks_bytes` | UInt64 | The size of the column with marks, in bytes. |
+| `bytes` | UInt64 | Alias for `bytes_on_disk`. |
+| `marks_size` | UInt64 | Alias for `marks_bytes`. |
 
 **Example**
 
@@ -153,3 +103,4 @@ column_marks_bytes:                    48
 **See Also**
 
 - [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
+- [Calculating the number and size of compact and wide parts](/knowledgebase/count-parts-by-type)

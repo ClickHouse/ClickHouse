@@ -68,6 +68,7 @@ common_ft_job_config = Job.Config(
         ],
     ),
     result_name_for_cidb="Tests",
+    timeout=int(3600 * 2.5),
 )
 
 common_stress_job_config = Job.Config(

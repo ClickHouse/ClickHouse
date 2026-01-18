@@ -169,6 +169,25 @@ def main():
     is_targeted_check = False
     is_llvm_coverage = False
 
+    # Set on_error_hook to collect logs on hard timeout
+    Result.from_fs(info.job_name).set_on_error_hook(
+        """
+dmesg -T >./ci/tmp/dmesg.log
+sudo chown -R $(id -u):$(id -g) ./tests/integration
+tar -czf ./ci/tmp/logs.tar.gz \
+  ./tests/integration/test_*/_instances*/ \
+  ./ci/tmp/*.log \
+  ./ci/tmp/*.jsonl || :
+"""
+    ).set_files(
+        [
+            "./ci/tmp/logs.tar.gz",
+            "./ci/tmp/dmesg.log",
+            "./ci/tmp/docker-in-docker.log",
+        ],
+        strict=False,
+    )
+
     if args.param:
         for item in args.param.split(","):
             print(f"Setting env variable: {item}")
@@ -452,6 +471,12 @@ def main():
         for failed_suit in failed_suits:
             failed_tests_files.append(f"tests/integration/{failed_suit}")
 
+        # Add all files matched ./ci/tmp/*.log ./ci/tmp/*.jsonl into failed_tests_files
+        for pattern in ["*.log", "*.jsonl"]:
+            for log_file in Path("./ci/tmp/").glob(pattern):
+                if log_file.is_file():
+                    failed_tests_files.append(str(log_file))
+
         if failed_suits:
             attached_files.append(
                 Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
@@ -491,8 +516,8 @@ def main():
 
     if not info.is_local_run:
         print("Dumping dmesg")
-        Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
-        with open("dmesg.log", "rb") as dmesg:
+        Shell.check("dmesg -T > ./ci/tmp/dmesg.log", verbose=True, strict=True)
+        with open("./ci/tmp/dmesg.log", "rb") as dmesg:
             dmesg = dmesg.read()
             if (
                 b"Out of memory: Killed process" in dmesg
@@ -504,7 +529,7 @@ def main():
                         name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
                     )
                 )
-                attached_files.append("dmesg.log")
+                attached_files.append("./ci/tmp/dmesg.log")
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
 
