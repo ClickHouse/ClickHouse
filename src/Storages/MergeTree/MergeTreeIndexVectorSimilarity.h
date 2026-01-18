@@ -148,7 +148,7 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
     const UsearchHnswParams usearch_hnsw_params;
     const LeaNNParams leann_params;
     USearchIndexWithSerializationPtr index;
-    
+
     /// Store vectors for hub pruning (if enable_hub_pruning is true)
     /// We store vectors as Float32 for simplicity, converting from original type as needed
     std::vector<std::vector<Float32>> stored_vectors;
