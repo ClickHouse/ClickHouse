@@ -1693,9 +1693,9 @@ public:
         return getStatement(execute->function_name, execute->arguments);
     }
 
-    void deleteStatement(ASTDeallocate * query)
+    void deleteStatement(const String& function_name)
     {
-        auto it = statements.find(query->function_name);
+        auto it = statements.find(function_name);
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
@@ -1717,9 +1717,8 @@ public:
         return result;
     }
 
-    void resetBindQuery(const String& function_name)
+    void resetBindQuery()
     {
-        statements.erase(function_name);
         bind_query.reset();
     }
 

@@ -631,6 +631,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
+        self.with_postgresql_dotnet_client = False
         self.with_mysql_dotnet_client = False
         self.with_kafka = False
         self.with_kafka_sasl = False
@@ -1434,6 +1435,26 @@ class ClickHouseCluster:
             "--file",
             p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
         )
+    
+    def setup_postgresql_dotnet_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_postgresql_dotnet_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_postgresql_dotnet_client.yml"
+                ),
+            ]
+        )
+        self.base_postgresql_dotnet_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgresql_dotnet_client.yml"),
+        )
+
 
     def setup_mysql_dotnet_client_cmd(
         self, instance, env_variables, docker_compose_yml_dir
@@ -1922,6 +1943,7 @@ class ClickHouseCluster:
         with_postgres=False,
         with_postgres_cluster=False,
         with_postgresql_java_client=False,
+        with_postgresql_dotnet_client=False,
         with_mysql_dotnet_client=False,
         clickhouse_log_file=CLICKHOUSE_LOG_FILE,
         clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
@@ -2091,6 +2113,7 @@ class ClickHouseCluster:
             with_postgres=with_postgres,
             with_postgres_cluster=with_postgres_cluster,
             with_postgresql_java_client=with_postgresql_java_client,
+            with_postgresql_dotnet_client=with_postgresql_dotnet_client,
             with_mysql_dotnet_client=with_mysql_dotnet_client,
             clickhouse_start_command=clickhouse_start_command,
             clickhouse_start_extra_args=extra_args,
@@ -2199,6 +2222,13 @@ class ClickHouseCluster:
         if with_postgresql_java_client and not self.with_postgresql_java_client:
             cmds.append(
                 self.setup_postgresql_java_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_postgresql_dotnet_client and not self.with_postgresql_dotnet_client:
+            cmds.append(
+                self.setup_postgresql_dotnet_client_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -3581,6 +3611,17 @@ class ClickHouseCluster:
                 self.wait_postgresql_java_client()
 
             if (
+                self.with_postgresql_dotnet_client
+                and self.base_postgresql_dotnet_client_cmd
+            ):
+                logging.debug("Setup Postgres C# Client")
+                subprocess_check_call(
+                    self.base_postgresql_dotnet_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_postgresql_dotnet_client()
+
+            if (
                 self.with_mysql_dotnet_client
                 and self.base_mysql_dotnet_client_cmd
             ):
@@ -4249,6 +4290,7 @@ class ClickHouseInstance:
         with_postgres,
         with_postgres_cluster,
         with_postgresql_java_client,
+        with_postgresql_dotnet_client,
         with_mysql_dotnet_client,
         clickhouse_start_command=CLICKHOUSE_START_COMMAND,
         clickhouse_start_extra_args="",
@@ -4342,6 +4384,7 @@ class ClickHouseInstance:
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_postgresql_dotnet_client = with_postgresql_dotnet_client
         self.with_mysql_dotnet_client = with_mysql_dotnet_client
         self.with_kafka = with_kafka
         self.with_kafka_sasl = with_kafka_sasl

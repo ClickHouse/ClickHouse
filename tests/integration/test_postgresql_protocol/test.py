@@ -49,6 +49,8 @@ cluster.add_instance(
     user_configs=["configs/default_passwd.xml"],
     with_postgres=True,
     with_postgresql_java_client=True,
+    with_postgresql_dotnet_client=True,
+    env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
 )
 
 server_port = 5433
@@ -487,6 +489,23 @@ def test_java_client(started_cluster):
             "bash",
             "-c",
             f"java JavaConnectorTest --host {node.hostname} --port {server_port} --user default --password 123 --database default",
+        ],
+    )
+    assert res == reference
+
+
+def test_dotnet_client(started_cluster):
+    node = cluster.instances["node"]
+
+    with open(os.path.join(SCRIPT_DIR, "dotnet.reference")) as fp:
+        reference = fp.read()
+
+    res = started_cluster.exec_in_container(
+        started_cluster.postgresql_java_client_docker_id,
+        [
+            "bash",
+            "-c",
+            f"dotnet run -- --host {node.hostname} --port {server_port} --username default --password 123",
         ],
     )
     assert res == reference

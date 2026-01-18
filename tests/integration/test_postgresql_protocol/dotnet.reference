@@ -1,0 +1,16 @@
+Connection sucessful!
+Result: 1
+Content:
+id = 16, name = bool
+id = 17, name = bytea
+id = 18, name = char
+id = 19, name = name
+id = 20, name = int8
+id = 21, name = int2
+id = 23, name = int4
+id = 25, name = text
+id = 700, name = float4
+id = 701, name = float8
+id = 1043, name = varchar
+id = 1082, name = date
+id = 1114, name = timestamp
