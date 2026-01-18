@@ -2513,6 +2513,7 @@ class ClickHouseCluster:
                 f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}"
             )
             exec_cmd = ["docker", "exec"]
+            timeout = kwargs.pop("timeout", None)
             if "user" in kwargs:
                 exec_cmd += ["-u", kwargs["user"]]
             if "privileged" in kwargs:
@@ -2528,7 +2529,11 @@ class ClickHouseCluster:
             exec_cmd += list(cmd)
 
             result = subprocess_check_call(
-                exec_cmd, detach=detach, nothrow=nothrow, env=env
+                exec_cmd,
+                detach=detach,
+                nothrow=nothrow,
+                env=env,
+                timeout=timeout,
             )
             return result
         else:
@@ -3899,6 +3904,19 @@ class ClickHouseCluster:
                     )
 
             start_timeout = 300.0  # seconds
+            connection_timeout = None
+            try:
+                v = os.environ.get("KEEPER_START_TIMEOUT_SEC")
+                if v:
+                    start_timeout = float(v)
+            except Exception:
+                start_timeout = 300.0
+            try:
+                v = os.environ.get("KEEPER_CONNECT_TIMEOUT_SEC")
+                if v:
+                    connection_timeout = float(v)
+            except Exception:
+                connection_timeout = None
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
@@ -3907,7 +3925,7 @@ class ClickHouseCluster:
                 logging.debug(
                     f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}..."
                 )
-                instance.wait_for_start(start_timeout)
+                instance.wait_for_start(start_timeout, connection_timeout=connection_timeout)
                 logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(

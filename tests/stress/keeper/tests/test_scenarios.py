@@ -53,6 +53,13 @@ def _apply_gate(gate, nodes, leader, ctx, summary):
     apply_gate(gate, nodes, leader, ctx, summary)
 
 
+def _best_effort(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except Exception:
+        return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper: CLI/env option extraction with fallback
 # ─────────────────────────────────────────────────────────────────────────────
@@ -290,17 +297,13 @@ def _resolve_random_faults(request, scenario, rnd_count, seed_val):
         return None, seed_val
 
 
-def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx, faults_mode):
+def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx):
     if parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
         return fs_effective, False
     bench_injected = False
-    # Read workload config env var once for both branches
     wc_env = os.environ.get("KEEPER_WORKLOAD_CONFIG", "").strip()
-    if "workload" in scenario and not parse_bool(
-        os.environ.get("KEEPER_DISABLE_WORKLOAD")
-    ):
+    if "workload" in scenario:
         wl = scenario["workload"]
-        # Environment overrides for workload paths and bench clients
         rp = os.environ.get("KEEPER_REPLAY_PATH", "").strip()
         if rp:
             wl = dict(wl or {})
@@ -310,7 +313,6 @@ def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx, faults_m
             wl["config"] = wc_env
         eff_dur = resolve_duration(request, "KEEPER_DURATION", wl.get("duration"), 120)
         rb = build_bench_step(wl, eff_dur)
-        # Attach context for gates which depend on workload
         ctx["workload"] = wl
         ctx["bench_node"] = nodes[0]
         ctx["bench_secure"] = False
@@ -328,6 +330,20 @@ def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx, faults_m
         bench_injected = True
         ensure_default_gates(scenario)
     return fs_effective, bench_injected
+
+
+def _ensure_clickhouse_binary_for_bench():
+    if parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
+        return
+    env_bin = str(os.environ.get("CLICKHOUSE_BINARY", "")).strip()
+    if not env_bin:
+        raise AssertionError(
+            "keeper-bench must run on host: env var CLICKHOUSE_BINARY must point to clickhouse binary"
+        )
+    if not os.path.exists(env_bin) or not os.access(env_bin, os.X_OK):
+        raise AssertionError(
+            f"keeper-bench must run on host: CLICKHOUSE_BINARY is not an executable file: {env_bin}"
+        )
 
 
 def _emit_bench_summary(summary, run_id, run_meta_eff, scenario_id, topo, sink_url):
@@ -961,20 +977,11 @@ def _print_manual_znode_counts(nodes):
 def test_scenario(scenario, cluster_factory, request, run_meta):
     topo = scenario.get("topology", 3)
     backend = scenario.get("backend") or request.config.getoption("--keeper-backend")
-    if not parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
-        env_bin = str(os.environ.get("CLICKHOUSE_BINARY", "")).strip()
-        if not env_bin:
-            raise AssertionError(
-                "keeper-bench must run on host: env var CLICKHOUSE_BINARY must point to clickhouse binary"
-            )
-        if not os.path.exists(env_bin) or not os.access(env_bin, os.X_OK):
-            raise AssertionError(
-                f"keeper-bench must run on host: CLICKHOUSE_BINARY is not an executable file: {env_bin}"
-            )
+    _ensure_clickhouse_binary_for_bench()
     # Effective run_meta per test with the scenario-selected backend
     run_meta_eff = dict(run_meta or {})
     run_meta_eff["backend"] = backend
-    opts = scenario.get("opts", {})
+    opts = scenario.get("opts", {}) or {}
     faults_mode = _resolve_faults_mode(request)
     rnd_count = _get_int_option(
         request, "--random-faults-count", "KEEPER_RANDOM_FAULTS_COUNT", 1
@@ -998,21 +1005,28 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     cname = run_id.replace("/", "_").replace(" ", "_")
     os.environ["KEEPER_CLUSTER_NAME"] = cname
     cluster, nodes = cluster_factory(topo, backend, opts)
+
+    scenario_id = scenario.get("id", "")
+    sink_url = "ci" if has_ci_sink() else ""
     summary = {}
-    ctx = {}
-    sink_url = ""
+    ctx = {"cluster": cluster, "faults_mode": faults_mode, "seed": seed_val}
+    sampler = None
+    leader = None
+    pre_rows = []
+    post_rows = []
+    bench_ran_flag = False
+    bench_injected = False
     try:
         scenario_for_env = copy.deepcopy(scenario)
         scenario_for_env["faults"] = fs_effective
         ensure_environment(nodes, scenario_for_env)
         single_leader(nodes)
-        leader = [n for n in nodes if is_leader(n)][0]
-        sink_url = "ci" if has_ci_sink() else ""
+        leader = next(n for n in nodes if is_leader(n))
         pre_rows = (
             _snapshot_and_sink(
                 nodes,
                 "pre",
-                scenario.get("id", ""),
+                scenario_id,
                 topo,
                 run_meta_eff,
                 sink_url,
@@ -1020,16 +1034,12 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             )
             or []
         )
-        ctx["cluster"] = cluster
-        ctx["faults_mode"] = faults_mode
-        ctx["seed"] = seed_val
-        sampler = None
         if sink_url:
             cfg = compute_prom_config(opts if isinstance(opts, dict) else {})
             sampler = MetricsSampler(
                 nodes,
                 run_meta_eff,
-                scenario.get("id", ""),
+                scenario_id,
                 topo,
                 sink_url=sink_url,
                 interval_s=cfg["interval_s"],
@@ -1042,27 +1052,25 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 ctx=ctx,
             )
             sampler.start()
-        for step in scenario.get("pre", []):
+        for step in scenario.get("pre", []) or []:
             _apply_step(step, nodes, leader, ctx)
-        bench_ran_flag = False
         fs_effective, bench_injected = _inject_workload_bench(
-            request, scenario, nodes, fs_effective, ctx, faults_mode
+            request, scenario, nodes, fs_effective, ctx
         )
         for action in fs_effective:
             _apply_step(action, nodes, leader, ctx)
-        if ctx.get("bench_summary"):
-            summary = ctx.get("bench_summary") or {}
+        summary = ctx.get("bench_summary") or {}
         # Sink keeper-bench summary to CIDB as scalar metrics tagged to this run
         if summary:
             bench_ran_flag = _emit_bench_summary(
                 summary,
                 run_id,
                 run_meta_eff,
-                scenario.get("id", ""),
+                scenario_id,
                 topo,
                 sink_url,
             )
-        for gate in scenario.get("gates", []):
+        for gate in scenario.get("gates", []) or []:
             gtype = (gate.get("type") or "") if isinstance(gate, dict) else ""
             t0 = time.time()
             try:
@@ -1073,7 +1081,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                         rows = _gate_event_rows(
                             run_id,
                             run_meta_eff,
-                            scenario.get("id", ""),
+                            scenario_id,
                             topo,
                             gtype,
                             False,
@@ -1089,7 +1097,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                     rows = _gate_event_rows(
                         run_id,
                         run_meta_eff,
-                        scenario.get("id", ""),
+                        scenario_id,
                         topo,
                         gtype,
                         True,
@@ -1102,7 +1110,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             _snapshot_and_sink(
                 nodes,
                 "post",
-                scenario.get("id", ""),
+                scenario_id,
                 topo,
                 run_meta_eff,
                 sink_url,
@@ -1110,123 +1118,102 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             )
             or []
         )
-        try:
-            _emit_derived_metrics(
-                pre_rows,
-                post_rows,
-                run_id,
-                run_meta_eff,
-                scenario.get("id", ""),
-                topo,
-                sink_url,
-                bench_ran_flag,
-            )
-        except Exception:
-            pass
+        _best_effort(
+            _emit_derived_metrics,
+            pre_rows,
+            post_rows,
+            run_id,
+            run_meta_eff,
+            scenario_id,
+            topo,
+            sink_url,
+            bench_ran_flag,
+        )
         # Check if bench was expected to run but didn't
         if bench_injected:
             ops = _safe_float((summary or {}).get("ops"))
             if (not bench_ran_flag) or ops <= 0:
                 raise AssertionError(
-                    f"bench did not run (or produced no ops) for scenario={scenario.get('id','')} backend={backend}"
+                    f"bench did not run (or produced no ops) for scenario={scenario_id} backend={backend}"
                 )
         if sink_url and not bench_ran_flag:
-            try:
-                row = _make_metric_row(
-                    run_id,
-                    run_meta_eff,
-                    scenario.get("id", ""),
-                    topo,
-                    "bench",
-                    "summary",
-                    "bench",
-                    "bench_ran",
-                    0.0,
-                )
-                sink_clickhouse(sink_url, "keeper_metrics_ts", [row])
-            except Exception:
-                pass
+            row = _make_metric_row(
+                run_id,
+                run_meta_eff,
+                scenario_id,
+                topo,
+                "bench",
+                "summary",
+                "bench",
+                "bench_ran",
+                0.0,
+            )
+            _best_effort(sink_clickhouse, sink_url, "keeper_metrics_ts", [row])
         # per-test checks insertion is handled by praktika post-run
     except Exception:
         # Emit minimal reproducible scenario to a file for debugging
-        try:
+        def _write_repro():
             repro_path = f"/tmp/keeper_repro_{run_id}.yaml"
             with open(repro_path, "w", encoding="utf-8") as f:
                 yaml.safe_dump(scenario, f, sort_keys=False)
             print(f"[keeper] reproducible scenario written: {repro_path}")
-        except Exception:
-            pass
+
+        _best_effort(_write_repro)
         # Attempt to snapshot fail state as well
-        try:
-            sink_url = "ci" if has_ci_sink() else ""
-            _snapshot_and_sink(
-                nodes,
-                "fail",
-                scenario.get("id", ""),
-                topo,
-                run_meta_eff,
-                sink_url,
-                run_id,
-            )
-        except Exception:
-            pass
+        _best_effort(
+            _snapshot_and_sink,
+            nodes,
+            "fail",
+            scenario_id,
+            topo,
+            run_meta_eff,
+            sink_url,
+            run_id,
+        )
         # per-test checks insertion is handled by praktika post-run
 
-        try:
-            setattr(request.node, "keeper_failed", True)
-        except Exception:
-            pass
+        _best_effort(setattr, request.node, "keeper_failed", True)
         raise
     finally:
         # Stop metrics sampler
-        if "sampler" in locals() and sampler:
-            try:
-                sampler.stop()
-                sampler.flush()
-            except Exception:
-                pass
+        if sampler:
+            _best_effort(sampler.stop)
+            _best_effort(sampler.flush)
         # Print local metrics summary
-        try:
-            _print_local_metrics(
-                nodes, run_id, scenario.get("id", ""), topo, run_meta_eff, ctx, summary
-            )
-        except Exception:
-            pass
+        _best_effort(
+            _print_local_metrics,
+            nodes,
+            run_id,
+            scenario_id,
+            topo,
+            run_meta_eff,
+            ctx,
+            summary,
+        )
         # Print keeper-bench config captured during run
-        try:
-            bcfg = (ctx or {}).get("bench_config_yaml")
-            if bcfg:
-                print("==== keeper-bench config ====\n" + str(bcfg))
-        except Exception:
-            pass
+        bcfg = (ctx or {}).get("bench_config_yaml")
+        if bcfg:
+            _best_effort(print, "==== keeper-bench config ====\n" + str(bcfg))
         # Print the actual config/output paths used by keeper-bench
-        try:
-            cps = (ctx or {}).get("bench_config_paths") or []
-            if cps:
-                print(
-                    "[keeper][bench-config-paths] "
-                    + ", ".join([str(p) for p in cps if p])
-                )
-        except Exception:
-            pass
-        try:
-            ops = (ctx or {}).get("bench_output_paths") or []
-            if ops:
-                print(
-                    "[keeper][bench-output-paths] "
-                    + ", ".join([str(p) for p in ops if p])
-                )
-        except Exception:
-            pass
-        try:
-            sps = (ctx or {}).get("bench_stdout_paths") or []
-            if sps:
-                print(
-                    "[keeper][bench-stdout-paths] "
-                    + ", ".join([str(p) for p in sps if p])
-                )
-        except Exception:
-            pass
+        cps = (ctx or {}).get("bench_config_paths") or []
+        if cps:
+            _best_effort(
+                print,
+                "[keeper][bench-config-paths] " + ", ".join([str(p) for p in cps if p]),
+            )
+        bops = (ctx or {}).get("bench_output_paths") or []
+        if bops:
+            _best_effort(
+                print,
+                "[keeper][bench-output-paths] "
+                + ", ".join([str(p) for p in bops if p]),
+            )
+        sps = (ctx or {}).get("bench_stdout_paths") or []
+        if sps:
+            _best_effort(
+                print,
+                "[keeper][bench-stdout-paths] " + ", ".join([str(p) for p in sps if p]),
+            )
         try:
             evs = (ctx or {}).get("fault_events") or []
             if evs:
@@ -1239,27 +1226,22 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 print("[keeper][fault-events] end")
         except Exception:
             pass
-        try:
-            _emit_fault_events_metrics(
-                ctx,
-                run_id,
-                run_meta_eff,
-                scenario.get("id", ""),
-                topo,
-                sink_url,
-            )
-        except Exception:
-            pass
-        try:
-            _print_keeper_configs(
-                cluster, topo, os.environ.get("KEEPER_CLUSTER_NAME", "")
-            )
-        except Exception:
-            pass
-        try:
-            _print_manual_znode_counts(nodes)
-        except Exception:
-            pass
+        _best_effort(
+            _emit_fault_events_metrics,
+            ctx,
+            run_id,
+            run_meta_eff,
+            scenario_id,
+            topo,
+            sink_url,
+        )
+        _best_effort(
+            _print_keeper_configs,
+            cluster,
+            topo,
+            os.environ.get("KEEPER_CLUSTER_NAME", ""),
+        )
+        _best_effort(_print_manual_znode_counts, nodes)
         # Cleanup context resources (pools, clients, watches)
         _cleanup_ctx_resources(ctx)
         # Keep containers on fail if requested
