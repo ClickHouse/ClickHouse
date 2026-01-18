@@ -93,7 +93,7 @@ public:
     /// All data reading from the read buffer must be performed by this method.
     virtual Chunk read() = 0;
 
-    virtual void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read);
+    virtual bool setBucketsToRead(const FileBucketInfoPtr & buckets_to_read);
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method
      * resetParser() which allow to reset the state of parser to continue reading of

@@ -972,7 +972,7 @@ ReadManager::ReadResult ReadManager::read()
     finishRowSubgroupStage(task.row_group_idx, task.row_subgroup_idx, ReadStage::Deliver, diff);
     flushMemoryUsageDiff(std::move(diff));
 
-    return {std::move(chunk), std::move(block_missing_values), virtual_bytes_read};
+    return {std::move(chunk), std::move(block_missing_values), virtual_bytes_read, static_cast<int>(row_group.row_group_idx)};
 }
 
 }

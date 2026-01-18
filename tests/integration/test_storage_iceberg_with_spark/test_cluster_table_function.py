@@ -210,7 +210,7 @@ def test_writes_cluster_table_function(started_cluster_iceberg_with_spark, forma
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
-@pytest.mark.parametrize("cluster_table_function_buckets_batch_size", [0, 100, 1000])
+@pytest.mark.parametrize("cluster_table_function_buckets_batch_size", [0, 100, 1000000])
 @pytest.mark.parametrize("input_format_parquet_use_native_reader_v3", [0, 1])
 def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with_spark, format_version, storage_type, cluster_table_function_buckets_batch_size,input_format_parquet_use_native_reader_v3):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
@@ -228,7 +228,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     def add_df(mode):
         write_iceberg_from_df(
             spark,
-            generate_data(spark, 0, 100000),
+            generate_data(spark, 0, 1000000),
             TABLE_NAME,
             mode=mode,
             format_version=format_version,

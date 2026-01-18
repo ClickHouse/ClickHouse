@@ -264,17 +264,28 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         }
     }
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
-        iterator,
-        std::move(ids_of_hosts),
-        /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]);
+    StorageObjectStorageTaskDistributorPtr task_distributor;
+    if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::FILE)
+    {
+        task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(
+            iterator,
+            std::move(ids_of_hosts),
+            /* send_over_whole_archive */!local_context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes]
+            );
+    }
+    else
+    {
+        task_distributor = std::make_shared<StorageObjectStorageBucketTaskDistributor>(iterator);
+    }
 
     auto callback = std::make_shared<TaskIterator>(
         [task_distributor, local_context](size_t number_of_current_replica) mutable -> ClusterFunctionReadTaskResponsePtr
         {
             auto task = task_distributor->getNextTask(number_of_current_replica);
             if (task)
+            {
                 return std::make_shared<ClusterFunctionReadTaskResponse>(std::move(task), local_context);
+            }
             return std::make_shared<ClusterFunctionReadTaskResponse>();
         });
 

@@ -1,4 +1,5 @@
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 
@@ -14,11 +15,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 {
@@ -93,12 +89,13 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
         reader.emplace();
         reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
         reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-        reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
+        reader->init(parser_shared_resources, std::nullopt);
     }
 }
 
 Chunk ParquetV3BlockInputFormat::read()
 {
+    std::lock_guard lock(set_buckets_mutex);
     if (need_only_count)
     {
         if (reported_count)
@@ -117,17 +114,43 @@ Chunk ParquetV3BlockInputFormat::read()
     }
 
     initializeIfNeeded();
-    auto res = reader->read();
-    previous_block_missing_values = res.block_missing_values;
-    previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
-    return std::move(res.chunk);
+    if (buckets_to_read && buckets_to_read->row_group_ids.empty())
+        return {};
+    while (true)
+    {
+        auto res = reader->read();
+        last_rg = res.row_group_id;
+        if (res.row_group_id == -1)
+            return std::move(res.chunk);
+        if (buckets_to_read)
+        {
+            if (!buckets_to_read->row_group_ids.empty() && static_cast<Int32>(buckets_to_read->row_group_ids[0]) != res.row_group_id)
+                continue;
+            buckets_to_read->row_group_ids.pop_front();
+        }
+        previous_block_missing_values = res.block_missing_values;
+        previous_approx_bytes_read_for_chunk = res.virtual_bytes_read;
+        return std::move(res.chunk);
+    }
 }
 
-void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
+bool ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
 {
-    if (reader)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reader already initialized");
-    buckets_to_read = std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_);
+    std::lock_guard lock(set_buckets_mutex);
+    if (!buckets_to_read_)
+        return false;
+
+    auto parquet_buckets_to_read = std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_);
+    if (!parquet_buckets_to_read->row_group_ids.empty() && last_rg >= parquet_buckets_to_read->row_group_ids.back())
+    {
+        return false;
+    }
+
+    if (buckets_to_read)
+        buckets_to_read->unite(*std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_));
+    else
+        buckets_to_read = std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_);
+    return true;
 }
 
 const BlockMissingValues * ParquetV3BlockInputFormat::getMissingValues() const

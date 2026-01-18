@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 #include <Common/SipHash.h>
 #include <consistent_hashing.h>
+#include <mutex>
 #include <optional>
 
 namespace DB
@@ -189,6 +190,53 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
     }
 
     return {};
+}
+
+StorageObjectStorageBucketTaskDistributor::StorageObjectStorageBucketTaskDistributor(std::shared_ptr<IObjectIterator> iterator_)
+    : iterator(iterator_)
+{
+}
+
+ObjectInfoPtr StorageObjectStorageBucketTaskDistributor::getAnyUnprocessedFile()
+{
+    for (auto & [replica, objects] : unprocessed_buckets)
+    {
+        if (!objects.empty())
+        {
+            auto result = objects.front();
+            objects.pop();
+            return result;
+        }
+    }
+    return nullptr;
+}
+
+ObjectInfoPtr StorageObjectStorageBucketTaskDistributor::getNextTask(size_t number_of_current_replica)
+{
+    std::lock_guard lock(mutex);
+
+    if (!unprocessed_buckets[number_of_current_replica].empty())
+    {
+        auto obj = unprocessed_buckets[number_of_current_replica].front();
+        unprocessed_buckets[number_of_current_replica].pop();
+        return obj;
+    }
+    while (true)
+    {
+        auto obj = iterator->next(0);
+        if (!obj)
+            break;
+        if (file_to_replica.contains(obj->getFileName()))
+        {
+            auto replica_id = file_to_replica[obj->getFileName()];
+            unprocessed_buckets[replica_id].push(obj);
+            continue;
+        }
+
+        file_to_replica[obj->getFileName()] = number_of_current_replica;
+        return obj;
+    }
+    return getAnyUnprocessedFile();
 }
 
 }

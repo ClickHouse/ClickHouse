@@ -1,4 +1,5 @@
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <Core/Settings.h>
 #include <Common/setThreadName.h>
@@ -114,7 +115,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
               1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
-    , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, ThreadName::READER_POOL))
+    , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<std::optional<ReaderHolder>>(*create_reader_pool, ThreadName::READER_POOL))
 {
 }
 
@@ -314,7 +315,12 @@ void StorageObjectStorageSource::lazyInitialize()
     if (initialized)
         return;
 
-    reader = createReader();
+    std::optional<ReaderHolder> tmp_reader;
+    {
+        tmp_reader = createReader();
+    }
+    if (tmp_reader)
+        reader = std::move(*tmp_reader);
     if (reader)
         reader_future = createReaderAsync();
     initialized = true;
@@ -334,7 +340,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         Chunk chunk;
-        if (reader->pull(chunk))
+        if (chunk = reader.getInputFormat()->read(); !chunk.empty())
         {
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;
@@ -452,7 +458,9 @@ Chunk StorageObjectStorageSource::generate()
         total_rows_in_file = 0;
 
         assert(reader_future.valid());
-        reader = reader_future.get();
+        auto tmp_reader = reader_future.get();
+        if (tmp_reader)
+            reader = std::move(*tmp_reader);
 
         if (!reader)
             break;
@@ -476,7 +484,7 @@ void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_inf
     schema_cache.addNumRows(cache_key, num_rows);
 }
 
-StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
+std::optional<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReader()
 {
     return createReader(
         0,
@@ -491,10 +499,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         max_block_size,
         parser_shared_resources,
         format_filter_info,
-        need_only_count);
+        need_only_count,
+        prev_file,
+        reader);
 }
 
-StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
+std::optional<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReader(
     size_t processor,
     const std::shared_ptr<IObjectIterator> & file_iterator,
     const StorageObjectStorageConfigurationPtr & configuration,
@@ -507,8 +517,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     size_t max_block_size,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
-    bool need_only_count)
+    bool need_only_count,
+    String & prev_file,
+    ReaderHolder & reader)
 {
+    (void)reader;
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
 
@@ -517,7 +530,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         object_info = file_iterator->next(processor);
 
         if (!object_info || object_info->getPath().empty())
-            return {};
+            return StorageObjectStorageSource::ReaderHolder{};
 
         if (!object_info->getObjectMetadata())
         {
@@ -528,7 +541,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 auto metadata = object_storage->tryGetObjectMetadata(path, with_tags);
                 if (!metadata)
-                    return {};
+                    return StorageObjectStorageSource::ReaderHolder{};
 
                 object_info->setObjectMetadata(metadata.value());
             }
@@ -536,6 +549,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 object_info->setObjectMetadata(object_storage->getObjectMetadata(path, with_tags));
         }
     } while (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0);
+
+    if (prev_file == object_info->getFileName() && reader.getInputFormat()->setBucketsToRead(object_info->file_bucket_info))
+    {
+        return std::nullopt;
+    }
+    prev_file = object_info->getFileName();
 
     QueryPipelineBuilder builder;
     std::shared_ptr<ISource> source;
@@ -707,9 +726,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         object_info, std::move(read_buf), std::move(source), std::move(pipeline), std::move(current_reader));
 }
 
-std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
+std::future<std::optional<StorageObjectStorageSource::ReaderHolder>> StorageObjectStorageSource::createReaderAsync()
 {
-    return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
+    return create_reader_scheduler([=, this] {
+        return createReader();
+    }, Priority{});
 }
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(

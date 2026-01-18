@@ -63,6 +63,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_READ_ALL_DATA;
@@ -606,7 +607,7 @@ void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
 {
     size_t size_chunks;
     readVarUInt(size_chunks, buffer);
-    row_group_ids = std::vector<size_t>{};
+    row_group_ids = std::deque<size_t>{};
     row_group_ids.resize(size_chunks);
     size_t bucket;
     for (size_t i = 0; i < size_chunks; ++i)
@@ -624,9 +625,20 @@ String ParquetFileBucketInfo::getIdentifier() const
     return result;
 }
 
-ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_)
-    : row_group_ids(row_group_ids_)
+ParquetFileBucketInfo::ParquetFileBucketInfo(const std::deque<size_t> & row_group_ids_)
+    : row_group_ids(std::deque<size_t>(row_group_ids_.begin(), row_group_ids_.end()))
 {
+}
+
+void ParquetFileBucketInfo::unite(const ParquetFileBucketInfo & other)
+{
+    for (const auto & val : other.row_group_ids)
+    {
+        if (!row_group_ids.empty() && row_group_ids.back() >= val)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not unite parquet file bucket info: {} {}", row_group_ids.back(), val);
+        row_group_ids.push_back(val);
+    }
+
 }
 
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
@@ -1245,9 +1257,10 @@ Chunk ParquetBlockInputFormat::read()
     }
 }
 
-void ParquetBlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
+bool ParquetBlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
 {
     buckets_to_read = std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_);
+    return true;
 }
 
 void ParquetBlockInputFormat::resetParser()
@@ -1365,7 +1378,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     for (int i = 0; i < metadata->num_row_groups(); ++i)
         bucket_sizes.push_back(metadata->RowGroup(i)->total_byte_size());
 
-    std::vector<std::vector<size_t>> buckets;
+    std::vector<std::deque<size_t>> buckets;
     size_t current_weight = 0;
     for (size_t i = 0; i < bucket_sizes.size(); ++i)
     {
