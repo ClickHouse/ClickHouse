@@ -1453,15 +1453,37 @@ bool tryPrepareSetColumnsForIndex(
 
         if (set_column_null_map)
         {
-            for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-            {
-                if (nullable_set_column_null_map_size < set_column_null_map->size())
-                    filter[i] &= (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
-                else
-                    filter[i] &= !nullable_set_column_null_map[i];
-            }
+            chassert(nullable_set_column_null_map_size == set_column_null_map->size());
 
-            set_column = nullable_set_column;
+            /// If the key expression is not Nullable, then NULL values in the set can never match.
+            /// Additionally, avoid the scenario when key column is not `Nullable` but set column is.
+            if (!isNullableOrLowCardinalityNullable(key_column_type))
+            {
+                for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
+                {
+                    const bool set_value_is_null = (*set_column_null_map)[i] != 0;
+                    /// Since we cast nested (non-nullable) column, NULLs here mean cast failure.
+                    const bool cast_result_is_null = nullable_set_column_null_map[i] != 0;
+                    const bool keep_row = !set_value_is_null && !cast_result_is_null;
+                    filter[i] &= keep_row;
+                }
+
+                set_column = nullable_set_column_typed->getNestedColumnPtr();
+            }
+            else
+            {
+                for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
+                {
+                    const bool set_value_is_null = (*set_column_null_map)[i] != 0;
+                    /// Since we cast nested (non-nullable) column, NULLs here mean cast failure.
+                    const bool cast_result_is_null = nullable_set_column_null_map[i] != 0;
+                    /// Preserve original NULLs in the set, but drop cast failures for non-NULL inputs.
+                    const bool keep_row = set_value_is_null || !cast_result_is_null;
+                    filter[i] &= keep_row;
+                }
+
+                set_column = nullable_set_column;
+            }
         }
         else
         {
