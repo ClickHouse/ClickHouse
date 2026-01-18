@@ -62,7 +62,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_statistics_optimize;
+    extern const SettingsBool use_statistics;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
 
@@ -238,7 +238,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         String table_display_name = reading->getStorageID().getTableName();
 
-        if (reading->getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
+        if (reading->getContext()->getSettingsRef()[Setting::use_statistics])
         {
             if (auto estimator_ = reading->getConditionSelectivityEstimator())
             {
