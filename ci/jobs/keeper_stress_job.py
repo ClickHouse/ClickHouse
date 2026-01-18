@@ -535,7 +535,6 @@ def main():
     # Run pytest
     report_file = f"{TEMP_DIR}/pytest.jsonl"
     junit_file = f"{TEMP_DIR}/keeper_junit.xml"
-    pytest_log_file = f"{TEMP_DIR}/pytest_stdout.log"
     pytest_timeout = max(3600, min(10200, timeout_val * 4))
 
     keepalive = start_keepalive()
@@ -546,7 +545,6 @@ def main():
             name="Keeper Stress",
             env=env,
             pytest_report_file=report_file,
-            logfile=pytest_log_file,
         )
     )
     stop_keepalive(keepalive)
@@ -579,7 +577,7 @@ def main():
     )
 
     # Attach files
-    for p in [pytest_log_file, junit_file]:
+    for p in [junit_file]:
         if Path(p).exists():
             files_to_attach.append(str(p))
     # Skip large report file
