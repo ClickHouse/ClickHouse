@@ -873,7 +873,7 @@ BoolMask MergeTreeSetIndex::checkInRange(
         if (rhs.isPositiveInfinity())
             return lhs.isNullAt(row) ? 0 : -1; /// +Inf == +Inf
         chassert(rhs.column);
-        return lhs.compareAt(row, 0, *rhs.column, 1);
+        return lhs.compareAt(row, rhs.row, *rhs.column, 1);
     };
 
     /// Because ordered_set is sorted lexicographically, the elements we're looking for are
