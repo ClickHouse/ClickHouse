@@ -175,6 +175,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool distributed_index_analysis;
+    extern const SettingsBool distributed_index_analysis_for_non_shared_merge_tree;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
@@ -2228,7 +2229,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         bool final_second_pass = indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode];
         /// Note, use_skip_indexes_if_final_exact_mode requires complete PK, so we cannot apply distributed_index_analysis with it
-        bool distributed_index_analysis_enabled = settings[Setting::distributed_index_analysis] && !final_second_pass;
+        bool distributed_index_analysis_enabled = settings[Setting::distributed_index_analysis]
+            && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
+            && !final_second_pass;
 
         if (!distributed_index_analysis_enabled)
         {
