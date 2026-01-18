@@ -174,7 +174,7 @@ struct Reader
 
         bool use_bloom_filter = false;
         const KeyCondition * column_index_condition = nullptr;
-        size_t step_idx = 0;
+        std::unordered_set<size_t> steps_to_calculate;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
@@ -426,20 +426,10 @@ struct Reader
 
     struct Step
     {
-        /// Columns needed for this step (indices in output_columns).
-        std::vector<size_t> input_column_idxs {};
-
-        /// Optional expression to compute after reading columns.
-        /// If present, actions will be executed and result_column_name will contain the result.
-        std::optional<ExpressionActions> actions = std::nullopt;
-        String result_column_name;
+        ExpressionActions actions;
+        std::optional<String> filter_column_name {};
         std::vector<size_t> input_idxs {}; // indices in extended_sample_block
-
-        /// Index in output block if this step produces a column that should be in the output.
-        std::optional<size_t> idx_in_output_block = std::nullopt;
-
-        /// Whether to filter rows using the result column after executing actions.
-        bool need_filter = true;
+        std::vector<std::pair<String, size_t>> idxs_in_output_block {};
     };
 
     ReadOptions options;
