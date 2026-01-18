@@ -32,15 +32,29 @@ def get_status(dictionary_name):
     ).rstrip("\n")
 
 
+def cleanup_dependent_tables():
+    """Clean up tables in correct dependency order to allow repeatable test runs."""
+    # Tables/objects must be dropped in reverse dependency order:
+    # a.t depends on: system.join, test.d, default.join
+    # default.join depends on: test.d
+    # src depends on: system.join
+    # test.d depends on: src
+    instance.query("DROP TABLE IF EXISTS a.t")
+    instance.query("DROP TABLE IF EXISTS default.join")
+    instance.query("DROP DICTIONARY IF EXISTS test.d")
+    instance.query("DROP TABLE IF EXISTS default.src")
+    instance.query("DROP TABLE IF EXISTS system.join")
+    instance.query("DROP DATABASE IF EXISTS a")
+    instance.query("DROP DATABASE IF EXISTS test")
+    instance.query("DROP DATABASE IF EXISTS dict")
+
+
 def test_get_data(started_cluster):
     query = instance.query
     instance.restart_clickhouse()
+    cleanup_dependent_tables()
     instance.query(
         """
-        DROP TABLE IF EXISTS default.join;
-        DROP DATABASE IF EXISTS a;
-        DROP DATABASE IF EXISTS dict;
-        DROP DATABASE IF EXISTS test;
         CREATE DATABASE dict ENGINE=Dictionary;
         CREATE DATABASE test;
         DROP TABLE IF EXISTS test.elements;
@@ -111,10 +125,10 @@ def dependent_tables_assert():
 
 def test_dependent_tables(started_cluster):
     query = instance.query
-    query("drop database if exists a")
+    cleanup_dependent_tables()
     query("create database a")
-    query("drop database if exists test")
     query("create database test")
+    query("create database dict engine=Dictionary")
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
     query(
@@ -149,6 +163,7 @@ def test_dependent_tables(started_cluster):
 
 
 def test_xml_dict_same_name(started_cluster):
+    instance.query("DROP TABLE IF EXISTS default.node")
     instance.query(
         "create table default.node ( key UInt64, name String ) Engine=Dictionary(node);"
     )

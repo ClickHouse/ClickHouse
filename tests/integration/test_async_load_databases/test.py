@@ -72,6 +72,7 @@ def get_status(dictionary_name):
 def test_dict_get_data(started_cluster):
     query = node1.query
 
+    query("DROP TABLE IF EXISTS test.elements")
     query(
         "CREATE TABLE test.elements (id UInt64, a String, b Int32, c Float64) ENGINE=Log;"
     )
@@ -141,12 +142,25 @@ def dependent_tables_assert():
     assert "a.t" in res
 
 
+def cleanup_dependent_tables():
+    """Clean up tables in correct dependency order to allow repeatable test runs."""
+    # Tables/objects must be dropped in reverse dependency order:
+    # a.t depends on: system.join, test.d, default.join
+    # default.join depends on: test.d
+    # src depends on: system.join
+    # test.d depends on: src
+    node1.query("DROP TABLE IF EXISTS a.t")
+    node1.query("DROP TABLE IF EXISTS default.join")
+    node1.query("DROP DICTIONARY IF EXISTS test.d")
+    node1.query("DROP TABLE IF EXISTS default.src")
+    node1.query("DROP TABLE IF EXISTS system.join")
+    node1.query("DROP DATABASE IF EXISTS a")
+
+
 def test_dependent_tables(started_cluster):
     query = node1.query
-    query("drop database if exists a")
+    cleanup_dependent_tables()
     query("create database a")
-    query("drop table if exists src")
-    query("drop table if exists system.join")
     query("create table system.join (n int, m int) engine=Join(any, left, n)")
     query("insert into system.join values (1, 1)")
     for i in range(2, 100):
@@ -185,6 +199,9 @@ def test_dependent_tables(started_cluster):
 def test_multiple_tables(started_cluster):
     query = node1.query
     tables_count = 20
+    # Clean up any leftover tables from previous runs
+    for i in range(tables_count):
+        query(f"drop table if exists test.table_{i}")
     for i in range(tables_count):
         query(
             f"create table test.table_{i} (n UInt64, s String) engine=MergeTree order by n as select number, randomString(100) from numbers(100)"
