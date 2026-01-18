@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Type
 
 from . import Job, Workflow
 from .settings import Settings
-from .utils import MetaClasses, Shell, T
+from .utils import MetaClasses, Shell, T, Utils
 
 
 @dataclasses.dataclass
@@ -34,6 +34,7 @@ class _Environment(MetaClasses.Serializable):
     PR_TITLE: str
     USER_LOGIN: str
     FORK_NAME: str
+    COMMIT_MESSAGE: str = ""
     # merged PR for "push" or "merge_group" workflow
     LINKED_PR_NUMBER: int = 0
     LOCAL_RUN: bool = False
@@ -44,6 +45,8 @@ class _Environment(MetaClasses.Serializable):
     WORKFLOW_JOB_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     WORKFLOW_STATUS_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     JOB_KV_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    COMMIT_AUTHORS: List[str] = dataclasses.field(default_factory=list)
+    WORKFLOW_CONFIG: Optional[Dict[str, Any]] = None
     name = "environment"
 
     @classmethod
@@ -60,12 +63,14 @@ class _Environment(MetaClasses.Serializable):
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
         USER_LOGIN = ""
+        COMMIT_AUTHORS = []
         FORK_NAME = REPOSITORY
         PR_BODY = ""
         PR_TITLE = ""
         PR_LABELS = []
         LINKED_PR_NUMBER = 0
         EVENT_TIME = ""
+        COMMIT_MESSAGE = ""
 
         assert Path(
             Settings.WORKFLOW_JOB_FILE
@@ -112,6 +117,13 @@ class _Environment(MetaClasses.Serializable):
                     pr_str = parts[1].split()[0]
                     LINKED_PR_NUMBER = int(pr_str) if pr_str.isdigit() else 0
                 EVENT_TIME = github_event.get("repository", {}).get("updated_at", None)
+                commit_authors = set()
+                for commit in github_event["commits"]:
+                    email = commit["author"]["email"]
+                    # Validate email contains @ symbol
+                    if email and "@" in email:
+                        commit_authors.add(email)
+                COMMIT_AUTHORS = list(commit_authors)
             elif "schedule" in github_event:
                 EVENT_TYPE = Workflow.Event.SCHEDULE
                 SHA = os.getenv(
@@ -184,6 +196,7 @@ class _Environment(MetaClasses.Serializable):
             EVENT_TYPE = Workflow.Event.PUSH
             CHANGE_URL = ""
             COMMIT_URL = ""
+            COMMIT_MESSAGE = ""
             INSTANCE_TYPE = ""
             INSTANCE_ID = ""
             INSTANCE_LIFE_CYCLE = ""
@@ -209,14 +222,24 @@ class _Environment(MetaClasses.Serializable):
             PR_BODY=PR_BODY,
             PR_TITLE=PR_TITLE,
             USER_LOGIN=USER_LOGIN,
+            COMMIT_AUTHORS=COMMIT_AUTHORS,
             FORK_NAME=FORK_NAME,
+            COMMIT_MESSAGE=COMMIT_MESSAGE,
             PR_LABELS=PR_LABELS,
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_INFO=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
-            JOB_KV_DATA={},
+            # TODO: Find a better way to store and pass commit authors data through workflow
+            JOB_KV_DATA={
+                "commit_authors": COMMIT_AUTHORS,
+                # Initial parent PR inference:
+                # - Defaults to LINKED_PR_NUMBER, which is the PR merged by a push/merge-queue event
+                # - Can be explicitly overridden later via workflow hooks (see Info.set_parent_pr_number)
+                "parent_pr_number": LINKED_PR_NUMBER,
+            },
             WORKFLOW_JOB_DATA=WORKFLOW_JOB_DATA,
             WORKFLOW_STATUS_DATA=WORKFLOW_STATUS_DATA,
+            WORKFLOW_CONFIG=None,
         )
 
     @classmethod
@@ -229,7 +252,25 @@ class _Environment(MetaClasses.Serializable):
         obj["JOB_OUTPUT_STREAM"] = JOB_OUTPUT_STREAM
         if "PARAMETER" in obj:
             obj["PARAMETER"] = _to_object(obj["PARAMETER"])
-        return cls(**obj)
+        # Filter out unexpected arguments - only keep fields defined in the dataclass
+        valid_fields = {f.name for f in dataclasses.fields(cls)}
+        filtered_obj = {k: v for k, v in obj.items() if k in valid_fields}
+        return cls(**filtered_obj)
+
+    @classmethod
+    def from_workflow_data(cls) -> "_Environment":
+        assert Path(
+            Settings.WORKFLOW_STATUS_FILE
+        ).is_file(), f"File not found: {Settings.WORKFLOW_STATUS_FILE}"
+        with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+            workflow_status_data = json.load(f)
+        # Access the config job data and parse the JSON string in "data" field
+        # Job names are normalized in the workflow status file
+        normalized_job_name = Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME)
+        config_job_data = workflow_status_data.get(normalized_job_name, {})
+        data_str = config_job_data.get("outputs", {}).get("data", "{}")
+        env_dict = json.loads(data_str) if isinstance(data_str, str) else data_str
+        return cls.from_dict(env_dict)
 
     def add_info(self, info):
         self.REPORT_INFO.append(info)
@@ -240,8 +281,7 @@ class _Environment(MetaClasses.Serializable):
         if Path(cls.file_name_static()).is_file():
             return cls.from_fs("environment")
         else:
-            print("WARNING: Environment: get from env")
-            env = cls.from_env()
+            env = cls.from_workflow_data()
             env.dump()
             return env
 

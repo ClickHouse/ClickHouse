@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/System/ServerSettingColumnsParams.h>
+#include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/MemoryTracker.h>
 
@@ -32,9 +33,27 @@ extern const Metric BackgroundMessageBrokerSchedulePoolSize;
 namespace DB
 {
 
+
+namespace
+{
+    constexpr int getDefaultOomScore() {
+#if defined(OS_LINUX) && !defined(NDEBUG)
+        /// In debug version on Linux, increase oom score so that clickhouse is killed
+        /// first, instead of some service. Use a carefully chosen random score of 555:
+        /// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
+        /// whatever errors that occur, because it's just a debugging aid and we don't
+        /// care if it breaks.
+        return 555;
+#else
+        return 0;
+#endif
+    }
+}
+
 // clang-format off
 
-#define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
+/// Settings without path are top-level server settings (no nesting).
+#define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
@@ -570,7 +589,13 @@ namespace DB
     DECLARE(Bool, disable_internal_dns_cache, false, "Disables the internal DNS cache. Recommended for operating ClickHouse in systems with frequently changing infrastructure such as Kubernetes.", 0) \
     DECLARE(UInt64, dns_cache_max_entries, 10000, R"(Internal DNS cache max entries.)", 0) \
     DECLARE(Int32, dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
-    DECLARE(UInt32, dns_max_consecutive_failures, 10, "Max DNS resolve failures of a hostname before dropping the hostname from ClickHouse DNS cache.", 0) \
+    DECLARE(UInt32, dns_max_consecutive_failures, 5, R"(
+    Stop further attempts to update a hostname's DNS cache after this number of consecutive failures. The information still remains in the DNS cache. Zero means unlimited.
+
+    **See also**
+
+    - [`SYSTEM DROP DNS CACHE`](../../sql-reference/statements/system#drop-dns-cache)
+    )", 0) \
     DECLARE(Bool, dns_allow_resolve_names_to_ipv4, true, "Allows resolve names to ipv4 addresses.", 0) \
     DECLARE(Bool, dns_allow_resolve_names_to_ipv6, true, "Allows resolve names to ipv6 addresses.", 0) \
     \
@@ -1218,13 +1243,313 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user).)", 0) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
+    DECLARE(UInt64, max_open_files, 0, R"(
+    The maximum number of open files.
+
+    :::note
+    We recommend using this option in macOS since the getrlimit() function returns an incorrect value.
+    :::
+    )", 0) \
+    DECLARE(String, path, DBMS_DEFAULT_PATH, R"(
+    The path to the directory containing data.
+
+    :::note
+    The trailing slash is mandatory.
+    :::
+
+    **Example**
+
+    ```xml
+    <path>/var/lib/clickhouse/</path>
+    ```
+    )", 0) \
+    DECLARE(String, user_files_path, "/var/lib/clickhouse/user_files/", R"(
+    The directory with user files. Used in the table function [file()](/sql-reference/table-functions/file), [fileCluster()](/sql-reference/table-functions/fileCluster).
+
+    **Example**
+
+    ```xml
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+    ```
+    )", 0) \
+    DECLARE(String, dictionaries_lib_path, "/var/lib/clickhouse/dictionaries_lib/", R"(
+    The directory with dictionaries lib.
+
+    **Example**
+
+    ```xml
+    <dictionaries_lib_path>/var/lib/clickhouse/dictionaries_lib/</dictionaries_lib_path>
+    ```
+    )", 0) \
+    DECLARE(String, user_scripts_path, "/var/lib/clickhouse/user_scripts/", R"(
+    The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).
+
+    **Example**
+
+    ```xml
+    <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
+    ```
+    )", 0) \
+    DECLARE(String, top_level_domains_path, "/var/lib/clickhouse/top_level_domains/", R"(
+    The directory with top level domains.
+
+    **Example**
+
+    ```xml
+    <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path>
+    ```
+    )", 0) \
+    DECLARE(String, interserver_http_host, "", R"(
+    The hostname that can be used by other servers to access this server.
+
+    If omitted, it is defined in the same way as the `<hostname -f>` command.
+
+    Useful for breaking away from a specific network interface.
+
+    **Example**
+
+    ```xml
+    <interserver_http_host>example.clickhouse.com</interserver_http_host>
+    ```
+    )", 0) \
+    DECLARE(UInt64, interserver_http_port, 0, R"(
+    Port for exchanging data between ClickHouse servers.
+
+    **Example**
+
+    ```xml
+    <interserver_http_port>9009</interserver_http_port>
+    ```
+    )", 0) \
+    DECLARE(String, interserver_https_host, "", R"(
+    Similar to `<interserver_http_host>`, except that this hostname can be used by other servers to access this server over `<HTTPS>`.
+
+    **Example**
+
+    ```xml
+    <interserver_https_host>example.clickhouse.com</interserver_https_host>
+    ```
+    )", 0) \
+    DECLARE(UInt64, interserver_https_port, 0, R"(
+    Port for exchanging data between ClickHouse servers over `<HTTPS>`.
+
+    **Example**
+
+    ```xml
+    <interserver_https_port>9010</interserver_https_port>
+    ```
+    )", 0) \
+    DECLARE(String, include_from, "/etc/metrika.xml", R"(
+    The path to the file with substitutions. Both XML and YAML formats are supported.
+
+    For more information, see the section [Configuration files](/operations/configuration-files).
+
+    **Example**
+
+    ```xml
+    <include_from>/etc/metrica.xml</include_from>
+    ```
+    )", 0) \
+    DECLARE(String, tmp_path, "/var/lib/clickhouse/tmp/", R"(
+    Path on the local filesystem to store temporary data for processing large queries.
+
+    :::note
+    - Only one option can be used to configure temporary data storage: tmp_path, tmp_policy, temporary_data_in_cache.
+    - The trailing slash is mandatory.
+    :::
+
+    **Example**
+
+    ```xml
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+    ```
+    )", 0) \
+    DECLARE(String, format_schema_path, "/var/lib/clickhouse/format_schemas/", R"(
+    The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](/interfaces/formats/CapnProto) format.
+
+    **Example**
+
+    ```xml
+    <!-- Directory containing schema files for various input formats. -->
+    <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+    ```
+    )", 0) \
+    DECLARE(String, google_protos_path, "/usr/share/clickhouse/protos/", R"(
+    Defines a directory containing proto files for Protobuf types.
+
+    **Example**
+
+    ```xml
+    <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
+    ```
+    )", 0) \
+    DECLARE(String, filesystem_caches_path, "", R"(
+    This setting specifies the cache path.
+
+    **Example**
+
+    ```xml
+    <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
+    ```
+    )", 0) \
+    DECLARE(Int32, oom_score, getDefaultOomScore(), R"(On Linux systems this can control the behavior of OOM killer.)", 0) \
+    DECLARE(Bool, remap_executable, false, R"(
+    Setting to reallocate memory for machine code ("text") using huge pages.
+
+    :::note
+    This feature is highly experimental.
+    :::
+
+    **Example**
+
+    ```xml
+    <remap_executable>false</remap_executable>
+    ```
+    )", 0) \
+    DECLARE(Bool, mlock_executable, false, R"(
+    Perform `<mlockall>` after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load.
+
+    :::note
+    Enabling this option is recommended but will lead to increased startup time for up to a few seconds. Keep in mind that this setting would not work without "CAP_IPC_LOCK" capability.
+    :::
+
+    **Example**
+
+    ```xml
+    <mlock_executable>false</mlock_executable>
+    ```
+    )", 0) \
+    DECLARE(UInt64, mlock_executable_min_total_memory_amount_bytes, 5000000000, R"(The minimum memory threshold for performing `<mlockall>`)", 0) \
+    DECLARE(UInt32, listen_backlog, 4096, R"(
+    Backlog (queue size of pending connections) of the listen socket. The default value of `<4096>` is the same as that of linux 5.4+).
+
+    Usually this value does not need to be changed, since:
+    - The default value is large enough,
+    - For accepting client's connections server has separate thread.
+
+    So even if you have `<TcpExtListenOverflows>` (from `<nstat>`) non-zero and this counter grows for ClickHouse server it does not mean that this value needs to be increased, since:
+    - Usually if `<4096>` is not enough it shows some internal ClickHouse scaling issue, so it is better to report an issue.
+    - It does not mean that the server can handle more connections later (and even if it could, by that moment clients may be gone or disconnected).
+
+    **Example**
+
+    ```xml
+    <listen_backlog>4096</listen_backlog>
+    ```
+    )", 0) \
+    DECLARE(Bool, listen_reuse_port, false, R"(
+    Allow multiple servers to listen on the same address:port. Requests will be routed to a random server by the operating system. Enabling this setting is not recommended.
+
+    **Example**
+
+    ```xml
+    <listen_reuse_port>0</listen_reuse_port>
+    ```
+    )", 0) \
+    DECLARE(Bool, listen_try, false, R"(
+    The server will not exit if IPv6 or IPv4 networks are unavailable while trying to listen.
+
+    **Example**
+
+    ```xml
+    <listen_try>0</listen_try>
+    ```
+    )", 0) \
+    DECLARE(Bool, mysql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [mysql_port](/operations/server-configuration-parameters/settings#mysql_port). Connection with option `<--ssl-mode=none>` will be refused. Use it with [OpenSSL](/operations/server-configuration-parameters/settings#openssl) settings.)", 0) \
+    DECLARE(Bool, postgresql_require_secure_transport, false, R"(If set to true, secure communication is required with clients over [postgresql_port](/operations/server-configuration-parameters/settings#postgresql_port). Connection with option `<sslmode=disable>` will be refused. Use it with [OpenSSL](/operations/server-configuration-parameters/settings#openssl) settings.)", 0) \
+    DECLARE(Bool, skip_check_for_incorrect_settings, false, R"(
+    If set to true, server settings will not be checked for correctness.
+
+    **Example**
+
+    ```xml
+    <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+    ```
+    )", 0)
+
+/// Settings with a path are server settings with at least one layer of nesting that have a fixed structure (no lists, lists, enumerations, repetitions, ...).
+#define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
+    DECLARE(UInt64, query_cache_max_size_in_bytes, 1073741824, R"(The maximum cache size in bytes. 0 means the query cache is disabled.)", 0, "query_cache.max_size_in_bytes") \
+    DECLARE(UInt64, query_cache_max_entries, 1024, R"(The maximum number of SELECT query results stored in the cache.)", 0, "query_cache.max_entries") \
+    DECLARE(UInt64, query_cache_max_entry_size_in_bytes, 1048576, R"(The maximum size in bytes SELECT query results may have to be saved in the cache.)", 0, "query_cache.max_entry_size_in_bytes") \
+    DECLARE(UInt64, query_cache_max_entry_size_in_rows, 30000000, R"(The maximum number of rows SELECT query results may have to be saved in the cache.)", 0, "query_cache.max_entry_size_in_rows") \
+    DECLARE(String, logger_level, "trace", R"(Log level. Acceptable values: `<none>` (turn logging off), `<fatal>`, `<critical>`, `<error>`, `<warning>`, `<notice>`, `<information>`, `<debug>`, `<trace>`, `<test>`.)", 0, "logger.level") \
+    DECLARE(String, logger_log, "", R"(The path to the log file.)", 0, "logger.log") \
+    DECLARE(String, logger_errorlog, "", R"(The path to the error log file.)", 0, "logger.errorlog") \
+    DECLARE(String, logger_size, "100M", R"(Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created.)", 0, "logger.size") \
+    DECLARE(String, logger_rotation, "100M", R"(Rotation policy: Controls when log files are rotated. Rotation can be based on size, time, or a combination of both. Examples: 100M, daily, 100M,daily. Once the log file exceeds the specified size or when the specified time interval is reached, it is renamed and archived, and a new log file is created.)", 0, "logger.rotation") \
+    DECLARE(UInt64, logger_count, 1, R"(Rotation policy: How many historical log files ClickHouse are kept at most.)", 0, "logger.count") \
+    DECLARE(Bool, logger_stream_compress, false, R"(Compress log messages using LZ4. Set to `<1>` or `<true>` to enable.)", 0, "logger.stream_compress") \
+    DECLARE(Bool, logger_console, false, R"(Enable logging to the console. Set to `<1>` or `<true>` to enable. Default is `<1>` if ClickHouse does not run in daemon mode, `<0>` otherwise.)", 0, "logger.console") \
+    DECLARE(String, logger_console_log_level, "trace", R"(Log level for console output. Defaults to `<level>`.)", 0, "logger.console_log_level") \
+    DECLARE(String, logger_formatting_type, "json", R"(Log format for console output. Currently, only `<json>` is supported.)", 0, "logger.formatting.type") \
+    DECLARE(Bool, logger_use_syslog, false, R"(Also forward log output to syslog.)", 0, "logger.use_syslog") \
+    DECLARE(String, logger_syslog_level, "trace", R"(Log level for logging to syslog.)", 0, "logger.syslog_level") \
+    DECLARE(Bool, logger_async, true, R"(When `<true>` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG.)", 0, "logger.async") \
+    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped.)", 0, "logger.async_queye_max_size") \
+    DECLARE(String, logger_startup_level, "", R"(Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `<level>` setting.)", 0, "logger.startup_level") \
+    DECLARE(String, logger_shutdown_level, "", R"(Shutdown level is used to set the root logger level at server Shutdown.)", 0, "logger.shutdown_level") \
+    DECLARE(String, openssl_server_private_key_file, "", R"(Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.)", 0, "openSSL.server.privateKeyFile") \
+    DECLARE(String, openssl_server_certificate_file, "", R"(Path to the client/server certificate file in PEM format. You can omit it if `<privateKeyFile>` contains the certificate.)", 0, "openSSL.server.certificateFile") \
+    DECLARE(String, openssl_server_ca_config, "", R"(Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).)", 0, "openSSL.server.caConfig") \
+    DECLARE(String, openssl_server_verification_mode, "relaxed", R"(The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `<none>`, `<relaxed>`, `<strict>`, `<once>`.)", 0, "openSSL.server.verificationMode") \
+    DECLARE(UInt64, openssl_server_verification_depth, 9, R"(The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.)", 0, "openSSL.server.verificationDepth") \
+    DECLARE(Bool, openssl_server_load_default_ca_file, true, R"(Determines whether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).)", 0, "openSSL.server.loadDefaultCAFile") \
+    DECLARE(String, openssl_server_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.server.cipherList") \
+    DECLARE(Bool, openssl_server_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.server.cacheSessions") \
+    DECLARE(String, openssl_server_session_id_context, "application.name", R"(A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `<SSL_MAX_SSL_SESSION_ID_LENGTH>`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching.)", 0, "openSSL.server.sessionIdContext") \
+    DECLARE(UInt64, openssl_server_session_cache_size, 20480, R"(The maximum number of sessions that the server caches. A value of 0 means unlimited sessions.)", 0, "openSSL.server.sessionCacheSize") \
+    DECLARE(UInt64, openssl_server_session_timeout, 2, R"(Time for caching the session on the server in hours.)", 0, "openSSL.server.sessionTimeout") \
+    DECLARE(Bool, openssl_server_extended_verification, false, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.server.extendedVerification") \
+    DECLARE(Bool, openssl_server_required_tls_v1, false, R"(Require a TLSv1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.server.requireTLSv1") \
+    DECLARE(Bool, openssl_server_required_tls_v1_1, false, R"(Require a TLSv1.1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.server.requireTLSv1_1") \
+    DECLARE(Bool, openssl_server_required_tls_v1_2, false, R"(Require a TLSv1.2 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.server.requireTLSv1_2") \
+    DECLARE(Bool, openssl_server_fips, false, R"(Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.)", 0, "openSSL.server.fips") \
+    DECLARE(String, openssl_server_private_key_passphrase_handler, "KeyConsoleHandler", R"(Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<<privateKeyPassphraseHandler>>`, `<<name>KeyFileHandler</name>>`, `<<options><password>test</password></options>>`, `<</privateKeyPassphraseHandler>>`)", 0, "openSSL.server.privateKeyPassphraseHandler.name") \
+    DECLARE(String, openssl_server_invalid_certificate_handler, "RejectCertificateHandler", R"(Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>>`.)", 0, "openSSL.server.invalidCertificateHandler.name") \
+    DECLARE(String, openssl_server_disable_protocols, "", R"(Protocols that are not allowed to be used.)", 0, "openSSL.server.disableProtocols") \
+    DECLARE(Bool, openssl_server_prefer_server_ciphers, false, R"(Client-preferred server ciphers.)", 0, "openSSL.server.preferServerCiphers") \
+    DECLARE(String, openssl_client_private_key_file, "", R"(Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.)", 0, "openSSL.client.privateKeyFile") \
+    DECLARE(String, openssl_client_certificate_file, "", R"(Path to the client/server certificate file in PEM format. You can omit it if `<privateKeyFile>` contains the certificate.)", 0, "openSSL.client.certificateFile") \
+    DECLARE(String, openssl_client_ca_config, "", R"(Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).)", 0, "openSSL.client.caConfig") \
+    DECLARE(String, openssl_client_verification_mode, "relaxed", R"(The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `<none>`, `<relaxed>`, `<strict>`, `<once>`.)", 0, "openSSL.client.verificationMode") \
+    DECLARE(UInt64, openssl_client_verification_depth, 9, R"(The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.)", 0, "openSSL.client.verificationDepth") \
+    DECLARE(Bool, openssl_client_load_default_ca_file, true, R"(Determines whether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).)", 0, "openSSL.client.loadDefaultCAFile") \
+    DECLARE(String, openssl_client_chipher_list, "ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH", R"(Supported OpenSSL encryptions.)", 0, "openSSL.client.cipherList") \
+    DECLARE(Bool, openssl_client_cache_sessions, false, R"(Enables or disables caching sessions. Must be used in combination with `<sessionIdContext>`. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.cacheSessions") \
+    DECLARE(Bool, openssl_client_extended_verification, false, R"(If enabled, verify that the certificate CN or SAN matches the peer hostname.)", 0, "openSSL.client.extendedVerification") \
+    DECLARE(Bool, openssl_client_required_tls_v1, false, R"(Require a TLSv1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1") \
+    DECLARE(Bool, openssl_client_required_tls_v1_1, false, R"(Require a TLSv1.1 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_1") \
+    DECLARE(Bool, openssl_client_required_tls_v1_2, false, R"(Require a TLSv1.2 connection. Acceptable values: `<true>`, `<false>`.)", 0, "openSSL.client.requireTLSv1_2") \
+    DECLARE(Bool, openssl_client_fips, false, R"(Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.)", 0, "openSSL.client.fips") \
+    DECLARE(String, openssl_client_private_key_passphrase_handler, "KeyConsoleHandler", R"(Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<<privateKeyPassphraseHandler>>`, `<<name>KeyFileHandler</name>>`, `<<options><password>test</password></options>>`, `<</privateKeyPassphraseHandler>>`)", 0, "openSSL.client.privateKeyPassphraseHandler.name") \
+    DECLARE(String, openssl_client_invalid_certificate_handler, "RejectCertificateHandler", R"(Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>>`.)", 0, "openSSL.client.invalidCertificateHandler.name") \
+    DECLARE(String, openssl_client_disable_protocols, "", R"(Protocols that are not allowed to be used.)", 0, "openSSL.client.disableProtocols") \
+    DECLARE(Bool, openssl_client_prefer_server_ciphers, false, R"(Client-preferred server ciphers.)", 0, "openSSL.client.preferServerCiphers") \
+    DECLARE(String, distributed_ddl_path, "/clickhouse/task_queue/ddl/", R"(the path in Keeper for the `<task_queue>` for DDL queries)", 0, "distributed_ddl.path") \
+    DECLARE(String, distributed_ddl_replicas_path, "/clickhouse/task_queue/replicas/", R"(the path in Keeper for the `<task_queue>` for replicas)", 0, "distributed_ddl.replicas_path") \
+    DECLARE(String, distributed_ddl_profile, "", R"(the profile used to execute the DDL queries)", 0, "distributed_ddl.profile") \
+    DECLARE(Int32, distributed_ddl_pool_size, 1, R"(how many `<ON CLUSTER>` queries can be run simultaneously)", 0, "distributed_ddl.pool_size") \
+    DECLARE(UInt64, distributed_ddl_max_tasks_in_queue, 1000, R"(the maximum number of tasks that can be in the queue.)", 0, "distributed_ddl.max_tasks_in_queue") \
+    DECLARE(UInt64, distributed_ddl_task_max_lifetime, 604800, R"(delete node if its age is greater than this value.)", 0, "distributed_ddl.task_max_lifetime") \
+    DECLARE(UInt64, distributed_ddl_cleanup_delay_period, 60, R"(cleaning starts after new node event is received if the last cleaning wasn't made sooner than `<cleanup_delay_period>` seconds ago.)", 0, "distributed_ddl.cleanup_delay_period") \
+    DECLARE(Bool, prometheus_keeper_metrics_only, false, R"(Expose the keeper related metrics)", 0, "prometheus.keeper_metrics_only") \
+    DECLARE(Bool, startup_scripts_throw_on_error, false, R"(If set to true, the server will not start if an error occurs during script execution.)", 0, "startup_scripts.throw_on_error") \
+    DECLARE(UInt64, keeper_server_socket_receive_timeout_sec, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, R"(Keeper socket receive timeout.)", 0, "keeper_server.socket_receive_timeout_sec") \
+    DECLARE(UInt64, keeper_server_socket_send_timeout_sec, DBMS_DEFAULT_SEND_TIMEOUT_SEC, R"(Keeper socket send timeout.)", 0, "keeper_server.socket_send_timeout_sec") \
+    DECLARE(String, hdfs_libhdfs3_conf, "", R"(Points libhdfs3 to the right location for its config.)", 0, "hdfs.libhdfs3_conf") \
+    DECLARE(String, config_file, "config.xml", R"(Points to the server config file.)", 0, "config-file")
 
 // clang-format on
 
 /// If you add a setting which can be updated at runtime, please update 'changeable_settings' map in dumpToSystemServerSettingsColumns below
 
-DECLARE_SETTINGS_TRAITS(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS)
+DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH)
+IMPLEMENT_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_WITHOUT_PATH, LIST_OF_SERVER_SETTINGS_WITH_PATH)
+
+#define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
+    LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
+    LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
 
 struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 {
@@ -1255,12 +1580,13 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
+        const auto & path = setting.getPath();
         try
         {
-            if (config.has(name))
-                set(name, config.getString(name));
-            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
-                set(name, config.getString("profiles.default." + name));
+            if (config.has(path))
+                set(name, config.getString(path));
+            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + path))
+                set(name, config.getString("profiles.default." + path));
         }
         catch (Exception & e)
         {
@@ -1441,11 +1767,12 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
+        const auto & setting_path = setting.getPath();
 
         const auto & changeable_settings_it = changeable_settings.find(setting_name);
         const bool is_changeable = (changeable_settings_it != changeable_settings.end());
 
-        res_columns[0]->insert(setting_name);
+        res_columns[0]->insert(setting_path);
         res_columns[1]->insert(is_changeable ? changeable_settings_it->second.first : setting.getValueString());
         res_columns[2]->insert(setting.getDefaultValueString());
         res_columns[3]->insert(setting.isValueChanged());

@@ -25,6 +25,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/Stopwatch.h>
 #include <libnuraft/log_val_type.hxx>
 #include <libnuraft/log_entry.hxx>
 #include <libnuraft/raft_server.hxx>
@@ -35,6 +36,8 @@ namespace ProfileEvents
     extern const Event KeeperLogsEntryReadFromCommitCache;
     extern const Event KeeperLogsEntryReadFromFile;
     extern const Event KeeperLogsPrefetchedEntries;
+    extern const Event KeeperChangelogWrittenBytes;
+    extern const Event KeeperChangelogFileSyncMicroseconds;
 }
 
 namespace DB
@@ -274,6 +277,8 @@ public:
         }
 
         auto & write_buffer = getBuffer();
+        const size_t bytes_before = write_buffer.count();
+
         auto current_position = initial_file_size + write_buffer.count();
         writeIntBinary(computeRecordChecksum(record), write_buffer);
 
@@ -306,6 +311,9 @@ public:
         chassert(!last_index_written || *last_index_written >= record.header.index || *last_index_written == record.header.index - 1);
         last_index_written = record.header.index;
 
+        const size_t bytes_written = write_buffer.count() - bytes_before;
+        ProfileEvents::increment(ProfileEvents::KeeperChangelogWrittenBytes, bytes_written);
+
         return true;
     }
 
@@ -316,7 +324,14 @@ public:
         {
             /// Fsync file system if needed
             if (log_file_settings.force_sync)
+            {
+                Stopwatch watch;
+
                 file_buffer->sync();
+
+                if (!compressed_buffer)
+                    ProfileEvents::increment(ProfileEvents::KeeperChangelogFileSyncMicroseconds, watch.elapsedMicroseconds());
+            }
             else
                 file_buffer->next();
         }
@@ -1850,7 +1865,6 @@ Changelog::Changelog(
 }
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
-try
 {
     std::lock_guard writer_lock(writer_mutex);
     std::optional<ChangelogReadResult> last_log_read_result;
@@ -1859,7 +1873,7 @@ try
     bool last_log_is_not_complete = false;
 
     /// We must start to read from this log index
-    uint64_t start_to_read_from = last_commited_log_index;
+    uint64_t start_to_read_from = last_commited_log_index + 1;
 
     /// If we need to have some reserved log read additional `logs_to_keep` logs
     if (start_to_read_from > logs_to_keep)
@@ -1879,25 +1893,20 @@ try
         {
             if (!last_log_read_result) /// still nothing was read
             {
+                LOG_INFO(log, "from log index: {}, to log index: {}, last committed log index: {}", changelog_description.from_log_index, changelog_description.to_log_index, last_commited_log_index);
                 /// Our first log starts from the more fresh log_id than we required to read and this changelog is not empty log.
-                /// So we are missing something in our logs, but it's not dataloss, we will receive snapshot and required
-                /// entries from leader.
+                /// So we are missing something in our logs.
                 if (changelog_description.from_log_index > last_commited_log_index
                     && (changelog_description.from_log_index - last_commited_log_index) > 1)
                 {
-                    LOG_ERROR(
-                        log,
-                        "Some records were lost, last committed log index {}, smallest available log index on disk {}. Hopefully will "
-                        "receive missing records from leader.",
+                    throw Exception(
+                        ErrorCodes::CORRUPTED_DATA,
+                        "Some records were lost, last committed log index {}, smallest available log index on disk {}. Manual intervention "
+                        "is necessary for recovery but removing changelogs can lead to data loss.",
                         last_commited_log_index,
                         changelog_description.from_log_index);
-                    /// Nothing to do with our more fresh log, leader will overwrite them, so remove everything and just start from last_commited_index
-                    removeAllLogs();
-                    max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
-                    current_writer->rotate(max_log_id + 1);
-                    initialized = true;
-                    return;
                 }
+
                 if (changelog_description.from_log_index > start_to_read_from)
                 {
                     /// We don't have required amount of reserved logs, but nothing was lost.
@@ -1931,13 +1940,12 @@ try
                 {
                     if (!last_log_read_result->error)
                     {
-                        LOG_ERROR(
-                            log,
-                            "Some records were lost, last found log index {}, while the next log index on disk is {}. Hopefully will receive "
-                            "missing records from leader.",
+                        throw Exception(
+                            ErrorCodes::CORRUPTED_DATA,
+                            "Some records were lost, last found log index {}, while the next log index on disk is {}. Manual intervention "
+                            "is necessary for recovery but removing changelogs can lead to data loss.",
                             last_read_index,
                             changelog_description.from_log_index);
-                        removeAllLogsAfter(last_log_read_result->log_start_index);
                     }
                     break;
                 }
@@ -1990,18 +1998,18 @@ try
     {
         /// Just to be sure they don't exist
         removeAllLogs();
-        max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
+        max_log_id = last_commited_log_index;
     }
-    else if (last_commited_log_index != 0 && max_log_id < last_commited_log_index - 1) /// If we have more fresh snapshot than our logs
+    else if (max_log_id < last_commited_log_index) /// If we have more fresh snapshot than our logs
     {
         LOG_WARNING(
             log,
             "Our most fresh log_id {} is smaller than stored data in snapshot {}. It can indicate data loss. Removing outdated logs.",
             max_log_id,
-            last_commited_log_index - 1);
+            last_commited_log_index);
 
         removeAllLogs();
-        max_log_id = last_commited_log_index - 1;
+        max_log_id = last_commited_log_index;
     }
     else if (last_log_is_not_complete) /// if it's complete just start new one
     {
@@ -2071,11 +2079,6 @@ try
 
     initialized = true;
 }
-catch (...)
-{
-    tryLogCurrentException(__PRETTY_FUNCTION__);
-}
-
 
 void Changelog::initWriter(ChangelogFileDescriptionPtr description)
 {
@@ -2336,7 +2339,7 @@ void Changelog::writeThread()
     catch (...)
     {
         tryLogCurrentException(log, "Write thread failed, aborting");
-        std::abort();
+        std::terminate();
     }
 }
 
@@ -2633,13 +2636,16 @@ void Changelog::shutdown()
 
 Changelog::~Changelog()
 {
-    try
+    if (initialized)
     {
-        flush();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        try
+        {
+            flush();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     try

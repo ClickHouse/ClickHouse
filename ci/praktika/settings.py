@@ -112,11 +112,23 @@ class _Settings:
     # Choose values wisely to effectively differentiate between different failure types.
     TEST_FAILURE_PATTERNS: Optional[List[str]] = None
 
+    ######################################
+    #        Infrastructure Settings     #
+    ######################################
+    CLOUD_INFRASTRUCTURE_CONFIG_PATH: str = ""
+    AWS_REGION: str = ""
+    # S3 path for Slack feed events storage (format: bucket/prefix)
+    # Used by EventFeed and FeedSubscription for PR notification subscriptions
+    EVENT_FEED_S3_PATH: str = ""
+
 
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
     "CACHE_S3_PATH",
     "HTML_S3_PATH",
+    "CLOUD_INFRASTRUCTURE_CONFIG_PATH",
+    "EVENT_FEED_S3_PATH",
+    "AWS_REGION",
     "S3_BUCKET_TO_HTTP_ENDPOINT",
     "TEXT_CONTENT_EXTENSIONS",
     "TEMP_DIR",

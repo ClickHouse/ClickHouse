@@ -46,6 +46,9 @@ callgrind.out.*
 *.kdev4
 *.kdev_include_paths
 
+# ignore Kate files
+*.kate-swp
+
 # ignore sublime project files
 *.sublime-*
 
@@ -179,20 +182,5 @@ tests/casa_del_dolor/_instances*
 /rust/**/.cargo/config.toml
 /rust/**/vendor
 
-store/
-data/
-metadata
-preprocessed_configs
-access
-coordination
-My_Notes/
-metadata_dropped
-ssh_key
-status
-user_files
-user_defined 
-disks 
-sysroot
-liburing
-uuid_test_soetfpfb.parquet
-03371_qbit_read_write*
+# Claude preferences
+.claude/*.local.*

@@ -1,3 +1,4 @@
+#include <format>
 #include "config.h"
 
 #if USE_AVRO
@@ -103,7 +104,7 @@ namespace
 
             if (const auto * decimal_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
             {
-                DB::DecimalField<DB::Decimal32> result(unscaled_value, decimal_type->getScale());
+                DB::DecimalField<DB::Decimal32> result(static_cast<Int32>(unscaled_value), decimal_type->getScale());
                 return result;
             }
             if (const auto * decimal_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
@@ -320,7 +321,7 @@ ManifestFileContent::ManifestFileContent(
                 for (const auto & column_stats : values_count.safeGet<Array>())
                 {
                     const auto & column_number_and_count = column_stats.safeGet<Tuple>();
-                    Int32 number = column_number_and_count[0].safeGet<Int32>();
+                    Int32 number = static_cast<Int32>(column_number_and_count[0].safeGet<Int32>());
                     Int64 count = column_number_and_count[1].safeGet<Int64>();
                     if (path == c_data_file_value_counts)
                         columns_infos[number].rows_count = count;
@@ -343,7 +344,7 @@ ManifestFileContent::ManifestFileContent(
                     for (const auto & column_stats : bounds.safeGet<Array>())
                     {
                         const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
-                        Int32 number = column_number_and_bound[0].safeGet<Int32>();
+                        Int32 number = static_cast<Int32>(column_number_and_bound[0].safeGet<Int32>());
                         const Field & bound_value = column_number_and_bound[1];
 
                         if (path == c_data_file_lower_bounds)
@@ -480,7 +481,7 @@ ManifestFileContent::ManifestFileContent(
                 {
                     Field equality_ids_field = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_equality_ids);
                     for (const Field & id : equality_ids_field.safeGet<Array>())
-                        equality_ids.push_back(id.safeGet<Int32>());
+                        equality_ids.push_back(static_cast<Int32>(id.safeGet<Int32>()));
                 }
                 else
                     throw Exception(
@@ -660,6 +661,56 @@ std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestF
     return std::tie(lhs->common_partition_specification, lhs->partition_key_value, lhs->added_sequence_number)
         <=> std::tie(rhs->common_partition_specification, rhs->partition_key_value, rhs->added_sequence_number);
 }
+
+String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
+{
+    if (partition_specification.empty())
+        return "[empty]";
+    else
+    {
+        String answer{"["};
+        for (size_t i = 0; i < partition_specification.size(); ++i)
+        {
+            const auto & entry = partition_specification[i];
+            answer += fmt::format(
+                "(source id: {}, transform name: {}, partition name: {})", entry.source_id, entry.transform_name, entry.partition_name);
+            if (i != partition_specification.size() - 1)
+                answer += ", ";
+        }
+        answer += ']';
+        return answer;
+    }
 }
+
+String dumpPartitionKeyValue(const DB::Row & partition_key_value)
+{
+    if (partition_key_value.empty())
+        return "[empty]";
+    else
+    {
+        String answer{"["};
+        for (size_t i = 0; i < partition_key_value.size(); ++i)
+        {
+            const auto & entry = partition_key_value[i];
+            answer += entry.dump();
+            if (i != partition_key_value.size() - 1)
+                answer += ", ";
+        }
+        answer += ']';
+        return answer;
+    }
+}
+
+
+String ManifestFileEntry::dumpDeletesMatchingInfo() const
+{
+    return fmt::format(
+        "Partition specification: {}, partition key value: {}, added sequence number: {}",
+        dumpPartitionSpecification(common_partition_specification),
+        dumpPartitionKeyValue(partition_key_value),
+        added_sequence_number);
+}
+}
+
 
 #endif
