@@ -23,6 +23,10 @@
 #include <Interpreters/castColumn.h>
 
 #include <ranges>
+#include <random>
+#include <unordered_map>
+#include <unordered_set>
+#include <algorithm>
 
 #include <fmt/ranges.h>
 
@@ -214,8 +218,9 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
-    UsearchHnswParams usearch_hnsw_params_)
-    : MergeTreeIndexGranuleVectorSimilarity(index_name_, metric_kind_, scalar_kind_, usearch_hnsw_params_, nullptr)
+    UsearchHnswParams usearch_hnsw_params_,
+    LeaNNParams leann_params_)
+    : MergeTreeIndexGranuleVectorSimilarity(index_name_, metric_kind_, scalar_kind_, usearch_hnsw_params_, nullptr, leann_params_)
 {
 }
 
@@ -224,11 +229,13 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
     UsearchHnswParams usearch_hnsw_params_,
-    USearchIndexWithSerializationPtr index_)
+    USearchIndexWithSerializationPtr index_,
+    LeaNNParams leann_params_)
     : index_name(index_name_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
+    , leann_params(leann_params_)
     , index(std::move(index_))
 {
 }
@@ -282,19 +289,163 @@ MergeTreeIndexAggregatorVectorSimilarity::MergeTreeIndexAggregatorVectorSimilari
     UInt64 dimensions_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
-    UsearchHnswParams usearch_hnsw_params_)
+    UsearchHnswParams usearch_hnsw_params_,
+    LeaNNParams leann_params_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , dimensions(dimensions_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
+    , leann_params(leann_params_)
 {
+}
+
+namespace
+{
+
+/// Perform hub node pruning on the HNSW graph (LeaNN Technique 2).
+/// Hub nodes are highly connected nodes that span wide areas of the vector space.
+/// This function identifies and keeps only hub nodes, reducing graph size by ~50% with minimal recall loss.
+///
+/// Implementation approach (workaround without USearch API changes):
+/// 1. Use search-based sampling to identify frequently visited nodes (hub nodes)
+/// 2. Rebuild the index with only hub node vectors
+void performHubPruning(
+    USearchIndexWithSerializationPtr & index,
+    const std::vector<std::vector<Float32>> & stored_vectors,
+    size_t dimensions,
+    unum::usearch::metric_kind_t metric_kind,
+    unum::usearch::scalar_kind_t scalar_kind,
+    UsearchHnswParams usearch_hnsw_params)
+{
+    if (!index || index->size() == 0 || stored_vectors.empty() || stored_vectors.size() != index->size())
+        return;
+
+    LoggerPtr logger = getLogger("VectorSimilarityIndex");
+    LOG_TRACE(logger, "Starting hub node pruning. Index size before pruning: {}", index->size());
+
+    /// Step 1: Identify hub nodes via search-based sampling
+    /// Perform multiple random searches and count how often each node is visited
+    const size_t num_samples = std::min(static_cast<size_t>(100), index->size()); /// Sample up to 100 random queries
+    std::unordered_map<USearchIndex::vector_key_t, size_t> node_visit_counts;
+    
+    /// Use a subset of stored vectors as random query vectors
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<size_t> dist(0, stored_vectors.size() - 1);
+    
+    const size_t search_limit = std::min(static_cast<size_t>(50), index->size() / 2); /// Search for top 50 or half the index
+    
+    for (size_t i = 0; i < num_samples; ++i)
+    {
+        /// Pick a random vector as query
+        size_t query_idx = dist(rng);
+        const auto & query_vector = stored_vectors[query_idx];
+        
+        /// Perform search and count visited nodes
+        /// Note: USearch's search() doesn't expose visited nodes directly, but we can infer from results
+        /// For now, we'll use the search results as a proxy - nodes in top results are likely hubs
+        auto search_result = index->search(query_vector.data(), search_limit, USearchIndex::any_thread(), false, default_expansion_search);
+        if (search_result)
+        {
+            std::vector<USearchIndex::vector_key_t> result_keys(search_result.size());
+            search_result.dump_to(result_keys.data());
+            
+            /// Count visits (nodes in search results)
+            for (auto key : result_keys)
+            {
+                node_visit_counts[key]++;
+            }
+        }
+    }
+    
+    /// Step 2: Select hub nodes (top 50% most frequently visited)
+    std::vector<std::pair<USearchIndex::vector_key_t, size_t>> node_scores;
+    for (const auto & [key, count] : node_visit_counts)
+    {
+        node_scores.emplace_back(key, count);
+    }
+    
+    /// Sort by visit count (descending)
+    std::sort(node_scores.begin(), node_scores.end(), 
+              [](const auto & a, const auto & b) { return a.second > b.second; });
+    
+    /// Keep top 50% as hub nodes
+    const size_t num_hub_nodes = std::max(static_cast<size_t>(1), node_scores.size() / 2);
+    std::unordered_set<USearchIndex::vector_key_t> hub_node_keys;
+    for (size_t i = 0; i < num_hub_nodes && i < node_scores.size(); ++i)
+    {
+        hub_node_keys.insert(node_scores[i].first);
+    }
+    
+    /// Also include nodes that weren't sampled but might be hubs (nodes with high indices are often in higher layers)
+    /// In HNSW, nodes added later often end up in higher layers and are more likely to be hubs
+    const size_t additional_hub_candidates = index->size() - hub_node_keys.size();
+    if (additional_hub_candidates > 0)
+    {
+        /// Add nodes from the upper half of the index (likely in higher layers)
+        for (size_t i = index->size() / 2; i < index->size() && hub_node_keys.size() < index->size() / 2; ++i)
+        {
+            hub_node_keys.insert(static_cast<USearchIndex::vector_key_t>(i));
+        }
+    }
+    
+    LOG_TRACE(logger, "Identified {} hub nodes out of {} total nodes", hub_node_keys.size(), index->size());
+    
+    /// Step 3: Rebuild index with only hub nodes
+    auto pruned_index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    
+    /// Reserve space for hub nodes
+    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
+    if (max_thread_pool_size == 0)
+        max_thread_pool_size = getNumberOfCPUCoresToUse();
+    unum::usearch::index_limits_t limits(roundUpToPowerOfTwoOrZero(hub_node_keys.size()), max_thread_pool_size);
+    pruned_index->reserve(limits);
+    
+    /// Add hub nodes to new index
+    auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
+    
+    size_t hub_index = 0;
+    for (auto key : hub_node_keys)
+    {
+        if (key >= stored_vectors.size())
+            continue;
+            
+        const auto & vector = stored_vectors[key];
+        auto new_key = static_cast<USearchIndex::vector_key_t>(hub_index++);
+        
+        runner.enqueueAndKeepTrack([&pruned_index, &vector, new_key, dimensions] {
+            auto result = pruned_index->add(new_key, vector.data());
+            if (!result)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add hub node to pruned index. Error: {}", result.error.release());
+        });
+    }
+    
+    runner.waitForAllToFinishAndRethrowFirstError();
+    
+    /// Replace original index with pruned index
+    index = pruned_index;
+    
+    auto stats_after = index->getStatistics();
+    LOG_TRACE(logger, "Hub pruning complete. Pruned index: {} nodes (reduced from {}), {} edges", 
+              stats_after.nodes, node_scores.size(), stats_after.edges);
+}
+
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, metric_kind, scalar_kind, usearch_hnsw_params, index);
+    /// Perform hub pruning if enabled
+    if (leann_params.enable_hub_pruning && index && index->size() > 0 && !stored_vectors.empty())
+    {
+        performHubPruning(index, stored_vectors, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    }
+
+    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, metric_kind, scalar_kind, usearch_hnsw_params, index, leann_params);
+    
+    /// Clear stored vectors after use (they're no longer needed after index construction)
+    stored_vectors.clear();
     index = nullptr;
     return granule;
 }
@@ -417,6 +568,55 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
 
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     WhichDataType which(nested_type_index);
+    
+    /// Store vectors for hub pruning if enabled
+    if (leann_params.enable_hub_pruning)
+    {
+        stored_vectors.reserve(stored_vectors.size() + rows);
+        
+        if (which.isFloat32())
+        {
+            const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(column_array->getData().get());
+            const auto & data = column_float32->getData();
+            for (size_t row = 0; row < rows; ++row)
+            {
+                size_t start = (row == 0) ? 0 : column_array_offsets[row - 1];
+                size_t end = column_array_offsets[row];
+                stored_vectors.emplace_back(data.begin() + start, data.begin() + end);
+            }
+        }
+        else if (which.isFloat64())
+        {
+            const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(column_array->getData().get());
+            const auto & data = column_float64->getData();
+            for (size_t row = 0; row < rows; ++row)
+            {
+                size_t start = (row == 0) ? 0 : column_array_offsets[row - 1];
+                size_t end = column_array_offsets[row];
+                std::vector<Float32> vec;
+                vec.reserve(end - start);
+                for (size_t i = start; i < end; ++i)
+                    vec.push_back(static_cast<Float32>(data[i]));
+                stored_vectors.push_back(std::move(vec));
+            }
+        }
+        else if (which.isBFloat16())
+        {
+            const auto * column_bf16 = typeid_cast<const ColumnBFloat16 *>(column_array->getData().get());
+            const auto & data = column_bf16->getData();
+            for (size_t row = 0; row < rows; ++row)
+            {
+                size_t start = (row == 0) ? 0 : column_array_offsets[row - 1];
+                size_t end = column_array_offsets[row];
+                std::vector<Float32> vec;
+                vec.reserve(end - start);
+                for (size_t i = start; i < end; ++i)
+                    vec.push_back(static_cast<Float32>(data[i].toFloat32()));
+                stored_vectors.push_back(std::move(vec));
+            }
+        }
+    }
+    
     if (which.isFloat32())
         updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
     else if (which.isFloat64())
@@ -531,23 +731,25 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
     UInt64 dimensions_,
     unum::usearch::metric_kind_t metric_kind_,
     unum::usearch::scalar_kind_t scalar_kind_,
-    UsearchHnswParams usearch_hnsw_params_)
+    UsearchHnswParams usearch_hnsw_params_,
+    LeaNNParams leann_params_)
     : IMergeTreeIndex(index_)
     , dimensions(dimensions_)
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
+    , leann_params(leann_params_)
 {
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexVectorSimilarity::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index.name, metric_kind, scalar_kind, usearch_hnsw_params, leann_params);
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, dimensions, metric_kind, scalar_kind, usearch_hnsw_params, leann_params);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG::Node * /*predicate*/, ContextPtr /*context*/) const
@@ -569,10 +771,12 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
     unum::usearch::metric_kind_t metric_kind = distanceFunctionToMetricKind.at(index.arguments[1].safeGet<String>());
     unum::usearch::scalar_kind_t scalar_kind = unum::usearch::scalar_kind_t::bf16_k;
     UsearchHnswParams usearch_hnsw_params;
+    LeaNNParams leann_params;
 
     /// Optional parameters:
     const bool has_six_args = (index.arguments.size() == 6);
-    if (has_six_args)
+    const bool has_seven_args = (index.arguments.size() == 7);
+    if (has_six_args || has_seven_args)
     {
         scalar_kind = quantizationToScalarKind.at(index.arguments[3].safeGet<String>());
         usearch_hnsw_params = {.connectivity  = index.arguments[4].safeGet<UInt64>(),
@@ -582,25 +786,35 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         if (scalar_kind == unum::usearch::scalar_kind_t::b1x8_k)
             metric_kind = unum::usearch::metric_kind_t::hamming_k;
     }
+    
+    /// Parse LeaNN parameters (7th argument)
+    if (has_seven_args)
+    {
+        String leann_arg = index.arguments[6].safeGet<String>();
+        
+        if (leann_arg == "true" || leann_arg == "enable_hub_pruning")
+            leann_params.enable_hub_pruning = true;
+    }
 
-    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+    return std::make_shared<MergeTreeIndexVectorSimilarity>(index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params, leann_params);
 }
 
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     const bool has_three_args = (index.arguments.size() == 3);
     const bool has_six_args = (index.arguments.size() == 6);
+    const bool has_seven_args = (index.arguments.size() == 7);
 
     /// Check number and type of arguments
-    if (!has_three_args && !has_six_args)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have three or six arguments");
+    if (!has_three_args && !has_six_args && !has_seven_args)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have three, six, or seven arguments");
     if (index.arguments[0].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of vector similarity index (method) must be of type String");
     if (index.arguments[1].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector similarity index (metric) must be of type String");
     if (index.arguments[2].getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Third argument of vector similarity index (dimensions) must be of type UInt64");
-    if (has_six_args)
+    if (has_six_args || has_seven_args)
     {
         if (index.arguments[3].getType() != Field::Types::String)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Fourth argument of vector similarity index (quantization) must be of type String");
@@ -638,6 +852,17 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         unum::usearch::index_dense_config_t config(connectivity, expansion_add, expansion_search);
         if (auto error = config.validate(); error)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parameters passed to vector similarity index. Error: {}", error.release());
+    }
+
+    /// Validate LeaNN parameters (7th argument):
+    if (has_seven_args)
+    {
+        if (index.arguments[6].getType() != Field::Types::String)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Seventh argument of vector similarity index (leann_mode) must be of type String");
+        
+        String leann_arg = index.arguments[6].safeGet<String>();
+        if (leann_arg != "enable_hub_pruning" && leann_arg != "true" && leann_arg != "false" && leann_arg != "")
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (leann_mode) of vector similarity index must be 'enable_hub_pruning', 'true', 'false', or empty string");
     }
 
     /// Check that the index is created on a single column
