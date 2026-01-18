@@ -6,6 +6,8 @@ SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;
 
+-- Make min_bytes_for_wide_part = 0 to avoid warning about non-adaptive granularity
+-- (index_granularity_bytes=0) being incompatible with Compact part format.
 CREATE TABLE tab
 (
     i Int32,
@@ -16,7 +18,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY i
-SETTINGS index_granularity_bytes = 0;
+SETTINGS index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
    
 INSERT INTO tab
 SELECT
