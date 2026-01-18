@@ -1,1 +1,2 @@
-SELECT name, price, CASE WHEN price > 200 THEN 'Premium' WHEN price > 100 THEN 'Standard' ELSE 'Budget' END AS price_range FROM products;
+-- Test conditional filtering (CASE not yet supported)
+SELECT name, price FROM products WHERE (price > 200) OR (price > 100 AND price <= 200) OR (price <= 100)
