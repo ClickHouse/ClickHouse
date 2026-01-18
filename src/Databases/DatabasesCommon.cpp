@@ -338,7 +338,8 @@ void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, st
 
 void throwIfTemporaryDatabaseUsedOnCluster(const String & database_name, const ContextPtr & context)
 {
-    throwIfTemporaryDatabaseUsedOnCluster(DatabaseCatalog::instance().tryGetDatabase(database_name, context));
+    if (!database_name.empty())
+        throwIfTemporaryDatabaseUsedOnCluster(DatabaseCatalog::instance().tryGetDatabase(database_name, context));
 }
 
 void throwIfTemporaryDatabaseUsedOnCluster(const DatabasePtr & db)
