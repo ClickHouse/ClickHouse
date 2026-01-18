@@ -399,6 +399,35 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
+#### OpenZL (Experimental) {#openzl}
+
+`OpenZL[(profile)]` — [OpenZL](https://github.com/facebook/openzl) format-aware compression developed by Meta. Provides superior compression ratios for structured columnar data compared to general-purpose compressors.
+
+OpenZL is particularly effective for:
+- Numeric columns (integers, floats)
+- Time series data
+- Columns with regular patterns
+
+**Syntax:**
+
+```sql
+SET allow_experimental_codecs = 1;
+
+CREATE TABLE example
+(
+    id UInt64 CODEC(OpenZL),
+    value Float64 CODEC(OpenZL),
+    timestamp DateTime CODEC(OpenZL)
+) ENGINE = MergeTree() ORDER BY id;
+```
+
+**Parameters:**
+- `profile` (optional): Compression profile name. Default is `generic`. Future versions may support data-type-specific profiles like `le-u64` (little-endian unsigned 64-bit) or `le-f64` (little-endian float64).
+
+:::note
+This is an experimental codec. Enable it with `SET allow_experimental_codecs = 1`.
+:::
+
 #### Obsolete: ZSTD_QAT {#zstd_qat}
 
 <CloudNotSupportedBadge/>
