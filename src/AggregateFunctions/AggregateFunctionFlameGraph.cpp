@@ -2,6 +2,9 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/SymbolIndex.h>
+#include <Core/Settings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -10,11 +13,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/Operators.h>
-#include <IO/WriteHelpers.h>
-#include <Common/ArenaAllocator.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/ContainersWithMemoryTracking.h>
-#include <Common/SymbolIndex.h>
 
 namespace DB
 {

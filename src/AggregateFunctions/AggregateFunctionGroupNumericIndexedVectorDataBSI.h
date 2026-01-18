@@ -633,7 +633,7 @@ public:
         const UInt32 total_bit_num = vector.getTotalBitNum();
         for (size_t i = 0; i < total_bit_num; ++i)
         {
-            vector.getDataArrayAt(i)->ra_set_container(ctns[i], container_id, types[i]);
+            vector.getDataArrayAt(i)->ra_set_container(ctns[i], static_cast<UInt16>(container_id), types[i]);
         }
     }
 
@@ -711,7 +711,7 @@ public:
                     UInt64 t = w & (~w + 1);
                     /// on x64, should compile to TZCNT
                     int i = __builtin_ctzll(w);
-                    bit_buffer[i][cnt[i]++] = indexes[offset + j];
+                    bit_buffer[i][cnt[i]++] = static_cast<UInt16>(indexes[offset + j]);
                     w ^= t;
                 }
             }
@@ -836,7 +836,7 @@ public:
                     continue;
                 }
                 auto * ctn = reinterpret_cast<roaring::internal::bitset_container_t *>(ctns[col]);
-                roaring::internal::bitset_container_set(ctn, index);
+                roaring::internal::bitset_container_set(ctn, static_cast<UInt16>(index));
             }
         }
 
@@ -883,7 +883,7 @@ public:
             for (UInt32 j = 0; j < len; ++j)
             {
                 UInt64 w = buffer[offset + j];
-                UInt16 key = indexes[offset + j];
+                UInt16 key = static_cast<UInt16>(indexes[offset + j]);
                 while (w)
                 {
                     /// on x64, should compile to BLSI (careful: the Intel compiler seems to fail)
@@ -991,7 +991,7 @@ public:
     {
         PaddedPODArray<UInt64> buffer(65536);
         PaddedPODArray<UInt32> bit_buffer(65536);
-        UInt16 mask_container_cardinality = mask->ra_get_container_cardinality(container_id);
+        UInt16 mask_container_cardinality = mask->ra_get_container_cardinality(static_cast<UInt16>(container_id));
         if (mask_container_cardinality == 0)
             return 0;
         memset(buffer.data(), 0, buffer.size() * sizeof(UInt64));
@@ -1000,7 +1000,7 @@ public:
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             auto & lhs_bm = vector.getDataArrayAt(i);
-            auto bit_cnt = lhs_bm->container_and_to_uint32_array(mask.get(), container_id, 0, &bit_buffer);
+            auto bit_cnt = lhs_bm->container_and_to_uint32_array(mask.get(), static_cast<UInt16>(container_id), 0, &bit_buffer);
             for (size_t j = 0; j < bit_cnt; ++j)
             {
                 if (bit_buffer[j] >= 65536)
@@ -1008,7 +1008,7 @@ public:
                 buffer[bit_buffer[j]] |= (1ULL << i);
             }
         }
-        auto result_cnt = mask->container_to_uint32_array(container_id, 0, bit_buffer);
+        auto result_cnt = mask->container_to_uint32_array(static_cast<UInt16>(container_id), 0, bit_buffer);
         if (vector.isValueTypeSigned() && total_bit_num < 64)
         {
             UInt64 bit_mask = ~((1ULL << total_bit_num) - 1);
@@ -1671,7 +1671,7 @@ public:
 
             if ((sum & 1) == 1)
             {
-                getDataArrayAt(j)->add(ele);
+                getDataArrayAt(j)->add(static_cast<IndexType>(ele));
             }
 
             cin = cin & x_xor_y;
