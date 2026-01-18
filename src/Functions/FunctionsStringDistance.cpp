@@ -245,7 +245,7 @@ struct ByteEditDistanceImpl
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
     {
         if (haystack_size == 0 || needle_size == 0)
-            return haystack_size + needle_size;
+            return static_cast<ResultType>(haystack_size + needle_size);
 
         /// Safety threshold against DoS, since we use two arrays to calculate the distance.
         if (haystack_size > max_string_size || needle_size > max_string_size)
