@@ -676,3 +676,43 @@ def test_headers_in_response():
             "query_param_with_url", method="GET", headers={"PARAMS_XXX": "test_param"})
         assert response_predefined.headers["X-My-Answer"] == f"Iam predefined"
         assert response_predefined.headers["X-My-Common-Header"] == "Common header present"
+
+
+def test_predefined_handler_whitespace():
+    """Test that predefined query handlers correctly trim whitespace from queries.
+
+    This is a regression test for a bug where whitespace from XML indentation
+    in the config file would be interpreted as MsgPack data, causing parsing errors.
+    """
+    import msgpack
+
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__),
+            "predefined_handler_whitespace",
+            "test_predefined_handler_whitespace",
+        )
+    ) as cluster:
+        # Create test table
+        cluster.instance.query(
+            "CREATE TABLE test_table (id UInt64, value String) ENGINE = Memory"
+        )
+
+        # Prepare MsgPack data: a row with id=1 and value='test'
+        msgpack_data = msgpack.packb([1, "test"])
+
+        # POST MsgPack data to the predefined handler
+        # The handler has a query with leading/trailing whitespace in the config XML.
+        # Without the fix, this whitespace would be interpreted as MsgPack data.
+        res = cluster.instance.http_request(
+            "insert_msgpack",
+            method="POST",
+            data=msgpack_data,
+        )
+        assert res.status_code == 200, f"Insert failed: {res.content}"
+
+        # Verify the data was inserted correctly
+        result = cluster.instance.query("SELECT * FROM test_table")
+        assert result.strip() == "1\ttest"
+
+        cluster.instance.query("DROP TABLE test_table")

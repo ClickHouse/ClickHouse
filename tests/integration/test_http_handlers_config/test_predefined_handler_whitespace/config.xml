@@ -1,0 +1,18 @@
+
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <methods>POST</methods>
+            <url>/insert_msgpack</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <!-- This query has intentional leading and trailing whitespace from XML indentation.
+                     The fix ensures this whitespace is trimmed and not interpreted as MsgPack data. -->
+                <query>
+                    INSERT INTO test_table FORMAT MsgPack
+                </query>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>
