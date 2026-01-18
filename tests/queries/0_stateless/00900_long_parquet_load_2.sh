@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-asan, no-msan, no-tsan
-#asdqwe no-debug
+# Tags: long, no-fasttest, no-asan, no-msan, no-tsan, no-debug
 
 # Load various .parquet files from the internet, and files used by other tests.
 
@@ -44,9 +43,6 @@ for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parque
     # pseudorandomly chosen rows. We use a dummy GROUP BY WITH TOTALS for that.
     # (Maybe the unnecessary GROUP BY could be expensive if there are lots of rows, but these test
     #  files don't have lots of rows or they would be too big to check into git.)
-    # TODO [parquet]: Delete the input_format_parquet_enable_json_parsing=0 when cityHash64
-    #                 supports JSON: https://github.com/ClickHouse/ClickHouse/issues/87734
-    # TODO [parquet]: Delete the session_timezone='UTC' after https://github.com/ClickHouse/ClickHouse/pull/87872
     ${CLICKHOUSE_LOCAL} --query="
-        SELECT _row_number, *, count(), sum(cityHash64(_row_number, *)) FROM file('$DATA_DIR/$NAME') GROUP BY all WITH TOTALS ORDER BY cityHash64(_row_number) LIMIT 20 SETTINGS input_format_parquet_enable_json_parsing=0, session_timezone='UTC';" 2>&1
+        SELECT _row_number, *, count(), sum(cityHash64(_row_number, *)) FROM file('$DATA_DIR/$NAME') GROUP BY all WITH TOTALS ORDER BY cityHash64(_row_number) LIMIT 20;" 2>&1
 done
