@@ -43,7 +43,7 @@ LEFT JOIN t3 ON t1.tid = t3.id
 WHERE true AND (t2.resource_id IS NOT NULL) AND (t2.status IN ('OPEN')) AND (t3.status IN ('BACKLOG'))
 SETTINGS log_comment = '03594_push_more_filters_down_joins';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT throwIf(ProfileEvents['JoinResultRowCount'] != 0)
 FROM system.query_log
