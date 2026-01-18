@@ -170,6 +170,7 @@ public:
     {
     public:
         const String & getName() const;
+        const String & getPath() const;
         Field getValue() const;
         void setValue(const Field & value);
         String getValueString() const;
@@ -789,6 +790,17 @@ const String & BaseSettings<TTraits>::SettingFieldRef::getName() const
 }
 
 template <typename TTraits>
+const String & BaseSettings<TTraits>::SettingFieldRef::getPath() const
+{
+    if constexpr (Traits::allow_custom_settings)
+    {
+        if (custom_setting)
+            return (*custom_setting)->first;
+    }
+    return accessor->getPath(index);
+}
+
+template <typename TTraits>
 Field BaseSettings<TTraits>::SettingFieldRef::getValue() const
 {
     if constexpr (Traits::allow_custom_settings)
@@ -890,19 +902,28 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, 0)
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 0)
 
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
-    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, 1)
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 1)
 
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, ALLOW_CUSTOM_SETTINGS) \
+#define DECLARE_SETTINGS_TRAITS_WITH_PATH(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, 0)
+
+/// NOLINTNEXTLINE
+#define DECLARE_SETTINGS_TRAITS_WITH_PATH_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
+    DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, 1)
+
+/// NOLINTNEXTLINE
+#define DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS) \
     struct SETTINGS_TRAITS_NAME \
     { \
         struct Data \
         { \
-            LIST_OF_SETTINGS_MACRO(DECLARE_SETTINGS_TRAITS_, DECLARE_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(DECLARE_SETTINGS_TRAITS_, DECLARE_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_WITH_PATH_MACRO(DECLARE_SETTINGS_TRAITS_, DECLARE_SETTINGS_TRAITS_) \
         }; \
         \
         class Accessor \
@@ -912,6 +933,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             size_t size() const { return field_infos.size(); } \
             size_t find(std::string_view name) const; \
             const String & getName(size_t index) const { return field_infos[index].name; } \
+            const String & getPath(size_t index) const { return field_infos[index].path; } \
             const char * getTypeName(size_t index) const { return field_infos[index].type; } \
             const char * getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
@@ -933,6 +955,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             struct FieldInfo \
             { \
                 String name; \
+                String path; \
                 const char * type; \
                 const char * description; \
                 UInt64 flags; \
@@ -955,7 +978,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
         \
         static inline const AliasMap aliases_to_settings = { \
-            LIST_OF_SETTINGS_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
+            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
+            LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_PATH_AND_ALIAS_TRAITS_) \
         }; \
         using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
         static inline const SettingsToAliasesMap & settingsToAliases() \
@@ -978,7 +1002,6 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         } \
     };
 
-
 /// NOLINTNEXTLINE
 #define SETTING_SKIP_TRAIT(...)
 
@@ -988,9 +1011,23 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS) \
     { #ALIAS, #NAME },
+/// NOLINTNEXTLINE
+#define DECLARE_SETTINGS_WITH_PATH_AND_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ALIAS) \
+    { #ALIAS, #NAME },
+// NOLINTNEXTLINE
+#define DECLARE_SETTINGS_WITH_PATH_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ...) \
+    { PATH, #NAME },
 
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
+    IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT)
+
+/// NOLINTNEXTLINE
+#define IMPLEMENT_SETTINGS_TRAITS_WITH_PATH(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
+    IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO)
+
+    /// NOLINTNEXTLINE
+#define IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
     const SETTINGS_TRAITS_NAME::Accessor & SETTINGS_TRAITS_NAME::Accessor::instance() \
     { \
         static const Accessor the_instance = [] \
@@ -998,7 +1035,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             Accessor res; \
             constexpr int IMPORTANT = 0x01; \
             UNUSED(IMPORTANT); \
-            LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
+            LIST_OF_SETTINGS_WITH_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_, IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_) \
             for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
             { \
                 const auto & info = res.field_infos[i]; \
@@ -1024,7 +1062,26 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     res.field_infos.emplace_back( \
-        FieldInfo{#NAME, #TYPE, DESCRIPTION, \
+        FieldInfo{#NAME, #NAME, #TYPE, DESCRIPTION, \
+            static_cast<UInt64>(FLAGS), \
+            [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
+            [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \
+            [](const String & str) -> Field { SettingField##TYPE temp; temp.parseFromString(str); return static_cast<Field>(temp); }, \
+            [](Data & data, const Field & value) { data.NAME = value; }, \
+            [](const Data & data) -> Field { return static_cast<Field>(data.NAME); }, \
+            [](Data & data, const String & str) { data.NAME.parseFromString(str); }, \
+            [](const Data & data) -> String { return data.NAME.toString(); }, \
+            [](const Data & data) -> bool { return data.NAME.changed; }, \
+            [](Data & data) { data.NAME = SettingField##TYPE{DEFAULT}; }, \
+            [](const Data & data, WriteBuffer & out) { data.NAME.writeBinary(out); }, \
+            [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); }, \
+            []() -> String { return SettingField##TYPE{DEFAULT}.toString(); } \
+        });
+
+        /// NOLINTNEXTLINE
+#define IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ...) \
+    res.field_infos.emplace_back( \
+        FieldInfo{#NAME, PATH, #TYPE, DESCRIPTION, \
             static_cast<UInt64>(FLAGS), \
             [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
             [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \

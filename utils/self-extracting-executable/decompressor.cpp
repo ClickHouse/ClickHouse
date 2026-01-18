@@ -551,7 +551,7 @@ int main(int/* argc*/, char* argv[])
             return 1;
         }
 #endif
-        if (chmod(self, static_cast<uint32_t>(decompressed_umask)))
+        if (chmod(self, static_cast<mode_t>(decompressed_umask)))
         {
             perror("chmod");
             return 1;

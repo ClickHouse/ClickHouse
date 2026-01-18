@@ -68,7 +68,7 @@ public:
         if (bits_count < 8)
             fillBitBuffer();
 
-        return getBitsFromBitBuffer<PEEK>(8);
+        return static_cast<UInt8>(getBitsFromBitBuffer<PEEK>(8));
     }
 
     ALWAYS_INLINE UInt8 readBit()

@@ -1,6 +1,6 @@
 -- Tags: long, no-parallel
 
--- originally intended to check found rate, as it is not deterministic, so check query_count instead 
+-- originally intended to check found rate, as it is not deterministic, so check query_count instead
 
 --
 -- Simple key
@@ -33,7 +33,7 @@ SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE 
 SELECT * FROM simple_key_flat_dictionary_01862 WHERE id = 0 FORMAT Null;
 SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
 SELECT dictGet('simple_key_flat_dictionary_01862', 'value', toUInt64(2)) FORMAT Null;
-SELECT name, round(query_count, 2), status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
 
 DROP DICTIONARY simple_key_flat_dictionary_01862;
 
