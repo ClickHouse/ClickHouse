@@ -515,7 +515,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     else if (creators.random_access_input_creator_with_metadata && metadata)
     {
         format = creators.random_access_input_creator_with_metadata(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info, *metadata);
+            buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info, metadata);
     }
     else if (creators.random_access_input_creator)
     {

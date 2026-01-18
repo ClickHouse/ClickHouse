@@ -121,7 +121,7 @@ private:
         bool is_remote_fs,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
-        const RelativePathWithMetadata & metadata)>;
+        const std::optional<RelativePathWithMetadata> & metadata)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
         WriteBuffer & buf,
