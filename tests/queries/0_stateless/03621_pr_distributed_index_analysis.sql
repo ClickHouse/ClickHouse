@@ -1,4 +1,4 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, long
 -- - no-replicated-database - it uses cluster of multiple nodes, while we use different clusters
 
 -- Make sure that distributed index analysis works with parallel replicas
