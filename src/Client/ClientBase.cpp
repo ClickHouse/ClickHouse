@@ -334,7 +334,7 @@ static void incrementProfileEventsBlock(Block & dst, const Block & src)
         }
     }
 
-    /// Copy rows from src that dst does not contains.
+    /// Copy rows from src that dst does not contain.
     for (const auto & [id, pos] : rows_by_name)
     {
         for (size_t col = 0; col < src.columns(); ++col)

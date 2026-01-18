@@ -1,15 +1,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
 
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <memory>
-#include <string>
 
 namespace DB
 {
