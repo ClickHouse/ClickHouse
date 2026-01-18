@@ -20,10 +20,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace impl
-{
-    using DB::likePatternIsSubstring;
-}
 
 // For more readable instantiations of MatchImpl<>
 struct MatchTraits
@@ -98,7 +94,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like && likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -169,7 +165,7 @@ struct MatchImpl
         }
         else
         {
-            /// NOTE This almost matches with the case of impl::likePatternIsSubstring.
+            /// NOTE This almost matches with the case of likePatternIsSubstring.
 
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.begin() + haystack_data.size();
@@ -261,7 +257,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like && likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack.data();
             const UInt8 * const end = haystack.data() + haystack.size();
@@ -446,7 +442,7 @@ struct MatchImpl
                     reinterpret_cast<const char *>(cur_needle_data),
                     cur_needle_length);
 
-            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+            if (is_like && likePatternIsSubstring(needle, required_substr))
             {
                 if (required_substr.size() > cur_haystack_length)
                     res[i] = negate;
@@ -555,7 +551,7 @@ struct MatchImpl
                     reinterpret_cast<const char *>(cur_needle_data),
                     cur_needle_length);
 
-            if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+            if (is_like && likePatternIsSubstring(needle, required_substr))
             {
                 if (required_substr.size() > cur_haystack_length)
                     res[i] = negate;
