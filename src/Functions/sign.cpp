@@ -86,6 +86,11 @@ struct FunctionUnaryArithmeticMonotonicity<NameSign>
     {
         return { .is_monotonic = true };
     }
+
+    static IFunction::Monotonicity get(const IDataType &, const ColumnValueRef &, const ColumnValueRef &)
+    {
+        return { .is_monotonic = true };
+    }
 };
 
 REGISTER_FUNCTION(Sign)
