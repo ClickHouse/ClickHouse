@@ -206,7 +206,7 @@ def _step_ensure_paths(step, nodes, leader, ctx):
             for _ in range(2):
                 r = sh_strict(
                     node,
-                    f"timeout 2s HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch '{full}'\" >/dev/null 2>&1; echo $?",
+                    f"HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch '{full}'\" >/dev/null 2>&1; echo $?",
                     timeout=5,
                 )
                 last_out = str((r or {}).get("out", "") or "").strip()
