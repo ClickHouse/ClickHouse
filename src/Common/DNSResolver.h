@@ -13,6 +13,8 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
+
 /// A singleton implementing DNS names resolving with optional DNS cache
 /// The cache is being updated asynchronous in separate thread (see DNSCacheUpdater)
 /// or it could be updated manually via drop() method.

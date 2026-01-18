@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-tsan, long
+-- Tags: no-fasttest, no-tsan, no-asan, no-msan, long
 -- (no-tsan because it has a small maximum stack size and the test would fail with TOO_DEEP_RECURSION)
 
 SET join_algorithm = 'default'; -- for 'full_sorting_merge' the query is 10x slower

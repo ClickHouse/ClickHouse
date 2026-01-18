@@ -11,6 +11,10 @@
 #    include <llvm/IR/IRBuilder.h>
 #endif
 
+#include <cstring>
+#include <type_traits>
+
+
 namespace DB
 {
 
@@ -18,6 +22,7 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int TOO_LARGE_STRING_SIZE;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -175,7 +180,7 @@ void SingleValueDataFixed<T>::write(WriteBuffer & buf, const ISerialization &) c
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::read(ReadBuffer & buf, const ISerialization &, Arena *)
+void SingleValueDataFixed<T>::read(ReadBuffer & buf, const ISerialization &, const DataTypePtr &, Arena *)
 {
     readBinary(has_value, buf);
     if (has())
@@ -466,22 +471,43 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
         {
             opt = findExtremeMinNotNull(vec.getData().data(), null_map, row_begin, row_end);
             if (!opt.has_value())
-                return opt;
+                return std::nullopt;
+            T smallest = *opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (!null_map[i] && vec_data[i] == *opt)
-                    return {i};
+                if constexpr (is_floating_point<T>)
+                {
+                    /// We search for the exact byte representation, not the default floating point equal, otherwise we might not find the value (NaN)
+                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    if (!null_map[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (!null_map[i] && vec_data[i] == smallest)
+                        return {i};
+                }
             }
         }
         else if (!null_map)
         {
             opt = findExtremeMinIf(vec.getData().data(), if_map, row_begin, row_end);
             if (!opt.has_value())
-                return opt;
+                return std::nullopt;
+            T smallest = *opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (if_map[i] && vec_data[i] == *opt)
-                    return {i};
+                if constexpr (is_floating_point<T>)
+                {
+                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    if (if_map[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (if_map[i] && vec_data[i] == smallest)
+                        return {i};
+                }
             }
         }
         else
@@ -490,13 +516,23 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
             opt = findExtremeMinIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
             if (!opt.has_value())
                 return std::nullopt;
+            T smallest = *opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (final_flags[i] && vec_data[i] == *opt)
-                    return {i};
+                if constexpr (is_floating_point<T>)
+                {
+                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    if (final_flags[i] && std::memcmp(&vec_data[i], &smallest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (final_flags[i] && vec_data[i] == smallest)
+                        return {i};
+                }
             }
         }
-        UNREACHABLE();
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find index");
     }
     else
     {
@@ -530,38 +566,67 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
         {
             opt = findExtremeMaxNotNull(vec.getData().data(), null_map, row_begin, row_end);
             if (!opt.has_value())
-                return opt;
+                return std::nullopt;
+            T greatest = *opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (!null_map[i] && vec_data[i] == *opt)
-                    return {i};
+                if constexpr (is_floating_point<T>)
+                {
+                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    if (!null_map[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (!null_map[i] && vec_data[i] == greatest)
+                        return {i};
+                }
             }
-            return opt;
         }
-        if (!null_map)
+        else if (!null_map)
         {
             opt = findExtremeMaxIf(vec.getData().data(), if_map, row_begin, row_end);
             if (!opt.has_value())
-                return opt;
+                return std::nullopt;
+            T greatest = *opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (if_map[i] && vec_data[i] == *opt)
-                    return {i};
+                if constexpr (is_floating_point<T>)
+                {
+                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    if (if_map[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (if_map[i] && vec_data[i] == greatest)
+                        return {i};
+                }
             }
-            return opt;
         }
-
-        auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
-        opt = findExtremeMaxIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
-        if (!opt.has_value())
-            return std::nullopt;
-        for (size_t i = row_begin; i < row_end; i++)
+        else
         {
-            if (final_flags[i] && vec_data[i] == *opt)
-                return {i};
+            auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
+            opt = findExtremeMaxIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
+            if (!opt.has_value())
+                return std::nullopt;
+            T greatest = *opt;
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if constexpr (is_floating_point<T>)
+                {
+                    static_assert(std::is_trivial_v<T> && std::is_standard_layout_v<T>);
+                    if (final_flags[i] && std::memcmp(&vec_data[i], &greatest, sizeof(T)) == 0) // NOLINT (we are comparing FP with memcmp on purpose)
+                        return {i};
+                }
+                else
+                {
+                    if (final_flags[i] && vec_data[i] == greatest)
+                        return {i};
+                }
+            }
         }
-
-        UNREACHABLE();
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find index");
     }
     else
     {
@@ -601,7 +666,9 @@ llvm::Value * SingleValueDataFixed<T>::getValueFromAggregateDataPtr(llvm::IRBuil
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
     auto * type = toNativeType<T>(builder);
     auto * value_ptr = getValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
-    return b.CreateLoad(type, value_ptr);
+    auto * res = b.CreateLoad(type, value_ptr);
+    res->setAlignment(llvm::Align(alignof(T)));
+    return res;
 }
 
 template <typename T>
@@ -617,7 +684,9 @@ llvm::Value * SingleValueDataFixed<T>::getHasValueFromAggregateDataPtr(llvm::IRB
 {
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
     auto * has_value_ptr = getHasValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
-    return b.CreateLoad(b.getInt1Ty(), has_value_ptr);
+    auto * res = b.CreateLoad(b.getInt1Ty(), has_value_ptr);
+    res->setAlignment(llvm::Align(alignof(T)));
+    return res;
 }
 
 template <typename T>
@@ -648,10 +717,10 @@ void SingleValueDataFixed<T>::compileSetValueFromNumber(
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
     auto * has_value_ptr = getHasValuePtrFromAggregateDataPtr(builder, aggregate_data_ptr);
-    b.CreateStore(b.getTrue(), has_value_ptr);
+    b.CreateStore(b.getTrue(), has_value_ptr)->setAlignment(llvm::Align(alignof(T)));
 
     auto * value_ptr = getValuePtrFromAggregateDataPtr(b, aggregate_data_ptr);
-    b.CreateStore(value_to_check, value_ptr);
+    b.CreateStore(value_to_check, value_ptr)->setAlignment(llvm::Align(alignof(T)));
 }
 
 template <typename T>
@@ -877,25 +946,25 @@ void SingleValueDataNumeric<T>::insertResultInto(IColumn & to, const DataTypePtr
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::write(DB::WriteBuffer & buf, const DB::ISerialization & serialization) const
+void SingleValueDataNumeric<T>::write(WriteBuffer & buf, const ISerialization & serialization) const
 {
     return memory.get().write(buf, serialization);
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::read(DB::ReadBuffer & buf, const DB::ISerialization & serialization, DB::Arena * arena)
+void SingleValueDataNumeric<T>::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena * arena)
 {
-    return memory.get().read(buf, serialization, arena);
+    return memory.get().read(buf, serialization, type, arena);
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::isEqualTo(const DB::IColumn & column, size_t index) const
+bool SingleValueDataNumeric<T>::isEqualTo(const IColumn & column, size_t index) const
 {
     return memory.get().isEqualTo(column, index);
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::isEqualTo(const DB::SingleValueDataBase & to) const
+bool SingleValueDataNumeric<T>::isEqualTo(const SingleValueDataBase & to) const
 {
     /// to.has() is checked in memory.get().isEqualTo
     auto const & other = assert_cast<const Self &>(to);
@@ -903,13 +972,13 @@ bool SingleValueDataNumeric<T>::isEqualTo(const DB::SingleValueDataBase & to) co
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::set(const DB::IColumn & column, size_t row_num, DB::Arena * arena)
+void SingleValueDataNumeric<T>::set(const IColumn & column, size_t row_num, Arena * arena)
 {
     return memory.get().set(column, row_num, arena);
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::set(const DB::SingleValueDataBase & to, DB::Arena * arena)
+void SingleValueDataNumeric<T>::set(const SingleValueDataBase & to, Arena * arena)
 {
     /// to.has() is checked in memory.get().set
     auto const & other = assert_cast<const Self &>(to);
@@ -917,7 +986,7 @@ void SingleValueDataNumeric<T>::set(const DB::SingleValueDataBase & to, DB::Aren
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::setIfSmaller(const DB::SingleValueDataBase & to, DB::Arena * arena)
+bool SingleValueDataNumeric<T>::setIfSmaller(const SingleValueDataBase & to, Arena * arena)
 {
     /// to.has() is checked in memory.get().setIfSmaller
     auto const & other = assert_cast<const Self &>(to);
@@ -925,7 +994,7 @@ bool SingleValueDataNumeric<T>::setIfSmaller(const DB::SingleValueDataBase & to,
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::setIfGreater(const DB::SingleValueDataBase & to, DB::Arena * arena)
+bool SingleValueDataNumeric<T>::setIfGreater(const SingleValueDataBase & to, Arena * arena)
 {
     /// to.has() is checked in memory.get().setIfGreater
     auto const & other = assert_cast<const Self &>(to);
@@ -933,49 +1002,49 @@ bool SingleValueDataNumeric<T>::setIfGreater(const DB::SingleValueDataBase & to,
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::setIfSmaller(const DB::IColumn & column, size_t row_num, DB::Arena * arena)
+bool SingleValueDataNumeric<T>::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
     return memory.get().setIfSmaller(column, row_num, arena);
 }
 
 template <typename T>
-bool SingleValueDataNumeric<T>::setIfGreater(const DB::IColumn & column, size_t row_num, DB::Arena * arena)
+bool SingleValueDataNumeric<T>::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
 {
     return memory.get().setIfGreater(column, row_num, arena);
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::setSmallest(const DB::IColumn & column, size_t row_begin, size_t row_end, DB::Arena * arena)
+void SingleValueDataNumeric<T>::setSmallest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena)
 {
     return memory.get().setSmallest(column, row_begin, row_end, arena);
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::setGreatest(const DB::IColumn & column, size_t row_begin, size_t row_end, DB::Arena * arena)
+void SingleValueDataNumeric<T>::setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena)
 {
     return memory.get().setGreatest(column, row_begin, row_end, arena);
 }
 
 template <typename T>
 void SingleValueDataNumeric<T>::setSmallestNotNullIf(
-    const DB::IColumn & column,
+    const IColumn & column,
     const UInt8 * __restrict null_map,
     const UInt8 * __restrict if_map,
     size_t row_begin,
     size_t row_end,
-    DB::Arena * arena)
+    Arena * arena)
 {
     return memory.get().setSmallestNotNullIf(column, null_map, if_map, row_begin, row_end, arena);
 }
 
 template <typename T>
 void SingleValueDataNumeric<T>::setGreatestNotNullIf(
-    const DB::IColumn & column,
+    const IColumn & column,
     const UInt8 * __restrict null_map,
     const UInt8 * __restrict if_map,
     size_t row_begin,
     size_t row_end,
-    DB::Arena * arena)
+    Arena * arena)
 {
     return memory.get().setGreatestNotNullIf(column, null_map, if_map, row_begin, row_end, arena);
 }
@@ -1011,57 +1080,21 @@ std::optional<size_t> SingleValueDataNumeric<T>::getGreatestIndexNotNullIf(
 FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
-namespace
-{
-
-struct StringValueCompatibility
-{
-    /// Old versions used to store terminating null-character in SingleValueDataString.
-    /// Then -WithTerminatingZero methods were removed from IColumn interface,
-    /// because these methods are quite dangerous and easy to misuse. It introduced incompatibility.
-    /// See https://github.com/ClickHouse/ClickHouse/pull/41431 and https://github.com/ClickHouse/ClickHouse/issues/42916
-    /// Here we keep these functions for compatibility.
-    /// It's safe because there's no way unsanitized user input (without \0 at the end) can reach these functions.
-
-    static StringRef getDataAtWithTerminatingZero(const ColumnString & column, size_t n)
-    {
-        auto res = column.getDataAt(n);
-        /// ColumnString always reserves extra byte for null-character after string.
-        /// But getDataAt returns StringRef without the null-character. Let's add it.
-        chassert(res.data[res.size] == '\0');
-        ++res.size;
-        return res;
-    }
-
-    static void insertDataWithTerminatingZero(ColumnString & column, const char * pos, size_t length)
-    {
-        /// String already has terminating null-character.
-        /// But insertData will add another one unconditionally. Trim existing null-character to avoid duplication.
-        chassert(0 < length);
-        chassert(pos[length - 1] == '\0');
-        column.insertData(pos, length - 1);
-    }
-};
-
-}
+/// String
 
 char * SingleValueDataString::getDataMutable()
 {
-    return size <= MAX_SMALL_STRING_SIZE ? small_data : large_data;
+    return isSmall() ? small_data : large_data;
 }
 
 const char * SingleValueDataString::getData() const
 {
-    const char * data_ptr = size <= MAX_SMALL_STRING_SIZE ? small_data : large_data;
-    /// It must always be terminated with null-character
-    chassert(0 < size);
-    chassert(data_ptr[size - 1] == '\0');
-    return data_ptr;
+    return isSmall() ? small_data : large_data;
 }
 
-StringRef SingleValueDataString::getStringRef() const
+std::string_view SingleValueDataString::getStringView() const
 {
-    return StringRef(getData(), size);
+    return std::string_view{getData(), size - 1};
 }
 
 void SingleValueDataString::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Arena * arena)
@@ -1081,33 +1114,34 @@ void SingleValueDataString::allocateLargeDataIfNeeded(UInt32 size_to_reserve, Ar
     }
 }
 
-void SingleValueDataString::changeImpl(StringRef value, Arena * arena)
+void SingleValueDataString::changeImpl(std::string_view value, Arena * arena)
 {
-    if (unlikely(MAX_STRING_SIZE < value.size))
-        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}", value.size, MAX_STRING_SIZE);
+    if (unlikely(MAX_STRING_SIZE < value.size()))
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "String size is too big ({}), maximum: {}", value.size(), MAX_STRING_SIZE);
 
-    UInt32 value_size = static_cast<UInt32>(value.size);
+    UInt32 value_size = static_cast<UInt32>(value.size());
 
-    if (value_size <= MAX_SMALL_STRING_SIZE)
+    if (value_size <= MAX_SMALL_STRING_SIZE && isSmall())
     {
         /// Don't free large_data here.
-        size = value_size;
+        size = value_size + 1;
 
-        if (size > 0)
-            memcpy(small_data, value.data, size);
+        if (value_size > 0)
+            memcpy(small_data, value.data(), value.size());
     }
     else
     {
         allocateLargeDataIfNeeded(value_size, arena);
-        size = value_size;
-        memcpy(large_data, value.data, size);
+
+        size = value_size + 1;
+        memcpy(large_data, value.data(), value.size());
     }
 }
 
-void SingleValueDataString::insertResultInto(DB::IColumn & to, const DataTypePtr &) const
+void SingleValueDataString::insertResultInto(IColumn & to, const DataTypePtr &) const
 {
     if (has())
-        StringValueCompatibility::insertDataWithTerminatingZero(assert_cast<ColumnString &>(to), getData(), size);
+        assert_cast<ColumnString &>(to).insertData(getData(), size - 1);
     else
         assert_cast<ColumnString &>(to).insertDefault();
 }
@@ -1118,13 +1152,17 @@ void SingleValueDataString::write(WriteBuffer & buf, const ISerialization & /*se
         throw Exception(ErrorCodes::LOGICAL_ERROR, "String size is too big ({}), it's a bug", size);
 
     /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
+    /// The strings are serialized as zero terminated.
     Int32 size_to_write = size ? size : -1;
     writeBinaryLittleEndian(size_to_write, buf);
     if (has())
-        buf.write(getData(), size);
+    {
+        buf.write(getData(), size - 1);
+        buf.write('\0');
+    }
 }
 
-void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena)
+void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena)
 {
     /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
     Int32 rhs_size_signed;
@@ -1137,76 +1175,84 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
         return;
     }
 
+    /// Compatibility with an invalid format in certain old versions.
+    if (rhs_size_signed == 0)
+    {
+        /// Don't free large_data here.
+        size = 1;
+        return;
+    }
+
+    /// The strings are serialized as zero terminated.
+    char last_char;
+
     UInt32 rhs_size = rhs_size_signed;
-    if (rhs_size <= MAX_SMALL_STRING_SIZE)
+    if (rhs_size <= MAX_SMALL_STRING_SIZE + 1 && isSmall())
     {
         /// Don't free large_data here.
         size = rhs_size;
-        buf.readStrict(small_data, size);
+        buf.readStrict(small_data, size - 1);
+        readChar(last_char, buf);
     }
     else
     {
-        /// Reserve one byte more for null-character
-        allocateLargeDataIfNeeded(rhs_size + 1, arena);
         size = rhs_size;
-        buf.readStrict(large_data, size);
+        allocateLargeDataIfNeeded(size - 1, arena);
+        buf.readStrict(large_data, size - 1);
+        readChar(last_char, buf);
     }
 
-    /// Check if the string we read is null-terminated (getDataMutable does not have the assertion)
-    if (0 < size && getDataMutable()[size - 1] == '\0')
-        return;
-
-    /// It's not null-terminated, but it must be (for historical reasons). There are two variants:
-    /// - The value was serialized by one of the incompatible versions of ClickHouse. We had some range of versions
-    ///   that used to serialize SingleValueDataString without terminating '\0'. Let's just append it.
-    /// - An attacker sent crafted data. Sanitize it and append '\0'.
-    /// In all other cases the string must be already null-terminated.
-
-    /// NOTE We cannot add '\0' unconditionally, because it will be duplicated.
-    /// NOTE It's possible that a string that actually ends with '\0' was written by one of the incompatible versions.
-    ///      Unfortunately, we cannot distinguish it from normal string written by normal version.
-    ///      So such strings will be trimmed.
-
-    if (size == MAX_SMALL_STRING_SIZE)
+    /// Compatibility with an invalid format in certain old versions.
+    if (last_char != 0)
     {
-        /// Special case: We have to move value to large_data
-        allocateLargeDataIfNeeded(size + 1, arena);
-        memcpy(large_data, small_data, size);
-    }
+        if (size < MAX_SMALL_STRING_SIZE + 1 && isSmall())
+        {
+            small_data[size - 1] = last_char;
+        }
+        else if (size == MAX_SMALL_STRING_SIZE + 1 && isSmall())
+        {
+            String tmp;
+            tmp.reserve(size);
+            tmp.assign(small_data, size - 1);
+            tmp += last_char;
 
-    /// We have enough space to append
-    ++size;
-    getDataMutable()[size - 1] = '\0';
+            allocateLargeDataIfNeeded(size, arena);
+            memcpy(large_data, tmp.data(), size);
+        }
+        else
+        {
+            large_data[size - 1] = last_char;
+        }
+        ++size;
+    }
 }
 
-bool SingleValueDataString::isEqualTo(const DB::IColumn & column, size_t row_num) const
+bool SingleValueDataString::isEqualTo(const IColumn & column, size_t row_num) const
 {
-    return has()
-        && StringValueCompatibility::getDataAtWithTerminatingZero(assert_cast<const ColumnString &>(column), row_num) == getStringRef();
+    return has() && assert_cast<const ColumnString &>(column).getDataAt(row_num) == getStringView();
 }
 
 bool SingleValueDataString::isEqualTo(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
-    return has() && to.has() && to.getStringRef() == getStringRef();
+    return has() && to.has() && to.getStringView() == getStringView();
 }
 
 void SingleValueDataString::set(const IColumn & column, size_t row_num, Arena * arena)
 {
-    changeImpl(StringValueCompatibility::getDataAtWithTerminatingZero(assert_cast<const ColumnString &>(column), row_num), arena);
+    changeImpl(assert_cast<const ColumnString &>(column).getDataAt(row_num), arena);
 }
 
 void SingleValueDataString::set(const SingleValueDataBase & other, Arena * arena)
 {
     auto const & to = assert_cast<const Self &>(other);
     if (to.has())
-        changeImpl(to.getStringRef(), arena);
+        changeImpl(to.getStringView(), arena);
 }
 
 bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
 {
-    if (!has()
-        || StringValueCompatibility::getDataAtWithTerminatingZero(assert_cast<const ColumnString &>(column), row_num) < getStringRef())
+    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) < getStringView())
     {
         set(column, row_num, arena);
         return true;
@@ -1217,9 +1263,9 @@ bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num,
 bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Arena * arena)
 {
     auto const & to = assert_cast<const Self &>(other);
-    if (to.has() && (!has() || to.getStringRef() < getStringRef()))
+    if (to.has() && (!has() || to.getStringView() < getStringView()))
     {
-        changeImpl(to.getStringRef(), arena);
+        changeImpl(to.getStringView(), arena);
         return true;
     }
     return false;
@@ -1228,8 +1274,7 @@ bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Aren
 
 bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
 {
-    if (!has()
-        || StringValueCompatibility::getDataAtWithTerminatingZero(assert_cast<const ColumnString &>(column), row_num) > getStringRef())
+    if (!has() || assert_cast<const ColumnString &>(column).getDataAt(row_num) > getStringView())
     {
         set(column, row_num, arena);
         return true;
@@ -1240,13 +1285,15 @@ bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num,
 bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Arena * arena)
 {
     auto const & to = assert_cast<const Self &>(other);
-    if (to.has() && (!has() || to.getStringRef() > getStringRef()))
+    if (to.has() && (!has() || to.getStringView() > getStringView()))
     {
-        changeImpl(to.getStringRef(), arena);
+        changeImpl(to.getStringView(), arena);
         return true;
     }
     return false;
 }
+
+/// Generic
 
 void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
@@ -1267,7 +1314,7 @@ void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & ser
         writeBinary(false, buf);
 }
 
-void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, Arena *)
+void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr &, Arena *)
 {
     bool is_not_null;
     readBinary(is_not_null, buf);
@@ -1281,7 +1328,7 @@ bool SingleValueDataGeneric::isEqualTo(const IColumn & column, size_t row_num) c
     return has() && value == column[row_num];
 }
 
-bool SingleValueDataGeneric::isEqualTo(const DB::SingleValueDataBase & other) const
+bool SingleValueDataGeneric::isEqualTo(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
     return has() && to.has() && to.value == value;
@@ -1357,8 +1404,215 @@ bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Are
     return false;
 }
 
-void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBaseMemoryBlock & data)
+/// GenericWithColumn
+
+void SingleValueDataGenericWithColumn::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
+    if (has())
+        to.insertFrom(*value, 0);
+    else
+        type->insertDefaultInto(to);
+}
+
+void SingleValueDataGenericWithColumn::write(WriteBuffer & buf, const ISerialization & serialization) const
+{
+    if (value)
+    {
+        writeBinary(true, buf);
+        serialization.serializeBinary(*value, 0, buf, {});
+    }
+    else
+        writeBinary(false, buf);
+}
+
+void SingleValueDataGenericWithColumn::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *)
+{
+    bool is_not_null;
+    readBinary(is_not_null, buf);
+
+    if (is_not_null)
+    {
+        auto new_value = type->createColumn();
+        new_value->reserve(1);
+        serialization.deserializeBinary(*new_value, buf, {});
+        value = std::move(new_value);
+    }
+}
+
+bool SingleValueDataGenericWithColumn::isEqualTo(const IColumn & column, size_t row_num) const
+{
+    return has() && !column.compareAt(row_num, 0, *value, -1);
+}
+
+bool SingleValueDataGenericWithColumn::isEqualTo(const SingleValueDataBase & other) const
+{
+    auto const & to = assert_cast<const Self &>(other);
+    return has() && to.has() && !to.value->compareAt(0, 0, *value, -1);
+}
+
+void SingleValueDataGenericWithColumn::set(const IColumn & column, size_t row_num, Arena *)
+{
+    auto new_value = column.cloneEmpty();
+    new_value->reserve(1);
+    new_value->insertFrom(column, row_num);
+    value = removeSpecialRepresentations(std::move(new_value));
+}
+
+void SingleValueDataGenericWithColumn::set(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (other.has())
+        value = to.value;
+}
+
+bool SingleValueDataGenericWithColumn::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has())
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+
+    if (column.compareAt(row_num, 0, *value, -1) < 0)
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+    return false;
+}
+
+bool SingleValueDataGenericWithColumn::setIfSmaller(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) < 0))
+    {
+        value = to.value;
+        return true;
+    }
+    return false;
+}
+
+bool SingleValueDataGenericWithColumn::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has())
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+
+    if (column.compareAt(row_num, 0, *value, -1) > 0)
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+    return false;
+}
+
+bool SingleValueDataGenericWithColumn::setIfGreater(const SingleValueDataBase & other, Arena *)
+{
+    auto const & to = assert_cast<const Self &>(other);
+    if (to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) > 0))
+    {
+        value = to.value;
+        return true;
+    }
+    return false;
+}
+
+void SingleValueReference::insertResultInto(DB::IColumn & to, const DataTypePtr &) const
+{
+    if (has())
+        to.insertFrom(*column_ref, row_number);
+    else
+        assert_cast<ColumnString &>(to).insertDefault();
+}
+
+void SingleValueReference::write(WriteBuffer & /*buf*/, const ISerialization & /*serialization*/) const
+{
+    /// Not support
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::write is not implemented");
+}
+
+void SingleValueReference::read(ReadBuffer & /*buf*/, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * /*arena*/)
+{
+    /// Not support
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::read is not implemented");
+}
+
+bool SingleValueReference::isEqualTo(const DB::IColumn & column, size_t row_num) const
+{
+    return has()
+        && column_ref->compareAt(row_number, row_num, column, -1) == 0;
+}
+
+bool SingleValueReference::isEqualTo(const SingleValueDataBase & /*other*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::isEqualTo is not implemented");
+}
+
+void SingleValueReference::set(const IColumn & column, size_t row_num, Arena * /*arena*/)
+{
+    column_ref.reset();
+    column_ref = column.getPtr();
+    row_number = row_num;
+}
+
+void SingleValueReference::set(const SingleValueDataBase & /*other*/, Arena * /*arena*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueDataString::set is not implemented");
+}
+
+bool SingleValueReference::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has()
+        || column_ref->compareAt(row_number, row_num, column, -1) > 0)
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+    return false;
+}
+
+bool SingleValueReference::setIfSmaller(const SingleValueDataBase & /*other*/, Arena * /*arena*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::setIfSmaller is not implemented");
+}
+
+
+bool SingleValueReference::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
+{
+    if (!has()
+        || column_ref->compareAt(row_number, row_num, column, -1) < 0)
+    {
+        set(column, row_num, arena);
+        return true;
+    }
+    return false;
+}
+
+bool SingleValueReference::setIfGreater(const SingleValueDataBase & /*other*/, Arena * /*arena*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::setIfGreater is not implemented");
+}
+
+bool canUseFieldForValueData(const DataTypePtr & value_type)
+{
+    bool result = true;
+    auto check = [&](const IDataType & type)
+    {
+        /// Variant, Dynamic and Object types doesn't work well with Field
+        /// because they can store values of different data types in a single column.
+        result &= !isVariant(type) && !isDynamic(type) && !isObject(type);
+    };
+
+    check(*value_type);
+    value_type->forEachChild(check);
+    return result;
+};
+
+void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMemoryBlock & data)
+{
+    auto idx = type->getTypeId();
 #define DISPATCH(TYPE) \
     if (idx == TypeIndex::TYPE) \
     { \
@@ -1392,9 +1646,18 @@ void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBaseMemoryBl
         new (&data.memory) SingleValueDataString;
         return;
     }
-    static_assert(sizeof(SingleValueDataGeneric) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
-    static_assert(alignof(SingleValueDataGeneric) <= alignof(SingleValueDataBaseMemoryBlock));
-    new (&data.memory) SingleValueDataGeneric;
+
+    if (canUseFieldForValueData(type))
+    {
+        static_assert(sizeof(SingleValueDataGeneric) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+        static_assert(alignof(SingleValueDataGeneric) <= alignof(SingleValueDataBaseMemoryBlock));
+        new (&data.memory) SingleValueDataGeneric;
+        return;
+    }
+
+    static_assert(sizeof(SingleValueDataGenericWithColumn) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
+    static_assert(alignof(SingleValueDataGenericWithColumn) <= alignof(SingleValueDataBaseMemoryBlock));
+    new (&data.memory) SingleValueDataGenericWithColumn;
 }
 
 bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx)

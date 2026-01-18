@@ -1,9 +1,9 @@
-#include "DictionaryFactory.h"
+#include <Dictionaries/DictionaryFactory.h>
 
 #include <memory>
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "getDictionaryConfigurationFromAST.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 

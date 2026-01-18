@@ -142,7 +142,16 @@ void WriteBufferValidUTF8::nextImpl()
 WriteBufferValidUTF8::~WriteBufferValidUTF8()
 {
     if (!canceled)
-        finalize();
+    {
+        try
+        {
+            finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 }
 
 void WriteBufferValidUTF8::finalizeImpl()

@@ -1,8 +1,10 @@
+#include <Common/DateLUT.h>
+#include <Common/SipHash.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/Serializations/SerializationDateTime64.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <optional>
+
 #include <string>
 
 
@@ -17,7 +19,7 @@ namespace ErrorCodes
 
 static constexpr UInt32 max_scale = 9;
 
-DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name)
+DataTypeDateTime64::DataTypeDateTime64(UInt32 scale_, std::string_view time_zone_name)
     : DataTypeDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_),
       TimezoneMixin(time_zone_name)
 {
@@ -41,8 +43,15 @@ std::string DataTypeDateTime64::doGetName() const
         return std::string(getFamilyName()) + "(" + std::to_string(this->scale) + ")";
 
     WriteBufferFromOwnString out;
-    out << "DateTime64(" << this->scale << ", " << quote << time_zone.getTimeZone() << ")";
+    out << "DateTime64(" << this->scale << ", " << quote << getDateLUTTimeZone(time_zone) << ")";
     return out.str();
+}
+
+void DataTypeDateTime64::updateHashImpl(SipHash & hash) const
+{
+    Base::updateHashImpl(hash);
+    if (has_explicit_time_zone)
+        hash.update(getDateLUTTimeZone(time_zone));
 }
 
 bool DataTypeDateTime64::equals(const IDataType & rhs) const
@@ -60,9 +69,9 @@ SerializationPtr DataTypeDateTime64::doGetDefaultSerialization() const
 std::string getDateTimeTimezone(const IDataType & data_type)
 {
     if (const auto * type = typeid_cast<const DataTypeDateTime *>(&data_type))
-        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
+        return type->hasExplicitTimeZone() ? getDateLUTTimeZone(type->getTimeZone()) : std::string();
     if (const auto * type = typeid_cast<const DataTypeDateTime64 *>(&data_type))
-        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
+        return type->hasExplicitTimeZone() ? getDateLUTTimeZone(type->getTimeZone()) : std::string();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get time zone from type {}", data_type.getName());
 }

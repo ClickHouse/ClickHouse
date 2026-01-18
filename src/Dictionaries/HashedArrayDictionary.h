@@ -39,7 +39,7 @@ class HashedArrayDictionary final : public IDictionary
     friend class HashedDictionaryImpl::HashedDictionaryParallelLoader<dictionary_key_type, HashedArrayDictionary<dictionary_key_type, sharded>>;
 
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     HashedArrayDictionary(
         const StorageID & dict_id_,
@@ -134,7 +134,7 @@ private:
     using KeyContainerType = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         HashMap<UInt64, size_t>,
-        HashMapWithSavedHash<StringRef, size_t, DefaultHash<StringRef>>>;
+        HashMapWithSavedHash<std::string_view, size_t, DefaultHash<std::string_view>>>;
 
     template <typename Value>
     using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
@@ -169,7 +169,7 @@ private:
             AttributeContainerShardsType<UUID>,
             AttributeContainerShardsType<IPv4>,
             AttributeContainerShardsType<IPv6>,
-            AttributeContainerShardsType<StringRef>,
+            AttributeContainerShardsType<std::string_view>,
             AttributeContainerShardsType<Array>>
             containers;
 
@@ -205,11 +205,11 @@ private:
         return intHashCRC32(key) % configuration.shards;
     }
 
-    UInt64 getShard(StringRef key) const
+    UInt64 getShard(std::string_view key) const
     {
         if constexpr (!sharded)
             return 0;
-        return StringRefHash()(key) % configuration.shards;
+        return StringViewHash()(key) % configuration.shards;
     }
 
     template <typename KeysProvider>

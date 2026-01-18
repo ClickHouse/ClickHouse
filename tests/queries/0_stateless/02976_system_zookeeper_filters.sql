@@ -15,3 +15,8 @@ SELECT count() > 0 FROM system.zookeeper WHERE name LIKE '%_%';
 SELECT count() > 0 FROM system.zookeeper WHERE value LIKE '%';
 SELECT count() > 0 FROM system.zookeeper WHERE path LIKE '/%';
 SELECT count() > 0 FROM system.zookeeper WHERE path = '/';
+
+SET allow_unrestricted_reads_from_keeper = DEFAULT;
+
+SELECT count() > 0 FROM system.zookeeper WHERE path = '/' AND zookeeperName  = 'unknown'; -- { serverError BAD_ARGUMENTS }
+SELECT count() > 0 FROM system.zookeeper WHERE path = '/' AND zookeeperName  = 'default';

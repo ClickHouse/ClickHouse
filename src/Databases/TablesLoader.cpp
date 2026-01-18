@@ -25,6 +25,8 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , strictness_mode(strictness_mode_)
     , referential_dependencies("ReferentialDeps")
     , loading_dependencies("LoadingDeps")
+    , mv_to_dependencies("MaterializedViewToDeps")
+    , mv_from_dependencies("MaterializedViewFromDeps")
     , all_loading_dependencies("LoadingDeps")
     , async_loader(global_context->getAsyncLoader())
 {
@@ -67,7 +69,7 @@ LoadTaskPtrs TablesLoader::loadTablesAsync(LoadJobSet load_after)
     buildDependencyGraph();
 
     /// Update existing info (it's important for ATTACH DATABASE)
-    DatabaseCatalog::instance().addDependencies(referential_dependencies, loading_dependencies);
+    DatabaseCatalog::instance().addDependencies(referential_dependencies, loading_dependencies, mv_from_dependencies);
 
     /// Remove tables that do not exist
     removeUnresolvableDependencies();
@@ -106,16 +108,46 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
 {
     LoadTaskPtrs result;
     std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks
+    TablesDependencyGraph all_startup_dependencies("AllStartupMvDependencies");
+    all_startup_dependencies = all_loading_dependencies;
 
-    for (const auto & table_id : all_loading_dependencies.getTables())
+    /// CREATE MATERIALIZED VIEW mv TO tgt AS SELECT ... FROM src
+    /// introduces two dependencies:  mv depends on tgt (mv_to_dependencies), src depends on mv (mv_from_dependencies)
+    /// src table must be started up when mv is ready, otherwise we lose data inserted in src
+    for (const auto & table_id : mv_to_dependencies.getTables())
     {
-        // Make startup table task
+        auto storage_id_vector = mv_to_dependencies.getDependencies(table_id);
+        for (const auto & storage_id : storage_id_vector)
+            all_startup_dependencies.addDependency(storage_id, table_id);
+    }
+    for (const auto & table_id : mv_from_dependencies.getTables())
+    {
+        auto storage_id_vector = mv_from_dependencies.getDependencies(table_id);
+        for (const auto & storage_id : storage_id_vector)
+            all_startup_dependencies.addDependency(table_id, storage_id);
+    }
+
+    for (const auto & table_id : all_startup_dependencies.getTablesSortedByDependency())
+    {
+        /// Gather tasks to startup before this table
+        LoadTaskPtrs startup_mv_dependency_tasks;
+        for (const StorageID & dependency_id : all_startup_dependencies.getDependencies(table_id))
+            if (startup_table.contains(dependency_id.getFullTableName()))
+                startup_mv_dependency_tasks.push_back(startup_table[dependency_id.getFullTableName()]);
+
+        /// Make startup table task
         auto table_name = table_id.getQualifiedName();
+        if (!databases.contains(table_name.database) || !load_table.contains(table_id.getFullTableName()))
+            // Materialized view target does not necessary exist
+            continue;
+
         auto task = databases[table_name.database]->startupTableAsync(
             async_loader,
-            joinJobs(load_table[table_id.getFullTableName()]->goals(), startup_after),
+            joinJobs(load_table[table_id.getFullTableName()]->goals(),
+                getGoals(startup_mv_dependency_tasks, startup_after)),
             table_name,
             strictness_mode);
+        startup_table[table_id.getFullTableName()] = task;
         startup_database[table_name.database].push_back(task);
         result.push_back(task);
     }
@@ -140,8 +172,13 @@ void TablesLoader::buildDependencyGraph()
         auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase());
         auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
 
-        if (!new_ref_dependencies.empty())
-            referential_dependencies.addDependencies(table_name, new_ref_dependencies);
+        if (!new_ref_dependencies.dependencies.empty())
+            referential_dependencies.addDependencies(table_name, new_ref_dependencies.dependencies);
+
+        if (new_ref_dependencies.mv_to_dependency)
+            mv_to_dependencies.addDependency(StorageID{table_name}, new_ref_dependencies.mv_to_dependency.value());
+        if (new_ref_dependencies.mv_from_dependency)
+            mv_from_dependencies.addDependency(new_ref_dependencies.mv_from_dependency.value(), StorageID{table_name});
 
         if (!new_loading_dependencies.empty())
             loading_dependencies.addDependencies(table_name, new_loading_dependencies);
@@ -153,6 +190,8 @@ void TablesLoader::buildDependencyGraph()
 
     referential_dependencies.log();
     all_loading_dependencies.log();
+    mv_from_dependencies.log();
+    mv_to_dependencies.log();
 }
 
 void TablesLoader::removeUnresolvableDependencies()

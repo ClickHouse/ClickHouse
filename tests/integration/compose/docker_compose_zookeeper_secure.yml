@@ -1,6 +1,7 @@
 services:
     zoo1:
         image: zookeeper:3.6.2
+        stop_grace_period: 5s
         restart: always
         environment:
             ZOO_TICK_TIME: 500
@@ -23,8 +24,10 @@ services:
             - type: ${ZK_FS:-tmpfs}
               source: ${ZK_DATA_LOG1:-}
               target: /datalog
+        cpus: 3
     zoo2:
         image: zookeeper:3.6.2
+        stop_grace_period: 5s
         restart: always
         environment:
             ZOO_TICK_TIME: 500
@@ -48,8 +51,10 @@ services:
             - type: ${ZK_FS:-tmpfs}
               source: ${ZK_DATA_LOG2:-}
               target: /datalog
+        cpus: 3
     zoo3:
         image: zookeeper:3.6.2
+        stop_grace_period: 5s
         restart: always
         environment:
             ZOO_TICK_TIME: 500
@@ -72,3 +77,4 @@ services:
             - type: ${ZK_FS:-tmpfs}
               source: ${ZK_DATA_LOG3:-}
               target: /datalog
+        cpus: 3

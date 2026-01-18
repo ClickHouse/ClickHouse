@@ -17,7 +17,7 @@ public:
     DistributedQueryStatusSource(
         const String & zk_node_path,
         const String & zk_replicas_path,
-        Block block,
+        SharedHeader block,
         ContextPtr context_,
         const Strings & hosts_to_wait,
         const char * logger_name);

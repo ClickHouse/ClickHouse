@@ -59,8 +59,10 @@ int SSHEvent::poll(int timeout)
 
         if (rc == SSH_AGAIN)
             continue;
+        if (rc == SSH_ERROR)
+            throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Error on polling on ssh event. {}", errnoToString());
         if (rc != SSH_OK)
-            throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Error on polling on ssh event: {}", rc);
+            throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "The failure happened with no reason provided by the libssh");
 
         return rc;
     }
@@ -73,7 +75,7 @@ int SSHEvent::poll()
 
 void SSHEvent::addFd(int fd, int events, EventCallback cb, void * userdata)
 {
-    if (ssh_event_add_fd(event.get(), fd, events, cb, userdata) != SSH_OK)
+    if (ssh_event_add_fd(event.get(), fd, static_cast<int16_t>(events), cb, userdata) != SSH_OK)
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Error on adding custom file descriptor to ssh event");
 }
 

@@ -48,6 +48,7 @@ namespace ErrorCodes
   * - otherwise, an empty array
   *
   * alphaTokens(s[, max_substrings])            - select from the string subsequence `[a-zA-Z]+`.
+  * sparseGrams(s[, min_length])                - find all substrings where border ngrams hashes are bigger than internal.
   *
   * URL functions are located separately.
   */
@@ -125,7 +126,7 @@ public:
             {
                 Pos pos = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
                 current_src_offset = src_offsets[i];
-                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]) - 1;
+                Pos end = reinterpret_cast<Pos>(&src_chars[current_src_offset]);
 
                 generator.set(pos, end);
                 size_t j = 0;
@@ -133,11 +134,10 @@ public:
                 {
                     size_t token_size = token_end - token_begin;
 
-                    res_strings_chars.resize(res_strings_chars.size() + token_size + 1);
+                    res_strings_chars.resize(res_strings_chars.size() + token_size);
                     memcpySmallAllowReadWriteOverflow15(&res_strings_chars[current_dst_strings_offset], token_begin, token_size);
-                    res_strings_chars[current_dst_strings_offset + token_size] = 0;
 
-                    current_dst_strings_offset += token_size + 1;
+                    current_dst_strings_offset += token_size;
                     res_strings_offsets.push_back(current_dst_strings_offset);
                     ++j;
                 }

@@ -12,7 +12,7 @@
 namespace DB
 {
 
-BinaryRowOutputFormat::BinaryRowOutputFormat(WriteBuffer & out_, const Block & header, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+BinaryRowOutputFormat::BinaryRowOutputFormat(WriteBuffer & out_, SharedHeader header, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header, out_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
 }
@@ -63,9 +63,10 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
         factory.registerOutputFormat(format_name, [with_names, with_types](
             WriteBuffer & buf,
             const Block & sample,
-            const FormatSettings & format_settings)
+            const FormatSettings & format_settings,
+            FormatFilterInfoPtr /*format_filter_info*/)
         {
-            return std::make_shared<BinaryRowOutputFormat>(buf, sample, with_names, with_types, format_settings);
+            return std::make_shared<BinaryRowOutputFormat>(buf, std::make_shared<const Block>(sample), with_names, with_types, format_settings);
         });
         factory.markOutputFormatSupportsParallelFormatting(format_name);
     };
@@ -75,6 +76,9 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
     factory.markOutputFormatNotTTYFriendly("RowBinary");
     factory.markOutputFormatNotTTYFriendly("RowBinaryWithNames");
     factory.markOutputFormatNotTTYFriendly("RowBinaryWithNamesAndTypes");
+    factory.setContentType("RowBinary", "application/octet-stream");
+    factory.setContentType("RowBinaryWithNames", "application/octet-stream");
+    factory.setContentType("RowBinaryWithNamesAndTypes", "application/octet-stream");
 }
 
 }

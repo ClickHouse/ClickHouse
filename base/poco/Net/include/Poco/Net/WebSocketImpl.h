@@ -72,6 +72,10 @@ namespace Net
         virtual Poco::Timespan getSendTimeout();
         virtual void setReceiveTimeout(const Poco::Timespan & timeout);
         virtual Poco::Timespan getReceiveTimeout();
+        virtual void setSendThrottler(const Poco::Net::ThrottlerPtr & throttler);
+        virtual Poco::Net::ThrottlerPtr getSendThrottler() const;
+        virtual void setReceiveThrottler(const Poco::Net::ThrottlerPtr & throttler);
+        virtual Poco::Net::ThrottlerPtr getReceiveThrottler() const;
 
         // Internal
         int frameFlags() const;

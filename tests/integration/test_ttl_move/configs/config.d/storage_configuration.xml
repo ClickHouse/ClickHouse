@@ -5,13 +5,13 @@
         <default>
         </default>
         <jbod1>
-            <path>/jbod1/</path>
+            <path>/test_ttl_move_jbod1/</path>
         </jbod1>
         <jbod2>
-            <path>/jbod2/</path>
+            <path>/test_ttl_move_jbod2/</path>
         </jbod2>
         <external>
-            <path>/external/</path>
+            <path>/test_ttl_move_external/</path>
         </external>
     </disks>
 

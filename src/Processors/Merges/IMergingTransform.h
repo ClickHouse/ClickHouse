@@ -19,15 +19,15 @@ class IMergingTransformBase : public IProcessor
 public:
     IMergingTransformBase(
         size_t num_inputs,
-        const Block & input_header,
-        const Block & output_header,
+        SharedHeader & input_header,
+        SharedHeader & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_);
 
     IMergingTransformBase(
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders & input_headers,
+        SharedHeader & output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_);
@@ -87,8 +87,8 @@ public:
     template <typename ... Args>
     IMergingTransform(
         size_t num_inputs,
-        const Block & input_header,
-        const Block & output_header,
+        SharedHeader input_header,
+        SharedHeader output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_,
@@ -100,8 +100,8 @@ public:
 
     template <typename ... Args>
     IMergingTransform(
-        const Blocks & input_headers,
-        const Block & output_header,
+        SharedHeaders input_headers,
+        SharedHeader output_header,
         bool have_all_inputs_,
         UInt64 limit_hint_,
         bool always_read_till_end_,

@@ -20,8 +20,6 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/JSONString.h>
 
-#include <Access/Common/SSLCertificateSubjects.h>
-
 #include <base/types.h>
 #include <base/range.h>
 
@@ -149,15 +147,16 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
             {
                 auth_params_json.set("realm", auth_data.getKerberosRealm());
             }
+#if USE_SSL
             else if (auth_data.getType() == AuthenticationType::SSL_CERTIFICATE)
             {
                 Poco::JSON::Array::Ptr common_names = new Poco::JSON::Array();
                 Poco::JSON::Array::Ptr subject_alt_names = new Poco::JSON::Array();
 
                 const auto & subjects = auth_data.getSSLCertificateSubjects();
-                for (const String & subject : subjects.at(SSLCertificateSubjects::Type::CN))
+                for (const String & subject : subjects.at(X509Certificate::Subjects::Type::CN))
                     common_names->add(subject);
-                for (const String & subject : subjects.at(SSLCertificateSubjects::Type::SAN))
+                for (const String & subject : subjects.at(X509Certificate::Subjects::Type::SAN))
                     subject_alt_names->add(subject);
 
                 if (common_names->size() > 0)
@@ -165,6 +164,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
                 if (subject_alt_names->size() > 0)
                     auth_params_json.set("subject_alt_names", subject_alt_names);
             }
+#endif
 
             std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss.exceptions(std::ios::failbit);

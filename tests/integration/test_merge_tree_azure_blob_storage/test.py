@@ -393,7 +393,7 @@ def test_table_manipulations(cluster):
     )
 
     azure_query(node, f"RENAME TABLE {renamed_table} TO {TABLE_NAME}")
-    assert azure_query(node, f"CHECK TABLE {TABLE_NAME} FORMAT Values") == "(1)"
+    assert azure_query(node, f"CHECK TABLE {TABLE_NAME} FORMAT Values SETTINGS check_query_single_value_result = 1") == "(1)"
 
     node.query(f"DETACH TABLE {TABLE_NAME}")
     node.query(f"ATTACH TABLE {TABLE_NAME}")

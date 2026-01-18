@@ -57,10 +57,27 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
     }
     else if ((exists_query = query_ptr->as<ASTExistsViewQuery>()))
     {
-        String database = getContext()->resolveDatabase(exists_query->getDatabase());
-        getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->getTable());
-        auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->getTable()}, getContext());
-        result = table && table->isView();
+        if (exists_query->temporary)
+        {
+            auto storage_id = getContext()->tryResolveStorageID(
+                {"", exists_query->getTable()}, Context::ResolveExternal);
+            if (storage_id)
+            {
+                auto table = DatabaseCatalog::instance().tryGetTable(storage_id, getContext());
+                result = table && table->isView();
+            }
+            else
+            {
+                result = false;
+            }
+        }
+        else
+        {
+            String database = getContext()->resolveDatabase(exists_query->getDatabase());
+            getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->getTable());
+            auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->getTable()}, getContext());
+            result = table && table->isView();
+        }
     }
     else if ((exists_query = query_ptr->as<ASTExistsDatabaseQuery>()))
     {
@@ -77,10 +94,10 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->getTable()});
     }
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{
         ColumnUInt8::create(1, result),
         std::make_shared<DataTypeUInt8>(),
-        "result" }}));
+        "result" }})));
 }
 
 void registerInterpreterExistsQuery(InterpreterFactory & factory)

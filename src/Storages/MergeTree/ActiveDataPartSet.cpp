@@ -263,6 +263,21 @@ std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfosCoveredBy(const Me
     return covered;
 }
 
+Strings ActiveDataPartSet::getPartsWithLimit(size_t limit) const
+{
+    Strings res;
+    res.reserve(limit);
+    for (const auto & kv : part_info_to_name)
+    {
+        res.push_back(kv.second);
+        if (res.size() >= limit)
+            break;
+    }
+
+    return res;
+
+}
+
 Strings ActiveDataPartSet::getParts() const
 {
     Strings res;
@@ -283,9 +298,30 @@ std::vector<MergeTreePartInfo> ActiveDataPartSet::getPartInfos() const
     return res;
 }
 
+std::vector<MergeTreePartInfo> ActiveDataPartSet::getPatchPartInfos() const
+{
+    std::vector<MergeTreePartInfo> res;
+    res.reserve(part_info_to_name.size());
+
+    for (const auto & kv : part_info_to_name)
+    {
+        if (kv.first.isPatch())
+            res.push_back(kv.first);
+    }
+
+    return res;
+}
+
 size_t ActiveDataPartSet::size() const
 {
     return part_info_to_name.size();
+}
+
+bool ActiveDataPartSet::hasPartitionId(const String & partition_id) const
+{
+    MergeTreePartInfo info;
+    info.setPartitionId(partition_id);
+    return part_info_to_name.lower_bound(info) != part_info_to_name.end();
 }
 
 }

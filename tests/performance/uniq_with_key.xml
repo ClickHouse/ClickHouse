@@ -1,0 +1,24 @@
+<test>
+    <substitutions>
+        <substitution>
+           <name>uniq_keys</name>
+           <values>
+               <value>100</value>
+               <value>500</value>
+               <value>1000</value>
+               <value>5000</value>
+               <value>10000</value>
+               <value>50000</value>
+               <value>100000</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>create table t_{uniq_keys}(a UInt64, b UInt64) engine=MergeTree order by tuple()</create_query>
+
+    <fill_query>insert into t_{uniq_keys} select number, number % {uniq_keys} from numbers_mt(5e7)</fill_query>
+
+    <query>SELECT uniqExact(a) FROM t_{uniq_keys} group by b</query>
+
+    <drop_query>drop table t_{uniq_keys}</drop_query>
+</test>

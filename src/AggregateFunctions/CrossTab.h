@@ -1,10 +1,10 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/assert_cast.h>
+#include <AggregateFunctions/UniqVariadicHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/HashTable/HashMap.h>
-#include <AggregateFunctions/UniqVariadicHash.h>
+#include <Common/assert_cast.h>
 
 
 /** Aggregate function that calculates statistics on top of cross-tab:
@@ -87,28 +87,75 @@ struct CrossTabData
       * Let's calculate the difference between the values that are supposed to be equal if there is no association between a and b:
       * count_ab - count_a * count_b / count
       *
-      * Let's sum the squares of the differences across all (a, b) pairs.
+      * Let's sum the squares of the differences across all (a, b) pairs, including unobserved pairs (count_ab = 0):
       * Then divide by the second term for normalization: (count_a * count_b / count)
+      * We get:
+      *   χ² = Σ_{a,b} (count_ab - (count_a * count_b) / count)² / ((count_a * count_b) / count).
       *
-      * This will be the χ² statistics.
-      * This statistics is used as a base for many other statistics.
+      * However, iterating over all possible pairs (a, b) is not feasible: in the worst case it is quadratic, O(|A||B|)
+      * if all entries may have count_ab = 0.
+      * Instead, we can rewrite the formula into a sparse form that runs in O(N), where N is the number of
+      * observed pairs (count_ab > 0), avoiding explicit iteration over zero cells.
+      *
+      * Expand (X - Y)² / Y = X² / Y - 2X + Y and sum term-wise:
+      *   χ² = Σ_{a,b} count_ab² / ((count_a * count_b) / count)
+      *        - 2 Σ_{a,b} count_ab
+      *        + Σ_{a,b} (count_a * count_b) / count.
+      *
+      * Note that:
+      *   Σ_{a,b} count_ab = count,
+      *   Σ_{a,b} (count_a * count_b) / count
+      *     = (1 / count) * Σ_a Σ_b (count_a * count_b)
+      *     = (1 / count) * Σ_a [ count_a * Σ_b count_b ]  // count_a does not depend on b
+      *     = (1 / count) * (Σ_a count_a) * (Σ_b count_b)
+      *     = (1 / count) * count * count
+      *     = count.
+      *
+      * Therefore
+      *   χ² = Σ_{a,b} (count * count_ab²) / (count_a * count_b) - count.
+      *
+      * Divide by count to obtain φ² = χ² / count:
+      *   φ² = Σ_{a,b} (count_ab²) / (count_a * count_b) - 1.
+      *
+      * Note that in this formulation we iterate only over observed pairs (count_ab > 0),
+      * because terms with count_ab = 0 contribute 0 to the sum; thus the computation is linear
+      * in the number of observed pairs (O(N), where N = |count_ab|).
+      *
+      * This will be the χ² statistic.
+      * This statistic is used as a base for many other statistics.
       */
     Float64 getPhiSquared() const
     {
-        Float64 chi_squared = 0;
-        for (const auto & [key, value_ab] : count_ab)
+        if (count == 0)
         {
-            Float64 value_a = count_a.at(key.items[UInt128::_impl::little(0)]);
-            Float64 value_b = count_b.at(key.items[UInt128::_impl::little(1)]);
-
-            Float64 expected_value_ab = (value_a * value_b) / count;
-
-            Float64 chi_squared_elem = value_ab - expected_value_ab;
-            chi_squared_elem = chi_squared_elem * chi_squared_elem / expected_value_ab;
-
-            chi_squared += chi_squared_elem;
+            return 0.0;
         }
-        return chi_squared / count;
+
+        // We compute Σ_{a,b} (count_ab² ) / (count_a * count_b) part of the formula first
+        Float64 sum = 0.0;
+        for (const auto & [key, value_ab_uint] : count_ab)
+        {
+            const Float64 value_a = count_a.at(key.items[UInt128::_impl::little(0)]);
+            const Float64 value_b = count_b.at(key.items[UInt128::_impl::little(1)]);
+
+            assert(value_a > 0 && "frequency of value `a` must be positive");
+            assert(value_b > 0 && "frequency of value `b` must be positive");
+
+            const Float64 value_ab = value_ab_uint;
+
+            sum += (value_ab / value_a) * (value_ab / value_b);
+        }
+
+        Float64 phi_squared = sum - 1.0;
+
+        // Numerical errors might lead to a very small negative number
+        if (phi_squared < 0.0)
+        {
+            assert(phi_squared > -1e-10);
+            phi_squared = 0.0;
+        }
+
+        return phi_squared;
     }
 };
 
@@ -122,26 +169,13 @@ public:
     {
     }
 
-    String getName() const override
-    {
-        return Data::getName();
-    }
+    String getName() const override { return Data::getName(); }
 
-    bool allocatesMemoryInArena() const override
-    {
-        return false;
-    }
+    bool allocatesMemoryInArena() const override { return false; }
 
-    static DataTypePtr createResultType()
-    {
-        return std::make_shared<DataTypeNumber<Float64>>();
-    }
+    static DataTypePtr createResultType() { return std::make_shared<DataTypeNumber<Float64>>(); }
 
-    void add(
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        size_t row_num,
-        Arena *) const override
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         UInt64 hash1 = UniqVariadicHash<false, false>::apply(1, &columns[0], row_num);
         UInt64 hash2 = UniqVariadicHash<false, false>::apply(1, &columns[1], row_num);

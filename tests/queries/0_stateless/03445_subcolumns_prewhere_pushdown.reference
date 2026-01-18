@@ -1,0 +1,209 @@
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.x UInt64 : 0
+         INPUT : 1 -> __table1.n Nullable(UInt32) : 1
+         INPUT : 2 -> __table1.t Tuple(a UInt32, b UInt32) : 2
+         INPUT : 3 -> __table1.json JSON : 3
+         ALIAS __table1.x :: 0 -> x UInt64 : 4
+         ALIAS __table1.n :: 1 -> n Nullable(UInt32) : 0
+         ALIAS __table1.t :: 2 -> t Tuple(a UInt32, b UInt32) : 1
+         ALIAS __table1.json :: 3 -> json JSON : 2
+Positions: 4 0 1 2
+  Expression ((WHERE + Change column names to column identifiers))
+  Actions: INPUT : 0 -> x UInt64 : 0
+           INPUT : 1 -> n Nullable(UInt32) : 1
+           INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2
+           INPUT : 3 -> json JSON : 3
+           INPUT :: 4 -> n.null UInt8 : 4
+           ALIAS x :: 0 -> __table1.x UInt64 : 5
+           ALIAS n :: 1 -> __table1.n Nullable(UInt32) : 0
+           ALIAS t :: 2 -> __table1.t Tuple(a UInt32, b UInt32) : 1
+           ALIAS json :: 3 -> __table1.json JSON : 2
+  Positions: 5 0 1 2
+    ReadFromMergeTree (default.test)
+    ReadType: Default
+    Parts: 1
+    Granules: 3
+    Prewhere info
+    Need filter: 1
+      Prewhere filter
+      Prewhere filter column: __table1.n.null (removed)
+      Actions: INPUT : 0 -> n.null UInt8 : 0
+               ALIAS n.null : 0 -> __table1.n.null UInt8 : 1
+      Positions: 0 1
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.x UInt64 : 0
+         INPUT : 1 -> __table1.n Nullable(UInt32) : 1
+         INPUT : 2 -> __table1.t Tuple(a UInt32, b UInt32) : 2
+         INPUT : 3 -> __table1.json JSON : 3
+         ALIAS __table1.x :: 0 -> x UInt64 : 4
+         ALIAS __table1.n :: 1 -> n Nullable(UInt32) : 0
+         ALIAS __table1.t :: 2 -> t Tuple(a UInt32, b UInt32) : 1
+         ALIAS __table1.json :: 3 -> json JSON : 2
+Positions: 4 0 1 2
+  Filter ((WHERE + Change column names to column identifiers))
+  Filter column: __table1.n.null (removed)
+  Actions: INPUT : 0 -> x UInt64 : 0
+           INPUT : 1 -> n Nullable(UInt32) : 1
+           INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2
+           INPUT : 3 -> json JSON : 3
+           INPUT : 4 -> n.null UInt8 : 4
+           ALIAS x :: 0 -> __table1.x UInt64 : 5
+           ALIAS n :: 1 -> __table1.n Nullable(UInt32) : 0
+           ALIAS t :: 2 -> __table1.t Tuple(a UInt32, b UInt32) : 1
+           ALIAS json :: 3 -> __table1.json JSON : 2
+           ALIAS n.null :: 4 -> __table1.n.null UInt8 : 3
+  Positions: 3 5 0 1 2
+    ReadFromMergeTree (default.test)
+    ReadType: Default
+    Parts: 1
+    Granules: 3
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.x UInt64 : 0
+         INPUT : 1 -> __table1.n Nullable(UInt32) : 1
+         INPUT : 2 -> __table1.t Tuple(a UInt32, b UInt32) : 2
+         INPUT : 3 -> __table1.json JSON : 3
+         ALIAS __table1.x :: 0 -> x UInt64 : 4
+         ALIAS __table1.n :: 1 -> n Nullable(UInt32) : 0
+         ALIAS __table1.t :: 2 -> t Tuple(a UInt32, b UInt32) : 1
+         ALIAS __table1.json :: 3 -> json JSON : 2
+Positions: 4 0 1 2
+  Expression ((WHERE + Change column names to column identifiers))
+  Actions: INPUT : 0 -> x UInt64 : 0
+           INPUT : 1 -> n Nullable(UInt32) : 1
+           INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2
+           INPUT : 3 -> json JSON : 3
+           INPUT :: 4 -> t.a UInt32 : 4
+           ALIAS x :: 0 -> __table1.x UInt64 : 5
+           ALIAS n :: 1 -> __table1.n Nullable(UInt32) : 0
+           ALIAS t :: 2 -> __table1.t Tuple(a UInt32, b UInt32) : 1
+           ALIAS json :: 3 -> __table1.json JSON : 2
+  Positions: 5 0 1 2
+    ReadFromMergeTree (default.test)
+    ReadType: Default
+    Parts: 1
+    Granules: 3
+    Prewhere info
+    Need filter: 1
+      Prewhere filter
+      Prewhere filter column: less(__table1.t.a, 4_UInt8) (removed)
+      Actions: INPUT : 0 -> t.a UInt32 : 0
+               COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
+               FUNCTION less(t.a : 0, 4_UInt8 :: 1) -> less(__table1.t.a, 4_UInt8) UInt8 : 2
+      Positions: 0 2
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.x UInt64 : 0
+         INPUT : 1 -> __table1.n Nullable(UInt32) : 1
+         INPUT : 2 -> __table1.t Tuple(a UInt32, b UInt32) : 2
+         INPUT : 3 -> __table1.json JSON : 3
+         ALIAS __table1.x :: 0 -> x UInt64 : 4
+         ALIAS __table1.n :: 1 -> n Nullable(UInt32) : 0
+         ALIAS __table1.t :: 2 -> t Tuple(a UInt32, b UInt32) : 1
+         ALIAS __table1.json :: 3 -> json JSON : 2
+Positions: 4 0 1 2
+  Filter ((WHERE + Change column names to column identifiers))
+  Filter column: less(__table1.t.a, 4_UInt8) (removed)
+  Actions: INPUT : 0 -> x UInt64 : 0
+           INPUT : 1 -> n Nullable(UInt32) : 1
+           INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2
+           INPUT : 3 -> json JSON : 3
+           INPUT : 4 -> t.a UInt32 : 4
+           COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 5
+           ALIAS x :: 0 -> __table1.x UInt64 : 6
+           ALIAS n :: 1 -> __table1.n Nullable(UInt32) : 0
+           ALIAS t :: 2 -> __table1.t Tuple(a UInt32, b UInt32) : 1
+           ALIAS json :: 3 -> __table1.json JSON : 2
+           FUNCTION less(t.a :: 4, 4_UInt8 :: 5) -> less(__table1.t.a, 4_UInt8) UInt8 : 3
+  Positions: 3 6 0 1 2
+    ReadFromMergeTree (default.test)
+    ReadType: Default
+    Parts: 1
+    Granules: 3
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.x UInt64 : 0
+         INPUT : 1 -> __table1.n Nullable(UInt32) : 1
+         INPUT : 2 -> __table1.t Tuple(a UInt32, b UInt32) : 2
+         INPUT : 3 -> __table1.json JSON : 3
+         ALIAS __table1.x :: 0 -> x UInt64 : 4
+         ALIAS __table1.n :: 1 -> n Nullable(UInt32) : 0
+         ALIAS __table1.t :: 2 -> t Tuple(a UInt32, b UInt32) : 1
+         ALIAS __table1.json :: 3 -> json JSON : 2
+Positions: 4 0 1 2
+  Expression ((WHERE + Change column names to column identifiers))
+  Actions: INPUT : 0 -> x UInt64 : 0
+           INPUT : 1 -> n Nullable(UInt32) : 1
+           INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2
+           INPUT : 3 -> json JSON : 3
+           INPUT :: 4 -> json.a Dynamic : 4
+           ALIAS x :: 0 -> __table1.x UInt64 : 5
+           ALIAS n :: 1 -> __table1.n Nullable(UInt32) : 0
+           ALIAS t :: 2 -> __table1.t Tuple(a UInt32, b UInt32) : 1
+           ALIAS json :: 3 -> __table1.json JSON : 2
+  Positions: 5 0 1 2
+    ReadFromMergeTree (default.test)
+    ReadType: Default
+    Parts: 1
+    Granules: 3
+    Prewhere info
+    Need filter: 1
+      Prewhere filter
+      Prewhere filter column: less(CAST(__table1.json.a, \'Int64\'_String), 4_UInt8) (removed)
+      Actions: INPUT : 0 -> json.a Dynamic : 0
+               COLUMN Const(String) -> \'Int64\'_String String : 1
+               COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 2
+               FUNCTION CAST(json.a : 0, \'Int64\'_String :: 1) -> CAST(__table1.json.a, \'Int64\'_String) Int64 : 3
+               FUNCTION less(CAST(__table1.json.a, \'Int64\'_String) :: 3, 4_UInt8 :: 2) -> less(CAST(__table1.json.a, \'Int64\'_String), 4_UInt8) UInt8 : 1
+      Positions: 0 1
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.x UInt64 : 0
+         INPUT : 1 -> __table1.n Nullable(UInt32) : 1
+         INPUT : 2 -> __table1.t Tuple(a UInt32, b UInt32) : 2
+         INPUT : 3 -> __table1.json JSON : 3
+         ALIAS __table1.x :: 0 -> x UInt64 : 4
+         ALIAS __table1.n :: 1 -> n Nullable(UInt32) : 0
+         ALIAS __table1.t :: 2 -> t Tuple(a UInt32, b UInt32) : 1
+         ALIAS __table1.json :: 3 -> json JSON : 2
+Positions: 4 0 1 2
+  Filter ((WHERE + Change column names to column identifiers))
+  Filter column: less(CAST(__table1.json.a, \'Int64\'_String), 4_UInt8) (removed)
+  Actions: INPUT : 0 -> x UInt64 : 0
+           INPUT : 1 -> n Nullable(UInt32) : 1
+           INPUT : 2 -> t Tuple(a UInt32, b UInt32) : 2
+           INPUT : 3 -> json JSON : 3
+           INPUT : 4 -> json.a Dynamic : 4
+           COLUMN Const(String) -> \'Int64\'_String String : 5
+           COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 6
+           ALIAS x :: 0 -> __table1.x UInt64 : 7
+           ALIAS n :: 1 -> __table1.n Nullable(UInt32) : 0
+           ALIAS t :: 2 -> __table1.t Tuple(a UInt32, b UInt32) : 1
+           ALIAS json :: 3 -> __table1.json JSON : 2
+           FUNCTION CAST(json.a :: 4, \'Int64\'_String :: 5) -> CAST(__table1.json.a, \'Int64\'_String) Int64 : 3
+           FUNCTION less(CAST(__table1.json.a, \'Int64\'_String) :: 3, 4_UInt8 :: 6) -> less(CAST(__table1.json.a, \'Int64\'_String), 4_UInt8) UInt8 : 5
+  Positions: 5 7 0 1 2
+    ReadFromMergeTree (default.test)
+    ReadType: Default
+    Parts: 1
+    Granules: 3
+0	\N	(0,0)	{"a":0,"b":0}
+1	\N	(1,1)	{"a":1,"b":1}
+2	\N	(2,2)	{"a":2,"b":2}
+3	\N	(3,3)	{"a":3,"b":3}

@@ -1,6 +1,9 @@
 ---
+description: 'Documentation for UNDROP TABLE'
+sidebar_label: 'UNDROP'
 slug: /sql-reference/statements/undrop
-sidebar_label: UNDROP
+title: 'UNDROP TABLE'
+doc_type: 'reference'
 ---
 
 # UNDROP TABLE
@@ -19,7 +22,7 @@ Also see [DROP TABLE](/sql-reference/statements/drop.md)
 
 Syntax:
 
-``` sql
+```sql
 UNDROP TABLE [db.]name [UUID '<uuid>'] [ON CLUSTER cluster]
 ```
 

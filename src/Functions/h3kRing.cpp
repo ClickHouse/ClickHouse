@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -11,9 +11,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
-
-#include <h3api.h>
 
 
 namespace DB
@@ -102,6 +101,9 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const H3Index origin_hindex = data_hindex[row];
+
+            validateH3Cell(origin_hindex);
+
             const int k = data_k[row];
 
             /// Overflow is possible. The function maxGridDiskSize does not check for overflow.
@@ -115,7 +117,7 @@ public:
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 
             const auto vec_size = maxGridDiskSize(k);
-            std::vector<H3Index> hindex_vec;
+            std::vector<H3Index, AllocatorWithMemoryTracking<H3Index>> hindex_vec;
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());
 
@@ -139,7 +141,39 @@ public:
 
 REGISTER_FUNCTION(H3KRing)
 {
-    factory.registerFunction<FunctionH3KRing>();
+    FunctionDocumentation::Description description = R"(
+Lists all the [H3](#H3-index) hexagons in the radius of `k` from the given hexagon in random order.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3kRing(h3index, k)";
+    FunctionDocumentation::Arguments arguments = {
+        {"h3index", "H3 index of the origin hexagon.", {"UInt64"}},
+        {"k", "Radius", {"UInt*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of H3 indexes that are within `k` rings of the origin hexagon.",
+        {"Array(UInt64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get all hexagons within 1 ring of the origin",
+            "SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index",
+            R"(
+┌────────────h3index─┐
+│ 644325529233966508 │
+│ 644325529233966497 │
+│ 644325529233966510 │
+│ 644325529233966504 │
+│ 644325529233966509 │
+│ 644325529233966355 │
+│ 644325529233966354 │
+└────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3KRing>(documentation);
 }
 
 }

@@ -1,10 +1,12 @@
 ---
+description: 'Native clients and interfaces for ClickHouse'
+keywords: ['clients', 'interfaces', 'CLI', 'SQL console', 'drivers']
 slug: /interfaces/natives-clients-and-interfaces
-keywords: [clients, interfaces, CLI, SQL console, drivers]
-description: Native clients and interfaces for ClickHouse
+title: 'Native Clients and Interfaces'
+doc_type: 'landing-page'
 ---
 
-# Native Clients & Interfaces
+# Native clients & interfaces
 
 ClickHouse provides a number of different native clients and interfaces that allow you to connect to ClickHouse.
 

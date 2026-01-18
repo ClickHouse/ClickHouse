@@ -16,6 +16,9 @@
 namespace DB
 {
 
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;

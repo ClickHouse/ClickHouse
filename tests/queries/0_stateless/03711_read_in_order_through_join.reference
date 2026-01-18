@@ -1,0 +1,88 @@
+['ReadType: InOrder','ReadType: Default']
+2024-01-01 00:00:00	0	Payload for event 0
+2024-01-01 00:00:01	1	\N
+2024-01-01 00:00:02	2	\N
+['ReadType: InReverseOrder','ReadType: Default','ReadType: Default']
+2024-02-02 00:00:29	29	\N	\N
+2024-02-02 00:00:28	28	Payload for event 28	\N
+2024-02-02 00:00:27	27	\N	\N
+['ReadType: InOrder','ReadType: Default','ReadType: Default']
+2024-01-01 00:00:00	133	157	3600	5
+2024-01-01 01:00:00	\N	\N	3600	0
+2024-01-01 02:00:00	\N	\N	3600	0
+['ReadType: InOrder','ReadType: Default']
+2024-01-01 00:00:00	0	Payload for event 0
+2024-01-01 00:00:04	4	Payload for event 4
+2024-01-01 00:00:08	8	Payload for event 8
+['ReadType: InReverseOrder','ReadType: Default','ReadType: Default']
+2024-02-02 00:00:24	24	Payload for event 24	Second payload for event 24
+2024-02-02 00:00:12	12	Payload for event 12	Second payload for event 12
+2024-02-02 00:00:00	0	Payload for event 0	Second payload for event 0
+['ReadType: InOrder','ReadType: Default','ReadType: Default']
+2024-01-01 00:00:00	80	59	3	3
+2024-02-02 00:00:00	80	59	3	3
+['ReadType: InOrder','ReadType: Default']
+2024-01-01 00:00:00	0	Payload for event 0
+2024-01-01 00:00:01	1	\N
+2024-01-01 00:00:02	2	\N
+['ReadType: InReverseOrder','ReadType: Default','ReadType: Default']
+2024-02-02 00:00:29	29	\N	\N
+2024-02-02 00:00:28	28	Payload for event 28	\N
+2024-02-02 00:00:27	27	\N	\N
+['ReadType: InOrder','ReadType: Default','ReadType: Default']
+2024-01-01 00:00:00	133	157	3600	5
+2024-01-01 01:00:00	\N	\N	3600	0
+2024-01-01 02:00:00	\N	\N	3600	0
+['ReadType: InOrder','ReadType: Default']
+2024-01-01 00:00:00	0	Payload for event 0
+2024-01-01 00:00:04	4	Payload for event 4
+2024-01-01 00:00:08	8	Payload for event 8
+['ReadType: InReverseOrder','ReadType: Default','ReadType: Default']
+2024-02-02 00:00:24	24	Payload for event 24	Second payload for event 24
+2024-02-02 00:00:12	12	Payload for event 12	Second payload for event 12
+2024-02-02 00:00:00	0	Payload for event 0	Second payload for event 0
+['ReadType: InOrder','ReadType: Default','ReadType: Default']
+2024-01-01 00:00:00	80	59	3	3
+2024-02-02 00:00:00	80	59	3	3
+['ReadType: InOrder','ReadType: Default']
+2024-01-01 00:00:00	0	Payload for event 0
+2024-01-01 00:00:01	1	\N
+2024-01-01 00:00:02	2	\N
+['ReadType: InReverseOrder','ReadType: Default','ReadType: Default']
+2024-02-02 00:00:29	29	\N	\N
+2024-02-02 00:00:28	28	Payload for event 28	\N
+2024-02-02 00:00:27	27	\N	\N
+['ReadType: InOrder','ReadType: Default','ReadType: Default']
+2024-01-01 00:00:00	133	157	3600	5
+2024-01-01 01:00:00	\N	\N	3600	0
+2024-01-01 02:00:00	\N	\N	3600	0
+['ReadType: InOrder','ReadType: Default']
+2024-01-01 00:00:00	0	Payload for event 0
+2024-01-01 00:00:04	4	Payload for event 4
+2024-01-01 00:00:08	8	Payload for event 8
+['ReadType: InReverseOrder','ReadType: Default','ReadType: Default']
+2024-02-02 00:00:24	24	Payload for event 24	Second payload for event 24
+2024-02-02 00:00:12	12	Payload for event 12	Second payload for event 12
+2024-02-02 00:00:00	0	Payload for event 0	Second payload for event 0
+['ReadType: InOrder','ReadType: Default','ReadType: Default']
+2024-01-01 00:00:00	80	59	3	3
+2024-02-02 00:00:00	80	59	3	3
+2024-01-01 00:00:00	0	Payload for event 0
+2024-01-01 00:00:04	4	Payload for event 4
+2024-01-01 00:00:08	8	Payload for event 8
+2024-01-01 00:00:00	0	Payload for event 0
+2024-01-01 00:00:04	4	Payload for event 4
+2024-01-01 00:00:08	8	Payload for event 8
+--
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+--
+OK
+OK

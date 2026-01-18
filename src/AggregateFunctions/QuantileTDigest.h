@@ -119,7 +119,6 @@ class QuantileTDigest
         static constexpr size_t PART_SIZE_BITS = 8;
 
         using Transform = RadixSortFloatTransform<KeyBits>;
-        using Allocator = RadixSortAllocator;
 
         /// The function to get the key from an array element.
         static Key & extractKey(Element & elem) { return elem.mean; }
@@ -442,7 +441,12 @@ public:
         if (centroids.empty())
         {
             for (size_t result_num = 0; result_num < size; ++result_num)
-                result[result_num] = std::is_floating_point_v<ResultType> ? NAN : 0;
+            {
+                if constexpr (std::is_floating_point_v<ResultType>)
+                    result[result_num] = NAN;
+                else
+                    result[result_num] = 0;
+            }
             return;
         }
 

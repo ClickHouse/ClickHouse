@@ -7,12 +7,18 @@
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include <Core/Settings.h>
+#include <Disks/IDisk.h>
 #include <base/defines.h>
+#include <Interpreters/Context.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
 
 #include <fmt/ranges.h>
+#include <filesystem>
+#include <ranges>
 
 namespace CurrentMetrics
 {
@@ -121,7 +127,9 @@ void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes,
         }
         else
         {
-            e.addMessage(fmt::format("While sending a batch of {} files, files: {}", files.size(), fmt::join(files, "\n")));
+            e.addMessage(fmt::format("While sending a batch of {} files, files: {}",
+                files.size(),
+                fmt::join(files | std::ranges::views::take(8), "\n")));
             throw;
         }
     }
@@ -136,7 +144,10 @@ void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes,
     }
     else if (!batch_marked_as_broken)
     {
-        LOG_ERROR(parent.log, "Marking a batch of {} files as broken, files: {}", files.size(), fmt::join(files, "\n"));
+        LOG_ERROR(parent.log,
+            "Marking a batch of {} files as broken, files: {}",
+            files.size(),
+            fmt::join(files | std::ranges::views::take(8), "\n"));
 
         for (const auto & file : files)
             parent.markAsBroken(file);
@@ -253,7 +264,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
 
             if (!remote)
             {
-                Settings insert_settings = distributed_header.insert_settings;
+                Settings insert_settings = *distributed_header.insert_settings;
                 insert_settings.applyChanges(settings_changes);
 
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(insert_settings);
@@ -272,6 +283,7 @@ void DistributedAsyncInsertBatch::sendBatch(const SettingsChanges & settings_cha
                     distributed_header.insert_query,
                     insert_settings,
                     distributed_header.client_info);
+                remote->initialize();
             }
             writeRemoteConvert(distributed_header, *remote, compression_expected, in, parent.log);
         }
@@ -307,7 +319,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
             ReadBufferFromFile in(file);
             const auto & distributed_header = DistributedAsyncInsertHeader::read(in, parent.log);
 
-            Settings insert_settings = distributed_header.insert_settings;
+            Settings insert_settings = *distributed_header.insert_settings;
             insert_settings.applyChanges(settings_changes);
 
             // This function is called in a separated thread, so we set up the trace context from the file
@@ -325,6 +337,7 @@ void DistributedAsyncInsertBatch::sendSeparateFiles(const SettingsChanges & sett
                 distributed_header.insert_query,
                 insert_settings,
                 distributed_header.client_info);
+            remote.initialize();
 
             writeRemoteConvert(distributed_header, remote, compression_expected, in, parent.log);
             remote.onFinish();

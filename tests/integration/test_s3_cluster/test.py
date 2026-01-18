@@ -8,6 +8,7 @@ from email.errors import HeaderParseError
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import TSV
 
@@ -108,19 +109,19 @@ def started_cluster():
 def test_select_all(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     pure_s3 = node.query(
-        """
+        f"""
     SELECT * from s3(
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
-        'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     ORDER BY (name, value, polygon)"""
     )
     # print(pure_s3)
     s3_distributed = node.query(
-        """
+        f"""
     SELECT * from s3Cluster(
         'cluster_simple',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)"""
     )
     # print(s3_distributed)
@@ -131,18 +132,18 @@ def test_select_all(started_cluster):
 def test_count(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     pure_s3 = node.query(
-        """
+        f"""
     SELECT count(*) from s3(
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
-        'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
     # print(pure_s3)
     s3_distributed = node.query(
-        """
+        f"""
     SELECT count(*) from s3Cluster(
-        'cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*',
-        'minio', 'minio123', 'CSV',
+        'cluster_simple', 'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
     # print(s3_distributed)
@@ -154,18 +155,18 @@ def test_count_macro(started_cluster):
     node = started_cluster.instances["s0_0_0"]
 
     s3_macro = node.query(
-        """
+        f"""
     SELECT count(*) from s3Cluster(
-        '{default_cluster_macro}', 'http://minio1:9001/root/data/{clickhouse,database}/*',
-        'minio', 'minio123', 'CSV',
+        '{{default_cluster_macro}}', 'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
     # print(s3_distributed)
     s3_distributed = node.query(
-        """
+        f"""
     SELECT count(*) from s3Cluster(
-        'cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*',
-        'minio', 'minio123', 'CSV',
+        'cluster_simple', 'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
     # print(s3_distributed)
@@ -176,17 +177,17 @@ def test_count_macro(started_cluster):
 def test_union_all(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     pure_s3 = node.query(
-        """
+        f"""
     SELECT * FROM
     (
         SELECT * from s3(
-            'http://minio1:9001/root/data/{clickhouse,database}/*',
-            'minio', 'minio123', 'CSV',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+            'minio', '{minio_secret_key}', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
         UNION ALL
         SELECT * from s3(
-            'http://minio1:9001/root/data/{clickhouse,database}/*',
-            'minio', 'minio123', 'CSV',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+            'minio', '{minio_secret_key}', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     )
     ORDER BY (name, value, polygon)
@@ -194,17 +195,17 @@ def test_union_all(started_cluster):
     )
     # print(pure_s3)
     s3_distributed = node.query(
-        """
+        f"""
     SELECT * FROM
     (
         SELECT * from s3Cluster(
             'cluster_simple',
-            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
         UNION ALL
         SELECT * from s3Cluster(
             'cluster_simple',
-            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     )
     ORDER BY (name, value, polygon)
@@ -218,16 +219,16 @@ def test_union_all(started_cluster):
 def test_wrong_cluster(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     error = node.query_and_get_error(
-        """
+        f"""
     SELECT count(*) from s3Cluster(
         'non_existent_cluster',
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
-        'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     UNION ALL
     SELECT count(*) from s3Cluster(
         'non_existent_cluster',
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
-        'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     """
     )
 
@@ -237,14 +238,14 @@ def test_wrong_cluster(started_cluster):
 def test_ambiguous_join(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     result = node.query(
-        """
+        f"""
     SELECT l.name, r.value from s3Cluster(
         'cluster_simple',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as l
     JOIN s3Cluster(
         'cluster_simple',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', 'minio123', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as r
     ON l.name = r.name
     """
@@ -255,11 +256,11 @@ def test_ambiguous_join(started_cluster):
 def test_skip_unavailable_shards(started_cluster):
     node = started_cluster.instances["s0_0_0"]
     result = node.query(
-        """
+        f"""
     SELECT count(*) from s3Cluster(
         'cluster_non_existent_port',
         'http://minio1:9001/root/data/clickhouse/part1.csv',
-        'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     SETTINGS skip_unavailable_shards = 1
     """
     )
@@ -271,11 +272,11 @@ def test_unset_skip_unavailable_shards(started_cluster):
     # Although skip_unavailable_shards is not set, cluster table functions should always skip unavailable shards.
     node = started_cluster.instances["s0_0_0"]
     result = node.query(
-        """
+        f"""
     SELECT count(*) from s3Cluster(
         'cluster_non_existent_port',
         'http://minio1:9001/root/data/clickhouse/part1.csv',
-        'minio', 'minio123', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
+        'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     """
     )
 
@@ -311,10 +312,10 @@ def test_distributed_insert_select_with_replicated(started_cluster):
         )
 
     first_replica_first_shard.query(
-        """
+        f"""
     INSERT INTO insert_select_replicated_local SELECT * FROM s3Cluster(
         'first_shard',
-        'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64'
+        'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64'
     ) SETTINGS parallel_distributed_insert_select=1;
         """
     )
@@ -360,16 +361,16 @@ def test_parallel_distributed_insert_select_with_schema_inference(started_cluste
     node.query(
         """
     CREATE TABLE parallel_insert_select ON CLUSTER 'first_shard' (a String, b UInt64)
-    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/insert_select_with_replicated', '{replica}')
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/test_parallel_distributed_insert_select_with_schema_inference', '{replica}')
     ORDER BY (a, b);
         """
     )
 
     node.query(
-        """
+        f"""
     INSERT INTO parallel_insert_select SELECT * FROM s3Cluster(
         'first_shard',
-        'http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV'
+        'http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV'
     ) SETTINGS parallel_distributed_insert_select=1, use_structure_from_insertion_table_in_table_functions=0;
         """
     )
@@ -378,7 +379,7 @@ def test_parallel_distributed_insert_select_with_schema_inference(started_cluste
 
     actual_count = int(
         node.query(
-            "SELECT count() FROM s3('http://minio1:9001/root/data/generated/*.csv', 'minio', 'minio123', 'CSV','a String, b UInt64')"
+            f"SELECT count() FROM s3('http://minio1:9001/root/data/generated/*.csv', 'minio', '{minio_secret_key}', 'CSV','a String, b UInt64')"
         )
     )
 
@@ -436,27 +437,27 @@ def test_cluster_format_detection(started_cluster):
     node = started_cluster.instances["s0_0_0"]
 
     expected_desc_result = node.query(
-        "desc s3('http://minio1:9001/root/data/generated/*', 'minio', 'minio123', 'CSV')"
+        f"desc s3('http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}', 'CSV')"
     )
 
     desc_result = node.query(
-        "desc s3('http://minio1:9001/root/data/generated/*', 'minio', 'minio123')"
+        f"desc s3('http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}')"
     )
 
     assert expected_desc_result == desc_result
 
     expected_result = node.query(
-        "SELECT * FROM s3('http://minio1:9001/root/data/generated/*', 'minio', 'minio123', 'CSV', 'a String, b UInt64') order by a, b"
+        f"SELECT * FROM s3('http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}', 'CSV', 'a String, b UInt64') order by a, b"
     )
 
     result = node.query(
-        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/generated/*', 'minio', 'minio123') order by c1, c2"
+        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}') order by c1, c2"
     )
 
     assert result == expected_result
 
     result = node.query(
-        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/generated/*', 'minio', 'minio123', auto, 'a String, b UInt64') order by a, b"
+        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/generated/*', 'minio', '{minio_secret_key}', auto, 'a String, b UInt64') order by a, b"
     )
 
     assert result == expected_result
@@ -466,39 +467,39 @@ def test_cluster_default_expression(started_cluster):
     node = started_cluster.instances["s0_0_0"]
 
     node.query(
-        "insert into function s3('http://minio1:9001/root/data/data1', 'minio', 'minio123', JSONEachRow) select 1 as id settings s3_truncate_on_insert=1"
+        f"insert into function s3('http://minio1:9001/root/data/data1', 'minio', '{minio_secret_key}', JSONEachRow) select 1 as id settings s3_truncate_on_insert=1"
     )
     node.query(
-        "insert into function s3('http://minio1:9001/root/data/data2', 'minio', 'minio123', JSONEachRow) select * from numbers(0) settings s3_truncate_on_insert=1"
+        f"insert into function s3('http://minio1:9001/root/data/data2', 'minio', '{minio_secret_key}', JSONEachRow) select * from numbers(0) settings s3_truncate_on_insert=1"
     )
     node.query(
-        "insert into function s3('http://minio1:9001/root/data/data3', 'minio', 'minio123', JSONEachRow) select 2 as id settings s3_truncate_on_insert=1"
+        f"insert into function s3('http://minio1:9001/root/data/data3', 'minio', '{minio_secret_key}', JSONEachRow) select 2 as id settings s3_truncate_on_insert=1"
     )
 
     expected_result = node.query(
-        "SELECT * FROM s3('http://minio1:9001/root/data/data{1,2,3}', 'minio', 'minio123', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id"
+        f"SELECT * FROM s3('http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id"
     )
 
     result = node.query(
-        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', 'minio123', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id"
-    )
-
-    assert result == expected_result
-
-    result = node.query(
-        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', 'minio123', 'auto', 'id UInt32, date Date DEFAULT 18262') order by id"
+        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id"
     )
 
     assert result == expected_result
 
     result = node.query(
-        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', 'minio123', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id"
+        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'auto', 'id UInt32, date Date DEFAULT 18262') order by id"
     )
 
     assert result == expected_result
 
     result = node.query(
-        "SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', 'minio123', 'auto', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id"
+        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'auto', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id"
     )
 
     assert result == expected_result

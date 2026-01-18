@@ -55,7 +55,7 @@ public:
         bool exchange,
         bool dictionary) override;
 
-    void alterTable(ContextPtr context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
+    void alterTable(ContextPtr context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, bool validate_new_create_query) override;
 
     bool isReadOnly() const override { return true; }
 
@@ -65,9 +65,10 @@ public:
 
     ASTPtr getCreateQueryFromMetadata(const String & table_name, bool throw_on_error) const override;
 
-    ASTPtr getCreateDatabaseQuery() const override;
-
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override;
+
+protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
 
 private:
     const Configuration config;

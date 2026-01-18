@@ -20,7 +20,7 @@ echo '[]' | $MY_CLICKHOUSE_CLIENT -q "INSERT INTO json_square_brackets FORMAT JS
 echo '' | $MY_CLICKHOUSE_CLIENT -q "INSERT INTO json_square_brackets FORMAT JSONEachRow"
 
 $CLICKHOUSE_CLIENT --query "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS asynchronous_insert_log;
     SELECT * FROM json_square_brackets ORDER BY id;
     SELECT status, data_kind, rows FROM system.asynchronous_insert_log WHERE database = currentDatabase() AND table = 'json_square_brackets' ORDER BY event_time_microseconds;
     DROP TABLE json_square_brackets;

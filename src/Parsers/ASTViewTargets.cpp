@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/IAST_erase.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -227,8 +228,8 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
         auto keyword = getKeywordForTableID(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No keyword for table name of kind {}", toString(target.kind));
-        ostr <<  " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword)
-               << (s.hilite ? hilite_none : "") << " "
+        ostr <<  " " << toStringView(*keyword)
+               << " "
                << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
                << backQuoteIfNeed(target.table_id.table_name);
     }
@@ -238,8 +239,8 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
         auto keyword = getKeywordForInnerUUID(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for inner UUID of kind {}", toString(target.kind));
-        ostr << " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword)
-               << (s.hilite ? hilite_none : "") << " " << quoteString(toString(target.inner_uuid));
+        ostr << " " << toStringView(*keyword)
+               << " " << quoteString(toString(target.inner_uuid));
     }
 
     if (target.inner_engine)
@@ -247,7 +248,7 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
         auto keyword = getKeywordForInnerStorage(target.kind);
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for table engine of kind {}", toString(target.kind));
-        ostr << " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword) << (s.hilite ? hilite_none : "");
+        ostr << " " << toStringView(*keyword);
         target.inner_engine->format(ostr, s, state, frame);
     }
 }
@@ -310,4 +311,40 @@ void ASTViewTargets::forEachPointerToChild(std::function<void(void**)> f)
     }
 }
 
+void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, const ASTPtr & table_)
+{
+    for (auto & target : targets)
+    {
+        if (target.kind == kind)
+        {
+            target.table_ast = table_;
+            return;
+        }
+    }
+    if (table_)
+        targets.emplace_back(kind).table_ast = table_;
+}
+
+bool ASTViewTargets::hasTableASTWithQueryParams(ViewTarget::Kind kind) const
+{
+    for (const auto & target : targets)
+        if (target.kind == kind)
+            return target.table_ast != nullptr;
+    return false;
+}
+
+ASTPtr ASTViewTargets::getTableASTWithQueryParams(ViewTarget::Kind kind)
+{
+    for (const auto & target : targets)
+        if (target.kind == kind)
+            return target.table_ast;
+    return nullptr;
+}
+
+void ASTViewTargets::resetTableASTWithQueryParams(ViewTarget::Kind kind)
+{
+    for (auto & target : targets)
+        if (target.kind == kind)
+            target.table_ast.reset();
+}
 }

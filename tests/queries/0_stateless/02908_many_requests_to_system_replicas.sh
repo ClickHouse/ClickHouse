@@ -56,7 +56,8 @@ echo "Making $CONCURRENCY requests to system.replicas"
 
 for i in $(seq 1 $CONCURRENCY)
 do
-    curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "SELECT * FROM system.replicas WHERE database=currentDatabase() FORMAT Null SETTINGS log_comment='02908_many_requests';" &>/dev/null &
+    curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "
+        SELECT * FROM system.replicas WHERE database=currentDatabase() FORMAT Null SETTINGS log_comment='02908_many_requests';" &>/dev/null &
 done
 
 echo "Query system.replicas while waiting for other concurrent requests to finish"
@@ -67,11 +68,25 @@ curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "SELECT sum(is_leader
 
 wait;
 
+
+# Make a request to system.replicas without other concurrent requests to figure out the baseline of how many ZK requests it makes
+curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "
+   SELECT * FROM system.replicas WHERE database=currentDatabase() FORMAT Null SETTINGS log_comment='02908_many_requests-baseline';" &>/dev/null
+
+
 $CLICKHOUSE_CLIENT -q "
 SYSTEM FLUSH LOGS query_log;
 
--- Check that number of ZK request is less then a half of (total replicas * concurrency)
-SELECT sum(ProfileEvents['ZooKeeperTransactions']) < (${NUM_TABLES} * 3 * ${CONCURRENCY} / 2)
-  FROM system.query_log
- WHERE current_database=currentDatabase() AND log_comment='02908_many_requests';
+-- Check that average number of ZK request is less then a half of max requests
+WITH
+    (SELECT ProfileEvents['ZooKeeperTransactions']
+    FROM system.query_log
+    WHERE current_database=currentDatabase() AND log_comment='02908_many_requests-baseline' AND type = 'QueryFinish') AS max_zookeeper_requests
+SELECT
+    if (sum(ProfileEvents['ZooKeeperTransactions']) <= (max_zookeeper_requests * ${CONCURRENCY} / 2) as passed,
+        passed::String,
+        'More ZK requests then expected: max_zookeeper_requests=' || max_zookeeper_requests::String || '  total_zk_requests=' || sum(ProfileEvents['ZooKeeperTransactions'])::String
+    )
+FROM system.query_log
+WHERE current_database=currentDatabase() AND log_comment='02908_many_requests' AND type = 'QueryFinish';
 "

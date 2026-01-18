@@ -160,6 +160,15 @@ public:
     /// Makes a difference (relative complement) of access rights.
     void makeDifference(const AccessRights & other);
 
+    /// Returns filters for specific parameter
+    /// S3('s3://url.*')
+    struct Filter
+    {
+        AccessFlags access_flags;
+        String path;
+    };
+    std::vector<Filter> getFilters(std::string_view parameter) const;
+
     /// Traverse the tree and modify each access flags.
     using ModifyFlagsFunction = std::function<AccessFlags(
         const AccessFlags & flags,

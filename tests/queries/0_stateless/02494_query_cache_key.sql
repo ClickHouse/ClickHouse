@@ -23,10 +23,10 @@ INSERT INTO db1.tab values(1);
 INSERT INTO db2.tab values(2);
 
 USE db1;
-SELECT * FROM tab SETTINGS use_query_cache=1;
+SELECT * FROM tab SETTINGS use_query_cache = 1;
 
 USE db2;
-SELECT * FROM tab SETTINGS use_query_cache=1;
+SELECT * FROM tab SETTINGS use_query_cache = 1;
 
 DROP DATABASE db1;
 DROP DATABASE db2;

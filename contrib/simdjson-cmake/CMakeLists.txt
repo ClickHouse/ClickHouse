@@ -17,4 +17,13 @@ if(ARCH_AMD64)
     target_compile_options(_simdjson PRIVATE -mno-avx -mno-avx2)
 endif()
 
+# We allow fallback implementations because binaries are built with all
+# supported instructions, so one implementation will be selected and fallback
+# will be disabled.
+#
+# However, ClickHouse may be run on CPUs that do not support all of these
+# instructions. Since fallback is disabled by default in such cases, this will
+# result in an UNSUPPORTED_ARCHITECTURE error.
+target_compile_options(_simdjson PRIVATE -DSIMDJSON_IMPLEMENTATION_FALLBACK=1)
+
 add_library(ch_contrib::simdjson ALIAS _simdjson)

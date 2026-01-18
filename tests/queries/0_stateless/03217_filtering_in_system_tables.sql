@@ -14,7 +14,7 @@ CREATE TABLE test_03217_system_tables_replica_2(x UInt32)
 SELECT 'both', database, table, left(replica_name, 2) FROM system.replicas WHERE database = currentDatabase();
 -- If filtering is not done correctly on database-table column, then this query report to read 2 rows, which are the above tables
 SELECT database, table, left(replica_name, 2) FROM system.replicas WHERE database = currentDatabase() AND table = 'test_03217_system_tables_replica_1' AND replica_name LIKE 'r1%';
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 -- argMax is necessary to make the test repeatable
 
 -- StorageSystemTables

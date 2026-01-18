@@ -1,7 +1,4 @@
 import os
-import shutil
-import time
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -33,12 +30,18 @@ CONFIG_DIR = os.path.join(SCRIPT_DIR, "configs")
 
 def test_system_reload_async_metrics(start_cluster):
     node.query("SYSTEM DROP QUERY CACHE")
+    node.query("DROP TABLE IF EXISTS tab SYNC;")
 
+    # Reload asynchronous metrics to get the latest state (async metrics update period has been set to a large value
+    # intentionally in the test config to test the manual reload functionality)
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+
+    # Get table count before creating new table
     res1 = node.query(
         "SELECT value FROM system.asynchronous_metrics WHERE metric = 'NumberOfTables'"
     )
 
-    # create table and test that the table creation is reflected in the asynchronous metrics
+    # Create table and test that SYSTEM RELOAD ASYNCHRONOUS METRICS reflects the change
     node.query("CREATE TABLE tab (col UInt64) ENGINE MergeTree ORDER BY tuple()")
 
     node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
@@ -46,4 +49,5 @@ def test_system_reload_async_metrics(start_cluster):
     res2 = node.query(
         "SELECT value FROM system.asynchronous_metrics WHERE metric = 'NumberOfTables'"
     )
-    assert int(res1.rstrip()) + 1 == int(res2.rstrip())
+
+    assert int(res2.strip()) == int(res1.strip()) + 1

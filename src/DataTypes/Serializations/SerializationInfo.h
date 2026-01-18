@@ -18,8 +18,6 @@ class WriteBuffer;
 class NamesAndTypesList;
 class Block;
 
-constexpr auto SERIALIZATION_INFO_VERSION = 0;
-
 /** Contains information about kind of serialization of column and its subcolumns.
  *  Also contains information about content of columns,
  *  that helps to choose kind of serialization of column.
@@ -45,13 +43,13 @@ public:
         void addDefaults(size_t length);
     };
 
-    SerializationInfo(ISerialization::Kind kind_, const SerializationInfoSettings & settings_);
-    SerializationInfo(ISerialization::Kind kind_, const SerializationInfoSettings & settings_, const Data & data_);
+    SerializationInfo(ISerialization::KindStack kind_stack_, const SerializationInfoSettings & settings_);
+    SerializationInfo(ISerialization::KindStack kind_stack_, const SerializationInfoSettings & settings_, const Data & data_);
 
     virtual ~SerializationInfo() = default;
 
-    virtual bool hasCustomSerialization() const { return kind != ISerialization::Kind::DEFAULT; }
-    virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(SerializationInfo) == typeid(rhs); }
+    virtual bool hasCustomSerialization() const { return kind_stack.size() > 1; }
+    virtual bool structureEquals(const SerializationInfo & rhs) const { return typeid(*this) == typeid(rhs); }
 
     virtual void add(const IColumn & column);
     virtual void add(const SerializationInfo & other);
@@ -66,23 +64,24 @@ public:
         const IDataType & new_type,
         const SerializationInfoSettings & new_settings) const;
 
-    virtual void serialializeKindBinary(WriteBuffer & out) const;
+    virtual void serialializeKindStackBinary(WriteBuffer & out) const;
     virtual void deserializeFromKindsBinary(ReadBuffer & in);
 
     virtual void toJSON(Poco::JSON::Object & object) const;
     virtual void fromJSON(const Poco::JSON::Object & object);
 
-    void setKind(ISerialization::Kind kind_) { kind = kind_; }
+    void setKindStack(ISerialization::KindStack kind_stack_) { kind_stack = kind_stack_; }
+    void appendToKindStack(ISerialization::Kind kind) { kind_stack.push_back(kind); }
     const SerializationInfoSettings & getSettings() const { return settings; }
     const Data & getData() const { return data; }
-    ISerialization::Kind getKind() const { return kind; }
+    ISerialization::KindStack getKindStack() const { return kind_stack; }
 
-    static ISerialization::Kind chooseKind(const Data & data, const SerializationInfoSettings & settings);
+    static ISerialization::KindStack chooseKindStack(const Data & data, const SerializationInfoSettings & settings);
 
 protected:
     const SerializationInfoSettings settings;
 
-    ISerialization::Kind kind;
+    ISerialization::KindStack kind_stack;
     Data data;
 };
 
@@ -98,8 +97,8 @@ class SerializationInfoByName : public std::map<String, MutableSerializationInfo
 public:
     using Settings = SerializationInfoSettings;
 
-    SerializationInfoByName() = default;
-    SerializationInfoByName(const NamesAndTypesList & columns, const Settings & settings);
+    explicit SerializationInfoByName(const Settings & settings_);
+    SerializationInfoByName(const NamesAndTypesList & columns, const Settings & settings_);
 
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
@@ -110,7 +109,7 @@ public:
 
     SerializationInfoPtr tryGet(const String & name) const;
     MutableSerializationInfoPtr tryGet(const String & name);
-    ISerialization::Kind getKind(const String & column_name) const;
+    ISerialization::KindStack getKindStack(const String & column_name) const;
 
     /// Takes data from @other, but keeps current serialization kinds.
     /// If column exists in @other infos, but not in current infos,
@@ -119,8 +118,39 @@ public:
 
     void writeJSON(WriteBuffer & out) const;
 
-    static SerializationInfoByName readJSON(
-        const NamesAndTypesList & columns, const Settings & settings, ReadBuffer & in);
+    SerializationInfoByName clone() const;
+
+    const Settings & getSettings() const { return settings; }
+
+    MergeTreeSerializationInfoVersion getVersion() const;
+
+    bool needsPersistence() const;
+
+    static SerializationInfoByName readJSON(const NamesAndTypesList & columns, ReadBuffer & in);
+
+    static SerializationInfoByName readJSONFromString(const NamesAndTypesList & columns, const std::string & str);
+
+private:
+    /// This field stores all configuration options that are not tied to a
+    /// specific column entry in `SerializationInfoByName`. For example:
+    /// - Per-type serialization versions (`types_serialization_versions`), e.g.,
+    ///   specifying different versions for `String` or other types.
+    ///
+    /// Design notes:
+    /// - We intentionally keep such options out of `SerializationInfo::Data`,
+    ///   because the mere existence of a `SerializationInfo` entry triggers
+    ///   sparse encoding logic. This would produce misleading content in
+    ///   `serializations.json` for types that do not support sparse encoding.
+    ///
+    /// - By storing them centrally in `settings`, we avoid polluting
+    ///   per-column entries and maintain a clear separation between
+    ///   "global defaults" and "per-column overrides".
+    ///
+    /// - The default constructor was removed. Constructors now require
+    ///   explicit `SerializationInfoSettings`, ensuring that in MergeTree
+    ///   or other engines, the correct settings must always be provided for
+    ///   consistent serialization behavior.
+    Settings settings;
 };
 
 }

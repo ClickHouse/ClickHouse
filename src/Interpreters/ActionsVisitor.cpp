@@ -55,7 +55,6 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -63,7 +62,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
@@ -463,7 +461,9 @@ FutureSetPtr makeExplicitSet(
 
     DataTypes set_element_types = {left_arg_type};
     const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
-    if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+
+    /// Do not unpack if empty tuple or single element tuple
+    if (left_tuple_type && left_tuple_type->getElements().size() > 1)
         set_element_types = left_tuple_type->getElements();
 
     auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef()[Setting::transform_null_in]);
@@ -830,10 +830,10 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         auto literal = std::make_shared<ASTLiteral>(UInt64{++tid});
         visit(*literal, literal, data);
 
-        auto func = makeASTFunction("tupleElement", tuple_ast, literal);
+        auto func = makeASTOperator("tupleElement", tuple_ast, literal);
         if (!untuple_alias.empty())
         {
-            auto element_alias = tuple_type->haveExplicitNames() ? element_name : toString(tid);
+            auto element_alias = tuple_type->hasExplicitNames() ? element_name : toString(tid);
             func->setAlias(untuple_alias + "." + element_alias);
         }
 
@@ -1056,7 +1056,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             for (const auto & arg : node.arguments->children)
             {
                 visit(arg, index_hint_data);
-                args.push_back({arg->getColumnNameWithoutAlias(), {}});
+
+                if (auto name_type = getNameAndTypeFromAST(arg, index_hint_data))
+                    args.push_back({name_type->name, {}});
+                else
+                    throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "Unexpected element in AST inside the indexHint function: {}", arg->getID());
             }
         }
 
@@ -1374,9 +1378,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     DataTypePtr type;
     if (literal.custom_type)
         type = literal.custom_type;
-    else if (
-        data.getContext()->getSettingsRef()[Setting::allow_experimental_variant_type]
-        && data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
+    else if (data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
         type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
     else
         type = applyVisitor(FieldToDataType(), literal.value);
@@ -1466,7 +1468,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             const auto & query_tree = interpreter.getQueryTree();
             if (auto * query_node = query_tree->as<QueryNode>())
                 query_node->setIsSubquery(true);
-            set_key = query_tree->getTreeHash();
+            set_key = query_tree->getTreeHash({.ignore_cte = true});
         }
         else
             set_key = right_in_operand->getTreeHash(/*ignore_aliases=*/ true);

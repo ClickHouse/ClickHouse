@@ -1,8 +1,10 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
@@ -28,6 +30,43 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
+}
+
+/// Helper to create Enum data type from ASTEnumDataType values
+static DataTypePtr createEnumFromValues(const String & type_name, const std::vector<std::pair<String, Int64>> & values)
+{
+    String type_name_upper = Poco::toUpper(type_name);
+    bool use_enum16 = (type_name_upper == "ENUM16");
+
+    if (!use_enum16 && type_name_upper == "ENUM")
+    {
+        /// Auto-detect Enum8 vs Enum16 based on values
+        for (const auto & [_, value] : values)
+        {
+            if (value < std::numeric_limits<Int8>::min() || value > std::numeric_limits<Int8>::max())
+            {
+                use_enum16 = true;
+                break;
+            }
+        }
+    }
+
+    if (use_enum16)
+    {
+        DataTypeEnum16::Values enum_values;
+        enum_values.reserve(values.size());
+        for (const auto & [name, value] : values)
+            enum_values.emplace_back(name, static_cast<Int16>(value));
+        return std::make_shared<DataTypeEnum16>(enum_values);
+    }
+    else
+    {
+        DataTypeEnum8::Values enum_values;
+        enum_values.reserve(values.size());
+        for (const auto & [name, value] : values)
+            enum_values.emplace_back(name, static_cast<Int8>(value));
+        return std::make_shared<DataTypeEnum8>(enum_values);
+    }
 }
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const
@@ -86,6 +125,10 @@ DataTypePtr DataTypeFactory::tryGet(const ASTPtr & ast) const
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 {
+    /// Handle specialized ASTEnumDataType directly
+    if (const auto * enum_type = ast->as<ASTEnumDataType>())
+        return createEnumFromValues(enum_type->name, enum_type->values);
+
     if (const auto * type = ast->as<ASTDataType>())
     {
         return getImpl<nullptr_on_error>(type->name, type->arguments);
@@ -123,6 +166,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
     String family_name = getAliasToOrName(family_name_param);
 
     const auto * creator = findCreatorByName<nullptr_on_error>(family_name);
+    DataTypePtr data_type;
     if constexpr (nullptr_on_error)
     {
         if (!creator)
@@ -130,7 +174,7 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
 
         try
         {
-            return (*creator)(parameters);
+            data_type = (*creator)(parameters);
         }
         catch (...)
         {
@@ -140,8 +184,16 @@ DataTypePtr DataTypeFactory::getImpl(const String & family_name_param, const AST
     else
     {
         assert(creator);
-        return (*creator)(parameters);
+        data_type = (*creator)(parameters);
     }
+
+    auto query_context = CurrentThread::getQueryContext();
+    if (query_context && query_context->getSettingsRef()[Setting::log_queries])
+    {
+        query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, data_type->getName());
+    }
+
+    return data_type;
 }
 
 DataTypePtr DataTypeFactory::getCustom(DataTypeCustomDescPtr customization) const
@@ -218,15 +270,10 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String & name, SimpleCr
 template <bool nullptr_on_error>
 const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String & family_name) const
 {
-    ContextPtr query_context;
-    if (CurrentThread::isInitialized())
-        query_context = CurrentThread::get().getQueryContext();
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
         {
-            if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name);
             return &it->second;
         }
     }
@@ -237,8 +284,6 @@ const DataTypeFactory::Value * DataTypeFactory::findCreatorByName(const String &
         DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
         {
-            if (query_context && query_context->getSettingsRef()[Setting::log_queries])
-                query_context->addQueryFactoriesInfo(Context::QueryLogFactories::DataType, family_name_lowercase);
             return &it->second;
         }
     }
@@ -259,11 +304,13 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDate(*this);
     registerDataTypeDate32(*this);
     registerDataTypeDateTime(*this);
+    registerDataTypeTime(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);
     registerDataTypeEnum(*this);
     registerDataTypeArray(*this);
     registerDataTypeTuple(*this);
+    registerDataTypeQBit(*this);
     registerDataTypeNullable(*this);
     registerDataTypeNothing(*this);
     registerDataTypeUUID(*this);
@@ -276,7 +323,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
-    registerDataTypeObjectDeprecated(*this);
     registerDataTypeVariant(*this);
     registerDataTypeDynamic(*this);
     registerDataTypeJSON(*this);

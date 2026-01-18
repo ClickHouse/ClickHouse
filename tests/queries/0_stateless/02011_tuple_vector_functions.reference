@@ -76,4 +76,5 @@
 3.6060655943063797
 4.3208683194033215
 \N
-SELECT -((3, 7, 3), 100)
+SELECT -_CAST(((3, 7, 3), 100), \'Tuple(Tuple(UInt8, UInt8, UInt8), UInt8)\')
+FROM system.one

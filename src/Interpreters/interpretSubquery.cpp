@@ -1,6 +1,5 @@
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
-#include <IO/WriteHelpers.h>
 
 #include <Storages/IStorage.h>
 
@@ -23,6 +22,7 @@ namespace Setting
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsString implicit_table_at_top_level;
 }
 
 namespace ErrorCodes
@@ -74,6 +74,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     subquery_settings[Setting::max_result_bytes] = 0;
     /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
     subquery_settings[Setting::extremes] = false;
+    subquery_settings[Setting::implicit_table_at_top_level] = "";
     subquery_context->setSettings(subquery_settings);
 
     auto subquery_options = options.subquery();

@@ -82,8 +82,7 @@ namespace Format
             if (pattern[i] == '{')
             {
                 /// Escaping handling
-                /// It is safe to access because of null termination
-                if (pattern[i + 1] == '{')
+                if (i + 1 < pattern.size() && pattern[i + 1] == '{')
                 {
                     ++i;
                     continue;

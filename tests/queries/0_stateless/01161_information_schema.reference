@@ -42,11 +42,11 @@ views
 INFORMATION_SCHEMA	INFORMATION_SCHEMA	default	\N	\N	\N	\N	INFORMATION_SCHEMA	INFORMATION_SCHEMA	default	\N	\N	\N	\N
 information_schema	information_schema	default	\N	\N	\N	\N	information_schema	information_schema	default	\N	\N	\N	\N
 -- information_schema.tables
-default	default	kcu1	BASE TABLE	0	0	utf8mb4_0900_ai_ci		default	default	kcu1	BASE TABLE	0	0	utf8mb4_0900_ai_ci	
-default	default	kcu2	BASE TABLE	0	0	utf8mb4_0900_ai_ci		default	default	kcu2	BASE TABLE	0	0	utf8mb4_0900_ai_ci	
-default	default	mv	VIEW	0	0	utf8mb4_0900_ai_ci		default	default	mv	VIEW	0	0	utf8mb4_0900_ai_ci	
-default	default	t	FOREIGN TABLE	0	0	utf8mb4_0900_ai_ci		default	default	t	FOREIGN TABLE	0	0	utf8mb4_0900_ai_ci	
-default	default	v	VIEW	\N	\N	utf8mb4_0900_ai_ci		default	default	v	VIEW	\N	\N	utf8mb4_0900_ai_ci	
+default	default	kcu1	BASE TABLE	0	0	0	utf8mb4_0900_ai_ci		default	default	kcu1	BASE TABLE	0	0	utf8mb4_0900_ai_ci	
+default	default	kcu2	BASE TABLE	0	0	0	utf8mb4_0900_ai_ci		default	default	kcu2	BASE TABLE	0	0	utf8mb4_0900_ai_ci	
+default	default	mv	VIEW	0	0	0	utf8mb4_0900_ai_ci		default	default	mv	VIEW	0	0	utf8mb4_0900_ai_ci	
+default	default	t	FOREIGN TABLE	0	0	0	utf8mb4_0900_ai_ci		default	default	t	FOREIGN TABLE	0	0	utf8mb4_0900_ai_ci	
+default	default	v	VIEW	\N	\N	0	utf8mb4_0900_ai_ci		default	default	v	VIEW	\N	\N	utf8mb4_0900_ai_ci	
 -- information_schema.views
 default	default	mv	SELECT * FROM system.one	NONE	NO	YES	NO	NO	NO	default	default	mv	SELECT * FROM system.one	NONE	NO	YES	NO	NO	NO
 default	default	v	SELECT n, f FROM default.t	NONE	NO	NO	NO	NO	NO	default	default	v	SELECT n, f FROM default.t	NONE	NO	NO	NO	NO	NO

@@ -68,7 +68,7 @@ public:
             {
                 pool.scheduleOrThrowOnError([this, shard, thread_group = CurrentThread::getGroup()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, "HashedDictLoad");
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_LOAD);
 
                     WorkerStatistic statistic;
                     SCOPE_EXIT_SAFE(

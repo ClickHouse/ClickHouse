@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS mv_table;
+DROP TABLE IF EXISTS mv_table SYNC;
 DROP TABLE IF EXISTS null_table;
 
 SET cluster_for_parallel_replicas='parallel_replicas', max_parallel_replicas=4, enable_parallel_replicas=1;

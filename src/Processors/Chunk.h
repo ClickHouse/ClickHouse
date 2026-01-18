@@ -2,8 +2,7 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Common/CollectionOfDerived.h>
-#include <Columns/IColumn.h>
-#include <Storages/MergeTree/MarkRange.h>
+#include <Core/Types_fwd.h>
 
 #include <memory>
 
@@ -20,6 +19,10 @@ public:
     ChunkInfo(ChunkInfo&&) = default;
 
     virtual Ptr clone() const = 0;
+    virtual Ptr merge(const Ptr & right) const
+    {
+        return right; // merge left into right by default returns right
+    }
     virtual ~ChunkInfo() = default;
 };
 
@@ -158,30 +161,13 @@ public:
 
 using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
 
-class IMergeTreeDataPart;
-
-/// The query condition cache needs to know the mark ranges of which part the chunk data comes from.
-class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
-{
-public:
-    MarkRangesInfo(std::shared_ptr<const IMergeTreeDataPart> data_part_, MarkRanges mark_ranges_)
-        : data_part(data_part_)
-        , mark_ranges(std::move(mark_ranges_))
-    {}
-
-    std::shared_ptr<const IMergeTreeDataPart> getDataPart() const { return data_part; }
-    const MarkRanges & getMarkRanges() const { return mark_ranges; }
-private:
-    std::shared_ptr<const IMergeTreeDataPart> data_part;
-    MarkRanges mark_ranges;
-};
-
 /// Converts all columns to full serialization in chunk.
 /// It's needed, when you have to access to the internals of the column,
 /// or when you need to perform operation with two columns
 /// and their structure must be equal (e.g. compareAt).
 void convertToFullIfConst(Chunk & chunk);
 void convertToFullIfSparse(Chunk & chunk);
+void removeSpecialColumnRepresentations(Chunk & chunk);
 
 /// Creates a chunk with the same columns but makes them constants with a default value and a specified number of rows.
 Chunk cloneConstWithDefault(const Chunk & chunk, size_t num_rows);

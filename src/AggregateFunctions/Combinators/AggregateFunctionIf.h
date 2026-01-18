@@ -118,6 +118,14 @@ public:
             nested_func->add(place, columns, row_num, arena);
     }
 
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
+    {
+        if (only_null_condition)
+            return;
+        if (assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[0])
+            nested_func->addManyDefaults(place, columns, length, arena);
+    }
+
     void addBatch(
         size_t row_begin,
         size_t row_end,
@@ -183,9 +191,11 @@ public:
         AggregateDataPtr * places,
         size_t place_offset,
         const AggregateDataPtr * rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena) const override
     {
-        nested_func->mergeBatch(row_begin, row_end, places, place_offset, rhs, arena);
+        nested_func->mergeBatch(row_begin, row_end, places, place_offset, rhs, thread_pool, is_cancelled, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/Settings.h>
 #include <Core/Protocol.h>
 #include <DataTypes/DataTypeArray.h>
@@ -95,9 +96,11 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             AUTH_TYPE_NAME_AND_VALUE(AuthType::SSL_CERTIFICATE),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::BCRYPT_PASSWORD),
             AUTH_TYPE_NAME_AND_VALUE(AuthType::HTTP),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::SCRAM_SHA256_PASSWORD),
+            AUTH_TYPE_NAME_AND_VALUE(AuthType::NO_AUTHENTICATION),
         });
 #undef AUTH_TYPE_NAME_AND_VALUE
-    static_assert(static_cast<int>(AuthenticationType::MAX) == 11);
+    static_assert(static_cast<int>(AuthenticationType::MAX) == 13);
 
     auto interface_type_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -110,8 +113,9 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"Local",                  static_cast<Int8>(Interface::LOCAL)},
             {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
             {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
+            {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
         });
-    static_assert(magic_enum::enum_count<Interface>() == 8);
+    static_assert(magic_enum::enum_count<Interface>() == 10, "Please update the array above to match the enum.");
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
@@ -170,7 +174,7 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(type);
     columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);
-    columns[i++]->insert(static_cast<DayNum>(DateLUT::instance().toDayNum(event_time).toUnderType()));
+    columns[i++]->insert(static_cast<UInt16>(DateLUT::instance().toDayNum(event_time).toUnderType()));
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
 

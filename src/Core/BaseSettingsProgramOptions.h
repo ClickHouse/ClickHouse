@@ -13,13 +13,23 @@ void addProgramOptionAsMultitoken(T &cmd_settings, boost::program_options::optio
     auto on_program_option = boost::function1<void, const Strings &>([&cmd_settings, name](const Strings & values) { cmd_settings.set(name, values.back()); });
     if (field.getTypeName() == "Bool")
     {
-        options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-                name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->implicit_value(std::vector<std::string>{"1"}, "1")->notifier(on_program_option), field.getDescription())));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        options.add(
+            boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+                name.data(), /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                boost::program_options::value<Strings>()
+                    ->multitoken()
+                    ->composing()
+                    ->implicit_value(std::vector<std::string>{"1"}, "1")
+                    ->notifier(on_program_option),
+                field.getDescription())));
     }
     else
     {
-        options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-                name.data(), boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option), field.getDescription())));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        options.add(
+            boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+                name.data(), /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option),
+                field.getDescription())));
     }
 }
 

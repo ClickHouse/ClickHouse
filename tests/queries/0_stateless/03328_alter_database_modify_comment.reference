@@ -1,0 +1,52 @@
+databasename  test_database_03328_alter_database_modify_comment_default
+engine : Atomic
+initial comment
+name=	test_database_03328_alter_database_modify_comment_default	comment=	Test database with comment
+
+change a comment
+name=	test_database_03328_alter_database_modify_comment_default	comment=	new comment on database
+
+add a comment back
+name=	test_database_03328_alter_database_modify_comment_default	comment=	another comment on database
+
+detach database
+
+re-attach database
+name=	test_database_03328_alter_database_modify_comment_default	comment=	another comment on database
+
+drop database
+
+engine : Lazy
+initial comment
+name=	test_database_03328_alter_database_modify_comment_default	comment=	Test database with comment
+
+change a comment
+name=	test_database_03328_alter_database_modify_comment_default	comment=	new comment on database
+
+add a comment back
+name=	test_database_03328_alter_database_modify_comment_default	comment=	another comment on database
+
+detach database
+
+re-attach database
+name=	test_database_03328_alter_database_modify_comment_default	comment=	another comment on database
+
+drop database
+
+engine : Memory
+initial comment
+name=	test_database_03328_alter_database_modify_comment_default	comment=	Test database with comment
+
+change a comment
+name=	test_database_03328_alter_database_modify_comment_default	comment=	new comment on database
+
+add a comment back
+name=	test_database_03328_alter_database_modify_comment_default	comment=	another comment on database
+
+detach database
+
+re-attach database
+name=	test_database_03328_alter_database_modify_comment_default	comment=	another comment on database
+
+drop database
+

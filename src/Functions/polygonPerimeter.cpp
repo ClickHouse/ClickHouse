@@ -104,8 +104,48 @@ const char * FunctionPolygonPerimeter<SphericalPoint>::name = "polygonPerimeterS
 
 REGISTER_FUNCTION(PolygonPerimeter)
 {
-    factory.registerFunction<FunctionPolygonPerimeter<CartesianPoint>>();
-    factory.registerFunction<FunctionPolygonPerimeter<SphericalPoint>>();
+    FunctionDocumentation::Description description_cartesian = R"(
+Calculates the perimeter of a polygon.
+    )";
+    FunctionDocumentation::Syntax syntax_cartesian = "polygonPerimeterCartesian(polygon)";
+    FunctionDocumentation::Arguments arguments_cartesian = {
+        {"polygon", "A Polygon value.", {"Polygon"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_cartesian = {"Returns the perimeter of the polygon.", {"Float64"}};
+    FunctionDocumentation::Examples examples_cartesian =
+    {
+    {
+        "Usage example",
+        R"(
+SELECT polygonPerimeterCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]]])
+        )",
+        R"(
+15
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_cartesian = {21, 4};
+    FunctionDocumentation::Category category_cartesian = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_cartesian = {description_cartesian, syntax_cartesian, arguments_cartesian, {}, returned_value_cartesian, examples_cartesian, introduced_in_cartesian, category_cartesian};
+
+    factory.registerFunction<FunctionPolygonPerimeter<CartesianPoint>>(function_documentation_cartesian);
+
+    FunctionDocumentation::Description description_spherical = R"(Calculates the perimeter of the polygon.)";
+    FunctionDocumentation::Syntax syntax_spherical = "polygonPerimeterSpherical(polygon)";
+    FunctionDocumentation::Arguments arguments_spherical = {{"polygon", "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon)"}};
+    FunctionDocumentation::ReturnedValue returned_value_spherical = {"The perimeter of the polygon on a sphere", {"Float64"}};
+    FunctionDocumentation::Examples examples_spherical = {{"spherical_example",
+                  R"(
+SELECT round(polygonPerimeterSpherical([[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]), 6)
+                  )",
+                  R"(
+0.045539
+                  )"}};
+    FunctionDocumentation::IntroducedIn introduced_in_spherical = {21, 4};
+    FunctionDocumentation::Category category_spherical = FunctionDocumentation::Category::GeoPolygon;
+    FunctionDocumentation function_documentation_spherical = {description_spherical, syntax_spherical, arguments_spherical, {}, returned_value_spherical, examples_spherical, introduced_in_spherical, category_spherical};
+
+    factory.registerFunction<FunctionPolygonPerimeter<SphericalPoint>>(function_documentation_spherical);
 }
 
 

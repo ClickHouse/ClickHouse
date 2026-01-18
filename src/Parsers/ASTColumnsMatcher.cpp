@@ -41,15 +41,13 @@ void ASTColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, bool igno
 
 void ASTColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "");
-
     if (expression)
     {
         expression->format(ostr, settings, state, frame);
         ostr << ".";
     }
 
-    ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    ostr << "COLUMNS" << "(";
     ostr << quoteString(pattern);
     ostr << ")";
 
@@ -91,7 +89,7 @@ void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
         writeCString(".", ostr);
     }
     writeCString("COLUMNS(", ostr);
-    for (auto * it = column_list->children.begin(); it != column_list->children.end(); ++it)
+    for (auto it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
             writeCString(", ", ostr);
@@ -103,15 +101,13 @@ void ASTColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
 
 void ASTColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "");
-
     if (expression)
     {
         expression->format(ostr, settings, state, frame);
         ostr << ".";
     }
 
-    ostr << "COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    ostr << "COLUMNS" << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
@@ -169,11 +165,9 @@ void ASTQualifiedColumnsRegexpMatcher::updateTreeHashImpl(SipHash & hash_state, 
 
 void ASTQualifiedColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "");
-
     qualifier->format(ostr, settings, state, frame);
 
-    ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    ostr << ".COLUMNS" << "(";
     ostr << quoteString(pattern);
     ostr << ")";
 
@@ -204,7 +198,7 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
     qualifier->appendColumnName(ostr);
     writeCString(".COLUMNS(", ostr);
 
-    for (auto * it = column_list->children.begin(); it != column_list->children.end(); ++it)
+    for (auto it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {
         if (it != column_list->children.begin())
             writeCString(", ", ostr);
@@ -216,9 +210,8 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
 
 void ASTQualifiedColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "");
     qualifier->format(ostr, settings, state, frame);
-    ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
+    ostr << ".COLUMNS" << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
     {

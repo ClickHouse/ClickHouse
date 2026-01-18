@@ -49,6 +49,7 @@ struct AlterCommand
         RENAME_COLUMN,
         REMOVE_TTL,
         MODIFY_DATABASE_SETTING,
+        MODIFY_DATABASE_COMMENT,
         COMMENT_TABLE,
         REMOVE_SAMPLE_BY,
         MODIFY_SQL_SECURITY,
@@ -186,7 +187,8 @@ struct AlterCommand
     /// Command removing some property from column or table
     bool isRemovingProperty() const;
 
-    bool isDropSomething() const;
+    /// Checks that command will drop something or rename column.
+    bool isDropOrRename() const;
 
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
@@ -235,9 +237,8 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
-    /// Check if commands have any full-text index or a (legacy) inverted index
-    static bool hasFullTextIndex(const StorageInMemoryMetadata & metadata);
-    static bool hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata);
+    /// Check if commands have a text index
+    static bool hasTextIndex(const StorageInMemoryMetadata & metadata);
 
     /// Check if commands have any vector similarity index
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);

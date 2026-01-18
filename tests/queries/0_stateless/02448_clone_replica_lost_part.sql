@@ -147,7 +147,7 @@ optimize table rmt2;
 
 select sleepEachRow(2) from url('http://localhost:8123/?param_tries={1..10}&query=' || encodeURLComponent(
             'select value from system.zookeeper where path=''/test/02448/' || currentDatabase() || '/rmt/replicas/1'' and name=''is_lost'' and value=''0'''
-    ), 'LineAsString', 's String') settings max_threads=1 format Null;
+    ), 'LineAsString', 's String') settings max_threads=1, http_make_head_request=0 format Null;
 
 -- rmt1 will mimic rmt2, but will not be able to fetch parts for a while
 system stop replicated sends rmt2;

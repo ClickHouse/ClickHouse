@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 
-SET allow_experimental_json_type = 1;
+SET enable_json_type = 1;
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types = 0;
 
 DROP TABLE IF EXISTS t_json_2;
 

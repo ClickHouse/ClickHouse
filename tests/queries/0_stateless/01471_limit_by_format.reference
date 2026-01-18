@@ -1,8 +1,8 @@
-SELECT dummy
+SELECT *
 FROM system.one
-LIMIT 1 BY dummy
+LIMIT 1 BY *
 LIMIT 1
-SELECT dummy
+SELECT *
 FROM system.one
 LIMIT 1 BY
     0 + dummy,

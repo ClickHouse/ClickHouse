@@ -58,7 +58,7 @@ template <DictionaryKeyType dictionary_key_type>
 class CacheDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     CacheDictionary(
         const StorageID & dict_id_,

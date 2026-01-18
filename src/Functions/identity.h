@@ -3,6 +3,10 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
 
 namespace DB
 {
@@ -11,6 +15,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+struct IdentityName
+{
+    static constexpr auto name = "identity";
+};
 
 template<typename Name>
 class FunctionIdentityBase : public IFunction
@@ -33,12 +42,21 @@ public:
     {
         return arguments.front().column;
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & /*types*/, const DataTypePtr & result_type) const override
+    {
+        return Name::name == IdentityName::name && canBeNativeType(result_type);
+    }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & /*builder*/, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
+    {
+        return arguments[0].value;
+    }
+#endif
 };
 
-struct IdentityName
-{
-    static constexpr auto name = "identity";
-};
 
 struct ScalarSubqueryResultName
 {

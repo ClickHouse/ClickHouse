@@ -1,17 +1,20 @@
-#include "IDisk.h"
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <IO/copyData.h>
-#include <Poco/Logger.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Interpreters/Context.h>
-#include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
-#include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
-#include <Core/Field.h>
+#include <Disks/IDisk.h>
 #include <Core/ServerUUID.h>
 #include <Disks/FakeDiskTransaction.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
+#include <Interpreters/Context.h>
+#include <Storages/PartitionCommands.h>
+#include <Poco/Logger.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/ThreadPool.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <boost/algorithm/string.hpp>
+
 
 namespace CurrentMetrics
 {
@@ -75,11 +78,10 @@ void IDisk::copyFile( /// NOLINT
 std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (existsFile(path))
-        return readFile(path, settings, read_hint, file_size);
+        return readFile(path, settings, read_hint);
     else
         return {};
 }
@@ -138,7 +140,7 @@ void asyncCopy(
 {
     if (from_disk.existsFile(from_path))
     {
-        runner(
+        runner.enqueueAndKeepTrack(
             [&from_disk, from_path, &to_disk, to_path, &read_settings, &write_settings, &cancellation_hook] {
                 from_disk.copyFile(
                     from_path, to_disk, to_path, read_settings, write_settings, cancellation_hook);
@@ -162,7 +164,7 @@ void IDisk::copyThroughBuffers(
     WriteSettings write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, "AsyncCopy");
+    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, ThreadName::ASYNC_COPY);
 
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
@@ -196,7 +198,7 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
-void IDisk::startup(ContextPtr context, bool skip_access_check)
+void IDisk::startup(bool skip_access_check)
 {
     if (!skip_access_check)
     {
@@ -209,7 +211,7 @@ void IDisk::startup(ContextPtr context, bool skip_access_check)
         else
             checkAccess();
     }
-    startupImpl(context);
+    startupImpl();
 }
 
 void IDisk::checkAccess()
@@ -228,10 +230,12 @@ try
 {
     const std::string_view payload("test", 4);
     const auto read_settings = getReadSettings();
+    auto write_settings = getWriteSettings();
+    write_settings.is_initial_access_check = true;
 
     /// write
     {
-        auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite);
+        auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite, write_settings);
         try
         {
             file->write(payload.data(), payload.size());
@@ -271,6 +275,13 @@ try
         }
     }
 
+    /// check case sensitivity
+    {
+        std::unique_lock lock(case_sensitivity_check_mutex);
+        is_case_insensitive = existsFile(boost::to_upper_copy(path));
+        is_case_sensitivity_checked = true;
+    }
+
     /// remove
     removeFile(path);
 }
@@ -278,6 +289,33 @@ catch (Exception & e)
 {
     e.addMessage(fmt::format("While checking access for disk {}", name));
     throw;
+}
+
+bool IDisk::isCaseInsensitive()
+{
+    /// For readonly disk we cannot perform the case sensitivity check.
+    if (isReadOnly())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot check if filesystem is case insensitive: disk {} is readonly", name);
+
+    if (is_case_sensitivity_checked)
+        return is_case_insensitive;
+
+    std::unique_lock lock(case_sensitivity_check_mutex);
+    const String path = fmt::format("clickhouse_case_sensitivity_check_{}", toString(DB::UUIDHelpers::generateV4()));
+    try
+    {
+        createFile(path);
+        is_case_insensitive = existsFile(boost::to_upper_copy(path));
+        is_case_sensitivity_checked = true;
+        removeFile(path);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("While checking case sensitivity for disk {}", name));
+        throw;
+    }
+
+    return is_case_insensitive;
 }
 
 void IDisk::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr /*context*/, const String & config_prefix, const DisksMap & /*map*/)

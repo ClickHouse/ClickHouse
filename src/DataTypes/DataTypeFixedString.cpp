@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
+#include <Common/SipHash.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
@@ -46,6 +47,11 @@ Field DataTypeFixedString::getDefault() const
 bool DataTypeFixedString::equals(const IDataType & rhs) const
 {
     return typeid(rhs) == typeid(*this) && n == static_cast<const DataTypeFixedString &>(rhs).n;
+}
+
+void DataTypeFixedString::updateHashImpl(SipHash & hash) const
+{
+    hash.update(n);
 }
 
 SerializationPtr DataTypeFixedString::doGetDefaultSerialization() const

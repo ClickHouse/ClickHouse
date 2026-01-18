@@ -23,22 +23,22 @@ SELECT sum(amount) = 100 FROM realtimebuff__fuzz_20 ORDER BY ALL; -- { serverErr
 SELECT amount FROM realtimebuff__fuzz_19 t1
 JOIN (SELECT number :: UInt32 AS amount FROM numbers(3) ) t2 ON t1.amount = t2.amount
 ORDER BY ALL
-SETTINGS allow_experimental_analyzer = 0; -- { serverError UNKNOWN_IDENTIFIER }
+SETTINGS enable_analyzer = 0; -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT amount FROM realtimebuff__fuzz_19 t1
 JOIN (SELECT number :: UInt32 AS amount FROM numbers(3) ) t2 ON t1.amount = t2.amount
 ORDER BY ALL
-SETTINGS allow_experimental_analyzer = 1;
+SETTINGS enable_analyzer = 1;
 
 SELECT amount FROM realtimebuff__fuzz_19 t1
 JOIN (SELECT number :: UInt32 AS amount FROM numbers(300) ) t2 ON t1.amount = t2.amount
 ORDER BY ALL
-SETTINGS allow_experimental_analyzer = 0; -- { serverError UNKNOWN_IDENTIFIER }
+SETTINGS enable_analyzer = 0; -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT amount FROM realtimebuff__fuzz_19 t1
 JOIN (SELECT number :: UInt32 AS amount FROM numbers(300) ) t2 ON t1.amount = t2.amount
 ORDER BY ALL
-SETTINGS allow_experimental_analyzer = 1;
+SETTINGS enable_analyzer = 1;
 
 SELECT t2.amount + 1 FROM (SELECT number :: UInt32 AS amount FROM numbers(300) ) t1
 JOIN realtimebuff__fuzz_19 t2 USING (amount)

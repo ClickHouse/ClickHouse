@@ -66,3 +66,31 @@ Non-const point; With holes
 0
 1
 0
+Non-const point; MultiPolygon with holes (same as above)
+0
+0
+0
+0
+0
+1
+1
+0
+0
+1
+1
+0
+1
+0
+1
+0
+Non-const point; MultiPolygon with two polygons (each has a hole)
+1
+0
+0
+1
+0
+0
+1
+1
+0
+0

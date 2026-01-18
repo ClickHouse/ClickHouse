@@ -42,7 +42,7 @@ $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
 "
 
 $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
-  SYSTEM FLUSH LOGS;
+  SYSTEM FLUSH LOGS processors_profile_log;
 
   SELECT sum(elapsed_us) > 0
   FROM system.processors_profile_log
@@ -87,7 +87,7 @@ $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
 "
 
 $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
-  SYSTEM FLUSH LOGS;
+  SYSTEM FLUSH LOGS processors_profile_log;
 
   SELECT sum(elapsed_us) > 0
   FROM system.processors_profile_log

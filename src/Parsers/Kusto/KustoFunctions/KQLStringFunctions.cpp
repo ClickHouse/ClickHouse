@@ -144,7 +144,7 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
 
             type_literal = String(pos->begin, pos->end);
 
-            if (type_cast.find(type_literal) == type_cast.end())
+            if (!type_cast.contains(type_literal))
                 throw Exception(ErrorCodes::UNKNOWN_TYPE, "{} is not a supported kusto data type for extract", type_literal);
 
             type_literal = type_cast[type_literal];
@@ -278,7 +278,7 @@ bool ExtractJSON::convertImpl(String & out, IParser::Pos & pos)
 
             datatype = String(pos->begin, pos->end);
 
-            if (type_cast.find(datatype) == type_cast.end())
+            if (!type_cast.contains(datatype))
                 throw Exception(ErrorCodes::UNKNOWN_TYPE, "{} is not a supported kusto data type for {}", datatype, fn_name);
             datatype = type_cast[datatype];
             ++pos;

@@ -23,7 +23,7 @@ if (ENABLE_SSL)
             -Wno-zero-as-null-pointer-constant
     )
     target_include_directories (_poco_net_ssl SYSTEM PUBLIC "include")
-    target_link_libraries (_poco_net_ssl PUBLIC Poco::Crypto Poco::Net Poco::Util)
+    target_link_libraries (_poco_net_ssl PUBLIC Poco::Net Poco::Util OpenSSL::SSL OpenSSL::Crypto)
 else ()
     add_library (_poco_net_ssl INTERFACE)
     add_library (Poco::Net::SSL ALIAS _poco_net_ssl)

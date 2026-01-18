@@ -11,7 +11,7 @@ class WindowTransform;
 class WindowStep : public ITransformingStep
 {
 public:
-    explicit WindowStep(const Header & input_header_,
+    explicit WindowStep(const SharedHeader & input_header_,
             const WindowDescription & window_description_,
             const std::vector<WindowFunctionDescription> & window_functions_,
             bool streams_fan_out_);

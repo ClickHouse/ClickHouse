@@ -3,7 +3,7 @@
 {% for storage in ["MergeTree", "ReplicatedMergeTree('/clickhouse/tables/{database}/test_01825_add_column/', 'r1')"] -%}
 
 DROP TABLE IF EXISTS t_json_add_column;
-SET allow_experimental_json_type = 1;
+SET enable_json_type = 1;
 
 CREATE TABLE t_json_add_column (id UInt64) ENGINE = {{ storage }} ORDER BY tuple();
 

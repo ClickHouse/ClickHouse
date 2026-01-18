@@ -36,7 +36,7 @@ EXPLAIN ESTIMATE
 SELECT count()
 FROM url_na_log
 PREWHERE (DateVisit >= toFixedString('2022-08-10', 10)) AND (DateVisit <= '2022-08-20')
-SETTINGS allow_experimental_analyzer=1, parallel_replicas_local_plan=1;
+SETTINGS enable_analyzer=1, parallel_replicas_local_plan=1;
 
 DROP POLICY url_na_log_policy0 ON url_na_log;
 DROP TABLE url_na_log;

@@ -15,6 +15,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/ColumnNode.h>
 
 #include <numeric>
 
@@ -34,6 +35,26 @@ namespace ErrorCodes
 
 namespace
 {
+
+class CollectColumnSourcesVisitor : public InDepthQueryTreeVisitor<CollectColumnSourcesVisitor, true>
+{
+public:
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return;
+
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (!column_source)
+            return;
+
+        column_sources.insert(column_source);
+    }
+
+    std::unordered_set<QueryTreeNodePtr> column_sources;
+};
 
 class FuseFunctionsVisitor : public InDepthQueryTreeVisitorWithContext<FuseFunctionsVisitor>
 {
@@ -64,11 +85,35 @@ public:
             /// Do not apply for `count()` with without arguments or `count(*)`, only `count(x)` is supported.
             return;
 
-        argument_to_functions_mapping[argument_nodes[0]].insert(&node);
+        auto argument_with_source = createArgumentWithSource(argument_nodes[0]);
+        if (!argument_with_source)
+            return;
+
+        argument_to_functions_mapping[*argument_with_source].insert(&node);
     }
 
-    /// argument -> list of sum/count/avg functions with this argument
-    QueryTreeNodePtrWithHashMap<std::unordered_set<QueryTreeNodePtr *>> argument_to_functions_mapping;
+    using ArgumentWithSource = std::pair<QueryTreeNodePtrWithHash, QueryTreeNodePtr>;
+
+    std::optional<ArgumentWithSource> createArgumentWithSource(const QueryTreeNodePtr & argument)
+    {
+        CollectColumnSourcesVisitor visitor;
+        visitor.visit(argument);
+        if (visitor.column_sources.size() != 1)
+            return std::nullopt;
+        return std::make_pair(argument, *visitor.column_sources.begin());
+    }
+
+    struct ArgumentWithSourceHash
+    {
+        size_t operator()(const ArgumentWithSource & p) const noexcept
+        {
+            return p.first.hash.low64 ^ std::hash<const void *>{}(p.second.get());
+        }
+    };
+
+    /// (argument, source) -> {list of sum/count/avg functions with this argument}
+    using NodePtrSet = std::unordered_set<QueryTreeNodePtr *>;
+    std::unordered_map<ArgumentWithSource, NodePtrSet, ArgumentWithSourceHash> argument_to_functions_mapping;
 
 private:
     std::unordered_set<String> names_to_collect;
@@ -221,7 +266,7 @@ void tryFuseSumCountAvg(QueryTreeNodePtr query_tree_node, ContextPtr context)
         if (nodes.size() < 2)
             continue;
 
-        auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.node);
+        auto sum_count_node = createResolvedAggregateFunction("sumCount", argument.first.node);
         for (auto * node : nodes)
         {
             assert(node);
@@ -243,7 +288,7 @@ void tryFuseQuantiles(QueryTreeNodePtr query_tree_node, ContextPtr context)
 
         std::vector<QueryTreeNodePtr *> nodes(nodes_set.begin(), nodes_set.end());
 
-        auto quantiles_node = createFusedQuantilesNode(nodes, argument.node);
+        auto quantiles_node = createFusedQuantilesNode(nodes, argument.first.node);
         auto result_array_type = std::dynamic_pointer_cast<const DataTypeArray>(quantiles_node->getResultType());
         if (!result_array_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR,

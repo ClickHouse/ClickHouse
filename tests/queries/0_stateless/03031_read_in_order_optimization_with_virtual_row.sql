@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- ^ because we are using query_log
+-- add_minmax_index_for_numeric_columns=0: Different read rows
 
 SET read_in_order_use_virtual_row = 1;
 SET use_query_condition_cache = 0;
@@ -14,7 +17,8 @@ CREATE TABLE t
 ENGINE = MergeTree
 ORDER BY (x, y, z)
 SETTINGS index_granularity = 8192,
-index_granularity_bytes = 10485760;
+index_granularity_bytes = 10485760,
+add_minmax_index_for_numeric_columns=0;
 
 SYSTEM STOP MERGES t;
 
@@ -44,14 +48,14 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'preliminary merge, no filter';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
 WHERE current_database = currentDatabase()
 AND log_comment = 'preliminary merge, no filter'
 AND type = 'QueryFinish'
-ORDER BY query_start_time DESC 
+ORDER BY query_start_time DESC
 limit 1;
 
 SELECT '========';
@@ -68,7 +72,7 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'preliminary merge with filter';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
@@ -91,7 +95,7 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'no preliminary merge, no filter';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
@@ -115,7 +119,7 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'no preliminary merge, with filter';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log

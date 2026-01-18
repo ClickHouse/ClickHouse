@@ -40,9 +40,9 @@ SETTINGS
 $CLICKHOUSE_CLIENT -m --query "
 SYSTEM FLUSH LOGS query_log;
 
--- This threshold was determined experimentally - before the fix this ratio had values around 50K
-SELECT throwIf(ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] / ProfileEvents['WriteBufferFromFileDescriptorWrite'] < 200000)
+SELECT ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] / ProfileEvents['WriteBufferFromFileDescriptorWrite'] as write_block_size, *
 FROM system.query_log
-WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type = 'QueryFinish';
+WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type = 'QueryFinish'
+-- This threshold was determined experimentally - before the fix this ratio had values around 50K
+AND write_block_size < 200e3;
 "
-

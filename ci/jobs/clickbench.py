@@ -1,4 +1,5 @@
-from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
+from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
@@ -9,13 +10,17 @@ def main():
     res = True
     results = []
     stop_watch = Utils.Stopwatch()
-    ch = ClickHouseLight()
+    ch = ClickHouseProc()
+    info = Info()
 
     if res:
         print("Install ClickHouse")
 
         def install():
-            return ch.install() and ch.clickbench_config_tweaks()
+            res = ch.install_clickbench_config()
+            if info.is_local_run:
+                return res
+            return res and ch.create_log_export_config()
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=install)
@@ -26,16 +31,15 @@ def main():
         print("Start ClickHouse")
 
         def start():
-            return ch.start()
-
-        log_export_config = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --config-logs-export-cluster {ch.config_path}/config.d/system_logs_export.yaml"
-        setup_logs_replication = f"./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --setup-logs-replication"
+            res = ch.start_light()
+            if info.is_local_run:
+                return res
+            return res and ch.start_log_exports(check_start_time=stop_watch.start_time)
 
         results.append(
             Result.from_commands_run(
                 name="Start ClickHouse",
-                command=[start, log_export_config, setup_logs_replication],
-                with_log=True,
+                command=start,
             )
         )
         res = results[-1].is_ok()
@@ -92,7 +96,11 @@ def main():
         verbose=True,
     )
 
-    Result.create_from(results=results, stopwatch=stop_watch, files=[]).complete_job()
+    Result.create_from(
+        results=results,
+        stopwatch=stop_watch,
+        files=ch.prepare_logs(all=False, info=info),
+    ).complete_job()
 
 
 if __name__ == "__main__":

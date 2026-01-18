@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int BAD_ARGUMENTS;
 }
 }
 
@@ -32,21 +33,10 @@ namespace ErrorCodes
 /// That is, it makes sense to first add, then get quantiles without adding.
 
 
-namespace DB
-{
-struct Settings;
-
-namespace ErrorCodes
-{
-    extern const int MEMORY_LIMIT_EXCEEDED;
-}
-}
-
-
 namespace detail
 {
     const size_t DEFAULT_MAX_SAMPLE_SIZE = 8192;
-    const auto MAX_SKIP_DEGREE = sizeof(UInt32) * 8;
+    const auto MAX_SKIP_DEGREE = sizeof(UInt32) * 8 - 1;
 }
 
 /// What if there is not a single value - throw an exception, or return 0 or NaN in the case of double?
@@ -195,7 +185,8 @@ public:
 #pragma clang diagnostic ignored "-Wnontrivial-memcall"
             memset(&elem, 0, sizeof(elem)); /// NOLINT(bugprone-undefined-memory-manipulation)
 #pragma clang diagnostic pop
-            elem = samples[i];
+            elem.first = samples[i].first;
+            elem.second = samples[i].second;
 
             DB::transformEndianness<std::endian::little>(elem);
             DB::writeString(reinterpret_cast<const char*>(&elem), sizeof(elem), buf);
@@ -244,7 +235,9 @@ private:
         if (skip_degree_ == skip_degree)
             return;
         if (skip_degree_ > detail::MAX_SKIP_DEGREE)
-            throw DB::Exception(DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED, "skip_degree exceeds maximum value");
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS,
+                "Skip degree in `quantileDeterministic` exceeds the maximum value of {}, which indicates an incorrect usage",
+                detail::MAX_SKIP_DEGREE);
         skip_degree = skip_degree_;
         if (skip_degree == detail::MAX_SKIP_DEGREE)
             skip_mask = static_cast<UInt32>(-1);

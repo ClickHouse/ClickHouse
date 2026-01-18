@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, log-engine
 
 SET send_logs_level = 'fatal';
 
@@ -33,7 +33,8 @@ SELECT 'can still show the create statement';
 SHOW CREATE TABLE test1601_detach_permanently_atomic.test_name_reuse FORMAT Vertical;
 
 SELECT 'can not attach with bad uuid';
-ATTACH TABLE test1601_detach_permanently_atomic.test_name_reuse UUID '00000000-0000-0000-0000-000000000001'　(`number` UInt64　)　ENGINE = MergeTree　ORDER BY tuple()　SETTINGS index_granularity = 8192 ;  -- { serverError TABLE_ALREADY_EXISTS }
+-- STD_EXCEPTION occured when running flaky test, the table directory's access right was removed. Refer `DatabaseCatalog::maybeRemoveDirectory`.
+ATTACH TABLE test1601_detach_permanently_atomic.test_name_reuse UUID '00000000-0000-0000-0000-000000001601'　(`number` UInt64　)　ENGINE = MergeTree　ORDER BY tuple()　SETTINGS index_granularity = 8192 ;  -- { serverError TABLE_ALREADY_EXISTS, STD_EXCEPTION }
 
 SELECT 'can attach with short syntax';
 ATTACH TABLE test1601_detach_permanently_atomic.test_name_reuse;
@@ -137,8 +138,6 @@ DETACH table test1601_detach_permanently_ordinary.test_name_reuse PERMANENTLY;
 SELECT 'DROP database - Directory not empty error, but database detached';
 DROP DATABASE test1601_detach_permanently_ordinary; -- { serverError DATABASE_NOT_EMPTY }
 
-ATTACH DATABASE test1601_detach_permanently_ordinary;
-
 ATTACH TABLE test1601_detach_permanently_ordinary.test_name_reuse;
 DROP TABLE test1601_detach_permanently_ordinary.test_name_reuse;
 
@@ -210,8 +209,6 @@ DETACH table test1601_detach_permanently_lazy.test_name_reuse PERMANENTLY;
 
 SELECT 'DROP database - Directory not empty error, but database deteched';
 DROP DATABASE test1601_detach_permanently_lazy; -- { serverError DATABASE_NOT_EMPTY }
-
-ATTACH DATABASE test1601_detach_permanently_lazy;
 
 ATTACH TABLE test1601_detach_permanently_lazy.test_name_reuse;
 DROP TABLE test1601_detach_permanently_lazy.test_name_reuse;

@@ -36,7 +36,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_ilike(Keyword::ILIKE);
     ParserKeyword s_where(Keyword::WHERE);
     ParserKeyword s_limit(Keyword::LIMIT);
-    ParserStringLiteral like_p;
+    ParserStringLiteral like_p(Highlight::string_like);
     ParserIdentifier name_p(true);
     ParserExpressionWithOptionalAlias exp_elem(false);
 

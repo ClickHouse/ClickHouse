@@ -20,10 +20,9 @@ extern const int TOO_LARGE_STRING_SIZE;
 namespace ColumnStringHelpers
 {
 
-/** Simplifies writing data to the ColumnString or ColumnFixedString via WriteBuffer.
- *
- *  Take care of little subtle details, like padding or proper offsets.
- */
+/** Simplifies writing data to a ColumnString or ColumnFixedString via WriteBuffer.
+  * Takes care of little subtle details, like proper offsets and padding.
+  */
 template <typename ColumnType>
 class WriteHelper
 {
@@ -34,11 +33,13 @@ class WriteHelper
     static ColumnType & resizeColumn(ColumnType & column, size_t rows)
     {
         if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
+        {
             column.resize(rows);
+        }
         else
         {
             column.getOffsets().reserve_exact(rows);
-            /// Using coefficient 2 for initial size is arbitrary.
+            /// The usage of coefficient 2 for initial size is arbitrary.
             column.getChars().reserve_exact(rows * 2);
         }
         return column;
@@ -48,7 +49,8 @@ public:
     WriteHelper(ColumnType & col_, size_t expected_rows)
         : col(resizeColumn(col_, expected_rows))
         , buffer(col.getChars())
-    {}
+    {
+    }
 
     ~WriteHelper() = default;
 
@@ -62,7 +64,7 @@ public:
         return buffer;
     }
 
-    void rowWritten()
+    void finishRow()
     {
         if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
         {
@@ -72,13 +74,15 @@ public:
                         "Too large string for FixedString column");
 
             // Pad with zeroes on the right to maintain FixedString invariant.
-            const auto excess_bytes = buffer.count() % col.getN();
-            const auto fill_bytes = col.getN() - excess_bytes;
-            writeChar(0, fill_bytes, buffer);
+            if (buffer.count() % col.getN() != 0 || buffer.count() == prev_row_buffer_size)
+            {
+                const auto excess_bytes = buffer.count() % col.getN();
+                const auto fill_bytes = col.getN() - excess_bytes;
+                writeChar(0, fill_bytes, buffer);
+            }
         }
         else
         {
-            writeChar(0, buffer);
             col.getOffsets().push_back(buffer.count());
         }
 

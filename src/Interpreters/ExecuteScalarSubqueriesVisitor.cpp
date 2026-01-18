@@ -5,21 +5,18 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ProfileEvents.h>
@@ -39,6 +36,7 @@ namespace Setting
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsString implicit_table_at_top_level;
 }
 
 namespace ErrorCodes
@@ -97,6 +95,7 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
     Settings subquery_settings = data.getContext()->getSettingsCopy();
     subquery_settings[Setting::max_result_rows] = 1;
     subquery_settings[Setting::extremes] = false;
+    subquery_settings[Setting::implicit_table_at_top_level] = "";
     subquery_context->setSettings(subquery_settings);
 
     if (subquery_context->hasQueryContext())
@@ -196,7 +195,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         if (data.only_analyze)
         {
             /// If query is only analyzed, then constants are not correct.
-            block = interpreter->getSampleBlock();
+            block = *interpreter->getSampleBlock();
             for (auto & column : block)
             {
                 if (column.column->empty())
@@ -220,7 +219,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
             if (block.rows() == 0)
             {
-                auto types = interpreter->getSampleBlock().getDataTypes();
+                auto types = interpreter->getSampleBlock()->getDataTypes();
                 if (types.size() != 1)
                     types = {std::make_shared<DataTypeTuple>(types)};
 
@@ -242,7 +241,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 ast = std::move(ast_new);
 
                 /// Empty subquery result is equivalent to NULL
-                block = interpreter->getSampleBlock().cloneEmpty();
+                block = interpreter->getSampleBlock()->cloneEmpty();
                 String column_name = block.columns() > 0 ?  block.safeGetByPosition(0).name : "dummy";
                 block = Block({
                     ColumnWithTypeAndName(type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), type, column_name)

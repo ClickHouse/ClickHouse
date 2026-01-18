@@ -1,9 +1,10 @@
-#include "MergeTreeDataPartCompact.h"
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <DataTypes/NestedUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompactSingleBuffer.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -22,33 +23,33 @@ namespace MergeTreeSetting
 }
 
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(
-        const MergeTreeData & storage_,
-        const String & name_,
-        const MergeTreePartInfo & info_,
-        const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_)
-    : IMergeTreeDataPart(storage_, name_, info_, data_part_storage_, Type::Compact, parent_part_)
+    const MergeTreeData & storage_,
+    const MergeTreeSettings & storage_settings,
+    const String & name_,
+    const MergeTreePartInfo & info_,
+    const MutableDataPartStoragePtr & data_part_storage_,
+    const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Compact, parent_part_)
 {
 }
 
-IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
+MergeTreeReaderPtr createMergeTreeReaderCompact(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
-    const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback) const
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
-    auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
-
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
         read_info, columns_to_read, virtual_fields,
-        storage_snapshot, uncompressed_cache,
+        storage_snapshot, storage_settings, uncompressed_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
@@ -87,7 +88,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
 }
 
 
-void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size, std::optional<Block> /*columns_sample*/) const
+void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
 {
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
     if (bin_checksum != checksums.files.end())
@@ -104,7 +105,7 @@ void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*eac
 void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     MergeTreeIndexGranularityPtr & index_granularity_ptr,
     const MergeTreeIndexGranularityInfo & index_granularity_info_,
-    size_t columns_count,
+    size_t marks_per_granule,
     const IDataPartStorage & data_part_storage_,
     const MergeTreeSettings & storage_settings)
 {
@@ -113,7 +114,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 
     auto marks_file_path = index_granularity_info_.getMarksFilePath("data");
 
-    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFileIfExists(marks_file_path, {}, {}, {});
+    std::unique_ptr<ReadBufferFromFileBase> buffer = data_part_storage_.readFileIfExists(marks_file_path, {}, {});
     if (!buffer)
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART,
@@ -129,7 +130,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
 
     while (!marks_reader->eof())
     {
-        marks_reader->ignore(columns_count * sizeof(MarkInCompressedFile));
+        marks_reader->ignore(marks_per_granule * sizeof(MarkInCompressedFile));
         size_t granularity;
         readBinaryLittleEndian(granularity, *marks_reader);
         index_granularity_ptr->appendMark(granularity);
@@ -147,7 +148,12 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     if (columns.empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    loadIndexGranularityImpl(index_granularity, index_granularity_info, columns.size(), getDataPartStorage(), *storage.getSettings());
+    loadIndexGranularityImpl(
+        index_granularity,
+        index_granularity_info,
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size(),
+        getDataPartStorage(),
+        *storage.getSettings());
 }
 
 void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
@@ -156,8 +162,6 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         return;
 
     auto context = storage.getContext();
-    auto read_settings = context->getReadSettings();
-    auto * load_marks_threadpool = read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
     auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
 
     LOG_TEST(getLogger("MergeTreeDataPartCompact"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
@@ -169,9 +173,9 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         index_granularity->getMarksCount(),
         index_granularity_info,
         /*save_marks_in_cache=*/ true,
-        read_settings,
-        load_marks_threadpool,
-        columns.size());
+        context->getReadSettings(),
+        /*load_marks_threadpool_=*/ nullptr,
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size());
 
     loader.loadMarks();
 }

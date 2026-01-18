@@ -17,7 +17,6 @@ using Strings = std::vector<String>;
 
 /** Supports multiple names of active parts of data.
   * Repeats part of the MergeTreeData functionality.
-  * TODO: generalize with MergeTreeData
   */
 class ActiveDataPartSet
 {
@@ -29,14 +28,15 @@ public:
         HasIntersectingPart,
     };
 
+    ActiveDataPartSet() : ActiveDataPartSet(MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING) {}
     explicit ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names);
 
     ActiveDataPartSet(const ActiveDataPartSet & other) = default;
+    ActiveDataPartSet(ActiveDataPartSet && other) noexcept = default;
 
     ActiveDataPartSet & operator=(const ActiveDataPartSet & other) = default;
-
-    ActiveDataPartSet(ActiveDataPartSet && other) noexcept = default;
+    ActiveDataPartSet & operator=(ActiveDataPartSet && other) = default;
 
     void swap(ActiveDataPartSet & other) noexcept
     {
@@ -65,9 +65,14 @@ public:
     /// Remove part and all covered parts from active set
     bool removePartAndCoveredParts(const String & part_name)
     {
-        Strings parts_covered_by = getPartsCoveredBy(MergeTreePartInfo::fromPartName(part_name, format_version));
+        return removePartAndCoveredParts(MergeTreePartInfo::fromPartName(part_name, format_version));
+    }
+
+    bool removePartAndCoveredParts(const MergeTreePartInfo & part_info)
+    {
+        Strings parts_covered_by = getPartsCoveredBy(part_info);
         bool result = true;
-        result &= remove(part_name);
+        result &= remove(part_info);
         for (const auto & part : parts_covered_by)
             result &= remove(part);
 
@@ -95,7 +100,10 @@ public:
 
     /// Returns parts in ascending order of the partition_id and block number.
     Strings getParts() const;
+    Strings getPartsWithLimit(size_t limit) const;
     std::vector<MergeTreePartInfo> getPartInfos() const;
+    std::vector<MergeTreePartInfo> getPatchPartInfos() const;
+    bool hasPartitionId(const String & partition_id) const;
 
     size_t size() const;
 

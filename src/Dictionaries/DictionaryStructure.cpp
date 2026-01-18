@@ -254,7 +254,7 @@ static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & k
 
     for (const auto & key : keys)
     {
-        if (valid_keys.find(key) == valid_keys.end())
+        if (!valid_keys.contains(key))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown key '{}' inside attribute section", key);
     }
 }

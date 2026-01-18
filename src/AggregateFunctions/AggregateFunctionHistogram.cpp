@@ -76,17 +76,12 @@ private:
     Mean lower_bound;
     Mean upper_bound;
 
+    // Variables to track patterns in points[]
+    UInt32 sorted_prefix;
+    Mean last_inserted;
+
     // Weighted values representation of histogram.
     WeightedValue points[0];
-
-    void sort()
-    {
-        ::sort(points, points + size,
-            [](const WeightedValue & first, const WeightedValue & second)
-            {
-                return first.mean < second.mean;
-            });
-    }
 
     template <typename T>
     struct PriorityQueueStorage
@@ -123,10 +118,21 @@ private:
      */
     void compress(UInt32 max_bins)
     {
-        sort();
-        auto new_size = size;
         if (size <= max_bins)
             return;
+
+        auto cmp = [](const WeightedValue & a, const WeightedValue & b){ return a.mean < b.mean; };
+        if (sorted_prefix == 0)
+        {
+            ::sort(points, points + size, cmp);
+        }
+        else if (sorted_prefix < size)
+        {
+            // If part of array is already sorted: we need only to sort the tail and then merge
+            ::sort(points + sorted_prefix, points + size, cmp);
+            std::inplace_merge(points, points + sorted_prefix, points + size, cmp);
+        }
+        auto new_size = size;
 
         // Maintain doubly-linked list of "active" points
         // and store neighbour pairs in priority queue by distance
@@ -194,6 +200,8 @@ private:
             }
         }
         size = new_size;
+        sorted_prefix = size;
+        last_inserted = (size ? points[size - 1].mean : std::numeric_limits<Mean>::lowest());
     }
 
     /***
@@ -229,6 +237,8 @@ public:
         : size(0)
         , lower_bound(std::numeric_limits<Mean>::max())
         , upper_bound(std::numeric_limits<Mean>::lowest())
+        , sorted_prefix(0)
+        , last_inserted(std::numeric_limits<Mean>::lowest())
     {
         static_assert(offsetof(AggregateFunctionHistogramData, points) == sizeof(AggregateFunctionHistogramData), "points should be last member");
     }
@@ -264,6 +274,10 @@ public:
 
         points[size] = {value, weight};
         ++size;
+        // check if the input sequence is monotonic increasing, which is a commonly occurring pattern
+        if (sorted_prefix == size - 1 && last_inserted <= value)
+            ++sorted_prefix;
+        last_inserted = value;
         lower_bound = std::min(lower_bound, value);
         upper_bound = std::max(upper_bound, value);
 
@@ -302,6 +316,8 @@ public:
                             "Too large array size in histogram (maximum: {})", max_size);
 
         buf.readStrict(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
+        sorted_prefix = 0;
+        last_inserted = std::numeric_limits<Mean>::lowest();
     }
 };
 

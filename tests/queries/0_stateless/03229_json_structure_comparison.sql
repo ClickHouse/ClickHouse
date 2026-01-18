@@ -1,4 +1,4 @@
-SET allow_experimental_json_type=1;
+SET enable_json_type=1;
 
 DROP TABLE IF EXISTS test_new_json_type;
 

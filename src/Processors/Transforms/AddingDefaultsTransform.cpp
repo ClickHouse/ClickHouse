@@ -105,7 +105,8 @@ static void mixNumberColumns(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type on mixNumberColumns");
 }
 
-static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
+static MutableColumnPtr mixColumns(
+    const ColumnWithTypeAndName & col_read,
     const ColumnWithTypeAndName & col_defaults,
     const BlockMissingValues::RowsBitMask & defaults_mask)
 {
@@ -135,7 +136,7 @@ static MutableColumnPtr mixColumns(const ColumnWithTypeAndName & col_read,
 
 
 AddingDefaultsTransform::AddingDefaultsTransform(
-    const Block & header,
+    SharedHeader header,
     const ColumnsDescription & columns_,
     IInputFormat & input_format_,
     ContextPtr context_)
@@ -177,7 +178,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     }
 
     if (!evaluate_block.columns())
-        evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), num_rows), std::make_shared<DataTypeUInt8>(), "_dummy"});
+        evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), num_rows), std::make_shared<DataTypeUInt8>(), "_dummy"});
 
     auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
     if (dag)
@@ -204,8 +205,8 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
 
         if (!defaults_mask.empty())
         {
-            column_read.column = recursiveRemoveSparse(column_read.column);
-            column_def.column = recursiveRemoveSparse(column_def.column);
+            column_read.column = removeSpecialRepresentations(column_read.column);
+            column_def.column = removeSpecialRepresentations(column_def.column);
 
             /// TODO: FixedString
             if (isColumnedAsNumber(column_read.type) || isDecimal(column_read.type))

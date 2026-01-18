@@ -13,8 +13,8 @@ namespace ErrorCodes
 
 IMergingTransformBase::IMergingTransformBase(
     size_t num_inputs,
-    const Block & input_header,
-    const Block & output_header,
+    SharedHeader & input_header,
+    SharedHeader & output_header,
     bool have_all_inputs_,
     UInt64 limit_hint_,
     bool always_read_till_end_)
@@ -30,7 +30,7 @@ OutputPort & IMergingTransformBase::getOutputPort()
     return outputs.front();
 }
 
-static InputPorts createPorts(const Blocks & blocks)
+static InputPorts createPorts(const SharedHeaders & blocks)
 {
     InputPorts ports;
     for (const auto & block : blocks)
@@ -39,8 +39,8 @@ static InputPorts createPorts(const Blocks & blocks)
 }
 
 IMergingTransformBase::IMergingTransformBase(
-    const Blocks & input_headers,
-    const Block & output_header,
+    SharedHeaders & input_headers,
+    SharedHeader & output_header,
     bool have_all_inputs_,
     UInt64 limit_hint_,
     bool always_read_till_end_)

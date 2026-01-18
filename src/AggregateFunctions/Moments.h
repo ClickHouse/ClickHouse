@@ -361,6 +361,103 @@ struct TTestMoments
     }
 };
 
+/// Data for calculation of One-Sample T-Tests.
+template <typename T>
+struct OneSampleTTestMoments
+{
+    T n{};      // sample size
+    T x1{};     // sum of values
+    T x2{};     // sum of squared values
+    Float64 population_mean = 0.0;  // known population mean
+
+    void add(T value)
+    {
+        ++n;
+        x1 += value;
+        x2 += value * value;
+    }
+
+    void setPopulationMean(Float64 mean)
+    {
+        population_mean = mean;
+    }
+
+    void merge(const OneSampleTTestMoments & rhs)
+    {
+        n += rhs.n;
+        x1 += rhs.x1;
+        x2 += rhs.x2;
+        // Note: population_mean should be the same for merged data
+    }
+
+    void write(WriteBuffer & buf) const
+    {
+        writePODBinary(*this, buf);
+    }
+
+    void read(ReadBuffer & buf)
+    {
+        readPODBinary(*this, buf);
+    }
+
+    Float64 getMean() const
+    {
+        return x1 / n;
+    }
+
+    Float64 getVariance() const
+    {
+        if (n <= 1)
+            return std::numeric_limits<Float64>::quiet_NaN();
+        Float64 mean = getMean();
+        return (x2 + n * mean * mean - 2 * mean * x1) / (n - 1);
+    }
+
+    Float64 getStandardError() const
+    {
+        Float64 variance = getVariance();
+        return sqrt(variance / n);
+    }
+
+    Float64 getTStatistic() const
+    {
+        Float64 sample_mean = getMean();
+        Float64 standard_error = getStandardError();
+        return (sample_mean - population_mean) / standard_error;
+    }
+
+    Float64 getDegreesOfFreedom() const
+    {
+        return n - 1;
+    }
+
+    std::pair<Float64, Float64> getConfidenceIntervals(Float64 confidence_level) const
+    {
+        Float64 sample_mean = getMean();
+        Float64 standard_error = getStandardError();
+        Float64 degrees_of_freedom = getDegreesOfFreedom();
+
+        boost::math::students_t dist(degrees_of_freedom);
+        Float64 t = boost::math::quantile(boost::math::complement(dist, (1.0 - confidence_level) / 2.0));
+
+        Float64 ci_low = sample_mean - t * standard_error;
+        Float64 ci_high = sample_mean + t * standard_error;
+
+        return {ci_low, ci_high};
+    }
+
+    bool isEssentiallyConstant() const
+    {
+        Float64 standard_error = getStandardError();
+        return standard_error < 10 * DBL_EPSILON * std::abs(getMean());
+    }
+
+    bool hasEnoughObservations() const
+    {
+        return n > 1;
+    }
+};
+
 template <typename T>
 struct ZTestMoments
 {

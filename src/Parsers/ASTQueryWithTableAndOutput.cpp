@@ -1,7 +1,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Common/quoteString.h>
-#include <IO/Operators.h>
+#include <Parsers/IAST_erase.h>
 
 
 namespace DB

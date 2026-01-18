@@ -1,4 +1,4 @@
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     is_initial_query,
     count() AS c,

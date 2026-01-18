@@ -151,6 +151,8 @@ elseif (ARCH_LOONGARCH64)
         "${LIBRARY_DIR}/libs/context/src/asm/make_loongarch64_sysv_elf_gas.S"
         "${LIBRARY_DIR}/libs/context/src/asm/ontop_loongarch64_sysv_elf_gas.S"
     )
+elseif (ARCH_E2K)
+    # using BOOST_USE_UCONTEXT=ON, don't use ASM
 elseif(OS_DARWIN)
     set (SRCS_CONTEXT ${SRCS_CONTEXT}
         "${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_macho_gas.S"

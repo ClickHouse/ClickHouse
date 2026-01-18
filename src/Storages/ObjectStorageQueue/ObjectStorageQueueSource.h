@@ -6,7 +6,9 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
+#include <base/defines.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -22,9 +24,12 @@ class ObjectStorageQueueSource : public ISource, WithContext
 public:
     using Storage = StorageObjectStorage;
     using Source = StorageObjectStorageSource;
-    using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
+    using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
+    using BucketHolders = std::vector<BucketHolderPtr>;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
+    using HiveLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap;
+    using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
     struct ObjectStorageQueueObjectInfo : public ObjectInfo
     {
@@ -41,18 +46,19 @@ public:
         FileIterator(
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
             ObjectStoragePtr object_storage_,
-            ConfigurationPtr configuration_,
+            StorageObjectStorageConfigurationPtr configuration_,
             const StorageID & storage_id_,
             size_t list_objects_batch_size_,
             const ActionsDAG::Node * predicate_,
             const NamesAndTypesList & virtual_columns_,
+            const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_,
             ContextPtr context_,
             LoggerPtr logger_,
             bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
             std::atomic<bool> & shutdown_called_);
 
-        bool isFinished() const;
+        bool isFinished();
 
         ObjectInfoPtr next(size_t processor) override;
 
@@ -68,54 +74,61 @@ public:
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseFinishedBuckets();
 
+        bool useBucketsForProcessing() const { return use_buckets_for_processing; }
+
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;
 
         const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
         const ObjectStoragePtr object_storage;
-        const ConfigurationPtr configuration;
+        const StorageObjectStorageConfigurationPtr configuration;
         const NamesAndTypesList virtual_columns;
+        const NamesAndTypesList hive_partition_columns_to_read_from_file_path;
         const bool file_deletion_on_processed_enabled;
         const ObjectStorageQueueMode mode;
         const bool enable_hash_ring_filtering;
         const StorageID storage_id;
+        const bool use_buckets_for_processing;
+        const size_t buckets_num = 0;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
         ExpressionActionsPtr filter_expr;
         bool recursive{false};
 
-        Source::ObjectInfos object_infos;
+        ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
         std::vector<FileMetadataPtr> file_metadatas;
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
-        void filterProcessableFiles(Source::ObjectInfos & objects);
-        void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
+        void filterProcessableFiles(ObjectInfos & objects);
+        void filterOutProcessedAndFailed(ObjectInfos & objects);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
         LoggerPtr log;
 
-        struct ListedKeys
+        struct BucketInfo
         {
             std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> keys;
-            std::optional<Processor> processor;
+            std::optional<size_t> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
-        std::unordered_map<Bucket, ListedKeys> listed_keys_cache;
+        std::unordered_map<Bucket, std::unique_ptr<BucketInfo>> keys_cache_per_bucket TSA_GUARDED_BY(mutex);
 
         /// We store a vector of holders, because we cannot release them until processed files are committed.
-        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders;
+        std::unordered_map<size_t, std::shared_ptr<BucketHolders>> bucket_holders TSA_GUARDED_BY(mutex);
 
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
+        bool is_path_with_hive_partitioning = false;
+
         /// Only for processing without buckets.
-        std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry;
+        std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry TSA_GUARDED_BY(mutex);
 
         struct NextKeyFromBucket
         {
@@ -123,8 +136,13 @@ public:
             FileMetadataPtr file_metadata;
             ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
         };
-        NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor);
-        bool hasKeysForProcessor(const Processor & processor) const;
+        NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
+        std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
+        BucketHolderPtr tryAcquireBucket(
+            size_t bucket,
+            BucketInfo & bucket_info,
+            BucketHolders & acquired_buckets,
+            size_t processor) const TSA_REQUIRES(mutex);
     };
 
     struct CommitSettings
@@ -141,21 +159,22 @@ public:
         std::atomic<size_t> processed_rows = 0;
         std::atomic<size_t> processed_bytes = 0;
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
-
-        std::mutex processed_files_mutex;
     };
     using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
+    using AfterProcessingSettings = ObjectStorageQueuePostProcessor::AfterProcessingSettings;
 
     ObjectStorageQueueSource(
         String name_,
         size_t processor_id_,
         std::shared_ptr<FileIterator> file_iterator_,
-        ConfigurationPtr configuration_,
+        StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
         ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
         const std::optional<FormatSettings> & format_settings_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
         const CommitSettings & commit_settings_,
+        const AfterProcessingSettings & after_processing_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
         size_t max_block_size_,
@@ -172,21 +191,40 @@ public:
 
     Chunk generate() override;
 
+    void onFinish() override { parser_shared_resources->finishStream(); }
+
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
     void prepareCommitRequests(
         Coordination::Requests & requests,
         bool insert_succeeded,
         StoredObjects & successful_files,
-        const std::string & exception_message = {});
+        HiveLastProcessedFileInfoMap & file_map,
+        LastProcessedFileInfoMapPtr created_nodes = nullptr,
+        const std::string & exception_message = {},
+        int error_code = 0);
+
+    static void prepareHiveProcessedRequests(
+        Coordination::Requests & requests,
+        const HiveLastProcessedFileInfoMap & last_processed_file_per_hive_partition);
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
-    void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
+    void finalizeCommit(
+        bool insert_succeeded,
+        UInt64 commit_id,
+        time_t commit_time,
+        time_t transaction_start_time_,
+        const std::string & exception_message = {});
 
 private:
     Chunk generateImpl();
     /// Log to system.s3(azure)_queue_log.
-    void appendLogElement(const FileMetadataPtr & file_metadata_, bool processed);
+    void appendLogElement(
+        const FileMetadataPtr & file_metadata_,
+        bool processed,
+        UInt64 commit_id,
+        time_t commit_time,
+        time_t transaction_start_time_);
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
@@ -195,12 +233,14 @@ private:
     const String name;
     const size_t processor_id;
     const std::shared_ptr<FileIterator> file_iterator;
-    const ConfigurationPtr configuration;
+    const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
+    FormatParserSharedResourcesPtr parser_shared_resources;
     const CommitSettings commit_settings;
+    const AfterProcessingSettings after_processing_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
     const ObjectStorageQueueMode mode;
@@ -210,6 +250,7 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
+    time_t transaction_start_time;
 
     LoggerPtr log;
 

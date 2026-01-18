@@ -11,7 +11,7 @@ cp $CUR_DIR/data_json/btc_transactions.json ${CLICKHOUSE_USER_FILES_UNIQUE}/
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS btc"
 
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE btc (data JSON) ENGINE = MergeTree ORDER BY tuple()" --allow_experimental_json_type 1
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE btc (data JSON) ENGINE = MergeTree ORDER BY tuple()" --enable_json_type 1
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO btc SELECT * FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}/btc_transactions.json', 'JSONAsObject')"
 

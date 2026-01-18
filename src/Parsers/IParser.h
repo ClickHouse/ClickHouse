@@ -32,6 +32,9 @@ enum class Highlight : uint8_t
     substitution,
     number,
     string,
+    /// This will highlight similarly to a string but also with highlighting metacharacters.
+    string_like,
+    string_regexp,
 };
 
 struct HighlightedRange

@@ -1,10 +1,10 @@
-#include "HierarchiesProvider.h"
+#include <Dictionaries/Embedded/GeodataProviders/HierarchiesProvider.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Exception.h>
 #include <Poco/Util/Application.h>
-#include "HierarchyFormatReader.h"
+#include <Dictionaries/Embedded/GeodataProviders/HierarchyFormatReader.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

@@ -25,10 +25,10 @@ ASTPtr ASTPair::clone() const
 
 void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(first) << " " << (settings.hilite ? hilite_none : "");
+    ostr << Poco::toUpper(first) << " ";
 
     if (second_with_brackets)
-        ostr << (settings.hilite ? hilite_keyword : "") << "(";
+        ostr << "(";
 
     if (!settings.show_secrets && (first == "password"))
     {
@@ -53,9 +53,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
     }
 
     if (second_with_brackets)
-        ostr << (settings.hilite ? hilite_keyword : "") << ")";
-
-    ostr << (settings.hilite ? hilite_none : "");
+        ostr << ")";
 }
 
 
@@ -97,10 +95,9 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 
 void ASTFunctionWithKeyValueArguments::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << (has_brackets ? "(" : "");
+    ostr << Poco::toUpper(name) << (has_brackets ? "(" : "");
     elements->format(ostr, settings, state, frame);
     ostr << (has_brackets ? ")" : "");
-    ostr << (settings.hilite ? hilite_none : "");
 }
 
 

@@ -54,7 +54,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     {
         ASTPtr settings;
-        ParserSetQuery parser_settings(true);
+        ParserSetQuery parser_settings(true, false);
 
         auto begin = pos;
         if (parser_settings.parse(pos, settings, expected))

@@ -11,7 +11,6 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
-#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB

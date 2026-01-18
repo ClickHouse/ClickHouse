@@ -1,4 +1,4 @@
-SET allow_experimental_json_type = 1;
+SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS t_json_attach_partition;
 

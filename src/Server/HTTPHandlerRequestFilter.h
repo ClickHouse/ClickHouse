@@ -76,6 +76,22 @@ static inline auto urlFilter(const Poco::Util::AbstractConfiguration & config, c
     };
 }
 
+static inline auto fullUrlFilter(const Poco::Util::AbstractConfiguration & config, const std::string & config_path)
+{
+    return [expression = getExpression(config.getString(config_path))](const HTTPServerRequest & request)
+    {
+        const auto & server_address = request.serverAddress();
+        std::string url(fmt::format("{}://{}{}",
+            request.isSecure() ? "https" : "http",
+            server_address.toString(),
+            request.getURI()
+        ));
+
+        const auto & end = find_first_symbols<'?'>(url.data(), url.data() + url.size());
+        return checkExpression(std::string_view(url.data(), end - url.data()), expression);
+    };
+}
+
 static inline auto emptyQueryStringFilter()
 {
     return [](const HTTPServerRequest & request)

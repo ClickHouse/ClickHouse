@@ -275,10 +275,206 @@ AggregateFunctionPtr createAggregateFunctionBitmapL2(
 
 void registerAggregateFunctionsBitmap(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("groupBitmap", createAggregateFunctionBitmap<AggregateFunctionGroupBitmapData>);
-    factory.registerFunction("groupBitmapAnd", createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2And>);
-    factory.registerFunction("groupBitmapOr", createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2Or>);
-    factory.registerFunction("groupBitmapXor", createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2Xor>);
+    FunctionDocumentation::Description description = R"(
+Creates a bitmap (bit array) from a column of unsigned integers, then returns the count of unique values (cardinality) in that bitmap.
+By appending the `-State` combinator suffix, instead of returning the count, it returns the actual [bitmap object](/sql-reference/functions/bitmap-functions).
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+groupBitmap(expr)
+groupBitmapState(expr)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "Expression that results in a `UInt*` type.", {"UInt*"}}
+    };
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the count of type UInt64 type, or a bitmap object when using `-State`.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE t (UserID UInt32) ENGINE = Memory;
+INSERT INTO t VALUES (1), (1), (2), (3);
+
+SELECT groupBitmap(UserID) AS num FROM t;
+        )",
+        R"(
+┌─num─┐
+│   3 │
+└─────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("groupBitmap", {createAggregateFunctionBitmap<AggregateFunctionGroupBitmapData>, {}, documentation});
+
+    FunctionDocumentation::Description description_and = R"(
+Calculates the AND of a bitmap column and returns it's cardinality.
+If suffix combinator [`-State`](/sql-reference/aggregate-functions/combinators#-state) is added, then it returns a bitmap object.
+    )";
+    FunctionDocumentation::Syntax syntax_and = R"(
+groupBitmapAnd(expr)
+groupBitmapAndState(expr)
+    )";
+    FunctionDocumentation::Arguments arguments_and = {
+        {"expr", "Expression that results in an `AggregateFunction(groupBitmap, UInt*)` type.", {"AggregateFunction(groupBitmap, UInt*)"}}
+    };
+    FunctionDocumentation::Parameters parameters_and = {};
+    FunctionDocumentation::ReturnedValue returned_value_and = {"Returns a count of type `UInt64`, or a bitmap object when using `-State`.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_and = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] AS Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] AS Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] AS Array(UInt32))));
+
+SELECT groupBitmapAnd(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+        )",
+        R"(
+┌─groupBitmapAnd(z)─┐
+│               3   │
+└───────────────────┘
+        )"
+    },
+    {
+        "Using -State combinator",
+        R"(
+SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+        )",
+        R"(
+┌─arraySort(bitmapToArray(groupBitmapAndState(z)))─┐
+│ [6,8,10]                                         │
+└──────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_and = {20, 1};
+    FunctionDocumentation::Category category_and = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_and = {description_and, syntax_and, arguments_and, parameters_and, returned_value_and, examples_and, introduced_in_and, category_and};
+
+    factory.registerFunction("groupBitmapAnd", {createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2And>, {}, documentation_and});
+
+    FunctionDocumentation::Description description_or = R"(
+Calculates the OR of a bitmap column and returns it's cardinality.
+If suffix combinator [`-State`](/sql-reference/aggregate-functions/combinators#-state) is added, then it returns a bitmap object.
+This is equivalent to `groupBitmapMerge` ([`groupBitmap`](/sql-reference/aggregate-functions/reference/groupbitmap) with the [`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) combinator suffix).
+    )";
+    FunctionDocumentation::Syntax syntax_or = R"(
+groupBitmapOr(expr)
+groupBitmapOrState(expr)
+    )";
+    FunctionDocumentation::Arguments arguments_or = {
+        {"expr", "Expression that results in an `AggregateFunction(groupBitmap, UInt*)` type.", {"AggregateFunction(groupBitmap, UInt*)"}}
+    };
+    FunctionDocumentation::Parameters parameters_or = {};
+    FunctionDocumentation::ReturnedValue returned_value_or = {"Returns a count of type `UInt64`, or a bitmap object when using `-State`.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_or = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] AS Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] AS Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] AS Array(UInt32))));
+
+SELECT groupBitmapOr(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+        )",
+        R"(
+┌─groupBitmapOr(z)─┐
+│             15   │
+└──────────────────┘
+        )"
+    },
+    {
+        "Using -State combinator",
+        R"(
+SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+        )",
+        R"(
+┌─arraySort(bitmapToArray(groupBitmapOrState(z)))─┐
+│ [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]           │
+└─────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_or = {20, 1};
+    FunctionDocumentation::Category category_or = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_or = {description_or, syntax_or, arguments_or, parameters_or, returned_value_or, examples_or, introduced_in_or, category_or};
+
+    factory.registerFunction("groupBitmapOr", {createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2Or>, {}, documentation_or});
+
+    FunctionDocumentation::Description description_xor = R"(
+Calculates the XOR of a bitmap column and returns it's cardinality.
+If suffix combinator [`-State`](/sql-reference/aggregate-functions/combinators#-state) is added, then it returns a bitmap object.
+    )";
+    FunctionDocumentation::Syntax syntax_xor = R"(
+groupBitmapXor(expr)
+groupBitmapXorState(expr)
+    )";
+    FunctionDocumentation::Arguments arguments_xor = {
+        {"expr", "Expression that results in an `AggregateFunction(groupBitmap, UInt*)` type.", {"AggregateFunction(groupBitmap, UInt*)"}}
+    };
+    FunctionDocumentation::Parameters parameters_xor = {};
+    FunctionDocumentation::ReturnedValue returned_value_xor = {"Returns a count of type `UInt64`, or a bitmap object when using `-State`.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_xor = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE bitmap_column_expr_test2
+(
+    tag_id String,
+    z AggregateFunction(groupBitmap, UInt32)
+)
+ENGINE = MergeTree
+ORDER BY tag_id;
+
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag1', bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] AS Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag2', bitmapBuild(cast([6,7,8,9,10,11,12,13,14,15] AS Array(UInt32))));
+INSERT INTO bitmap_column_expr_test2 VALUES ('tag3', bitmapBuild(cast([2,4,6,8,10,12] AS Array(UInt32))));
+
+SELECT groupBitmapXor(z) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+        )",
+        R"(
+┌─groupBitmapXor(z)─┐
+│              10   │
+└───────────────────┘
+        )"
+    },
+    {
+        "Using -State combinator",
+        R"(
+SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_test2 WHERE like(tag_id, 'tag%');
+        )",
+        R"(
+┌─arraySort(bitmapToArray(groupBitmapXorState(z)))─┐
+│ [1, 3, 5, 6, 8, 10, 11, 13, 14, 15]              │
+└──────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_xor = {20, 1};
+    FunctionDocumentation::Category category_xor = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_xor = {description_xor, syntax_xor, arguments_xor, parameters_xor, returned_value_xor, examples_xor, introduced_in_xor, category_xor};
+
+    factory.registerFunction("groupBitmapXor", {createAggregateFunctionBitmapL2<AggregateFunctionBitmapL2Xor>, {}, documentation_xor});
 }
 
 }

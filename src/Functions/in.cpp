@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
@@ -68,13 +69,11 @@ public:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return std::make_shared<DataTypeUInt8>();
-    }
+        if (arguments[0]->hasDynamicSubcolumns())
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}", arguments[0]->getName(), getName());
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -82,6 +81,11 @@ public:
     {
         /// Never return constant for -IgnoreSet functions to avoid constant folding.
         return !ignore_set;
+    }
+
+    bool useDefaultImplementationForDynamic() const override
+    {
+        return false;
     }
 
     bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
@@ -101,7 +105,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
     {
         if constexpr (ignore_set)
-            return ColumnUInt8::create(input_rows_count, 0u);
+            return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
         if (input_rows_count == 0)
             return ColumnUInt8::create();
 
@@ -133,7 +137,7 @@ public:
         if (!future_set)
         {
             if (dry_run)
-                return ColumnUInt8::create(input_rows_count, 0u);
+                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No Set is passed as the second argument for function '{}'", getName());
         }
@@ -170,7 +174,7 @@ public:
         auto res = set->execute(columns_of_key_columns, negative);
 
         if (is_const)
-            res = ColumnUInt8::create(input_rows_count, res->getUInt(0));
+            res = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(res->getUInt(0)));
 
         if (res->size() != input_rows_count)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Output size is different from input size, expect {}, get {}", input_rows_count, res->size());

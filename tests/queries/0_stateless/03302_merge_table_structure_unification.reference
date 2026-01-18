@@ -1,5 +1,6 @@
 -1		['Goodbye']	2025-01-01 02:03:04
 1	Hello	['World']	1970-01-01 00:00:00
+--- table function
 a	Int32					
 b	String					
 c	Array(Nullable(String))					
@@ -8,8 +9,10 @@ d	DateTime(\'UTC\')	DEFAULT	now()
 -1		['Goodbye']	2025-01-01 02:03:04
 1	Hello	['World']	1970-01-01 00:00:00
 1	Hello	['World']	1970-01-01 00:00:00
--1		['Goodbye']	2025-01-01 02:03:04
-1	Hello	['World']	1970-01-01 00:00:00
+--- merge_table_max_tables_to_look_for_schema_inference = 1
+1	Hello	['World']
+255		['Goodbye']
+--- table function
 a	UInt8					
 b	String					
 c	Array(String)					

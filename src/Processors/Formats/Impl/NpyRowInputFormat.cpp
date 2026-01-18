@@ -256,7 +256,7 @@ void NpyRowInputFormat::readPrefix()
     header = parseHeader(*in);
 }
 
-NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, Block header_, Params params_)
+NpyRowInputFormat::NpyRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_)
     : IRowInputFormat(std::move(header_), in_, std::move(params_))
 {
     auto types = getPort().getHeader().getDataTypes();
@@ -441,7 +441,7 @@ void registerInputFormatNpy(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings &)
     {
-        return std::make_shared<NpyRowInputFormat>(buf, sample, std::move(params));
+        return std::make_shared<NpyRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params));
     });
 
     factory.markFormatSupportsSubsetOfColumns("Npy");

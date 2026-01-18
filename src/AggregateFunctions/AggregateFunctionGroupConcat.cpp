@@ -8,9 +8,10 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int LOGICAL_ERROR;
+extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 void GroupConcatDataBase::checkAndUpdateSize(UInt64 add, Arena * arena)
@@ -161,20 +162,43 @@ void GroupConcatImpl<has_limit>::deserialize(AggregateDataPtr __restrict place, 
 {
     auto & cur_data = this->data(place);
 
+    /// IAggregateFunction::deserialize() must be called only for an empty (just created) state.
+    if (cur_data.data_size != 0)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "groupConcat deserialize() expects an empty state (data_size = 0), got data_size = {}",
+            cur_data.data_size);
+
     UInt64 temp_size = 0;
     readVarUInt(temp_size, buf);
 
     cur_data.checkAndUpdateSize(temp_size, arena);
 
-    buf.readStrict(cur_data.data + cur_data.data_size, temp_size);
+    buf.readStrict(cur_data.data, temp_size);
     cur_data.data_size = temp_size;
 
     if constexpr (has_limit)
     {
         readVarUInt(cur_data.num_rows, buf);
+
+        if (cur_data.num_rows > std::numeric_limits<UInt64>::max() / 2)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid groupConcat state: num_rows ({}) is too large and would overflow the offsets array.", cur_data.num_rows);
+
         cur_data.offsets.resize_exact(cur_data.num_rows * 2, arena);
-        for (auto & offset : cur_data.offsets)
-            readVarUInt(offset, buf);
+
+        for (size_t i = 0; i < cur_data.offsets.size(); ++i)
+        {
+            readVarUInt(cur_data.offsets[i], buf);
+
+            if (cur_data.offsets[i] > cur_data.data_size)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offset {} in groupConcat state: exceeds data size {}", cur_data.offsets[i], cur_data.data_size);
+
+            if (i != 0 && cur_data.offsets[i] < cur_data.offsets[i - 1])
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: end offset {} is less than start offset {}", cur_data.offsets[i], cur_data.offsets[i - 1]);
+        }
+
+        if (cur_data.num_rows != 0 && cur_data.offsets.back() != cur_data.data_size)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid offsets in groupConcat state: last offset {} is not equal to data size {}", cur_data.offsets.back(), cur_data.data_size);
     }
 }
 
@@ -243,7 +267,71 @@ void registerAggregateFunctionGroupConcat(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, properties });
+    /// groupConcat documentation
+    FunctionDocumentation::Description description_groupConcat = R"(
+Calculates a concatenated string from a group of strings, optionally separated by a delimiter, and optionally limited by a maximum number of elements.
+
+:::note
+If delimiter is specified without limit, it must be the first parameter. If both delimiter and limit are specified, delimiter must precede limit.
+
+Also, if different delimiters are specified as parameters and arguments, the delimiter from arguments will be used only.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_groupConcat = R"(
+groupConcat[(delimiter [, limit])](expression)
+    )";
+    FunctionDocumentation::Parameters parameters_groupConcat = {
+        {"delimiter", "A string that will be used to separate concatenated values. This parameter is optional and defaults to an empty string if not specified.", {"String"}},
+        {"limit", "A positive integer specifying the maximum number of elements to concatenate. If more elements are present, excess elements are ignored. This parameter is optional.", {"UInt*"}}
+    };
+    FunctionDocumentation::Arguments arguments_groupConcat = {
+        {"expression", "The expression or column name that outputs strings to be concatenated.", {"String"}},
+        {"delimiter", "A string that will be used to separate concatenated values. This parameter is optional and defaults to an empty string or delimiter from parameters if not specified.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_groupConcat = {"Returns a string consisting of the concatenated values of the column or expression. If the group has no elements or only null elements, and the function does not specify a handling for only null values, the result is a nullable string with a null value.", {"String"}};
+    FunctionDocumentation::Examples examples_groupConcat = {
+    {
+        "Basic usage without a delimiter",
+        R"(
+SELECT groupConcat(Name) FROM Employees;
+        )",
+        R"(
+JohnJaneBob
+        )"
+    },
+    {
+        "Using comma as a delimiter (parameter syntax)",
+        R"(
+SELECT groupConcat(', ')(Name) FROM Employees;
+        )",
+        R"(
+John, Jane, Bob
+        )"
+    },
+    {
+        "Using comma as a delimiter (argument syntax)",
+        R"(
+SELECT groupConcat(Name, ', ') FROM Employees;
+        )",
+        R"(
+John, Jane, Bob
+        )"
+    },
+    {
+        "Limiting the number of concatenated elements",
+        R"(
+SELECT groupConcat(', ', 2)(Name) FROM Employees;
+        )",
+        R"(
+John, Jane
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_groupConcat = {24, 8};
+    FunctionDocumentation::Category category_groupConcat = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_groupConcat = {description_groupConcat, syntax_groupConcat, arguments_groupConcat, parameters_groupConcat, returned_value_groupConcat, examples_groupConcat, introduced_in_groupConcat, category_groupConcat};
+
+    factory.registerFunction("groupConcat", { createAggregateFunctionGroupConcat, properties, documentation_groupConcat });
     factory.registerAlias(GroupConcatImpl<false>::getNameAndAliases().at(1), GroupConcatImpl<false>::getNameAndAliases().at(0), AggregateFunctionFactory::Case::Insensitive);
 }
 

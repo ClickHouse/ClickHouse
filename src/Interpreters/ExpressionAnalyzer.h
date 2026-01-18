@@ -5,7 +5,6 @@
 #include <Interpreters/ActionsMatcher.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/ArrayJoin.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
@@ -43,6 +42,10 @@ class Set;
 using SetPtr = std::shared_ptr<Set>;
 
 class QueryPlan;
+
+struct TemporaryTableHolder;
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 namespace ExpressionActionsChainSteps
 {
@@ -270,7 +273,7 @@ struct ExpressionAnalysisResult
     NameSet columns_to_remove_after_prewhere;
 
     PrewhereInfoPtr prewhere_info;
-    FilterDAGInfoPtr filter_info;
+    FilterDAGInfoPtr row_policy_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
     /// Actions by every element of ORDER BY
@@ -285,12 +288,12 @@ struct ExpressionAnalysisResult
         bool first_stage,
         bool second_stage,
         bool only_types,
-        const FilterDAGInfoPtr & filter_info,
+        const FilterDAGInfoPtr & row_policy_info,
         const FilterDAGInfoPtr & additional_filter, /// for setting additional_filters
         const Block & source_header);
 
     /// Filter for row-level security.
-    bool hasFilter() const { return filter_info.get(); }
+    bool hasRowPolicyFilter() const { return row_policy_info.get(); }
 
     bool hasJoin() const { return join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }

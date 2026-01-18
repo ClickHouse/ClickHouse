@@ -4,11 +4,11 @@
 #include <Analyzer/Utils.h>
 #include <IO/Operators.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
+
 
 namespace DB
 {
@@ -72,7 +72,9 @@ ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
         else
             array_join_expression_ast = array_join_expression->toAST(options);
 
-        array_join_expression_ast->setAlias(array_join_expression->getAlias());
+        /// We must check that it has an alias (not empty) as otherwise we try to set it and not all IAST classes support it (LOGICAL_ERROR)
+        if (array_join_expression->hasAlias())
+            array_join_expression_ast->setAlias(array_join_expression->getAlias());
         array_join_expressions_ast->children.push_back(std::move(array_join_expression_ast));
     }
 

@@ -1,6 +1,5 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Parsers/formatAST.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -8,7 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <boost/range/algorithm/copy.hpp>
-#include <boost/range/algorithm_ext/push_back.hpp>
 #include <base/sort.h>
 
 
@@ -182,14 +180,14 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
 String RolesOrUsersSet::toString() const
 {
     auto ast = toAST();
-    return serializeAST(*ast);
+    return ast->formatWithSecretsOneLine();
 }
 
 
 String RolesOrUsersSet::toStringWithNames(const AccessControl & access_control) const
 {
     auto ast = toASTWithNames(access_control);
-    return serializeAST(*ast);
+    return ast->formatWithSecretsOneLine();
 }
 
 

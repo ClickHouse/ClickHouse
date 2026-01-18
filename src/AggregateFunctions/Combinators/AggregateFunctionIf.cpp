@@ -1,6 +1,6 @@
-#include "AggregateFunctionCombinatorFactory.h"
-#include "AggregateFunctionIf.h"
-#include "AggregateFunctionNull.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionIf.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 
 #include <absl/container/inlined_vector.h>
 
@@ -121,6 +121,20 @@ public:
         {
             this->setFlag(place);
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
+        }
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
+    {
+        if (filter_is_only_null)
+            return;
+
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const IColumn * nested_column = &column->getNestedColumn();
+        if (!column->isNullAt(0) && singleFilter(columns, 0))
+        {
+            this->setFlag(place);
+            this->nested_function->addManyDefaults(this->nestedPlace(place), &nested_column, length, arena);
         }
     }
 
@@ -315,7 +329,7 @@ public:
 
             for (size_t i = row_begin; i < row_end; i++)
             {
-                final_null_flags[i] = filter_null_map[i] || !filter_values[i];
+                final_null_flags[i] = (!!filter_null_map[i]) | !filter_values[i];
             }
         }
         else
@@ -337,9 +351,7 @@ public:
                     const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
                     const UInt8 * col_null_map = nullmap_column.getData().data();
                     for (size_t r = row_begin; r < row_end; r++)
-                    {
-                        final_null_flags[r] |= col_null_map[r];
-                    }
+                        final_null_flags[r] |= !!col_null_map[r];
                 }
                 nested_columns[arg] = &nullable_col.getNestedColumn();
             }
@@ -347,16 +359,7 @@ public:
                 nested_columns[arg] = columns[arg];
         }
 
-        bool at_least_one = false;
-        for (size_t i = row_begin; i < row_end; i++)
-        {
-            if (!final_null_flags[i])
-            {
-                at_least_one = true;
-                break;
-            }
-        }
-
+        bool at_least_one = !memoryIsByte(final_null_flags.get(), row_begin, row_end, 1);
         if (at_least_one)
         {
             this->setFlag(place);

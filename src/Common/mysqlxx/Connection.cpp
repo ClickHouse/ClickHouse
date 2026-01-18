@@ -135,7 +135,7 @@ void Connection::disconnect()
         return;
 
     // If driver->free_me, then mysql_close will deallocate memory by calling 'free' function.
-    assert(driver && !driver->free_me);
+    chassert(driver && !driver->free_me);
     mysql_close(driver.get());
     memset(driver.get(), 0, sizeof(*driver));
 

@@ -1,9 +1,9 @@
-#include "DictionarySourceHelpers.h"
+#include <Dictionaries/DictionarySourceHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -99,8 +99,8 @@ static Block transformHeader(Block header, Block block_to_add)
 }
 
 TransformWithAdditionalColumns::TransformWithAdditionalColumns(
-    Block block_to_add_, const Block & header)
-    : ISimpleTransform(header, transformHeader(header, block_to_add_), true)
+    SharedHeader block_to_add_, SharedHeader header)
+    : ISimpleTransform(header, std::make_shared<const Block>(transformHeader(*header, *block_to_add_)), true)
     , block_to_add(std::move(block_to_add_))
 {
 }
@@ -112,7 +112,7 @@ void TransformWithAdditionalColumns::transform(Chunk & chunk)
         auto num_rows = chunk.getNumRows();
         auto columns = chunk.detachColumns();
 
-        auto cut_block = block_to_add.cloneWithCutColumns(current_range_index, num_rows);
+        auto cut_block = block_to_add->cloneWithCutColumns(current_range_index, num_rows);
 
         if (cut_block.rows() != num_rows)
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,

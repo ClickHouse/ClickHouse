@@ -1,4 +1,4 @@
-#include "convertMySQLDataType.h"
+#include <DataTypes/convertMySQLDataType.h>
 
 #include <Core/Field.h>
 #include <base/types.h>
@@ -6,18 +6,18 @@
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
-#include "DataTypeDate.h"
-#include "DataTypeDate32.h"
-#include "DataTypeDateTime.h"
-#include "DataTypeDateTime64.h"
-#include "DataTypesDecimal.h"
-#include "DataTypeFixedString.h"
-#include "DataTypeNullable.h"
-#include "DataTypeString.h"
-#include "DataTypesNumber.h"
-#include "DataTypeCustomGeo.h"
-#include "DataTypeFactory.h"
-#include "IDataType.h"
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeCustomGeo.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 #include <Common/logger_useful.h>
 
 namespace DB

@@ -89,6 +89,7 @@ public:
     ContextPtr sessionContext() const { return session_context; }
 
     ContextPtr  sessionOrGlobalContext() const { return session_context ? session_context : global_context; }
+    ContextPtr  globalContext() const { return global_context; }
 
     /// Makes a query context, can be used multiple times, with or without makeSession() called earlier.
     /// The query context will be created from a copy of a session context if it exists, or from a copy of

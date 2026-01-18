@@ -1,14 +1,13 @@
 #pragma once
 
-#include <boost/circular_buffer.hpp>
-
 #include <Core/Names.h>
-#include <base/types.h>
 #include <IO/ReadBuffer.h>
-
+#include <Storages/Kafka/IKafkaExceptionInfoSink.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
+#include <boost/circular_buffer.hpp>
 #include <cppkafka/cppkafka.h>
-#include <Common/DateLUT.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DateLUT.h>
 
 namespace CurrentMetrics
 {
@@ -23,45 +22,13 @@ namespace Poco
 namespace DB
 {
 
-class StorageSystemKafkaConsumers;
-
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
-class KafkaConsumer
+class KafkaConsumer : public IKafkaExceptionInfoSink
 {
 public:
-    struct ExceptionInfo
-    {
-        String text;
-        UInt64 timestamp;
-    };
-    using ExceptionsBuffer = boost::circular_buffer<ExceptionInfo>;
-
-    struct Stat // system.kafka_consumers data
-    {
-        struct Assignment
-        {
-            String topic_str;
-            Int32 partition_id;
-            Int64 current_offset;
-        };
-        using Assignments = std::vector<Assignment>;
-
-        String consumer_id;
-        Assignments assignments;
-        UInt64 last_poll_time;
-        UInt64 num_messages_read;
-        UInt64 last_commit_timestamp;
-        UInt64 last_rebalance_timestamp;
-        UInt64 num_commits;
-        UInt64 num_rebalance_assignments;
-        UInt64 num_rebalance_revocations;
-        KafkaConsumer::ExceptionsBuffer exceptions_buffer;
-        bool in_use;
-        UInt64 last_used_usec;
-        std::string rdkafka_stat;
-    };
+    using Stat = StorageKafkaUtils::ConsumerStatistics;
 
     KafkaConsumer(
         LoggerPtr log_,
@@ -69,10 +36,11 @@ public:
         size_t poll_timeout_,
         bool intermediate_commit_,
         const std::atomic<bool> & stopped_,
-        const Names & _topics
+        const Names & _topics,
+        size_t skip_bytes_ = 0
     );
 
-    ~KafkaConsumer();
+    ~KafkaConsumer() override;
 
     void createConsumer(cppkafka::Configuration consumer_config);
     bool hasConsumer() const { return consumer.get() != nullptr; }
@@ -80,7 +48,11 @@ public:
 
     void commit(); // Commit all processed messages.
     void subscribe(); // Subscribe internal consumer to topics.
-    void unsubscribe(); // Unsubscribe internal consumer in case of failure.
+
+    // used during exception processing to restart the consumption from last committed offset
+    // Notes: duplicates can appear if the some data were already flushed
+    // it causes rebalance (and is an expensive way of exception handling)
+    void markDirty();
 
     auto pollTimeout() const { return poll_timeout; }
 
@@ -111,8 +83,7 @@ public:
     auto currentTimestamp() const { return current[-1].get_timestamp(); }
     const auto & currentHeaderList() const { return current[-1].get_header_list(); }
     const cppkafka::Buffer & currentPayload() const { return current[-1].get_payload(); }
-    void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace = true);
-    void setExceptionInfo(const std::string & text, bool with_stacktrace = true);
+    void setExceptionInfo(const std::string & text, bool with_stacktrace) override;
     void setRDKafkaStat(const std::string & stat_json_string)
     {
         std::lock_guard<std::mutex> lock(rdkafka_stat_mutex);
@@ -135,6 +106,7 @@ public:
 
 private:
     using Messages = std::vector<cppkafka::Message>;
+    using ExceptionsBuffer = StorageKafkaUtils::ConsumerStatistics::ExceptionsBuffer;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::KafkaConsumers};
 
     enum StalledStatus
@@ -155,7 +127,9 @@ private:
     LoggerPtr log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
+    const size_t skip_bytes = 0;
     size_t offsets_stored = 0;
+    bool current_subscription_valid = false;
 
     StalledStatus stalled_status = NO_MESSAGES_RETURNED;
 
@@ -189,10 +163,10 @@ private:
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
 
-    void drain();
+    void doPoll();
     void cleanUnprocessed();
+    void cleanAssignment();
     void resetIfStopped();
-    void filterMessageErrors();
     ReadBufferPtr getNextMessage();
 };
 

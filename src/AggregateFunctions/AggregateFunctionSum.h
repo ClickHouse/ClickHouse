@@ -163,32 +163,16 @@ struct AggregateFunctionSumData
         }
         else if constexpr (is_over_big_int<T>)
         {
-            /// Use a mask to discard or keep the value to reduce branch miss.
-            /// Notice that for (U)Int128 or Decimal128, MaskType is Int8 instead of Int64, otherwise extra branches will be introduced by compiler (for unknown reason) and performance will be worse.
-            using MaskType = std::conditional_t<sizeof(T) == 16, Int8, Int64>;
-            alignas(64) const MaskType masks[2] = {0, -1};
+            alignas(64) const uint64_t masks[2] = {0, ~0ULL};
             T local_sum{};
-            while (ptr < end_ptr)
+            for (size_t i = 0; i < count; ++i)
             {
-                Value v = *ptr;
-                if constexpr (!add_if_zero)
-                {
-                    if constexpr (is_integer<T>)
-                        v &= masks[!!*condition_map];
-                    else
-                        v.value &= masks[!!*condition_map];
-                }
-                else
-                {
-                    if constexpr (is_integer<T>)
-                        v &= masks[!*condition_map];
-                    else
-                        v.value &= masks[!*condition_map];
-                }
+                uint8_t flag = (condition_map[i] != add_if_zero);
 
-                Impl::add(local_sum, v);
-                ++ptr;
-                ++condition_map;
+                T mask{};
+                std::memset(&mask, static_cast<int>(masks[flag]), sizeof(T));
+
+                Impl::add(local_sum, ptr[i] & mask);
             }
             Impl::add(sum, local_sum);
             return;
@@ -610,7 +594,7 @@ public:
         auto * return_type = toNativeType(b, this->getResultType());
         auto * aggregate_sum_ptr = aggregate_data_ptr;
 
-        b.CreateStore(llvm::Constant::getNullValue(return_type), aggregate_sum_ptr);
+        b.CreateStore(llvm::Constant::getNullValue(return_type), aggregate_sum_ptr)->setAlignment(llvm::Align(this->alignOfData()));
     }
 
     void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const ValuesWithType & arguments) const override
@@ -621,11 +605,12 @@ public:
 
         auto * sum_value_ptr = aggregate_data_ptr;
         auto * sum_value = b.CreateLoad(return_type, sum_value_ptr);
+        sum_value->setAlignment(llvm::Align(this->alignOfData()));
 
         auto * value_cast_to_result = nativeCast(b, arguments[0], this->getResultType());
         auto * sum_result_value = sum_value->getType()->isIntegerTy() ? b.CreateAdd(sum_value, value_cast_to_result) : b.CreateFAdd(sum_value, value_cast_to_result);
 
-        b.CreateStore(sum_result_value, sum_value_ptr);
+        b.CreateStore(sum_result_value, sum_value_ptr)->setAlignment(llvm::Align(this->alignOfData()));
     }
 
     void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
@@ -636,12 +621,14 @@ public:
 
         auto * sum_value_dst_ptr = aggregate_data_dst_ptr;
         auto * sum_value_dst = b.CreateLoad(return_type, sum_value_dst_ptr);
+        sum_value_dst->setAlignment(llvm::Align(this->alignOfData()));
 
         auto * sum_value_src_ptr = aggregate_data_src_ptr;
         auto * sum_value_src = b.CreateLoad(return_type, sum_value_src_ptr);
+        sum_value_src->setAlignment(llvm::Align(this->alignOfData()));
 
         auto * sum_return_value = sum_value_dst->getType()->isIntegerTy() ? b.CreateAdd(sum_value_dst, sum_value_src) : b.CreateFAdd(sum_value_dst, sum_value_src);
-        b.CreateStore(sum_return_value, sum_value_dst_ptr);
+        b.CreateStore(sum_return_value, sum_value_dst_ptr)->setAlignment(llvm::Align(this->alignOfData()));
     }
 
     llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
@@ -651,7 +638,9 @@ public:
         auto * return_type = toNativeType(b, this->getResultType());
         auto * sum_value_ptr = aggregate_data_ptr;
 
-        return b.CreateLoad(return_type, sum_value_ptr);
+        auto * res = b.CreateLoad(return_type, sum_value_ptr);
+        res->setAlignment(llvm::Align(this->alignOfData()));
+        return res;
     }
 
 #endif

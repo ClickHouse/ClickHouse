@@ -116,7 +116,53 @@ AggregateFunctionPtr createAggregateFunctionRankCorrelation(
 
 void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("rankCorr", createAggregateFunctionRankCorrelation);
+    FunctionDocumentation::Description description_rankCorr = R"(
+Computes a rank correlation coefficient.
+
+Returns a rank correlation coefficient of the ranks of x and y. The value of the correlation coefficient ranges from -1 to +1. If less than two arguments are passed, the function will return an exception. The value close to +1 denotes a high linear relationship, and with an increase of one random variable, the second random variable also increases. The value close to -1 denotes a high linear relationship, and with an increase of one random variable, the second random variable decreases. The value close or equal to 0 denotes no relationship between the two random variables.
+
+**See Also**
+
+- [Spearman's rank correlation coefficient](https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient)
+    )";
+    FunctionDocumentation::Syntax syntax_rankCorr = R"(
+rankCorr(x, y)
+    )";
+    FunctionDocumentation::Parameters parameters_rankCorr = {};
+    FunctionDocumentation::Arguments arguments_rankCorr = {
+        {"x", "Arbitrary value.", {"Float*"}},
+        {"y", "Arbitrary value.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_rankCorr = {"Returns a rank correlation coefficient of the ranks of x and y. The value ranges from -1 to +1.", {"Float64"}};
+    FunctionDocumentation::Examples examples_rankCorr = {
+    {
+        "Perfect correlation",
+        R"(
+SELECT rankCorr(number, number) FROM numbers(100);
+        )",
+        R"(
+┌─rankCorr(number, number)─┐
+│                        1 │
+└──────────────────────────┘
+        )"
+    },
+    {
+        "Non-linear relationship",
+        R"(
+SELECT roundBankers(rankCorr(exp(number), sin(number)), 3) FROM numbers(100);
+        )",
+        R"(
+┌─roundBankers(rankCorr(exp(number), sin(number)), 3)─┐
+│                                              -0.037 │
+└─────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_rankCorr = {20, 9};
+    FunctionDocumentation::Category category_rankCorr = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_rankCorr = {description_rankCorr, syntax_rankCorr, arguments_rankCorr, parameters_rankCorr, returned_value_rankCorr, examples_rankCorr, introduced_in_rankCorr, category_rankCorr};
+
+    factory.registerFunction("rankCorr", {createAggregateFunctionRankCorrelation, {}, documentation_rankCorr});
 }
 
 }

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# no-parallel-replicas: unrelated error
 
 # INSERT buffer_02572 -> data_02572 -> copy_02572
 #                                   ^^

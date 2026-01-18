@@ -1,10 +1,15 @@
 ---
-description: "System table containing logging entries with information about `BACKUP` and `RESTORE` operations."
+description: 'System table containing logging entries with information about `BACKUP`
+  and `RESTORE` operations.'
+keywords: ['system table', 'backup_log']
 slug: /operations/system-tables/backup_log
-title: "system.backup_log"
-keywords: ["system table", "backup_log"]
+title: 'system.backup_log'
+doc_type: 'reference'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.backup_log
 
 <SystemTableCloud/>
 
@@ -19,12 +24,12 @@ Columns:
 - `id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the backup or restore operation.
 - `name` ([String](../../sql-reference/data-types/string.md)) — Name of the backup storage (the contents of the `FROM` or `TO` clause).
 - `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Operation status. Possible values:
-    - `'CREATING_BACKUP'`
-    - `'BACKUP_CREATED'`
-    - `'BACKUP_FAILED'`
-    - `'RESTORING'`
-    - `'RESTORED'`
-    - `'RESTORE_FAILED'`
+  - `'CREATING_BACKUP'`
+  - `'BACKUP_CREATED'`
+  - `'BACKUP_FAILED'`
+  - `'RESTORING'`
+  - `'RESTORED'`
+  - `'RESTORE_FAILED'`
 - `error` ([String](../../sql-reference/data-types/string.md)) — Error message of the failed operation (empty string for successful operations).
 - `start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of the operation.
 - `end_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time of the operation.
@@ -154,4 +159,4 @@ SELECT * FROM system.backups ORDER BY start_time
 
 **See Also**
 
-- [Backup and Restore](../../operations/backup.md)
+- [Backup and Restore](/operations/backup/overview)

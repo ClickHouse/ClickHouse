@@ -248,7 +248,7 @@ struct TimeWindowImpl<TUMBLE>
         for (size_t i = 0; i != input_rows_count; ++i)
         {
             start_data[i] = ToStartOfTransform<unit>::execute(time_data[i], num_units, time_zone);
-            end_data[i] = AddTime<unit>::execute(start_data[i], num_units, time_zone);
+            end_data[i] = static_cast<ToType>(AddTime<unit>::execute(start_data[i], num_units, time_zone));
         }
         MutableColumns result;
         result.emplace_back(std::move(start));
@@ -448,8 +448,8 @@ struct TimeWindowImpl<HOP>
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
-            ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
-            wstart = AddTime<kind>::execute(wend, -window_num_units, time_zone);
+            ToType wend = static_cast<ToType>(AddTime<kind>::execute(wstart, hop_num_units, time_zone));
+            wstart = static_cast<ToType>(AddTime<kind>::execute(wend, -window_num_units, time_zone));
             ToType wend_latest;
 
             if (wstart > wend)
@@ -458,11 +458,11 @@ struct TimeWindowImpl<HOP>
             do
             {
                 wend_latest = wend;
-                wend = AddTime<kind>::execute(wend, -hop_num_units, time_zone);
+                wend = static_cast<ToType>(AddTime<kind>::execute(wend, -hop_num_units, time_zone));
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
-            start_data[i] = AddTime<kind>::execute(wend_latest, -window_num_units, time_zone);
+            start_data[i] = static_cast<ToType>(AddTime<kind>::execute(wend_latest, -window_num_units, time_zone));
         }
         MutableColumns result;
         result.emplace_back(std::move(start));
@@ -583,7 +583,7 @@ struct TimeWindowImpl<WINDOW_ID>
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
-            ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
+            ToType wend = static_cast<ToType>(AddTime<kind>::execute(wstart, hop_num_units, time_zone));
             ToType wend_latest;
 
             if (wstart > wend)
@@ -592,7 +592,7 @@ struct TimeWindowImpl<WINDOW_ID>
             do
             {
                 wend_latest = wend;
-                wend = AddTime<kind>::execute(wend, -gcd_num_units, time_zone);
+                wend = static_cast<ToType>(AddTime<kind>::execute(wend, -gcd_num_units, time_zone));
             } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
@@ -716,12 +716,111 @@ ColumnPtr FunctionTimeWindow<type>::executeImpl(const ColumnsWithTypeAndName & a
 
 REGISTER_FUNCTION(TimeWindow)
 {
-    factory.registerFunction<FunctionTumble>();
-    factory.registerFunction<FunctionHop>();
-    factory.registerFunction<FunctionTumbleStart>();
-    factory.registerFunction<FunctionTumbleEnd>();
-    factory.registerFunction<FunctionHopStart>();
-    factory.registerFunction<FunctionHopEnd>();
+    FunctionDocumentation::Description description_tumble = R"(
+A tumbling time window assigns records to non-overlapping, continuous windows with a fixed duration (`interval`).
+    )";
+    FunctionDocumentation::Syntax syntax_tumble = "tumble(time_attr, interval[, timezone])";
+    FunctionDocumentation::Arguments arguments_tumble = {
+        {"time_attr", "Date and time.", {"DateTime"}},
+        {"interval", "Window interval in Interval.", {"Interval"}},
+        {"timezone", "Optional. Timezone name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tumble = {"Returns the inclusive lower and exclusive upper bound of the corresponding tumbling window.", {"Tuple(DateTime, DateTime)"}};
+    FunctionDocumentation::Examples examples_tumble = {{"Tumbling window", "SELECT tumble(now(), toIntervalDay('1'))", "('2024-07-04 00:00:00','2024-07-05 00:00:00')"}};
+    FunctionDocumentation::IntroducedIn introduced_in_tumble = {21, 12};
+    FunctionDocumentation::Category category_tumble = FunctionDocumentation::Category::TimeWindow;
+    FunctionDocumentation documentation_tumble = {description_tumble, syntax_tumble, arguments_tumble, {}, returned_value_tumble, examples_tumble, introduced_in_tumble, category_tumble};
+
+    FunctionDocumentation::Description description_tumble_start = R"(
+Returns the inclusive lower bound of the corresponding tumbling window.
+    )";
+    FunctionDocumentation::Syntax syntax_tumble_start = "tumbleStart(time_attr, interval[, timezone])";
+    FunctionDocumentation::Arguments arguments_tumble_start = {
+        {"time_attr", "Date and time.", {"DateTime"}},
+        {"interval", "Window interval in Interval.", {"Interval"}},
+        {"timezone", "Optional. Timezone name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tumble_start = {"Returns the inclusive lower bound of the corresponding tumbling window.", {"DateTime"}};
+    FunctionDocumentation::Examples examples_tumble_start = {{"Tumbling window start", "SELECT tumbleStart(now(), toIntervalDay('1'))", "2024-07-04 00:00:00"}};
+    FunctionDocumentation::IntroducedIn introduced_in_tumble_start = {22, 1};
+    FunctionDocumentation::Category category_tumble_start = FunctionDocumentation::Category::TimeWindow;
+    FunctionDocumentation documentation_tumble_start = {description_tumble_start, syntax_tumble_start, arguments_tumble_start, {}, returned_value_tumble_start, examples_tumble_start, introduced_in_tumble_start, category_tumble_start};
+
+    FunctionDocumentation::Description description_tumble_end = R"(
+Returns the exclusive upper bound of the corresponding tumbling window.
+    )";
+    FunctionDocumentation::Syntax syntax_tumble_end = "tumbleEnd(time_attr, interval[, timezone])";
+    FunctionDocumentation::Arguments arguments_tumble_end = {
+        {"time_attr", "Date and time.", {"DateTime"}},
+        {"interval", "Window interval in Interval.", {"Interval"}},
+        {"timezone", "Optional. Timezone name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_tumble_end = {"Returns the exclusive upper bound of the corresponding tumbling window.", {"DateTime"}};
+    FunctionDocumentation::Examples examples_tumble_end = {{"Tumbling window end", "SELECT tumbleEnd(now(), toIntervalDay('1'))", "2024-07-05 00:00:00"}};
+    FunctionDocumentation::IntroducedIn introduced_in_tumble_end = {22, 1};
+    FunctionDocumentation::Category category_tumble_end = FunctionDocumentation::Category::TimeWindow;
+    FunctionDocumentation documentation_tumble_end = {description_tumble_end, syntax_tumble_end, arguments_tumble_end, {}, returned_value_tumble_end, examples_tumble_end, introduced_in_tumble_end, category_tumble_end};
+
+    FunctionDocumentation::Description description_hop = R"(
+A hopping time window has a fixed duration (`window_interval`) and hops by a specified hop interval (`hop_interval`). If the `hop_interval` is smaller than the `window_interval`, hopping windows are overlapping. Thus, records can be assigned to multiple windows.
+
+Since one record can be assigned to multiple hop windows, the function only returns the bound of the first window when hop function is used without WINDOW VIEW.
+    )";
+    FunctionDocumentation::Syntax syntax_hop = "hop(time_attr, hop_interval, window_interval[, timezone])";
+    FunctionDocumentation::Arguments arguments_hop = {
+        {"time_attr", "Date and time.", {"DateTime"}},
+        {"hop_interval", "Positive Hop interval.", {"Interval"}},
+        {"window_interval", "Positive Window interval.", {"Interval"}},
+        {"timezone", "Optional. Timezone name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_hop = {"Returns the inclusive lower and exclusive upper bound of the corresponding hopping window.", {"Tuple(DateTime, DateTime)"}};
+    FunctionDocumentation::Examples examples_hop = {{"Hopping window", "SELECT hop(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)", "('2024-07-03 00:00:00','2024-07-05 00:00:00')"}};
+    FunctionDocumentation::IntroducedIn introduced_in_hop = {21, 12};
+    FunctionDocumentation::Category category_hop = FunctionDocumentation::Category::TimeWindow;
+    FunctionDocumentation documentation_hop = {description_hop, syntax_hop, arguments_hop, {}, returned_value_hop, examples_hop, introduced_in_hop, category_hop};
+
+    FunctionDocumentation::Description description_hop_start = R"(
+Returns the inclusive lower bound of the corresponding hopping window.
+
+Since one record can be assigned to multiple hop windows, the function only returns the bound of the first window when hop function is used without `WINDOW VIEW`.
+    )";
+    FunctionDocumentation::Syntax syntax_hop_start = "hopStart(time_attr, hop_interval, window_interval[, timezone])";
+    FunctionDocumentation::Arguments arguments_hop_start = {
+        {"time_attr", "Date and time.", {"DateTime"}},
+        {"hop_interval", "Positive Hop interval.", {"Interval"}},
+        {"window_interval", "Positive Window interval.", {"Interval"}},
+        {"timezone", "Optional. Timezone name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_hop_start = {"Returns the inclusive lower bound of the corresponding hopping window.", {"DateTime"}};
+    FunctionDocumentation::Examples examples_hop_start = {{"Hopping window start", "SELECT hopStart(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)", "2024-07-03 00:00:00"}};
+    FunctionDocumentation::IntroducedIn introduced_in_hop_start = {22, 1};
+    FunctionDocumentation::Category category_hop_start = FunctionDocumentation::Category::TimeWindow;
+    FunctionDocumentation documentation_hop_start = {description_hop_start, syntax_hop_start, arguments_hop_start, {}, returned_value_hop_start, examples_hop_start, introduced_in_hop_start, category_hop_start};
+
+    FunctionDocumentation::Description description_hop_end = R"(
+Returns the exclusive upper bound of the corresponding hopping window.
+
+Since one record can be assigned to multiple hop windows, the function only returns the bound of the first window when hop function is used without `WINDOW VIEW`.
+    )";
+    FunctionDocumentation::Syntax syntax_hop_end = "hopEnd(time_attr, hop_interval, window_interval[, timezone])";
+    FunctionDocumentation::Arguments arguments_hop_end = {
+        {"time_attr", "Date and time.", {"DateTime"}},
+        {"hop_interval", "Positive Hop interval.", {"Interval"}},
+        {"window_interval", "Positive Window interval.", {"Interval"}},
+        {"timezone", "Optional. Timezone name.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_hop_end = {"Returns the exclusive upper bound of the corresponding hopping window.", {"DateTime"}};
+    FunctionDocumentation::Examples examples_hop_end = {{"Hopping window end", "SELECT hopEnd(now(), INTERVAL '1' DAY, INTERVAL '2' DAY)", "2024-07-05 00:00:00"}};
+    FunctionDocumentation::IntroducedIn introduced_in_hop_end = {22, 1};
+    FunctionDocumentation::Category category_hop_end = FunctionDocumentation::Category::TimeWindow;
+    FunctionDocumentation documentation_hop_end = {description_hop_end, syntax_hop_end, arguments_hop_end, {}, returned_value_hop_end, examples_hop_end, introduced_in_hop_end, category_hop_end};
+
+    factory.registerFunction<FunctionTumble>(documentation_tumble);
+    factory.registerFunction<FunctionTumbleStart>(documentation_tumble_start);
+    factory.registerFunction<FunctionTumbleEnd>(documentation_tumble_end);
+    factory.registerFunction<FunctionHop>(documentation_hop);
+    factory.registerFunction<FunctionHopStart>(documentation_hop_start);
+    factory.registerFunction<FunctionHopEnd>(documentation_hop_end);
     factory.registerFunction<FunctionWindowId>();
 }
 }

@@ -11,7 +11,7 @@ namespace DB
 class RowInputFormatWithDiagnosticInfo : public IRowInputFormat
 {
 public:
-    RowInputFormatWithDiagnosticInfo(const Block & header_, ReadBuffer & in_, const Params & params_);
+    RowInputFormatWithDiagnosticInfo(SharedHeader header_, ReadBuffer & in_, const Params & params_);
 
     std::pair<String, String> getDiagnosticAndRawDataImpl(bool is_errors_record);
     String getDiagnosticInfo() override;

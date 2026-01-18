@@ -40,7 +40,7 @@ ALTER TABLE t_lightweight_mut_7 UPDATE v = v WHERE 1 SETTINGS mutations_sync = 2
 
 SELECT 3, sum(v) FROM t_lightweight_mut_7;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     query,

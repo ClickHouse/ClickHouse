@@ -54,7 +54,7 @@ wait_for_mutation rmt_slave 0000000000
 $CLICKHOUSE_CLIENT -m -q "
     system sync replica rmt_slave;
 
-    system flush logs;
+    system flush logs part_log;
     select 'after';
     select table, event_type, error>0, countIf(error=0) from system.part_log where database = currentDatabase() group by 1, 2, 3 order by 1, 2, 3;
 

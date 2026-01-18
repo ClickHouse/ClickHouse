@@ -13,7 +13,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <boost/range/algorithm_ext/erase.hpp>
+#include <Storages/StorageFactory.h>
 
 namespace DB
 {
@@ -428,6 +428,18 @@ BlockIO InterpreterGrantQuery::execute()
 
     auto & access_control = getContext()->getAccessControl();
     auto current_user_access = getContext()->getAccess();
+
+    /// Validate TABLE ENGINE parameter names if explicitly specified
+    for (const auto & element : query.access_rights_elements)
+    {
+        if (element.isGlobalWithParameter()
+            && (element.access_flags.getParameterType() == AccessFlags::TABLE_ENGINE)
+            && !element.anyParameter())
+        {
+            /// Will throw UNKNOWN_STORAGE if engine is unknown
+            (void)StorageFactory::instance().getStorageFeatures(element.parameter);
+        }
+    }
 
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 

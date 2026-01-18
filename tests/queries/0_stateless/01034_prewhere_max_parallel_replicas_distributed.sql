@@ -12,6 +12,7 @@ SET enable_parallel_replicas = 1;
 SET parallel_replicas_mode='sampling_key';
 SET max_parallel_replicas = 2;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
+SET use_query_condition_cache = 0; -- https://github.com/ClickHouse/ClickHouse/issues/91741
 select count() FROM remote('127.0.0.{2|3}', currentDatabase(), test_max_parallel_replicas_lr) PREWHERE timestamp > 0;
 
 drop table test_max_parallel_replicas_lr;

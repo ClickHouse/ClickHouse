@@ -1,6 +1,8 @@
-#include "TemporaryReplaceTableName.h"
+#include <Interpreters/TemporaryReplaceTableName.h>
 
 #include <Common/re2.h>
+#include <Common/SipHash.h>
+
 
 #include <base/hex.h>
 #include <fmt/core.h>
@@ -22,5 +24,10 @@ namespace DB
             return result;
         }
         return std::nullopt;
+    }
+
+    String TemporaryReplaceTableName::calculateHash(String database, String table)
+    {
+        return getHexUIntLowercase(sipHash64(std::move(database) + std::move(table)));
     }
 }

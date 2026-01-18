@@ -11,6 +11,7 @@ namespace DB
 /// SHOW [CURRENT|ENABLED] ROLES
 /// SHOW [SETTINGS] PROFILES
 /// SHOW [ROW] POLICIES [name | ON [database.]table]
+/// SHOW MASKING POLICIES [name | ON [database.]table]
 /// SHOW QUOTAS
 /// SHOW [CURRENT] QUOTA
 class ASTShowAccessEntitiesQuery : public ASTQueryWithOutput

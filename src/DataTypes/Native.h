@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <DataTypes/DataTypesDecimal.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <Common/Exception.h>
@@ -29,21 +30,20 @@ bool canBeNativeType(const IDataType & type);
 /// Returns true if type can be native LLVM type, false otherwise
 bool canBeNativeType(const DataTypePtr & type);
 
+/// LLVM supports up to 128-bit integers on x86_64 and AArch64
+#define MAX_NATIVE_INT_SIZE 16
+
 template <typename Type>
 static constexpr bool canBeNativeType()
 {
-    if constexpr (std::is_same_v<Type, Int8> || std::is_same_v<Type, UInt8>)
+    if constexpr (std::is_same_v<Type, Float32> || std::is_same_v<Type, Float64>)
         return true;
-    else if constexpr (std::is_same_v<Type, Int16> || std::is_same_v<Type, UInt16>)
+    else if constexpr (is_integer<Type> && sizeof(Type) <= MAX_NATIVE_INT_SIZE)
         return true;
-    else if constexpr (std::is_same_v<Type, Int32> || std::is_same_v<Type, UInt32>)
+    else if constexpr (is_decimal<Type> && sizeof(Type) <= MAX_NATIVE_INT_SIZE)
         return true;
-    else if constexpr (std::is_same_v<Type, Int64> || std::is_same_v<Type, UInt64>)
-        return true;
-    else if constexpr (std::is_same_v<Type, Float32> || std::is_same_v<Type, Float64>)
-        return true;
-
-    return false;
+    else
+        return false;
 }
 
 /// Cast type to native LLVM type
@@ -59,14 +59,24 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder)
         return builder.getInt8Ty();
     else if constexpr (std::is_same_v<ToType, Int16> || std::is_same_v<ToType, UInt16>)
         return builder.getInt16Ty();
-    else if constexpr (std::is_same_v<ToType, Int32> || std::is_same_v<ToType, UInt32>)
+    else if constexpr (std::is_same_v<ToType, Int32> || std::is_same_v<ToType, UInt32> || std::is_same_v<ToType, Decimal32>)
         return builder.getInt32Ty();
-    else if constexpr (std::is_same_v<ToType, Int64> || std::is_same_v<ToType, UInt64>)
+    else if constexpr (
+        std::is_same_v<ToType, Int64> || std::is_same_v<ToType, UInt64> || std::is_same_v<ToType, DateTime64>
+        || std::is_same_v<ToType, Decimal64>)
         return builder.getInt64Ty();
     else if constexpr (std::is_same_v<ToType, Float32>)
         return builder.getFloatTy();
     else if constexpr (std::is_same_v<ToType, Float64>)
         return builder.getDoubleTy();
+    else if constexpr (std::is_same_v<ToType, Int128> || std::is_same_v<ToType, UInt128> || std::is_same_v<ToType, Decimal128>)
+    /// There is one problem: LLVM uses "preferred alignment" for this type as 16 bytes,
+    /// and will generate aligned loads/stores by default
+    /// While our Int128, UInt128 types have only 8 bytes alignment.
+    /// When working with values of these types in LLVM, don't forget to do setAlignment(llvm::Align(8)) for all loads/stores.
+        return builder.getInt128Ty();
+    else if constexpr (std::is_same_v<ToType, Int256> || std::is_same_v<ToType, UInt256> || std::is_same_v<ToType, Decimal256>)
+        return builder.getIntNTy(256);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast to native type");
 }
@@ -74,12 +84,26 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder)
 template <typename ToType>
 static inline DataTypePtr toNativeDataType()
 {
-    static_assert(std::is_same_v<ToType, Int8> || std::is_same_v<ToType, UInt8> ||
+    if constexpr (std::is_same_v<ToType, Int8> || std::is_same_v<ToType, UInt8> ||
         std::is_same_v<ToType, Int16> || std::is_same_v<ToType, UInt16> ||
         std::is_same_v<ToType, Int32> || std::is_same_v<ToType, UInt32> ||
         std::is_same_v<ToType, Int64> || std::is_same_v<ToType, UInt64> ||
-        std::is_same_v<ToType, Float32> || std::is_same_v<ToType, Float64>);
-    return std::make_shared<DataTypeNumber<ToType>>();
+        std::is_same_v<ToType, Int128> || std::is_same_v<ToType, UInt128> ||
+        std::is_same_v<ToType, Int256> || std::is_same_v<ToType, UInt256> ||
+        std::is_same_v<ToType, Float32> || std::is_same_v<ToType, Float64>)
+        return std::make_shared<DataTypeNumber<ToType>>();
+    else if constexpr (std::is_same_v<ToType, DateTime64>)
+        return std::make_shared<DataTypeDateTime64>(0);
+    else if constexpr (std::is_same_v<ToType, Decimal32>)
+        return createDecimalMaxPrecision<Decimal32>(0);
+    else if constexpr (std::is_same_v<ToType, Decimal64>)
+        return createDecimalMaxPrecision<Decimal64>(0);
+    else if constexpr (std::is_same_v<ToType, Decimal128>)
+        return createDecimalMaxPrecision<Decimal128>(0);
+    else if constexpr (std::is_same_v<ToType, Decimal256>)
+        return createDecimalMaxPrecision<Decimal256>(0);
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid cast to native data type");
 }
 
 /// Cast LLVM value with type to bool
@@ -103,6 +127,9 @@ static inline llvm::Value * nativeCast(llvm::IRBuilderBase & b, llvm::Value * va
 
 /// Get column value for specified index as LLVM constant
 llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index);
+
+/// Get value for specified field as LLVM constant
+llvm::Constant * getNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const Field & field);
 
 }
 

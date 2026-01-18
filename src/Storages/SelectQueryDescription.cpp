@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
@@ -63,7 +62,7 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPt
             throw Exception(
                 ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW,
                 "StorageMaterializedView cannot be created from table functions ({})",
-                serializeAST(*subquery));
+                subquery->formatForErrorMessage());
 
         auto & inner_query = ast_select->list_of_selects->children.at(0);
 

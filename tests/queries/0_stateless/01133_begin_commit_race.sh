@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-ordinary-database
+# Tags: long, no-ordinary-database, no-encrypted-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,7 +13,9 @@ $CLICKHOUSE_CLIENT --query "CREATE TABLE mt (n Int64) ENGINE=MergeTree ORDER BY 
 
 function begin_commit_readonly()
 {
-  while true; do
+  local TIMELIMIT=$((SECONDS+TIMEOUT))
+  while [ $SECONDS -lt "$TIMELIMIT" ]
+  do
     $CLICKHOUSE_CLIENT --query "
             SET wait_changes_become_visible_after_commit_mode='wait';
             BEGIN TRANSACTION;
@@ -23,7 +25,9 @@ function begin_commit_readonly()
 
 function begin_rollback_readonly()
 {
-  while true; do
+  local TIMELIMIT=$((SECONDS+TIMEOUT))
+  while [ $SECONDS -lt "$TIMELIMIT" ]
+  do
     $CLICKHOUSE_CLIENT --wait_changes_become_visible_after_commit_mode=wait_unknown --query "
             BEGIN TRANSACTION;
             SET TRANSACTION SNAPSHOT 42;
@@ -33,7 +37,9 @@ function begin_rollback_readonly()
 
 function begin_insert_commit()
 {
-  while true; do
+  local TIMELIMIT=$((SECONDS+TIMEOUT))
+  while [ $SECONDS -lt "$TIMELIMIT" ]
+  do
     $CLICKHOUSE_CLIENT --wait_changes_become_visible_after_commit_mode=async --query "
             BEGIN TRANSACTION;
             INSERT INTO mt VALUES ($RANDOM);
@@ -43,23 +49,20 @@ function begin_insert_commit()
 
 function introspection()
 {
-  while true; do
+  local TIMELIMIT=$((SECONDS+TIMEOUT))
+  while [ $SECONDS -lt "$TIMELIMIT" ]
+  do
     $CLICKHOUSE_CLIENT -q "SELECT * FROM system.transactions FORMAT Null"
     $CLICKHOUSE_CLIENT -q "SELECT transactionLatestSnapshot(), transactionOldestSnapshot() FORMAT Null"
   done
 }
 
-export -f begin_commit_readonly
-export -f begin_rollback_readonly
-export -f begin_insert_commit
-export -f introspection
-
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c begin_commit_readonly &
-timeout $TIMEOUT bash -c begin_rollback_readonly &
-timeout $TIMEOUT bash -c begin_insert_commit &
-timeout $TIMEOUT bash -c introspection &
+begin_commit_readonly &
+begin_rollback_readonly &
+begin_insert_commit &
+introspection &
 
 wait
 

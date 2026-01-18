@@ -27,9 +27,9 @@ enum class IPStringToNumExceptionMode : uint8_t
     Null
 };
 
-static inline bool tryParseIPv4(const char * pos, UInt32 & result_value)
+static inline bool tryParseIPv4(const char * pos, const char * end, UInt32 & result_value)
 {
-    return parseIPv4whole(pos, reinterpret_cast<unsigned char *>(&result_value));
+    return parseIPv4whole(pos, end, reinterpret_cast<unsigned char *>(&result_value));
 }
 
 namespace detail
@@ -41,7 +41,6 @@ namespace detail
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "Illegal return column type {}. Expected IPv6 or FixedString",
                             TypeName<typename ToColumn::ValueType>);
-
 
         size_t column_size = string_column.size();
 
@@ -126,16 +125,6 @@ namespace detail
         const Chars & vec_src = string_column.getChars();
 
         size_t src_offset = 0;
-        char src_ipv4_buf[sizeof("::ffff:") + IPV4_MAX_TEXT_LENGTH + 1] = "::ffff:";
-
-        /// ColumnFixedString contains not null terminated strings. But functions parseIPv6, parseIPv4 expect null terminated string.
-        /// TODO fix this - now parseIPv6/parseIPv4 accept end iterator, so can be parsed in-place
-        std::string fixed_string_buffer;
-
-        if constexpr (std::is_same_v<StringColumnType, ColumnFixedString>)
-        {
-            fixed_string_buffer.resize(string_column.getN());
-        }
 
         int offset_inc = 1;
         if constexpr (std::is_same_v<ToColumn, ColumnFixedString>)
@@ -145,23 +134,15 @@ namespace detail
         {
             size_t src_next_offset = src_offset;
 
-            const char * src_value = nullptr;
+            const char * src_value = reinterpret_cast<const char *>(&vec_src[src_offset]);
             unsigned char * res_value = reinterpret_cast<unsigned char *>(&vec_res[out_offset]);
 
             if constexpr (std::is_same_v<StringColumnType, ColumnString>)
-            {
-                src_value = reinterpret_cast<const char *>(&vec_src[src_offset]);
                 src_next_offset = string_column.getOffsets()[i];
-            }
             else if constexpr (std::is_same_v<StringColumnType, ColumnFixedString>)
-            {
-                size_t fixed_string_size = string_column.getN();
+                src_next_offset += string_column.getN();
 
-                std::memcpy(fixed_string_buffer.data(), reinterpret_cast<const char *>(&vec_src[src_offset]), fixed_string_size);
-                src_value = fixed_string_buffer.data();
-
-                src_next_offset += fixed_string_size;
-            }
+            const char * src_value_end = reinterpret_cast<const char *>(&vec_src[src_next_offset]);
 
             if (null_map && (*null_map)[i])
             {
@@ -172,27 +153,29 @@ namespace detail
                 continue;
             }
 
-            bool parse_result = false;
-            UInt32 dummy_result = 0;
+            bool parsed = false;
 
-            /// For both cases below: In case of failure, the function parseIPv6 fills vec_res with zero bytes.
+            /// For both cases below: In case of failure, the function parseIPv6 fills vec_res with zeros.
 
             /// If the source IP address is parsable as an IPv4 address, then transform it into a valid IPv6 address.
-            /// Keeping it simple by just prefixing `::ffff:` to the IPv4 address to represent it as a valid IPv6 address.
-            if (tryParseIPv4(src_value, dummy_result))
+            UInt32 ipv4 = 0;
+            if (tryParseIPv4(src_value, src_value_end, ipv4))
             {
-                std::memcpy(
-                    src_ipv4_buf + std::strlen("::ffff:"),
-                    src_value,
-                    std::min<UInt64>(src_next_offset - src_offset, IPV4_MAX_TEXT_LENGTH + 1));
-                parse_result = parseIPv6whole(src_ipv4_buf, res_value);
+                memset(res_value, 0, 10);
+                res_value[10] = 0xFF;
+                res_value[11] = 0xFF;
+                if constexpr (std::endian::native == std::endian::little)
+                    reverseMemcpy(&res_value[12], &ipv4, 4);
+                else
+                    memcpy(&res_value[12], &ipv4, 4);
+                parsed = true;
             }
             else
             {
-                parse_result = parseIPv6whole(src_value, res_value);
+                parsed = parseIPv6Whole(src_value, src_value_end, res_value);
             }
 
-            if (!parse_result)
+            if (!parsed)
             {
                 if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
                     throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Invalid IPv6 value");
@@ -268,7 +251,11 @@ ColumnPtr convertToIPv4(ColumnPtr column, const PaddedPODArray<UInt8> * null_map
             continue;
         }
 
-        bool parse_result = tryParseIPv4(reinterpret_cast<const char *>(&vec_src[prev_offset]), vec_res[i]);
+        size_t next_offset = offsets_src[i];
+        bool parse_result = tryParseIPv4(
+            reinterpret_cast<const char *>(&vec_src[prev_offset]),
+            reinterpret_cast<const char *>(&vec_src[next_offset]),
+            vec_res[i]);
 
         if (!parse_result)
         {
@@ -287,7 +274,7 @@ ColumnPtr convertToIPv4(ColumnPtr column, const PaddedPODArray<UInt8> * null_map
             }
         }
 
-        prev_offset = offsets_src[i];
+        prev_offset = next_offset;
     }
 
     if constexpr (exception_mode == IPStringToNumExceptionMode::Null)

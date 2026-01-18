@@ -8,7 +8,6 @@ generateSeries
 generate_series
 input
 jdbc
-merge
 null
 numbers
 numbers_mt

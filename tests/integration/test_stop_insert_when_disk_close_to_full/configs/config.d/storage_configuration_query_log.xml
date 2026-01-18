@@ -1,0 +1,27 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk1>
+                <type>local</type>
+                <path>/disk1/</path>
+            </disk1>
+        </disks>
+        <policies>
+            <only_disk1>
+                <volumes>
+                    <main>
+                        <disk>disk1</disk>
+                    </main>
+                </volumes>
+            </only_disk1>
+        </policies>
+    </storage_configuration>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <storage_policy>only_disk1</storage_policy>
+    </query_log>
+    <merge_tree>
+        <min_free_disk_ratio_to_perform_insert>1.0</min_free_disk_ratio_to_perform_insert>
+    </merge_tree>
+</clickhouse>

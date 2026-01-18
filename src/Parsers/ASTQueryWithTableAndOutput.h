@@ -52,9 +52,9 @@ public:
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
-        ostr << (settings.hilite ? hilite_keyword : "")
+        ostr
             << (temporary ? AstIDAndQueryNames::QueryTemporary : AstIDAndQueryNames::Query)
-            << " " << (settings.hilite ? hilite_none : "");
+            << " ";
 
         if (database)
         {

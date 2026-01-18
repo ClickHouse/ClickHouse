@@ -15,11 +15,12 @@ namespace ErrorCodes
 
 RowInputMissingColumnsFiller::RowInputMissingColumnsFiller() = default;
 
-RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const NamesAndTypesList & names_and_types)
+RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const NamesAndTypesList & names_and_types_)
+  : names_and_types(names_and_types_)
 {
     std::unordered_map<std::string_view, std::vector<size_t>> nested_groups; /// Nested prefix -> column indices.
     size_t i = 0;
-    for (auto it = names_and_types.begin(); it != names_and_types.end(); ++it, ++i)
+    for (auto it = names_and_types_.begin(); it != names_and_types_.end(); ++it, ++i)
     {
         const auto & name_and_type = *it;
         if (isArray(name_and_type.type))
@@ -29,7 +30,7 @@ RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const NamesAndTypesLi
                 nested_groups[split.first].push_back(i);
         }
     }
-    setNestedGroups(std::move(nested_groups), names_and_types.size());
+    setNestedGroups(std::move(nested_groups), names_and_types_.size());
 }
 
 RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const Names & names, const DataTypes & types)
@@ -43,6 +44,7 @@ RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(const Names & names, 
             if (!split.second.empty()) /// Is it really a column of Nested data structure?
                 nested_groups[split.first].push_back(i);
         }
+        names_and_types.push_back({names[i], types[i]});
     }
     setNestedGroups(std::move(nested_groups), names.size());
 }
@@ -58,6 +60,7 @@ RowInputMissingColumnsFiller::RowInputMissingColumnsFiller(size_t count, const s
             if (!split.second.empty()) /// Is it really a column of Nested data structure?
                 nested_groups[split.first].push_back(i);
         }
+        names_and_types.push_back({std::string(names[i]), types[i]});
     }
     setNestedGroups(std::move(nested_groups), count);
 }
@@ -139,6 +142,13 @@ void RowInputMissingColumnsFiller::addDefaults(MutableColumns & columns, size_t 
             }
         }
     }
+
 }
+
+const NamesAndTypesList & RowInputMissingColumnsFiller::getNamesAndTypes() const
+{
+    return names_and_types;
+}
+
 
 }

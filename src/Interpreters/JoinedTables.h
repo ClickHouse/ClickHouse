@@ -3,7 +3,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
 

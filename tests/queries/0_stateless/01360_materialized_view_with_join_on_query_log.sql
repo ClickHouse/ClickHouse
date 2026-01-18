@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, memory-engine
 -- no-parallel: Slows down query_log
 
 DROP TABLE IF EXISTS slow_log;

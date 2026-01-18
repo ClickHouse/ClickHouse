@@ -10,12 +10,11 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/Stopwatch.h>
-#include <base/StringRef.h>
 
 /// NOTE: see string_hash_map.cpp for usage example
 
 template <typename Set>
-void NO_INLINE bench(const std::vector<StringRef> & data, DB::Arena & pool, const char * name)
+void NO_INLINE bench(const std::vector<std::string_view> & data, DB::Arena & pool, const char * name)
 {
     std::cerr << "method " << name << std::endl;
     for (auto t = 0ul; t < 7; ++t)
@@ -52,9 +51,9 @@ int main(int argc, char ** argv)
     size_t m = std::stol(argv[2]);
 
     DB::Arena pool(128 * 1024 * 1024);
-    std::vector<StringRef> data(n);
+    std::vector<std::string_view> data(n);
 
-    std::cerr << "sizeof(Key) = " << sizeof(StringRef) << std::endl;
+    std::cerr << "sizeof(Key) = " << sizeof(std::string_view) << std::endl;
 
     {
         Stopwatch watch;
@@ -65,7 +64,7 @@ int main(int argc, char ** argv)
         for (size_t i = 0; i < n && !in2.eof(); ++i)
         {
             DB::readStringBinary(tmp, in2);
-            data[i] = StringRef(pool.insert(tmp.data(), tmp.size()), tmp.size());
+            data[i] = std::string_view(pool.insert(tmp.data(), tmp.size()), tmp.size());
         }
 
         watch.stop();
@@ -76,8 +75,8 @@ int main(int argc, char ** argv)
     if (!m || m == 1)
         bench<StringHashSet<>>(data, pool, "StringHashSet");
     if (!m || m == 2)
-        bench<HashSetWithSavedHash<StringRef>>(data, pool, "HashSetWithSavedHash");
+        bench<HashSetWithSavedHash<std::string_view>>(data, pool, "HashSetWithSavedHash");
     if (!m || m == 3)
-        bench<HashSet<StringRef>>(data, pool, "HashSet");
+        bench<HashSet<std::string_view>>(data, pool, "HashSet");
     return 0;
 }

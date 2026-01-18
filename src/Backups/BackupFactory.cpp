@@ -17,6 +17,8 @@ BackupFactory::CreateParams BackupFactory::CreateParams::getCreateParamsForBaseB
     read_params.backup_info = std::move(base_backup_info_);
     read_params.context = context;
     read_params.is_internal_backup = is_internal_backup;
+    read_params.data_file_name_generator = data_file_name_generator;
+    read_params.data_file_name_prefix_length = data_file_name_prefix_length;
     read_params.allow_s3_native_copy = allow_s3_native_copy;
     read_params.allow_azure_native_copy = allow_azure_native_copy;
     read_params.use_same_s3_credentials_for_base_backup = use_same_s3_credentials_for_base_backup;

@@ -1,8 +1,12 @@
 ---
+description: 'Documentation for cluster discovery in ClickHouse'
+sidebar_label: 'Cluster discovery'
 slug: /operations/cluster-discovery
-sidebar_label: Cluster Discovery
+title: 'Cluster discovery'
+doc_type: 'guide'
 ---
-# Cluster Discovery
+
+# Cluster discovery
 
 ## Overview {#overview}
 
@@ -22,9 +26,9 @@ To enable it include the `allow_experimental_cluster_discovery` setting in your 
 ```
 :::
 
-## Remote Servers Configuration {#remote-servers-configuration}
+## Remote servers configuration {#remote-servers-configuration}
 
-### Traditional Manual Configuration {#traditional-manual-configuration}
+### Traditional manual configuration {#traditional-manual-configuration}
 
 Traditionally, in ClickHouse, each shard and replica in the cluster needed to be manually specified in the configuration:
 
@@ -56,7 +60,7 @@ Traditionally, in ClickHouse, each shard and replica in the cluster needed to be
 
 ```
 
-### Using Cluster Discovery {#using-cluster-discovery}
+### Using cluster discovery {#using-cluster-discovery}
 
 With Cluster Discovery, rather than defining each node explicitly, you simply specify a path in ZooKeeper. All nodes that register under this path in ZooKeeper will be automatically discovered and added to the cluster.
 
@@ -106,7 +110,6 @@ for `node3` and `node4`:
 
 ### Observer mode {#observer-mode}
 
-
 Nodes configured in observer mode will not register themselves as replicas.
 They will solely observe and discover other active replicas in the cluster without actively participating.
 To enable observer mode, include the `<observer/>` tag within the `<discovery>` section:
@@ -118,15 +121,53 @@ To enable observer mode, include the `<observer/>` tag within the `<discovery>` 
 </discovery>
 ```
 
+### Discovery of clusters {#discovery-of-clusters}
 
-## Use-Cases and Limitations {#use-cases-and-limitations}
+Sometimes you may need to add and remove not only hosts in clusters, but clusters themselves. You can use the `<multicluster_root_path>` node with root path for several clusters:
+
+```xml
+<remote_servers>
+    <some_unused_name>
+        <discovery>
+            <multicluster_root_path>/clickhouse/discovery</multicluster_root_path>
+            <observer/>
+        </discovery>
+    </some_unused_name>
+</remote_servers>
+```
+
+In this case, when some other host registers itself with the path `/clickhouse/discovery/some_new_cluster`, a cluster with name `some_new_cluster` will be added.
+
+You can use both features simultaneously, the host can register itself in cluster `my_cluster` and discovery any other clusters:
+
+```xml
+<remote_servers>
+    <my_cluster>
+        <discovery>
+            <path>/clickhouse/discovery/my_cluster</path>
+        </discovery>
+    </my_cluster>
+    <some_unused_name>
+        <discovery>
+            <multicluster_root_path>/clickhouse/discovery</multicluster_root_path>
+            <observer/>
+        </discovery>
+    </some_unused_name>
+</remote_servers>
+```
+
+Limitations:
+- You can't use both `<path>` and `<multicluster_root_path>` in the same `remote_servers` subtree.
+- `<multicluster_root_path>` can only be with `<observer/>`.
+- The last part of path from Keeper is used as the cluster name, while during registration the name is taken from the XML tag.
+
+## Use cases and limitations {#use-cases-and-limitations}
 
 As nodes are added or removed from the specified ZooKeeper path, they are automatically discovered or removed from the cluster without the need for configuration changes or server restarts.
 
 However, changes affect only cluster configuration, not the data or existing databases and tables.
 
 Consider the following example with a cluster of 3 nodes:
-
 
 ```xml
 <remote_servers>
@@ -170,7 +211,6 @@ Then, we add a new node to the cluster, starting a new node with the same entry 
 
 The fourth node is participating in the cluster, but table `event_table` still exists only on the first three nodes:
 
-
 ```sql
 SELECT hostname(), database, table FROM clusterAllReplicas(default, system.tables) WHERE table = 'event_table' FORMAT PrettyCompactMonoBlock
 
@@ -182,4 +222,3 @@ SELECT hostname(), database, table FROM clusterAllReplicas(default, system.table
 ```
 
 If you need to have tables replicated on all the nodes, you may use the [Replicated](../engines/database-engines/replicated.md) database engine in alternative to cluster discovery.
-

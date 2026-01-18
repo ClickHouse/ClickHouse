@@ -82,7 +82,6 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("BIGINT", "Int64", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("SIGNED", "Int64", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("BIGINT SIGNED", "Int64", DataTypeFactory::Case::Insensitive);
-    factory.registerAlias("TIME", "Int64", DataTypeFactory::Case::Insensitive);
 
     factory.registerAlias("TINYINT UNSIGNED", "UInt8", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("INT1 UNSIGNED", "UInt8", DataTypeFactory::Case::Insensitive);
@@ -120,5 +119,17 @@ template class DataTypeNumber<UInt128>;
 template class DataTypeNumber<Int128>;
 template class DataTypeNumber<UInt256>;
 template class DataTypeNumber<Int256>;
+
+
+DataTypePtr getSmallestIndexesType(size_t num_indexes)
+{
+    if (num_indexes <= std::numeric_limits<UInt8>::max() + 1ull)
+        return std::make_shared<DataTypeUInt8>();
+    if (num_indexes <= std::numeric_limits<UInt16>::max() + 1ull)
+        return std::make_shared<DataTypeUInt16>();
+    if (num_indexes <= std::numeric_limits<UInt32>::max() + 1ull)
+        return std::make_shared<DataTypeUInt32>();
+    return std::make_shared<DataTypeUInt64>();
+}
 
 }

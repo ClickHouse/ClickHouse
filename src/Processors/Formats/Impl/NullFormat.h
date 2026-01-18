@@ -9,7 +9,7 @@ class NullWriteBuffer;
 class NullOutputFormat final : public IOutputFormat
 {
 public:
-    explicit NullOutputFormat(const Block & header);
+    explicit NullOutputFormat(SharedHeader header);
 
     String getName() const override { return "Null"; }
 

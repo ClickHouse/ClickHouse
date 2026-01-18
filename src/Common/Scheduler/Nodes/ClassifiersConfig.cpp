@@ -1,6 +1,5 @@
 #include <Common/Scheduler/Nodes/ClassifiersConfig.h>
 
-#include <Common/Exception.h>
 
 namespace DB
 {

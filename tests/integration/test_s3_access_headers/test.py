@@ -4,6 +4,7 @@ import os
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.s3_tools import prepare_s3_bucket
 
@@ -64,7 +65,7 @@ INCORRECT_TOKEN = "InvalidToken1234"
         ),
         pytest.param(
             "test_static_override",
-            "S3('http://resolver:8081/root/test_static_override.csv', 'minio', 'minio123',  'CSV')",
+            f"S3('http://resolver:8081/root/test_static_override.csv', 'minio', '{minio_secret_key}',  'CSV')",
             False,
             id="test_access_key_id_overrides_access_header",
         ),
@@ -84,7 +85,7 @@ def test_custom_access_header(
     instance.query(
         f"""
         SET s3_truncate_on_insert=1;
-        INSERT INTO FUNCTION s3('http://minio1:9001/root/{table_name}.csv', 'minio', 'minio123','CSV')
+        INSERT INTO FUNCTION s3('http://minio1:9001/root/{table_name}.csv', 'minio', '{minio_secret_key}','CSV')
         SELECT number as a, toString(number) as b FROM numbers(3);
         """
     )

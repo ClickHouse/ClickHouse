@@ -109,10 +109,10 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         .one_line = false
     }));
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{
         std::move(column),
         std::make_shared<DataTypeString>(),
-        "statement"}}));
+        "statement"}})));
 }
 
 void registerInterpreterShowCreateQuery(InterpreterFactory & factory)

@@ -44,6 +44,7 @@ struct IdentifierLookup
 {
     Identifier identifier;
     IdentifierLookupContext lookup_context;
+    ASTPtr original_ast_node = nullptr;
 
     bool isExpressionLookup() const
     {

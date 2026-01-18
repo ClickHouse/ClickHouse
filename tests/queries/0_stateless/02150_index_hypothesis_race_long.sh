@@ -20,12 +20,7 @@ run_query() {
 }
 
 export -f run_query
-parallel -j 8 run_query ::: {0..30}
-
-if [ $? -ne 0 ]; then
-    echo FAILED
-    exit 1
-fi
+seq 0 30 | xargs -P8 -I{} bash -c 'run_query "$@" || exit 255' _ {} || { echo FAILED; exit 1; }
 
 echo OK
 

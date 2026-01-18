@@ -101,6 +101,41 @@ createAggregateFunctionSumCount(const std::string & name, const DataTypes & argu
 
 void registerAggregateFunctionSumCount(AggregateFunctionFactory & factory)
 {
+    FunctionDocumentation::Description description_sumCount = R"(
+Calculates the sum of the numbers and counts the number of rows at the same time. The function is used by ClickHouse query optimizer: if there are multiple `sum`, `count` or `avg` functions in a query, they can be replaced to single `sumCount` function to reuse the calculations. The function is rarely needed to use explicitly.
+
+**See also**
+
+- [`optimize_syntax_fuse_functions`](../../../operations/settings/settings.md#optimize_syntax_fuse_functions) setting.
+    )";
+    FunctionDocumentation::Syntax syntax_sumCount = R"(
+sumCount(x)
+    )";
+    FunctionDocumentation::Parameters parameters_sumCount = {};
+    FunctionDocumentation::Arguments arguments_sumCount = {
+        {"x", "Input value.", {"(U)Int*", "Float", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_sumCount = {"Returns a tuple `(sum, count)`, where `sum` is the sum of numbers and `count` is the number of rows with not-NULL values.", {"Tuple"}};
+    FunctionDocumentation::Examples examples_sumCount = {
+    {
+        "Basic usage",
+        R"(
+CREATE TABLE s_table (x Int8) ENGINE = Log;
+INSERT INTO s_table SELECT number FROM numbers(0, 20);
+INSERT INTO s_table VALUES (NULL);
+SELECT sumCount(x) FROM s_table;
+        )",
+        R"(
+┌─sumCount(x)─┐
+│ (190,20)    │
+└─────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sumCount = {21, 6};
+    FunctionDocumentation::Category category_sumCount = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_sumCount = {description_sumCount, syntax_sumCount, arguments_sumCount, parameters_sumCount, returned_value_sumCount, examples_sumCount, introduced_in_sumCount, category_sumCount};
+
     factory.registerFunction("sumCount", createAggregateFunctionSumCount);
 }
 

@@ -155,7 +155,39 @@ static AggregateFunctionPtr createAggregateFunctionDistinctDynamicTypes(
 
 void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("distinctDynamicTypes", createAggregateFunctionDistinctDynamicTypes);
+    /// distinctDynamicTypes documentation
+    FunctionDocumentation::Description description_distinctDynamicTypes = R"(
+Calculates the list of distinct data types stored in [Dynamic](https://clickhouse.com/docs/sql-reference/data-types/dynamic) column.
+    )";
+    FunctionDocumentation::Syntax syntax_distinctDynamicTypes = R"(
+distinctDynamicTypes(dynamic)
+    )";
+    FunctionDocumentation::Arguments arguments_distinctDynamicTypes = {
+        {"dynamic", "Dynamic column.", {"Dynamic"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_distinctDynamicTypes = {"Returns the sorted list of data type names.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_distinctDynamicTypes = {
+    {
+        "Basic usage with mixed types",
+        R"(
+DROP TABLE IF EXISTS test_dynamic;
+CREATE TABLE test_dynamic(d Dynamic) ENGINE = Memory;
+INSERT INTO test_dynamic VALUES (42), (NULL), ('Hello'), ([1, 2, 3]), ('2020-01-01'), (map(1, 2)), (43), ([4, 5]), (NULL), ('World'), (map(3, 4));
+
+SELECT distinctDynamicTypes(d) FROM test_dynamic;
+        )",
+        R"(
+┌─distinctDynamicTypes(d)──────────────────────────────────────────┐
+│ ['Array(Int64)', 'Date', 'Int64', 'Map(UInt8, UInt8)', 'String'] │
+└──────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_distinctDynamicTypes = {24, 9};
+    FunctionDocumentation::Category category_distinctDynamicTypes = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_distinctDynamicTypes = {description_distinctDynamicTypes, syntax_distinctDynamicTypes, arguments_distinctDynamicTypes, {}, returned_value_distinctDynamicTypes, examples_distinctDynamicTypes, introduced_in_distinctDynamicTypes, category_distinctDynamicTypes};
+
+    factory.registerFunction("distinctDynamicTypes", {createAggregateFunctionDistinctDynamicTypes, {}, documentation_distinctDynamicTypes});
 }
 
 }

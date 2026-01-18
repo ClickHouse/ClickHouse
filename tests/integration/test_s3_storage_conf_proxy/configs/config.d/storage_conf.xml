@@ -5,7 +5,7 @@
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/s3</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <proxy>
                     <uri>http://proxy1</uri>
                     <uri>http://proxy2</uri>
@@ -15,7 +15,7 @@
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/s3_with_resolver</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <skip_access_check>true</skip_access_check>
                 <proxy>
                     <!--

@@ -56,6 +56,7 @@ public:
 
     static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type);
     bool equals(const IDataType & rhs) const override;
+    void updateHashImpl(SipHash & hash) const override;
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
@@ -83,5 +84,8 @@ public:
 };
 
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);
+
+/// Checks type of any nested type is DataTypeAggregateFunction.
+bool hasAggregateFunctionType(const DataTypePtr & type);
 
 }

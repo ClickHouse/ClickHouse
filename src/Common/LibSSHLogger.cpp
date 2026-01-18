@@ -33,10 +33,10 @@ void libssh_logger_callback(int priority, const char *, const char * buffer, voi
             LOG_WARNING(logger, "{}", buffer);
             break;
         case SSH_LOG_PROTOCOL:
-            LOG_INFO(logger, "{}", buffer);
+            LOG_TRACE(logger, "{}", buffer);
             break;
         case SSH_LOG_PACKET:
-            LOG_TRACE(logger, "{}", buffer);
+            LOG_TEST(logger, "{}", buffer);
             break;
         case SSH_LOG_FUNCTIONS:
             LOG_TEST(logger, "{}", buffer);

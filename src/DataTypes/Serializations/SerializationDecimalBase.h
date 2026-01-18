@@ -26,7 +26,7 @@ public:
 
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
-    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
+    void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const override;
 };
 
 extern template class SerializationDecimalBase<Decimal32>;

@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Access/Common/AccessFlags.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -9,7 +10,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/StorageLoop.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 namespace DB
 {
@@ -28,7 +29,7 @@ namespace DB
             std::string getName() const override { return name; }
         private:
             StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
-            const char * getStorageTypeName() const override { return "Loop"; }
+            const char * getStorageEngineName() const override { return "Loop"; }
             ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
             void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -118,6 +119,7 @@ namespace DB
             storage = database->tryGetTable(loop_table_name, context);
             if (!storage)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table '{}' not found in database '{}'", loop_table_name, database_name);
+            context->checkAccess(AccessType::SELECT, database_name, loop_table_name);
         }
         else
         {
@@ -127,7 +129,8 @@ namespace DB
                     context,
                     table_name,
                     std::move(cached_columns),
-                    is_insert_query);
+                    /*use_global_context=*/false,
+                    /*is_insert_query=*/is_insert_query);
         }
         auto res = std::make_shared<StorageLoop>(
                 StorageID(getDatabaseName(), table_name),
@@ -148,7 +151,8 @@ namespace DB
                                                                                               "0"
                                                                                               "1"
                                                                                               "2"
-                                                                                              "0"}}
+                                                                                              "0"}},
+                 .category = FunctionDocumentation::Category::TableFunction
                         }});
     }
 

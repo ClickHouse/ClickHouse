@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Formats/FormatSettings.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/Context_fwd.h>
@@ -15,6 +14,9 @@ struct SpecialParserType;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+struct FormatSettings;
+struct Settings;
 
 /// Deduces template of an expression by replacing literals with dummy columns.
 /// It allows to parse and evaluate similar expressions without using heavy IParsers and ExpressionAnalyzer.

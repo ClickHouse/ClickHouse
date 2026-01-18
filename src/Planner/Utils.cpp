@@ -42,11 +42,13 @@
 
 #include <Core/Settings.h>
 
-#include <Planner/PlannerActionsVisitor.h>
-#include <Planner/CollectTableExpressionData.h>
 #include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/PlannerActionsVisitor.h>
 
-#include <stack>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 
 namespace DB
 {
@@ -70,6 +72,7 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsSeconds timeout_before_checking_execution_speed;
     extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace ErrorCodes
@@ -97,10 +100,10 @@ String dumpQueryPipeline(const QueryPlan & query_plan)
     return query_pipeline_buffer.str();
 }
 
-Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode union_mode)
+Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type)
 {
     size_t num_selects = queries_headers.size();
-    Block common_header = queries_headers.front();
+    Block common_header = *queries_headers.front();
     size_t columns_size = common_header.columns();
 
     for (size_t query_number = 1; query_number < num_selects; ++query_number)
@@ -114,12 +117,12 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
         else
             error_code = ErrorCodes::INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH;
 
-        if (queries_headers.at(query_number).columns() != columns_size)
+        if (queries_headers.at(query_number)->columns() != columns_size)
             throw Exception(error_code,
                             "Different number of columns in {} elements: {} and {}",
                             toString(union_mode),
                             common_header.dumpNames(),
-                            queries_headers[query_number].dumpNames());
+                            queries_headers[query_number]->dumpNames());
     }
 
     std::vector<const ColumnWithTypeAndName *> columns(num_selects);
@@ -127,22 +130,54 @@ Block buildCommonHeaderForUnion(const Blocks & queries_headers, SelectUnionMode 
     for (size_t column_number = 0; column_number < columns_size; ++column_number)
     {
         for (size_t i = 0; i < num_selects; ++i)
-            columns[i] = &queries_headers[i].getByPosition(column_number);
+            columns[i] = &queries_headers[i]->getByPosition(column_number);
 
         ColumnWithTypeAndName & result_element = common_header.getByPosition(column_number);
-        result_element = getLeastSuperColumn(columns);
+        result_element = getLeastSuperColumn(columns, use_variant_as_common_type);
     }
 
     return common_header;
 }
 
-ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
+void addConvertingToCommonHeaderActionsIfNeeded(
+    std::vector<std::unique_ptr<QueryPlan>> & query_plans,
+    const Block & union_common_header,
+    SharedHeaders & query_plans_headers,
+    ContextPtr context)
+{
+    size_t queries_size = query_plans.size();
+    for (size_t i = 0; i < queries_size; ++i)
+    {
+        auto & query_node_plan = query_plans[i];
+        if (blocksHaveEqualStructure(*query_node_plan->getCurrentHeader(), union_common_header))
+            continue;
+
+        auto actions_dag = ActionsDAG::makeConvertingActions(
+            query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
+            union_common_header.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position,
+            context,
+            false /*ignore_constant_values*/,
+            false /*add_cast_columns*/,
+            nullptr /*new_names*/);
+        auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
+        converting_step->setStepDescription("Conversion before UNION");
+        query_node_plan->addStep(std::move(converting_step));
+
+        query_plans_headers[i] = query_node_plan->getCurrentHeader();
+    }
+}
+
+ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name)
 {
     auto & query_node_typed = query_node->as<QueryNode &>();
 
     // In case of cross-replication we don't know what database is used for the table.
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
-    auto result_ast = query_node_typed.toAST({ .qualify_indentifiers_with_database = false });
+    auto result_ast = query_node_typed.toAST({
+        .qualify_indentifiers_with_database = false,
+        .set_subquery_cte_name = set_subquery_cte_name
+    });
 
     while (true)
     {
@@ -162,31 +197,13 @@ ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node)
     return result_ast;
 }
 
-static void removeCTEs(ASTPtr & ast)
-{
-    std::stack<IAST *> stack;
-    stack.push(ast.get());
-    while (!stack.empty())
-    {
-        auto * node = stack.top();
-        stack.pop();
-
-        if (auto * subquery = typeid_cast<ASTSubquery *>(node))
-            subquery->cte_name = {};
-
-        for (const auto & child : node->children)
-            stack.push(child.get());
-    }
-}
-
 ASTPtr queryNodeToDistributedSelectQuery(const QueryTreeNodePtr & query_node)
 {
-    auto ast = queryNodeToSelectQuery(query_node);
     /// Remove CTEs information from distributed queries.
     /// Now, if cte_name is set for subquery node, AST -> String serialization will only print cte name.
     /// But CTE is defined only for top-level query part, so may not be sent.
     /// Removing cte_name forces subquery to be always printed.
-    removeCTEs(ast);
+    auto ast = queryNodeToSelectQuery(query_node, /*set_subquery_cte_name=*/false);
     return ast;
 }
 
@@ -243,16 +260,19 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
     return {limits, leaf_limits};
 }
 
-ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
+    const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set,
+    bool use_column_identifier_as_action_node_name)
 {
     ActionsDAG action_dag(input_columns);
-    PlannerActionsVisitor actions_visitor(planner_context);
-    auto expression_dag_index_nodes = actions_visitor.visit(action_dag, expression_node);
+    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set, use_column_identifier_as_action_node_name);
+    auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(action_dag, expression_node);
     action_dag.getOutputs() = std::move(expression_dag_index_nodes);
 
-    return action_dag;
+    return std::make_pair(std::move(action_dag), std::move(correlated_subtrees));
 }
 
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full)
@@ -328,16 +348,14 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
     return false;
 }
 
-bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
+bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
 {
-    const auto & query_node_typed = query_node->as<const QueryNode &>();
-
-    std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
-    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
+    std::vector<const IQueryTreeNode *> join_tree_nodes_to_process;
+    join_tree_nodes_to_process.push_back(node);
 
     while (!join_tree_nodes_to_process.empty())
     {
-        auto join_tree_node_to_process = join_tree_nodes_to_process.back();
+        const auto * join_tree_node_to_process = join_tree_nodes_to_process.back();
         join_tree_nodes_to_process.pop_back();
 
         auto join_tree_node_type = join_tree_node_to_process->getNodeType();
@@ -352,41 +370,41 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
             }
             case QueryTreeNodeType::QUERY:
             {
-                auto & query_node_to_process = join_tree_node_to_process->as<QueryNode &>();
+                const auto & query_node_to_process = join_tree_node_to_process->as<QueryNode &>();
                 if (query_node_to_process.isGroupByWithTotals())
                     return true;
 
-                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree());
+                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree().get());
                 break;
             }
             case QueryTreeNodeType::UNION:
             {
-                auto & union_node = join_tree_node_to_process->as<UnionNode &>();
-                auto & union_queries = union_node.getQueries().getNodes();
+                const auto & union_node = join_tree_node_to_process->as<UnionNode &>();
+                const auto & union_queries = union_node.getQueries().getNodes();
 
-                for (auto & union_query : union_queries)
-                    join_tree_nodes_to_process.push_back(union_query);
+                for (const auto & union_query : union_queries)
+                    join_tree_nodes_to_process.push_back(union_query.get());
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
             {
-                auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
-                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression());
+                const auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
+                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression().get());
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
             {
-                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
+                const auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
                 for (const auto & expr : cross_join_node.getTableExpressions())
-                    join_tree_nodes_to_process.push_back(expr);
+                    join_tree_nodes_to_process.push_back(expr.get());
 
                 break;
             }
             case QueryTreeNodeType::JOIN:
             {
-                auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression());
+                const auto & join_node = join_tree_node_to_process->as<JoinNode &>();
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression().get());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression().get());
                 break;
             }
             default:
@@ -402,9 +420,17 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
     return false;
 }
 
+bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
+{
+    const auto & query_node_typed = query_node->as<const QueryNode &>();
+    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTree().get());
+}
+
+
 QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context)
 {
     auto function_node = std::make_shared<FunctionNode>("and");
+    function_node->markAsOperator();
     auto and_function = FunctionFactory::instance().get("and", context);
     function_node->getArguments().getNodes() = condition_nodes;
     function_node->resolveAsFunction(and_function->build(function_node->getArgumentColumns()));
@@ -428,12 +454,12 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
         if (table_node || table_function_node)
         {
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
-            auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
             const auto & storage = storage_snapshot->storage;
 
             auto storage_dummy = std::make_shared<StorageDummy>(
                 storage.getStorageID(),
-                ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
+                /// To preserve information about alias columns, column description must be extracted directly from storage metadata.
+                storage_snapshot->metadata->getColumns(),
                 storage_snapshot,
                 storage.supportsReplication());
 
@@ -492,8 +518,10 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
     ActionsDAG filter_actions_dag;
 
-    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-    auto expression_nodes = actions_visitor.visit(filter_actions_dag, filter_query_tree);
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    PlannerActionsVisitor actions_visitor(planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+    auto [expression_nodes, correlated_subtrees] = actions_visitor.visit(filter_actions_dag, filter_query_tree);
+    correlated_subtrees.assertEmpty("in row-policy and additional table filters");
     if (expression_nodes.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Filter actions must return single output node. Actual {}",
@@ -572,6 +600,100 @@ std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node)
         return win_func->getDefaultFrame();
     }
     return {};
+}
+
+ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
+{
+    /// Parts of predicate in case predicate is conjunction (or just predicate itself).
+    ActionsDAG::NodeRawConstPtrs conjuncts;
+    {
+        std::vector<const ActionsDAG::Node *> stack;
+        std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+        stack.push_back(predicate);
+        visited_nodes.insert(predicate);
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            bool is_conjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
+            if (is_conjunction)
+            {
+                for (const auto & child : node->children)
+                {
+                    if (!visited_nodes.contains(child))
+                    {
+                        visited_nodes.insert(child);
+                        stack.push_back(child);
+                    }
+                }
+            }
+            else if (node->type == ActionsDAG::ActionType::ALIAS)
+                stack.push_back(node->children.front());
+            else
+                conjuncts.push_back(node);
+        }
+    }
+    return conjuncts;
+}
+
+bool optimizePlanForExists(QueryPlan & query_plan)
+{
+    auto * node = query_plan.getRootNode();
+    while (true)
+    {
+        if (typeid_cast<ExpressionStep *>(node->step.get()))
+        {
+            node = node->children[0];
+            continue;
+        }
+        if (auto * aggregation = typeid_cast<AggregatingStep *>(node->step.get()))
+        {
+            const auto & params = aggregation->getParams();
+            if (params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
+            {
+                /// Subquery will always produce at least one row
+                return true;
+            }
+            node = node->children[0];
+            continue;
+        }
+        if (typeid_cast<LimitStep *>(node->step.get()))
+        {
+            /// TODO: Support LimitStep in decorrelation process.
+            /// For now, we just remove it, because it only increases the number of rows in the result.
+            /// It doesn't affect the result of correlated subquery.
+            node = node->children[0];
+            continue;
+        }
+        break;
+    }
+
+    if (node != query_plan.getRootNode())
+    {
+        query_plan = query_plan.extractSubplan(node);
+    }
+    return false;
+}
+
+QueryPlanStepPtr projectOnlyUsedColumns(
+    const SharedHeader & stream_header,
+    const ColumnIdentifiers & used_column_identifiers)
+{
+    ActionsDAG project_only_used_columns_actions;
+
+    NameSet used_column_identifiers_set(used_column_identifiers.begin(), used_column_identifiers.end());
+
+    auto & outputs = project_only_used_columns_actions.getOutputs();
+    for (const auto & column : stream_header->getColumnsWithTypeAndName())
+    {
+        const auto * input_node = &project_only_used_columns_actions.addInput(column);
+        if (used_column_identifiers_set.contains(column.name))
+            outputs.push_back(input_node);
+    }
+
+    auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));
+    step->setStepDescription("Project only used columns");
+    return step;
 }
 
 }

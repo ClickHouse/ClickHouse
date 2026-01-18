@@ -21,6 +21,7 @@ def cluster():
                 "configs/ssl_conf.xml",
             ],
             with_minio=True,
+            with_remote_database_disk=False,  # The test compares some S3 events. We disable the remote DB disk, so it doesn't affect the comparing events.
         )
 
         logging.info("Starting cluster...")

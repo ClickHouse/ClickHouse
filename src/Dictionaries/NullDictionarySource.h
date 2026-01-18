@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Common/Exception.h>
 
@@ -15,23 +15,23 @@ namespace ErrorCodes
 class NullDictionarySource final : public IDictionarySource
 {
 public:
-    explicit NullDictionarySource(Block & sample_block_);
+    explicit NullDictionarySource(SharedHeader sample_block_);
 
     NullDictionarySource(const NullDictionarySource & other);
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override
+    BlockIO loadUpdatedAll() override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for NullDictionarySource");
     }
 
-    QueryPipeline loadIds(const std::vector<UInt64> & /*ids*/) override
+    BlockIO loadIds(const std::vector<UInt64> & /*ids*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for NullDictionarySource");
     }
 
-    QueryPipeline loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
+    BlockIO loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for NullDictionarySource");
     }
@@ -48,7 +48,7 @@ public:
     std::string toString() const override;
 
 private:
-    Block sample_block;
+    SharedHeader sample_block;
 };
 
 }

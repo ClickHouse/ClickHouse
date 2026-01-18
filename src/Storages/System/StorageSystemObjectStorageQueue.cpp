@@ -1,4 +1,4 @@
-#include "StorageSystemObjectStorageQueue.h"
+#include <Storages/System/StorageSystemObjectStorageQueue.h>
 
 #include <Access/ContextAccess.h>
 #include <DataTypes/DataTypeString.h>

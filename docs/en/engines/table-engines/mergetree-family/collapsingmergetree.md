@@ -1,13 +1,15 @@
 ---
-slug: /engines/table-engines/mergetree-family/collapsingmergetree
-sidebar_position: 70
-sidebar_label: CollapsingMergeTree
+description: 'Inherits from MergeTree but adds logic for collapsing rows during the
+  merge process.'
 keywords: ['updates', 'collapsing']
-title: "CollapsingMergeTree"
-description: "Inherits from MergeTree but adds logic for collapsing rows during the merge process."
+sidebar_label: 'CollapsingMergeTree'
+sidebar_position: 70
+slug: /engines/table-engines/mergetree-family/collapsingmergetree
+title: 'CollapsingMergeTree table engine'
+doc_type: 'guide'
 ---
 
-# CollapsingMergeTree
+# CollapsingMergeTree table engine
 
 ## Description {#description}
 
@@ -32,9 +34,9 @@ have the same meaning as in [`MergeTree`](/engines/table-engines/mergetree-famil
 
 - `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/sql-reference/data-types/int-uint).
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -57,7 +59,7 @@ The method below is not recommended for use in new projects.
 We advise, if possible, to update old projects to use the new method.
 :::
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -91,7 +93,7 @@ To do so, we make use of the special column `Sign`.
 For example, we want to calculate how many pages users checked on some website and how long they visited them for. 
 At some given moment in time, we write the following row with the state of user activity:
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
@@ -99,7 +101,7 @@ At some given moment in time, we write the following row with the state of user 
 
 At a later moment in time, we register the change of user activity and write it with the following two rows:
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -113,7 +115,7 @@ The second row above contains the current state.
 As we need only the last state of user activity, the original "state" row and the "cancel" 
 row that we inserted can be deleted as shown below, collapsing the invalid (old) state of an object:
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │ -- old "state" row can be deleted
 │ 4324182021466249494 │         5 │      146 │   -1 │ -- "cancel" row can be deleted
@@ -181,11 +183,11 @@ For CollapsingMergeTree, only the latest state row for each key is returned.
 
 ## Examples {#examples}
 
-### Example of Use {#example-of-use}
+### Example of use {#example-of-use}
 
 Given the following example data:
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 │ 4324182021466249494 │         5 │      146 │   -1 │
@@ -195,7 +197,7 @@ Given the following example data:
 
 Let's create a table `UAct` using the `CollapsingMergeTree`:
 
-``` sql
+```sql
 CREATE TABLE UAct
 (
     UserID UInt64,
@@ -209,11 +211,11 @@ ORDER BY UserID
 
 Next we will insert some data:
 
-``` sql
+```sql
 INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1)
 ```
 
-``` sql
+```sql
 INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1),(4324182021466249494, 6, 185, 1)
 ```
 
@@ -225,11 +227,11 @@ If we insert the data with a single query, ClickHouse creates only one data part
 
 We can select the data using:
 
-``` sql
+```sql
 SELECT * FROM UAct
 ```
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │   -1 │
 │ 4324182021466249494 │         6 │      185 │    1 │
@@ -249,7 +251,7 @@ We therefore need an aggregation
 which we perform with the [`sum`](/sql-reference/aggregate-functions/reference/sum) 
 aggregate function and the [`HAVING`](/sql-reference/statements/select/having) clause:
 
-``` sql
+```sql
 SELECT
     UserID,
     sum(PageViews * Sign) AS PageViews,
@@ -259,7 +261,7 @@ GROUP BY UserID
 HAVING sum(Sign) > 0
 ```
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┐
 │ 4324182021466249494 │         6 │      185 │
 └─────────────────────┴───────────┴──────────┘
@@ -267,20 +269,20 @@ HAVING sum(Sign) > 0
 
 If we do not need aggregation and want to force collapsing, we can also use the `FINAL` modifier for `FROM` clause.
 
-``` sql
+```sql
 SELECT * FROM UAct FINAL
 ```
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 :::note
-This way of selecting the data is less inefficient and is not recommended for use with large amounts of scanned data (millions of rows).
+This way of selecting the data is less efficient and is not recommended for use with large amounts of scanned data (millions of rows).
 :::
 
-### Example of Another Approach {#example-of-another-approach}
+### Example of another approach {#example-of-another-approach}
 
 The idea with this approach is that merges take into account only key fields.
 In the "cancel" row, we can therefore specify negative values
@@ -288,7 +290,7 @@ that equalize the previous version of the row when summing without using the `Si
 
 For this example, we will make use of the sample data below:
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         5 │      146 │    1 │
 │ 4324182021466249494 │        -5 │     -146 │   -1 │
@@ -300,7 +302,7 @@ For this approach, it is necessary to change the data types of `PageViews` and `
 We therefore change the values of these columns from `UInt8` to `Int16` when we create our table `UAct` using the
 `collapsingMergeTree`:
 
-``` sql
+```sql
 CREATE TABLE UAct
 (
     UserID UInt64,
@@ -316,7 +318,7 @@ Let's test the approach by inserting data into our table.
 
 For examples or small tables, it is, however, acceptable:
 
-``` sql
+```sql
 INSERT INTO UAct VALUES(4324182021466249494,  5,  146,  1);
 INSERT INTO UAct VALUES(4324182021466249494, -5, -146, -1);
 INSERT INTO UAct VALUES(4324182021466249494,  6,  185,  1);
@@ -324,13 +326,13 @@ INSERT INTO UAct VALUES(4324182021466249494,  6,  185,  1);
 SELECT * FROM UAct FINAL;
 ```
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-``` sql
+```sql
 SELECT
     UserID,
     sum(PageViews) AS PageViews,
@@ -339,29 +341,29 @@ FROM UAct
 GROUP BY UserID
 ```
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┐
 │ 4324182021466249494 │         6 │      185 │
 └─────────────────────┴───────────┴──────────┘
 ```
 
-``` sql
+```sql
 SELECT COUNT() FROM UAct
 ```
 
-``` text
+```text
 ┌─count()─┐
 │       3 │
 └─────────┘
 ```
 
-``` sql
+```sql
 OPTIMIZE TABLE UAct FINAL;
 
 SELECT * FROM UAct
 ```
 
-``` text
+```text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
 │ 4324182021466249494 │         6 │      185 │    1 │
 └─────────────────────┴───────────┴──────────┴──────┘

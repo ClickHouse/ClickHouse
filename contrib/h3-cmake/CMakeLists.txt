@@ -28,6 +28,13 @@ set(SRCS
     "${H3_SOURCE_DIR}/lib/baseCells.c"
 )
 
+file(READ "${ClickHouse_SOURCE_DIR}/contrib/h3/VERSION" H3_VERSION LIMIT_COUNT 1)
+# Clean any newlines
+string(REPLACE "\n" "" H3_VERSION "${H3_VERSION}")
+string(REPLACE "." ";" H3_VERSION_LIST "${H3_VERSION}")
+list(GET H3_VERSION_LIST 0 H3_VERSION_MAJOR)
+list(GET H3_VERSION_LIST 1 H3_VERSION_MINOR)
+list(GET H3_VERSION_LIST 2 H3_VERSION_PATCH)
 configure_file("${H3_SOURCE_DIR}/include/h3api.h.in" "${H3_BINARY_DIR}/include/h3api.h")
 
 add_library(_h3 ${SRCS})

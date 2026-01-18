@@ -10,29 +10,25 @@ SYSTEM DROP PRIMARY INDEX CACHE;
 
 INSERT INTO t_primary_index_cache SELECT number, number FROM numbers(10000);
 
-SYSTEM RELOAD ASYNCHRONOUS METRICS;
 SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE table = 't_primary_index_cache' AND active;
-SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;
+SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;
 
 SELECT count() FROM t_primary_index_cache WHERE a > 100 AND a < 200;
 
-SYSTEM RELOAD ASYNCHRONOUS METRICS;
 SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE table = 't_primary_index_cache' AND active;
-SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;
+SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;
 
 SYSTEM DROP PRIMARY INDEX CACHE;
 
-SYSTEM RELOAD ASYNCHRONOUS METRICS;
 SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE table = 't_primary_index_cache' AND active;
-SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;
+SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;
 
 SELECT count() FROM t_primary_index_cache WHERE a > 100 AND a < 200 AND a % 2 = 0;
 
-SYSTEM RELOAD ASYNCHRONOUS METRICS;
 SELECT sum(primary_key_bytes_in_memory) FROM system.parts WHERE table = 't_primary_index_cache' AND active;
-SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;
+SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['LoadedPrimaryIndexFiles'],

@@ -32,7 +32,7 @@ ${CLICKHOUSE_CLIENT} -q """
     INSERT INTO t1_local SELECT * FROM numbers_mt(1e6);
 """
 
-max_insert_threads=9
+max_insert_threads=8
 
 echo "inserting into a remote table from local with concurrency equal to max_insert_threads"
 ${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" -q """

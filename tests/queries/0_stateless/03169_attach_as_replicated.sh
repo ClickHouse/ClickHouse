@@ -21,6 +21,11 @@ ${CLICKHOUSE_CLIENT} -n -q "
 
 # Convert tables
 $CLICKHOUSE_CLIENT -n -q "
+    ATTACH TABLE mt AS REPLICATED; -- { serverError TABLE_ALREADY_EXISTS }
+    ATTACH TABLE replacing AS REPLICATED; -- { serverError TABLE_ALREADY_EXISTS }
+    ATTACH TABLE replacing_ver AS REPLICATED; -- { serverError TABLE_ALREADY_EXISTS }
+    ATTACH TABLE collapsing_ver AS REPLICATED; -- { serverError TABLE_ALREADY_EXISTS }
+
     DETACH TABLE mt;
     DETACH TABLE replacing;
     DETACH TABLE replacing_ver;
@@ -73,6 +78,11 @@ COLLAPSING_VER_ZK_PATH=$($CLICKHOUSE_CLIENT --query="SELECT zookeeper_path FROM 
 # Restored replica has no table_shared_id node in ZK
 # DROP REPLICA will log warning while deleting this node
 $CLICKHOUSE_CLIENT -n -q "
+    ATTACH TABLE mt AS NOT REPLICATED; -- { serverError TABLE_ALREADY_EXISTS }
+    ATTACH TABLE replacing AS NOT REPLICATED; -- { serverError TABLE_ALREADY_EXISTS }
+    ATTACH TABLE replacing_ver AS NOT REPLICATED; -- { serverError TABLE_ALREADY_EXISTS }
+    ATTACH TABLE collapsing_ver AS NOT REPLICATED; -- { serverError TABLE_ALREADY_EXISTS }
+
     DETACH TABLE mt;
     DETACH TABLE replacing;
     DETACH TABLE replacing_ver;

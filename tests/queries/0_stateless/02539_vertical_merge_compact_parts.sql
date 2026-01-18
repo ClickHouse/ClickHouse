@@ -8,7 +8,8 @@ SETTINGS
     min_rows_for_wide_part = 100,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
-    allow_vertical_merges_from_compact_to_wide_parts = 1;
+    allow_vertical_merges_from_compact_to_wide_parts = 1,
+    min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_compact_vertical_merge SELECT number, toString(number), range(number % 10) FROM numbers(40);
 INSERT INTO t_compact_vertical_merge SELECT number, toString(number), range(number % 10) FROM numbers(40);

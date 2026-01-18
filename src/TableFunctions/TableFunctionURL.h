@@ -46,13 +46,13 @@ public:
             if (collection->getOrDefault<String>("format", "auto") == "auto")
             {
                 ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
-                auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+                auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
                 args.push_back(format_equal_func);
             }
             if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
             {
                 ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-                auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+                auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
                 args.push_back(structure_equal_func);
             }
         }
@@ -87,9 +87,10 @@ private:
 
     StoragePtr getStorage(
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-        const std::string & table_name, const String & compression_method_) const override;
+        const std::string & table_name, const String & compression_method_, bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "URL"; }
+    const char * getStorageEngineName() const override { return "URL"; }
+    const String & getFunctionURI() const override { return filename; }
 
     std::optional<String> tryGetFormatFromFirstArgument() override;
 };

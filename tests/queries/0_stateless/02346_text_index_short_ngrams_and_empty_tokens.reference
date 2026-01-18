@@ -1,0 +1,160 @@
+Setting query_plan_direct_read_from_text_index to 0.
+-- { echoOn }
+SELECT count() FROM tab WHERE hasAnyTokens(message, ['abc']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(message, ['abc']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(message, ['']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(message, ['']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(message, []);
+0
+SELECT count() FROM tab WHERE hasAllTokens(message, []);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'abc');
+0
+SELECT count() FROM tab WHERE hasAllTokens(message, 'abc');
+0
+SELECT count() FROM tab WHERE hasAnyTokens(message, '');
+0
+SELECT count() FROM tab WHERE hasAllTokens(message, '');
+0
+SELECT tokens('abc', 'ngrams', 4) AS tokens;
+[]
+SELECT count() FROM tab WHERE hasToken(message, 'abc');
+0
+-- Arrays
+SELECT count() FROM tab WHERE hasAnyTokens(arr, ['abc']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(arr, ['abc']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(arr, ['']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(arr, ['']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(arr, []);
+0
+SELECT count() FROM tab WHERE hasAllTokens(arr, []);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(arr, 'abc');
+0
+SELECT count() FROM tab WHERE hasAllTokens(arr, 'abc');
+0
+SELECT count() FROM tab WHERE hasAnyTokens(arr, '');
+0
+SELECT count() FROM tab WHERE hasAllTokens(arr, '');
+0
+SELECT count() FROM tab WHERE has(arr, 'abc');
+0
+SELECT count() FROM tab WHERE has(arr, '');
+0
+-- Maps
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), ['abc']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), ['abc']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), ['']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), ['']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), []);
+0
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), []);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), 'abc');
+0
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'abc');
+0
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), '');
+0
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), '');
+0
+SELECT count() FROM tab WHERE mapContains(map, 'abc');
+0
+SELECT count() FROM tab WHERE mapContains(map, '');
+0
+SELECT count() FROM tab WHERE has(map, 'abc');
+0
+SELECT count() FROM tab WHERE has(map, '');
+0
+Setting query_plan_direct_read_from_text_index to 1.
+-- { echoOn }
+SELECT count() FROM tab WHERE hasAnyTokens(message, ['abc']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(message, ['abc']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(message, ['']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(message, ['']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(message, []);
+0
+SELECT count() FROM tab WHERE hasAllTokens(message, []);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'abc');
+0
+SELECT count() FROM tab WHERE hasAllTokens(message, 'abc');
+0
+SELECT count() FROM tab WHERE hasAnyTokens(message, '');
+0
+SELECT count() FROM tab WHERE hasAllTokens(message, '');
+0
+SELECT tokens('abc', 'ngrams', 4) AS tokens;
+[]
+SELECT count() FROM tab WHERE hasToken(message, 'abc');
+0
+-- Arrays
+SELECT count() FROM tab WHERE hasAnyTokens(arr, ['abc']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(arr, ['abc']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(arr, ['']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(arr, ['']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(arr, []);
+0
+SELECT count() FROM tab WHERE hasAllTokens(arr, []);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(arr, 'abc');
+0
+SELECT count() FROM tab WHERE hasAllTokens(arr, 'abc');
+0
+SELECT count() FROM tab WHERE hasAnyTokens(arr, '');
+0
+SELECT count() FROM tab WHERE hasAllTokens(arr, '');
+0
+SELECT count() FROM tab WHERE has(arr, 'abc');
+0
+SELECT count() FROM tab WHERE has(arr, '');
+0
+-- Maps
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), ['abc']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), ['abc']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), ['']);
+0
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), ['']);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), []);
+0
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), []);
+0
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), 'abc');
+0
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'abc');
+0
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), '');
+0
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), '');
+0
+SELECT count() FROM tab WHERE mapContains(map, 'abc');
+0
+SELECT count() FROM tab WHERE mapContains(map, '');
+0
+SELECT count() FROM tab WHERE has(map, 'abc');
+0
+SELECT count() FROM tab WHERE has(map, '');
+0

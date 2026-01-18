@@ -90,11 +90,11 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
 
     if (column_id == 0)
     {
-        const auto new_ast = makeASTFunction(func_plus_minus->name,
+        const auto new_ast = makeASTOperator(func_plus_minus->name,
                                                 makeASTFunction("sum",
                                                                 std::make_shared<ASTIdentifier>(column_name)
                                                                 ),
-                                                makeASTFunction("multiply",
+                                             makeASTOperator("multiply",
                                                                 std::make_shared<ASTLiteral>(* literal),
                                                                 makeASTFunction("count", std::make_shared<ASTIdentifier>(column_name))
                                                                 )
@@ -108,7 +108,7 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
     else if (column_id == 1)
     {
         const auto new_ast = makeASTFunction(func_plus_minus->name,
-                                                makeASTFunction("multiply",
+                                             makeASTOperator("multiply",
                                                                 std::make_shared<ASTLiteral>(* literal),
                                                                 makeASTFunction("count", std::make_shared<ASTIdentifier>(column_name))
                                                                 ),

@@ -26,7 +26,7 @@ SHOW CREATE VIEW test_1602.not_exist_view; -- { serverError CANNOT_GET_CREATE_TA
 
 SHOW CREATE VIEW test_1602.tbl; -- { serverError BAD_ARGUMENTS }
 
-SHOW CREATE TEMPORARY VIEW; -- { serverError UNKNOWN_TABLE }
+SHOW CREATE TEMPORARY VIEW; -- { clientError SYNTAX_ERROR }
 
 SHOW CREATE VIEW; -- { clientError SYNTAX_ERROR }
 

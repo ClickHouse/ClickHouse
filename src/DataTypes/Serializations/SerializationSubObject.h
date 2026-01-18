@@ -18,7 +18,7 @@ namespace ErrorCodes
 class SerializationSubObject final : public SimpleTextSerialization
 {
 public:
-    SerializationSubObject(const String & path_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_);
+    SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -48,6 +48,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -67,10 +68,10 @@ private:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Text/binary serialization is not implemented for object sub-object subcolumn");
     }
 
-    String path_prefix;
+    String paths_prefix;
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
+    DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
-    SerializationPtr shared_data_serialization;
 };
 
 }

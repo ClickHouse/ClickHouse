@@ -45,12 +45,17 @@ public:
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
 
+    void updateHashImpl(SipHash & hash) const override;
+
 private:
     SerializationPtr doGetDefaultSerialization() const override;
     String doGetName() const override;
 
     size_t max_dynamic_types;
 };
+
+/// Returns true if provided type is Dynamic or has Dynamic type as a nested type.
+bool hasDynamicType(const DataTypePtr & type);
 
 }
 

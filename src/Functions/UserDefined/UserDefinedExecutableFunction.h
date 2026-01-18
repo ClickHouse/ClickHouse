@@ -31,6 +31,7 @@ struct UserDefinedExecutableFunctionConfiguration
     std::vector<UserDefinedExecutableFunctionParameter> parameters;
     DataTypePtr result_type;
     String result_name;
+    bool is_deterministic;
 };
 
 class UserDefinedExecutableFunction final : public IExternalLoadable

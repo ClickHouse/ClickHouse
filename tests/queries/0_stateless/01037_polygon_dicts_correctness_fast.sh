@@ -42,7 +42,7 @@ for type in "${SearchTypes[@]}";
 do
    outputFile="${TMP_DIR}/results${type}.out"
 
-   $CLICKHOUSE_CLIENT --query="
+   $CLICKHOUSE_CLIENT --max_execution_time 300 --query="
    DROP DICTIONARY IF EXISTS dict_array;
 
    CREATE DICTIONARY dict_array
@@ -62,4 +62,3 @@ do
 
    diff -q "${CURDIR}/01037_polygon_dicts_correctness_fast.ans" "$outputFile"
 done
-
