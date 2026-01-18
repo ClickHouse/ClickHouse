@@ -429,21 +429,9 @@ class Result(MetaClasses.Serializable):
 
         with ContextManager.cd(cwd):
             # Construct the full pytest command with jsonl report
-            try:
-                cmd_tokens = (command or "").split()
-                cmd_tokens = [
-                    t
-                    for t in cmd_tokens
-                    if not (t.startswith("--report-log=") or t.startswith("--log-file="))
-                ]
-                safe_command = " ".join(cmd_tokens).strip()
-            except Exception:
-                safe_command = command
-            full_command = (
-                f"ulimit -n 1048576 || true; pytest {safe_command} --report-log={pytest_report_file}"
-                if safe_command
-                else f"ulimit -n 1048576 || true; pytest --report-log={pytest_report_file}"
-            )
+            full_command = f"pytest {command} --report-log={pytest_report_file}"
+            if logfile:
+                full_command += f" --log-file={logfile}"
 
             # Apply environment
             for key, value in (env or {}).items():
@@ -454,7 +442,7 @@ class Result(MetaClasses.Serializable):
                 name = f"pytest_{command}"
 
             # Run pytest
-            _res = Shell.check(full_command, verbose=True, timeout=timeout_seconds, log_file=logfile)
+            _res = Shell.check(full_command, verbose=True)
             test_result = ResultTranslator.from_pytest_jsonl(
                 pytest_report_file=pytest_report_file
             )

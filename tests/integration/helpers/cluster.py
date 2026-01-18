@@ -148,6 +148,15 @@ def run_and_check(
     nothrow=False,
     detach=False,
 ) -> str:
+    if timeout is None:
+        timeout = 300
+    try:
+        timeout = int(timeout)
+    except Exception:
+        timeout = 300
+    # Never let external commands hang longer than this from within tests.
+    # Keep below common pytest-timeout limits so we fail with actionable output.
+    timeout = max(1, min(timeout, 600))
     if shell:
         if isinstance(args, str):
             shell_args = args
@@ -167,28 +176,24 @@ def run_and_check(
         )
         return ""
 
-    # Honor a global override for long-running steps (e.g. keeper stress bench)
-    eff_timeout = timeout
     try:
-        if (timeout is None) or (timeout == 300):
-            # Prefer a dedicated subprocess timeout if provided, otherwise fall back to pytest timeout
-            to_env = os.environ.get("KEEPER_SUBPROC_TIMEOUT") or os.environ.get("KEEPER_PYTEST_TIMEOUT")
-            if to_env:
-                eff_timeout = int(to_env)
-    except Exception:
-        eff_timeout = timeout
-
-    res = subprocess.run(
-        args,
-        stdout=stdout,
-        stderr=stderr,
-        env=env,
-        shell=shell,
-        timeout=eff_timeout,
-        check=False,
-    )
-    out = res.stdout.decode("utf-8", "ignore")
-    err = res.stderr.decode("utf-8", "ignore")
+        res = subprocess.run(
+            args,
+            stdout=stdout,
+            stderr=stderr,
+            env=env,
+            shell=shell,
+            timeout=timeout,
+            check=False,
+        )
+        out = res.stdout.decode("utf-8", "ignore")
+        err = res.stderr.decode("utf-8", "ignore")
+    except subprocess.TimeoutExpired as ex:
+        out = (ex.stdout or b"").decode("utf-8", "ignore")
+        err = (ex.stderr or b"").decode("utf-8", "ignore")
+        raise Exception(
+            f"Command [{shell_args}] timed out after {timeout}s\nstdout:\n{out}\nstderr:\n{err}"
+        ) from ex
     # check_call(...) from subprocess does not print stderr, so we do it manually
     for outline in out.splitlines():
         logging.debug("Stdout:%s", outline)
@@ -585,9 +590,8 @@ class ClickHouseCluster:
         #
         #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
         self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
-        # Only set TSAN_OPTIONS if explicitly provided by the environment; do not force a memory limit here
-        if os.environ.get("CLICKHOUSE_TSAN_OPTIONS"):
-            self.env_variables["TSAN_OPTIONS"] = os.environ["CLICKHOUSE_TSAN_OPTIONS"]
+        # In integration tests we spawn multiple servers, so let's aim to not more then 5GiB
+        self.env_variables["TSAN_OPTIONS"] = f"use_sigaltstack=0 memory_limit_mb=5120"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
 
@@ -639,6 +643,7 @@ class ClickHouseCluster:
         self.with_mysql57 = False
         self.with_mysql8 = False
         self.with_mysql_cluster = False
+        self.with_dremio26 = False
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
@@ -660,8 +665,6 @@ class ClickHouseCluster:
         self.with_hive = False
         self.with_coredns = False
         self.with_ytsaurus = False
-        # available when with_dremio26 == True
-        self.with_dremio26 = False
         self.with_letsencrypt_pebble = False
 
         # available when with_minio == True
@@ -841,6 +844,14 @@ class ClickHouseCluster:
         self.mysql_cluster_dir = p.abspath(p.join(self.instances_dir, "mysql"))
         self.mysql_cluster_logs_dir = os.path.join(self.mysql8_dir, "logs")
 
+        # available when with_dremio26 == True
+        self.dremio26_host = "dremio26"
+        self.dremio26_port = 32010
+        self.dremio26_rest_port = 9047
+        self.dremio26_ip = None
+        self.dremio26_dir = p.abspath(p.join(self.instances_dir, "dremio26"))
+        self.dremio26_logs_dir = os.path.join(self.dremio26_dir, "logs")
+
         # available when with_zookeper_secure == True
         self.zookeeper_secure_port = 2281
         self.zookeeper_keyfile = zookeeper_keyfile
@@ -882,17 +893,11 @@ class ClickHouseCluster:
 
         # available when with_ytsaurus = True
         self._ytsaurus_port = None
+        self._ytsaurus_internal_ports_list = None
+        self.ytsaurus_internal_ports_list_size = 20
 
         # available when with_letsencrypt_pebble = True
         self._letsencrypt_pebble_api_port = 14000
-
-        # Dremio 26 service config (ArrowFlight)
-        self.dremio26_host = "dremio26"
-        self.dremio26_port = 32010
-        self.dremio26_rest_port = 9047
-        self.dremio26_dir = p.abspath(p.join(self.instances_dir, "dremio26"))
-        self.dremio26_logs_dir = os.path.join(self.dremio26_dir, "logs")
-        self.base_dremio26_cmd = []
         self._letsencrypt_pebble_management_port = 15000
 
         self.docker_client: docker.DockerClient = None
@@ -1028,11 +1033,20 @@ class ClickHouseCluster:
             self._letsencrypt_pebble_management_port = self.port_pool.get_port()
         return self._letsencrypt_pebble_management_port
 
+    @property
+    def ytsaurus_internal_ports_list(self):
+        if not self._ytsaurus_internal_ports_list:
+            self._ytsaurus_internal_ports_list = []
+            for _ in range(self.ytsaurus_internal_ports_list_size):
+                self._ytsaurus_internal_ports_list.append(self.port_pool.get_port())
+        return self._ytsaurus_internal_ports_list
+
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
             f"docker network ls --filter name='{self.project_name}*'",
             shell=True,
             universal_newlines=True,
+            timeout=30,
         )
         logging.debug(
             f"Docker networks for project {self.project_name} are {res_networks}"
@@ -1041,6 +1055,7 @@ class ClickHouseCluster:
             f"docker container ls -a --filter name='{self.project_name}*'",
             shell=True,
             universal_newlines=True,
+            timeout=30,
         )
         logging.debug(
             f"Docker containers for project {self.project_name} are {res_containers}"
@@ -1049,6 +1064,7 @@ class ClickHouseCluster:
             f"docker volume ls --filter name='{self.project_name}*'",
             shell=True,
             universal_newlines=True,
+            timeout=30,
         )
         logging.debug(
             f"Docker volumes for project {self.project_name} are {res_volumes}"
@@ -1095,6 +1111,7 @@ class ClickHouseCluster:
                 f"docker network ls -q --filter name='{self.project_name}'",
                 shell=True,
                 universal_newlines=True,
+                timeout=30,
             ).splitlines()
             if list_networks:
                 logging.debug(f"Trying to remove networks: {list_networks}")
@@ -1357,6 +1374,28 @@ class ClickHouseCluster:
         )
 
         return self.base_mysql_cluster_cmd
+
+    def setup_dremio26_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_dremio26 = True
+        env_variables["DREMIO26_HOST"] = self.dremio26_host
+        env_variables["DREMIO26_PORT"] = str(self.dremio26_port)
+        env_variables["DREMIO26_REST_PORT"] = str(self.dremio26_rest_port)
+        env_variables["DREMIO26_ROOT_HOST"] = "%"
+        env_variables["DREMIO26_LOGS"] = self.dremio26_logs_dir
+        env_variables["DREMIO26_LOGS_FS"] = "bind"
+        env_variables["DREMIO26_DOCKER_USER"] = str(os.getuid())
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_dremio_26_0.yml")]
+        )
+        self.base_dremio26_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_dremio_26_0.yml"),
+        )
+
+        return self.base_dremio26_cmd
 
     def setup_postgres_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.base_cmd.extend(
@@ -1644,29 +1683,6 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
-    def setup_dremio26_cmd(self, instance, env_variables, docker_compose_yml_dir):
-        logging.debug("Setup Dremio 26")
-        self.with_dremio26 = True
-        # Provide Dremio envs for compose
-        env_variables["DREMIO26_ROOT_HOST"] = self.dremio26_host
-        env_variables["DREMIO26_PORT"] = str(self.dremio26_port)
-        env_variables["DREMIO26_REST_PORT"] = str(self.dremio26_rest_port)
-        env_variables["DREMIO26_LOGS"] = self.dremio26_logs_dir
-        env_variables["DREMIO26_LOGS_FS"] = "bind"
-        env_variables["DREMIO26_DOCKER_USER"] = str(os.getuid())
-
-        dremio_compose = p.join(
-            docker_compose_yml_dir, "docker_compose_dremio_26_0.yml"
-        )
-        self.base_cmd.extend(["--file", dremio_compose])
-        self.base_dremio26_cmd = self.compose_cmd(
-            "--env-file",
-            instance.env_file,
-            "--file",
-            dremio_compose,
-        )
-        return self.base_dremio26_cmd
-
     def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_glue_catalog = True
         self.base_cmd.extend(
@@ -1822,11 +1838,9 @@ class ClickHouseCluster:
     def setup_ytsaurus(self, instance, env_variables, docker_compose_yml_dir):
         self.with_ytsaurus = True
         env_variables["YTSAURUS_PROXY_PORT"] = str(self.ytsaurus_port)
-        # Provide an internal port range start and size; avoid overlap with proxy port
-        start_port = int(self.ytsaurus_port) + 1000
-        size = 200
-        env_variables["YTSAURUS_INTERNAL_PORTS_START"] = str(start_port)
-        env_variables["YTSAURUS_INTERNAL_PORTS_SIZE"] = str(size)
+        env_variables["YTSAURUS_INTERNAL_PORTS_LIST"] = " ".join(
+            str(port) for port in self.ytsaurus_internal_ports_list
+        )
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml")]
@@ -1915,6 +1929,7 @@ class ClickHouseCluster:
         with_mysql57=False,
         with_mysql8=False,
         with_mysql_cluster=False,
+        with_dremio26=False,
         with_kafka=False,
         with_kafka_sasl=False,
         with_kerberized_kafka=False,
@@ -1935,7 +1950,6 @@ class ClickHouseCluster:
         with_nginx=False,
         with_redis=False,
         with_minio=False,
-        with_dremio26=False,
         # The config is defined in tests/integration/helpers/remote_database_disk.xml
         # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
         # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in ASAN build (i.e. if not explicitly set to false)
@@ -2064,6 +2078,7 @@ class ClickHouseCluster:
             with_mysql57=with_mysql57,
             with_mysql8=with_mysql8,
             with_mysql_cluster=with_mysql_cluster,
+            with_dremio26=with_dremio26,
             with_kafka=with_kafka,
             with_kafka_sasl=with_kafka_sasl,
             with_kerberized_kafka=with_kerberized_kafka,
@@ -2184,6 +2199,11 @@ class ClickHouseCluster:
                 )
             )
 
+        if with_dremio26 and not self.with_dremio26:
+            cmds.append(
+                self.setup_dremio26_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
         if with_postgres and not self.with_postgres:
             cmds.append(
                 self.setup_postgres_cmd(instance, env_variables, docker_compose_yml_dir)
@@ -2288,13 +2308,6 @@ class ClickHouseCluster:
         if with_minio and not self.with_minio:
             cmds.append(
                 self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir)
-            )
-
-        if with_dremio26 and not self.with_dremio26:
-            cmds.append(
-                self.setup_dremio26_cmd(
-                    instance, env_variables, docker_compose_yml_dir
-                )
             )
 
         if with_iceberg_catalog and not self.with_iceberg_catalog:
@@ -2514,21 +2527,13 @@ class ClickHouseCluster:
             exec_cmd += [container_id]
             exec_cmd += list(cmd)
 
-            t = kwargs.get("timeout", None)
-            if t is None:
-                result = subprocess_check_call(
-                    exec_cmd, detach=detach, nothrow=nothrow, env=env
-                )
-            else:
-                result = subprocess_check_call(
-                    exec_cmd, detach=detach, nothrow=nothrow, env=env, timeout=t
-                )
+            result = subprocess_check_call(
+                exec_cmd, detach=detach, nothrow=nothrow, env=env
+            )
             return result
         else:
             assert self.docker_client is not None
-            _kwargs = dict(kwargs)
-            _kwargs.pop("timeout", None)
-            exec_id = self.docker_client.api.exec_create(container_id, cmd, **_kwargs)
+            exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
             output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
             exit_code = self.docker_client.api.exec_inspect(exec_id)["ExitCode"]
@@ -2775,40 +2780,43 @@ class ClickHouseCluster:
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
 
-    def wait_ytsaurus_to_start(self):
-        try:
-            container_id = self.get_container_id("ytsaurus_backend1")
-            start = time.time()
-            # Prefer in-container readiness via yt CLI; allow up to 8 minutes as YTsaurus may initialize slowly
-            while time.time() - start < 480:
-                try:
-                    self.exec_in_container(
-                        container_id,
-                        [
-                            "bash",
-                            "-lc",
-                            "yt list // >/dev/null 2>&1",
-                        ],
-                        environment={
-                            "YT_PROXY": f"ytsaurus_backend1:{self.ytsaurus_port}",
-                            "YT_TOKEN": "password",
-                        },
-                    )
-                    return
-                except Exception:
-                    time.sleep(1)
-        except Exception:
-            pass
+    def wait_dremio26_to_start(self, timeout=180):
+        # Data payload for the request
+        user_data = {
+            "userName": dremio_user,
+            "firstName": "FirstName",
+            "lastName": "LastName",
+            "email": "dremio@localhost",
+            "password": dremio_pass
+        }
 
-        try:
-            ip = self.get_instance_ip("ytsaurus_backend1")
-            # Shorter fallback HTTP readiness on container IP
-            self.wait_for_url(url=f"http://{ip}:{self.ytsaurus_port}/ping", timeout=120)
-            return
-        except Exception:
-            pass
-        # Final short fallback on localhost-mapped port
-        self.wait_for_url(url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=120)
+        headers = {
+            'Content-Type': 'application/json',
+            # The Authorization header for the FIRST user creation must be '_dremionull'
+            'Authorization': '_dremionull'
+        }
+
+        self.dremio26_ip = self.get_instance_ip("dremio26")
+        start = time.time()
+
+        while time.time() - start < timeout:
+            try:
+                response = requests.put(f"http://{self.dremio26_ip}:{self.dremio26_rest_port}/apiv2/bootstrap/firstuser", headers=headers, data=json.dumps(user_data), timeout=10)
+                if response.status_code == 200:
+                    logging.debug("Dremio 26 Started")
+                    return
+                raise Exception(f"Failed to create user for Dremio 26 (Status Code: {response.status_code}): {response.text}")
+            except Exception as ex:
+                logging.debug("Can't connect to Dremio 26 " + str(ex))
+                time.sleep(0.5)
+
+        run_and_check(["docker", "ps", "--all"])
+        raise Exception("Cannot wait Dremio 26 container")
+
+    def wait_ytsaurus_to_start(self):
+        self.wait_for_url(
+            url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=300
+        )
 
     def wait_letsencrypt_pebble_to_start(self):
         self.wait_for_url(
@@ -3549,6 +3557,15 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_mysql_cluster_to_start()
 
+            if self.with_dremio26 and self.base_dremio26_cmd:
+                logging.debug("Setup Dremio 26")
+                if os.path.exists(self.dremio26_dir):
+                    shutil.rmtree(self.dremio26_dir, ignore_errors=True)
+                os.makedirs(self.dremio26_logs_dir, exist_ok=True)
+                os.chmod(self.dremio26_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_dremio26_cmd + common_opts)
+                self.wait_dremio26_to_start()
+
             if self.with_postgres and self.base_postgres_cmd:
                 logging.debug("Setup Postgres")
                 if os.path.exists(self.postgres_dir):
@@ -3835,11 +3852,6 @@ class ClickHouseCluster:
                 logging.error(f'Trying to connect to Arrowflight...')
                 self.wait_arrowflight_to_start()
 
-            # Ensure Dremio bind mount source exists when enabled
-            if self.with_dremio26:
-                os.makedirs(self.dremio26_logs_dir, exist_ok=True)
-                os.chmod(self.dremio26_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
-
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
             logging.debug(
                 (
@@ -3850,28 +3862,6 @@ class ClickHouseCluster:
             self.up_called = True
             run_and_check(clickhouse_start_cmd)
             logging.debug("ClickHouse instance created")
-
-            if self.with_dremio26:
-                try:
-                    ip = self.get_instance_ip(self.dremio26_host)
-                    # wait for Arrow Flight TCP port to accept connections
-                    start = time.time()
-                    while time.time() - start < 300:
-                        try:
-                            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                            s.settimeout(2)
-                            s.connect((ip, self.dremio26_port))
-                            s.close()
-                            break
-                        except Exception:
-                            time.sleep(1)
-                    else:
-                        raise Exception(
-                            f"Cannot wait Dremio Flight port {self.dremio26_port} at {ip}"
-                        )
-                except Exception:
-                    run_and_check(["docker", "ps", "--all"])
-                    raise
 
             # Copy binaries and start ClickHouse for dolor instances
             for instance in self.instances.values():
@@ -3908,17 +3898,7 @@ class ClickHouseCluster:
                         detach=True,
                     )
 
-            # Instance startup timeout (seconds). Allow override via env (used by Keeper stress workflows).
-            try:
-                start_timeout = float(os.environ.get("KEEPER_START_TIMEOUT_SEC", 300.0))
-            except Exception:
-                start_timeout = 300.0  # seconds
-            try:
-                connect_timeout = float(
-                    os.environ.get("KEEPER_CONNECT_TIMEOUT_SEC", start_timeout)
-                )
-            except Exception:
-                connect_timeout = start_timeout
+            start_timeout = 300.0  # seconds
             for instance in self.instances.values():
                 instance.docker_client = self.docker_client
                 instance.ip_address = self.get_instance_ip(instance.name)
@@ -3927,7 +3907,7 @@ class ClickHouseCluster:
                 logging.debug(
                     f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}..."
                 )
-                instance.wait_for_start(start_timeout, connection_timeout=connect_timeout)
+                instance.wait_for_start(start_timeout)
                 logging.debug(f"ClickHouse {instance.name} started")
 
                 instance.client = Client(
@@ -3966,11 +3946,8 @@ class ClickHouseCluster:
         if self.up_called:
             if kill:
                 try:
-                    stop_to = os.environ.get("KEEPER_COMPOSE_DOWN_TIMEOUT")
-                    stop_cmd = self.base_cmd + ["stop"]
-                    if stop_to and str(stop_to).strip():
-                        stop_cmd = self.base_cmd + ["stop", "-t", str(int(stop_to))]
-                    run_and_check(stop_cmd)
+                    # NOTE: no --timeout, rely on stop_grace_period
+                    run_and_check(self.base_cmd + ["stop"])
                 except Exception as e:
                     logging.debug(
                         "Kill command failed during shutdown. {}".format(repr(e))
@@ -4018,11 +3995,7 @@ class ClickHouseCluster:
                         logging.error(msg)
 
             try:
-                down_to = os.environ.get("KEEPER_COMPOSE_DOWN_TIMEOUT")
-                down_cmd = self.base_cmd + ["down", "--volumes"]
-                if down_to and str(down_to).strip():
-                    down_cmd = self.base_cmd + ["down", "--volumes", "--timeout", str(int(down_to))]
-                subprocess_check_call(down_cmd)
+                subprocess_check_call(self.base_cmd + ["down", "--volumes"])
             except Exception as e:
                 logging.debug(
                     "Down + remove orphans failed during shutdown. {}".format(repr(e))
@@ -4244,7 +4217,6 @@ services:
             - NET_ADMIN
             - IPC_LOCK
             - SYS_NICE
-            - SYS_TIME
             # for umount/mount on fly
             - SYS_ADMIN
         depends_on: {depends_on}
@@ -4272,7 +4244,6 @@ services:
 
 
 class ClickHouseInstance:
-    is_local_server_asan_build = None
     def __init__(
         self,
         cluster,
@@ -4290,6 +4261,7 @@ class ClickHouseInstance:
         with_mysql57,
         with_mysql8,
         with_mysql_cluster,
+        with_dremio26,
         with_kafka,
         with_kafka_sasl,
         with_kerberized_kafka,
@@ -4408,6 +4380,7 @@ class ClickHouseInstance:
         self.with_mysql57 = with_mysql57
         self.with_mysql8 = with_mysql8
         self.with_mysql_cluster = with_mysql_cluster
+        self.with_dremio26 = with_dremio26
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
@@ -4461,7 +4434,7 @@ class ClickHouseInstance:
         # and there is no other way to kill clickhouse properly (easily), since
         # clickhosue is spawned with --daemon, and it is not a child neither in
         # the same session.
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; ( while true; do chmod -R a+rX /var/log/clickhouse-server 2>/dev/null || true; sleep 1; done ) & coproc tail -f /dev/null; wait $$!\"".format(
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
             self.clickhouse_start_command_in_daemon
         )
 
@@ -4861,9 +4834,9 @@ class ClickHouseInstance:
             )
         try:
             ps_clickhouse = self.exec_in_container(
-                ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
+                ["bash", "-c", "ps --no-header -C clickhouse"], nothrow=True, user="root"
             )
-            if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
+            if not ps_clickhouse:
                 logging.warning("ClickHouse process already stopped")
                 return False
 
@@ -4986,7 +4959,7 @@ class ClickHouseInstance:
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
                 user="root",
             )
         if last_err is not None:
@@ -5009,7 +4982,7 @@ class ClickHouseInstance:
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
                 user="root",
             )
         raise Exception(
@@ -5070,12 +5043,7 @@ class ClickHouseInstance:
         return len(result) > 0
 
     def grep_in_log(
-        self,
-        substring,
-        from_host=False,
-        filename="clickhouse-server.log",
-        after=None,
-        only_latest=False,
+        self, substring, from_host=False, filename="clickhouse-server.log", after=None, only_latest=False
     ):
         logging.debug(f"grep in log called %s", substring)
         if after is not None:
@@ -5102,35 +5070,36 @@ class ClickHouseInstance:
         logging.debug("grep result %s", result)
         return result
 
+    def count_log_lines(
+        self,
+        filename="/var/log/clickhouse-server/clickhouse-server.log",
+    ):
+        result = self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                'wc -l {}'.format(
+                    filename,
+                ),
+            ]
+        )
+        separator = result.find(" ")
+        assert separator > 0, f"no separator in wc output: '{result}'"
+        wc_count = result[:separator]
+        assert wc_count.isdigit(), f"Line count is not a number: {wc_count}"
+        return int(wc_count)
+
     def count_in_log(self, substring):
         result = self.exec_in_container(
             [
                 "bash",
                 "-c",
-                '[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep -a "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l || echo 0'.format(
+                'grep -a "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(
                     substring
                 ),
-            ],
-            nothrow=True,
-        )
-        try:
-            return result if result and result.strip() else "0"
-        except Exception:
-            return "0"
-
-    def count_log_lines(self):
-        """Return total number of lines in clickhouse-server.log inside the container."""
-        result = self.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "[ -f /var/log/clickhouse-server/clickhouse-server.log ] && wc -l < /var/log/clickhouse-server/clickhouse-server.log || echo 0",
             ]
         )
-        try:
-            return int(result.strip())
-        except Exception:
-            return 0
+        return result
 
     def wait_for_log_line(
         self,
@@ -5211,9 +5180,6 @@ class ClickHouseInstance:
 
     def remove_file_from_container(self, path):
         return self.cluster.remove_file_from_container(self.docker_id, path)
-
-    def remove_directory_from_container(self, path):
-        return self.cluster.remove_directory_from_container(self.docker_id, path)
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(["bash", "-c", f"pgrep -f '^[^ ]*{process_name}'"], nothrow=True)
@@ -5387,6 +5353,7 @@ class ClickHouseInstance:
         self.get_docker_handle().start()
 
     def wait_for_start(self, start_timeout=None, connection_timeout=None):
+        # Wait until TCP port is ready. Usually it means that ClickHouse is ready to accept queries.
         ports = [9000]
         try:
             ports_env = os.environ.get("CH_WAIT_START_PORTS", "").strip()
@@ -5399,156 +5366,6 @@ class ClickHouseInstance:
             ports = [9000]
         self.wait_until_any_port_is_ready(ports, timeout=start_timeout, connection_timeout=connection_timeout)
         self.is_up = True
-
-    # Waits until a specified port is ready for connections.
-    def wait_until_port_is_ready(self, port, timeout=None, connection_timeout=None):
-        handle = self.get_docker_handle()
-
-        if timeout is None or timeout <= 0:
-            raise Exception("Invalid timeout: {}".format(timeout))
-
-        if connection_timeout is not None and connection_timeout < timeout:
-            raise Exception(
-                "Connection timeout {} should be greater then start timeout {}".format(
-                    connection_timeout, timeout
-                )
-            )
-
-        start_time = time.time()
-        prev_rows_in_log = 0
-
-        def has_new_rows_in_log():
-            nonlocal prev_rows_in_log
-            try:
-                rows_in_log = int(self.count_log_lines())
-                res = rows_in_log > prev_rows_in_log
-                prev_rows_in_log = rows_in_log
-                return res
-            except Exception:
-                return False
-
-        while True:
-            handle.reload()
-            status = handle.status
-            if status == "exited":
-                try:
-                    logs_tail = handle.logs(tail=200).decode("utf-8", errors="replace")
-                except Exception:
-                    logs_tail = handle.logs().decode("utf-8", errors="replace")
-                diag_ps = ""
-                diag_ss = ""
-                diag_cfg = ""
-                diag_err = ""
-                diag_log = ""
-                try:
-                    diag_ps = self.exec_in_container(["bash", "-c", "ps aux | sed -n '1,200p'"], nothrow=True, user="root")
-                except Exception:
-                    pass
-                try:
-                    diag_ss = self.exec_in_container(["bash", "-c", "ss -ltnp | sed -n '1,200p'"], nothrow=True, user="root")
-                except Exception:
-                    pass
-                try:
-                    diag_cfg = self.exec_in_container(["bash", "-c", "if [ -d /etc/clickhouse-server/config.d ]; then for f in /etc/clickhouse-server/config.d/*keeper* 2>/dev/null; do if [ -f \"$f\" ]; then echo ==== \"$f\" ====; sed -n '1,150p' \"$f\"; fi; done; fi"], nothrow=True)
-                except Exception:
-                    pass
-                try:
-                    diag_err = self.exec_in_container(["bash", "-c", "tail -n 200 /var/log/clickhouse-server/clickhouse-server.err.log || true"], nothrow=True)
-                except Exception:
-                    pass
-                try:
-                    diag_log = self.exec_in_container(["bash", "-c", "tail -n 200 /var/log/clickhouse-server/clickhouse-server.log || true"], nothrow=True)
-                except Exception:
-                    pass
-                extra = ""
-                if diag_ps:
-                    extra += "\n[ps]\n" + diag_ps
-                if diag_ss:
-                    extra += "\n[ss]\n" + diag_ss
-                if diag_cfg:
-                    extra += "\n[keeper_config]\n" + diag_cfg
-                if diag_err:
-                    extra += "\n[err.log]\n" + diag_err
-                if diag_log:
-                    extra += "\n[server.log]\n" + diag_log
-                raise Exception(
-                    f"Instance `{self.name}' failed to start. Container status: {status}, logs_tail:\n{logs_tail}{extra}"
-                )
-
-            deadline = start_time + timeout
-            # It is possible that server starts slowly.
-            # If container is running, and there is some progress in log, check connection_timeout.
-            if connection_timeout and status == "running" and has_new_rows_in_log():
-                deadline = start_time + connection_timeout
-
-            current_time = time.time()
-            if current_time >= deadline:
-                try:
-                    logs_tail = handle.logs(tail=200).decode("utf-8", errors="replace")
-                except Exception:
-                    logs_tail = handle.logs().decode("utf-8", errors="replace")
-                diag_ps = ""
-                diag_ss = ""
-                diag_cfg = ""
-                diag_err = ""
-                diag_log = ""
-                try:
-                    diag_ps = self.exec_in_container(["bash", "-c", "ps aux | sed -n '1,200p'"], nothrow=True, user="root")
-                except Exception:
-                    pass
-                try:
-                    diag_ss = self.exec_in_container(["bash", "-c", "ss -ltnp | sed -n '1,200p'"], nothrow=True, user="root")
-                except Exception:
-                    pass
-                try:
-                    diag_cfg = self.exec_in_container(["bash", "-c", "if [ -d /etc/clickhouse-server/config.d ]; then for f in /etc/clickhouse-server/config.d/*keeper* 2>/dev/null; do if [ -f \"$f\" ]; then echo ==== \"$f\" ====; sed -n '1,150p' \"$f\"; fi; done; fi"], nothrow=True)
-                except Exception:
-                    pass
-                try:
-                    diag_err = self.exec_in_container(["bash", "-c", "tail -n 200 /var/log/clickhouse-server/clickhouse-server.err.log || true"], nothrow=True)
-                except Exception:
-                    pass
-                try:
-                    diag_log = self.exec_in_container(["bash", "-c", "tail -n 200 /var/log/clickhouse-server/clickhouse-server.log || true"], nothrow=True)
-                except Exception:
-                    pass
-                extra = ""
-                if diag_ps:
-                    extra += "\n[ps]\n" + diag_ps
-                if diag_ss:
-                    extra += "\n[ss]\n" + diag_ss
-                if diag_cfg:
-                    extra += "\n[keeper_config]\n" + diag_cfg
-                if diag_err:
-                    extra += "\n[err.log]\n" + diag_err
-                if diag_log:
-                    extra += "\n[server.log]\n" + diag_log
-                raise Exception(
-                    f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs_tail:\n{logs_tail}{extra}"
-                )
-
-            socket_timeout = min(timeout, deadline - current_time)
-
-            # Repeatedly poll the instance address until there is something that listens there.
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(socket_timeout)
-                sock.connect((self.ip_address, port))
-                return
-            except socket.timeout:
-                continue
-            except socket.error as e:
-                if (
-                    e.errno == errno.ECONNREFUSED
-                    or e.errno == errno.EHOSTUNREACH
-                    or e.errno == errno.ENETUNREACH
-                ):
-                    time.sleep(0.1)
-                else:
-                    raise
-            finally:
-                sock.close()
 
     def wait_until_any_port_is_ready(self, ports, timeout=None, connection_timeout=None):
         if not ports:
@@ -5576,6 +5393,76 @@ class ClickHouseInstance:
         if last_exc:
             raise last_exc
         raise Exception("Timed out while waiting for instance '{}' to start".format(self.name))
+
+    # Waits until a specified port is ready for connections.
+    def wait_until_port_is_ready(self, port, timeout=None, connection_timeout=None):
+        handle = self.get_docker_handle()
+
+        if timeout is None or timeout <= 0:
+            raise Exception("Invalid timeout: {}".format(timeout))
+
+        if connection_timeout is not None and connection_timeout < timeout:
+            raise Exception(
+                "Connection timeout {} should be greater then start timeout {}".format(
+                    connection_timeout, timeout
+                )
+            )
+
+        start_time = time.time()
+        prev_rows_in_log = 0
+
+        def has_new_rows_in_log():
+            nonlocal prev_rows_in_log
+            try:
+                rows_in_log = int(self.count_in_log(".*").strip())
+                res = rows_in_log > prev_rows_in_log
+                prev_rows_in_log = rows_in_log
+                return res
+            except ValueError:
+                return False
+
+        while True:
+            handle.reload()
+            status = handle.status
+            if status == "exited":
+                raise Exception(
+                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                )
+
+            deadline = start_time + timeout
+            # It is possible that server starts slowly.
+            # If container is running, and there is some progress in log, check connection_timeout.
+            if connection_timeout and status == "running" and has_new_rows_in_log():
+                deadline = start_time + connection_timeout
+
+            current_time = time.time()
+            if current_time >= deadline:
+                raise Exception(
+                    f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
+                    f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                )
+
+            socket_timeout = min(timeout, deadline - current_time)
+
+            # Repeatedly poll the instance address until there is something that listens there.
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(socket_timeout)
+                sock.connect((self.ip_address, port))
+                return
+            except socket.timeout:
+                continue
+            except socket.error as e:
+                if (
+                    e.errno == errno.ECONNREFUSED
+                    or e.errno == errno.EHOSTUNREACH
+                    or e.errno == errno.ENETUNREACH
+                ):
+                    time.sleep(0.1)
+                else:
+                    raise
+            finally:
+                sock.close()
 
     def dict_to_xml(self, dictionary):
         xml_str = dict2xml(
@@ -5828,16 +5715,7 @@ class ClickHouseInstance:
             f"Copy custom test config files {self.custom_main_config_paths} to {self.config_d_dir}"
         )
         for path in self.custom_main_config_paths:
-            src = path
-            if not os.path.exists(src):
-                try:
-                    base = Path(self.cluster.instances_dir) / "configs"
-                    found = next(base.glob(f"*/{os.path.basename(src)}"), None)
-                    if found and found.exists():
-                        src = str(found)
-                except Exception:
-                    pass
-            shutil.copy(src, self.config_d_dir)
+            shutil.copy(path, self.config_d_dir)
 
         # Copy users.d configs
         for path in self.custom_user_config_paths:
@@ -5881,6 +5759,9 @@ class ClickHouseInstance:
             depends_on.append("mysql2")
             depends_on.append("mysql3")
             depends_on.append("mysql4")
+
+        if self.with_dremio26:
+            depends_on.append("dremio26")
 
         if self.with_postgres_cluster:
             depends_on.append("postgres2")

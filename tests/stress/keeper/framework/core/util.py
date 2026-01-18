@@ -13,9 +13,7 @@ def _exec(node, cmd, user=None, privileged=False, timeout=None, nothrow=False):
     args = ["bash", "-lc", cmd] if isinstance(cmd, str) else list(cmd)
     kwargs = {}
     if timeout is None:
-        to_env = os.environ.get("KEEPER_DOCKER_EXEC_TIMEOUT") or os.environ.get(
-            "KEEPER_PYTEST_TIMEOUT"
-        )
+        to_env = os.environ.get("KEEPER_DOCKER_EXEC_TIMEOUT")
         if to_env:
             try:
                 timeout = max(10, min(int(to_env), 3600))
@@ -74,9 +72,7 @@ def host_sh(cmd, timeout=None):
     """Execute a command on the host (not inside container). Returns {"out": ...}."""
     try:
         if timeout is None:
-            to_env = os.environ.get("KEEPER_HOST_EXEC_TIMEOUT") or os.environ.get(
-                "KEEPER_PYTEST_TIMEOUT"
-            )
+            to_env = os.environ.get("KEEPER_HOST_EXEC_TIMEOUT")
             if to_env:
                 try:
                     timeout = max(5, min(int(to_env), 3600))
@@ -89,15 +85,6 @@ def host_sh(cmd, timeout=None):
                 timeout = float(timeout)
             except Exception:
                 timeout = 300
-
-        pt = os.environ.get("KEEPER_PYTEST_TIMEOUT")
-        if pt:
-            try:
-                pt_s = int(pt)
-                max_host = max(5, pt_s - 60)
-                timeout = min(float(timeout), float(max_host))
-            except Exception:
-                pass
 
         args = cmd if isinstance(cmd, list) else ["bash", "-lc", cmd]
         res = subprocess.run(

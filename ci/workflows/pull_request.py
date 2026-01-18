@@ -34,7 +34,7 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
 ][0]
 
 # Ensure Keeper stress (PR) becomes a hard gate for other tests
-KEEPER_STRESS_PR_NAME = "Keeper Stress (PR)"
+KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
 # Use Keeper as an additional blocker so dependent jobs will start only after Keeper finishes
 BLOCKERS_AFTER_KEEPER = FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES + [KEEPER_STRESS_PR_NAME]
 

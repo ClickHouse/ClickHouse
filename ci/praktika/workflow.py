@@ -112,18 +112,11 @@ class Workflow:
             name = str(name)
             names = []
             for secret in self.secrets:
-                # Exact match: return a copy to avoid mutating workflow.secrets via join_with
                 if secret.name == name:
-                    return Secret.Config(name=name, type=secret.type, region=secret.region)
-                # Support grouped secrets where Config.name is a list of names
-                try:
-                    if isinstance(secret.name, list) and name in secret.name:
-                        return Secret.Config(name=name, type=secret.type, region=secret.region)
-                except Exception:
-                    pass
+                    return secret
                 names.append(secret.name)
             print(f"ERROR: Failed to find secret [{name}], workflow secrets [{names}]")
-            raise RuntimeError(f"Secret [{name}] not found")
+            raise
 
         def _enabled_workflow_config(self):
             return (

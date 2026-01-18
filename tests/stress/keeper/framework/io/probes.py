@@ -1,7 +1,7 @@
 import json
 import os
 
-from keeper.framework.core.settings import CLIENT_PORT, CONTROL_PORT, PROM_PORT
+from keeper.framework.core.settings import CLIENT_PORT, PROM_PORT
 from keeper.framework.core.util import has_bin, sh
 
 
@@ -173,19 +173,6 @@ def prom_metrics(node):
     return sh(
         node, f"curl -sf --max-time 2 http://127.0.0.1:{PROM_PORT}/metrics", timeout=4
     )["out"]
-
-
-def ready(node):
-    if not CONTROL_PORT:
-        return False
-    return (
-        sh(
-            node,
-            f"curl -sf --max-time 2 -o /dev/null -w '%{{http_code}}' http://127.0.0.1:{CONTROL_PORT}/ready",
-            timeout=4,
-        )["out"].strip()
-        == "200"
-    )
 
 
 def ch_metrics(node):

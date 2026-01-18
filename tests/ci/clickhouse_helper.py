@@ -28,36 +28,13 @@ class ClickHouseHelper:
         self, url: Optional[str] = None, auth: Optional[Dict[str, str]] = None
     ):
         if url is None:
-            url = (
-                os.environ.get("CI_DB_URL")
-                or os.environ.get("CLICKHOUSE_TEST_STAT_URL")
-                or get_parameter_from_ssm("clickhouse-test-stat-url")
-            )
+            url = get_parameter_from_ssm("clickhouse-test-stat-url")
 
         self.url = url
-        if auth is None:
-            env_user = os.environ.get("CI_DB_USER") or os.environ.get(
-                "CLICKHOUSE_TEST_STAT_LOGIN"
-            )
-            env_key = os.environ.get("CI_DB_PASSWORD") or os.environ.get(
-                "CLICKHOUSE_TEST_STAT_PASSWORD"
-            )
-            if env_user and env_key:
-                self.auth = {
-                    "X-ClickHouse-User": env_user,
-                    "X-ClickHouse-Key": env_key,
-                }
-            else:
-                self.auth = {
-                    "X-ClickHouse-User": get_parameter_from_ssm(
-                        "clickhouse-test-stat-login"
-                    ),
-                    "X-ClickHouse-Key": get_parameter_from_ssm(
-                        "clickhouse-test-stat-password"
-                    ),
-                }
-        else:
-            self.auth = auth
+        self.auth = auth or {
+            "X-ClickHouse-User": get_parameter_from_ssm("clickhouse-test-stat-login"),
+            "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password"),
+        }
 
     @staticmethod
     def insert_file(

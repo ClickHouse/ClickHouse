@@ -355,24 +355,6 @@ class Shell:
                         t.daemon = True
                         t.start()
 
-                    hb_thread = None
-                    try:
-                        hb_sec_raw = os.environ.get("CI_HEARTBEAT_SEC", "0") or "0"
-                        hb_sec = int(hb_sec_raw)
-                    except Exception:
-                        hb_sec = 0
-                    if hb_sec > 0:
-                        def _hb():
-                            while proc and (proc.poll() is None):
-                                try:
-                                    print(f"[heartbeat] {datetime.utcnow().isoformat()} still running: {command}")
-                                except Exception:
-                                    pass
-                                time.sleep(hb_sec)
-                        hb_thread = Thread(target=_hb)
-                        hb_thread.daemon = True
-                        hb_thread.start()
-
                     # Write stdin if provided
                     if stdin_str:
                         proc.stdin.write(stdin_str)

@@ -644,24 +644,14 @@ class Runner:
             # Keeper metrics ingestion: move from job to praktika post-run
             try:
                 temp_abs = Utils.absolute_path(Settings.TEMP_DIR)
-                # Support both single sidecar and per-test split files
-                metrics_files = sorted(glob.glob(f"{temp_abs}/keeper_metrics*.jsonl"))
-                if ci_db and metrics_files:
-                    per_test_mode = any("__" in Path(p).name for p in metrics_files)
-                    total_inserted = 0
-                    total_skipped = 0
-                    for path in metrics_files:
-                        try:
-                            inserted, skipped = ci_db.insert_keeper_metrics_from_file(
-                                file_path=path,
-                                chunk_size=(1000000 if per_test_mode else 1000),
-                            )
-                            total_inserted += int(inserted or 0)
-                            total_skipped += int(skipped or 0)
-                        except Exception as e:
-                            print(f"ERROR: metrics ingestion failed for {path}: {e}")
+                metrics_file = f"{temp_abs}/keeper_metrics.jsonl"
+                if ci_db and os.path.exists(metrics_file):
+                    inserted, skipped = ci_db.insert_keeper_metrics_from_file(
+                        file_path=metrics_file,
+                        chunk_size=1000,
+                    )
                     print(
-                        f"NOTE: Keeper metrics ingested via praktika: files={len(metrics_files)} inserted={total_inserted} skipped_existing={total_skipped}"
+                        f"NOTE: Keeper metrics ingested via praktika: file={metrics_file} inserted={int(inserted or 0)}"
                     )
             except Exception as ex:
                 traceback.print_exc()
