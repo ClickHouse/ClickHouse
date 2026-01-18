@@ -26,7 +26,7 @@ from praktika.utils import Shell, Utils
 # ─────────────────────────────────────────────────────────────────────────────
 REPO_DIR = _repo_dir
 TEMP_DIR = f"{REPO_DIR}/ci/tmp"
-DEFAULT_XDIST_WORKERS = "12"
+DEFAULT_XDIST_WORKERS = "8"
 DEFAULT_TIMEOUT = 120
 DEFAULT_READY_TIMEOUT = 600
 
@@ -40,36 +40,6 @@ def env_int(name, default=0):
         return int(os.environ.get(name) or default)
     except (ValueError, TypeError):
         return default
-
-
-def safe_int(val, default=0):
-    """Safely convert to int."""
-    try:
-        return int(val) if val is not None else default
-    except (ValueError, TypeError):
-        return default
-
-
-def load_praktika_env():
-    """Load environment from praktika setup file if present."""
-    envf = os.path.join(REPO_DIR, "ci", "tmp", "praktika_setup_env.sh")
-    if not os.path.exists(envf):
-        return
-    try:
-        with open(envf, "r", encoding="utf-8") as f:
-            for line in f:
-                s = line.strip()
-                if not s or s.startswith("#"):
-                    continue
-                if s.startswith("export "):
-                    s = s[7:]
-                if "=" in s:
-                    k, v = s.split("=", 1)
-                    v = v.strip().strip("'").strip('"')
-                    if k and v and k not in os.environ:
-                        os.environ[k.strip()] = v
-    except Exception:
-        pass
 
 
 def set_default_env():
@@ -239,6 +209,7 @@ def get_commit_sha(env):
             cwd=REPO_DIR,
             stderr=subprocess.STDOUT,
             text=True,
+            timeout=10,
         )
         sha = out.strip()
         if sha:
@@ -260,7 +231,7 @@ def build_pytest_command(args):
         extra.append(f"--faults={args.faults}")
 
     # Calculate timeout
-    dur_val = safe_int(args.duration) or env_int("KEEPER_DURATION", DEFAULT_TIMEOUT)
+    dur_val = args.duration or env_int("KEEPER_DURATION", DEFAULT_TIMEOUT)
     ready_val = max(
         DEFAULT_READY_TIMEOUT, env_int("KEEPER_READY_TIMEOUT", DEFAULT_READY_TIMEOUT)
     )
@@ -445,8 +416,6 @@ def main():
     parser.add_argument("--duration", type=int)
     parser.add_argument("--param")
     args, _ = parser.parse_known_args()
-
-    load_praktika_env()
     set_default_env()
     apply_cli_params(args)
 
@@ -535,7 +504,6 @@ def main():
     # Run pytest
     report_file = f"{TEMP_DIR}/pytest.jsonl"
     junit_file = f"{TEMP_DIR}/keeper_junit.xml"
-    pytest_timeout = max(3600, min(10200, timeout_val * 4))
 
     keepalive = start_keepalive()
     results.append(
