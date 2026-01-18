@@ -616,11 +616,9 @@ def main():
                 stopwatch=sw_,
             )
         )
-        # fatal failures found in logs represented as normal test cases
-        test_result.extend_sub_results(results[-1].results)
-        results[-1].results = []
 
         # invert result status for bugfix validation
+        # must be done before results are moved to test_result
         if is_bugfix_validation:
             has_failure = False
             for r in results[-1].results:
@@ -635,6 +633,10 @@ def main():
                 results[-1].set_failed().set_info("Failed to reproduce the bug")
             else:
                 results[-1].set_success()
+
+        # fatal failures found in logs represented as normal test cases
+        test_result.extend_sub_results(results[-1].results)
+        results[-1].results = []
 
         if not results[-1].is_ok():
             results[-1].set_info("Found errors added into Tests results")
