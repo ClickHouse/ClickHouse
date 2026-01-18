@@ -18,7 +18,7 @@ namespace DB
   * Otherwise, uses match() with a combined regexp pattern using alternation.
   *
   * The result is wrapped with indexHint() to preserve index analysis:
-  *   (optimized_expr OR false) AND indexHint(original_expr)
+  *   optimized_expr AND indexHint(original_expr)
   */
 class ConvertOrLikeChainPass final : public IQueryTreePass
 {
