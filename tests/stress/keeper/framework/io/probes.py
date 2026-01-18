@@ -70,6 +70,14 @@ def count_leaders(nodes):
     return sum(1 for n in nodes if is_leader(n))
 
 
+def ready(node):
+    try:
+        out = four(node, "ruok")
+        return "imok" in str(out or "").lower()
+    except Exception:
+        return False
+
+
 def mntr(node):
     kv = {}
     for line in four(node, "mntr").splitlines():
