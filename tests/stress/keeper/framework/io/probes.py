@@ -1,7 +1,17 @@
 import json
+import os
 
 from keeper.framework.core.settings import CLIENT_PORT, CONTROL_PORT, PROM_PORT
 from keeper.framework.core.util import has_bin, sh
+
+
+def _ch_query_timeout_s():
+    """Timeout for best-effort ClickHouse queries (metrics snapshots)."""
+    try:
+        v = int(os.environ.get("KEEPER_CH_QUERY_TIMEOUT", "5") or "5")
+        return max(1, min(v, 60))
+    except Exception:
+        return 5
 
 
 def four(node, cmd):
@@ -15,8 +25,8 @@ def four(node, cmd):
     except Exception:
         pass
     fb = [
-        f"HOME=/tmp timeout 2s clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{cmd}' 2>/dev/null",
-        f"HOME=/tmp timeout 2s clickhouse keeper-client -p {CLIENT_PORT} -q '{cmd}' 2>/dev/null",
+        f"HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{cmd}' 2>&1",
+        f"HOME=/tmp clickhouse keeper-client -p {CLIENT_PORT} -q '{cmd}' 2>&1",
     ]
     devtcp_inner = (
         f"exec 3<>/dev/tcp/127.0.0.1/{CLIENT_PORT}; "
@@ -24,7 +34,7 @@ def four(node, cmd):
         f"cat <&3; "
         f"exec 3<&-; exec 3>&-"
     )
-    fb.append(f'timeout 2s bash -lc "{devtcp_inner}"')
+    fb.append(f'bash -lc "{devtcp_inner}"')
     for c in fb:
         try:
             out = sh(node, c, timeout=5)["out"]
@@ -38,13 +48,15 @@ def four(node, cmd):
 def is_leader(node):
     # Prefer 'stat' which always includes Mode: <role>
     out = four(node, "stat")
-    if "Mode: leader" in out:
+    out_l = str(out or "").lower()
+    if "mode: leader" in out_l:
         return True
-    if "Mode: follower" in out or "Mode: standalone" in out:
+    if "mode: follower" in out_l or "mode: standalone" in out_l:
         return False
     # Fallback to 'srvr' (some builds also include Mode)
     out2 = four(node, "srvr")
-    if "Mode: leader" in out2:
+    out2_l = str(out2 or "").lower()
+    if "mode: leader" in out2_l:
         return True
     # Final fallback: parse mntr key
     try:
@@ -191,7 +203,7 @@ def ch_async_metrics(node):
 
 def _query_json_each_row(node, sql):
     try:
-        txt = node.query(sql)
+        txt = node.query(sql, timeout=_ch_query_timeout_s(), ignore_error=True)
         return [json.loads(l) for l in txt.strip().splitlines() if l.strip()]
     except Exception:
         return []
@@ -200,7 +212,7 @@ def _query_json_each_row(node, sql):
 def ch_trace_log(node, limit_rows=500):
     try:
         q = f"SELECT * FROM system.trace_log ORDER BY event_time DESC LIMIT {int(limit_rows)} FORMAT JSONEachRow"
-        return node.query(q)
+        return node.query(q, timeout=_ch_query_timeout_s(), ignore_error=True)
     except Exception:
         return ""
 

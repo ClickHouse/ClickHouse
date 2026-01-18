@@ -191,12 +191,37 @@ def cluster_factory(request):
         except Exception:
             pass
         to = float(env_int("KEEPER_READY_TIMEOUT", 120))
-        wait_until(
-            lambda: count_leaders(nodes) == 1,
-            timeout_s=to,
-            interval=0.5,
-            desc="cluster ready",
-        )
+        try:
+            wait_until(
+                lambda: count_leaders(nodes) == 1,
+                timeout_s=to,
+                interval=0.5,
+                desc="cluster ready",
+            )
+        except Exception as e:
+            try:
+                from keeper.framework.io.probes import four, mntr
+
+                for n in nodes:
+                    try:
+                        print(f"==== {n.name} stat ====\n" + str(four(n, "stat"))[:2000])
+                    except Exception:
+                        pass
+                    try:
+                        print(f"==== {n.name} srvr ====\n" + str(four(n, "srvr"))[:2000])
+                    except Exception:
+                        pass
+                    try:
+                        m = mntr(n) or {}
+                        print(
+                            f"==== {n.name} mntr zk_server_state ====\n"
+                            + str(m.get("zk_server_state", ""))
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            raise e
         return cluster, nodes
 
     return _make

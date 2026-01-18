@@ -8,7 +8,7 @@ import time
 import traceback
 
 
-def _exec(node, cmd, user=None, privileged=False, timeout=None):
+def _exec(node, cmd, user=None, privileged=False, timeout=None, nothrow=False):
     """Execute command in container, return raw output."""
     args = ["bash", "-lc", cmd] if isinstance(cmd, str) else list(cmd)
     kwargs = {}
@@ -29,13 +29,20 @@ def _exec(node, cmd, user=None, privileged=False, timeout=None):
         kwargs["privileged"] = True
     if timeout is not None:
         kwargs["timeout"] = timeout
-    return node.exec_in_container(args, **kwargs)
+    return node.exec_in_container(args, nothrow=bool(nothrow), **kwargs)
 
 
 def sh(node, cmd, user=None, privileged=False, timeout=None):
     """Execute shell command, return {"out": ...}. Swallows exceptions."""
     try:
-        out = _exec(node, cmd, user=user, privileged=privileged, timeout=timeout)
+        out = _exec(
+            node,
+            cmd,
+            user=user,
+            privileged=privileged,
+            timeout=timeout,
+            nothrow=True,
+        )
         return {"out": out}
     except Exception:
         return {"out": ""}

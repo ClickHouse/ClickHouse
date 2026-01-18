@@ -183,10 +183,6 @@ if __name__ == "__main__":
     info = Info()
     error, category = get_category(info.pr_body)
     if not category or error:
-        changed_files = info.get_kv_data("changed_files")
-        if any(f.startswith(("ci/", "tests/stress/keeper")) for f in changed_files or []):
-            category = LABEL_CATEGORIES["pr-ci"][0]
-        else:
-            print(f"ERROR: {error}")
-            sys.exit(1)
+        print(f"ERROR: {error}")
+        sys.exit(1)
     check_labels(category, info)
