@@ -393,9 +393,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
                         /// This should happen because filter expression on initiator needs the set as well,
                         /// and it should be built before sending the external tables.
 
-                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(set_from_subquery->getSourceAST(), context);
-                        NamesAndTypesList columns = header->getNamesAndTypesList();
-
+                        auto columns = InterpreterSelectQueryAnalyzer::getSampleBlock(set_from_subquery->getSourceAST(), context)->getNamesAndTypesList();
                         auto external_storage_holder = TemporaryTableHolder(
                             context,
                             ColumnsDescription{columns},
