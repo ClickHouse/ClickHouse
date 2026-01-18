@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- Test for GLOBAL IN with nullable subquery types
 -- This test verifies that external tables for GLOBAL IN work correctly when the
 -- subquery returns Nullable types. The Set class strips Nullable from types when
