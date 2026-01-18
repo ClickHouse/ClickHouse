@@ -65,7 +65,8 @@ void promqllexerLexerInitialize() {
       "IGNORING", "GROUP_LEFT", "GROUP_RIGHT", "OFFSET", "BOOL", "AGGREGATION_OPERATOR", 
       "FUNCTION", "LEFT_BRACE", "RIGHT_BRACE", "LEFT_PAREN", "RIGHT_PAREN", 
       "LEFT_BRACKET", "RIGHT_BRACKET", "COMMA", "AT", "SUBQUERY_RANGE", 
-      "TIME_RANGE", "METRIC_NAME", "LABEL_NAME", "WS", "SL_COMMENT", "WS_FRAGMENT"
+      "SELECTOR_RANGE", "METRIC_NAME", "LABEL_NAME", "WS", "SL_COMMENT", 
+      "WS_FRAGMENT"
     },
     std::vector<std::string>{
       "DEFAULT_TOKEN_CHANNEL", "HIDDEN"
@@ -86,8 +87,8 @@ void promqllexerLexerInitialize() {
       "RE", "NRE", "BY", "WITHOUT", "ON", "IGNORING", "GROUP_LEFT", "GROUP_RIGHT", 
       "OFFSET", "BOOL", "AGGREGATION_OPERATOR", "FUNCTION", "LEFT_BRACE", 
       "RIGHT_BRACE", "LEFT_PAREN", "RIGHT_PAREN", "LEFT_BRACKET", "RIGHT_BRACKET", 
-      "COMMA", "AT", "SUBQUERY_RANGE", "TIME_RANGE", "METRIC_NAME", "LABEL_NAME", 
-      "WS", "SL_COMMENT"
+      "COMMA", "AT", "SUBQUERY_RANGE", "SELECTOR_RANGE", "METRIC_NAME", 
+      "LABEL_NAME", "WS", "SL_COMMENT"
     }
   );
   static const int32_t serializedATNSegment[] = {
