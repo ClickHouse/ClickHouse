@@ -27,7 +27,7 @@ from praktika.utils import Shell, Utils
 # ─────────────────────────────────────────────────────────────────────────────
 REPO_DIR = _repo_dir
 TEMP_DIR = f"{REPO_DIR}/ci/tmp"
-DEFAULT_XDIST_WORKERS = "16"
+DEFAULT_XDIST_WORKERS = "12"
 DEFAULT_TIMEOUT = 120
 DEFAULT_READY_TIMEOUT = 600
 
@@ -96,7 +96,6 @@ def set_default_env():
         "KEEPER_KEEP_ON_FAIL": "1",
         "KEEPER_CLEAN_ARTIFACTS": "1",
         "KEEPER_XDIST_PORT_STEP": "100",
-        "KEEPER_PYTEST_XDIST": "auto",
         "CI_HEARTBEAT_SEC": "60",
     }
     for k, v in defaults.items():
@@ -272,8 +271,7 @@ def build_pytest_command(args):
     extra.extend([f"--timeout={timeout_val}", "--timeout-method=signal"])
 
     # xdist workers
-    xd_env = os.environ.get("KEEPER_PYTEST_XDIST", "").strip().lower()
-    xdist_workers = DEFAULT_XDIST_WORKERS if xd_env in ("", "auto") else xd_env
+    xdist_workers = DEFAULT_XDIST_WORKERS
     extra.append(f"-n {xdist_workers}")
     is_parallel = xdist_workers not in ("1", "no", "0")
 
