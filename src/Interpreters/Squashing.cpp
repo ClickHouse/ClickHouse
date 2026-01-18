@@ -343,9 +343,8 @@ Chunk Squashing::squash(ChunksWithOffsetsAndLengths && input_data)
         mutable_columns[col_ind]->prepareForSquashing(source_columns_list[col_ind], /* factor */ 1);
         for (size_t chunk_ind = 1; chunk_ind < input_data.size(); ++chunk_ind)
         {
-            auto & source_column = source_columns_list[col_ind][chunk_ind - 1];
-            auto column = std::move(source_column);
-            mutable_columns[col_ind]->insertRangeFrom(*source_column, input_data[chunk_ind].offset, input_data[chunk_ind].length);
+            auto column = std::move(source_columns_list[col_ind][chunk_ind - 1]);
+            mutable_columns[col_ind]->insertRangeFrom(*column, input_data[chunk_ind].offset, input_data[chunk_ind].length);
         }
     }
 

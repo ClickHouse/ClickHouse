@@ -17,7 +17,6 @@ struct ChunkWithOffsetAndLength
         , offset(offset_)
         , length(length_)
         {
-            assert(length > 0 && offset + length <= chunk.getNumRows());
         }
 
     Chunk chunk;
