@@ -90,15 +90,6 @@ def _step_parallel(step, nodes, leader, ctx):
     exp = max(durs) if durs else DEFAULT_FAULT_DURATION_S
     slack = 60
     deadline = time.time() + exp + slack
-    try:
-        pytest_to = float(env_int("KEEPER_PYTEST_TIMEOUT", 0) or 0)
-    except Exception:
-        pytest_to = 0.0
-    if pytest_to > 0:
-        try:
-            deadline = min(deadline, time.time() + max(1.0, pytest_to - 120.0))
-        except Exception:
-            pass
 
     threads = []
     thread_to_sub = {}
@@ -344,15 +335,6 @@ def _step_run_bench(step, nodes, leader, ctx):
 
     slack = 60
     deadline = time.time() + float(duration) + float(slack)
-    try:
-        pytest_to = float(env_int("KEEPER_PYTEST_TIMEOUT", 0) or 0)
-    except Exception:
-        pytest_to = 0.0
-    if pytest_to > 0:
-        try:
-            deadline = min(deadline, time.time() + max(1.0, pytest_to - 120.0))
-        except Exception:
-            pass
     for t in threads:
         t.join(timeout=max(0.0, deadline - time.time()))
 

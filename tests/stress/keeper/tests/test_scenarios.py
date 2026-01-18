@@ -958,9 +958,6 @@ def _print_manual_znode_counts(nodes):
                 )
         except Exception:
             pass
-
-
-@pytest.mark.timeout(int(os.environ.get("KEEPER_PYTEST_TIMEOUT", "2400") or 2400))
 def test_scenario(scenario, cluster_factory, request, run_meta):
     topo = scenario.get("topology", 3)
     backend = scenario.get("backend") or request.config.getoption("--keeper-backend")

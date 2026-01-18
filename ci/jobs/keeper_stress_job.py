@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Keeper stress test CI job runner."""
 import argparse
-import json
 import os
 import subprocess
 import sys
@@ -78,12 +77,10 @@ def set_default_env():
     defaults = {
         # Test selection
         "KEEPER_SCENARIO_FILE": "all",
-        "KEEPER_MATRIX_BACKENDS": "default,rocks",
         "KEEPER_FAULTS": "on",
         "KEEPER_DURATION": "600",
         # Adaptive bench tuning
         "KEEPER_BENCH_ADAPTIVE": "1",
-        "KEEPER_BENCH_CLIENTS": "96",
         "KEEPER_ADAPT_TARGET_P99_MS": "600",
         "KEEPER_ADAPT_MAX_ERROR": "0.01",
         "KEEPER_ADAPT_STAGE_S": "15",
@@ -314,7 +311,6 @@ def build_pytest_env(ch_path, timeout_val):
     env = os.environ.copy()
 
     # Timeouts
-    env["KEEPER_PYTEST_TIMEOUT"] = str(timeout_val)
     env["KEEPER_READY_TIMEOUT"] = str(ready_val)
     env["KEEPER_START_TIMEOUT_SEC"] = str(ready_val)
 
@@ -350,120 +346,6 @@ def build_pytest_env(ch_path, timeout_val):
     )
 
     return env
-
-
-def generate_comparison_summary(sidecar_path):
-    """Generate rocks vs default comparison from metrics sidecar. Returns (path, lines)."""
-    cmp_txt = f"{TEMP_DIR}/keeper_compare_summary.txt"
-    rows = []
-
-    if os.path.exists(sidecar_path):
-        try:
-            with open(sidecar_path, "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    try:
-                        rows.append(json.loads(line))
-                    except Exception:
-                        continue
-        except Exception:
-            pass
-
-    # Aggregate by scenario and backend
-    comp = {}
-    for r in rows:
-        if r.get("stage") != "summary" or r.get("source") != "bench":
-            continue
-        scen = str(r.get("scenario", ""))
-        backend = str(r.get("backend", ""))
-        name = str(r.get("name", ""))
-        val = r.get("value")
-        if val is None:
-            continue
-        try:
-            comp.setdefault(scen, {}).setdefault(backend, {})[name] = float(val)
-        except (ValueError, TypeError):
-            continue
-
-    # Format comparison with regression detection
-    lines = []
-    regressions = []
-    improvements = []
-    
-    lines.append("=" * 70)
-    lines.append("KEEPER BACKEND COMPARISON: Default vs RocksDB")
-    lines.append("=" * 70)
-    lines.append("")
-    
-    for scen, backs in sorted(comp.items()):
-        d, rk = backs.get("default", {}), backs.get("rocks", {})
-        if not d or not rk:
-            continue
-        lines.append(f"[scenario] {scen}")
-        lines.append(f"  {'metric':<12} {'default':>12} {'rocks':>12} {'diff%':>10} {'status':>10}")
-        lines.append("  " + "-" * 58)
-        
-        for key in ("ops", "rps", "errors", "p50_ms", "p95_ms", "p99_ms", "error_rate"):
-            if key not in d and key not in rk:
-                continue
-            vd = d.get(key, 0.0)
-            vr = rk.get(key, 0.0)
-            
-            # Calculate percentage difference
-            if vd != 0:
-                pct = (vr - vd) / vd * 100
-            elif vr != 0:
-                pct = 100.0
-            else:
-                pct = 0.0
-            
-            # Determine status (latency/errors: lower is better, ops/rps: higher is better)
-            is_latency = key in ("p50_ms", "p95_ms", "p99_ms", "errors", "error_rate")
-            if is_latency:
-                if pct > 15:
-                    status = "⚠️ WORSE"
-                    regressions.append((scen, key, pct))
-                elif pct < -15:
-                    status = "✅ BETTER"
-                    improvements.append((scen, key, pct))
-                else:
-                    status = "≈"
-            else:
-                if pct < -15:
-                    status = "⚠️ WORSE"
-                    regressions.append((scen, key, pct))
-                elif pct > 15:
-                    status = "✅ BETTER"
-                    improvements.append((scen, key, pct))
-                else:
-                    status = "≈"
-            
-            lines.append(f"  {key:<12} {vd:>12.2f} {vr:>12.2f} {pct:>+9.1f}% {status:>10}")
-        lines.append("")
-    
-    # Summary section
-    lines.append("=" * 70)
-    lines.append("SUMMARY")
-    lines.append("=" * 70)
-    if regressions:
-        lines.append("⚠️  REGRESSIONS (Rocks worse than Default):")
-        for scen, metric, pct in regressions:
-            lines.append(f"    - {scen} / {metric}: {pct:+.1f}%")
-    else:
-        lines.append("✅ No significant regressions detected")
-    
-    if improvements:
-        lines.append("")
-        lines.append("✅ IMPROVEMENTS (Rocks better than Default):")
-        for scen, metric, pct in improvements:
-            lines.append(f"    - {scen} / {metric}: {pct:+.1f}%")
-    lines.append("")
-
-    try:
-        with open(cmp_txt, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) if lines else "No comparable metrics found")
-        return cmp_txt, lines
-    except Exception:
-        return None, []
 
 
 def parse_junit_summary(junit_file):
@@ -515,40 +397,15 @@ def collect_failure_artifacts(pytest_ok):
             if p.exists():
                 files.append(str(p))
 
-    # Print debug tails
-    tail_cmds = []
-    for i in range(1, 4):
-        err = inst / f"keeper{i}" / "logs" / "clickhouse-server.err.log"
-        log = inst / f"keeper{i}" / "logs" / "clickhouse-server.log"
-        conf = (
-            inst
-            / f"keeper{i}"
-            / "configs"
-            / "config.d"
-            / f"keeper_config_keeper{i}.xml"
+    results.append(
+        Result.from_commands_run(
+            name="Keeper debug: docker ps",
+            command=[
+                f"echo 'Instances dir: {inst}'",
+                "docker ps -a --format '{{.Names}}\t{{.Status}}' | sed -n '1,200p'",
+            ],
         )
-        if conf.exists():
-            tail_cmds.append(
-                f"echo '==== keeper{i} config ====' && sed -n '1,120p' '{conf}'"
-            )
-        tail_cmds.append(
-            f"echo '==== keeper{i} err ====' && tail -n 400 '{err}' || true"
-        )
-        tail_cmds.append(
-            f"echo '==== keeper{i} log ====' && tail -n 400 '{log}' || true"
-        )
-
-    tail_cmds.extend(
-        [
-            "echo '==== docker ps ====' && docker ps -a --format '{{.Names}}\t{{.Status}}' | sed -n '1,200p'",
-            "for n in $(docker ps --format '{{.Names}}' | grep -E 'keeper[0-9]+' || true); do echo '==== docker logs' $n '===='; docker logs --tail 400 $n || true; done",
-        ]
     )
-
-    if tail_cmds:
-        results.append(
-            Result.from_commands_run(name="Keeper debug tails", command=tail_cmds)
-        )
 
     return files, results
 
@@ -670,7 +527,7 @@ def main():
             name="Preflight",
             command=[
                 "clickhouse --version || true",
-                f"echo 'xdist_workers={xdist_workers} backends={env.get('KEEPER_MATRIX_BACKENDS', '')}'",
+                f"echo 'xdist_workers={xdist_workers}'",
             ],
         )
     )
@@ -690,7 +547,6 @@ def main():
             env=env,
             pytest_report_file=report_file,
             logfile=pytest_log_file,
-            timeout_seconds=pytest_timeout,
         )
     )
     stop_keepalive(keepalive)
@@ -737,22 +593,6 @@ def main():
     # Metrics sidecar
     if Path(sidecar).exists():
         files_to_attach.append(sidecar)
-        results.append(
-            Result.from_commands_run(
-                name="Keeper Metrics preview",
-                command=[f"wc -l '{sidecar}'", f"sed -n '1,100p' '{sidecar}'"],
-            )
-        )
-
-    # Comparison summary
-    cmp_path, _ = generate_comparison_summary(sidecar)
-    if cmp_path and os.path.exists(cmp_path):
-        files_to_attach.append(cmp_path)
-        results.append(
-            Result.from_commands_run(
-                name="Rocks vs Default", command=[f"cat '{cmp_path}'"]
-            )
-        )
 
     # Test summary
     tests, passed, failures, errors, skipped = parse_junit_summary(junit_file)

@@ -9,8 +9,6 @@ if [[ ! -v MALLOC_CONF ]]; then
     JEMALLOC_PROFILER=1
 fi
 
-umask 022
-
 PID=0
 
 function handle_term()

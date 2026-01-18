@@ -370,7 +370,6 @@ ORDER BY day DESC
         file_path: str,
         chunk_size: int = 1000,
         retries: int = 3,
-        dedupe_days: int = 7,
     ):
         metrics_db = Settings.KEEPER_STRESS_METRICS_DB_NAME
         table = Settings.KEEPER_STRESS_METRICS_TABLE_NAME
@@ -383,77 +382,6 @@ ORDER BY day DESC
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
-
-        def _sql_quote(s: str) -> str:
-            return "'" + (s or "").replace("'", "''") + "'"
-
-        # Collect (run_id, scenario) pairs for deduplication to support per-test files
-        pairs = set()
-        try:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    s = line.strip()
-                    if not s:
-                        continue
-                    try:
-                        obj = json.loads(s)
-                    except Exception:
-                        continue
-                    rid = str(obj.get("run_id") or "")
-                    scen = str(obj.get("scenario") or "")
-                    if rid:
-                        pairs.add((rid, scen))
-        except Exception:
-            pairs = set()
-
-        # Attempt to upgrade ts column to DateTime64(3) if needed (one-time, best-effort)
-        try:
-            col_q = (
-                f"SELECT type FROM system.columns WHERE database = '{metrics_db}' "
-                f"AND table = '{table}' AND name = 'ts' FORMAT TabSeparated"
-            )
-            r = requests.get(
-                url=self.url,
-                params={"query": col_q},
-                headers=self.auth,
-                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-            )
-        except Exception:
-            pass
-
-        # Dedupe: check if any rows exist for these (run_id, scenario) in recent window
-        if pairs:
-            filt_in = ",".join(
-                f"({_sql_quote(rid)}, {_sql_quote(scen)})" for rid, scen in sorted(pairs)
-            )
-            q = (
-                f"SELECT count() FROM {metrics_db}.{table} "
-                f"WHERE (run_id, scenario) IN ({filt_in}) "
-                f"AND ts > now() - INTERVAL {dedupe_days} DAY FORMAT TabSeparated"
-            )
-            try:
-                existing = None
-                for attempt in range(retries):
-                    try:
-                        r = requests.get(
-                            url=self.url,
-                            params={"query": q},
-                            headers=self.auth,
-                            timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                        )
-                        txt = (r.text or "").strip()
-                        existing = int(float(txt.splitlines()[0])) if txt else 0
-                        break
-                    except Exception:
-                        if attempt == retries - 1:
-                            break
-                if existing is not None and existing > 0:
-                    print(
-                        f"INFO: keeper metrics dedupe skip: existing={existing} pairs={len(pairs)}"
-                    )
-                    return 0, 1
-            except Exception:
-                pass
 
         def _insert_chunk(lines: list) -> int:
             if not lines:

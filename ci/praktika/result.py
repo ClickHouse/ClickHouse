@@ -457,6 +457,7 @@ class Result(MetaClasses.Serializable):
 
             # Run pytest
             Shell.run(full_command, log_file=logfile, timeout=timeout)
+            _res = Shell.check(full_command, verbose=True)
             test_result = ResultTranslator.from_pytest_jsonl(
                 pytest_report_file=pytest_report_file
             )
