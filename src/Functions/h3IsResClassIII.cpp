@@ -6,8 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Common/typeid_cast.h>
-#include <base/range.h>
 
 namespace DB
 {
@@ -74,7 +72,7 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             validateH3Cell(data[row]);
-            UInt8 res = isResClassIII(data[row]);
+            auto res = static_cast<UInt8>(isResClassIII(data[row]));
             dst_data[row] = res;
         }
         return dst;

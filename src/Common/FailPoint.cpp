@@ -132,8 +132,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_merge_selecting_task_pause_when_scheduled) \
     ONCE(shared_set_full_update_fails_when_initializing) \
     PAUSEABLE(after_kill_part_pause) \
-    ONCE(parallel_replicas_reading_response_timeout)
-
+    ONCE(parallel_replicas_reading_response_timeout) \
+    ONCE(database_iceberg_gcs)
 
 namespace FailPoints
 {
