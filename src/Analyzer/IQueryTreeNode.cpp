@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/IAST.h>
 
 #include <boost/functional/hash.hpp>
 
@@ -281,6 +282,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
 
         node_clone->original_ast = node_to_clone->original_ast;
         node_clone->setAlias(node_to_clone->alias);
+        node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
 
@@ -339,6 +341,8 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 
     if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
         converted_node->setAlias(alias);
+
+    converted_node->parenthesized = parenthesized;
 
     return converted_node;
 }

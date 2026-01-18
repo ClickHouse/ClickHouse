@@ -48,7 +48,7 @@ FROM
         co3
         WITH CUBE
 )
-WHERE (co != 0) AND (co2 != 2)
+WHERE co != 0 AND co2 != 2
 1	0	3	1
 1	0	0	1
 SELECT name
@@ -68,24 +68,20 @@ enable_optimize_predicate_expression
 SELECT ccc
 FROM
 (
+    SELECT 1 AS ccc
+    FROM system.one
+    UNION ALL
+    SELECT *
+    FROM
     (
-        SELECT 1 AS ccc
+        SELECT 2 AS ccc
         FROM system.one
     )
-    UNION ALL
+    ANY INNER JOIN
     (
-        SELECT *
-        FROM
-        (
-            SELECT 2 AS ccc
-            FROM system.one
-        )
-        ANY INNER JOIN
-        (
-            SELECT 2 AS ccc
-            FROM system.one
-        ) USING (ccc)
-    )
+        SELECT 2 AS ccc
+        FROM system.one
+    ) USING (ccc)
 )
 WHERE ccc > 1
 2
@@ -137,7 +133,7 @@ FROM
     SELECT *
     FROM system.one
 )
-WHERE arrayMap(x -> (x + 1), [dummy]) = _CAST([1], \'Array(UInt8)\')
+WHERE arrayMap(x -> x + 1, [dummy]) = _CAST([1], \'Array(UInt8)\')
 0
 SELECT *
 FROM
@@ -154,8 +150,8 @@ ALL INNER JOIN
         3 AS value_1
     FROM system.one
 ) USING (id)
-WHERE arrayMap(x -> ((x + value) + value_1), _CAST([1], \'Array(UInt8)\')) = _CAST([6], \'Array(UInt8)\')
+WHERE arrayMap(x -> x + value + value_1, _CAST([1], \'Array(UInt8)\')) = _CAST([6], \'Array(UInt8)\')
 1	2	3
 SELECT *
 FROM system.one
-HAVING (dummy > 0) AND (dummy < 0)
+HAVING dummy > 0 AND dummy < 0

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <string_view>
 
 #include <Parsers/ASTFunction.h>
@@ -325,6 +326,32 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             {
                 const auto & func_symbol = it->operator_name;
                 ostr << func_symbol;
+
+                /// For negate, add space if argument starts with '-' to avoid '--'
+                if (name == "negate" && !arguments->children.empty())
+                {
+                    const auto & arg = arguments->children[0];
+                    bool need_space = false;
+                    if (const auto * arg_func = arg->as<ASTFunction>())
+                    {
+                        if (arg_func->name == "negate" && !arg_func->parenthesized)
+                            need_space = true;
+                    }
+                    else if (const auto * arg_lit = arg->as<ASTLiteral>())
+                    {
+                        /// Check if it's a negative number literal (including negative zero for floats)
+                        const auto & value = arg_lit->value;
+                        bool is_negative = (value.getType() == Field::Types::Int64 && value.safeGet<Int64>() < 0)
+                            || (value.getType() == Field::Types::Int128 && value.safeGet<Int128>() < 0)
+                            || (value.getType() == Field::Types::Int256 && value.safeGet<Int256>() < 0)
+                            || (value.getType() == Field::Types::Float64 && std::signbit(value.safeGet<Float64>()));
+                        if (is_negative && !arg_lit->parenthesized)
+                            need_space = true;
+                    }
+                    if (need_space)
+                        ostr << ' ';
+                }
+
                 arguments->format(ostr, settings, state, frame);
                 written = true;
             }
