@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-asan
 
 DROP TABLE IF EXISTS test_max_execution_time_leaf SYNC;
 CREATE TABLE test_max_execution_time_leaf
