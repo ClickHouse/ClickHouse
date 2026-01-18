@@ -3,3 +3,6 @@ target_link_libraries (compressed_buffer PRIVATE dbms clickhouse_common_io click
 
 clickhouse_add_executable (decompress_perf decompress_perf.cpp)
 target_link_libraries(decompress_perf PRIVATE clickhouse_compression ch_contrib::lz4)
+
+clickhouse_add_executable (openzl_benchmark openzl_benchmark.cpp)
+target_link_libraries(openzl_benchmark PRIVATE clickhouse_compression ch_contrib::openzl ch_contrib::zstd)
