@@ -10,18 +10,36 @@
 namespace DB
 {
 
+struct ChunkWithOffsetAndLength
+{
+    explicit ChunkWithOffsetAndLength(Chunk chunk_, size_t offset_, size_t length_)
+        : chunk(std::move(chunk_))
+        , offset(offset_)
+        , length(length_)
+        {
+            assert(length > 0 && offset + length <= chunk.getNumRows());
+        }
+
+    Chunk chunk;
+    size_t offset = 0;
+    size_t length = 0;
+};
+
+using ChunksWithOffsetsAndLengths = std::vector<ChunkWithOffsetAndLength>;
+
 class ChunksToSquash : public ChunkInfoCloneable<ChunksToSquash>
 {
+
 public:
     ChunksToSquash() = default;
     ChunksToSquash(const ChunksToSquash & other)
     {
-        chunks.reserve(other.chunks.size());
-        for (const auto & chunk: other.chunks)
-           chunks.push_back(chunk.clone());
+        data.reserve(other.data.size());
+        for (const auto & elem: other.data)
+           data.emplace_back(elem.chunk.clone(), elem.offset, elem.length);
     }
 
-    std::vector<Chunk> chunks = {};
+    ChunksWithOffsetsAndLengths data = {};
 };
 
 /** Merging consecutive passed blocks to specified minimum size.
@@ -59,34 +77,33 @@ private:
     class AccumulatedChunks
     {
     public:
-        explicit operator bool () const { return !chunks.empty(); }
-        bool empty() const { return chunks.empty(); }
+        explicit operator bool () const { return !data.empty(); }
+        bool empty() const { return data.empty(); }
         size_t getRows() const { return rows; }
         size_t getBytes() const { return bytes; }
         void append(Chunk && chunk);
-        void append(Chunk && chunk, size_t rows_to_add, size_t bytes_to_add);
+        void append(Chunk && chunk, size_t rows_to_add, size_t bytes_to_add, size_t offset);
 
-        Chunks extract();
-
-        std::pair<size_t,size_t> findLengthBytesPending(const Chunk & chunk, size_t max_rows, size_t max_bytes, size_t offset_pending) const;
+        ChunksWithOffsetsAndLengths extract();
 
     private:
 
-        Chunks chunks;
+        ChunksWithOffsetsAndLengths data;
         size_t rows = 0;
         size_t bytes = 0;
     };
 
     class PendingQueue
     {
-    public:
-
         struct ConsumeResult
         {
             Chunk chunk;
             size_t rows;
             size_t bytes;
+            size_t offset;
         };
+
+    public:
 
         size_t getRows() const { return total_rows; }
         size_t getBytes() const { return total_bytes; }
@@ -128,10 +145,10 @@ private:
     bool oneMaxReached() const;
     bool oneMaxReached(size_t rows, size_t bytes) const;
 
-    static Chunk squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos, SharedHeader header);
-    static Chunk squash(std::vector<Chunk> && input_chunks);
+    static Chunk squash(ChunksWithOffsetsAndLengths && input_data, Chunk::ChunkInfoCollection && infos, SharedHeader header);
+    static Chunk squash(Chunks &&input_chunks);
+    static Chunk squash(ChunksWithOffsetsAndLengths && input_data);
 
-    AccumulatedChunks extract();
     Chunk convertToChunk();
 
     // LazyMaterializingTransform calls private method squash(std::vector<Chunk> && input_chunks)
