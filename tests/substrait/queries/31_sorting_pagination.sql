@@ -1,0 +1,1 @@
+SELECT * FROM products ORDER BY price ASC, stock DESC LIMIT 10 OFFSET 5;

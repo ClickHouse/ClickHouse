@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -17,6 +18,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/TableJoin.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -69,14 +71,12 @@ private:
 
         TypeIndex type_id = type->getTypeId();
 
-        // Handle Nullable wrapper
         if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
         {
             convertFieldToLiteral(field, nullable->getNestedType(), literal);
             return;
         }
 
-        // Handle LowCardinality wrapper
         if (const auto * lc = typeid_cast<const DataTypeLowCardinality *>(type.get()))
         {
             convertFieldToLiteral(field, lc->getDictionaryType(), literal);
@@ -125,12 +125,14 @@ private:
                 }
                 else
                 {
+                    // Values exceeding Int64 range are encoded as Decimal(20,0) to preserve precision
                     auto * decimal_literal = literal->mutable_decimal();
                     decimal_literal->set_precision(20);
                     decimal_literal->set_scale(0);
                     Int128 raw_value = static_cast<Int128>(u64);
                     std::string bytes(16, '\0');
                     unsigned __int128 u = static_cast<unsigned __int128>(raw_value);
+                    // Encode as big-endian 16-byte representation
                     for (int i = 0; i < 16; ++i)
                         bytes[15 - i] = static_cast<char>((u >> (i * 8)) & 0xFF);
                     decimal_literal->set_value(std::move(bytes));
@@ -159,6 +161,8 @@ private:
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected DateTime64 type");
                 Int64 raw = applyVisitor(FieldVisitorConvertToNumber<Int64>(), field);
                 int scale = dt64->getScale();
+                // Substrait timestamp uses microsecond precision (scale=6)
+                // Adjust from ClickHouse's arbitrary scale to microseconds
                 if (scale < 6)
                 {
                     int diff = 6 - scale;
@@ -168,6 +172,7 @@ private:
                 }
                 else if (scale > 6)
                 {
+                    // Truncate sub-microsecond precision
                     int diff = scale - 6;
                     Int64 factor = 1;
                     for (int i = 0; i < diff; ++i) factor *= 10;
@@ -184,6 +189,7 @@ private:
                 UInt32 target_scale = getDecimalScale(*type);
                 UInt32 target_precision = getDecimalPrecision(*type);
 
+                // Extract the raw integer value from the decimal field based on its width
                 Int128 raw_value = 0;
                 if (type_id == TypeIndex::Decimal32)
                     raw_value = static_cast<Int128>(field.safeGet<DecimalField<Decimal32>>().getValue().value);
@@ -192,6 +198,7 @@ private:
                 else
                     raw_value = field.safeGet<DecimalField<Decimal128>>().getValue().value;
 
+                // Substrait decimals are encoded as big-endian 16-byte two's complement
                 std::string bytes(16, '\0');
                 unsigned __int128 u = static_cast<unsigned __int128>(raw_value);
                 for (int i = 0; i < 16; ++i)
@@ -235,6 +242,7 @@ private:
             }
             case TypeIndex::Map:
             {
+                // ClickHouse Map is stored as Array of (key, value) tuples
                 const auto & map_field = field.safeGet<Map>();
                 auto * map_literal = literal->mutable_map();
                 const auto * map_type = checkAndGetDataType<DataTypeMap>(type.get());
@@ -268,16 +276,29 @@ private:
     std::unordered_map<String, int> function_name_to_ref_;
     int next_function_ref_ = 0;
 
+    /// Map ClickHouse function names to Substrait standard names
+    static String toSubstraitFunctionName(const String & clickhouse_name)
+    {
+        if (clickhouse_name == "plus") return "add";
+        if (clickhouse_name == "minus") return "subtract";
+        // Other arithmetic types have the same name in ClickHouse and Substrait
+        
+        return clickhouse_name;
+    }
+
     // Register a function and get its reference ID
     int registerFunction(const String & function_name)
     {
-        // Check if already registered
+        // Check if already registered using ClickHouse name as key
         auto it = function_name_to_ref_.find(function_name);
         if (it != function_name_to_ref_.end())
             return it->second;
         
         // Register new function
         int ref_id = next_function_ref_++;
+        
+        // Map ClickHouse function name to Substrait standard name
+        String substrait_name = toSubstraitFunctionName(function_name);
         
         // Use standard Substrait function URNs (format: extension:<OWNER>:<ID>)
         String urn;
@@ -307,7 +328,7 @@ private:
             urn = "extension:clickhouse:functions";
         }
         
-        function_extensions_.push_back({urn, function_name, ref_id});
+        function_extensions_.push_back({urn, substrait_name, ref_id});
         function_name_to_ref_[function_name] = ref_id;
         
         return ref_id;
@@ -328,6 +349,7 @@ private:
     void buildFieldSelection(substrait::Expression * expr, int field_index) const
     {
         auto * selection = expr->mutable_selection();
+        selection->mutable_root_reference();
         auto * direct_ref = selection->mutable_direct_reference();
         direct_ref->mutable_struct_field()->set_field(field_index);
     }
@@ -389,8 +411,8 @@ public:
         // Set Substrait version
         auto * version = substrait_plan.mutable_version();
         version->set_major_number(0);
-        version->set_minor_number(54);
-        version->set_patch_number(0);
+        version->set_minor_number(57);
+        version->set_patch_number(1);
         version->set_producer("ClickHouse");
 
         // Get the root node of the QueryPlan
@@ -403,6 +425,12 @@ public:
         auto * root_rel = plan_rel->mutable_root();
         auto rel = convertNode(root);
         root_rel->mutable_input()->Swap(&rel);
+
+        const auto & final_header = root->step->getOutputHeader();
+        for (const auto & column : *final_header)
+        {
+            root_rel->add_names(column.name);
+        }
         
         // Add all registered function extensions to the plan
         addExtensionsToPlan(substrait_plan);
@@ -538,6 +566,14 @@ private:
                 convertType(ch_map->getValueType(), map->mutable_value());
                 break;
             }
+            case TypeIndex::AggregateFunction:
+            {
+                const auto * agg_func_type = checkAndGetDataType<DataTypeAggregateFunction>(ch_type.get());
+                if (!agg_func_type)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected AggregateFunction type");
+                convertType(agg_func_type->getFunction()->getResultType(), substrait_type, nullability);
+                break;
+            }
             default:
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, 
                     "Type {} not yet supported for Substrait conversion", ch_type->getName());
@@ -628,7 +664,6 @@ private:
         
         substrait::Rel rel;
         
-        // Handle different step types
         if (step_name.starts_with("ReadFrom"))
         {
             convertReadStep(step, &rel);
@@ -648,6 +683,10 @@ private:
         else if (step_name == "Aggregating")
         {
             convertAggregatingStep(node, &rel);
+        }
+        else if (step_name == "MergingAggregated")
+        {
+            convertMergingAggregatedStep(node, &rel);
         }
         else if (step_name == "Join")
         {
@@ -685,6 +724,8 @@ private:
         // Get output header to determine schema
         const auto & header = *step.getOutputHeader();
         auto * base_schema = read_rel->mutable_base_schema();
+
+        base_schema->mutable_struct_()->set_nullability(substrait::Type::NULLABILITY_REQUIRED);
         
         // Convert columns to Substrait schema
         for (const auto & column : header)
@@ -718,15 +759,13 @@ private:
             table_name = read_from_table->getTable();
         }
 
-        // Add table name to named_table
-        if(!table_name.empty())
-        {
+        // Add table name to named_table when known. For constant/virtual sources
+        // (e.g. SELECT 1), Substrait allows ReadRel without a named table, so
+        // use virtual_source as table name in this case.
+        if (!table_name.empty())
             named_table->add_names(table_name);
-        }
         else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to determine table name for Read step");
-        }
+            named_table->add_names("virtual_source");
     }
 
     void convertFilterStep(const QueryPlan::Node * node, substrait::Rel * rel)
@@ -736,7 +775,6 @@ private:
         
         auto * filter_rel = rel->mutable_filter();
         
-        // Convert child node
         auto child_rel = convertNode(node->children[0]);
         filter_rel->mutable_input()->Swap(&child_rel);
         
@@ -780,7 +818,6 @@ private:
         const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
         const Block & input_header = *input_header_ptr;
         
-        // Convert child node
         auto child_rel = convertNode(node->children[0]);
         
         // ExpressionStep always produces ProjectRel
@@ -794,6 +831,17 @@ private:
             auto expr = convertExpression(output_node, input_header);
             project_rel->add_expressions()->Swap(&expr);
         }
+
+        // Substrait ProjectRel outputs input_fields + expression_fields
+        // ClickHouse ExpressionStep outputs only the final columns
+        // Emit mapping to select only the expression outputs
+        size_t input_field_count = input_header.columns();
+        size_t output_count = outputs.size();
+        auto * emit = project_rel->mutable_common()->mutable_emit();
+        for (size_t i = 0; i < output_count; ++i)
+        {
+            emit->add_output_mapping(static_cast<int32_t>(input_field_count + i));
+        }
     }   
 
     void convertSortingStep(const QueryPlan::Node * node, substrait::Rel * rel)
@@ -803,7 +851,6 @@ private:
         
         auto * sort_rel = rel->mutable_sort();
         
-        // Convert child node
         auto child_rel = convertNode(node->children[0]);
         sort_rel->mutable_input()->Swap(&child_rel);
         
@@ -856,8 +903,7 @@ private:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Aggregating step must have a child");
         
         auto * agg_rel = rel->mutable_aggregate();
-        
-        // Convert child node
+
         auto child_rel = convertNode(node->children[0]);
         agg_rel->mutable_input()->Swap(&child_rel);
         
@@ -1081,7 +1127,6 @@ private:
 
         auto * fetch_rel = rel->mutable_fetch();
 
-        // Convert child node
         auto child_rel = convertNode(node->children[0]);
         fetch_rel->mutable_input()->Swap(&child_rel);
 
@@ -1090,17 +1135,13 @@ private:
         if (!limit_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected LimitStep");
 
-        // Get limit (count) - note: getLimitForSorting returns limit + offset
+        // Get limit (count) and offset
         size_t limit = limit_step->getLimit();
-        fetch_rel->set_count(static_cast<int64_t>(limit));
+        size_t offset = limit_step->getOffset();
 
-        // Get offset if available (getLimitForSorting - getLimit gives us offset)
-        size_t limit_for_sorting = limit_step->getLimitForSorting();
-        if (limit_for_sorting > limit)
-        {
-            size_t offset = limit_for_sorting - limit;
+        fetch_rel->set_count(static_cast<int64_t>(limit));
+        if (offset > 0)
             fetch_rel->set_offset(static_cast<int64_t>(offset));
-        }
     }
 
     void convertDistinctStep(const QueryPlan::Node * node, substrait::Rel * rel)
@@ -1110,7 +1151,6 @@ private:
 
         auto * agg_rel = rel->mutable_aggregate();
 
-        // Convert child node
         auto child_rel = convertNode(node->children[0]);
         agg_rel->mutable_input()->Swap(&child_rel);
 
@@ -1149,6 +1189,55 @@ private:
             }
         }
         // No measures - this produces distinct rows via grouping only
+    }
+
+    void convertMergingAggregatedStep(const QueryPlan::Node * node, substrait::Rel * rel)
+    {
+        if (node->children.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MergingAggregated step must have a child");
+
+        auto * agg_rel = rel->mutable_aggregate();
+
+        auto child_rel = convertNode(node->children[0]);
+        agg_rel->mutable_input()->Swap(&child_rel);
+
+        const auto * merging_step = dynamic_cast<const MergingAggregatedStep *>(node->step.get());
+        if (!merging_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected MergingAggregatedStep but got {}", node->step->getName());
+
+        const auto & params = merging_step->getParams();
+
+        const auto & input_header_ptr = node->children[0]->step->getOutputHeader();
+        const Block & input_header = *input_header_ptr;
+
+        // Convert grouping keys
+        for (const auto & key : params.keys)
+        {
+            int field_index = findColumnIndex(input_header, key,
+                fmt::format("Grouping key {}", key));
+
+            auto * grouping_expr = agg_rel->add_groupings()->add_grouping_expressions();
+            buildFieldSelection(grouping_expr, field_index);
+        }
+
+        // Convert aggregate functions
+        for (const auto & aggregate : params.aggregates)
+        {
+            auto * measure = agg_rel->add_measures();
+            auto * agg_func = measure->mutable_measure();
+
+            const String & func_name = aggregate.function->getName();
+            int ref_id = registerFunction(func_name);
+            agg_func->set_function_reference(ref_id);
+
+            convertType(aggregate.function->getResultType(), agg_func->mutable_output_type());
+
+            int field_index = findColumnIndex(input_header, aggregate.column_name,
+                fmt::format("Aggregate column {}", aggregate.column_name));
+
+            auto * arg = agg_func->add_arguments();
+            buildFieldSelection(arg->mutable_value(), field_index);
+        }
     }
 
     void convertUnionStep(const QueryPlan::Node * node, substrait::Rel * rel)
