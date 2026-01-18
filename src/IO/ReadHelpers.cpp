@@ -1626,7 +1626,7 @@ ReturnType readDateTimeTextFallback(
 
                 /// Check for overflow before performing multiplication
                 static constexpr time_t max_div_10 = std::numeric_limits<time_t>::max() / 10;
-                if (datetime > max_div_10)
+                if (unlikely(datetime > max_div_10))
                 {
                     if constexpr (throw_exception)
                         throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Too large value for DateTime");
