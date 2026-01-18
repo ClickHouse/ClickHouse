@@ -19,7 +19,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 #include <Disks/loadLocalDiskConfig.h>
-#include <Disks/DiskType.h>
 
 #include <Interpreters/Context.h>
 

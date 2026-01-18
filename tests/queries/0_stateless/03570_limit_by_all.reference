@@ -57,13 +57,13 @@ QUERY id: 0
   ORDER BY
     LIST id: 6, nodes: 3
       SORT id: 7, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION id
           COLUMN id: 8, column_name: id, result_type: Int32, source_id: 3
       SORT id: 9, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION category
           COLUMN id: 10, column_name: category, result_type: String, source_id: 3
       SORT id: 11, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION value
           COLUMN id: 12, column_name: value, result_type: Int32, source_id: 3
   LIMIT BY LIMIT
     CONSTANT id: 13, constant_value: UInt64_1, constant_value_type: UInt64

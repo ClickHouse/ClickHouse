@@ -6,10 +6,10 @@
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ThreadProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/SignalHandlers.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -24,15 +24,12 @@
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
-#include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
@@ -56,7 +53,6 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
@@ -166,7 +162,6 @@ namespace Setting
     extern const SettingsOverflowMode result_overflow_mode;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
-    extern const SettingsBool throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -208,6 +203,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int ABORTED;
 }
 
 namespace FailPoints
@@ -1518,21 +1514,6 @@ static BlockIO executeQueryImpl(
             if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
 
-            /// Let's agree on terminology and say that a mini-INSERT is an asynchronous INSERT
-            /// which typically contains not a lot of data inside and a big-INSERT in an INSERT
-            /// which was formed by concatenating several mini-INSERTs together.
-            /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
-            /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
-            /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
-            /// The process of forming such blocks is not deterministic so each time we retry mini-INSERTs the resulting
-            /// block may be concatenated differently.
-            /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
-            if (settings[Setting::throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert]
-                && settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Deduplication in dependent materialized view cannot work together with async inserts. "\
-                        "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
-
             if (settings[Setting::insert_quorum].valueOr(0) > 0)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Insert quorum cannot be used together with async inserts. " \
@@ -1950,10 +1931,14 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryFlags flags,
     QueryProcessingStage::Enum stage)
 {
+    if (isCrashed())
+        throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
+
     ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
             context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
             context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
+
     ASTPtr ast;
     BlockIO res;
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
@@ -2000,6 +1985,9 @@ void executeQuery(
     QueryFinishCallback query_finish_callback,
     HTTPContinueCallback http_continue_callback)
 {
+    if (isCrashed())
+        throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
+
     PODArray<char> parse_buf;
     const char * begin;
     const char * end;

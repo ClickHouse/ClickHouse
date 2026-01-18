@@ -55,6 +55,7 @@ workflow = Workflow.Config(
     enable_report=True,
     enable_cidb=True,
     enable_commit_status_on_failure=True,
+    enable_slack_feed=True,
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
