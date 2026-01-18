@@ -42,7 +42,7 @@ QUERY id: 0
                 CONSTANT id: 25, constant_value: \'world%\', constant_value_type: String
   SETTINGS optimize_or_like_chain=0 enable_analyzer=1
 SELECT materialize(\'Привет, World\') AS s
-WHERE multiMatchAny(s, [\'^hell\', \'(?i)привет\', \'(?i)^world\']) OR false
+WHERE match(s, \'(^hell)|((?i)привет)|((?i)^world)\') OR false
 SETTINGS optimize_or_like_chain = 1
 QUERY id: 0
   PROJECTION COLUMNS
@@ -56,23 +56,56 @@ QUERY id: 0
   JOIN TREE
     TABLE id: 5, alias: __table1, table_name: system.one
   WHERE
-    FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+    FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
       ARGUMENTS
         LIST id: 7, nodes: 2
-          FUNCTION id: 8, function_name: multiMatchAny, function_type: ordinary, result_type: UInt8
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
             ARGUMENTS
               LIST id: 9, nodes: 2
-                FUNCTION id: 10, function_name: materialize, function_type: ordinary, result_type: String
+                FUNCTION id: 10, function_name: match, function_type: ordinary, result_type: UInt8
                   ARGUMENTS
-                    LIST id: 11, nodes: 1
-                      CONSTANT id: 12, constant_value: \'Привет, World\', constant_value_type: String
-                CONSTANT id: 13, constant_value: Array_[\'^hell\', \'(?i)привет\', \'(?i)^world\'], constant_value_type: Array(String)
-          CONSTANT id: 14, constant_value: UInt64_0, constant_value_type: UInt8
+                    LIST id: 11, nodes: 2
+                      FUNCTION id: 12, function_name: materialize, function_type: ordinary, result_type: String
+                        ARGUMENTS
+                          LIST id: 13, nodes: 1
+                            CONSTANT id: 14, constant_value: \'Привет, World\', constant_value_type: String
+                      CONSTANT id: 15, constant_value: \'(^hell)|((?i)привет)|((?i)^world)\', constant_value_type: String
+                CONSTANT id: 16, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 17, function_name: indexHint, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 18, nodes: 1
+                FUNCTION id: 19, function_name: or, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 20, nodes: 3
+                      FUNCTION id: 21, function_name: like, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 22, nodes: 2
+                            FUNCTION id: 23, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 24, nodes: 1
+                                  CONSTANT id: 25, constant_value: \'Привет, World\', constant_value_type: String
+                            CONSTANT id: 26, constant_value: \'hell%\', constant_value_type: String
+                      FUNCTION id: 27, function_name: ilike, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 28, nodes: 2
+                            FUNCTION id: 29, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 30, nodes: 1
+                                  CONSTANT id: 31, constant_value: \'Привет, World\', constant_value_type: String
+                            CONSTANT id: 32, constant_value: \'%привет%\', constant_value_type: String
+                      FUNCTION id: 33, function_name: ilike, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 34, nodes: 2
+                            FUNCTION id: 35, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 36, nodes: 1
+                                  CONSTANT id: 37, constant_value: \'Привет, World\', constant_value_type: String
+                            CONSTANT id: 38, constant_value: \'world%\', constant_value_type: String
   SETTINGS optimize_or_like_chain=1 enable_analyzer=1
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE multiMatchAny(s1, [\'^hell\', \'(?i)^world\']) OR multiMatchAny(s2, [\'(?i)привет\'])
+WHERE match(s1, \'(^hell)|((?i)^world)\') OR multiSearchAnyCaseInsensitive(s2, [\'привет\'])
 SETTINGS optimize_or_like_chain = 1
 SELECT
     materialize(\'Привет, World\') AS s1,
@@ -92,7 +125,7 @@ SETTINGS optimize_or_like_chain = 1, max_hyperscan_regexp_total_length = 10
 SELECT
     materialize(\'Привет, World\') AS s1,
     materialize(\'Привет, World\') AS s2
-WHERE multiMatchAny(s1, [\'^hell\', \'(?i)^world\']) OR multiMatchAny(s2, [\'(?i)привет\']) OR (s1 = \'Привет\')
+WHERE match(s1, \'(^hell)|((?i)^world)\') OR multiSearchAnyCaseInsensitive(s2, [\'привет\']) OR (s1 = \'Привет\')
 SETTINGS optimize_or_like_chain = 1
 Привет, optimized World
 Привет, optimized World
@@ -106,5 +139,236 @@ SETTINGS optimize_or_like_chain = 1
 SELECT
     (materialize(\'Привет, World\') AS s) LIKE \'hell%\' AS test,
     s
-WHERE multiMatchAny(s, [\'^hell\', \'(?i)привет\', \'(?i)^world\']) OR false
+WHERE match(s, \'(^hell)|((?i)привет)|((?i)^world)\') OR false
 SETTINGS optimize_or_like_chain = 1
+SELECT materialize(\'Hello World\') AS s
+WHERE match(s, \'(^hello)|(wor.*)\') OR false
+SETTINGS optimize_or_like_chain = 1
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'Hello World\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: match, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 11, nodes: 2
+                      FUNCTION id: 12, function_name: materialize, function_type: ordinary, result_type: String
+                        ARGUMENTS
+                          LIST id: 13, nodes: 1
+                            CONSTANT id: 14, constant_value: \'Hello World\', constant_value_type: String
+                      CONSTANT id: 15, constant_value: \'(^hello)|(wor.*)\', constant_value_type: String
+                CONSTANT id: 16, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 17, function_name: indexHint, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 18, nodes: 1
+                FUNCTION id: 19, function_name: or, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 20, nodes: 2
+                      FUNCTION id: 21, function_name: like, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 22, nodes: 2
+                            FUNCTION id: 23, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 24, nodes: 1
+                                  CONSTANT id: 25, constant_value: \'Hello World\', constant_value_type: String
+                            CONSTANT id: 26, constant_value: \'hello%\', constant_value_type: String
+                      FUNCTION id: 27, function_name: match, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 28, nodes: 2
+                            FUNCTION id: 29, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 30, nodes: 1
+                                  CONSTANT id: 31, constant_value: \'Hello World\', constant_value_type: String
+                            CONSTANT id: 32, constant_value: \'wor.*\', constant_value_type: String
+  SETTINGS optimize_or_like_chain=1 enable_analyzer=1
+SELECT materialize(\'test string\') AS s
+WHERE match(s, \'(^test)|(ing$)\') OR false
+SETTINGS optimize_or_like_chain = 1
+test string
+SELECT materialize(\'Hello World\') AS s
+WHERE multiSearchAny(s, [\'Hello\', \'World\']) OR false
+SETTINGS optimize_or_like_chain = 1
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'Hello World\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: multiSearchAny, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 11, nodes: 2
+                      FUNCTION id: 12, function_name: materialize, function_type: ordinary, result_type: String
+                        ARGUMENTS
+                          LIST id: 13, nodes: 1
+                            CONSTANT id: 14, constant_value: \'Hello World\', constant_value_type: String
+                      CONSTANT id: 15, constant_value: Array_[\'Hello\', \'World\'], constant_value_type: Array(String)
+                CONSTANT id: 16, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 17, function_name: indexHint, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 18, nodes: 1
+                FUNCTION id: 19, function_name: or, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 20, nodes: 2
+                      FUNCTION id: 21, function_name: like, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 22, nodes: 2
+                            FUNCTION id: 23, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 24, nodes: 1
+                                  CONSTANT id: 25, constant_value: \'Hello World\', constant_value_type: String
+                            CONSTANT id: 26, constant_value: \'%Hello%\', constant_value_type: String
+                      FUNCTION id: 27, function_name: like, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 28, nodes: 2
+                            FUNCTION id: 29, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 30, nodes: 1
+                                  CONSTANT id: 31, constant_value: \'Hello World\', constant_value_type: String
+                            CONSTANT id: 32, constant_value: \'%World%\', constant_value_type: String
+  SETTINGS optimize_or_like_chain=1 enable_analyzer=1
+Hello World
+Hello World
+SELECT materialize(\'Hello World\') AS s
+WHERE multiSearchAnyCaseInsensitive(s, [\'hello\', \'world\']) OR false
+SETTINGS optimize_or_like_chain = 1
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'Hello World\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: multiSearchAnyCaseInsensitive, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 11, nodes: 2
+                      FUNCTION id: 12, function_name: materialize, function_type: ordinary, result_type: String
+                        ARGUMENTS
+                          LIST id: 13, nodes: 1
+                            CONSTANT id: 14, constant_value: \'Hello World\', constant_value_type: String
+                      CONSTANT id: 15, constant_value: Array_[\'hello\', \'world\'], constant_value_type: Array(String)
+                CONSTANT id: 16, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 17, function_name: indexHint, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 18, nodes: 1
+                FUNCTION id: 19, function_name: or, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 20, nodes: 2
+                      FUNCTION id: 21, function_name: ilike, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 22, nodes: 2
+                            FUNCTION id: 23, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 24, nodes: 1
+                                  CONSTANT id: 25, constant_value: \'Hello World\', constant_value_type: String
+                            CONSTANT id: 26, constant_value: \'%hello%\', constant_value_type: String
+                      FUNCTION id: 27, function_name: ilike, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 28, nodes: 2
+                            FUNCTION id: 29, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 30, nodes: 1
+                                  CONSTANT id: 31, constant_value: \'Hello World\', constant_value_type: String
+                            CONSTANT id: 32, constant_value: \'%world%\', constant_value_type: String
+  SETTINGS optimize_or_like_chain=1 enable_analyzer=1
+Hello World
+Hello World
+SELECT materialize(\'Hello World\') AS s
+WHERE match(s, \'(Hello)|((?i)world)\') OR false
+SETTINGS optimize_or_like_chain = 1
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: materialize, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            CONSTANT id: 4, constant_value: \'Hello World\', constant_value_type: String
+  JOIN TREE
+    TABLE id: 5, alias: __table1, table_name: system.one
+  WHERE
+    FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 7, nodes: 2
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                FUNCTION id: 10, function_name: match, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 11, nodes: 2
+                      FUNCTION id: 12, function_name: materialize, function_type: ordinary, result_type: String
+                        ARGUMENTS
+                          LIST id: 13, nodes: 1
+                            CONSTANT id: 14, constant_value: \'Hello World\', constant_value_type: String
+                      CONSTANT id: 15, constant_value: \'(Hello)|((?i)world)\', constant_value_type: String
+                CONSTANT id: 16, constant_value: UInt64_0, constant_value_type: UInt8
+          FUNCTION id: 17, function_name: indexHint, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 18, nodes: 1
+                FUNCTION id: 19, function_name: or, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 20, nodes: 2
+                      FUNCTION id: 21, function_name: like, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 22, nodes: 2
+                            FUNCTION id: 23, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 24, nodes: 1
+                                  CONSTANT id: 25, constant_value: \'Hello World\', constant_value_type: String
+                            CONSTANT id: 26, constant_value: \'%Hello%\', constant_value_type: String
+                      FUNCTION id: 27, function_name: ilike, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 28, nodes: 2
+                            FUNCTION id: 29, function_name: materialize, function_type: ordinary, result_type: String
+                              ARGUMENTS
+                                LIST id: 30, nodes: 1
+                                  CONSTANT id: 31, constant_value: \'Hello World\', constant_value_type: String
+                            CONSTANT id: 32, constant_value: \'%world%\', constant_value_type: String
+  SETTINGS optimize_or_like_chain=1 enable_analyzer=1
+Hello World
+Hello World
+SELECT materialize(\'Hello World\') AS s
+WHERE match(s, \'(Hello)|(^World)\') OR false
+SETTINGS optimize_or_like_chain = 1
+Hello World
+World Hello
+SELECT materialize(\'Hello World\') AS s
+WHERE match(s, \'((?i)hello)|((?i)world)\') OR false
+SETTINGS optimize_or_like_chain = 1
+Hello World

@@ -88,4 +88,55 @@ String likePatternToRegexp(std::string_view pattern)
     return res;
 }
 
+bool likePatternIsSubstring(std::string_view pattern, String & res)
+{
+    /// TODO: ignore multiple leading or trailing %
+    if (pattern.size() < 2 || !pattern.starts_with('%') || !pattern.ends_with('%'))
+        return false;
+
+    res.clear();
+    res.reserve(pattern.size() - 2);
+
+    const char * pos = pattern.data() + 1;
+    const char * const end = pattern.data() + pattern.size() - 1;
+
+    while (pos < end)
+    {
+        switch (*pos)
+        {
+            case '%':
+            case '_':
+                return false;
+            case '\\':
+                ++pos;
+                if (pos == end)
+                    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
+                    return false;
+
+                switch (*pos)
+                {
+                    /// Known LIKE escape sequences:
+                    case '%':
+                    case '_':
+                    case '\\':
+                        res += *pos;
+                        break;
+                    /// For all other escape sequences, the backslash loses its special meaning
+                    default:
+                        res += '\\';
+                        res += *pos;
+                        break;
+                }
+
+                break;
+            default:
+                res += *pos;
+                break;
+        }
+        ++pos;
+    }
+
+    return true;
+}
+
 }
