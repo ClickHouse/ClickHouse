@@ -1,10 +1,10 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, long
 -- Tag no-replicated-database: profile events for mutations may differ because of additional replicas.
 
 DROP TABLE IF EXISTS t_apply_patches SYNC;
 DROP TABLE IF EXISTS t_apply_patches_smt SYNC;
 
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 CREATE TABLE t_apply_patches (a UInt64, b UInt64, c UInt64, d UInt64)
 ENGINE = MergeTree
@@ -30,7 +30,7 @@ ALTER TABLE t_apply_patches APPLY PATCHES;
 
 SELECT b, c, count() FROM t_apply_patches GROUP BY b, c ORDER BY b, c SETTINGS apply_patch_parts = 0;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT
     ProfileEvents['MutationSomePartColumns'],
@@ -62,7 +62,7 @@ ALTER TABLE t_apply_patches_smt APPLY PATCHES;
 
 SELECT b, c, count() FROM t_apply_patches GROUP BY b, c ORDER BY b, c SETTINGS apply_patch_parts = 0;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT
     ProfileEvents['MutationSomePartColumns'],

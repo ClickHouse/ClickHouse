@@ -47,6 +47,7 @@ public:
     }
 
     bool canBeUsedToCreateTable() const override { return false; }
+    bool isClusterFunction() const override { return true; }
 
 protected:
     void parseArguments(const ASTPtr & ast, ContextPtr context) override

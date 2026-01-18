@@ -14,7 +14,6 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
-#include <base/hex.h>
 #include <Core/Block.h>
 
 
@@ -241,7 +240,9 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
                 result += '-';
 
             if (typeid_cast<const DataTypeDate *>(partition_key_sample.getByPosition(i).type.get()))
-                result += toString(DateLUT::serverTimezoneInstance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
+                result += toString(
+                    DateLUT::serverTimezoneInstance().toNumYYYYMMDD(
+                        DayNum(static_cast<DayNum::UnderlyingType>(value[i].safeGet<UInt64>()))));
             else if (typeid_cast<const DataTypeIPv4 *>(partition_key_sample.getByPosition(i).type.get()))
                 result += toString(value[i].safeGet<IPv4>().toUnderType());
             else
@@ -422,7 +423,7 @@ std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block & partition_key_sample, IDataPartStorage & data_part_storage, MergeTreeDataPartChecksums & checksums, const WriteSettings & settings) const
 {
-    if (!partition_key_sample)
+    if (partition_key_sample.empty())
         return nullptr;
 
     auto out = data_part_storage.writeFile("partition.dat", 4096, settings);

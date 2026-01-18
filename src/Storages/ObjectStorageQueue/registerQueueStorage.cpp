@@ -26,11 +26,18 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
+    extern const SettingsBool allow_experimental_object_storage_queue_hive_partitioning;
+}
+
+namespace ObjectStorageQueueSetting
+{
+    extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
 }
 
 template <typename Configuration>
@@ -41,7 +48,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getContext(), false);
+    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getContext(), false);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -50,7 +57,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 
     const bool is_attach = args.mode > LoadingStrictnessLevel::CREATE;
 
-    if (!is_attach)
+    if (!is_attach && args.storage_def->settings)
     {
         if (auto * path_setting = args.storage_def->settings->changes.tryGet("keeper_path"))
         {
@@ -95,6 +102,17 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     else
     {
         format_settings = getFormatSettings(args.getContext());
+    }
+
+    if ((*queue_settings)[ObjectStorageQueueSetting::use_hive_partitioning])
+    {
+        if (!is_attach &&
+            !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_object_storage_queue_hive_partitioning])
+        {
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "Experimental 'use_hive_partitioning' setting is not enabled "
+                            "(the setting 'allow_experimental_object_storage_queue_hive_partitioning')");
+        }
     }
 
     return std::make_shared<StorageObjectStorageQueue>(

@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 
 namespace ProfileEvents
@@ -52,6 +53,9 @@ void QueryConditionCache::write(
     const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
     const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
+    if (table_id == UUIDHelpers::Nil)
+        return; /// Issue #92863: Certain database engines provide no table UUIDs
+
     Key key = {table_id, part_name, condition_hash, condition};
 
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
@@ -79,16 +83,18 @@ void QueryConditionCache::write(
             return;
     }
 
-    std::lock_guard lock(entry->mutex); /// (*)
+    {
+        std::lock_guard lock(entry->mutex); /// (*)
 
-    chassert(marks_count == entry->matching_marks.size());
+        chassert(marks_count == entry->matching_marks.size());
 
-    /// The input mark ranges are the areas which the scan can skip later on.
-    for (const auto & mark_range : mark_ranges)
-        std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
+        /// The input mark ranges are the areas which the scan can skip later on.
+        for (const auto & mark_range : mark_ranges)
+            std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
 
-    if (has_final_mark)
-        entry->matching_marks[marks_count - 1] = false;
+        if (has_final_mark)
+            entry->matching_marks[marks_count - 1] = false;
+    }
 
     LOG_TEST(
         logger,
@@ -104,6 +110,9 @@ void QueryConditionCache::write(
 
 std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash)
 {
+    if (table_id == UUIDHelpers::Nil)
+        return {}; /// Issue #92864: Certain database engines provide no table UUIDs
+
     Key key = {table_id, part_name, condition_hash, ""};
 
     if (auto entry = cache.get(key))
@@ -152,7 +161,7 @@ void QueryConditionCache::setMaxSizeInBytes(size_t max_size_in_bytes)
     cache.setMaxSizeInBytes(max_size_in_bytes);
 }
 
-size_t QueryConditionCache::maxSizeInBytes()
+size_t QueryConditionCache::maxSizeInBytes() const
 {
     return cache.maxSizeInBytes();
 }

@@ -31,7 +31,6 @@ class RemoteQueryExecutorReadContext;
 
 class ParallelReplicasReadingCoordinator;
 
-/// This is the same type as StorageS3Source::IteratorWrapper
 using TaskIterator = std::function<ClusterFunctionReadTaskResponsePtr(size_t)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
@@ -60,7 +59,7 @@ public:
     RemoteQueryExecutor(
         ConnectionPoolPtr pool,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         ThrottlerPtr throttler = nullptr,
         const Scalars & scalars_ = Scalars(),
@@ -73,32 +72,20 @@ public:
     RemoteQueryExecutor(
         Connection & connection,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr,
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 
-        std::optional<Extension> extension_ = std::nullopt);
-
-    /// Takes already set connection.
-    RemoteQueryExecutor(
-        std::shared_ptr<Connection> connection,
-        const String & query_,
-        const Block & header_,
-        ContextPtr context_,
-        ThrottlerPtr throttler_ = nullptr,
-        const Scalars & scalars_ = Scalars(),
-        const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         std::optional<Extension> extension_ = std::nullopt);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
         std::vector<IConnectionPool::Entry> && connections_,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr,
         const Scalars & scalars_ = Scalars(),
@@ -111,7 +98,7 @@ public:
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr,
         const Scalars & scalars_ = Scalars(),
@@ -222,7 +209,8 @@ public:
 
     void setLogger(LoggerPtr logger) { log = logger; }
 
-    const Block & getHeader() const { return header; }
+    const Block & getHeader() const { return *header; }
+    const SharedHeader & getSharedHeader() const { return header; }
 
     IConnections & getConnections() { return *connections; }
 
@@ -233,10 +221,12 @@ public:
     /// return true if parallel replica packet was processed
     bool processParallelReplicaPacketIfAny();
 
+    bool isFinished() const { return finished; }
+
 private:
     RemoteQueryExecutor(
         const String & query_,
-        const Block & header_,
+        SharedHeader header_,
         ContextPtr context_,
         const Scalars & scalars_,
         const Tables & external_tables_,
@@ -245,7 +235,7 @@ private:
         std::optional<Extension> extension_,
         GetPriorityForLoadBalancing::Func priority_func = {});
 
-    Block header;
+    SharedHeader header;
     Block totals;
     Block extremes;
 

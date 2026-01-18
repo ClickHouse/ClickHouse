@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Logger.h>
 #include <Common/ShellCommand.h>
 #include <boost/noncopyable.hpp>
 #include <memory>

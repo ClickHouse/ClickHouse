@@ -37,6 +37,8 @@ public:
 
     String getName() const override { return "PostgreSQL"; }
 
+    bool isExternalDatabase() const override { return true; }
+
     void read(
         QueryPlan & query_plan,
         const Names & column_names,

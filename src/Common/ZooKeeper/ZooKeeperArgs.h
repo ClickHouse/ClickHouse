@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/GetPriorityForLoadBalancing.h>
@@ -55,10 +56,28 @@ struct ZooKeeperArgs
     bool prefer_local_availability_zone = false;
     bool availability_zone_autodetect = false;
     String password;
-    std::unordered_map<std::string, Coordination::ACL> path_acls;
+
+    /// Linux nice value for the send and receive threads in ZooKeeper Client.
+    Int32 send_receive_os_threads_nice_value = 0;
+
+    struct PathAclInfo
+    {
+        Coordination::ACL acl;
+        bool apply_to_children = false;
+
+        bool operator==(const PathAclInfo &) const = default;
+    };
+    using PathAclMap = std::unordered_map<
+        std::string,
+        PathAclInfo,
+        DB::StringHashForHeterogeneousLookup,
+        DB::StringHashForHeterogeneousLookup::transparent_key_equal>;
+    PathAclMap path_acls;
 
     SessionLifetimeConfiguration fallback_session_lifetime = {};
     DB::GetPriorityForLoadBalancing get_priority_load_balancing;
+
+    int64_t last_zxid_seen = 0;
 
 private:
     void initFromKeeperServerSection(const Poco::Util::AbstractConfiguration & config);

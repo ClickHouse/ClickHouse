@@ -4,6 +4,7 @@
 select 'index is applied while using column alias';
 
 drop table if exists t;
+
 CREATE TABLE t
 (
     `tenant` String,

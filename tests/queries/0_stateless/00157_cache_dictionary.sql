@@ -1,4 +1,5 @@
 -- Tags: stateful, no-tsan, no-msan, no-asan, no-parallel
+-- no-parallel: Heavy
 
 DROP TABLE IF EXISTS test.hits_1m;
 

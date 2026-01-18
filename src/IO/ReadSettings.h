@@ -19,9 +19,6 @@ class Context;
 
 struct ReadSettings
 {
-    ReadSettings() = default;
-    explicit ReadSettings(const Context & context);
-
     /// Method to use reading from local filesystem.
     LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
     /// Method to use reading from remote filesystem.
@@ -46,8 +43,6 @@ struct ReadSettings
     /// For 'pread_threadpool'/'io_uring' method. Lower value is higher priority.
     Priority priority;
 
-    bool load_marks_asynchronously = true;
-
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
 
@@ -65,7 +60,7 @@ struct ReadSettings
     std::optional<size_t> filesystem_cache_boundary_alignment;
 
     bool use_page_cache_for_disks_without_file_cache = false;
-    [[ maybe_unused ]] bool use_page_cache_with_distributed_cache = false;
+    [[maybe_unused]] bool use_page_cache_with_distributed_cache = false;
     bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
     bool page_cache_inject_eviction = false;
     size_t page_cache_block_size = 1 << 20;
@@ -98,7 +93,7 @@ struct ReadSettings
     bool enable_hdfs_pread = true;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
-    ReadSettings withNestedBuffer() const;
+    ReadSettings withNestedBuffer(bool seekable = false) const;
 };
 
 ReadSettings getReadSettings();

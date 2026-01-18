@@ -57,7 +57,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         , enable_pread(read_settings_.enable_hdfs_pread)
     {
         fs = createHDFSFS(builder.get());
-        fin = wrapErr<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
+        fin = wrapErr<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, static_cast<int16_t>(0), 0);
 
         if (fin == nullptr)
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
@@ -135,7 +135,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             working_buffer.resize(bytes_read);
             file_offset += bytes_read;
             if (read_settings.remote_throttler)
-                read_settings.remote_throttler->add(bytes_read);
+                read_settings.remote_throttler->throttle(bytes_read);
 
             return true;
         }
@@ -178,7 +178,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
         if (bytes_read && read_settings.remote_throttler)
         {
-            read_settings.remote_throttler->add(bytes_read);
+            read_settings.remote_throttler->throttle(bytes_read);
         }
         return bytes_read;
     }

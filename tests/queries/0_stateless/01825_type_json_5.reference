@@ -1,5 +1,0 @@
-{"a.b":1,"a.c":2}
-{"s":{"a.b":1,"a.c":2}}
-1		[22,33]
-2	qqq	[44]
-Tuple(\n    k1 Int8,\n    k2 Tuple(\n        k3 String,\n        k4 Array(Int8)))

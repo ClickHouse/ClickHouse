@@ -48,4 +48,24 @@ private:
     std::string session_token;
 };
 
+class AzureCredentials final : public IStorageCredentials
+{
+public:
+    explicit AzureCredentials(
+        const std::string & sas_token_)
+        : sas_token(sas_token_)
+    {}
+
+    void addCredentialsToEngineArgs(DB::ASTs & engine_args) const override
+    {
+        if (engine_args.size() != 1)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Storage credentials specified in AST already");
+
+        engine_args.push_back(std::make_shared<DB::ASTLiteral>(sas_token));
+    }
+
+private:
+    std::string sas_token;
+};
+
 }

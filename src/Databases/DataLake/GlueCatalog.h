@@ -11,6 +11,7 @@
 
 #include <Common/CacheBase.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 
 namespace Aws::Glue
 {
@@ -26,7 +27,7 @@ public:
     GlueCatalog(
         const String & endpoint,
         DB::ContextPtr context_,
-        const DB::DatabaseDataLakeSettings & settings_,
+        const CatalogSettings & settings_,
         DB::ASTPtr table_engine_definition_);
 
     ~GlueCatalog() override;
@@ -58,12 +59,19 @@ public:
         return DB::DatabaseDataLakeCatalogType::GLUE;
     }
 
+    void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
+
+    bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+    void dropTable(const String & namespace_name, const String & table_name) const override;
+
 private:
+    void createNamespaceIfNotExists(const String & namespace_name) const;
+
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
     Aws::Auth::AWSCredentials credentials;
     std::string region;
-    DB::DatabaseDataLakeSettings settings;
+    CatalogSettings settings;
     DB::ASTPtr table_engine_definition;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
@@ -73,6 +81,17 @@ private:
     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
     /// This method allows to clarify the actual type of the timestamp column.
     bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
+
+    String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
+
+    struct ObjectStorageWithPath
+    {
+        DB::ObjectStoragePtr object_storage;
+        String bucket_name;
+        String table_path;  /// Path within bucket
+    };
+
+    ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
 
     mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
 };

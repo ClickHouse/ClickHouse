@@ -21,6 +21,7 @@ public:
         bool multiline = false;
         bool ignore_shell_suspend = false;
         bool embedded_mode = false;
+        bool interactive_history_legacy_keymap = false;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
@@ -41,6 +42,9 @@ public:
     /// If highlight is on, we will set a flag to denote whether the last token is a delimiter.
     /// This is useful to determine the behavior of <ENTER> key when multiline is enabled.
     static void setLastIsDelimiter(bool flag);
+
+    /// Set text to be prepopulated in the next readLine call
+    void setInitialText(const String & text) override;
 private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;

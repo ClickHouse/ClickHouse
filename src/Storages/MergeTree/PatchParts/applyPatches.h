@@ -1,61 +1,64 @@
 #pragma once
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
-#include <Common/HashTable/HashMap.h>
+#include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
 
 namespace DB
 {
 
+/// Represents a patch that can be applied to the result block to update the data.
 struct PatchToApply
 {
-    PaddedPODArray<UInt64> result_indices;
-    PaddedPODArray<UInt64> patch_indices;
-    Block patch_block;
+    /// Blocks with data from patch parts.
+    std::vector<Block> patch_blocks;
+    /// Index of row to update in the result block.
+    PaddedPODArray<UInt64> result_row_indices;
+    /// Index of patch block to take the updated row from.
+    PaddedPODArray<UInt64> patch_block_indices;
+    /// Index of row in patch block to take the updated row from.
+    PaddedPODArray<UInt64> patch_row_indices;
 
-    bool empty() const
-    {
-        chassert(result_indices.size() == patch_indices.size());
-        return result_indices.empty();
-    }
+    bool empty() const { return patch_blocks.empty(); }
+    size_t getNumSources() const { return patch_blocks.size(); }
 
-    size_t rows() const
+    size_t getNumRows() const
     {
-        chassert(result_indices.size() == patch_indices.size());
-        return result_indices.size();
+        chassert(result_row_indices.size() == patch_row_indices.size());
+        return result_row_indices.size();
     }
 };
 
 using PatchToApplyPtr = std::shared_ptr<const PatchToApply>;
 using PatchesToApply = std::vector<PatchToApplyPtr>;
 
-struct PatchSharedData
+struct PatchReadResult
 {
-    virtual ~PatchSharedData() = default;
+    virtual ~PatchReadResult() = default;
+    virtual bool empty() const = 0;
 };
 
-using PatchSharedDataPtr = std::shared_ptr<const PatchSharedData>;
+using PatchReadResultPtr = std::shared_ptr<const PatchReadResult>;
 
-struct PatchMergeSharedData : public PatchSharedData
+struct PatchMergeReadResult : public PatchReadResult
 {
+    Block block;
+    UInt64 min_part_offset = 0;
+    UInt64 max_part_offset = 0;
+
+    bool empty() const override { return block.rows() == 0; }
 };
 
-using PatchHashMap = HashMap<UInt128, UInt64, UInt128HashCRC32>;
-
-struct PatchJoinSharedData : public PatchSharedData
+struct PatchJoinReadResult : public PatchReadResult
 {
-    PatchHashMap hash_map;
-    UInt64 min_block = 0;
-    UInt64 max_block = 0;
-};
+    PatchJoinCache::Entries entries;
 
-/// Builds a hash table from patch_block.
-/// It stores a mapping (_block_number, _block_offset) -> number of row in block.
-std::shared_ptr<PatchJoinSharedData> buildPatchJoinData(const Block & patch_block);
+    bool empty() const override { return entries.empty(); }
+};
 
 /// Applies patch. Returns indices in result and patch blocks for rows that should be updated.
 PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch);
-PatchToApplyPtr applyPatchJoin(const Block & result_block, const Block & patch_block, const PatchJoinSharedData & join_data);
+PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & join_entry);
 
 /// Updates rows in result_block from patch_block at specified indices.
 /// versions_block is a shared block with current versions of rows for each updated column.
@@ -63,6 +66,7 @@ void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
     const PatchesToApply & patches,
+    const Names & updated_columns,
     UInt64 source_data_version);
 
 }

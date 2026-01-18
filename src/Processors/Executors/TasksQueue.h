@@ -23,24 +23,31 @@ public:
     void push(Task * task, size_t thread_num)
     {
         queues[thread_num].push(task);
+        use_queues = std::max(use_queues, thread_num + 1);
         ++num_tasks;
     }
 
     /// Returns thread number to pop task from.
     /// First it check dedicated queue, and only if it is empty, it steal from other threads
-    size_t getAnyThreadWithTasks(size_t from_thread = 0)
+    size_t getAnyThreadWithTasks(size_t from_thread)
     {
         if (num_tasks == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "TaskQueue is empty");
 
-        for (size_t i = 0; i < queues.size(); ++i)
+        if (from_thread >= use_queues)
+            from_thread = 0;
+
+        for (size_t i = 0, max_iterations = use_queues; i < max_iterations; ++i)
         {
             if (!queues[from_thread].empty())
                 return from_thread;
 
             ++from_thread;
-            if (from_thread >= queues.size())
+            if (from_thread == use_queues)
+            {
+                use_queues--; // lazy update: less expensive than updating on every pop
                 from_thread = 0;
+            }
         }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "TaskQueue is empty");
@@ -65,6 +72,7 @@ private:
     using Queue = std::queue<Task *>;
     std::vector<Queue> queues;
     size_t num_tasks = 0;
+    size_t use_queues = 0; // For optimization, to avoid searching for empty queue every time
 };
 
 }

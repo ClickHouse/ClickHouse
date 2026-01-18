@@ -5,7 +5,6 @@
 
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/SnapshotableHashTable.h>
-#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperStorage.h>
 
 #include <Common/SipHash.h>
@@ -17,6 +16,7 @@ struct IntNode
 {
     int value;
     IntNode(int value_) : value(value_) { } /// NOLINT(google-explicit-constructor)
+    IntNode copyFromSnapshotNode() { return *this; }
     [[maybe_unused]] UInt64 sizeInBytes() const { return sizeof value; }
     [[maybe_unused]] bool operator==(const int & rhs) const { return value == rhs; }
     [[maybe_unused]] bool operator!=(const int & rhs) const { return rhs != this->value; }
@@ -538,7 +538,6 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotEqual)
 
 TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
 {
-
     ChangelogDirTest test("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
@@ -550,7 +549,7 @@ TYPED_TEST(CoordinationTest, TestStorageSnapshotBlockACL)
     DB::KeeperSnapshotManager<Storage> manager(3, this->keeper_context, this->enable_compression);
 
     Storage storage(500, "", this->keeper_context);
-    static constexpr StringRef path = "/hello";
+    static constexpr std::string_view path = "/hello";
     static constexpr uint64_t acl_id = 42;
     addNode(storage, std::string{path}, "world", /*ephemeral_owner=*/0, acl_id);
     DB::KeeperStorageSnapshot<Storage> snapshot(&storage, 50);

@@ -142,16 +142,23 @@ void AccessRightsElement::formatColumnNames(WriteBuffer & buffer) const
     buffer << ")";
 }
 
-void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) const
+void AccessRightsElement::formatFilter(WriteBuffer & buffer) const
+{
+    buffer << "(" << backQuoteIfNeed(filter) << ")";
+}
+
+void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
 {
     auto is_enabled_user_name_access_type = true;
+    auto is_enabled_read_write_grants = true;
     if (const auto context = Context::getGlobalContextInstance())
     {
         const auto & access_control = context->getAccessControl();
         is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
+        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
     }
 
-    buffer << (hilite ? IAST::hilite_keyword : "") << "ON " << (hilite ? IAST::hilite_none : "");
+    buffer << "ON ";
     if (isGlobalWithParameter())
     {
         /// Special check for backward compatibility.
@@ -177,6 +184,11 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
                 buffer << backQuoteIfNeed(parameter);
                 if (wildcard)
                     buffer << "*";
+                else
+                {
+                    if (hasFilter() && is_enabled_read_write_grants)
+                        formatFilter(buffer);
+                }
             }
         }
     }
@@ -192,7 +204,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
         if (columns.empty() && wildcard)
             buffer << "*";
     }
-    else
+    else if (!database.empty())
     {
         buffer << backQuoteIfNeed(database);
 
@@ -200,6 +212,10 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
             buffer << "*";
 
         buffer << ".*";
+    }
+    else
+    {
+        buffer << "*";
     }
 }
 
@@ -438,7 +454,7 @@ void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
-void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bool hilite) const
+void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
 {
     bool no_output = true;
     for (size_t i = 0; i != size(); ++i)
@@ -455,7 +471,7 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bo
             if (!std::exchange(no_output, false))
                 buffer << ", ";
 
-            buffer << (hilite ? IAST::hilite_keyword : "") << keyword << (hilite ? IAST::hilite_none : "");
+            buffer << keyword;
             if (!element.anyColumn())
                 element.formatColumnNames(buffer);
         }
@@ -473,12 +489,12 @@ void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer, bo
         if (!next_element_on_same_db_and_table)
         {
             buffer << " ";
-            element.formatONClause(buffer, hilite);
+            element.formatONClause(buffer);
         }
     }
 
     if (no_output)
-        buffer << (hilite ? IAST::hilite_keyword : "") << "USAGE ON " << (hilite ? IAST::hilite_none : "") << "*.*";
+        buffer << "USAGE ON " << "*.*";
 }
 
 }

@@ -18,6 +18,7 @@
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/getLeastSupertype.h>
 
@@ -37,6 +38,11 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
@@ -110,7 +116,9 @@ NamesAndTypes UnionNode::computeProjectionColumns() const
         for (size_t projection_index = 0; projection_index < projections_size; ++projection_index)
             projection_column_types[projection_index] = projections[projection_index][column_index].type;
 
-        auto result_type = getLeastSupertype(projection_column_types);
+        auto result_type = getContext()->getSettingsRef()[Setting::use_variant_as_common_type]
+            ? getLeastSupertypeOrVariant(projection_column_types)
+            : getLeastSupertype(projection_column_types);
         result_columns.emplace_back(projections.front()[column_index].name, std::move(result_type));
     }
 
@@ -120,6 +128,35 @@ NamesAndTypes UnionNode::computeProjectionColumns() const
 void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
 {
     if (recursive_cte_table)
+        return;
+
+    /// We can't remove unused projections in the case of EXCEPT and INTERSECT
+    /// because it can lead to incorrect query results. Example:
+    ///
+    /// SELECT count()
+    /// FROM
+    /// (
+    ///     SELECT
+    ///         1 AS a,
+    ///         2 AS b
+    ///     INTERSECT ALL
+    ///     SELECT
+    ///         1,
+    ///         1
+    /// )
+    ///
+    /// Will be transformed into the following query with output 1 instead of 0:
+    ///
+    /// SELECT count()
+    /// FROM
+    /// (
+    ///     SELECT
+    ///         1 AS a, -- we must keep at least 1 column
+    ///     INTERSECT ALL
+    ///     SELECT
+    ///         1
+    /// );
+    if (union_mode > SelectUnionMode::UNION_DISTINCT)
         return;
 
     auto & query_nodes = getQueries().getNodes();

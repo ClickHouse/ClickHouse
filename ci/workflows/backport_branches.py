@@ -12,22 +12,19 @@ workflow = Workflow.Config(
         *[
             job
             for job in JobConfigs.build_jobs
-            if any(t in job.name for t in ("amd_asan", "amd_tsan", "release", "debug"))
+            if any(t in job.name for t in ("amd_asan", "amd_tsan", "debug"))
         ],
+        *JobConfigs.release_build_jobs,
         *[
             job
             for job in JobConfigs.special_build_jobs
             if any(t in job.name for t in ("darwin",))
         ],
-        JobConfigs.docker_sever,
+        JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_jobs,
         *JobConfigs.compatibility_test_jobs,
-        *[
-            job
-            for job in JobConfigs.functional_tests_jobs_required
-            if "asan" in job.name
-        ],
+        *[job for job in JobConfigs.functional_tests_jobs if "asan" in job.name],
         *[job for job in JobConfigs.stress_test_jobs if "tsan" in job.name],
         *[
             job
@@ -55,6 +52,8 @@ workflow = Workflow.Config(
     enable_automerge=True,
     enable_cidb=True,
     enable_commit_status_on_failure=True,
+    enable_gh_summary_comment=True,
+    enable_slack_feed=True,
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",

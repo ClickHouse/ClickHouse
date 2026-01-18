@@ -4,6 +4,7 @@ sidebar_label: 'REVOKE'
 sidebar_position: 39
 slug: /sql-reference/statements/revoke
 title: 'REVOKE Statement'
+doc_type: 'reference'
 ---
 
 # REVOKE Statement

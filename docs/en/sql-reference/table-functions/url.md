@@ -4,6 +4,7 @@ sidebar_label: 'url'
 sidebar_position: 200
 slug: /sql-reference/table-functions/url
 title: 'url'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -36,7 +37,7 @@ A table with the specified format and structure and with data from the defined `
 
 ## Examples {#examples}
 
-Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](../../interfaces/formats.md#csv) format.
+Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](/interfaces/formats/CSV) format.
 
 ```sql
 SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;
@@ -63,7 +64,7 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
 
-## Hive-style partitioning {#hive-style-partitioning}
+## use_hive_partitioning setting {#hive-style-partitioning}
 
 When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-style partitioning in the path (`/name=value/`) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 
@@ -83,7 +84,6 @@ SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE _d
 ## Permissions {#permissions}
 
 `url` function requires `CREATE TEMPORARY TABLE` permission. As such - it'll not work for users with [readonly](/operations/settings/permissions-for-queries#readonly) = 1 setting. At least readonly = 2 is required.
-
 
 ## Related {#related}
 

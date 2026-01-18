@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 
 #include <Client/ProgressTable.h>
 #include <Client/Suggest.h>
@@ -14,6 +15,10 @@
 #include <Core/ExternalTable.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageFile.h>
+
+#if USE_CLIENT_AI
+#include <Client/AI/AISQLGenerator.h>
+#endif
 
 #include <boost/program_options.hpp>
 
@@ -52,6 +57,12 @@ enum MultiQueryProcessingStage
     EXECUTE_QUERY,
     PARSING_FAILED,
 };
+
+// On illumos, <curses.h> defines ERR as a macro (error return value).
+// Undef it to allow use of ERR as an enum value below.
+#ifdef ERR
+#  undef ERR
+#endif
 
 enum ProgressOption
 {
@@ -121,7 +132,7 @@ protected:
 
     virtual bool buzzHouse()
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse was compiled without BuzzHouse enabled");
     }
 
     virtual void connect() = 0;
@@ -151,6 +162,14 @@ protected:
 
     void clearTerminal();
     void showClientVersion();
+
+#if USE_CLIENT_AI
+    void initAIProvider();
+
+    /// Check if AI provider usage needs acknowledgment from user
+    /// Returns false if user declined, true otherwise
+    bool checkAIProviderAcknowledgment();
+#endif
 
     using ProgramOptionsDescription = boost::program_options::options_description;
     using CommandLineOptions = boost::program_options::variables_map;
@@ -196,6 +215,7 @@ protected:
     /// Used to check certain things that are considered unsafe for the embedded client
     virtual bool isEmbeeddedClient() const = 0;
 
+    static fs::path getHistoryFilePath();
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);
@@ -203,7 +223,7 @@ private:
     bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description, ASTPtr parsed_query);
     bool receiveEndOfQueryForInsert();
     void cancelQuery();
-    void sendCancel(std::exception_ptr exception_ptr = nullptr);
+    bool sendCancel(std::exception_ptr exception_ptr = nullptr);
 
     void onProgress(const Progress & value);
     void onTimezoneUpdate(const String & tz);
@@ -239,6 +259,10 @@ private:
 
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
+
+    /// Execute a query and collect all results as a single string (rows separated by newlines)
+    /// Returns empty string on exception
+    std::string executeQueryForSingleString(const std::string & query);
 
 protected:
 
@@ -319,7 +343,7 @@ protected:
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
     bool stderr_is_a_tty = false; /// stderr is a terminal.
-    uint64_t terminal_width = 0;
+    uint16_t terminal_width = 0;
 
     String pager;
 
@@ -331,7 +355,10 @@ protected:
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
-    std::optional<size_t> insert_format_max_block_size_from_config; /// Max block size when reading INSERT data.
+    std::optional<size_t> insert_format_max_block_size_rows_from_config; /// Max block size in rows when reading INSERT data.
+    std::optional<size_t> insert_format_max_block_size_bytes_from_config; /// Max block size in bytes when reading INSERT data.
+    std::optional<size_t> insert_format_min_block_size_rows_from_config; /// Min block size in rows when reading INSERT data.
+    std::optional<size_t> insert_format_min_block_size_bytes_from_config; /// Min block size in bytes when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
@@ -367,8 +394,8 @@ protected:
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
     std::mutex tty_mutex;
 
-    String home_path;
-    String history_file; /// Path to a file containing command history.
+    fs::path home_path;
+    fs::path history_file; /// Path to a file containing command history.
     UInt32 history_max_entries; /// Maximum number of entries in the history file.
 
     UInt64 server_revision = 0;
@@ -387,7 +414,10 @@ protected:
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
-    size_t processed_rows = 0; /// How many rows have been read or written.
+    /// How many rows have been read or written. `processed_rows_from_blocks` does not increment when data does not flow through client,
+    /// like with `INSERT ... SELECT`. We can use progress reports by server in that case to track processed rows.
+    size_t processed_rows_from_blocks = 0;
+    size_t processed_rows_from_progress = 0;
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
@@ -410,8 +440,22 @@ protected:
 
     /// Options for BuzzHouse
     String buzz_house_options_path;
+
+    /// Text to prepopulate in the next query prompt
+    String next_query_to_prepopulate;
     bool buzz_house = false;
     int error_code = 0;
+
+#if USE_CLIENT_AI
+    /// Cached AI SQL generator
+    std::unique_ptr<AISQLGenerator> ai_generator;
+    /// Whether the user has acknowledged AI provider usage
+    bool ai_provider_acknowledged = false;
+    /// Whether the AI API key was inferred from environment
+    bool ai_inferred_from_env = false;
+    /// The AI provider name (e.g., "openai", "anthropic")
+    std::string ai_provider_name;
+#endif
 
     struct
     {

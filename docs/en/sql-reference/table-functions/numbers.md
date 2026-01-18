@@ -4,6 +4,7 @@ sidebar_position: 145
 sidebar_label: 'numbers'
 title: 'numbers'
 description: 'Returns tables with a single `number` column that contains specifiable integers.'
+doc_type: 'reference'
 ---
 
 # numbers Table Function
@@ -31,7 +32,6 @@ SELECT number * 2 FROM numbers(10);
 SELECT (number - 10) * 2 FROM numbers(10, 10);
 SELECT * FROM numbers(0, 20, 2);
 ```
-
 
 Examples:
 

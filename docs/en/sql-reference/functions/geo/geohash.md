@@ -3,13 +3,14 @@ description: 'Documentation for Geohash'
 sidebar_label: 'Geohash'
 slug: /sql-reference/functions/geo/geohash
 title: 'Functions for Working with Geohash'
+doc_type: 'reference'
 ---
 
 ## Geohash {#geohash}
 
 [Geohash](https://en.wikipedia.org/wiki/Geohash) is the geocode system, which subdivides Earth's surface into buckets of grid shape and encodes each cell into a short string of letters and digits. It is a hierarchical data structure, so the longer the geohash string is, the more precise the geographic location will be.
 
-If you need to manually convert geographic coordinates to geohash strings, you can use [geohash.org](http://geohash.org/).
+If you need to manually convert geographic coordinates to geohash strings, you can use [geohash.org](http://geohash.co/)
 
 ## geohashEncode {#geohashencode}
 

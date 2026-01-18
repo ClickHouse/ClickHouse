@@ -31,7 +31,7 @@ namespace Setting
     extern const SettingsUInt64 lightweight_deletes_sync;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsLightweightDeleteMode lightweight_delete_mode;
-    extern const SettingsBool allow_experimental_lightweight_update;
+    extern const SettingsBool enable_lightweight_update;
 }
 
 namespace MergeTreeSetting
@@ -129,8 +129,8 @@ BlockIO InterpreterDeleteQuery::execute()
 
         auto supports_lightweight_update = [&] -> std::expected<void, PreformattedMessage>
         {
-            if (!settings[Setting::allow_experimental_lightweight_update])
-                return std::unexpected(PreformattedMessage::create("Lightweight updates are not allowed. Set 'allow_experimental_lightweight_update = 1' to allow them"));
+            if (!settings[Setting::enable_lightweight_update])
+                return std::unexpected(PreformattedMessage::create("Lightweight updates are not allowed. Set 'enable_lightweight_update = 1' to allow them"));
 
             return table->supportsLightweightUpdate();
         }();

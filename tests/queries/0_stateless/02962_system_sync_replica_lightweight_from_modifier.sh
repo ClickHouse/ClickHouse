@@ -18,20 +18,25 @@ for i in $(seq $TOTAL_REPLICAS); do
 done
 
 function insert_thread() {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % $TOTAL_REPLICAS + 1))
-        $CLICKHOUSE_CLIENT --query "INSERT INTO test_table_$REPLICA VALUES ($RANDOM, $RANDOM % 255)"
+        with_lock test_table_$REPLICA $CLICKHOUSE_CLIENT --query "INSERT INTO test_table_$REPLICA VALUES ($RANDOM, $RANDOM % 255)"
         sleep 0.$RANDOM
     done
 }
 
 function sync_and_drop_replicas() {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         for i in $(seq $REPLICAS_TO_DROP); do
             local stable_replica_id=$((i + 1))
-            $CLICKHOUSE_CLIENT --query "ALTER TABLE test_table_$i MODIFY SETTING parts_to_throw_insert = 0"
-            $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA test_table_$stable_replica_id LIGHTWEIGHT FROM '$i'"
-            $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_table_$i"
+            # Note that "ALTER TABLE test_table_$i MODIFY SETTING parts_to_throw_insert = 0" does not prevent INSERTs that were run before the setting change
+            # We use locks to make sure SYNC/DROP and INSERT are not running concurrently
+            with_lock test_table_$i $CLICKHOUSE_CLIENT --query "
+                SYSTEM SYNC REPLICA test_table_$stable_replica_id LIGHTWEIGHT FROM '$i';
+                DROP TABLE IF EXISTS test_table_$i;
+            "
         done
 
         for i in $(seq $REPLICAS_TO_DROP); do
@@ -41,7 +46,8 @@ function sync_and_drop_replicas() {
 }
 
 function optimize_thread() {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % $TOTAL_REPLICAS + 1))
         $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE test_table_$REPLICA FINAL"
         sleep 0.$RANDOM
@@ -49,7 +55,8 @@ function optimize_thread() {
 }
 
 function mutations_thread() {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % $TOTAL_REPLICAS + 1))
         CONDITION="key % 2 = 0"
         $CLICKHOUSE_CLIENT --query "ALTER TABLE test_table_$REPLICA DELETE WHERE $CONDITION"
@@ -76,18 +83,13 @@ function consistency_table_sync_non_existent_replica() {
     echo "Error correctly detected for non-existent replica"
 }
 
-export -f insert_thread
-export -f sync_and_drop_replicas
-export -f optimize_thread
-export -f mutations_thread
-
 TIMEOUT=30
 
 consistency_table_sync_non_existent_replica
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c sync_and_drop_replicas 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c mutations_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+sync_and_drop_replicas 2> /dev/null &
+optimize_thread 2> /dev/null &
+mutations_thread 2> /dev/null &
 
 wait
 

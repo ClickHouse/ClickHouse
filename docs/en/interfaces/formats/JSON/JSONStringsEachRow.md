@@ -6,6 +6,7 @@ keywords: ['JSONStringsEachRow']
 output_format: true
 slug: /interfaces/formats/JSONStringsEachRow
 title: 'JSONStringsEachRow'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -16,9 +17,9 @@ title: 'JSONStringsEachRow'
 
 Differs from the [`JSONEachRow`](./JSONEachRow.md) only in that data fields are output in strings, not in typed JSON values.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
-### Inserting Data {#inserting-data}
+### Inserting data {#inserting-data}
 
 Using a JSON file with the following data, named as `football.json`:
 
@@ -48,7 +49,7 @@ Insert the data:
 INSERT INTO football FROM INFILE 'football.json' FORMAT JSONStringsEachRow;
 ```
 
-### Reading Data {#reading-data}
+### Reading data {#reading-data}
 
 Read data using the `JSONStringsEachRow` format:
 
@@ -80,6 +81,4 @@ The output will be in JSON format:
 {"date":"2022-05-07","season":"2021","home_team":"Walsall","away_team":"Swindon Town","home_team_goals":"0","away_team_goals":"3"}   
 ```
 
-
-## Format Settings {#format-settings}
-
+## Format settings {#format-settings}

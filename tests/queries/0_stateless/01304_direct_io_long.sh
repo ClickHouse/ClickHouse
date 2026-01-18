@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: long, no-object-storage, no-flaky-check, no-tsan
+# Tags: long, no-object-storage, no-flaky-check, no-tsan, no-msan
+# - no-msan - too slow
 # - no-flaky-check - It can be too long with ThreadFuzzer
 # - no-tsan - It is slow under TSan and may lead to query timeouts
+# - no-asan - It is slow under ASan and may lead to query timeouts
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -96,7 +96,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
-        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector(column, *type, creator));
+        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector<Creator>(column, *type, creator));
 
         if (!column)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected numeric type: {}", type->getName());
@@ -133,7 +133,7 @@ MutableColumnPtr DataTypeLowCardinality::createColumn() const
 {
     MutableColumnPtr indexes = DataTypeUInt8().createColumn();
     MutableColumnPtr dictionary = createColumnUnique(*dictionary_type);
-    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
 }
 
 Field DataTypeLowCardinality::getDefault() const

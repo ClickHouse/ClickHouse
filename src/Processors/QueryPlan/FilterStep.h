@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -10,7 +11,7 @@ class FilterStep : public ITransformingStep
 {
 public:
     FilterStep(
-        const Header & input_header_,
+        const SharedHeader & input_header_,
         ActionsDAG actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_);
@@ -47,6 +48,12 @@ public:
 
     bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
     void decorrelateActions() { actions_dag.decorrelate(); }
+
+    bool canRemoveUnusedColumns() const override;
+    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
+
+    bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     void updateOutputHeader() override;

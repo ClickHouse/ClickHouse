@@ -1,6 +1,9 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -13,8 +16,8 @@ extern const int LOGICAL_ERROR;
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
-    std::vector<Columns> source_columns;
-    source_columns.resize(columns.size());
+    std::vector<Columns> source_columns(columns.size());
+    std::vector<bool> is_replicated(columns.size());
     for (const auto & input : inputs)
     {
         if (!input.chunk)
@@ -22,13 +25,20 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
 
         const auto & input_columns = input.chunk.getColumns();
         for (size_t i = 0; i != input_columns.size(); ++i)
+        {
             source_columns[i].push_back(input_columns[i]);
+            is_replicated[i] = is_replicated[i] || input_columns[i]->isReplicated();
+        }
     }
 
     for (size_t i = 0; i != columns.size(); ++i)
     {
+        /// Sometimes header can contain Sparse columns, we don't support Sparse in merge algorithms.
+        columns[i] = recursiveRemoveSparse(std::move(columns[i]))->assumeMutable();
+        if (is_replicated[i])
+            columns[i] = ColumnReplicated::create(std::move(columns[i]));
         if (columns[i]->hasDynamicStructure())
-            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i]);
+            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i], max_dynamic_subcolumns);
     }
 }
 
@@ -87,6 +97,10 @@ void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
         {
             columns[i] = columns[i]->cloneEmpty();
             columns[i]->insertRangeFrom(*chunk_columns[i], 0, num_rows);
+        }
+        else if (columns[i]->isReplicated() && !chunk_columns[i]->isReplicated())
+        {
+            columns[i] = ColumnReplicated::create(std::move(chunk_columns[i]));
         }
         else
         {

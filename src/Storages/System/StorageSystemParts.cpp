@@ -69,6 +69,7 @@ Name of the data part. The part naming structure can be used to determine many a
         {"active",                                      std::make_shared<DataTypeUInt8>(),     "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations."},
         {"marks",                                       std::make_shared<DataTypeUInt64>(),    "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                        std::make_shared<DataTypeUInt64>(),    "The number of rows."},
+        {"files",                                       std::make_shared<DataTypeUInt64>(),    "The number of files in the data part."},
         {"bytes_on_disk",                               std::make_shared<DataTypeUInt64>(),    "Total size of all the data part files in bytes."},
         {"data_compressed_bytes",                       std::make_shared<DataTypeUInt64>(),    "Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
         {"data_uncompressed_bytes",                     std::make_shared<DataTypeUInt64>(),    "Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included."},
@@ -91,8 +92,8 @@ Name of the data part. The part naming structure can be used to determine many a
         {"data_version",                                std::make_shared<DataTypeUInt64>(),    "Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than data_version)."},
         {"primary_key_bytes_in_memory",                 std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by primary key values."},
         {"primary_key_bytes_in_memory_allocated",       std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for primary key values."},
-        {"index_granularity_bytes_in_memory",           std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by index granularity values."},
-        {"index_granularity_bytes_in_memory_allocated", std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for index granularity values."},
+        {"index_granularity_bytes_in_memory",           std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) used by index granularity values (will be 0 in case of primary_key_lazy_load=1 and use_primary_key_cache=1)."},
+        {"index_granularity_bytes_in_memory_allocated", std::make_shared<DataTypeUInt64>(),    "The amount of memory (in bytes) reserved for index granularity values (will be 0 in case of primary_key_lazy_load=1 and use_primary_key_cache=1)."},
         {"is_frozen",                                   std::make_shared<DataTypeUInt8>(),     "Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. "},
 
         {"database",                                    std::make_shared<DataTypeString>(),    "Name of the database."},
@@ -189,6 +190,8 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->rows_count);
+        if (columns_mask[src_index++])
+            columns[res_index++]->insert(part->checksums.files.size());
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getBytesOnDisk());
         if (columns_mask[src_index++])

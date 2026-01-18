@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -12,7 +12,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <h3api.h>
 
 
 namespace DB
@@ -57,8 +56,8 @@ public:
         for (auto & argument : non_const_arguments)
             argument.column = argument.column->convertToFullColumnIfConst();
 
-        const auto * col_hindex_edge = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
-        if (!col_hindex_edge)
+        const auto * col_hindex = checkAndGetColumn<ColumnUInt64>(non_const_arguments[0].column.get());
+        if (!col_hindex)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal type {} of argument {} of function {}. Must be UInt64.",
@@ -66,7 +65,7 @@ public:
                 1,
                 getName());
 
-        const auto & data_hindex_edge = col_hindex_edge->getData();
+        const auto & data_hindex = col_hindex->getData();
 
         auto result_column_data = ColumnUInt64::create();
         auto & result_data = result_column_data->getData();
@@ -85,8 +84,9 @@ public:
             // array that's passed to it
             std::array<H3Index, 6> res;
 
-            const UInt64 edge = data_hindex_edge[row];
-            originToDirectedEdges(edge, res.data());
+            const UInt64 cell = data_hindex[row];
+            validateH3Cell(cell);
+            originToDirectedEdges(cell, res.data());
 
             for (auto & i : res)
             {
@@ -104,7 +104,32 @@ public:
 
 REGISTER_FUNCTION(H3GetUnidirectionalEdgesFromHexagon)
 {
-    factory.registerFunction<FunctionH3GetUnidirectionalEdgesFromHexagon>();
+    FunctionDocumentation::Description description = R"(
+Provides all of the unidirectional edges from the provided H3Index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetUnidirectionalEdgesFromHexagon(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number that represents a cell.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of H3 indexes representing each unidirectional edge.",
+        {"Array(UInt64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get all edges for an H3 index",
+            "SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355775) AS edges",
+            R"(
+┌─edges─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [1248204388774707199,1320261982812635135,1392319576850563071,1464377170888491007,1536434764926418943,1608492358964346879] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3GetUnidirectionalEdgesFromHexagon>(documentation);
 }
 
 }

@@ -4,6 +4,7 @@ sidebar_label: 'USER'
 sidebar_position: 39
 slug: /sql-reference/statements/create/user
 title: 'CREATE USER'
+doc_type: 'reference'
 ---
 
 Creates [user accounts](../../../guides/sre/user-management/index.md#user-account-management).
@@ -123,7 +124,8 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
     CREATE USER name5 IDENTIFIED WITH bcrypt_password BY 'my_password'
     ```
 
-    The length of the password is limited to 72 characters with this method. The bcrypt work factor parameter, which defines the amount of computations and time needed to compute the hash and verify the password, can be modified in the server configuration:
+    The length of the password is limited to 72 characters with this method. 
+    The bcrypt work factor parameter, which defines the amount of computations and time needed to compute the hash and verify the password, can be modified in the server configuration:
 
     ```xml
     <bcrypt_workfactor>12</bcrypt_workfactor>
@@ -131,6 +133,12 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
 
     The work factor must be between 4 and 31, with a default value of 12.
 
+   :::warning
+   For applications with high-frequency authentication,
+   consider alternative authentication methods due to
+   bcrypt's computational overhead at higher work factors.
+   :::
+6. 
 6. The type of the password can also be omitted:
 
     ```sql

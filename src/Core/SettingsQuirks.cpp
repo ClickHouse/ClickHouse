@@ -54,7 +54,7 @@ namespace Setting
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsNonZeroUInt64 input_format_parquet_max_block_size;
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const SettingsUInt64 min_external_table_block_size_rows;

@@ -195,13 +195,7 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
-#if USE_QATLIB
-void registerCodecZSTDQAT(CompressionCodecFactory & factory);
-#endif
 void registerCodecMultiple(CompressionCodecFactory & factory);
-#if USE_QPL
-void registerCodecDeflateQpl(CompressionCodecFactory & factory);
-#endif
 
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
@@ -212,18 +206,12 @@ void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
-#if USE_SZ3
-void registerCodecSZ3(CompressionCodecFactory & factory);
-#endif
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
     registerCodecNone(*this);
     registerCodecLZ4(*this);
     registerCodecZSTD(*this);
-#if USE_QATLIB
-    registerCodecZSTDQAT(*this);
-#endif
     registerCodecLZ4HC(*this);
     registerCodecMultiple(*this);
     registerCodecDelta(*this);
@@ -232,13 +220,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
-#if USE_QPL
-    registerCodecDeflateQpl(*this);
-#endif
     registerCodecGCD(*this);
-#if USE_SZ3
-    registerCodecSZ3(*this);
-#endif
 
     default_codec = get("LZ4", {});
 }

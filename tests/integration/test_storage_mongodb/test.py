@@ -7,6 +7,7 @@ import bson
 import pymongo
 import pytest
 
+from helpers.database_disk import replace_text_in_metadata
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mongo_pass
@@ -83,9 +84,15 @@ def test_simple_select(started_cluster):
     node.restart_clickhouse()
 
     assert node.query(system_warnings_query) == "0\n"
+
+    metadata_path = node.query(
+        f"SELECT metadata_path FROM system.tables WHERE database='default' AND table='simple_mongo_table'"
+    ).strip()
     node.stop_clickhouse()
-    replace_definition_cmd = f"sed --follow-symlinks -i 's|mongo1|mongo1/ignored/path|' /var/lib/clickhouse/metadata/default/simple_mongo_table.sql"
-    node.exec_in_container(["bash", "-c", replace_definition_cmd])
+    replace_text_in_metadata(
+        node, metadata_path, "mongo1", "mongo1/ignored/path"
+    )
+
     node.start_clickhouse()
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
     assert node.query(system_warnings_query) == "1\n"
@@ -1321,3 +1328,173 @@ def test_json_serialization(started_cluster):
 
     node.query("DROP TABLE json_serialization_table")
     json_serialization_table.drop()
+
+
+def test_numbers_parsing(started_cluster):
+    cases = [
+        {"type": "Int16", "value": "32767", "ok": True},
+        {"type": "Int16", "value": "-32768", "ok": True},
+        {"type": "Int16", "value": "32767.0", "ok": False},
+        {"type": "Int16", "value": "-32768.0", "ok": False},
+        {"type": "Int16", "value": "12.5", "ok": False},
+        {"type": "Int16", "value": "-0.1", "ok": False},
+        {"type": "Int16", "value": "abc", "ok": False},
+
+        {"type": "UInt16", "value": "65535", "ok": True},
+        {"type": "UInt16", "value": "0", "ok": True},
+        {"type": "UInt16", "value": "65535.0", "ok": False},
+        {"type": "UInt16", "value": "0.0", "ok": False},
+        {"type": "UInt16", "value": "12.34", "ok": False},
+        {"type": "UInt16", "value": "-1.0", "ok": False},
+        {"type": "UInt16", "value": "-32768", "ok": False},
+
+        {"type": "Int32", "value": "2147483647", "ok": True},
+        {"type": "Int32", "value": "-2147483648", "ok": True},
+        {"type": "Int32", "value": "2147483647.0", "ok": False},
+        {"type": "Int32", "value": "-2147483648.0", "ok": False},
+        {"type": "Int32", "value": "12.5", "ok": False},
+        {"type": "Int32", "value": "-0.1", "ok": False},
+        {"type": "Int32", "value": "abc", "ok": False},
+
+        {"type": "UInt32", "value": "4294967295", "ok": True},
+        {"type": "UInt32", "value": "0", "ok": True},
+        {"type": "UInt32", "value": "4294967295.0", "ok": False},
+        {"type": "UInt32", "value": "0.0", "ok": False},
+        {"type": "UInt32", "value": "12.34", "ok": False},
+        {"type": "UInt32", "value": "-1.0", "ok": False},
+        {"type": "UInt32", "value": "-2147483648", "ok": False},
+
+        {"type": "Int64", "value": "9223372036854775807", "ok": True},
+        {"type": "Int64", "value": "-9223372036854775808", "ok": True},
+        {"type": "Int64", "value": "9223372036854775807.0", "ok": False},
+        {"type": "Int64", "value": "-9223372036854775808.0", "ok": False},
+        {"type": "Int64", "value": "12.5", "ok": False},
+        {"type": "Int64", "value": "-0.1", "ok": False},
+        {"type": "Int64", "value": "abc", "ok": False},
+
+        {"type": "UInt64", "value": "18446744073709551615", "ok": True},
+        {"type": "UInt64", "value": "0", "ok": True},
+        {"type": "UInt64", "value": "18446744073709551615.0", "ok": False},
+        {"type": "UInt64", "value": "0.0", "ok": False},
+        {"type": "UInt64", "value": "12.34", "ok": False},
+        {"type": "UInt64", "value": "-1.0", "ok": False},
+        {"type": "UInt64", "value": "-9223372036854775808", "ok": False},
+
+        {"type": "Int128", "value": "170141183460469231731687303715884105727",  "ok": True},
+        {"type": "Int128", "value": "-170141183460469231731687303715884105728", "ok": True},
+        {"type": "Int128", "value": "170141183460469231731687303715884105727.0", "ok": False},
+        {"type": "Int128", "value": "-170141183460469231731687303715884105728.0", "ok": False},
+        {"type": "Int128", "value": "12.5", "ok": False},
+        {"type": "Int128", "value": "-0.1", "ok": False},
+        {"type": "Int128", "value": "abc", "ok": False},
+
+        {"type": "UInt128", "value": "340282366920938463463374607431768211455", "ok": True},
+        {"type": "UInt128", "value": "0", "ok": True},
+        {"type": "UInt128", "value": "340282366920938463463374607431768211455.0", "ok": False},
+        {"type": "UInt128", "value": "0.0", "ok": False},
+        {"type": "UInt128", "value": "12.34", "ok": False},
+        {"type": "UInt128", "value": "-1.0", "ok": False},
+        {"type": "UInt128", "value": "-170141183460469231731687303715884105728", "ok": False},
+
+        {"type": "Int256", "value": "57896044618658097711785492504343953926634992332820282019728792003956564819967", "ok": True},
+        {"type": "Int256", "value": "-57896044618658097711785492504343953926634992332820282019728792003956564819968", "ok": True},
+        {"type": "Int256", "value": "57896044618658097711785492504343953926634992332820282019728792003956564819967.0", "ok": False},
+        {"type": "Int256", "value": "-57896044618658097711785492504343953926634992332820282019728792003956564819968.0", "ok": False},
+        {"type": "Int256", "value": "12.5", "ok": False},
+        {"type": "Int256", "value": "-0.1", "ok": False},
+        {"type": "Int256", "value": "abc", "ok": False},
+
+        {"type": "UInt256", "value": "115792089237316195423570985008687907853269984665640564039457584007913129639935", "ok": True},
+        {"type": "UInt256", "value": "0", "ok": True},
+        {"type": "UInt256", "value": "115792089237316195423570985008687907853269984665640564039457584007913129639935.0", "ok": False},
+        {"type": "UInt256", "value": "0.0", "ok": False},
+        {"type": "UInt256", "value": "12.34", "ok": False},
+        {"type": "UInt256", "value": "-1.0", "ok": False},
+        {"type": "UInt256", "value": "-57896044618658097711785492504343953926634992332820282019728792003956564819968", "ok": False},
+
+        {"type": "Float32", "value": "3.14",     "ok": True},
+        {"type": "Float32", "value": "-2.71",    "ok": True},
+        {"type": "Float32", "value": "0.0",      "ok": True},
+        {"type": "Float32", "value": "-0.0",     "ok": True},
+        {"type": "Float32", "value": "1e38",     "ok": True},
+        {"type": "Float32", "value": "-1e38",    "ok": True},
+        {"type": "Float32", "value": "abc",      "ok": False},
+        {"type": "Float32", "value": "",         "ok": False},
+
+        {"type": "Float64", "value": "3.14",     "ok": True},
+        {"type": "Float64", "value": "-2.71",    "ok": True},
+        {"type": "Float64", "value": "0.0",      "ok": True},
+        {"type": "Float64", "value": "-0.0",     "ok": True},
+        {"type": "Float64", "value": "1e308",    "ok": True},
+        {"type": "Float64", "value": "-1e308",   "ok": True},
+        {"type": "Float64", "value": "abc",      "ok": False},
+        {"type": "Float64", "value": "",         "ok": False},
+    ]
+
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "numbers_parsing_table")
+    numbers_parsing_table = db["numbers_parsing_table"]
+
+    node = started_cluster.instances["node"]
+    node.query(
+        f"""
+        CREATE OR REPLACE TABLE numbers_parsing_table(
+            caseNum UInt8,
+            
+            Int8_ Int8,
+            UInt8_ UInt8,
+            Int16_ Int16,
+            UInt16_ UInt16,
+            Int32_ Int32,
+            UInt32_ UInt32,
+            Int64_ Int64,
+            UInt64_ UInt64,
+            Int128_ Int128,
+            UInt128_ UInt128,
+            Int256_ Int256,
+            UInt256_ UInt256,
+            Float32_ Float32,
+            Float64_ Float64
+        ) ENGINE = MongoDB('mongo1:27017', 'test', 'numbers_parsing_table', 'root', '{mongo_pass}')
+        """
+    )
+
+    for num, case in enumerate(cases):
+        numbers_parsing_table.insert_one({"caseNum": num, f"{case['type']}_": case['value']})
+        query = f"SELECT {case['type']}_ FROM numbers_parsing_table WHERE caseNum = {num}"
+        if case['ok']:
+            if case['value'] in ["0.0"]:
+                assert node.query(query) == f"0\n"
+            elif case['value'] in ["-0.0"]:
+                assert node.query(query) == f"-0\n"
+            else:
+                assert node.query(query) == f"{case['value']}\n"
+        else:
+            with pytest.raises(QueryRuntimeException):
+                node.query(query)
+
+    node.query("DROP TABLE numbers_parsing_table")
+    numbers_parsing_table.drop()
+
+
+def test_url_validation(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root@aa.com", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "url_validation_table")
+    url_validation_table = db["url_validation_table"]
+    data = []
+    for i in range(0, 100):
+        data.append({"key": i, "data": hex(i * i)})
+    url_validation_table.insert_many(data)
+
+    node = started_cluster.instances["node"]
+    node.query(
+        f"CREATE OR REPLACE TABLE url_validation_table(key UInt64, data String) ENGINE = MongoDB('mongo1', 'test', 'url_validation_table', 'root@aa.com', '{mongo_pass}')"
+    )
+
+    assert node.query("SELECT COUNT() FROM url_validation_table") == "100\n"

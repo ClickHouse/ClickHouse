@@ -118,6 +118,7 @@ def test_with_invalid_environment_credentials(started_cluster):
     for bucket, auth in [
         (started_cluster.minio_restricted_bucket, f"'minio', '{minio_secret_key}'"),
         (started_cluster.minio_bucket, "NOSIGN"),
+        (started_cluster.minio_bucket, "no_sign = 1"),
     ]:
         instance.query(
             f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_cache4.jsonl', {auth}) select * from numbers(100) settings s3_truncate_on_insert=1"

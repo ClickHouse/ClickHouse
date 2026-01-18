@@ -19,6 +19,7 @@ namespace BuzzHouse
 
 void CreateDatabaseToString(String & ret, const CreateDatabase &);
 void CreateTableToString(String & ret, const CreateTable &);
+void BackupParamsToString(String & ret, const BackupParams &);
 void SQLQueryToString(String & ret, const SQLQuery &);
 
 }

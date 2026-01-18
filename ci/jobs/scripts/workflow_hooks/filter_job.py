@@ -1,10 +1,12 @@
+import re
+
 from ci.defs.defs import JobNames
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
     has_new_integration_tests,
 )
-from ci.jobs.scripts.workflow_hooks.pr_description import Labels
+from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 
 
@@ -38,13 +40,14 @@ PRELIMINARY_JOBS = [
 
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
-    "Integration tests (asan, flaky check)",
+    "Integration tests (amd_asan, flaky)",
 ]
 
 FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
-    "Stateless tests (asan, flaky check)",
+    "Stateless tests (amd_asan, flaky check)",
 ]
+
 
 _info_cache = None
 
@@ -54,10 +57,25 @@ def should_skip_job(job_name):
     if _info_cache is None:
         _info_cache = Info()
 
-    changed_files = _info_cache.get_custom_data("changed_files")
+    changed_files = _info_cache.get_kv_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
+
+    if job_name == JobNames.PR_BODY:
+        # Run the job if AI assistant is explicitly enabled in the PR body
+        if "disable ai pr formatting assistant: true" in _info_cache.pr_body.lower():
+            return True, "AI PR assistant is explicitly disabled in the PR body"
+        if "Reverts ClickHouse/" in _info_cache.pr_body:
+            return True, "Skipped for revert PRs"
+        return False, ""
+
+    if (
+        Labels.CI_BUILD in _info_cache.pr_labels
+        and "build" not in job_name.lower()
+        and job_name not in PRELIMINARY_JOBS
+    ):
+        return True, f"Skipped, labeled with '{Labels.CI_BUILD}'"
 
     if Labels.DO_NOT_TEST in _info_cache.pr_labels and job_name not in DO_NOT_TEST_JOBS:
         return True, f"Skipped, labeled with '{Labels.DO_NOT_TEST}'"
@@ -71,7 +89,7 @@ def should_skip_job(job_name):
     ):
         return (
             True,
-            f"Skipped, labeled with '{Labels.CI_INTEGRATION_FLAKY}' - run integration test jobs only",
+            f"Skipped, labeled with '{Labels.CI_INTEGRATION_FLAKY}' - run integration test flaky check job only",
         )
 
     if (
@@ -155,6 +173,28 @@ def should_skip_job(job_name):
         and JobNames.PERFORMANCE in job_name
         and "arm" in job_name
     ):
+        if "release_base" in job_name and not _info_cache.pr_number:
+            # comparison with the latest release merge base - do not skip on master
+            return False, ""
         return True, "Skipped, not labeled with 'pr-performance'"
+
+    # If only the functional tests script changed, run only the first batch of stateless tests
+    if changed_files and all(
+        f.startswith("ci/") and f.endswith(".py") for f in changed_files
+    ):
+        if JobNames.STATELESS in job_name:
+            match = re.search(r"(\d)/\d", job_name)
+            if match and match.group(1) != "1" or "sequential" in job_name:
+                return True, "Skipped, only job script changed - run first batch only"
+
+        if JobNames.INTEGRATION in job_name:
+            match = re.search(r"(\d)/\d", job_name)
+            if (
+                match
+                and match.group(1) != "1"
+                or "sequential" in job_name
+                or "_asan" not in job_name
+            ):
+                return True, "Skipped, only job script changed - run first batch only"
 
     return False, ""

@@ -147,7 +147,7 @@ public:
             {
                 ColumnPtr decimal_scaled;
                 if (const auto * decimal_type = checkDecimal<Decimal32>(*arguments[1].type))
-                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal32>(value, decimal_type->getScale()));
+                    decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal32>(static_cast<Int32>(value), decimal_type->getScale()));
                 if (const auto * decimal_type = checkDecimal<Decimal64>(*arguments[1].type))
                     decimal_scaled = arguments[1].type->createColumnConst(input_rows_count, DecimalField<Decimal64>(value, decimal_type->getScale()));
 
@@ -194,7 +194,7 @@ REGISTER_FUNCTION(IcebergTruncate)
     FunctionDocumentation::IntroducedIn introduced_in = {25, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
-    factory.registerFunction<FunctionIcebergTruncate>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionIcebergTruncate>({description, syntax, arguments, {}, returned_value, examples, introduced_in, category});
 }
 
 }

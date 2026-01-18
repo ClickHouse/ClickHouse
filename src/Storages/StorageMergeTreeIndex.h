@@ -44,8 +44,8 @@ private:
     bool with_minmax;
 
     MergeTreeData::DataPartsVector data_parts;
-    Block key_sample_block;
-    Block minmax_sample_block;
+    SharedHeader key_sample_block;
+    SharedHeader minmax_sample_block;
 };
 
 }

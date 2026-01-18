@@ -1,5 +1,6 @@
 #pragma once
 #include <Interpreters/Context_fwd.h>
+#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ColumnsDescription.h>
 #include <Core/NamesAndTypes.h>
@@ -7,6 +8,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
 
 class IDataPartStorage;
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
@@ -91,6 +97,18 @@ public:
     virtual String getTableName() const = 0;
 
     virtual void reportBroken() = 0;
+
+    virtual size_t getRowCount() const = 0;
+
+    virtual void setReadHints(const RangesInDataPartReadHints & /*read_hints_*/, const NamesAndTypesList & /*read_columns*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setReadHints not implemented for this reader");
+    }
+
+    virtual const RangesInDataPartReadHints & getReadHints() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReadHints not implemented for this reader");
+    }
 };
 
 using MergeTreeDataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader>;

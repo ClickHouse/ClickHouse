@@ -678,6 +678,39 @@ def test_headers_in_response():
         assert response_predefined.headers["X-My-Common-Header"] == "Common header present"
 
 
+def test_redirect_handler():
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__), "redirect_handler", "test_redirect_handler"
+        )
+    ) as cluster:
+        def get(uri, *args, **kwargs):
+            return cluster.instance.http_request(uri, method="GET", allow_redirects=False, *args, **kwargs)
+
+        req = get("")
+        assert req.status_code == 302
+        assert req.headers["Location"] == "/play"
+
+        req = get("/pla")
+        assert req.status_code == 302
+        assert req.headers["Location"] == "/play"
+
+        req = get("/foo/pla")
+        assert req.status_code == 404
+
+        # Host does not match - no redirect, and we do not add defaults so, it will be 404
+        req = get("/play")
+        assert req.status_code == 404
+
+        req = get("/dashboard")
+        assert req.status_code == 302
+        assert req.headers["Location"] == "/dashboard?from=http://:8123/dashboard"
+
+        # Query string is not empty - no redirect, and we do not add defaults so, it will be 404
+        req = get("/dashboard?foo=bar")
+        assert req.status_code == 404
+
+
 def test_predefined_handler_whitespace():
     """Test that predefined query handlers correctly trim whitespace from queries.
 
