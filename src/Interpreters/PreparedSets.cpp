@@ -1,12 +1,11 @@
 #include <chrono>
 #include <variant>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/Operators.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessorsProfileLog.h>
@@ -202,13 +201,15 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
     if (set.empty())
         return;
 
-    /// The Set class may strip Nullable/LowCardinality from types when storing elements
-    /// (depending on transform_null_in setting), so we need to convert the set elements
-    /// to match the external table's expected column types.
     auto metadata = external_table_->getInMemoryMetadataPtr();
     const auto & expected_columns = metadata->getColumns().getAllPhysical();
 
     Columns set_elements = set.getSetElements();
+    const auto & set_types = set.getElementsTypes();
+
+    /// The Set class may strip Nullable/LowCardinality from types when storing elements
+    /// (depending on transform_null_in setting), so we need to convert the set elements
+    /// to match the external table's expected column types.
     Columns converted_columns;
     converted_columns.reserve(set_elements.size());
 
@@ -219,20 +220,14 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
             break;
 
         const auto & set_column = set_elements[idx];
+        const auto & set_type = set_types[idx];
         const auto & expected_type = expected_col.type;
 
-        /// If the expected type is Nullable but the set column is not, wrap it
-        if (expected_type->isNullable() && !set_column->isNullable())
-        {
-            auto nullable_column = ColumnNullable::create(
-                set_column,
-                ColumnUInt8::create(set_column->size(), UInt8(0))); /// All non-null
-            converted_columns.push_back(std::move(nullable_column));
-        }
+        if (!set_type->equals(*expected_type))
+            converted_columns.push_back(castColumn({set_column, set_type, ""}, expected_type));
         else
-        {
             converted_columns.push_back(set_column);
-        }
+
         ++idx;
     }
 
