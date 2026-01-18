@@ -1,6 +1,8 @@
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/typeid_cast.h>
+#include <Core/DecimalFunctions.h>
+#include <IO/WriteHelpers.h>
 
 #include "config.h"
 
@@ -35,8 +37,8 @@ namespace ErrorCodes
 namespace
 {
     using ScalarType = PrometheusQueryTree::ScalarType;
-    using IntervalType = PrometheusQueryTree::IntervalType;
-    using ScalarOrInterval = PrometheusQueryParsingUtil::ScalarOrInterval;
+    using TimestampType = PrometheusQueryTree::TimestampType;
+    using DurationType = PrometheusQueryTree::DurationType;
     using ResultType = PrometheusQueryResultType;
     using Node = PrometheusQueryTree::Node;
 
@@ -112,8 +114,8 @@ namespace
     class PrometheusQueryTreeBuilder : public antlr4_grammars::PromQLParserBaseVisitor
     {
     public:
-        explicit PrometheusQueryTreeBuilder(std::string_view promql_query_, ErrorListener & error_listener_)
-            : promql_query(promql_query_), error_listener(error_listener_) {}
+        explicit PrometheusQueryTreeBuilder(std::string_view promql_query_, UInt32 timestamp_scale_, ErrorListener & error_listener_)
+            : promql_query(promql_query_), timestamp_scale(timestamp_scale_), error_listener(error_listener_) {}
 
         Node * makeNode(antlr4::ParserRuleContext * expression)
         {
@@ -129,6 +131,7 @@ namespace
 
     private:
         std::string_view promql_query;
+        UInt32 timestamp_scale;
         ErrorListener & error_listener;
         std::vector<std::unique_ptr<Node>> nodes;
 
@@ -148,7 +151,8 @@ namespace
         static size_t getStartPos(const antlr4::ParserRuleContext * ctx) { return ctx->start->getStartIndex(); }
         static size_t getLength(const antlr4::tree::TerminalNode * ctx) { return ctx->getSymbol()->getStopIndex() - ctx->getSymbol()->getStartIndex() + 1; }
         static size_t getLength(const antlr4::ParserRuleContext * ctx) { return ctx->stop->getStopIndex() - ctx->start->getStartIndex() + 1; }
-        std::string_view getText(const antlr4::tree::TerminalNode * ctx) const { return std::string_view{promql_query}.substr(getStartPos(ctx), getLength(ctx)); }
+        std::string_view getText(const antlr4::tree::TerminalNode * ctx) const { return getText(getStartPos(ctx), getLength(ctx)); }
+        std::string_view getText(size_t start_pos, size_t length) const { return std::string_view{promql_query}.substr(start_pos, length); }
 
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
         {
@@ -162,26 +166,78 @@ namespace
             return true;
         }
 
-        bool parseScalarOrLiteral(const antlr4::tree::TerminalNode * ctx, ScalarOrInterval & result)
+        bool parseScalar(const antlr4::tree::TerminalNode * ctx, ScalarType & result)
         {
             String error_message;
             size_t error_pos;
-            if (!PrometheusQueryParsingUtil::parseScalarOrInterval(getText(ctx), result, error_message, error_pos))
+            PrometheusQueryParsingUtil::ScalarOrInterval scalar_or_interval;
+            if (!PrometheusQueryParsingUtil::parseScalarOrInterval(getText(ctx), scalar_or_interval, error_message, error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
             }
+
+            if (scalar_or_interval.scalar)
+            {
+                result = *scalar_or_interval.scalar;
+            }
+            else
+            {
+                const auto & decimal_field = *scalar_or_interval.interval;
+                if (!DecimalUtils::tryConvertTo(decimal_field.getValue(), decimal_field.getScale(), result))
+                {
+                    error_listener.setError(fmt::format("Cannot convert {} to scalar", ::DB::toString(decimal_field.getValue(), decimal_field.getScale())), getStartPos(ctx));
+                    return false;
+                }
+            }
             return true;
         }
 
-        bool parseSelectorRange(const antlr4::tree::TerminalNode * ctx, ScalarOrInterval & res_range, size_t & res_start_pos, size_t & res_length)
+        bool parseTimestamp(const antlr4::tree::TerminalNode * ctx, TimestampType & result)
+        {
+            DurationType duration;
+            if (!parseDuration(ctx, duration))
+                return false;
+            result = TimestampType{duration.getValue(), duration.getScale()};
+            return true;
+        }
+
+        bool parseDuration(const antlr4::tree::TerminalNode * ctx, DurationType & result)
+        {
+            return parseDuration(getStartPos(ctx), getLength(ctx), result);
+        }
+
+        bool parseDuration(size_t start_pos, size_t length, DurationType & result)
+        {
+            String error_message;
+            size_t error_pos;
+            PrometheusQueryParsingUtil::ScalarOrInterval scalar_or_interval;
+            if (!PrometheusQueryParsingUtil::parseScalarOrInterval(getText(start_pos, length), scalar_or_interval, error_message, error_pos))
+            {
+                error_listener.setError(error_message, error_pos + start_pos);
+                return false;
+            }
+
+            if (scalar_or_interval.scalar)
+            {
+                result = DurationType{static_cast<Int64>(*scalar_or_interval.scalar * DecimalUtils::scaleMultiplier<Decimal64>(timestamp_scale)), timestamp_scale};
+            }
+            else
+            {
+                const auto & decimal_field = *scalar_or_interval.interval;
+                result = DurationType{DecimalUtils::convertTo<Decimal64>(timestamp_scale, decimal_field.getValue(), decimal_field.getScale()), timestamp_scale};
+            }
+
+            return true;
+        }
+
+        bool parseSelectorRange(const antlr4::tree::TerminalNode * ctx, DurationType & res_range)
         {
             std::string_view sv = getText(ctx);
 
             String error_message;
             size_t error_pos;
             std::string_view range_sv;
-            ScalarOrInterval range;
 
             if (!PrometheusQueryParsingUtil::findTimeRange(sv, range_sv, error_message, error_pos))
             {
@@ -189,22 +245,12 @@ namespace
                 return false;
             }
 
-            if (!PrometheusQueryParsingUtil::parseScalarOrInterval(range_sv, range, error_message, error_pos))
-            {
-                error_listener.setError(error_message, error_pos + getStartPos(ctx) + (range_sv.data() - sv.data()));
-                return false;
-            }
-
-            res_range = range;
-            res_start_pos = getStartPos(ctx) + (range_sv.data() - sv.data());
-            res_length = range_sv.length();
-            return true;
+            size_t range_start_pos = range_sv.data() - promql_query.data();
+            size_t range_length = range_sv.length();
+            return parseDuration(range_start_pos, range_length, res_range);
         }
 
-        bool parseSubqueryRangeAndResolution(const antlr4::tree::TerminalNode * ctx,
-                                             ScalarOrInterval & res_range, size_t & res_range_start_pos, size_t & res_range_length,
-                                             ScalarOrInterval & res_resolution, size_t & res_resolution_start_pos, size_t & res_resolution_length)
-
+        bool parseSubqueryRange(const antlr4::tree::TerminalNode * ctx, DurationType & res_range, std::optional<DurationType> & res_resolution)
         {
             std::string_view sv = getText(ctx);
 
@@ -212,8 +258,6 @@ namespace
             size_t error_pos;
             std::string_view range_sv;
             std::string_view resolution_sv;
-            ScalarOrInterval range;
-            ScalarOrInterval resolution;
 
             if (!PrometheusQueryParsingUtil::findSubqueryRangeAndResolution(sv, range_sv, resolution_sv, error_message, error_pos))
             {
@@ -221,37 +265,33 @@ namespace
                 return false;
             }
 
-            if (!PrometheusQueryParsingUtil::parseScalarOrInterval(range_sv, range, error_message, error_pos))
-            {
-                error_listener.setError(error_message, error_pos + getStartPos(ctx) + (range_sv.data() - sv.data()));
+            size_t range_start_pos = range_sv.data() - promql_query.data();
+            size_t range_length = range_sv.length();
+            if (!parseDuration(range_start_pos, range_length, res_range))
                 return false;
+
+            res_resolution.reset();
+
+            if (!resolution_sv.empty())
+            {
+                size_t resolution_start_pos = resolution_sv.data() - promql_query.data();
+                size_t resolution_length = resolution_sv.length();
+                if (!parseDuration(resolution_start_pos, resolution_length, res_resolution.emplace()))
+                    return false;
             }
 
-            if (!resolution_sv.empty() && !PrometheusQueryParsingUtil::parseScalarOrInterval(resolution_sv, resolution, error_message, error_pos))
-            {
-                error_listener.setError(error_message, error_pos + getStartPos(ctx) + (resolution_sv.data() - sv.data()));
-                return false;
-            }
-
-            res_range = range;
-            res_range_start_pos = getStartPos(ctx) + (range_sv.data() - sv.data());
-            res_range_length = range_sv.length();
-            res_resolution = resolution;
-            res_resolution_start_pos = getStartPos(ctx) + (resolution_sv.data() - sv.data());
-            res_resolution_length = resolution_sv.length();
             return true;
         }
 
         using Matcher = PrometheusQueryTree::Matcher;
         using MatcherType = PrometheusQueryTree::MatcherType;
         using MatcherList = PrometheusQueryTree::MatcherList;
+        using Scalar = PrometheusQueryTree::Scalar;
         using StringLiteral = PrometheusQueryTree::StringLiteral;
-        using ScalarLiteral = PrometheusQueryTree::ScalarLiteral;
-        using IntervalLiteral = PrometheusQueryTree::IntervalLiteral;
         using InstantSelector = PrometheusQueryTree::InstantSelector;
         using RangeSelector = PrometheusQueryTree::RangeSelector;
         using Subquery = PrometheusQueryTree::Subquery;
-        using At = PrometheusQueryTree::At;
+        using Offset = PrometheusQueryTree::Offset;
         using Function = PrometheusQueryTree::Function;
         using UnaryOperator = PrometheusQueryTree::UnaryOperator;
         using BinaryOperator = PrometheusQueryTree::BinaryOperator;
@@ -272,42 +312,19 @@ namespace
         }
 
         /// Makes a node for a scalar or an interval literal after parsing it.
-        Node * makeNodeForScalarOrInterval(antlr4::tree::TerminalNode * ctx, int sign = 1)
+        Node * makeScalar(antlr4::tree::TerminalNode * ctx)
         {
-            PrometheusQueryParsingUtil::ScalarOrInterval scalar_or_interval;
-            if (!parseScalarOrLiteral(ctx, scalar_or_interval))
+            ScalarType scalar;
+            if (!parseScalar(ctx, scalar))
             {
                 chassert(error_listener.hasError());
                 return nullptr;
             }
-            return makeNodeForScalarOrInterval(scalar_or_interval, getStartPos(ctx), getLength(ctx), sign);
-        }
-
-        Node * makeNodeForScalarOrInterval(const ScalarOrInterval & scalar_or_interval, size_t start_pos, size_t length, int sign = 1)
-        {
-            chassert(!scalar_or_interval.empty());
-            if (scalar_or_interval.scalar)
-            {
-                auto scalar = *scalar_or_interval.scalar;
-                if (sign < 0)
-                    scalar = -scalar;
-                auto new_node = std::make_unique<ScalarLiteral>();
-                new_node->start_pos = start_pos;
-                new_node->length = length;
-                new_node->scalar = scalar;
-                return addNode(std::move(new_node));
-            }
-            else
-            {
-                auto interval = *scalar_or_interval.interval;
-                if (sign < 0)
-                    interval = IntervalType{-interval.getValue(), interval.getScale()};
-                auto new_node = std::make_unique<IntervalLiteral>();
-                new_node->start_pos = start_pos;
-                new_node->length = length;
-                new_node->interval = interval;
-                return addNode(std::move(new_node));
-            }
+            auto new_node = std::make_unique<Scalar>();
+            new_node->start_pos = getStartPos(ctx);
+            new_node->length = getLength(ctx);
+            new_node->scalar = scalar;
+            return addNode(std::move(new_node));
         }
 
         /// Extracts a metric name.
@@ -414,19 +431,13 @@ namespace
 
             auto * instant_selector = makeInstantSelector(instant_selector_ctx);
 
-            ScalarOrInterval range;
-            size_t range_start_pos;
-            size_t range_length;
-            if (!instant_selector || !parseSelectorRange(selector_range_ctx, range, range_start_pos, range_length))
+            if (!instant_selector || !parseSelectorRange(selector_range_ctx, new_node->range))
             {
                 chassert(error_listener.hasError());
                 return nullptr;
             }
 
-            auto * range_node = makeNodeForScalarOrInterval(range, range_start_pos, range_length);
-
             addChild(new_node.get(), instant_selector);
-            addChild(new_node.get(), range_node);
             return addNode(std::move(new_node));
         }
 
@@ -440,60 +451,42 @@ namespace
             if (!subquery_range_ctx)
                 throwInconsistentSchema("SubqueryOp", ctx->getText());
 
-            ScalarOrInterval range;
-            ScalarOrInterval resolution;
-            size_t range_start_pos;
-            size_t range_length;
-            size_t resolution_start_pos;
-            size_t resolution_length;
-            if (!parseSubqueryRangeAndResolution(subquery_range_ctx, range, range_start_pos, range_length, resolution, resolution_start_pos, resolution_length))
+            if (!parseSubqueryRange(subquery_range_ctx, new_node->range, new_node->resolution))
             {
                 chassert(error_listener.hasError());
                 return nullptr;
             }
 
-            auto * range_node = makeNodeForScalarOrInterval(range, range_start_pos, range_length);
-
-            Node * resolution_node = nullptr;
-            if (!resolution.empty())
-                resolution_node = makeNodeForScalarOrInterval(resolution, resolution_start_pos, resolution_length);
-
             addChild(new_node.get(), expression);
-            addChild(new_node.get(), range_node);
-
-            if (resolution_node)
-                addChild(new_node.get(), resolution_node);
 
             auto * res_node = addNode(std::move(new_node));
 
             if (auto * offset_op_ctx = ctx->offsetOp())
             {
                 res_node->length -= getLength(offset_op_ctx);
-                res_node = makeAt(offset_op_ctx, res_node);
+                res_node = makeOffset(offset_op_ctx, res_node);
             }
 
             return res_node;
         }
 
         /// Makes a node for [@ timestamp][offset <offset>],
-        Node * makeAt(antlr4_grammars::PromQLParser::OffsetOpContext * ctx, Node * expression)
+        Node * makeOffset(antlr4_grammars::PromQLParser::OffsetOpContext * ctx, Node * expression)
         {
-            auto new_node = std::make_unique<At>();
+            auto new_node = std::make_unique<Offset>();
             new_node->start_pos = expression->start_pos;
             new_node->length = expression->length + getLength(ctx);
             new_node->result_type = expression->result_type;
 
             bool ok = true;
-            Node * at_node = nullptr;
-            Node * offset_node = nullptr;
 
             if (auto * timestamp_ctx = ctx->timestamp())
             {
                 auto * number_ctx = timestamp_ctx->NUMBER();
                 if (!number_ctx)
                     throwInconsistentSchema("OffsetOp", ctx->getText());
-                at_node = makeNodeForScalarOrInterval(number_ctx);
-                ok &= (at_node != nullptr);
+                auto & timestamp = new_node->at_timestamp.emplace();
+                ok &= parseTimestamp(number_ctx, timestamp);
             }
 
             if (auto * offset_value_ctx = ctx->offsetValue())
@@ -501,9 +494,10 @@ namespace
                 auto * number_ctx = offset_value_ctx->NUMBER();
                 if (!number_ctx)
                     throwInconsistentSchema("OffsetOp", ctx->getText());
-                int sign = offset_value_ctx->SUB() ? -1 : 1;
-                offset_node = makeNodeForScalarOrInterval(number_ctx, sign);
-                ok &= (offset_node != nullptr);
+                auto & offset_value = new_node->offset_value.emplace();
+                ok &= parseDuration(number_ctx, offset_value);
+                if (ok && offset_value_ctx->SUB())
+                    offset_value = DurationType{-offset_value.getValue(), offset_value.getScale()};
             }
 
             if (!ok)
@@ -513,19 +507,6 @@ namespace
             }
 
             addChild(new_node.get(), expression);
-
-            if (at_node)
-            {
-                new_node->at_index = new_node->children.size();
-                addChild(new_node.get(), at_node);
-            }
-
-            if (offset_node)
-            {
-                new_node->offset_index = new_node->children.size();
-                addChild(new_node.get(), offset_node);
-            }
-
             return addNode(std::move(new_node));
         }
 
@@ -770,7 +751,7 @@ namespace
         std::any visitLiteral(antlr4_grammars::PromQLParser::LiteralContext * ctx) override
         {
             if (auto * number_ctx = ctx->NUMBER())
-                return makeNodeForScalarOrInterval(number_ctx);
+                return makeScalar(number_ctx);
             else if (auto * string_ctx = ctx->STRING())
                 return makeStringLiteral(string_ctx);
             else
@@ -807,7 +788,7 @@ namespace
             if (!offset_op_ctx)
                 throwInconsistentSchema("Offset", ctx->getText());
 
-            res_node = makeAt(offset_op_ctx, res_node);
+            res_node = makeOffset(offset_op_ctx, res_node);
             return res_node;
         }
 
@@ -962,7 +943,7 @@ namespace
             Node * node = anyToNodePtr(aggregate);
             Node * next_node = anyToNodePtr(next_result);
             if (node && next_node)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't aggregate\n{}and\n{}", node->dumpNode(1), next_node->dumpNode(1));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't aggregate nodes {} and {}", node->node_type, next_node->node_type);
             if (node)
                 return node;
             else
@@ -973,7 +954,7 @@ namespace
 
 #endif
 
-bool PrometheusQueryParsingUtil::parseQuery([[maybe_unused]] std::string_view input, [[maybe_unused]] PrometheusQueryTree & result, [[maybe_unused]] String & error_message, [[maybe_unused]] size_t & error_pos)
+bool PrometheusQueryParsingUtil::parseQuery([[maybe_unused]] std::string_view input, [[maybe_unused]] UInt32 timestamp_scale, [[maybe_unused]] PrometheusQueryTree & result, [[maybe_unused]] String & error_message, [[maybe_unused]] size_t & error_pos)
 {
 #if USE_ANTLR4_GRAMMARS
     ErrorListener error_listener{input};
@@ -996,7 +977,7 @@ bool PrometheusQueryParsingUtil::parseQuery([[maybe_unused]] std::string_view in
     if (!expression)
         error_listener.setError("Couldn't get an expression after parsing promql query", 0);
 
-    PrometheusQueryTreeBuilder builder{input, error_listener};
+    PrometheusQueryTreeBuilder builder{input, timestamp_scale, error_listener};
     std::vector<std::unique_ptr<Node>> parsed_nodes;
     Node * parsed_root = nullptr;
     if (expression && !error_listener.hasError())
@@ -1015,7 +996,7 @@ bool PrometheusQueryParsingUtil::parseQuery([[maybe_unused]] std::string_view in
     if (!parsed_root)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsing promql query '{}' failed without setting any error message", input);
 
-    result = PrometheusQueryTree{String{input}, parsed_root, std::move(parsed_nodes)};
+    result = PrometheusQueryTree{String{input}, timestamp_scale, parsed_root, std::move(parsed_nodes)};
     return true;
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ANTLR4 support is disabled");

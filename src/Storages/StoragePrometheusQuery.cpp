@@ -59,6 +59,7 @@ void StoragePrometheusQuery::read(
     time_series_table_info.value_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
 
     LOG_INFO(log, "Building SQL to evaluate promql: {}", promql_query);
+
     PrometheusQueryToSQLConverter converter{promql_query, time_series_table_info, 5*60, 15};
     if (!evaluation_time.isNull())
         converter.setEvaluationTime(evaluation_time);

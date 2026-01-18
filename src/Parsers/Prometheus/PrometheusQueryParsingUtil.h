@@ -11,7 +11,7 @@ struct PrometheusQueryParsingUtil
 public:
     /// Parses a prometheus query.
     /// Scale `timestamp_scale` is used to parse decimals representing timestamps and offsets.
-    static bool parseQuery(std::string_view input, PrometheusQueryTree & result, String & error_message, size_t & error_pos);
+    static bool parseQuery(std::string_view input, UInt32 timestamp_scale, PrometheusQueryTree & result, String & error_message, size_t & error_pos);
 
     /// Converts a quoted string literal to its unquoted version: "abc" -> abc
     /// Accepts an input string in quotes or double quotes or backticks, and also handles escape sequences
@@ -19,7 +19,7 @@ public:
     static bool parseStringLiteral(std::string_view input, String & result, String & error_message, size_t & error_pos);
 
     using ScalarType = PrometheusQueryTree::ScalarType;
-    using IntervalType = PrometheusQueryTree::IntervalType;
+    using IntervalType = DecimalField<Decimal64>;
 
     /// Contains either a scalar or an interval.
     struct ScalarOrInterval

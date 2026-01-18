@@ -542,8 +542,8 @@ private:
             case NodeType::Subquery:
                 return buildPieceForSubquery(typeid_cast<const PrometheusQueryTree::Subquery *>(node));
 
-            case NodeType::At:
-                return buildPieceForAt(typeid_cast<const PrometheusQueryTree::At *>(node));
+            case NodeType::Offset:
+                return buildPieceForOffset(typeid_cast<const PrometheusQueryTree::Offset *>(node));
 
             case NodeType::Function:
                 return buildPieceForFunction(typeid_cast<const PrometheusQueryTree::Function *>(node));
@@ -610,9 +610,9 @@ private:
     {
         const auto * instant_selector = range_selector->getInstantSelector();
 
-        auto range = nodeToInterval(range_selector->getRange());
+        auto range = range_selector->range;
         if (range.getValue() <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range specified in a range selector must be positive, got {}", getPromQLText(range_selector->getRange()));
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range specified in a range selector must be positive, got {}", toString(range));
 
         /// Ranges are left-open (and right-closed), so we decrease `window` a little bit to consider both boundaries close.
         auto window = range;
@@ -654,7 +654,7 @@ private:
             return getEmptyPiece(ResultType::RANGE_VECTOR);
 
         piece.result_type = ResultType::RANGE_VECTOR;
-        piece.window = nodeToInterval(subquery->getRange());
+        piece.window = subquery->range;
         return piece;
     }
 
@@ -674,10 +674,10 @@ private:
     }
 
     /// Builds a piece to evaluate an offset.
-    Piece buildPieceForAt(const PrometheusQueryTree::At * at_node)
+    Piece buildPieceForOffset(const PrometheusQueryTree::Offset * offset_node)
     {
         /// Offsets are already taken into account - see extractRangeAndStep(). So here we just ignore them.
-        return buildPiece(at_node->getExpression());
+        return buildPiece(offset_node->getExpression());
     }
 
     /// Checks the number of arguments of a promql function.
@@ -873,40 +873,41 @@ private:
 
         for (const auto * parent : parent_nodes)
         {
-            if (parent->node_type == NodeType::At)
+            if (parent->node_type == NodeType::Offset)
             {
-                const auto * at_node = typeid_cast<const PrometheusQueryTree::At *>(parent);
-                if (const auto * at = at_node->getAt())
+                const auto * offset_node = typeid_cast<const PrometheusQueryTree::Offset *>(parent);
+                if (offset_node->at_timestamp)
                 {
-                    start_time = nodeToTimestamp(at);
+                    start_time = *offset_node->at_timestamp;
                     end_time = start_time;
                     step = getZeroInterval();
                 }
-                if (const auto * offset = at_node->getOffset())
+                if (offset_node->offset_value)
                 {
                     /// The "offset" modifier moves the evaluation time backward.
-                    start_time = subtract(start_time, nodeToInterval(offset));
-                    end_time = subtract(end_time, nodeToInterval(offset));
+                    auto offset = *offset_node->offset_value;
+                    start_time = subtract(start_time, offset);
+                    end_time = subtract(end_time, offset);
                 }
             }
             else if (parent->node_type == NodeType::Subquery)
             {
                 const auto * subquery_node = typeid_cast<const PrometheusQueryTree::Subquery *>(parent);
-                if (const auto * resolution = subquery_node->getResolution())
+                if (subquery_node->resolution)
                 {
-                    step = nodeToInterval(resolution);
+                    step = *subquery_node->resolution;
                     if (step.getValue() <= 0)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Resolution must be positive, got {}", getPromQLText(resolution));
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Resolution must be positive, got {}", toString(step));
                 }
                 else
                 {
-                    step = default_resolution;
-                    if (step.getValue() <= 0)
+                    if (default_resolution.getValue() <= 0)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The default resolution must be positive, got {}", toString(default_resolution));
+                    step = default_resolution;
                 }
-                auto subquery_range = nodeToInterval(subquery_node->getRange());
+                auto subquery_range = subquery_node->range;
                 if (subquery_range.getValue() <= 0)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subquery rangeResolution must be positive, got {}", getPromQLText(subquery_node->getRange()));
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subquery range must be positive, got {}", toString(subquery_range));
                 start_time = subtract(start_time, previous(subquery_range));
 
                 /// We need to align `start_time` and `end_time` by `step` if there is a subquery.
@@ -917,38 +918,16 @@ private:
         }
     }
 
-    /// Extracts a value from a scalar literal or an interval literal node.
-    Field nodeToField(const PrometheusQueryTree::Node * scalar_or_interval_node) const
-    {
-        auto node_type = scalar_or_interval_node->node_type;
-        if (node_type == NodeType::ScalarLiteral)
-            return Field{typeid_cast<const PrometheusQueryTree::ScalarLiteral &>(*scalar_or_interval_node).scalar};
-        else if (node_type == NodeType::IntervalLiteral)
-            return Field{typeid_cast<const PrometheusQueryTree::IntervalLiteral &>(*scalar_or_interval_node).interval};
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a scalar literal or a interval literal node, got {} ({})", node_type, getPromQLText(scalar_or_interval_node));
-    }
-
     /// Converts a scalar or an interval value to a timestamp compatible with the data types used in the TimeSeries table.
     DecimalField<DateTime64> fieldToTimestamp(const Field & field) const
     {
         return fieldToDecimal<DateTime64>(field, timestamp_data_type);
     }
 
-    DecimalField<DateTime64> nodeToTimestamp(const PrometheusQueryTree::Node * scalar_or_interval_node) const
-    {
-        return fieldToTimestamp(nodeToField(scalar_or_interval_node));
-    }
-
     /// Converts a scalar or an interval value to an interval compatible with the data types used in the TimeSeries table.
     DecimalField<Decimal64> fieldToInterval(const Field & field) const
     {
         return fieldToDecimal<Decimal64>(field, interval_data_type);
-    }
-
-    DecimalField<Decimal64> nodeToInterval(const PrometheusQueryTree::Node * scalar_or_interval_node) const
-    {
-        return fieldToInterval(nodeToField(scalar_or_interval_node));
     }
 
     /// Returns a zero interval with the correct scale.
