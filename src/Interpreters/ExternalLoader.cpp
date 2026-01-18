@@ -1081,7 +1081,6 @@ private:
             next_update_time = TimePoint::max();
         }
 
-
         Info * info = getInfo(name);
 
         /// We should check if this is still the same loading as we were doing.
@@ -1448,7 +1447,7 @@ ReturnType ExternalLoader::reloadAllTriedToLoad() const
 {
     std::unordered_set<String> names;
     boost::range::copy(getAllTriedToLoadNames(), std::inserter(names, names.end()));
-    return loadOrReload<ReturnType>([&names](const String & name) { return names.count(name); });
+    return loadOrReload<ReturnType>([&names](const String & name) { return names.contains(name); });
 }
 
 bool ExternalLoader::has(const String & name) const

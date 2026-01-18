@@ -76,7 +76,7 @@ public:
             LOG_WARNING(log, "Client options propagation is enabled. This is considered unsafe and shouldn't be used in production.");
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &) override
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer &) override
     {
         LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
         ::ssh::libsshLogger::initialize();

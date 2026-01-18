@@ -2382,13 +2382,16 @@ public:
     }
 };
 
-// ClickHouse-specific variant of lag/lead that respects the window frame.
-template <bool is_lead>
-struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
+// ClickHouse-specific lag/lead family implementation.
+/// `full_partition_default_frame` controls whether the function supplies a default window frame:
+/// - `true` (used by `lag`/`lead`): use the full-partition ROWS frame (UNBOUNDED PRECEDING .. UNBOUNDED FOLLOWING).
+/// - `false` (used by `lagInFrame`/`leadInFrame`): no default frame, so the caller-provided frame is respected.
+template <bool is_lead, bool full_partition_default_frame>
+struct WindowFunctionLagLeadImpl final : public StatelessWindowFunction
 {
     FunctionBasePtr func_cast = nullptr;
 
-    WindowFunctionLagLeadInFrame(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
+    WindowFunctionLagLeadImpl(const std::string & name_, const DataTypes & argument_types_, const Array & parameters_)
         : StatelessWindowFunction(name_, argument_types_, parameters_, createResultType(argument_types_, name_))
     {
         if (!parameters.empty())
@@ -2481,6 +2484,17 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    std::optional<WindowFrame> getDefaultFrame() const override
+    {
+        if constexpr (!full_partition_default_frame)
+            return {};
+
+        WindowFrame frame;
+        frame.type = WindowFrame::FrameType::ROWS;
+        frame.end_type = WindowFrame::BoundaryType::Unbounded;
+        return frame;
+    }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
@@ -2536,6 +2550,12 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
         }
     }
 };
+
+template <bool is_lead>
+using WindowFunctionLagLead = WindowFunctionLagLeadImpl<is_lead, true>;
+
+template <bool is_lead>
+using WindowFunctionLagLeadInFrame = WindowFunctionLagLeadImpl<is_lead, false>;
 
 struct WindowFunctionNthValue final : public StatelessWindowFunction
 {
@@ -2830,7 +2850,7 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     factory.registerFunction("lag", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
+            return std::make_shared<WindowFunctionLagLead<false>>(
                 name, argument_types, parameters);
         }, properties}, AggregateFunctionFactory::Case::Insensitive);
 
@@ -2844,7 +2864,7 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     factory.registerFunction("lead", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
-            return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
+            return std::make_shared<WindowFunctionLagLead<true>>(
                 name, argument_types, parameters);
         }, properties}, AggregateFunctionFactory::Case::Insensitive);
 

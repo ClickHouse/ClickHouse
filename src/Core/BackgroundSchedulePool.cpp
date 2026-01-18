@@ -157,7 +157,7 @@ bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
     }
     catch (...)
     {
-        error_code = getCurrentExceptionCode();
+        error_code = static_cast<UInt16>(getCurrentExceptionCode());
         exception_message = getCurrentExceptionMessage(false);
         tryLogCurrentException(__PRETTY_FUNCTION__);
         chassert(false && "Tasks in BackgroundSchedulePool cannot throw");
