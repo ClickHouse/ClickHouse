@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Interpreters/Context.h>
@@ -16,14 +15,11 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Common/escapeForFileName.h>
 #include <Common/parseRemoteDescription.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -529,11 +525,12 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
     {
         auto * engine_define = args.create_query.storage;
         const ASTFunction * engine = engine_define->engine;
-        ASTs & engine_args = engine->arguments->children;
-        const String & engine_name = engine_define->engine->name;
 
         if (!engine->arguments)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `PostgreSQL` must have arguments");
+
+        ASTs & engine_args = engine->arguments->children;
+        const String & engine_name = engine_define->engine->name;
 
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;

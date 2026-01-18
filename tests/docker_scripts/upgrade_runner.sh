@@ -278,7 +278,7 @@ echo "<clickhouse>
 
 cat /etc/clickhouse-server/users.d/compatibility.xml
 
-start_server 500 || (echo "Failed to start server" && exit 1)
+start_server || (echo "Failed to start server" && exit 1)
 clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
     || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
     && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \

@@ -31,7 +31,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 19, nodes: 1
       SORT id: 20, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION val
           FUNCTION id: 21, function_name: toString, function_type: ordinary, result_type: String
             ARGUMENTS
               LIST id: 22, nodes: 1
@@ -78,7 +78,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 15, nodes: 1
       SORT id: 16, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION val
           FUNCTION id: 17, function_name: toString, function_type: ordinary, result_type: String
             ARGUMENTS
               LIST id: 18, nodes: 1
@@ -124,7 +124,7 @@ QUERY id: 0, is_group_by_with_totals: 1
   ORDER BY
     LIST id: 19, nodes: 1
       SORT id: 20, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION val
           FUNCTION id: 21, function_name: toString, function_type: ordinary, result_type: String
             ARGUMENTS
               LIST id: 22, nodes: 1

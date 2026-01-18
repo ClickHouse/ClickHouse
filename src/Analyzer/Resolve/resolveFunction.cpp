@@ -94,6 +94,14 @@ bool isNullConstant(const QueryTreeNodePtr & node)
     return false;
 }
 
+/// Creates a NOT function node wrapping the given node (caller must resolve it)
+QueryTreeNodePtr createNotWrapper(QueryTreeNodePtr node)
+{
+    auto not_fn = std::make_shared<FunctionNode>("not");
+    not_fn->getArguments().getNodes().push_back(node);
+    return not_fn;
+}
+
 /// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
 std::pair<QueryTreeNodePtr, ProjectionNames> QueryAnalyzer::makeNullSafeHas(
     QueryTreeNodePtr array_arg,    // [1,2,number]
@@ -122,6 +130,45 @@ std::pair<QueryTreeNodePtr, ProjectionNames> QueryAnalyzer::makeNullSafeHas(
     resolveFunction(if_node, scope);
 
     return std::make_pair(if_node, proj);
+}
+
+/// Builds has() expression with proper null handling and NOT wrapping for IN rewrites
+ProjectionNames QueryAnalyzer::buildHasExpression(
+    QueryTreeNodePtr & node,
+    QueryTreeNodePtr array_arg,
+    QueryTreeNodePtr element_arg,
+    bool is_not_in,
+    bool transform_null_in,
+    const ProjectionNames & arguments_projection_names,
+    const ProjectionNames & parameters_projection_names,
+    IdentifierResolveScope & scope)
+{
+    auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+
+    if (!transform_null_in)
+    {
+        auto [result_node, proj_names] = makeNullSafeHas(array_arg, element_arg, arguments_projection_names, scope);
+        if (is_not_in)
+        {
+            result_node = createNotWrapper(result_node);
+            resolveFunction(result_node, scope);
+        }
+        node = result_node;
+        return proj_names;
+    }
+
+    auto has_fn = std::make_shared<FunctionNode>("has");
+    has_fn->getArguments().getNodes() = {array_arg, element_arg};
+    QueryTreeNodePtr result_node = has_fn;
+    resolveFunction(result_node, scope);
+
+    if (is_not_in)
+    {
+        result_node = createNotWrapper(result_node);
+        resolveFunction(result_node, scope);
+    }
+    node = result_node;
+    return ProjectionNames{proj};
 }
 
 /// handles special case: NULL IN (tuple) with transform_null_in enabled
@@ -658,7 +705,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 evaluateScalarSubqueryIfNeeded(new_exists_argument, scope, true);
                 auto res_col = ColumnUInt8::create();
                 const auto * const_node = new_exists_argument->as<ConstantNode>();
-                res_col->getData().push_back(const_node->getColumn()->isNullAt(0) ? 0 : 1);
+                res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->isNullAt(0) ? 0 : 1));
                 ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
                 auto tme_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
                 auto res = tme_const_node->getValueStringRepresentation();
@@ -798,110 +845,67 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             /// If it's a function node like array(..) or tuple(..), consider rewriting them to 'has':
             if (auto * non_const_set_candidate = in_second_argument->as<FunctionNode>())
             {
-                bool left_is_null = isNullConstant(in_first_argument);
                 const auto & candidate_name = non_const_set_candidate->getFunctionName();
-                bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn" ||
-                                  function_name == "notNullIn" || function_name == "globalNotNullIn");
+                const bool is_not_in = (function_name == "notIn" || function_name == "globalNotIn" ||
+                                        function_name == "notNullIn" || function_name == "globalNotNullIn");
+                const bool transform_null_in = scope.context->getSettingsRef()[Setting::transform_null_in];
+                auto & fn_args = function_node.getArguments().getNodes();
 
-                /// Case 1: array(..) node or any function returning Array type
-                if (candidate_name == "array" || isArray(non_const_set_candidate->getResultType()))
-                {
-                    /// convert to has() by swapping arguments
-                    function_name = "has";
-                    is_special_function_in = false;
-                    auto & fn_args = function_node.getArguments().getNodes();
-                    std::swap(fn_args[0], fn_args[1]);
+                /// the type of the second argument
+                bool is_array_type = (candidate_name == "array") ||
+                    (non_const_set_candidate->isResolved() && isArray(non_const_set_candidate->getResultType()));
+                bool is_tuple_type = (candidate_name == "tuple");
+                bool is_not_array_or_tuple_type = non_const_set_candidate->isResolved() &&
+                    !isArray(non_const_set_candidate->getResultType()) &&
+                    !isTuple(non_const_set_candidate->getResultType());
 
-                    if (!scope.context->getSettingsRef()[Setting::transform_null_in])
-                    {
-                        auto [wrapped_node, proj_names] = makeNullSafeHas(
-                            fn_args[0], fn_args[1], arguments_projection_names, scope);
-                        if (is_not_in)
-                        {
-                            auto not_fn = std::make_shared<FunctionNode>("not");
-                            not_fn->getArguments().getNodes().push_back(wrapped_node);
-                            resolveFunction(wrapped_node = not_fn, scope);
-                        }
-                        node = wrapped_node;
-                        return proj_names;
-                    }
+                /// Case 1: array(..) or any function returning Array type -> rewrite to has()
+                if (is_array_type)
+                    return buildHasExpression(node, fn_args[1], fn_args[0], is_not_in, transform_null_in,
+                        arguments_projection_names, parameters_projection_names, scope);
 
-                    if (is_not_in)
-                    {
-                        /// Wrap has() result with NOT for notIn/globalNotIn
-                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
-                        resolveFunction(node, scope);
-                        auto not_fn = std::make_shared<FunctionNode>("not");
-                        not_fn->getArguments().getNodes().push_back(node);
-                        node = not_fn;
-                        resolveFunction(node, scope);
-                        return ProjectionNames{proj};
-                    }
-                }
-                /// Case 2: tuple(..) node - rewrite into an array
-                else if (candidate_name == "tuple")
+                /// Case 2: tuple(..) -> convert to array, then rewrite to has()
+                /// If the left-hand side is a lambda, do not rewrite
+                /// Lambdas are rejected later by getLambdaArgumentTypes() with a proper error
+                if (is_tuple_type && in_first_argument->getNodeType() != QueryTreeNodeType::LAMBDA)
                 {
                     auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
+                    const bool left_is_null = isNullConstant(in_first_argument);
 
-                    /// If the left-hand side is a lambda, do not rewrite
-                    /// Lambdas are rejected later by getLambdaArgumentTypes() with a proper error
-                    if (in_first_argument->getNodeType() == QueryTreeNodeType::LAMBDA)
+                    /// handling for NULL IN (tuple)
+                    if (left_is_null)
                     {
-                        /// Do nothing; leave IN as-is
-                    }
-                    else
-                    {
-                        /// special handling for NULL IN (tuple) with transform_null_in enabled
-                        if (left_is_null && scope.context->getSettingsRef()[Setting::transform_null_in])
-                        {
+                        if (transform_null_in)
                             return handleNullInTuple(tuple_args, function_name,
-                                                parameters_projection_names,
-                                                arguments_projection_names, scope, node);
-                        }
+                                parameters_projection_names, arguments_projection_names, scope, node);
 
-                        if (left_is_null && !scope.context->getSettingsRef()[Setting::transform_null_in])
-                        {
-                            auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
-                            auto null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
-                            node = std::make_shared<ConstantNode>(Field{}, null_type);
-                            return ProjectionNames{proj};
-                        }
-
-                        /// convert tuple to array with proper type handling
-                        in_second_argument = convertTupleToArray(tuple_args, in_first_argument, scope);
-
-                        /// convert to has() and handle null-safety
-                        function_name = "has";
-                        is_special_function_in = false;
-                        auto & fn_args = function_node.getArguments().getNodes();
-                        std::swap(fn_args[0], fn_args[1]);
-
-                        if (!scope.context->getSettingsRef()[Setting::transform_null_in])
-                        {
-                            auto [wrapped_node, proj_names] = makeNullSafeHas(
-                                fn_args[0], fn_args[1], arguments_projection_names, scope);
-                            if (is_not_in)
-                            {
-                                auto not_fn = std::make_shared<FunctionNode>("not");
-                                not_fn->getArguments().getNodes().push_back(wrapped_node);
-                                resolveFunction(wrapped_node = not_fn, scope);
-                            }
-                            node = wrapped_node;
-                            return proj_names;
-                        }
-
-                        if (is_not_in)
-                        {
-                            /// Wrap has() result with NOT for notIn/globalNotIn
-                            auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
-                            resolveFunction(node, scope);
-                            auto not_fn = std::make_shared<FunctionNode>("not");
-                            not_fn->getArguments().getNodes().push_back(node);
-                            node = not_fn;
-                            resolveFunction(node, scope);
-                            return ProjectionNames{proj};
-                        }
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        node = std::make_shared<ConstantNode>(Field{},
+                            std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+                        return ProjectionNames{proj};
                     }
+
+                    /// convert tuple to array and rewrite to has()
+                    QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope);
+                    return buildHasExpression(node, array_arg, in_first_argument, is_not_in, transform_null_in,
+                        arguments_projection_names, parameters_projection_names, scope);
+                }
+
+                /// Case 3: scalar-returning function -> rewrite to ifNull(equals/notEquals, default)
+                /// We wrap with ifNull to preserve IN's non-nullable behavior (NULL → 0 for IN, 1 for NOT IN)
+                if (is_not_array_or_tuple_type)
+                {
+                    auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                    auto eq_fn = std::make_shared<FunctionNode>(is_not_in ? "notEquals" : "equals");
+                    eq_fn->getArguments().getNodes() = {fn_args[0], fn_args[1]};
+
+                    auto default_val = std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u});
+                    auto ifnull_fn = std::make_shared<FunctionNode>("ifNull");
+                    ifnull_fn->getArguments().getNodes() = {eq_fn, default_val};
+
+                    node = ifnull_fn;
+                    resolveFunction(node, scope);
+                    return ProjectionNames{proj};
                 }
             }
         }
@@ -1167,15 +1171,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     function_name,
                     function_node.formatASTForErrorMessage());
             }
-
-            frame = WindowFrame{
-                .is_default = false,
-                .type = WindowFrame::FrameType::ROWS,
-                .begin_type = WindowFrame::BoundaryType::Unbounded,
-                .begin_preceding = true,
-                .end_type = WindowFrame::BoundaryType::Unbounded,
-                .end_preceding = false,
-            };
         }
 
         if (window_node_is_identifier)

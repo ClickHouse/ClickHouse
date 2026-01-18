@@ -300,7 +300,7 @@ void ColumnSparse::insertManyDefaults(size_t length)
 
 void ColumnSparse::popBack(size_t n)
 {
-    assert(n < _size);
+    assert(n <= _size);
 
     auto & offsets_data = getOffsetsData();
     size_t new_size = _size - n;
@@ -357,7 +357,7 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
 
     Filter values_filter;
     values_filter.reserve_exact(values->size());
-    values_filter.push_back(1);
+    values_filter.push_back(static_cast<UInt8>(1));
     size_t values_result_size_hint = 1;
 
     size_t res_offset = 0;
@@ -371,13 +371,13 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
             if (filt[i])
             {
                 res_offsets_data.push_back(res_offset);
-                values_filter.push_back(1);
+                values_filter.push_back(static_cast<UInt8>(1));
                 ++res_offset;
                 ++values_result_size_hint;
             }
             else
             {
-                values_filter.push_back(0);
+                values_filter.push_back(static_cast<UInt8>(0));
             }
             offset_it.increaseCurrentOffset();
         }
@@ -407,7 +407,7 @@ void ColumnSparse::filter(const Filter & filt)
 
     Filter values_filter;
     values_filter.reserve_exact(values->size());
-    values_filter.push_back(1);
+    values_filter.push_back(static_cast<UInt8>(1));
 
     size_t res_offset = 0;
     auto offset_it = begin();
@@ -420,13 +420,13 @@ void ColumnSparse::filter(const Filter & filt)
             if (filt[i])
             {
                 res_offsets_data[res_offsets_pos] = res_offset;
-                values_filter.push_back(1);
+                values_filter.push_back(static_cast<UInt8>(1));
                 ++res_offsets_pos;
                 ++res_offset;
             }
             else
             {
-                values_filter.push_back(0);
+                values_filter.push_back(static_cast<UInt8>(0));
             }
             offset_it.increaseCurrentOffset();
         }

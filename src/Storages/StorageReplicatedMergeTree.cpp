@@ -2276,7 +2276,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     for (auto & detached_part_info : detached_parts)
     {
         chassert(rename_parts.old_and_new_names.empty());
-        rename_parts.addPart(detached_part_info.dir_name, "attaching_" + detached_part_info.dir_name, detached_part_info.disk);
+        rename_parts.addPart(detached_part_info.getPartNameV1(), detached_part_info.dir_name, "attaching_" + detached_part_info.dir_name, detached_part_info.disk);
 
         try
         {
@@ -2290,7 +2290,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
         }
 
         const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
-        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_name, getReadSettings())
+        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_dir, getReadSettings())
             .withPartFormatFromDisk()
             .build();
 
@@ -2312,7 +2312,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
                 try
                 {
                     part->renameToDetached("broken", /* ignore_error*/ false);
-                    rename_parts.old_and_new_names.front().old_name.clear();
+                    rename_parts.old_and_new_names.front().old_dir.clear();
                 }
                 catch (...)
                 {
@@ -2399,7 +2399,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
 
             chassert(renamed_parts.renamed && renamed_parts.old_and_new_names.size() == 1);
-            renamed_parts.old_and_new_names.front().old_name.clear();
+            renamed_parts.old_and_new_names.front().old_dir.clear();
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
@@ -6773,8 +6773,8 @@ String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const 
         /// The date range is all month long.
         const auto & lut = DateLUT::serverTimezoneInstance();
         time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(part_info.getPartitionId() + "01"));
-        DayNum left_date = DayNum(lut.toDayNum(start_time).toUnderType());
-        DayNum right_date = DayNum(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
+        DayNum left_date = DayNum(static_cast<DayNum::UnderlyingType>(lut.toDayNum(start_time)));
+        DayNum right_date = DayNum(left_date.toUnderType() + lut.daysInMonth(start_time) - 1);
         return part_info.getPartNameV0(left_date, right_date);
     }
 
@@ -6889,9 +6889,18 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
 
     has_metadata_in_zookeeper = true;
 
+    PartitionCommand command;
+    command.part = true;
+    command.type = PartitionCommand::ATTACH_PARTITION;
+
     if (is_first_replica)
-        for (const String& part_name : active_parts_names)
-            attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
+    {
+        for (const auto & part_name : active_parts_names)
+        {
+            command.partition = std::make_shared<ASTLiteral>(part_name);
+            attachPartition(command, metadata_snapshot, getContext());
+        }
+    }
 
     if (!is_called_during_attach)
     {
@@ -6988,10 +6997,7 @@ void StorageReplicatedMergeTree::truncate(
 
 
 PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
-    const ASTPtr & partition,
-    const StorageMetadataPtr & metadata_snapshot,
-    bool attach_part,
-    ContextPtr query_context)
+    const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context)
 {
     /// Allow ATTACH PARTITION on readonly replica when restoring it.
     if (!are_restoring_replica)
@@ -6999,7 +7005,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
 
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
-    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
+    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
     ReplicatedMergeTreeSink output(
@@ -7023,7 +7029,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
 
         output.writeExistingPart(loaded_parts[i]);
 
-        renamed_parts.old_and_new_names[i].old_name.clear();
+        renamed_parts.old_and_new_names[i].old_dir.clear();
 
         LOG_DEBUG(log, "Attached part {} as {}", old_name, loaded_parts[i]->name);
 
