@@ -39,10 +39,15 @@ select (*) from test_azure_mt order by tuple(a, b) limit 10;
 ${CLICKHOUSE_CLIENT} --query "optimize table test_azure_mt final"
 
 ${CLICKHOUSE_CLIENT} -m --query "
+alter table test_azure_mt update c = 0 where a % 2 = 1 SETTINGS mutations_sync = 2;
+select count(*) from test_azure_mt;
+select (*) from test_azure_mt order by tuple(a, b) limit 10;
+"
+
+${CLICKHOUSE_CLIENT} -m --query "
 alter table test_azure_mt add projection test_azure_mt_projection (select * order by b)" 2>&1 | grep -Fq "SUPPORT_IS_DISABLED"
 
 ${CLICKHOUSE_CLIENT} -nm --query "
-alter table test_azure_mt update c = 0 where a % 2 = 1;
 alter table test_azure_mt add column d Int64 after c;
 alter table test_azure_mt drop column c;
 " 2>&1 | grep -Fq "SUPPORT_IS_DISABLED"

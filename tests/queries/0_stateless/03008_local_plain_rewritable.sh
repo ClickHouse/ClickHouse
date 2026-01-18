@@ -38,10 +38,23 @@ select (*) from 03008_test_local_mt order by tuple(a, b) limit 10;
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "
-alter table 03008_test_local_mt update c = 0 where a % 2 = 1;
-alter table 03008_test_local_mt add column d Int64 after c;
-alter table 03008_test_local_mt drop column c;
-" 2>&1 | grep -Fq "SUPPORT_IS_DISABLED"
+alter table 03008_test_local_mt update c = 0 where a % 2 = 1 SETTINGS mutations_sync = 2;
+alter table 03008_test_local_mt add column d Int64 after c SETTINGS alter_sync = 2;
+"
+
+${CLICKHOUSE_CLIENT} -m --query "
+select count(*) from 03008_test_local_mt;
+select (*) from 03008_test_local_mt order by tuple(a, b) limit 10;
+"
+
+${CLICKHOUSE_CLIENT} -m --query "
+alter table 03008_test_local_mt drop column c SETTINGS alter_sync = 2;
+"
+
+${CLICKHOUSE_CLIENT} -m --query "
+select count(*) from 03008_test_local_mt;
+select (*) from 03008_test_local_mt order by tuple(a, b) limit 10;
+"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 truncate table 03008_test_local_mt;
