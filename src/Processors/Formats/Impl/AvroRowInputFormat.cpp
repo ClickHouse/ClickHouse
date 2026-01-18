@@ -1,9 +1,12 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #if USE_AVRO
 
-#include <numeric>
+#include <atomic>
+#include <mutex>
 
 #include <Core/Field.h>
+
+#include <Common/Allocator.h>
 
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
@@ -1010,6 +1013,155 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
     }
 }
 
+AvroDeserializerFactory::AvroDeserializerFactory(
+    const Block & header_,
+    avro::ValidSchema schema_,
+    bool allow_missing_fields_,
+    bool null_as_default_,
+    const FormatSettings & settings_)
+    : header(header_)
+    , schema(std::move(schema_))
+    , allow_missing_fields(allow_missing_fields_)
+    , null_as_default(null_as_default_)
+    , settings(settings_)
+{
+}
+
+std::unique_ptr<AvroDeserializer> AvroDeserializerFactory::create() const
+{
+    return std::make_unique<AvroDeserializer>(
+        header, schema, allow_missing_fields, null_as_default, settings);
+}
+
+
+/// Segmentation engine for Avro format.
+/// Reads complete Avro blocks from input into memory segment.
+/// Each block is stored as: objectCount (varint) + byteCount (varint) + compressedData
+/// Sync markers are verified and consumed but NOT stored in the segment.
+std::pair<bool, size_t> avroFileSegmentationEngine(
+    ReadBuffer & in,
+    DB::Memory<> & memory,
+    size_t min_bytes,
+    size_t max_rows,
+    const std::shared_ptr<AvroHeaderState> & header_state)
+{
+    size_t total_rows = 0;
+    size_t initial_size = memory.size();
+
+    while (!in.eof())
+    {
+        /// Check termination conditions
+        if ((memory.size() - initial_size >= min_bytes) && total_rows > 0)
+            break;
+        if (max_rows > 0 && total_rows >= max_rows)
+            break;
+
+        /// Read block directly into memory: objectCount (varint) + byteCount (varint) + compressedData
+        size_t size_before = memory.size();
+        int64_t object_count = AvroBlockReader::readBlockInto(in, memory);
+
+        if (in.eof() && memory.size() == size_before)
+            break;
+
+        /// Verify and consume sync marker (16 bytes)
+        if (!AvroBlockReader::verifySyncMarker(in, header_state->sync_marker))
+        {
+            /// EOF after reading block data - this is fine, we got the last block
+            break;
+        }
+
+        total_rows += static_cast<size_t>(object_count);
+    }
+
+    return {!in.eof(), total_rows};
+}
+
+
+/// AvroSegmentInputFormat implementation
+
+AvroSegmentInputFormat::AvroSegmentInputFormat(
+    ReadBuffer & in_,
+    const Block & header_,
+    std::shared_ptr<AvroHeaderState> header_state_,
+    std::shared_ptr<AvroDeserializerFactory> deserializer_factory_,
+    const FormatSettings & format_settings_)
+    : IInputFormat(std::make_shared<const Block>(header_), &in_)
+    , header_state(std::move(header_state_))
+    , deserializer(deserializer_factory_->create())
+    , format_settings(format_settings_)
+{
+}
+
+Chunk AvroSegmentInputFormat::read()
+{
+    if (segment_finished)
+        return {};
+
+    auto & segment_buf = getReadBuffer();
+
+    const auto & header = getPort().getHeader();
+    MutableColumns columns = header.cloneEmptyColumns();
+    size_t num_rows = 0;
+
+    /// Read all rows from all blocks in the segment
+    while (true)
+    {
+        /// Need to read a new block?
+        if (current_block_remaining_rows == 0)
+        {
+            if (segment_buf.eof())
+            {
+                segment_finished = true;
+                break;
+            }
+
+            /// Read block header from segment: objectCount + byteCount + compressedData
+            Int64 object_count;
+            Int64 byte_count;
+            DB::readVarInt(object_count, segment_buf);
+            DB::readVarInt(byte_count, segment_buf);
+
+            if (byte_count < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid Avro block: negative byte count {}", byte_count);
+
+            /// Read compressed data
+            std::string compressed_data;
+            compressed_data.resize(static_cast<size_t>(byte_count));
+            segment_buf.readStrict(compressed_data.data(), static_cast<size_t>(byte_count));
+
+            /// Decompress
+            AvroBlockReader::decompressBlock(
+                compressed_data.data(),
+                compressed_data.size(),
+                header_state->codec,
+                decompressed_data);
+
+            /// Create decoder for decompressed data
+            input_stream = avro::memoryInputStream(
+                reinterpret_cast<const uint8_t *>(decompressed_data.data()),
+                decompressed_data.size());
+            decoder = avro::binaryDecoder();
+            decoder->init(*input_stream);
+
+            current_block_remaining_rows = object_count;
+        }
+
+        /// Deserialize all remaining rows from current block
+        while (current_block_remaining_rows > 0)
+        {
+            RowReadExtension ext;
+            deserializer->deserializeRow(columns, *decoder, ext);
+            ++num_rows;
+            --current_block_remaining_rows;
+        }
+    }
+
+    if (num_rows == 0)
+        return {};
+
+    return Chunk(std::move(columns), num_rows);
+}
+
 
 AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_), format_settings(format_settings_)
@@ -1445,6 +1597,98 @@ void registerAvroSchemaReader(FormatFactory & factory)
 
 }
 
+/// AvroParallelParsingContext implementation
+
+AvroParallelParsingContext::AvroParallelParsingContext(const FormatSettings & settings_, const Block & header_)
+    : settings(settings_)
+    , header(header_)
+    , header_state(std::make_shared<AvroHeaderState>())
+    , header_parsed(std::make_shared<std::atomic<bool>>(false))
+    , header_mutex(std::make_shared<std::mutex>())
+    , deserializer_factory(std::make_shared<std::shared_ptr<AvroDeserializerFactory>>())
+{
+}
+
+std::pair<FormatFactory::FileSegmentationEngine, FormatFactory::InternalParserCreator>
+AvroParallelParsingContext::createEngineAndParser()
+{
+    /// Segmentation engine: reads Avro blocks from the file.
+    /// On first call, parses the file header to extract schema, codec, sync_marker.
+    FormatFactory::FileSegmentationEngine segmentation_engine =
+        [ctx_header_state = header_state,
+         ctx_header_parsed = header_parsed,
+         ctx_header_mutex = header_mutex,
+         ctx_deserializer_factory = deserializer_factory,
+         ctx_settings = settings,
+         ctx_header = header]
+        (ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows) -> std::pair<bool, size_t>
+    {
+        /// Parse header on first call (thread-safe).
+        if (!ctx_header_parsed->load())
+        {
+            std::lock_guard lock(*ctx_header_mutex);
+            if (!ctx_header_parsed->load())
+            {
+                /// Parse the header directly from the ReadBuffer.
+                *ctx_header_state = AvroBlockReader::parseHeader(in);
+
+                /// Create the deserializer factory now that we have the schema.
+                *ctx_deserializer_factory = std::make_shared<AvroDeserializerFactory>(
+                    ctx_header,
+                    ctx_header_state->schema,
+                    ctx_settings.avro.allow_missing_fields,
+                    ctx_settings.null_as_default,
+                    ctx_settings);
+
+                ctx_header_parsed->store(true);
+            }
+        }
+
+        return avroFileSegmentationEngine(in, memory, min_bytes, max_rows, ctx_header_state);
+    };
+
+    /// Parser creator: creates AvroSegmentInputFormat instances for each segment.
+    FormatFactory::InternalParserCreator parser_creator =
+        [ctx_header_state = header_state,
+         ctx_deserializer_factory = deserializer_factory,
+         ctx_settings = settings,
+         ctx_header = header]
+        (ReadBuffer & segment_buf) -> InputFormatPtr
+    {
+        return std::make_shared<AvroSegmentInputFormat>(
+            segment_buf,
+            ctx_header,
+            ctx_header_state,
+            *ctx_deserializer_factory,
+            ctx_settings);
+    };
+
+    return {std::move(segmentation_engine), std::move(parser_creator)};
+}
+
+void registerFileSegmentationEngineAvro(FormatFactory & factory)
+{
+    /// Register a checker that disables parallel parsing when the setting is off.
+    factory.registerNonTrivialPrefixAndSuffixChecker("Avro", [](ReadBuffer &)
+    {
+        /// Return false to not disable parallel parsing based on prefix/suffix.
+        /// The segmentation engine creator handles the setting check.
+        return false;
+    });
+
+    /// Register the combined segmentation engine and parser creator for Avro.
+    factory.registerFileSegmentationEngineAndParserCreator("Avro",
+        [](const FormatSettings & settings, const Block & header)
+        {
+            if (!settings.avro.parallel_parsing)
+                return std::pair<FormatFactory::FileSegmentationEngine,
+                                FormatFactory::InternalParserCreator>{{}, {}};
+
+            auto context = std::make_shared<AvroParallelParsingContext>(settings, header);
+            return context->createEngineAndParser();
+        });
+}
+
 
 }
 
@@ -1458,6 +1702,8 @@ void registerInputFormatAvro(FormatFactory &)
 }
 
 void registerAvroSchemaReader(FormatFactory &) {}
+
+void registerFileSegmentationEngineAvro(FormatFactory &) {}
 }
 
 #endif

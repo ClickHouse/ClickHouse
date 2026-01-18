@@ -169,6 +169,7 @@ struct FormatSettings
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
+        bool parallel_parsing = false;
         String string_column_pattern;
         UInt64 output_rows_in_file = 1;
     } avro{};

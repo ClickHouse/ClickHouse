@@ -10,8 +10,11 @@
 
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/AvroBlockReader.h>
 
 #include <DataFile.hh>
 #include <Decoder.hh>
@@ -154,6 +157,33 @@ private:
     const FormatSettings & settings;
 };
 
+/// Factory for creating per-thread AvroDeserializer instances.
+/// Thread-safe: stores only immutable configuration.
+/// Each call to create() returns an independent deserializer instance.
+class AvroDeserializerFactory
+{
+public:
+    AvroDeserializerFactory(
+        const Block & header,
+        avro::ValidSchema schema,
+        bool allow_missing_fields,
+        bool null_as_default,
+        const FormatSettings & settings);
+
+    /// Create a new deserializer instance (call once per parser thread)
+    std::unique_ptr<AvroDeserializer> create() const;
+
+    /// Get the output block header
+    const Block & getHeader() const { return header; }
+
+private:
+    Block header;
+    avro::ValidSchema schema;
+    bool allow_missing_fields;
+    bool null_as_default;
+    FormatSettings settings;  // Copy, not reference (thread safety)
+};
+
 class AvroRowInputFormat final : public IRowInputFormat
 {
 public:
@@ -202,6 +232,68 @@ private:
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
     FormatSettings format_settings;
+};
+
+/// Input format for parsing a segment of pre-read Avro blocks.
+/// Used by ParallelParsingInputFormat for parallel Avro parsing.
+/// Each segment contains one or more complete Avro blocks (without sync markers).
+class AvroSegmentInputFormat : public IInputFormat
+{
+public:
+    AvroSegmentInputFormat(
+        ReadBuffer & in_,
+        const Block & header_,
+        std::shared_ptr<AvroHeaderState> header_state_,
+        std::shared_ptr<AvroDeserializerFactory> deserializer_factory_,
+        const FormatSettings & format_settings_);
+
+    String getName() const override { return "AvroSegmentInputFormat"; }
+
+protected:
+    Chunk read() override;
+
+private:
+    std::shared_ptr<AvroHeaderState> header_state;
+    std::unique_ptr<AvroDeserializer> deserializer;
+    FormatSettings format_settings;
+
+    /// Current block state
+    bool segment_finished = false;
+    int64_t current_block_remaining_rows = 0;
+    std::string decompressed_data;
+    std::unique_ptr<avro::InputStream> input_stream;
+    avro::DecoderPtr decoder;
+};
+
+/// Segmentation engine function for Avro format.
+/// Reads complete Avro blocks from input into memory segment.
+/// Returns {more_data_available, row_count}.
+std::pair<bool, size_t> avroFileSegmentationEngine(
+    ReadBuffer & in,
+    DB::Memory<> & memory,
+    size_t min_bytes,
+    size_t max_rows,
+    const std::shared_ptr<AvroHeaderState> & header_state);
+
+/// Helper class to manage shared state for Avro parallel parsing.
+/// Encapsulates the synchronization and state sharing between
+/// segmentation engine and parser instances.
+class AvroParallelParsingContext
+{
+public:
+    AvroParallelParsingContext(const FormatSettings & settings_, const Block & header_);
+
+    /// Create both segmentation engine and parser creator with shared state.
+    std::pair<FormatFactory::FileSegmentationEngine, FormatFactory::InternalParserCreator>
+    createEngineAndParser();
+
+private:
+    FormatSettings settings;
+    Block header;
+    std::shared_ptr<AvroHeaderState> header_state;
+    std::shared_ptr<std::atomic<bool>> header_parsed;
+    std::shared_ptr<std::mutex> header_mutex;
+    std::shared_ptr<std::shared_ptr<AvroDeserializerFactory>> deserializer_factory;
 };
 
 class AvroSchemaReader : public ISchemaReader

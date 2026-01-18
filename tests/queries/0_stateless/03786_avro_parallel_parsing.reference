@@ -1,0 +1,16 @@
+=== Test 1: Basic parallel vs sequential - aggregate comparison ===
+OK: Sequential and parallel results match
+1249975000	50000	238894
+=== Test 2: Row-by-row hash comparison ===
+OK: Row hashes match
+=== Test 3: Larger file with multiple data types ===
+OK: Larger file results match
+4999950000	100000	1000	704982704	50000
+=== Test 4: Verify all rows are present (no duplicates, no missing) ===
+OK: All rows present, no duplicates
+0	24999	25000	312487500
+=== Test 5: Different thread counts ===
+OK: All thread counts produce same results
+=== Test 6: Default setting (parallel parsing disabled) ===
+OK: Default value is disabled
+=== All tests passed ===

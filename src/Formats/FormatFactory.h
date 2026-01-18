@@ -79,6 +79,16 @@ public:
     using FileSegmentationEngineCreator = std::function<FileSegmentationEngine(
         const FormatSettings & settings)>;
 
+    /// For formats where segmentator and parsers need to share state (e.g., Avro).
+    /// The internal parser creator is used instead of the regular input_creator for parallel parsing segments.
+    using InternalParserCreator = std::function<InputFormatPtr(ReadBuffer & buf)>;
+
+    /// Creates both segmentation engine and a custom internal parser creator that share state.
+    /// Used when formats need to parse a header once and share it across all segment parsers.
+    using FileSegmentationEngineAndParserCreator = std::function<std::pair<FileSegmentationEngine, InternalParserCreator>(
+        const FormatSettings & settings,
+        const Block & header)>;
+
     std::vector<String> getAllRegisteredNames() const override;
 private:
     // On the input side, there are two kinds of formats:
@@ -155,6 +165,7 @@ private:
         RandomAccessInputCreator random_access_input_creator;
         OutputCreator output_creator;
         FileSegmentationEngineCreator file_segmentation_engine_creator;
+        FileSegmentationEngineAndParserCreator file_segmentation_engine_and_parser_creator;
         SchemaReaderCreator schema_reader_creator;
         ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
@@ -236,6 +247,10 @@ public:
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
 
     void registerFileSegmentationEngineCreator(const String & name, FileSegmentationEngineCreator file_segmentation_engine_creator);
+
+    /// Register a creator that provides both segmentation engine and custom parser creator.
+    /// Used for formats where segmentator and parsers need shared state (e.g., Avro with headers).
+    void registerFileSegmentationEngineAndParserCreator(const String & name, FileSegmentationEngineAndParserCreator creator);
 
     void registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker);
 
@@ -323,6 +338,20 @@ private:
         const Settings & settings,
         bool is_remote_fs,
         const FormatParserSharedResourcesPtr & parser_shared_resources) const;
+
+    /// Attempts to create a ParallelParsingInputFormat using the format's segmentation engine.
+    /// Returns nullptr if parallel parsing is not available or the format opts out.
+    static InputFormatPtr tryCreateParallelParsingFormat(
+        ReadBuffer & buf,
+        const Block & sample,
+        const Creators & creators,
+        const RowInputFormatParams & row_input_format_params,
+        const FormatSettings & format_settings,
+        const String & format_name,
+        size_t max_parsing_threads,
+        size_t min_chunk_bytes,
+        size_t max_block_size,
+        bool is_server);
 };
 
 }
