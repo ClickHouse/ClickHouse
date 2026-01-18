@@ -553,7 +553,8 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
         result_node = atom_node_ptr;
 
         if (atom_node_ptr->type == ActionsDAG::ActionType::INPUT ||
-            atom_node_ptr->type == ActionsDAG::ActionType::FUNCTION)
+            atom_node_ptr->type == ActionsDAG::ActionType::FUNCTION ||
+            (atom_node_ptr->type == ActionsDAG::ActionType::COLUMN && !WhichDataType(atom_node_ptr->result_type).isSet()))
         {
             auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
             result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
