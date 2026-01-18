@@ -17,6 +17,7 @@ namespace DB
 
 struct Range;
 struct RangeRef;
+struct IndexAnalysisContext;
 
 class Context;
 class IFunctionBase;
@@ -221,7 +222,12 @@ public:
     bool hasMonotonicFunctionsChain() const;
 
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
-    BoolMask checkInRange(std::span<const RangeRef> key_ranges, const DataTypes & data_types, bool single_point = false, ColumnsWithTypeAndName * key_columns = nullptr) const;
+    BoolMask checkInRange(
+        std::span<const RangeRef> key_ranges,
+        const DataTypes & data_types,
+        bool single_point,
+        ColumnsWithTypeAndName & key_columns,
+        IndexAnalysisContext & index_analysis_context) const;
 
     const Columns & getOrderedSet() const { return ordered_set; }
 

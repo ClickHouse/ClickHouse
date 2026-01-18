@@ -4,10 +4,13 @@
 #include <memory>
 #include <mutex>
 #include <span>
+#include <unordered_map>
 
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 #include <Core/RangeRef.h>
+
+#include <Common/SipHash.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -31,6 +34,37 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
 class MergeTreeSetIndex;
+
+/// Context for analysis during index evaluation for Primary Key. Currently, it is only used in the
+/// ColumnValueRef path, and only contains the cache of index position of function result columns
+/// when applying monotonic functions to index columns.
+struct IndexAnalysisContext
+{
+    struct FunctionResultColumnKey
+    {
+        const IFunctionBase * function = nullptr;
+        size_t input_column_idx = 0;
+
+        bool operator==(const FunctionResultColumnKey & other) const noexcept
+        {
+            return function == other.function && input_column_idx == other.input_column_idx;
+        }
+    };
+
+    struct FunctionResultColumnKeyHash
+    {
+        size_t operator()(const FunctionResultColumnKey & key) const noexcept
+        {
+            SipHash hash;
+            hash.update(reinterpret_cast<uintptr_t>(key.function));
+            hash.update(static_cast<UInt64>(key.input_column_idx));
+            return static_cast<size_t>(hash.get64());
+        }
+    };
+
+    using FunctionResultColumnIndex = std::unordered_map<FunctionResultColumnKey, size_t, FunctionResultColumnKeyHash>;
+    FunctionResultColumnIndex function_result_column_to_index;
+};
 
 
 /// Canonize the predicate
@@ -113,7 +147,8 @@ public:
 
     BoolMask checkInHyperrectangle(
         std::span<const RangeRef> hyperrectangle,
-        ColumnsWithTypeAndName * key_columns_block,
+        ColumnsWithTypeAndName & key_columns_block,
+        IndexAnalysisContext & index_analysis_context,
         const DataTypes & data_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
@@ -131,10 +166,11 @@ public:
     /// Same as checkInRange, but avoids materialization of Field values from columns.
     BoolMask checkInRange(
         size_t used_key_size,
-        ColumnsWithTypeAndName * key_columns_block,
+        ColumnsWithTypeAndName & key_columns_block,
         const ColumnValueRef * left_keys,
         const ColumnValueRef * right_keys,
         const DataTypes & data_types,
+        IndexAnalysisContext & index_analysis_context,
         BoolMask initial_mask = BoolMask(false, false)) const;
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
@@ -203,6 +239,18 @@ public:
         Range key_range,
         const MonotonicFunctionsChain & functions,
         DataTypePtr current_type,
+        bool single_point = false);
+
+    /// Same as applyMonotonicFunctionsChainToRange(), but works on RangeRef to avoid Field materialization
+    /// and additionally can use cache to quickly get the index of function's result columns in key_columns.
+    /// The cache is stored in index_analysis_context.
+    static std::optional<RangeRef> applyMonotonicFunctionsChainToRange(
+        RangeRef key_range,
+        size_t key_column_idx,
+        ColumnsWithTypeAndName & key_columns,
+        const MonotonicFunctionsChain & functions,
+        DataTypePtr current_type,
+        IndexAnalysisContext & index_analysis_context,
         bool single_point = false);
 
     bool matchesExactContinuousRange() const;

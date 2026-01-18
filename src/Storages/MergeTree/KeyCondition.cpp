@@ -3132,48 +3132,54 @@ void KeyCondition::rebuildPreparedRangeForRefs()
 
 static std::optional<size_t> getOrCreateFunctionResultColumnIndex(
     ColumnsWithTypeAndName & key_columns,
+    IndexAnalysisContext & index_analysis_context,
     size_t input_column_idx,
     const FunctionBasePtr & func)
 {
     chassert(func);
 
-    if (input_column_idx >= key_columns.size())
-        return std::nullopt;
+    const IndexAnalysisContext::FunctionResultColumnKey cache_key{func.get(), input_column_idx};
+    if (auto it = index_analysis_context.function_result_column_to_index.find(cache_key);
+        it != index_analysis_context.function_result_column_to_index.end())
+    {
+        const size_t result_idx = it->second;
+        if (result_idx < key_columns.size() && key_columns[result_idx].column)
+            return result_idx;
+    }
+
+    if (unlikely(input_column_idx >= key_columns.size()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid input column index {} for key columns size {}", input_column_idx, key_columns.size());
 
     const ColumnWithTypeAndName input = key_columns[input_column_idx];
     if (!input.column)
         return std::nullopt;
 
+    /// At this stage, we know for sure that func(input) column does not exist in key_columns yet, so it is safe to
+    /// put newly created column at the end of key_columns.
     WriteBufferFromOwnString buf;
     writeText("_", buf);
     writePointerHex(func.get(), buf);
     writeText("_" + toString(input_column_idx), buf);
     const String result_name = buf.str();
 
-    size_t result_idx = key_columns.size();
-    for (size_t i = 0; i < result_idx; ++i)
-    {
-        if (key_columns[i].name == result_name)
-            result_idx = i;
-    }
+    ColumnsWithTypeAndName args{input};
 
-    if (result_idx == key_columns.size())
-    {
-        ColumnsWithTypeAndName args{input};
-        key_columns.emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), result_name});
-        result_idx = key_columns.size() - 1;
-        key_columns[result_idx].column = func->execute(args, key_columns[result_idx].type, input.column->size(), /* dry_run = */ false);
-    }
+    key_columns.emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), result_name});
+    const size_t result_idx = key_columns.size() - 1;
+    key_columns[result_idx].column = func->execute(args, key_columns[result_idx].type, input.column->size(), /* dry_run = */ false);
 
+    const bool inserted = index_analysis_context.function_result_column_to_index.emplace(cache_key, result_idx).second;
+    chassert(inserted);
     return result_idx;
 }
 
-static std::optional<RangeRef> applyMonotonicFunctionsChainToRangeForRefs(
+std::optional<RangeRef> KeyCondition::applyMonotonicFunctionsChainToRange(
     RangeRef key_range,
     size_t key_column_idx,
-    ColumnsWithTypeAndName * key_columns,
-    const KeyCondition::MonotonicFunctionsChain & functions,
+    ColumnsWithTypeAndName & key_columns,
+    const MonotonicFunctionsChain & functions,
     DataTypePtr current_type,
+    IndexAnalysisContext & index_analysis_context,
     bool single_point)
 {
     size_t current_column_idx = key_column_idx;
@@ -3191,14 +3197,11 @@ static std::optional<RangeRef> applyMonotonicFunctionsChainToRangeForRefs(
 
         if (key_range.left.isNormal() || key_range.right.isNormal())
         {
-            if (!key_columns)
-                return {};
-
-            auto result_idx = getOrCreateFunctionResultColumnIndex(*key_columns, current_column_idx, func);
+            auto result_idx = getOrCreateFunctionResultColumnIndex(key_columns, index_analysis_context, current_column_idx, func);
             if (!result_idx)
                 return {};
 
-            const auto * result_col = (*key_columns)[*result_idx].column.get();
+            const auto * result_col = key_columns[*result_idx].column.get();
             if (!result_col)
                 return {};
 
@@ -3230,85 +3233,8 @@ static std::optional<RangeRef> applyMonotonicFunctionsChainToRangeForRefs(
     return key_range;
 }
 
-struct UInt64RangeForCurve
-{
-    UInt64 left = 0;
-    UInt64 right = 0;
-    bool left_included = false;
-    bool right_included = false;
-    bool left_is_negative_infinity = false;
-    bool right_is_positive_infinity = false;
-};
-
-static std::optional<UInt64RangeForCurve> tryGetUInt64RangeForCurve(const Range & range)
-{
-    UInt64RangeForCurve out;
-    out.left_included = range.left_included;
-    out.right_included = range.right_included;
-
-    if (range.left.isNegativeInfinity())
-        out.left_is_negative_infinity = true;
-    else if (range.left.isPositiveInfinity() || range.left.isNull())
-        return {};
-    else
-        out.left = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), range.left);
-
-    if (range.right.isPositiveInfinity())
-        out.right_is_positive_infinity = true;
-    else if (range.right.isNegativeInfinity() || range.right.isNull())
-        return {};
-    else
-        out.right = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), range.right);
-
-    return out;
-}
-
-static bool intersectsRange(const UInt64RangeForCurve & condition, UInt64 range_left, UInt64 range_right)
-{
-    /// [range_left, range_right] is to the left of condition.
-    if (!condition.left_is_negative_infinity)
-    {
-        if (range_right < condition.left)
-            return false;
-        if (range_right == condition.left && !condition.left_included)
-            return false;
-    }
-
-    /// [range_left, range_right] is to the right of condition.
-    if (!condition.right_is_positive_infinity)
-    {
-        if (range_left > condition.right)
-            return false;
-        if (range_left == condition.right && !condition.right_included)
-            return false;
-    }
-
-    return true;
-}
-
-static bool containsRange(const UInt64RangeForCurve & condition, UInt64 range_left, UInt64 range_right)
-{
-    if (!condition.left_is_negative_infinity)
-    {
-        if (range_left < condition.left)
-            return false;
-        if (range_left == condition.left && !condition.left_included)
-            return false;
-    }
-
-    if (!condition.right_is_positive_infinity)
-    {
-        if (range_right > condition.right)
-            return false;
-        if (range_right == condition.right && !condition.right_included)
-            return false;
-    }
-
-    return true;
-}
-
 template <typename F>
-static BoolMask forAnyHyperrectangleForRefs(
+static BoolMask forAnyHyperrectangle(
     size_t key_size,
     const ColumnValueRef * left_keys,
     const ColumnValueRef * right_keys,
@@ -3382,7 +3308,7 @@ static BoolMask forAnyHyperrectangleForRefs(
         hyperrectangle[prefix_size] = RangeRef(left_keys[prefix_size]);
         result = BoolMask::combine(
             result,
-            forAnyHyperrectangleForRefs(
+            forAnyHyperrectangle(
                 key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
 
         if (result.isComplete())
@@ -3396,7 +3322,7 @@ static BoolMask forAnyHyperrectangleForRefs(
         hyperrectangle[prefix_size] = RangeRef(right_keys[prefix_size]);
         result = BoolMask::combine(
             result,
-            forAnyHyperrectangleForRefs(
+            forAnyHyperrectangle(
                 key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
     }
 
@@ -3430,7 +3356,8 @@ BoolMask KeyCondition::checkInRange(
 
 BoolMask KeyCondition::checkInHyperrectangle(
     std::span<const RangeRef> hyperrectangle,
-    ColumnsWithTypeAndName * key_columns_block,
+    ColumnsWithTypeAndName & key_columns_block,
+    IndexAnalysisContext & index_analysis_context,
     const DataTypes & data_types) const
 {
     const auto & prepared = prepared_range_for_refs;
@@ -3478,13 +3405,13 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             if (!element.monotonic_functions_chain.empty())
             {
-                /// This is not fast. We have materialization to Field inside to get monotonicity information.
-                std::optional<RangeRef> new_range = applyMonotonicFunctionsChainToRangeForRefs(
+                std::optional<RangeRef> new_range = applyMonotonicFunctionsChainToRange(
                     key_range,
                     key_column,
                     key_columns_block,
                     element.monotonic_functions_chain,
                     data_types[key_column],
+                    index_analysis_context,
                     single_point);
 
                 if (!new_range)
@@ -3515,196 +3442,181 @@ BoolMask KeyCondition::checkInHyperrectangle(
             if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
                 rpn_stack.back() = !rpn_stack.back();
         }
-        else if (
-            element.function == RPNElement::FUNCTION_IS_NULL
-            || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
-        {
-            const size_t key_column = element.getKeyColumn();
-            if (key_column >= hyperrectangle.size())
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Hyperrectangle size is {}, but requested element at position {} ({})",
-                    hyperrectangle.size(),
-                    key_column,
-                    element.toString());
-            }
-
-            const RangeRef & key_range = hyperrectangle[key_column];
-            const auto & prepared_range = prepared.ranges[i];
-
-            bool intersects = prepared_range.range.intersectsRange(key_range);
-            bool contains = prepared_range.range.containsRange(key_range);
-
-            rpn_stack.emplace_back(intersects, !contains);
-
-            if (element.function == RPNElement::FUNCTION_IS_NULL)
-                rpn_stack.back() = !rpn_stack.back();
-        }
-        else if (
-            element.function == RPNElement::FUNCTION_IN_SET
-            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
-        {
-            if (!element.set_index)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
-
-            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point, key_columns_block));
-
-            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
-                rpn_stack.back() = !rpn_stack.back();
-        }
         else if (element.function == RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
         {
+            /** The case of space-filling curves.
+              * We unpack the range of a space filling curve into hyperrectangles of their arguments,
+              * and then check the intersection of them with the given hyperrectangle from the key condition.
+              *
+              * Note: you might find this code hard to understand,
+              * because there are three different hyperrectangles involved:
+              *
+              * 1. A hyperrectangle derived from the range of the table's sparse index (marks granule): `hyperrectangle`
+              *    We analyze its dimension `key_range`, corresponding to the `key_column`.
+              *    For example, the table's key is a single column `mortonEncode(x, y)`,
+              *    the current granule is [500, 600], and it means that
+              *    mortonEncode(x, y) in [500, 600]
+              *
+              * 2. A hyperrectangle derived from the key condition, e.g.
+              *    `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30` defines: (x, y) in [10, 20] × [20, 30]
+              *
+              * 3. A set of hyperrectangles that we obtain by inverting the space-filling curve on the range:
+              *    From mortonEncode(x, y) in [500, 600]
+              *    We get (x, y) in [30, 31] × [12, 13]
+              *        or (x, y) in [28, 31] × [14, 15];
+              *        or (x, y) in [0, 7] × [16, 23];
+              *        or (x, y) in [8, 11] × [16, 19];
+              *        or (x, y) in [12, 15] × [16, 17];
+              *        or (x, y) in [12, 12] × [18, 18];
+              *
+              *  And we analyze the intersection of (2) and (3).
+              */
+
             const size_t key_column = element.getKeyColumn();
-            if (key_column >= hyperrectangle.size())
-            {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Hyperrectangle size is {}, but requested element at position {} ({})",
-                    hyperrectangle.size(),
-                    key_column,
-                    element.toString());
-            }
 
+            RangeRef key_range_ref = hyperrectangle[key_column];
+
+            /// The only possible result type of a space filling curve is UInt64.
+            /// We also only check bounded ranges.
             const auto type_without_null = removeNullable(recursiveRemoveLowCardinality(data_types[key_column]));
-            if (!WhichDataType(type_without_null).isUInt64())
+            if (WhichDataType(type_without_null).isUInt64()
+                && key_range_ref.left.isNormal()
+                && key_range_ref.right.isNormal()
+                && key_range_ref.left.column
+                && key_range_ref.right.column
+                && key_range_ref.left.column == key_range_ref.right.column)
             {
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
+                UInt64 left = key_range_ref.left.column->getUInt(key_range_ref.left.row);
+                UInt64 right = key_range_ref.right.column->getUInt(key_range_ref.right.row);
 
-            const RangeRef & key_range_ref = hyperrectangle[key_column];
-            if (!key_range_ref.left.isNormal() || !key_range_ref.right.isNormal())
-            {
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
-
-            if (!key_range_ref.left.column || !key_range_ref.right.column || key_range_ref.left.column != key_range_ref.right.column)
-            {
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
-
-            UInt64 left = key_range_ref.left.column->getUInt(key_range_ref.left.row);
-            UInt64 right = key_range_ref.right.column->getUInt(key_range_ref.right.row);
-
-            /// Convert open bounds into closed for UInt64 when possible, like Range::shrinkToIncludedIfPossible().
-            if (!key_range_ref.left_included)
-            {
-                if (left != std::numeric_limits<UInt64>::max())
+                /// Convert open bounds into closed for UInt64 when possible, like Range::shrinkToIncludedIfPossible().
+                if (!key_range_ref.left_included)
                 {
-                    ++left;
+                    if (left != std::numeric_limits<UInt64>::max())
+                        ++left;
+                    else
+                    {
+                        rpn_stack.emplace_back(true, true);
+                        continue;
+                    }
                 }
-                else
+
+                if (!key_range_ref.right_included)
                 {
-                    rpn_stack.emplace_back(true, true);
+                    if (right != std::numeric_limits<UInt64>::min())
+                        --right;
+                    else
+                    {
+                        rpn_stack.emplace_back(true, true);
+                        continue;
+                    }
+                }
+
+                if (left > right)
+                {
+                    /// Empty interval.
+                    rpn_stack.emplace_back(false, false);
                     continue;
                 }
-            }
 
-            if (!key_range_ref.right_included)
-            {
-                if (right != std::numeric_limits<UInt64>::min())
+                size_t num_dimensions = element.space_filling_curve_args_hyperrectangle.size();
+
+                /// Let's support only the case of 2d, because I'm not confident in other cases.
+                if (num_dimensions == 2)
                 {
-                    --right;
+                    BoolMask mask(false, true);
+                    auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)
+                    {
+                        BoolMask current_intersection(true, false);
+                        for (size_t dim = 0; dim < num_dimensions; ++dim)
+                        {
+                            const Range & condition_arg_range = element.space_filling_curve_args_hyperrectangle[dim];
+
+                            const Range curve_arg_range(
+                                curve_hyperrectangle[dim].first, true,
+                                curve_hyperrectangle[dim].second, true);
+
+                            bool intersects = condition_arg_range.intersectsRange(curve_arg_range);
+                            bool contains = condition_arg_range.containsRange(curve_arg_range);
+
+                            current_intersection = current_intersection & BoolMask(intersects, !contains);
+                        }
+
+                        mask = mask | current_intersection;
+                    };
+
+                    switch (curve_type(key_column))
+                    {
+                        case SpaceFillingCurveType::Hilbert:
+                        {
+                            hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
+                            break;
+                        }
+                        case SpaceFillingCurveType::Morton:
+                        {
+                            mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
+                            break;
+                        }
+                        case SpaceFillingCurveType::Unknown:
+                        {
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
+                        }
+                    }
+
+                    rpn_stack.emplace_back(mask);
                 }
                 else
-                {
                     rpn_stack.emplace_back(true, true);
-                    continue;
-                }
             }
-
-            if (left > right)
-            {
-                /// Empty interval.
-                rpn_stack.emplace_back(false, false);
-                continue;
-            }
-
-            /// TODO: Create lightweight `prepared` version
-            const size_t num_dimensions = element.space_filling_curve_args_hyperrectangle.size();
-            if (num_dimensions != 2)
-            {
+            else
                 rpn_stack.emplace_back(true, true);
-                continue;
-            }
 
-            auto condition_range_x = tryGetUInt64RangeForCurve(element.space_filling_curve_args_hyperrectangle[0]);
-            auto condition_range_y = tryGetUInt64RangeForCurve(element.space_filling_curve_args_hyperrectangle[1]);
-            if (!condition_range_x || !condition_range_y)
-            {
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
-
-            BoolMask mask(false, true);
-            auto hyperrectangle_intersection_callback = [&](std::array<std::pair<UInt64, UInt64>, 2> curve_hyperrectangle)
-            {
-                BoolMask current_intersection(true, false);
-
-                {
-                    bool intersects = intersectsRange(*condition_range_x, curve_hyperrectangle[0].first, curve_hyperrectangle[0].second);
-                    bool contains = containsRange(*condition_range_x, curve_hyperrectangle[0].first, curve_hyperrectangle[0].second);
-                    current_intersection = current_intersection & BoolMask(intersects, !contains);
-                }
-
-                {
-                    bool intersects = intersectsRange(*condition_range_y, curve_hyperrectangle[1].first, curve_hyperrectangle[1].second);
-                    bool contains = containsRange(*condition_range_y, curve_hyperrectangle[1].first, curve_hyperrectangle[1].second);
-                    current_intersection = current_intersection & BoolMask(intersects, !contains);
-                }
-
-                mask = mask | current_intersection;
-            };
-
-            switch (curve_type(key_column))
-            {
-                case SpaceFillingCurveType::Hilbert:
-                {
-                    hilbertIntervalToHyperrectangles2D(left, right, hyperrectangle_intersection_callback);
-                    break;
-                }
-                case SpaceFillingCurveType::Morton:
-                {
-                    mortonIntervalToHyperrectangles<2>(left, right, hyperrectangle_intersection_callback);
-                    break;
-                }
-                case SpaceFillingCurveType::Unknown:
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "curve_type is `Unknown`. It is a bug.");
-                }
-            }
-
-            rpn_stack.emplace_back(mask);
+            /** Note: we can consider implementing a simpler solution, based on "hidden keys".
+              * It means, when we have a table's key like (a, b, mortonCurve(x, y))
+              * we extract the arguments from the curves, and append them to the key,
+              * imagining that we have the key (a, b, mortonCurve(x, y), x, y)
+              *
+              * Then while we analyze the granule's range between (a, b, mortonCurve(x, y))
+              * and decompose it to the series of hyperrectangles,
+              * we can construct a series of hyperrectangles of the extended key (a, b, mortonCurve(x, y), x, y),
+              * and then do everything as usual.
+              *
+              * This approach is generalizable to any functions, that have preimage of interval
+              * represented by a set of hyperrectangles.
+              */
         }
         else if (element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
         {
-            if (element.key_columns.size() != 2)
-            {
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
+            /** There are 2 kinds of polygons:
+              *   1. Polygon by minmax index
+              *   2. Polygons which is provided by user
+              *
+              * Polygon by minmax index:
+              *   For hyperactangle [1, 2] × [3, 4] we can create a polygon with 4 points: (1, 3), (1, 4), (2, 4), (2, 3)
+              *
+              * Algorithm:
+              *   Check whether there is any intersection of the 2 polygons. If true return {true, true}, else return {false, true}.
+              */
+
+            chassert(element.key_columns.size() == 2);
 
             const size_t x_column = element.key_columns[0];
             const size_t y_column = element.key_columns[1];
             if (x_column >= hyperrectangle.size() || y_column >= hyperrectangle.size())
             {
-                rpn_stack.emplace_back(true, true);
-                continue;
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Hyperrectangle size is {}, but requested element at position x = {} or y = {} ({})",
+                    hyperrectangle.size(),
+                    x_column,
+                    y_column,
+                    element.toString());
             }
 
             const auto & x_range = hyperrectangle[x_column];
             const auto & y_range = hyperrectangle[y_column];
 
             if (!x_range.left.isNormal() || !x_range.right.isNormal() || !y_range.left.isNormal() || !y_range.right.isNormal())
-            {
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
-
-            if (!x_range.left.column || !x_range.right.column || !y_range.left.column || !y_range.right.column)
             {
                 rpn_stack.emplace_back(true, true);
                 continue;
@@ -3729,25 +3641,104 @@ BoolMask KeyCondition::checkInHyperrectangle(
             polygon_by_minmax_index.outer().emplace_back(x_max, y_max);
             polygon_by_minmax_index.outer().emplace_back(x_max, y_min);
 
+            /// Close ring
             boost::geometry::correct(polygon_by_minmax_index);
-
-            if (!element.polygon)
-            {
-                rpn_stack.emplace_back(true, true);
-                continue;
-            }
+            chassert(element.polygon);
 
             /// Because the polygon may have a hole so the "can_be_false" should always be true.
             rpn_stack.emplace_back(boost::geometry::intersects(polygon_by_minmax_index, element.polygon->data), true);
         }
+        else if (
+            element.function == RPNElement::FUNCTION_IS_NULL
+            || element.function == RPNElement::FUNCTION_IS_NOT_NULL)
+        {
+            const size_t key_column = element.getKeyColumn();
+            if (key_column >= hyperrectangle.size())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Hyperrectangle size is {}, but requested element at position {} ({})",
+                    hyperrectangle.size(),
+                    key_column,
+                    element.toString());
+            }
+
+            const RangeRef & key_range = hyperrectangle[key_column];
+
+            /// No need to apply monotonic functions as nulls are kept.
+            const auto & prepared_range = prepared.ranges[i];
+
+            bool intersects = prepared_range.range.intersectsRange(key_range);
+            bool contains = prepared_range.range.containsRange(key_range);
+
+            rpn_stack.emplace_back(intersects, !contains);
+            if (element.function == RPNElement::FUNCTION_IS_NULL)
+                rpn_stack.back() = !rpn_stack.back();
+        }
+        else if (
+            element.function == RPNElement::FUNCTION_IN_SET
+            || element.function == RPNElement::FUNCTION_NOT_IN_SET)
+        {
+            if (!element.set_index)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
+
+            /// We call set_index->checkInRange.
+            /// In theory this should be a checkInHyperrectangle rather than checkInRange.
+            /// checkInRange may produce false positives if some set element is in range but not in
+            /// hyperrectangle. But for MergeTreeSetIndex, range lookup is more efficient than
+            /// hyperrectangle lookup: range lookup is a binary search in O(log n) time, while
+            /// hyperrectangle lookup requires an O(n) scan in the worst case.
+            /// So we use checkInRange as an approximation of checkInHyperrectangle. This doesn't
+            /// break correctness because it can't produce false negatives, because the range is
+            /// a superset of the hyperrectangle.
+            ///
+            /// Moreover, when this KeyCondition::checkInHyperrectangle is called from
+            /// forAnyHyperrectangle, this checkInRange is equivalent to a checkInHyperrectangle,
+            /// no false positives.
+            /// Proof: Recall how forAnyHyperrectangle produces its hyperrectangles:
+            ///  > For example, the range [ x1 y1 .. x2 y2 ] given x1 != x2 is equal to the union of
+            ///  > the following three hyperrectangles:
+            ///  > [x1]       × [y1 .. +inf)
+            ///  > (x1 .. x2) × (-inf .. +inf)
+            ///  > [x2]       × (-inf .. y2]
+            /// (The above is applied recursively, i.e. y1 and y2 are tails of the tuple,
+            ///  not necessarily individual tuple elements.)
+            /// Suppose the MergeTreeSetIndex contains a set element that's inside the range but not
+            /// inside the hyperrectangle. It's a tuple (..., x, ..., y, ...), where y is outside
+            /// the corresponding hyperrectangle range, and x corresponds to a hyperrectangle range
+            /// that is not a single element. So x must come from the `(x1 .. x2) × (-inf .. +inf)`
+            /// case. But then y's range is (-inf, +inf), so y can't be outside its range. Contradiction.
+            ///
+            /// It may make sense to implement proper MergeTreeSetIndex::checkInHyperrectangle too,
+            /// for cases when KeyCondition::checkInHyperrectangle is called directly, e.g. based on
+            /// min/max index in MergeTree or Parquet file metadata.
+
+            /// But if set_index->checkInRange exists, can't KeyCondition::checkInRange call it
+            /// once for the initial key range instead of going through forAnyHyperrectangle?
+            /// No, that would be incorrect if the set's tuple doesn't include all key columns.
+            /// For example,
+            ///   (x, y, z) BETWEEN (10, 100, 1000) AND (20, 200, 2000)
+            /// is neither necessary nor sufficient for
+            ///   (x, z) BETWEEN (10, 1000) AND (20, 2000)
+            /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
+            /// but  (20, 150, 3000) satisfies the first condition but not the second.
+
+            rpn_stack.emplace_back(
+                element.set_index->checkInRange(hyperrectangle, data_types, single_point, key_columns_block, index_analysis_context));
+
+            if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
+                rpn_stack.back() = !rpn_stack.back();
+        }
         else if (element.function == RPNElement::FUNCTION_NOT)
         {
             assert(!rpn_stack.empty());
+
             rpn_stack.back() = !rpn_stack.back();
         }
         else if (element.function == RPNElement::FUNCTION_AND)
         {
             assert(!rpn_stack.empty());
+
             auto arg1 = rpn_stack.back();
             rpn_stack.pop_back();
             auto arg2 = rpn_stack.back();
@@ -3770,10 +3761,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             rpn_stack.emplace_back(true, false);
         }
         else
-        {
-            /// Unknown element type for fast path.
-            rpn_stack.emplace_back(true, true);
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     }
 
     if (rpn_stack.size() != 1)
@@ -3785,20 +3773,21 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
 BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
-    ColumnsWithTypeAndName * key_columns_block,
+    ColumnsWithTypeAndName & key_columns_block,
     const ColumnValueRef * left_keys,
     const ColumnValueRef * right_keys,
     const DataTypes & data_types,
+    IndexAnalysisContext & index_analysis_context,
     BoolMask initial_mask) const
 {
     PODArrayWithStackMemory<RangeRef, 1024> key_ranges(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
         key_ranges[i] = RangeRef::createWholeUniverse(isNullableOrLowCardinalityNullable(data_types[i]));
 
-    return forAnyHyperrectangleForRefs(used_key_size, left_keys, right_keys, true, true, key_ranges.data(), data_types, 0, initial_mask,
+    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges.data(), data_types, 0, initial_mask,
         [&] (const RangeRef * key_ranges_hyperrectangle)
     {
-        return checkInHyperrectangle(std::span<const RangeRef>(key_ranges_hyperrectangle, used_key_size), key_columns_block, data_types);
+        return checkInHyperrectangle(std::span<const RangeRef>(key_ranges_hyperrectangle, used_key_size), key_columns_block, index_analysis_context, data_types);
     });
 }
 
