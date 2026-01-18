@@ -12,7 +12,7 @@
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <endpoint_subpath>rewr_xd</endpoint_subpath>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </plainRewritableDisk>
         </disks>
         <policies>

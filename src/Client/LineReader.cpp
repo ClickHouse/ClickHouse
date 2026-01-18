@@ -79,18 +79,20 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
 
     std::pair<Words::const_iterator, Words::const_iterator> range;
 
-    std::lock_guard lock(mutex);
-
     Words to_search;
     bool no_case = false;
-    /// Only perform case sensitive completion when the prefix string contains any uppercase characters
-    if (std::none_of(prefix.begin(), prefix.end(), [](char32_t x) { return iswupper(static_cast<wint_t>(x)); }))
+
     {
-        to_search = words_no_case;
-        no_case = true;
+        std::lock_guard lock(mutex);
+        /// Only perform case sensitive completion when the prefix string contains any uppercase characters
+        if (std::none_of(prefix.begin(), prefix.end(), [](char32_t x) { return iswupper(static_cast<wint_t>(x)); }))
+        {
+            to_search = words_no_case;
+            no_case = true;
+        }
+        else
+            to_search = words;
     }
-    else
-        to_search = words;
 
     if (custom_completions_callback)
     {
@@ -103,13 +105,13 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
         range = std::equal_range(
             to_search.begin(), to_search.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
-                return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0; /// NOLINT(bugprone-suspicious-stringview-data-usage)
             });
     else
         range = std::equal_range(
             to_search.begin(), to_search.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
-                return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0; /// NOLINT(bugprone-suspicious-stringview-data-usage)
             });
 
     return replxx::Replxx::completions_t(range.first, range.second);
@@ -212,7 +214,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
             break;
     }
 
-    if (!line.empty() && line != prev_line)
+    if (!line.empty() && line != prev_line && !line.starts_with(" "))
     {
         addToHistory(line);
         prev_line = line;

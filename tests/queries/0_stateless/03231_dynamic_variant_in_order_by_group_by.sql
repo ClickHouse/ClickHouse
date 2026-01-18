@@ -26,7 +26,7 @@ create table test (d Variant(UInt64)) engine=MergeTree order by tuple() partitio
 create table test (d Dynamic) engine=Memory;
 insert into test select * from numbers(5);
 
-set allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 set allow_suspicious_types_in_group_by=1;
 set allow_suspicious_types_in_order_by=0;
@@ -59,7 +59,7 @@ select array(d) from test group by array(d) order by all;
 select map('str', d) from test group by map('str', d) order by all;
 select * from test group by grouping sets ((d), ('str')) order by all;
 
-set allow_experimental_analyzer=0;
+SET enable_analyzer=0;
 
 set allow_suspicious_types_in_group_by=1;
 set allow_suspicious_types_in_order_by=0;
@@ -97,7 +97,7 @@ drop table test;
 create table test (d Variant(UInt64)) engine=Memory;
 insert into test select * from numbers(5);
 
-set allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 set allow_suspicious_types_in_group_by=1;
 set allow_suspicious_types_in_order_by=0;
@@ -130,7 +130,7 @@ select array(d) from test group by array(d) order by all;
 select map('str', d) from test group by map('str', d) order by all;
 select * from test group by grouping sets ((d), ('str')) order by all;
 
-set allow_experimental_analyzer=0;
+SET enable_analyzer=0;
 
 set allow_suspicious_types_in_group_by=1;
 set allow_suspicious_types_in_order_by=0;

@@ -16,10 +16,9 @@ ASTPtr ASTShowSettingQuery::clone() const
     return res;
 }
 
-void ASTShowSettingQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTShowSettingQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "SHOW SETTING " << (settings.hilite ? hilite_none : "")
-                  << backQuoteIfNeed(setting_name);
+    ostr << "SHOW SETTING " << backQuoteIfNeed(setting_name);
 }
 
 }

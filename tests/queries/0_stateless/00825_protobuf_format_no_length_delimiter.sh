@@ -30,6 +30,7 @@ $CLICKHOUSE_CLIENT --query "SELECT * FROM no_length_delimiter_protobuf_00825 LIM
 echo
 echo "Binary representation:"
 hexdump -C $BINARY_FILE_PATH
+trap 'rm -f "$BINARY_FILE_PATH"' EXIT
 
 echo
 (cd $SCHEMADIR && $PROTOC_BINARY --decode Message 00825_protobuf_format_no_length_delimiter.proto) < $BINARY_FILE_PATH

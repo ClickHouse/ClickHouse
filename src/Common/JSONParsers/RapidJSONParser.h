@@ -10,7 +10,8 @@
 #include <base/types.h>
 #include <base/defines.h>
 #include <rapidjson/document.h>
-#include "ElementTypes.h"
+#include <Common/JSONParsers/ElementTypes.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -116,14 +117,44 @@ struct RapidJSONParser
         ALWAYS_INLINE Iterator end() const { return ptr->MemberEnd(); }
         ALWAYS_INLINE size_t size() const { return ptr->MemberCount(); }
 
-        bool find(std::string_view key, Element & result) const
+        bool find(std::string_view key_, Element & result) const
         {
-            auto it = ptr->FindMember(rapidjson::StringRef(key.data(), key.length()));
+            /// Here we have to create a temporary std::string, because it has to be 0-terminated.
+            std::string key{key_};
+
+            auto it = ptr->FindMember(rapidjson::StringRef(key.c_str(), key.length()));
             if (it == ptr->MemberEnd())
                 return false;
 
             result = it->value;
             return true;
+        }
+
+        bool findCaseInsensitive(std::string_view key, Element & result) const
+        {
+            // RapidJSON doesn't have native case-insensitive search, so we iterate
+            for (auto it = ptr->MemberBegin(); it != ptr->MemberEnd(); ++it)
+            {
+                std::string_view member_key(it->name.GetString(), it->name.GetStringLength());
+                if (member_key.size() == key.size())
+                {
+                    bool match = true;
+                    for (size_t i = 0; i < key.size(); ++i)
+                    {
+                        if (!equalsCaseInsensitive(member_key[i], key[i]))
+                        {
+                            match = false;
+                            break;
+                        }
+                    }
+                    if (match)
+                    {
+                        result = it->value;
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         /// Optional: Provides access to an object's element by index.

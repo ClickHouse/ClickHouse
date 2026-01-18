@@ -46,6 +46,9 @@ public:
     /// Return amount of rows before mark
     size_t getMarkStartingRow(size_t mark_index) const;
 
+    /// Return the mark associated with the target row offset.
+    virtual MarkRange getMarkRangeForRowOffset(size_t row_offset) const = 0;
+
     /// Amount of rows after last mark
     size_t getLastMarkRows() const;
 

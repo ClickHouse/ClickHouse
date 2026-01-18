@@ -12,19 +12,21 @@ NUM_REPLICAS=5
 for i in $(seq 1 $NUM_REPLICAS); do
     $CLICKHOUSE_CLIENT -q "
         DROP TABLE IF EXISTS r$i SYNC;
-        CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r$i') ORDER BY x SETTINGS replicated_deduplication_window = 1, allow_remote_fs_zero_copy_replication = 1;
+        CREATE TABLE r$i (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r$i') ORDER BY x SETTINGS replicated_deduplication_window = 1;
     "
 done
 
 function thread {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "INSERT INTO r$REPLICA SELECT rand()"
     done
 }
 
 function nemesis_thread1 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "SYSTEM STOP REPLICATED SENDS r$REPLICA"
         sleep 0.5
@@ -33,7 +35,8 @@ function nemesis_thread1 {
 }
 
 function nemesis_thread2 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "SYSTEM STOP FETCHES r$REPLICA"
         sleep 0.5
@@ -43,21 +46,17 @@ function nemesis_thread2 {
 
 
 
-export -f thread
-export -f nemesis_thread1
-export -f nemesis_thread2
-
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c thread 2>/dev/null &
-timeout $TIMEOUT bash -c thread 2>/dev/null &
-timeout $TIMEOUT bash -c thread 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread1 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
-timeout $TIMEOUT bash -c nemesis_thread2 2>/dev/null &
+thread 2>/dev/null &
+thread 2>/dev/null &
+thread 2>/dev/null &
+nemesis_thread1 2>/dev/null &
+nemesis_thread1 2>/dev/null &
+nemesis_thread1 2>/dev/null &
+nemesis_thread2 2>/dev/null &
+nemesis_thread2 2>/dev/null &
+nemesis_thread2 2>/dev/null &
 
 wait
 

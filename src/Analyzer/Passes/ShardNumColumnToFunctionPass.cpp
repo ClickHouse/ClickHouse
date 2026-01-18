@@ -8,6 +8,7 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -49,10 +50,20 @@ public:
         if (!storage->isVirtualColumn(column.name, storage_snapshot->metadata))
             return;
 
-        auto function_node = std::make_shared<FunctionNode>("shardNum");
-        auto function = FunctionFactory::instance().get(function_node->getFunctionName(), getContext());
-        function_node->resolveAsFunction(function->build(function_node->getArgumentColumns()));
-        node = std::move(function_node);
+        const auto column_type = column_node->getColumnType();
+        const auto shard_num_column_numeric_type = column_type->isNullable() ? typeid_cast<const DataTypeNullable *>(column_type.get())->getNestedType() : column_type;
+
+        auto shard_num_function_node = std::make_shared<FunctionNode>("shardNum");
+        auto shard_num_function = FunctionFactory::instance().get(shard_num_function_node->getFunctionName(), getContext());
+        shard_num_function_node->resolveAsFunction(shard_num_function->build(shard_num_function_node->getArgumentColumns()));
+        const auto & function_result_type = shard_num_function_node->getResultType();
+
+        if (!function_result_type->equals(*shard_num_column_numeric_type))
+            return;
+
+        node = std::move(shard_num_function_node);
+        if (column_type->isNullable())
+            node = createCastFunction(node, column_type, getContext());
     }
 };
 

@@ -7,7 +7,6 @@
 #include <Processors/Formats/Impl/BSONEachRowRowInputFormat.h>
 #include <IO/ReadHelpers.h>
 
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
@@ -51,16 +50,16 @@ namespace
 }
 
 BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
-    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
-    , prev_positions(header_.columns())
-    , types(header_.getDataTypes())
+    , prev_positions(header_->columns())
+    , types(header_->getDataTypes())
 {
     name_map = getNamesToIndexesMap(getPort().getHeader());
 }
 
-inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
+inline size_t BSONEachRowRowInputFormat::columnIndex(std::string_view name, size_t key_index)
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
@@ -84,8 +83,8 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     return UNKNOWN_FIELD;
 }
 
-/// Read the field name. Resulting StringRef is valid only before next read from buf.
-static StringRef readBSONKeyName(ReadBuffer & in, String & key_holder)
+/// Read the field name. Resulting std::string_view is valid only before next read from buf.
+static std::string_view readBSONKeyName(ReadBuffer & in, String & key_holder)
 {
     // This is just an optimization: try to avoid copying the name into key_holder
 
@@ -95,7 +94,7 @@ static StringRef readBSONKeyName(ReadBuffer & in, String & key_holder)
 
         if (next_pos != in.buffer().end())
         {
-            StringRef res(in.position(), next_pos - in.position());
+            std::string_view res(in.position(), next_pos - in.position());
             in.position() = next_pos + 1;
             return res;
         }
@@ -257,14 +256,13 @@ static void readAndInsertStringImpl(ReadBuffer & in, IColumn & column, size_t si
         auto & offsets = column_string.getOffsets();
 
         size_t old_chars_size = data.size();
-        size_t offset = old_chars_size + size + 1;
+        size_t offset = old_chars_size + size;
         offsets.push_back(offset);
 
         try
         {
             data.resize(offset);
-            in.readStrict(reinterpret_cast<char *>(&data[offset - size - 1]), size);
-            data.back() = 0;
+            in.readStrict(reinterpret_cast<char *>(&data[offset - size]), size);
         }
         catch (...)
         {
@@ -411,14 +409,14 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
         size_t index = read_nested_columns;
         if (use_key_names)
         {
-            auto try_get_index = data_type_tuple->tryGetPositionByName(name.toString());
+            auto try_get_index = data_type_tuple->tryGetPositionByName(name);
             if (!try_get_index)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Cannot parse tuple column with type {} from BSON array/embedded document field: "
                     "tuple doesn't have element with name \"{}\"",
                     data_type->getName(),
-                    name.toView());
+                    name);
             index = *try_get_index;
         }
 
@@ -435,14 +433,20 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
 
     assertChar(BSON_DOCUMENT_END, *in);
 
-    if (read_nested_columns != data_type_tuple->getElements().size())
+    const auto elements_size = data_type_tuple->getElements().size();
+    if (read_nested_columns != elements_size)
         throw Exception(
                         ErrorCodes::INCORRECT_DATA,
                         "Cannot parse tuple column with type {} from BSON array/embedded document field, "
                         "the number of fields in tuple and BSON document doesn't match: {} != {}",
                         data_type->getName(),
-                        data_type_tuple->getElements().size(),
+                        elements_size,
                         read_nested_columns);
+
+    /// There are no nested columns to grow, so we must explicitly increment the column size.
+    /// Otherwise, `column.size()` will return 0 for empty tuples columns.
+    if (elements_size == 0)
+        tuple_column.addSize(1);
 }
 
 void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
@@ -468,7 +472,7 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     {
         auto nested_bson_type = getBSONType(readBSONType(*in));
         auto name = readBSONKeyName(*in, current_key_name);
-        ReadBufferFromMemory buf(name.data, name.size);
+        ReadBufferFromMemory buf(name);
         key_data_type->getDefaultSerialization()->deserializeWholeText(key_column, buf, format_settings);
         readField(value_column, value_data_type, nested_bson_type);
     }
@@ -797,13 +801,13 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
 
         if (index == UNKNOWN_FIELD)
         {
-            current_key_name.assign(name.data, name.size);
+            current_key_name.assign(name.data(), name.size());
             skipUnknownField(BSONType(type), current_key_name);
         }
         else
         {
             if (seen_columns[index])
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name.toView());
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
 
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));
@@ -1061,7 +1065,7 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
     factory.registerInputFormat(
         "BSONEachRow",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
-        { return std::make_shared<BSONEachRowRowInputFormat>(buf, sample, std::move(params), settings); });
+        { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); });
     factory.registerFileExtension("bson", "BSONEachRow");
 }
 

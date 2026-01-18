@@ -9,14 +9,19 @@
 #include <Storages/NATS/NATSConnection.h>
 #include <Storages/NATS/NATSHandler.h>
 #include <Storages/NATS/NATSSettings.h>
+#include <Storages/NATS/NATS_fwd.h>
 #include <Poco/Semaphore.h>
 #include <Common/thread_local_rng.h>
 
 namespace DB
 {
 
-class NATSConsumer;
-using NATSConsumerPtr = std::shared_ptr<NATSConsumer>;
+class INATSConsumer;
+using INATSConsumerPtr = std::shared_ptr<INATSConsumer>;
+
+class INATSProducer;
+using INATSProducerPtr = std::unique_ptr<INATSProducer>;
+
 struct NATSSettings;
 
 class StorageNATS final : public IStorage, WithContext
@@ -32,9 +37,11 @@ public:
 
     ~StorageNATS() override;
 
-    std::string getName() const override { return "NATS"; }
+    std::string getName() const override { return NATS::TABLE_ENGINE_NAME; }
 
-    bool noPushingToViews() const override { return true; }
+    bool isMessageQueue() const override { return true; }
+
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -62,16 +69,16 @@ public:
     /// We want to control the number of rows in a chunk inserted into NATS
     bool prefersLargeBlocks() const override { return false; }
 
-    void pushConsumer(NATSConsumerPtr consumer);
-    NATSConsumerPtr popConsumer();
-    NATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+    void pushConsumer(INATSConsumerPtr consumer);
+    INATSConsumerPtr popConsumer();
+    INATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
 
-    void incrementReader();
-    void decrementReader();
-
 private:
+    String getStreamName() const;
+    String getConsumerName() const;
+
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
     std::vector<String> subjects;
@@ -89,43 +96,43 @@ private:
     NATSConnectionPtr consumers_connection; /// Connection for all consumers
     NATSConfiguration configuration;
 
-    size_t num_created_consumers = 0;
+    std::atomic<size_t> num_created_consumers = 0;
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
-    std::vector<NATSConsumerPtr> consumers; /// available NATS consumers
+    std::vector<INATSConsumerPtr> consumers; /// available NATS consumers
 
     /// maximum number of messages in NATS queue (x-max-length). Also used
     /// to setup size of inner consumer for received messages
     uint32_t queue_size;
 
-    std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
     BackgroundSchedulePoolTaskHolder streaming_task;
-    BackgroundSchedulePoolTaskHolder subscribe_consumers_task;
+    BackgroundSchedulePoolTaskHolder initialize_consumers_task;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
     /// Needed for tell MV or producer background tasks
     /// that they must finish as soon as possible.
     std::atomic<bool> shutdown_called{false};
-    /// For select query we must be aware of the end of streaming
-    /// to be able to turn off the loop.
-    std::atomic<size_t> readers_count = 0;
     std::atomic<bool> mv_attached = false;
 
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
 
-    NATSConsumerPtr createConsumer();
+    INATSConsumerPtr createConsumer();
+    INATSProducerPtr createProducer(String subject);
 
     bool isSubjectInSubscriptions(const std::string & subject);
 
     /// Functions working in the background
+    void initializeConsumersFunc();
     void streamingToViewsFunc();
-    void subscribeConsumersFunc();
 
+    void createConsumersConnection();
     void createConsumers();
+
     bool subscribeConsumers();
+    void unsubscribeConsumers();
 
     void stopEventLoop();
 

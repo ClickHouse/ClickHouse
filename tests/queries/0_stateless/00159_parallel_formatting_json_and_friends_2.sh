@@ -12,9 +12,9 @@ for format in "${FORMATS[@]}"
 do
     echo "$format, false";
     $CLICKHOUSE_CLIENT --max_threads=0 --output_format_parallel_formatting=false -q \
-    "SELECT ClientEventTime::DateTime('Asia/Dubai') as a, MobilePhoneModel as b, ClientIP6 as c FROM test.hits ORDER BY a, b, c LIMIT 3000000 Format $format" | md5sum
+    "SELECT addSeconds('2025-01-01', number) AS a, number AS b, concat('value', number) AS c FROM (SELECT number FROM system.numbers_mt LIMIT 1000000) ORDER BY number Format $format" | md5sum
 
     echo "$format, true";
     $CLICKHOUSE_CLIENT --max_threads=0 --output_format_parallel_formatting=true -q \
-    "SELECT ClientEventTime::DateTime('Asia/Dubai') as a, MobilePhoneModel as b, ClientIP6 as c FROM test.hits ORDER BY a, b, c LIMIT 3000000 Format $format" | md5sum
+    "SELECT addSeconds('2025-01-01', number) AS a, number AS b, concat('value', number) AS c FROM (SELECT number FROM system.numbers_mt LIMIT 1000000) ORDER BY number Format $format" | md5sum
 done

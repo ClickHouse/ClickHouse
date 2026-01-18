@@ -1,0 +1,14 @@
+select json
+select json.b
+select json.arr
+select json.b, json.c
+select json.b, json.c, json.arr
+select json, json.b, json.c
+select json, json.b, json.c, json.arr
+select json.b, json.c, json
+select json.b, json.c, json.arr, json
+select json.^a
+select json, json.^a
+select json.^a, json.a.a1
+select json.^a, json.a.a1, json.arr
+select json.a.a1, json.arr, json.^a

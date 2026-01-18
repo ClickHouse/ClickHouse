@@ -31,6 +31,7 @@ public:
     TypeIndex getColumnType() const override { return TypeIndex::Int64; }
 
     bool equals(const IDataType & rhs) const override;
+    void updateHashImpl(SipHash & hash) const override;
 
     bool isParametric() const override { return true; }
     bool isCategorial() const override { return false; }

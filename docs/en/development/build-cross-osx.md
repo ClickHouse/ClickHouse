@@ -1,7 +1,10 @@
 ---
-slug: /development/build-cross-osx
+description: 'Guide for cross-compiling ClickHouse from Linux for macOS systems'
+sidebar_label: 'Build on Linux for macOS'
 sidebar_position: 20
-sidebar_label: Build on Linux for macOS
+slug: /development/build-cross-osx
+title: 'Build on Linux for macOS'
+doc_type: 'guide'
 ---
 
 # How to Build ClickHouse on Linux for macOS
@@ -16,11 +19,11 @@ The following sections provide a walk-through for building ClickHouse for `x86_6
 If you're targeting ARM architecture, simply substitute all occurrences of `x86_64` with `aarch64`.
 For example, replace `x86_64-apple-darwin` with `aarch64-apple-darwin` throughout the steps.
 
-## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
+## Install cross-compilation toolset {#install-cross-compilation-toolset}
 
 Let's remember the path where we install `cctools` as `${CCTOOLS}`
 
-``` bash
+```bash
 mkdir ~/cctools
 export CCTOOLS=$(cd ~/cctools && pwd)
 cd ${CCTOOLS}
@@ -41,14 +44,14 @@ make install
 
 Also, we need to download macOS X SDK into the working tree.
 
-``` bash
+```bash
 cd ClickHouse/cmake/toolchain/darwin-x86_64
 curl -L 'https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz' | tar xJ --strip-components=1
 ```
 
 ## Build ClickHouse {#build-clickhouse}
 
-``` bash
+```bash
 cd ClickHouse
 mkdir build-darwin
 cd build-darwin

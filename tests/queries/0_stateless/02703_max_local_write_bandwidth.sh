@@ -18,7 +18,7 @@ $CLICKHOUSE_CLIENT -m -q "
     SELECT
         query_duration_ms >= 7e3,
         ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] > 8e6,
-        ProfileEvents['LocalWriteThrottlerBytes'] > 8e6
+        ProfileEvents['QueryLocalWriteThrottlerBytes'] > 8e6
         /* LocalWriteThrottlerSleepMicroseconds is too unreliable in debug build, but query_duration_ms is enough */
     FROM system.query_log
     WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'

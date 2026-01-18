@@ -10,20 +10,25 @@ cluster = ClickHouseCluster(
     __file__, zookeeper_config_path="configs/zookeeper_config_root_a.xml"
 )
 
+# Disable `with_remote_database_disk` as the test does not use the default Keeper
+
 node1 = cluster.add_instance(
     "node1",
     with_zookeeper=True,
     main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"],
+    with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
     "node2",
     with_zookeeper=True,
     main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_a.xml"],
+    with_remote_database_disk=False,
 )
 node3 = cluster.add_instance(
     "node3",
     with_zookeeper=True,
     main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_root_b.xml"],
+    with_remote_database_disk=False,
 )
 
 

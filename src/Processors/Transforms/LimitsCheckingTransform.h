@@ -27,7 +27,7 @@ class LimitsCheckingTransform : public ISimpleTransform
 {
 public:
 
-    LimitsCheckingTransform(const Block & header_, StreamLocalLimits limits_);
+    LimitsCheckingTransform(SharedHeader header_, StreamLocalLimits limits_);
 
     String getName() const override { return "LimitsCheckingTransform"; }
 

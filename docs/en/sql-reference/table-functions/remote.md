@@ -1,9 +1,12 @@
 ---
-slug: /sql-reference/table-functions/remote
+description: 'Table function `remote` allows to access remote servers on-the-fly,
+  i.e. without creating a distributed table. Table function `remoteSecure` is same
+  as `remote` but over a secure connection.'
+sidebar_label: 'remote'
 sidebar_position: 175
-sidebar_label: remote
-title: "remote, remoteSecure"
-description: "Table function `remote` allows to access remote servers on-the-fly, i.e. without creating a distributed table. Table function `remoteSecure` is same as `remote` but over a secure connection."
+slug: /sql-reference/table-functions/remote
+title: 'remote, remoteSecure'
+doc_type: 'reference'
 ---
 
 # remote, remoteSecure Table Function
@@ -14,7 +17,7 @@ Both functions can be used in `SELECT` and `INSERT` queries.
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 remote(addresses_expr, [db, table, user [, password], sharding_key])
 remote(addresses_expr, [db.table, user [, password], sharding_key])
 remote(named_collection[, option=value [,..]])
@@ -25,23 +28,14 @@ remoteSecure(named_collection[, option=value [,..]])
 
 ## Parameters {#parameters}
 
-- `addresses_expr` — A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.
-
-    The `host` can be specified as a server name, or as a IPv4 or IPv6 address. An IPv6 address must be specified in square brackets.
-
-    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](../../operations/server-configuration-parameters/settings.md#tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#tcp_port_secure) for table function `remoteSecure` (by default, 9440).
-
-    For IPv6 addresses, a port is required.
-
-    If only parameter `addresses_expr` is specified, `db` and `table` will use `system.one` by default.
-
-    Type: [String](../../sql-reference/data-types/string.md).
-
-- `db` — Database name. Type: [String](../../sql-reference/data-types/string.md).
-- `table` — Table name. Type: [String](../../sql-reference/data-types/string.md).
-- `user` — User name. If not specified, `default` is used. Type: [String](../../sql-reference/data-types/string.md).
-- `password` — User password. If not specified, an empty password is used. Type: [String](../../sql-reference/data-types/string.md).
-- `sharding_key` — Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+| Argument       | Description                                                                                                                                                                                                                                                                                                                                                        |
+|----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `addresses_expr` | A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.<br/><br/>    The `host` can be specified as a server name, or as a IPv4 or IPv6 address. An IPv6 address must be specified in square brackets.<br/><br/>    The `port` is the TCP port on the remote server. If the port is omitted, it uses [tcp_port](../../operations/server-configuration-parameters/settings.md#tcp_port) from the server config file for table function `remote` (by default, 9000) and [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#tcp_port_secure) for table function `remoteSecure` (by default, 9440).<br/><br/>    For IPv6 addresses, a port is required.<br/><br/>    If only parameter `addresses_expr` is specified, `db` and `table` will use `system.one` by default.<br/><br/>    Type: [String](../../sql-reference/data-types/string.md). |
+| `db`           | Database name. Type: [String](../../sql-reference/data-types/string.md).                                                                                                                                                                                                                                                                                             |
+| `table`        | Table name. Type: [String](../../sql-reference/data-types/string.md).                                                                                                                                                                                                                                                                                               |
+| `user`         | User name. If not specified, `default` is used. Type: [String](../../sql-reference/data-types/string.md).                                                                                                                                                                                                                                                         |
+| `password`     | User password. If not specified, an empty password is used. Type: [String](../../sql-reference/data-types/string.md).                                                                                                                                                                                                                                             |
+| `sharding_key` | Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](../../sql-reference/data-types/int-uint.md).                                                                                                                                                 |
 
 Arguments also can be passed using [named collections](operations/named-collections.md).
 
@@ -63,7 +57,7 @@ The `remote` table function can be useful in the following cases:
 
 ### Addresses {#addresses}
 
-``` text
+```text
 example01-01-1
 example01-01-1:9440
 example01-01-1:9000
@@ -76,7 +70,7 @@ localhost
 
 Multiple addresses can be comma-separated. In this case, ClickHouse will use distributed processing and send the query to all specified addresses (like shards with different data). Example:
 
-``` text
+```text
 example01-01-1,example01-02-1
 ```
 
@@ -84,7 +78,7 @@ example01-01-1,example01-02-1
 
 ### Selecting data from a remote server: {#selecting-data-from-a-remote-server}
 
-``` sql
+```sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
 ```
 
@@ -99,7 +93,7 @@ SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
 
 ### Inserting data into a table on a remote server: {#inserting-data-into-a-table-on-a-remote-server}
 
-``` sql
+```sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
 INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALUES ('test', 42);
 SELECT * FROM remote_table;
@@ -124,9 +118,9 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
 - Get the CREATE TABLE statement from the source:
 
 ```sql
-  select create_table_query
-  from system.tables
-  where database = 'imdb' and table = 'actors'
+  SELECT create_table_query
+  FROM system.tables
+  WHERE database = 'imdb' AND table = 'actors'
   ```
 
   Response

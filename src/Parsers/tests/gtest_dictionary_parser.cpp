@@ -8,7 +8,6 @@
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/types.h>
 
@@ -155,7 +154,7 @@ TEST(ParserDictionaryDDL, AttributesWithMultipleProperties)
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
-    EXPECT_EQ(serializeAST(*attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression), "(rand() % 100) * 77");
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression->formatWithSecretsOneLine(), "(rand() % 100) * 77");
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
@@ -201,7 +200,7 @@ TEST(ParserDictionaryDDL, CustomAttributePropertiesOrder)
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->expression, nullptr);
-    EXPECT_EQ(serializeAST(*attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression), "(rand() % 100) * 77");
+    EXPECT_EQ(attributes_children[2]->as<ASTDictionaryAttributeDeclaration>()->expression->formatWithSecretsOneLine(), "(rand() % 100) * 77");
 
     EXPECT_EQ(attributes_children[0]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, false);
     EXPECT_EQ(attributes_children[1]->as<ASTDictionaryAttributeDeclaration>()->hierarchical, true);
@@ -288,7 +287,7 @@ TEST(ParserDictionaryDDL, Formatting)
     ParserCreateDictionaryQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0, 0);
     ASTCreateQuery * create = ast->as<ASTCreateQuery>();
-    auto str = serializeAST(*create);
+    auto str = create->formatWithSecretsOneLine();
     EXPECT_EQ(str, "CREATE DICTIONARY test.dict5 (`key_column1` UInt64 DEFAULT 1 HIERARCHICAL INJECTIVE, `key_column2` String DEFAULT '', `second_column` UInt8 EXPRESSION intDiv(50, rand() % 1000), `third_column` UInt8) PRIMARY KEY key_column1, key_column2 SOURCE(MYSQL(HOST 'localhost' PORT 9000 USER 'default' REPLICA (HOST '127.0.0.1' PRIORITY 1) PASSWORD '')) LIFETIME(MIN 1 MAX 10) LAYOUT(CACHE(SIZE_IN_CELLS 50)) RANGE(MIN second_column MAX third_column)");
 }
 
@@ -303,7 +302,7 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     EXPECT_TRUE(drop1->is_dictionary);
     EXPECT_EQ(drop1->getDatabase(), "test");
     EXPECT_EQ(drop1->getTable(), "dict1");
-    auto str1 = serializeAST(*drop1);
+    auto str1 = drop1->formatWithSecretsOneLine();
     EXPECT_EQ(input1, str1);
 
     String input2 = "DROP DICTIONARY IF EXISTS dict2";
@@ -314,7 +313,7 @@ TEST(ParserDictionaryDDL, ParseDropQuery)
     EXPECT_TRUE(drop2->is_dictionary);
     EXPECT_EQ(drop2->getDatabase(), "");
     EXPECT_EQ(drop2->getTable(), "dict2");
-    auto str2 = serializeAST(*drop2);
+    auto str2 = drop2->formatWithSecretsOneLine();
     EXPECT_EQ(input2, str2);
 }
 
@@ -328,7 +327,7 @@ TEST(ParserDictionaryDDL, ParsePropertiesQueries)
 
     EXPECT_EQ(show1->getTable(), "dict1");
     EXPECT_EQ(show1->getDatabase(), "test");
-    EXPECT_EQ(serializeAST(*show1), input1);
+    EXPECT_EQ(show1->formatWithSecretsOneLine(), input1);
 
     String input2 = "EXISTS DICTIONARY dict2";
 
@@ -337,5 +336,5 @@ TEST(ParserDictionaryDDL, ParsePropertiesQueries)
 
     EXPECT_EQ(show2->getTable(), "dict2");
     EXPECT_EQ(show2->getDatabase(), "");
-    EXPECT_EQ(serializeAST(*show2), input2);
+    EXPECT_EQ(show2->formatWithSecretsOneLine(), input2);
 }

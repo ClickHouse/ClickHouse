@@ -27,7 +27,7 @@ class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
+using ChildrenSet = absl::flat_hash_set<std::string_view, StringViewHash>;
 
 struct NodeStats
 {
@@ -60,7 +60,7 @@ struct NodeStats
 
     void setEphemeralOwner(int64_t ephemeral_owner)
     {
-        is_ephemeral_and_ctime.is_ephemeral = ephemeral_owner != 0;
+        is_ephemeral_and_ctime.is_ephemeral = true;
         ephemeral_or_children_data.ephemeral_owner = ephemeral_owner;
     }
 
@@ -124,7 +124,7 @@ private:
     /// node was created, we can use the MSB for a bool
     struct
     {
-        bool is_ephemeral : 1;
+        int64_t is_ephemeral : 1;
         int64_t ctime : 63;
     } is_ephemeral_and_ctime{false, 0};
 
@@ -149,7 +149,7 @@ struct KeeperRocksNodeInfo
     uint64_t acl_id = 0; /// 0 -- no ACL by default
 
     /// dummy interface for test
-    void addChild(StringRef) {}
+    void addChild(std::string_view) {}
     auto getChildren() const
     {
         return std::vector<int>(stats.numChildren());
@@ -247,12 +247,15 @@ struct KeeperMemNode
 
     std::string_view getData() const noexcept { return {data.get(), stats.data_size}; }
 
-    void addChild(StringRef child_path);
+    void addChild(std::string_view child_path);
 
-    void removeChild(StringRef child_path);
+    void removeChild(std::string_view child_path);
 
-    const auto & getChildren() const noexcept { return children; }
-    auto & getChildren() { return children; }
+    template <typename Self>
+    auto & getChildren(this Self & self)
+    {
+        return self.children;
+    }
 
     // Invalidate the calculated digest so it's recalculated again on the next
     // getDigest call
@@ -264,6 +267,11 @@ struct KeeperMemNode
     // copy only necessary information for preprocessing and digest calculation
     // (e.g. we don't need to copy list of children)
     void shallowCopy(const KeeperMemNode & other);
+
+    // copy data from node that is left only for snapshot write
+    // e.g. we don't need list of children when writing snapshots so we can
+    // move it to the new copy of node
+    KeeperMemNode copyFromSnapshotNode();
 private:
     ChildrenSet children{};
 };
@@ -294,10 +302,20 @@ public:
     };
 
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
+
+    enum class WatchType : uint8_t
+    {
+        WATCH,
+        LIST_WATCH,
+        PERSISTENT_WATCH,
+        PERSISTENT_LIST_WATCH,
+        PERSISTENT_RECURSIVE_WATCH,
+    };
+
     struct WatchInfo
     {
         std::string_view path;
-        bool is_list_watch;
+        WatchType type;
 
         bool operator==(const WatchInfo &) const = default;
     };
@@ -385,6 +403,12 @@ public:
     /// Currently active watches (node_path -> subscribed sessions)
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
+    Watches persistent_watches;
+    Watches persistent_list_watches;
+    Watches persistent_recursive_watches;
+
+    /// Mapping session_id -> set of watched nodes paths
+    SessionAndWatcher sessions_and_watchers;
 
     static bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
 
@@ -424,6 +448,11 @@ public:
     void dumpWatches(WriteBufferFromOwnString & buf) const;
     void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
     void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
+
+    bool containsWatch(const String & path, Coordination::CheckWatchRequest::CheckWatchType check_type) const;
+    void addPersistentWatch(const String & path, Coordination::AddWatchRequest::AddWatchMode mode, int64_t session_id);
+
+    bool removePersistentWatch(const String& path, Coordination::RemoveWatchRequest::WatchType type, int64_t session_id);
 protected:
     KeeperStorageBase(int64_t tick_time_ms, const KeeperContextPtr & keeper_context, const String & superdigest_);
 
@@ -442,8 +471,6 @@ protected:
 
     std::atomic<bool> finalized{false};
 
-    /// Mapping session_id -> set of watched nodes paths
-    SessionAndWatcher sessions_and_watchers;
     size_t total_watches_count = 0;
 
     void clearDeadWatches(int64_t session_id);
@@ -492,10 +519,9 @@ public:
         void rollback(int64_t rollback_zxid);
         void rollback(std::list<Delta> rollback_deltas);
 
-        std::shared_ptr<Node> getNode(StringRef path, bool should_lock_storage = true) const;
-        const Node * getActualNodeView(StringRef path, const Node & storage_node) const;
+        std::shared_ptr<Node> getNode(std::string_view path, bool should_lock_storage = true) const;
 
-        Coordination::ACLs getACLs(StringRef path) const;
+        Coordination::ACLs getACLs(std::string_view path) const;
 
         void applyDeltas(const std::list<Delta> & new_deltas, uint64_t * digest);
         void applyDelta(const Delta & delta, uint64_t * digest);
@@ -508,9 +534,9 @@ public:
 
         void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
 
-        std::shared_ptr<Node> tryGetNodeFromStorage(StringRef path, bool should_lock_storage = true) const;
+        std::shared_ptr<Node> tryGetNodeFromStorage(std::string_view path, bool should_lock_storage = true) const;
 
-        std::unordered_set<int64_t> closed_sessions;
+        std::unordered_map<int64_t, std::unordered_set<int64_t>> closed_sessions_to_zxids;
 
         struct UncommittedNode
         {
@@ -572,7 +598,7 @@ public:
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool removeNode(const std::string & path, int32_t version, bool update_digest);
 
-    bool checkACL(StringRef path, int32_t permissions, int64_t session_id, bool is_local);
+    bool checkACL(std::string_view path, int32_t permissions, int64_t session_id, bool is_local);
 
     KeeperStorage(int64_t tick_time_ms, const String & superdigest_, const KeeperContextPtr & keeper_context_, bool initialize_system_nodes = true);
 
@@ -588,7 +614,7 @@ public:
         std::optional<int64_t> new_last_zxid,
         bool check_acl = true,
         bool is_local = false);
-    void preprocessRequest(
+    KeeperDigest preprocessRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,
@@ -610,6 +636,15 @@ public:
 
     /// Clear outdated data from internal container.
     void clearGarbageAfterSnapshot();
+
+    KeeperResponsesForSessions setWatches(
+        int64_t last_zxid,
+        const std::vector<String> & watches_paths,
+        const std::vector<String> & list_watches_paths,
+        const std::vector<String> & exist_watches_paths,
+        const std::vector<String> & persistent_watches_paths,
+        const std::vector<String> & persistent_recursive_watches_paths,
+        int64_t session_id);
 
     /// Introspection functions mostly used in 4-letter commands
     uint64_t getNodesCount() const;

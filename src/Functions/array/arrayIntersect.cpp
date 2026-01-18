@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getMostSubtype.h>
@@ -25,6 +24,7 @@
 #include <base/range.h>
 #include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
+#include <IO/ReadBufferFromString.h>
 
 
 namespace DB
@@ -408,11 +408,11 @@ FunctionArrayIntersect<Mode>::UnpackedArrays FunctionArrayIntersect<Mode>::prepa
                 {
                     /// Compare original and cast columns. It seem to be the easiest way.
                     auto overflow_mask = callFunctionNotEquals(
-                            {arg.nested_column->getPtr(), nested_init_type, ""},
-                            {initial_column->getPtr(), nested_cast_type, ""},
+                            {arg.nested_column->getPtr(), nested_cast_type, ""},
+                            {initial_column->getPtr(), nested_init_type, ""},
                             context);
 
-                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*overflow_mask).getData();
+                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*removeNullable(overflow_mask)).getData();
                     arrays.column_holders.emplace_back(std::move(overflow_mask));
                 }
             }
@@ -487,8 +487,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::executeImpl(const ColumnsWithTypeAndName
         DataTypeDateTime::FieldType, size_t,
         DefaultHash<DataTypeDateTime::FieldType>, INITIAL_SIZE_DEGREE>;
 
-    using StringMap = ClearableHashMapWithStackMemory<StringRef, size_t,
-        StringRefHash, INITIAL_SIZE_DEGREE>;
+    using StringMap = ClearableHashMapWithStackMemory<std::string_view, size_t,
+        StringViewHash, INITIAL_SIZE_DEGREE>;
 
     if (!result_column)
     {
@@ -614,7 +614,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     else
                     {
                         const char * data = nullptr;
-                        value = &map[columns[arg_num]->serializeValueIntoArena(i, arena, data)];
+                        value = &map[columns[arg_num]->serializeValueIntoArena(i, arena, data, nullptr)];
                     }
 
                     /// Here we count the number of element appearances, but no more than once per array.
@@ -641,6 +641,13 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
         // We have NULL in output only once if it should be there
         bool null_added = false;
         bool use_null_map;
+        const auto & arg = arrays.args[0];
+        size_t off;
+        // const array has only one row
+        if (arg.is_const)
+            off = (*arg.offsets)[0];
+        else
+            off = (*arg.offsets)[row];
 
         if constexpr (std::is_same_v<Mode, ArrayModeUnion>)
         {
@@ -655,7 +662,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             {
                 ++result_offset;
                 result_data.insertDefault();
-                null_map.push_back(1);
+                null_map.push_back(true);
                 null_added = true;
             }
         }
@@ -672,20 +679,13 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             {
                 ++result_offset;
                 result_data.insertDefault();
-                null_map.push_back(1);
+                null_map.push_back(true);
                 null_added = true;
             }
         }
         else if constexpr (std::is_same_v<Mode, ArrayModeIntersect>)
         {
             use_null_map = all_nullable;
-            const auto & arg = arrays.args[0];
-            size_t off;
-            // const array has only one row
-            if (arg.is_const)
-                off = (*arg.offsets)[0];
-            else
-                off = (*arg.offsets)[row];
 
             for (auto i : collections::range(prev_off[0], off))
             {
@@ -699,7 +699,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     {
                         ++result_offset;
                         result_data.insertDefault();
-                        null_map.push_back(1);
+                        null_map.push_back(true);
                         null_added = true;
                     }
                     if (null_added)
@@ -712,11 +712,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                 else
                 {
                     const char * data = nullptr;
-                    pair = map.find(columns[0]->serializeValueIntoArena(i, arena, data));
+                    pair = map.find(columns[0]->serializeValueIntoArena(i, arena, data, nullptr));
                 }
-                prev_off[0] = off;
-                if (arg.is_const)
-                    prev_off[0] = 0;
 
                 if (!current_has_nullable)
                     all_has_nullable = false;
@@ -727,6 +724,10 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
             }
         }
+        // Now we update the offsets for the first array
+        prev_off[0] = off;
+        if (arg.is_const)
+            prev_off[0] = 0;
 
         result_offsets.getElement(row) = result_offset;
     }
@@ -749,14 +750,15 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
     }
     else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
     {
-        result_data.insertData(pair->getKey().data, pair->getKey().size);
+        result_data.insertData(pair->getKey().data(), pair->getKey().size());
     }
     else
     {
-        std::ignore = result_data.deserializeAndInsertFromArena(pair->getKey().data);
+        ReadBufferFromString in(pair->getKey());
+        result_data.deserializeAndInsertFromArena(in, /*settings=*/nullptr);
     }
     if (use_null_map)
-        null_map.push_back(0);
+        null_map.push_back(false);
 }
 
 
@@ -766,9 +768,66 @@ using ArraySymmetricDifference = FunctionArrayIntersect<ArrayModeSymmetricDiffer
 
 REGISTER_FUNCTION(ArrayIntersect)
 {
-    factory.registerFunction<ArrayIntersect>();
-    factory.registerFunction<ArrayUnion>();
-    factory.registerFunction<ArraySymmetricDifference>();
+    FunctionDocumentation::Description intersect_description = "Takes multiple arrays and returns an array with elements which are present in all source arrays. The result contains only unique values.";
+    FunctionDocumentation::Syntax intersect_syntax = "arrayIntersect(arr, arr1, ..., arrN)";
+    FunctionDocumentation::Arguments intersect_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/sql-reference/data-types/array)."}};
+    FunctionDocumentation::ReturnedValue intersect_returned_value = {"Returns an array with distinct elements that are present in all N arrays", {"Array(T)"}};    FunctionDocumentation::Examples intersect_example = {{"Usage example",
+R"(SELECT
+arrayIntersect([1, 2], [1, 3], [2, 3]) AS empty_intersection,
+arrayIntersect([1, 2], [1, 3], [1, 4]) AS non_empty_intersection
+)", R"(
+┌─non_empty_intersection─┬─empty_intersection─┐
+│ []                     │ [1]                │
+└────────────────────────┴────────────────────┘
+)"}};
+    FunctionDocumentation::IntroducedIn intersect_introduced_in = {1, 1};
+    FunctionDocumentation::Category intersect_category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation intersect_documentation = {intersect_description, intersect_syntax, intersect_argument, {}, intersect_returned_value, intersect_example, intersect_introduced_in, intersect_category};
+
+    factory.registerFunction<ArrayIntersect>(intersect_documentation);
+
+    FunctionDocumentation::Description union_description = "Takes multiple arrays and returns an array which contains all elements that are present in one of the source arrays.The result contains only unique values.";
+    FunctionDocumentation::Syntax union_syntax = "arrayUnion(arr1, arr2, ..., arrN)";
+    FunctionDocumentation::Arguments union_argument = {{"arrN", "N arrays from which to make the new array.", {"Array(T)"}}};
+    FunctionDocumentation::ReturnedValue union_returned_value = {"Returns an array with distinct elements from the source arrays", {"Array(T)"}};    FunctionDocumentation::Examples union_example = {{"Usage example",
+R"(SELECT
+arrayUnion([-2, 1], [10, 1], [-2], []) as num_example,
+arrayUnion(['hi'], [], ['hello', 'hi']) as str_example,
+arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
+)",R"(
+┌─num_example─┬─str_example────┬─null_example─┐
+│ [10,-2,1]   │ ['hello','hi'] │ [3,2,1,NULL] │
+└─────────────┴────────────────┴──────────────┘
+)"}};
+    FunctionDocumentation::IntroducedIn union_introduced_in = {24, 10};
+    FunctionDocumentation::Category union_category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation union_documentation = {union_description, union_syntax, union_argument, {}, union_returned_value, union_example, union_introduced_in, union_category};
+
+    factory.registerFunction<ArrayUnion>(union_documentation);
+
+    FunctionDocumentation::Description symdiff_description = R"(Takes multiple arrays and returns an array with elements that are not present in all source arrays. The result contains only unique values.
+
+:::note
+The symmetric difference of _more than two sets_ is [mathematically defined](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference)
+as the set of all input elements which occur in an odd number of input sets.
+In contrast, function `arraySymmetricDifference` simply returns the set of input elements which do not occur in all input sets.
+:::
+)";
+    FunctionDocumentation::Syntax symdiff_syntax = "arraySymmetricDifference(arr1, arr2, ... , arrN)";
+    FunctionDocumentation::Arguments symdiff_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/sql-reference/data-types/array)."}};
+    FunctionDocumentation::ReturnedValue symdiff_returned_value = {"Returns an array of distinct elements not present in all source arrays", {"Array(T)"}};    FunctionDocumentation::Examples symdiff_example = {{"Usage example", R"(SELECT
+arraySymmetricDifference([1, 2], [1, 2], [1, 2]) AS empty_symmetric_difference,
+arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_difference;
+)", R"(
+┌─empty_symmetric_difference─┬─non_empty_symmetric_difference─┐
+│ []                         │ [3]                            │
+└────────────────────────────┴────────────────────────────────┘
+)"}};
+    FunctionDocumentation::IntroducedIn symdiff_introduced_in = {25, 4};
+    FunctionDocumentation::Category symdiff_category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation symdiff_documentation = {symdiff_description, symdiff_syntax, symdiff_argument, {}, symdiff_returned_value, symdiff_example, symdiff_introduced_in, symdiff_category};
+
+    factory.registerFunction<ArraySymmetricDifference>(symdiff_documentation);
 }
 
 }

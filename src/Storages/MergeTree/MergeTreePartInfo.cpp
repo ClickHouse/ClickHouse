@@ -2,8 +2,10 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/ProtocolDefines.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 namespace DB
 {
@@ -48,7 +50,11 @@ void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, Mer
         if (!std::all_of(partition_id.begin(), partition_id.end(), is_valid_char))
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Invalid partition format: {}", partition_id);
     }
+}
 
+String MergeTreePartInfo::getOriginalPartitionId() const
+{
+    return isPatch() ? getOriginalPartitionIdOfPatch(partition_id) : partition_id;
 }
 
 std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
@@ -120,7 +126,7 @@ std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
 
     MergeTreePartInfo part_info;
 
-    part_info.partition_id = std::move(partition_id);
+    part_info.setPartitionId(partition_id);
     part_info.min_block = min_block_num;
     part_info.max_block = max_block_num;
 
@@ -157,8 +163,8 @@ void MergeTreePartInfo::parseMinMaxDatesFromPartName(const String & part_name, D
 
     const auto & date_lut = DateLUT::serverTimezoneInstance();
 
-    min_date = date_lut.YYYYMMDDToDayNum(min_yyyymmdd);
-    max_date = date_lut.YYYYMMDDToDayNum(max_yyyymmdd);
+    min_date = static_cast<DayNum::UnderlyingType>(date_lut.YYYYMMDDToDayNum(min_yyyymmdd));
+    max_date = static_cast<DayNum::UnderlyingType>(date_lut.YYYYMMDDToDayNum(max_yyyymmdd));
 
     auto min_month = date_lut.toNumYYYYMM(min_date);
     auto max_month = date_lut.toNumYYYYMM(max_date);

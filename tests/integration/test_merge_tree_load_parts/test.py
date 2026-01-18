@@ -1,4 +1,6 @@
 import time
+import random
+import string
 
 import pytest
 
@@ -39,52 +41,48 @@ def started_cluster():
         cluster.shutdown()
 
 
+def random_string(length):
+    return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
+
+
 def test_merge_tree_load_parts(started_cluster):
+    table = f"mt_load_parts_{random_string(6)}"
     node1.query(
-        """
-        CREATE TABLE mt_load_parts (pk UInt32, id UInt32, s String)
+        f"""
+        CREATE TABLE {table} (pk UInt32, id UInt32, s String)
         ENGINE = MergeTree ORDER BY id PARTITION BY pk"""
     )
 
-    node1.query("SYSTEM STOP MERGES mt_load_parts")
+    node1.query(f"SYSTEM STOP MERGES {table}")
 
     for i in range(20):
-        node1.query(
-            f"INSERT INTO mt_load_parts VALUES (44, {i}, randomPrintableASCII(10))"
-        )
+        node1.query(f"INSERT INTO {table} VALUES (44, {i}, randomPrintableASCII(10))")
 
     node1.restart_clickhouse(kill=True)
     for i in range(1, 21):
         assert node1.contains_in_log(f"Loading Active part 44_{i}_{i}_0")
 
-    node1.query("OPTIMIZE TABLE mt_load_parts FINAL")
+    node1.query(f"OPTIMIZE TABLE {table} FINAL")
     node1.restart_clickhouse(kill=True)
 
-    node1.query("SYSTEM WAIT LOADING PARTS mt_load_parts")
+    node1.query(f"SYSTEM WAIT LOADING PARTS {table}")
 
     assert node1.contains_in_log("Loading Active part 44_1_20")
     for i in range(1, 21):
         assert not node1.contains_in_log(f"Loading Active part 44_{i}_{i}_0")
         assert node1.contains_in_log(f"Loading Outdated part 44_{i}_{i}_0")
 
-    assert node1.query("SELECT count() FROM mt_load_parts") == "20\n"
+    assert node1.query(f"SELECT count() FROM {table}") == "20\n"
 
-    assert (
-        node1.query(
-            "SELECT count() FROM system.parts WHERE table = 'mt_load_parts' AND active"
-        )
-        == "1\n"
-    )
+    assert node1.query(f"SELECT count() FROM system.parts WHERE table = '{table}' AND active") == "1\n"
 
-    node1.query("ALTER TABLE mt_load_parts MODIFY SETTING old_parts_lifetime = 1")
-    node1.query("DETACH TABLE mt_load_parts")
-    node1.query("ATTACH TABLE mt_load_parts")
+    node1.query(f"ALTER TABLE {table} MODIFY SETTING old_parts_lifetime = 1")
+    node1.query(f"DETACH TABLE {table}")
+    node1.query(f"ATTACH TABLE {table}")
 
-    node1.query("SYSTEM WAIT LOADING PARTS mt_load_parts")
+    node1.query(f"SYSTEM WAIT LOADING PARTS {table}")
 
-    table_path = node1.query(
-        "SELECT data_paths[1] FROM system.tables WHERE table = 'mt_load_parts'"
-    ).strip()
+    table_path = node1.query(f"SELECT data_paths[1] FROM system.tables WHERE table = '{table}'").strip()
 
     part_dirs = node1.exec_in_container(["bash", "-c", f"ls {table_path}"], user="root")
 
@@ -110,65 +108,49 @@ def test_merge_tree_load_parts(started_cluster):
 
 
 def test_merge_tree_load_parts_corrupted(started_cluster):
+    table = f"mt_load_parts_2_{random_string(6)}"
+
     for i, node in enumerate([node1, node2]):
         node.query(
             f"""
-            CREATE TABLE mt_load_parts_2 (pk UInt32, id UInt32, s String)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/mt_load_parts_2', '{i}') ORDER BY id PARTITION BY pk"""
+            CREATE TABLE {table} (pk UInt32, id UInt32, s String)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/{table}', '{i}') ORDER BY id PARTITION BY pk"""
         )
 
     """min-max blocks in created parts: 1_1_0, 2_2_0, 1_2_1, 3_3_0, 1_3_2"""
     for partition in [111, 222, 333]:
-        node1.query(
-            f"INSERT INTO mt_load_parts_2 VALUES ({partition}, 0, randomPrintableASCII(10))"
-        )
+        node1.query(f"INSERT INTO {table} VALUES ({partition}, 0, randomPrintableASCII(10))")
+        node1.query(f"INSERT INTO {table} VALUES ({partition}, 1, randomPrintableASCII(10))")
+        node1.query(f"OPTIMIZE TABLE {table} PARTITION {partition} FINAL")
+        node1.query(f"INSERT INTO {table} VALUES ({partition}, 2, randomPrintableASCII(10))")
+        node1.query(f"OPTIMIZE TABLE {table} PARTITION {partition} FINAL")
 
-        node1.query(
-            f"INSERT INTO mt_load_parts_2 VALUES ({partition}, 1, randomPrintableASCII(10))"
-        )
-
-        node1.query(f"OPTIMIZE TABLE mt_load_parts_2 PARTITION {partition} FINAL")
-
-        node1.query(
-            f"INSERT INTO mt_load_parts_2 VALUES ({partition}, 2, randomPrintableASCII(10))"
-        )
-
-        node1.query(f"OPTIMIZE TABLE mt_load_parts_2 PARTITION {partition} FINAL")
-
-    node2.query("SYSTEM SYNC REPLICA mt_load_parts_2", timeout=30)
+    node2.query(f"SYSTEM SYNC REPLICA {table}", timeout=30)
 
     def get_part_name(node, partition, min_block, max_block):
         return node.query(
             f"""
             SELECT name FROM system.parts
-            WHERE table = 'mt_load_parts_2'
+            WHERE table = '{table}'
             AND partition = '{partition}'
             AND min_block_number = {min_block}
             AND max_block_number = {max_block}"""
         ).strip()
 
-    corrupt_part_data_on_disk(node1, "mt_load_parts_2", get_part_name(node1, 111, 0, 2))
-    corrupt_part_data_on_disk(node1, "mt_load_parts_2", get_part_name(node1, 222, 0, 2))
-    corrupt_part_data_on_disk(node1, "mt_load_parts_2", get_part_name(node1, 222, 0, 1))
-    corrupt_part_data_on_disk(node1, "mt_load_parts_2", get_part_name(node1, 333, 0, 1))
-    corrupt_part_data_on_disk(node1, "mt_load_parts_2", get_part_name(node1, 333, 2, 2))
+    corrupt_part_data_on_disk(node1, table, get_part_name(node1, 111, 0, 2))
+    corrupt_part_data_on_disk(node1, table, get_part_name(node1, 222, 0, 2))
+    corrupt_part_data_on_disk(node1, table, get_part_name(node1, 222, 0, 1))
+    corrupt_part_data_on_disk(node1, table, get_part_name(node1, 333, 0, 1))
+    corrupt_part_data_on_disk(node1, table, get_part_name(node1, 333, 2, 2))
 
     node1.restart_clickhouse(kill=True)
-    node1.query("SYSTEM WAIT LOADING PARTS mt_load_parts_2")
+    node1.query(f"SYSTEM WAIT LOADING PARTS {table}")
 
     def check_parts_loading(node, partition, loaded, failed, skipped):
-        # The whole test produces around 6-700 lines, so 2k is plenty enough.
-        # wait_for_log_line uses tail + grep, so the overhead is negligible
-        look_behind_lines = 2000
         for min_block, max_block in loaded:
             part_name = f"{partition}_{min_block}_{max_block}"
-            assert node.wait_for_log_line(
-                f"Loading Active part {part_name}", look_behind_lines=look_behind_lines
-            )
-            assert node.wait_for_log_line(
-                f"Finished loading Active part {part_name}",
-                look_behind_lines=look_behind_lines,
-            )
+            assert node.wait_for_log_line(f"{table}.*Loading Active part {part_name}")
+            assert node.wait_for_log_line(f"{table}.*Finished loading Active part {part_name}")
 
         failed_part_names = []
         # Let's wait until there is some information about all expected parts, and only
@@ -176,19 +158,15 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
         for min_block, max_block in failed:
             part_name = f"{partition}_{min_block}_{max_block}"
             failed_part_names.append(part_name)
-            assert node.wait_for_log_line(
-                f"Loading Active part {part_name}", look_behind_lines=look_behind_lines
-            )
+            assert node.wait_for_log_line(f"{table}.*Loading Active part {part_name}")
 
         for failed_part_name in failed_part_names:
-            assert not node.contains_in_log(
-                f"Finished loading Active part {failed_part_name}"
-            )
+            assert not node.contains_in_log(f"{table}.*Finished loading Active part {failed_part_name}")
 
         for min_block, max_block in skipped:
             part_name = f"{partition}_{min_block}_{max_block}"
-            assert not node.contains_in_log(f"Loading Active part {part_name}")
-            assert not node.contains_in_log(f"Finished loading Active part {part_name}")
+            assert not node.contains_in_log(f"{table}.*Loading Active part {part_name}")
+            assert not node.contains_in_log(f"{table}.*Finished loading Active part {part_name}")
 
     check_parts_loading(
         node1, 111, loaded=[(0, 1), (2, 2)], failed=[(0, 2)], skipped=[(0, 0), (1, 1)]
@@ -200,23 +178,23 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
         node1, 333, loaded=[(0, 2)], failed=[], skipped=[(0, 0), (1, 1), (2, 2), (0, 1)]
     )
 
-    node1.query("SYSTEM SYNC REPLICA mt_load_parts_2", timeout=30)
-    node1.query("OPTIMIZE TABLE mt_load_parts_2 FINAL")
-    node1.query("SYSTEM SYNC REPLICA mt_load_parts_2", timeout=30)
+    node1.query(f"SYSTEM SYNC REPLICA {table}", timeout=30)
+    node1.query(f"OPTIMIZE TABLE {table} FINAL")
+    node1.query(f"SYSTEM SYNC REPLICA {table}", timeout=30)
 
     assert (
         node1.query(
-            """
-            SELECT pk, count() FROM mt_load_parts_2
+            f"""
+            SELECT pk, count() FROM {table}
             GROUP BY pk ORDER BY pk"""
         )
         == "111\t3\n222\t3\n333\t3\n"
     )
     assert (
         node1.query(
-            """
+            f"""
             SELECT partition, count()
-            FROM system.parts WHERE table = 'mt_load_parts_2' AND active
+            FROM system.parts WHERE table = '{table}' AND active
             GROUP BY partition ORDER BY partition"""
         )
         == "111\t1\n222\t1\n333\t1\n"
@@ -224,6 +202,7 @@ def test_merge_tree_load_parts_corrupted(started_cluster):
 
 
 def test_merge_tree_load_parts_filesystem_error(started_cluster):
+    table = f"mt_load_parts_fs_error_{random_string(6)}"
     if node3.is_built_with_sanitizer() or node3.is_debug_build():
         pytest.skip(
             "Skip with debug build and sanitizers. \
@@ -231,16 +210,16 @@ def test_merge_tree_load_parts_filesystem_error(started_cluster):
         )
 
     node3.query(
-        """
-        CREATE TABLE mt_load_parts (id UInt32)
+        f"""
+        CREATE TABLE {table} (id UInt32)
         ENGINE = MergeTree ORDER BY id
         SETTINGS index_granularity_bytes = 0"""
     )
 
-    node3.query("SYSTEM STOP MERGES mt_load_parts")
+    node3.query(f"SYSTEM STOP MERGES {table}")
 
     for i in range(2):
-        node3.query(f"INSERT INTO mt_load_parts VALUES ({i})")
+        node3.query(f"INSERT INTO {table} VALUES ({i})")
 
     # We want to somehow check that exception thrown on part creation is handled during part loading.
     # It can be a filesystem exception triggered at initialization of part storage but it hard
@@ -263,13 +242,11 @@ def test_merge_tree_load_parts_filesystem_error(started_cluster):
             privileged=True,
         )
 
-    corrupt_part("mt_load_parts", "all_1_1_0")
+    corrupt_part(table, "all_1_1_0")
     node3.restart_clickhouse(kill=True)
 
-    assert node3.query("SELECT * FROM mt_load_parts") == "1\n"
+    assert node3.query(f"SELECT * FROM {table}") == "1\n"
     assert (
-        node3.query(
-            "SELECT name FROM system.detached_parts WHERE table = 'mt_load_parts'"
-        )
+        node3.query(f"SELECT name FROM system.detached_parts WHERE table = '{table}'")
         == "broken-on-start_all_1_1_0\n"
     )

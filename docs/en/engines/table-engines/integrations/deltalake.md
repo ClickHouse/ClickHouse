@@ -1,20 +1,22 @@
 ---
-slug: /engines/table-engines/integrations/deltalake
+description: 'This engine provides a read-only integration with existing Delta Lake
+  tables in Amazon S3.'
+sidebar_label: 'DeltaLake'
 sidebar_position: 40
-sidebar_label: DeltaLake
-title: "DeltaLake Table Engine"
-description: "This engine provides a read-only integration with existing Delta Lake tables in Amazon S3."
+slug: /engines/table-engines/integrations/deltalake
+title: 'DeltaLake table engine'
+doc_type: 'reference'
 ---
 
-# DeltaLake Table Engine
+# DeltaLake table engine
 
 This engine provides a read-only integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3.
 
-## Create Table {#create-table}
+## Create table {#create-table}
 
 Note that the Delta Lake table must already exist in S3, this command does not take DDL parameters to create a new table.
 
-``` sql
+```sql
 CREATE TABLE deltalake
     ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,])
 ```
@@ -34,7 +36,7 @@ CREATE TABLE deltalake ENGINE=DeltaLake('http://mars-doc-test.s3.amazonaws.com/c
 
 Using named collections:
 
-``` xml
+```xml
 <clickhouse>
     <named_collections>
         <deltalake_conf>
