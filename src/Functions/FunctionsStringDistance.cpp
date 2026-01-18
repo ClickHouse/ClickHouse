@@ -274,6 +274,8 @@ struct ByteEditDistanceImpl
 
         iota(distances0.data(), haystack_size + 1, ResultType(0));
 
+        const auto has_tail = (haystack_size % 2) == 1;
+
         for (size_t pos_needle = 0; pos_needle < needle_size; ++pos_needle)
         {
             curr[0] = static_cast<ResultType>(pos_needle + 1);
@@ -321,7 +323,7 @@ struct ByteEditDistanceImpl
                 }
                 curr[pos_haystack + 2] = std::min({deletion, substitution, insertion});
             }
-            if (pos_haystack < haystack_size)
+            if (has_tail)
             {
                 deletion = prev[pos_haystack + 1] + 1;
                 insertion = curr[pos_haystack] + 1;
