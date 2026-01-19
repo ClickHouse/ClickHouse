@@ -178,7 +178,7 @@ void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseA
     /// e.g. `s3(endpoint, ..., SETTINGS setting=value, ..., setting=value)`
     /// We do similarly for some other table functions
     /// whose storage implementation supports storage settings (for example, MySQL).
-    for (auto it = args.begin(); it != args.end(); ++it)
+    for (auto * it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
@@ -270,8 +270,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             columns,
             ConstraintsDescription{},
             partition_by,
-            context,
-            /* is_table_function */true);
+            context);
 
         storage->startup();
         return storage;
@@ -310,7 +309,6 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* is_datalake_query*/ false,
         /* distributed_processing */ can_use_distributed_iterator,
         /* partition_by */ partition_by,
-        /* order_by */ nullptr,
         /* is_table_function */true);
 
     storage->startup();
@@ -417,10 +415,6 @@ template class TableFunctionObjectStorage<OSSDefinition, StorageS3Configuration>
 #if USE_HDFS
 template class TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfiguration>;
 template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConfiguration>;
-#endif
-
-#if USE_AVRO
-template class TableFunctionObjectStorage<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration, true>;
 #endif
 
 #if USE_AVRO && USE_AWS_S3

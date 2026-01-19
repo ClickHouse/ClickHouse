@@ -137,8 +137,6 @@ void IStorageCluster::read(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    updateConfigurationIfNeeded(context);
-
     storage_snapshot->check(column_names);
 
     updateBeforeRead(context);

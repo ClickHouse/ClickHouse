@@ -28,6 +28,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool describe_compact_output;
+    extern const SettingsBool describe_extend_object_types;
     extern const SettingsBool describe_include_subcolumns;
     extern const SettingsBool describe_include_virtual_columns;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -223,6 +224,9 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
                 virtual_columns.push_back(column);
         }
     }
+
+    if (settings[Setting::describe_extend_object_types])
+        storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 }
 
 void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
@@ -230,10 +234,11 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
     size_t i = 0;
     res_columns[i++]->insert(column.name);
 
+    auto type = storage_snapshot ? storage_snapshot->getConcreteType(column.name) : column.type;
     if (settings[Setting::print_pretty_type_names])
-        res_columns[i++]->insert(column.type->getPrettyName());
+        res_columns[i++]->insert(type->getPrettyName());
     else
-        res_columns[i++]->insert(column.type->getName());
+        res_columns[i++]->insert(type->getName());
 
     if (!settings[Setting::describe_compact_output])
     {
@@ -270,6 +275,8 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
 
 void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
 {
+    auto type = storage_snapshot ? storage_snapshot->getConcreteType(column.name) : column.type;
+
     IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
     {
         size_t i = 0;
@@ -304,7 +311,7 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
         if (settings[Setting::describe_include_virtual_columns])
             res_columns[i++]->insert(is_virtual);
 
-    }, ISerialization::SubstreamData(column.type->getDefaultSerialization()).withType(column.type));
+    }, ISerialization::SubstreamData(type->getDefaultSerialization()).withType(type));
 }
 
 void registerInterpreterDescribeQuery(InterpreterFactory & factory)

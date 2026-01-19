@@ -287,7 +287,7 @@ SharedHeader InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & quer
     auto key = query_ptr_->formatWithSecretsOneLine();
     {
         auto [cache, lock] = context_->getSampleBlockCache();
-        if (cache->contains(key))
+        if (cache->find(key) != cache->end())
             return cache->at(key);
     }
 
@@ -333,8 +333,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
                 auto actions_dag = ActionsDAG::makeConvertingActions(
                         plans[i]->getCurrentHeader()->getColumnsWithTypeAndName(),
                         result_header->getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Position,
-                        context);
+                        ActionsDAG::MatchColumnsMode::Position);
                 auto converting_step = std::make_unique<ExpressionStep>(plans[i]->getCurrentHeader(), std::move(actions_dag));
                 converting_step->setStepDescription("Conversion before UNION");
                 plans[i]->addStep(std::move(converting_step));
