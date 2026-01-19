@@ -41,39 +41,50 @@ public:
         std::atomic<size_t> hits = 0;
         std::atomic<bool> invalidated = false;
 
-        std::string toString() const;
+        std::string toString(const std::string & prefix = "") const;
 
-        bool isEvictingUnlocked() const { return evicting; }
-        bool isEvicting(const LockedKey &) const { return evicting; }
-        /// This does not look good to have isEvicting with two options for locks,
-        /// but still it is valid as we do setEvicting always under both of them.
-        /// (Well, not always - only always for setting it to True,
-        /// but for False we have lower guarantees and allow a logical race,
-        /// physical race is not possible because the value is atomic).
-        /// We can avoid this ambiguity for isEvicting by introducing
-        /// a separate lock `EntryGuard::Lock`, it will make this part of code more coherent,
-        /// but it will introduce one more mutex while it is avoidable.
-        /// Introducing one more mutex just for coherency does not win the trade-off (isn't it?).
-        void setEvictingFlag(const LockedKey &) const
+        bool isEvicting(const LockedKey &) const
         {
-            auto prev = evicting.exchange(true, std::memory_order_relaxed);
-            chassert(!prev, fmt::format("Evicting flag not reset for key {} offset {}", key, offset));
-            UNUSED(prev);
+            return isEvictingUnlocked();
         }
 
-        void setRemoved(const CachePriorityGuard::WriteLock &) { removed = true; evicting = false; }
-        bool isRemoved(const CachePriorityGuard::WriteLock &) const { return removed; }
-
-        void resetEvictingFlag() const
+        /// Used when less strong guarantees are acceptable trade off for not taking a mutex.
+        bool isEvictingUnlocked() const
         {
-            auto prev = evicting.exchange(false, std::memory_order_relaxed);
-            chassert(prev);
-            UNUSED(prev);
+            return state.load(std::memory_order_relaxed) == State::Evicting;
+        }
+
+        bool isRemoved(const CachePriorityGuard::WriteLock &) const
+        {
+            return state.load(std::memory_order_relaxed) == State::Removed;
+        }
+
+        void setEvictingFlag(const LockedKey &)
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Evicting, std::memory_order_relaxed);
+            chassert(prev != State::Evicting, toString("Evicting flag is already set for "));
+        }
+
+        void setRemoved(const CachePriorityGuard::WriteLock &)
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Removed, std::memory_order_relaxed);
+            chassert(prev != State::Removed, toString("Removed flag is already set for "));
+        }
+
+        void resetEvictingFlag()
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Active, std::memory_order_relaxed);
+            chassert(prev == State::Evicting, toString("Evicting flag is not set for "));
         }
 
     private:
-        mutable std::atomic<bool> evicting = false;
-        bool removed = false;
+        enum class State
+        {
+            Active,
+            Evicting,
+            Removed
+        };
+        std::atomic<State> state = State::Active;
     };
     using EntryPtr = std::shared_ptr<Entry>;
 
@@ -109,7 +120,7 @@ public:
     struct InvalidatedEntryInfo
     {
         /// Iterator becomes invalid when entry is removed
-        /// so we also save the entry here.
+        /// so we also save the entry here to be able to check validity of the iterator.
         IFileCachePriority::EntryPtr entry;
         IFileCachePriority::IteratorPtr iterator;
     };
@@ -132,17 +143,17 @@ public:
     size_t getElementsLimit(const CacheStateGuard::Lock &) const { return max_elements; }
     size_t getElementsLimitApprox() const { return max_elements.load(std::memory_order_relaxed); }
 
-    virtual bool isOvercommitEviction() const { return false; }
-
     virtual size_t getSize(const CacheStateGuard::Lock &) const = 0;
     virtual size_t getSizeApprox() const = 0;
 
     virtual size_t getElementsCount(const CacheStateGuard::Lock &) const = 0;
     virtual size_t getElementsCountApprox() const = 0;
 
+    virtual bool isOvercommitEviction() const { return false; }
     virtual double getSLRUSizeRatio() const { return 0; }
 
     virtual std::string getStateInfoForLog(const CacheStateGuard::Lock &) const = 0;
+    /// Check correctness of cache state.
     virtual void check(const CacheStateGuard::Lock &) const;
 
     virtual EvictionInfoPtr collectEvictionInfo(
@@ -236,6 +247,8 @@ public:
 
     virtual void resetEvictionPos() = 0;
 
+    /// Remove given queue entries for the queue.
+    /// Used to cleanup invalidated queue entries.
     static void removeEntries(const std::vector<InvalidatedEntryInfo> & entries, const CachePriorityGuard::WriteLock &);
 
     struct UsageStat
@@ -245,13 +258,14 @@ public:
     };
     virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
 
-    struct HoldSpace;
+    class HoldSpace;
     using HoldSpacePtr = std::unique_ptr<HoldSpace>;
     /// A space holder implementation, which allows to take hold of
     /// some space in cache given that this space was freed.
     /// Takes hold of the space in constructor and releases it in destructor.
-    struct HoldSpace : private boost::noncopyable
+    class HoldSpace : private boost::noncopyable
     {
+    public:
         HoldSpace(
             size_t size_,
             size_t elements_,
@@ -261,6 +275,10 @@ public:
         {
             priority.holdImpl(size, elements, lock);
         }
+
+        size_t getSize() const { return size; }
+
+        size_t getElements() const { return elements; }
 
         void release(const CacheStateGuard::Lock &) { releaseUnlocked(); }
 
@@ -277,9 +295,9 @@ public:
                 releaseUnlocked();
         }
 
+    private:
         size_t size;
         size_t elements;
-    private:
         IFileCachePriority & priority;
         bool released = false;
 
@@ -289,6 +307,7 @@ public:
                 return;
             released = true;
             priority.releaseImpl(size, elements);
+            size = elements = 0;
         }
     };
 
@@ -302,6 +321,8 @@ protected:
     IFileCachePriority(size_t max_size_, size_t max_elements_);
 
     virtual void holdImpl(size_t /* size */, size_t /* elements */, const CacheStateGuard::Lock &) {}
+    /// No lock is required in releaseImpl unlike holdImpl,
+    /// because for releasing hold space we do not need strong guarantees.
     virtual void releaseImpl(size_t /* size */, size_t /* elements */) {}
 
     std::atomic<size_t> max_size = 0;

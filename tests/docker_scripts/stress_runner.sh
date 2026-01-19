@@ -72,9 +72,7 @@ cache_policy=""
 if [ $((RANDOM % 2)) -eq 1 ]; then
     cache_policy="SLRU"
 else
-    # TODO: revert before merge
-    cache_policy="SLRU"
-    #cache_policy="LRU"
+    cache_policy="LRU"
 fi
 
 echo "Using cache policy: $cache_policy"
@@ -112,23 +110,19 @@ if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     TEMP_POLICY="azure_cache"
 else
-    #TODO: revert before merge
-    TEMP_POLICY="s3_cache"
-    export USE_S3_STORAGE_FOR_MERGE_TREE=1
-    echo "Using s3 storage policy"
-    #random=$((RANDOM % 3))
-    #if [[ $random -eq 0 ]]; then
-    #    TEMP_POLICY="default"
-    #    echo "Using local storage policy"
-    #elif [[ $random -eq 1 ]]; then
-    #    TEMP_POLICY="s3_cache"
-    #    export USE_S3_STORAGE_FOR_MERGE_TREE=1
-    #    echo "Using s3 storage policy"
-    #elif [[ $random -eq 2 ]]; then
-    #    TEMP_POLICY="azure_cache"
-    #    export USE_AZURE_STORAGE_FOR_MERGE_TREE=1
-    #    echo "Using azure storage policy"
-    #fi
+    random=$((RANDOM % 3))
+    if [[ $random -eq 0 ]]; then
+        TEMP_POLICY="default"
+        echo "Using local storage policy"
+    elif [[ $random -eq 1 ]]; then
+        TEMP_POLICY="s3_cache"
+        export USE_S3_STORAGE_FOR_MERGE_TREE=1
+        echo "Using s3 storage policy"
+    elif [[ $random -eq 2 ]]; then
+        TEMP_POLICY="azure_cache"
+        export USE_AZURE_STORAGE_FOR_MERGE_TREE=1
+        echo "Using azure storage policy"
+    fi
 fi
 
 

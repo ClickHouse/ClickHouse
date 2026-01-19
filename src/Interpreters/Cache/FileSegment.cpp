@@ -953,7 +953,15 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         if (!it)
             return;
 
-        const auto & entry = it->getEntry();
+        auto entry = it->getEntry();
+        if (entry->size == 0)
+        {
+            /// A race in case of SLRU eviction is possible here
+            /// when we do setIterator during downgrade.
+            /// Then as entry is invalidated right after we set a new iterator
+            /// - just fetch entry once more.
+            entry = it->getEntry();
+        }
         if (download_state != State::DOWNLOADING && entry->size != reserved_size)
             throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size.load(), reserved_size.load()));
 

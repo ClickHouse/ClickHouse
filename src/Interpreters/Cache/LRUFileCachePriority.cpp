@@ -159,7 +159,7 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
         log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
         entry.key, entry.offset, entry.size.load());
 
-    skipEvictionPosIfEqual(it, lock);
+    moveEvictionPosIfEqual(it, lock);
     return queue.erase(it);
 }
 
@@ -258,7 +258,7 @@ LRUFileCachePriority::iterateImpl(
         if (entry.isEvicting(*locked_key))
         {
             /// Skip queue entries which are in evicting state.
-            /// We threat them the same way as deleted entries.
+            /// We treat them the same way as deleted entries.
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
             stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Evicting);
             ++it;
@@ -513,7 +513,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
     }
 #endif
 
-    skipEvictionPosIfEqual(it.iterator, lock);
+    moveEvictionPosIfEqual(it.iterator, lock);
     queue.splice(queue.end(), other.queue, it.iterator);
 
     state->add(entry.size, /* elements */1, state_lock);
@@ -565,10 +565,12 @@ bool LRUFileCachePriority::tryIncreasePriority(
     CacheStateGuard &)
 {
     auto lock = queue_guard.writeLock();
-    iterator.getEntry()->hits += 1;
+    const auto & entry = iterator.getEntry();
+    chassert(!entry->isEvictingUnlocked());
+    entry->hits += 1;
 
     auto it = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator).get();
-    skipEvictionPosIfEqual(it, lock);
+    moveEvictionPosIfEqual(it, lock);
     queue.splice(queue.end(), queue, it);
     return true;
 }
@@ -703,7 +705,7 @@ void LRUFileCachePriority::holdImpl(
     total_hold_size += size;
     total_hold_elements += elements;
 
-    LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
+    //LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
 }
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
@@ -717,7 +719,7 @@ void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
     total_hold_size -= size;
     total_hold_elements -= elements;
 
-    LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
+    //LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
 }
 
 LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionPos(const CachePriorityGuard::ReadLock &) const
@@ -732,7 +734,7 @@ void LRUFileCachePriority::setEvictionPos(LRUQueue::iterator it, const CachePrio
     eviction_pos = it;
 }
 
-void LRUFileCachePriority::skipEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
+void LRUFileCachePriority::moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &)
 {
     std::lock_guard lk(eviction_pos_mutex);
     if (eviction_pos != LRUQueue::iterator{} && eviction_pos == it)

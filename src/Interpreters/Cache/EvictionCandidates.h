@@ -77,7 +77,10 @@ public:
     std::vector<CacheUsagePtr> getCacheUsage() const { return sorted_cache_usage; }
 
 private:
-    void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info, bool update_if_exists);
+    /// If `merge_if_exists` is true
+    /// (meaning that eviction info by `queue_id` already exists),
+    /// combine two eviction info's into one.
+    void addImpl(const QueueID & queue_id, QueueEvictionInfoPtr info, bool merge_if_exists);
 
     size_t size_to_evict = 0; /// Total size to evict among all eviction infos.
     size_t elements_to_evict = 0; /// Total elements to evict among all eviction infos.
@@ -94,7 +97,9 @@ public:
     EvictionCandidates();
     ~EvictionCandidates();
 
+    /// Total number of eviction candidates.
     size_t size() const { return candidates_size; }
+    /// Total size in bytes of all eviction candidates.
     size_t bytes() const { return candidates_bytes; }
 
     auto begin(this auto && self) { return self.candidates.begin(); }

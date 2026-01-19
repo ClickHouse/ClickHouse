@@ -39,32 +39,32 @@ struct FileSegmentMetadata : private boost::noncopyable
 
     size_t size() const;
 
-    bool isEvictingOrRemoved(const LockedKey & lock) const
+    bool isEvictingOrRemoved(const LockedKey & lock) const { return isRemoved(lock) || isEvicting(lock); }
+
+    /// Whether queue entry is removed/evicted.
+    bool isRemoved(const LockedKey &) const { return removed; }
+
+    /// Whether queue entry is in evicting state.
+    bool isEvicting(const LockedKey & lock) const
     {
-        if (isRemoved(lock))
-            return true;
         auto iterator = getQueueIterator();
         if (!iterator)
             return false; /// Iterator is set only on first space reservation attempt.
         return iterator->getEntry()->isEvicting(lock);
     }
 
-    bool isRemoved(const LockedKey &) const
+    void setRemovedFlag(const LockedKey &, bool value = true)
     {
-        return removed;
+        removed = value;
+        chassert(!getQueueIterator());
     }
 
-    void setEvictingFlag(const LockedKey & locked_key) const
+    void setEvictingFlag(const LockedKey & lock) const
     {
         auto iterator = getQueueIterator();
         if (!iterator)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Iterator is not set");
-        iterator->getEntry()->setEvictingFlag(locked_key);
-    }
-
-    void setRemovedFlag(const LockedKey &, bool value = true)
-    {
-        removed = value;
+        iterator->getEntry()->setEvictingFlag(lock);
     }
 
     void resetEvictingFlag() const
@@ -81,7 +81,9 @@ struct FileSegmentMetadata : private boost::noncopyable
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }
 
     FileSegmentPtr file_segment;
+
 private:
+    /// If removed=true, then iterator=nullptr.
     bool removed = false;
 };
 

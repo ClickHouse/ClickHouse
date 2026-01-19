@@ -43,10 +43,12 @@ IFileCachePriority::Entry::Entry(const Entry & other)
 {
 }
 
-std::string IFileCachePriority::Entry::toString() const
+std::string IFileCachePriority::Entry::toString(const std::string & prefix) const
 {
-    return fmt::format("{}:{}:{} (invalidated: {}, evicting: {})",
-                       key, offset, size.load(), invalidated.load(), evicting.load());
+    return fmt::format(
+        "{}{}:{}:{} (state: {})",
+        prefix, key, offset, size.load(),
+        magic_enum::enum_name(state.load(std::memory_order_relaxed)));
 }
 
 void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
@@ -78,6 +80,10 @@ void IFileCachePriority::removeEntries(
 
     for (const auto & [entry, it] : entries)
     {
+        /// We store `entry` shared pointer in addition to `it`
+        /// (which is an iterator pointing to the same entry)
+        /// because `it` could become invalid,
+        /// so we use `entry` to check validity of the iterator.
         if (!entry->isRemoved(lock))
             it->remove(lock);
     }

@@ -72,6 +72,12 @@ public:
         IteratorPtr reservee = nullptr,
         bool best_effort = false) const override;
 
+    /// Create a queue entry for given key and offset.
+    /// Write priority lock is required.
+    /// State lock is required only if non-zero size entry is being added.
+    /// In most cases, we first add a zero-size queue entry with write priority lock,
+    /// then release that lock and take cache state lock
+    /// with which we increase size of the newly added zero-size queue entry.
     IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,
         size_t offset,
@@ -120,6 +126,7 @@ public:
 
     FileCachePriorityPtr copy() const { return std::make_unique<LRUFileCachePriority>(max_size, max_elements, description, state); }
 
+    /// See a comment near eviction_pos.
     void resetEvictionPos() override
     {
         std::lock_guard lock(eviction_pos_mutex);
@@ -147,6 +154,7 @@ protected:
 
     size_t getHoldElements() override { return total_hold_elements; }
 
+    /// Used to collect stats for a system table (in private).
     void setCacheUsageStatGuard(std::shared_ptr<CacheUsageStatGuard> guard) override
     {
         cache_usage_stat_guard = guard;
@@ -161,6 +169,11 @@ private:
     const std::string description;
     LoggerPtr log;
     StatePtr state;
+    /// Eviction position is a pointer used in collectCandidatesForEviction
+    /// to track where the last collectCandidatesForEviction stopped.
+    /// This is an optimization for concurrently made eviction attempts,
+    /// which allows us not to iterate the queue from scratch,
+    /// skipping elements which are likely in non-evictable state.
     LRUQueue::iterator eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     mutable std::mutex eviction_pos_mutex;
     /// Id of the current priority queue.
@@ -190,7 +203,6 @@ private:
         FileCacheReserveStat & stat,
         const CachePriorityGuard::ReadLock &) override;
 
-    //void iterate(IterateFunc func, const CachePriorityGuard::Lock &) override;
     LRUQueue::iterator iterateImpl(
         LRUQueue::iterator start_pos,
         IterateFunc func,
@@ -203,6 +215,8 @@ private:
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *);
 
+    /// Move a queue element from one queue to another.
+    /// Used in SLRU eviction policy to upgrade/downgrade queue entries.
     LRUIterator move(
         LRUIterator & it,
         LRUFileCachePriority & other,
@@ -213,7 +227,7 @@ private:
 
     LRUQueue::iterator getEvictionPos(const CachePriorityGuard::ReadLock &) const;
     void setEvictionPos(LRUQueue::iterator it, const CachePriorityGuard::ReadLock &);
-    void skipEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
+    void moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
 };
 
 class LRUFileCachePriority::LRUIterator : public IFileCachePriority::Iterator

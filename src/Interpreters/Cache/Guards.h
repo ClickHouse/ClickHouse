@@ -27,12 +27,12 @@ namespace DB
  * 4. CacheStateGuard (to update state (total size/elements) after successful space reservation).
  *
  * FileCache::removeIfExists
- * 1. CachePriorityGuard::Lock
+ * 1. CachePriorityGuard::WriteLock
  * 2. KeyGuard::Lock (taken via metadata lock)
  * 3. FileSegmentGuard::Lock
  *
  * FileCache::removeAllReleasable
- * 1. CachePriorityGuard::Lock
+ * 1. CachePriorityGuard::WriteLock
  * 2. any number of KeyGuard::Lock's locks (taken via metadata lock), but at a moment of time only one key lock can be hold
  * 3. FileSegmentGuard::Lock
  *
@@ -46,13 +46,11 @@ namespace DB
  * 2. FileSegmentGuard::Lock
  *
  * FileSegment::complete
- * 1. CachePriorityGuard::Lock
- * 2. KeyGuard::Lock (taken without metadata lock)
- * 3. FileSegmentGuard::Lock
+ * 1. KeyGuard::Lock (taken without metadata lock)
+ * 2. FileSegmentGuard::Lock
  *
  * Rules:
  * 1. Priority of locking: CachePriorityGuard::Lock > CacheMetadataGuard::Lock > KeyGuard::Lock > FileSegmentGuard::Lock
- * 2. If we take more than one key lock at a moment of time, we need to take CachePriorityGuard::Lock (example: tryReserve())
  *
  *
  *                                 _CachePriorityGuard_ / _CacheStateGuard
@@ -62,7 +60,7 @@ namespace DB
  *                                 4. FileSegment::complete
  *
  *             _KeyGuard_                                      _CacheMetadataGuard_
- *             1. all from CachePriorityGuard                          1. getOrSet/get/set
+ *             1. all from CachePriorityGuard                  1. getOrSet/get/set
  *             2. getOrSet/get/Set
  *
  * *This table does not include locks taken for introspection and system tables.
@@ -71,13 +69,16 @@ namespace DB
 /**
  * Cache priority queue guard.
  * "Write" lock is for priority queue structure modifications,
- * like adding, moving and removing elements.
- * "Read" lock is for read-only iteration of priority queue.
+ * (like adding, moving and removing elements).
+ * "Read" lock is for read-only iteration of priority queue
+ * (like collection of eviction candidates).
  */
 struct CachePriorityGuard : private boost::noncopyable
 {
-    /// struct is used (not keyword `using`) to make CachePriorityGuard::Lock non-interchangable with other guards locks
-    /// so, we wouldn't be able to pass CachePriorityGuard::Lock to a function which accepts KeyGuard::Lock, for example
+    /// struct is used (not keyword `using`) to make CachePriorityGuard::Lock
+    /// non-interchangable with other guards locks,
+    /// so we wouldn't be able to pass CachePriorityGuard::Lock to a function
+    /// which accepts KeyGuard::Lock.
     using WriteLock = std::unique_lock<SharedMutex>;
     using ReadLock = std::shared_lock<SharedMutex>;
 

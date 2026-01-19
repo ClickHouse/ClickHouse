@@ -44,8 +44,8 @@ std::string QueueEvictionInfo::toString() const
     wb << ", " << "elements to evict: " << elements_to_evict;
     if (hold_space)
     {
-        wb << ", " << "hold space size: " << hold_space->size;
-        wb << ", " << "hold space elements: " << hold_space->elements;
+        wb << ", " << "hold space size: " << hold_space->getSize();
+        wb << ", " << "hold space elements: " << hold_space->getElements();
     }
     return wb.str();
 }
@@ -65,7 +65,7 @@ void QueueEvictionInfo::merge(QueueEvictionInfoPtr other)
 
 EvictionInfo::EvictionInfo(QueueID queue_id, QueueEvictionInfoPtr info)
 {
-    addImpl(queue_id, std::move(info), /* update_if_exists */false);
+    addImpl(queue_id, std::move(info), /* merge_if_exists */false);
 }
 
 std::string EvictionInfo::toString() const
@@ -97,26 +97,26 @@ void EvictionInfo::releaseHoldSpace(const CacheStateGuard::Lock & lock)
 void EvictionInfo::add(EvictionInfoPtr && info)
 {
     for (auto && [queue_id, info_] : *info)
-        addImpl(queue_id, std::move(info_), /* update_if_exists */false);
+        addImpl(queue_id, std::move(info_), /* merge_if_exists */false);
 }
 
 void EvictionInfo::addOrUpdate(EvictionInfoPtr && info)
 {
     for (auto && [queue_id, info_] : *info)
-        addImpl(queue_id, std::move(info_), /* update_if_exists */true);
+        addImpl(queue_id, std::move(info_), /* merge_if_exists */true);
 }
 
 void EvictionInfo::addImpl(
     const QueueID & queue_id,
     QueueEvictionInfoPtr info,
-    bool update_if_exists)
+    bool merge_if_exists)
 {
     size_to_evict += info->size_to_evict;
     elements_to_evict += info->elements_to_evict;
     auto [it, inserted] = emplace(queue_id, std::move(info));
     if (!inserted)
     {
-        if (!update_if_exists)
+        if (!merge_if_exists)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Queue with id {} already exists", queue_id);
 

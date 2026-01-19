@@ -152,6 +152,8 @@ public:
         LRUFileCachePriority::LRUIterator && lru_iterator_,
         bool is_protected_);
 
+    QueueEntryType getType() const override { return is_protected ? QueueEntryType::SLRU_Protected : QueueEntryType::SLRU_Probationary; }
+
     EntryPtr getEntry() const override;
 
     bool isValid(const CachePriorityGuard::WriteLock &) override;
@@ -164,22 +166,20 @@ public:
 
     void decrementSize(size_t size) override;
 
-    QueueEntryType getType() const override { return is_protected ? QueueEntryType::SLRU_Protected : QueueEntryType::SLRU_Probationary; }
-
-    void setIterator(LRUIterator && iterator_, bool is_protected_, const CacheStateGuard::Lock &);
-
 private:
     bool assertValid() const;
+
+    void setIterator(LRUIterator && iterator_, bool is_protected_, const CacheStateGuard::Lock &);
 
     SLRUFileCachePriority * cache_priority;
     LRUIterator lru_iterator;
     /// Entry itself is stored by lru_iterator.entry.
-    /// We have it as a separate field to use entry without requiring any lock
+    /// We have it as a separate field to use entry without requiring priority write lock
     /// (which will be required if we wanted to get entry from lru_iterator.getEntry()).
     std::weak_ptr<Entry> entry TSA_GUARDED_BY(entry_mutex);
     mutable std::mutex entry_mutex;
     /// Atomic,
-    /// but needed only in order to do FileSegment::getInfo() without any lock,
+    /// but needed only in order to do FileSegment::getInfo() without priority write lock,
     /// which is done for system tables and logging.
     std::atomic<bool> is_protected;
 };
