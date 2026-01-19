@@ -166,26 +166,24 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
     )
     assert count > 0
 
-    node.query("SELECT * FROM t0 FORMAT NULL")
-
-    assert (
-        int(
+    def assert_cache_state():
+        """
+        The state of cache can change with background processes,so make sure that the state does not change dramatically
+        """
+        current_count = int(
             node.query(
                 f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='System'"
             )
         )
-        >= count
-    )
+        fraction = abs(current_count - count) / count
+        assert fraction < 0.2
+
+    node.query("SELECT * FROM t0 FORMAT NULL")
+
+    assert_cache_state()
 
     node.restart_clickhouse()
     wait_for_cache_initialized(node, storage_policy)
-    assert (
-        int(
-            node.query(
-                f"SELECT count(*) FROM system.filesystem_cache WHERE segment_type='System'"
-            )
-        )
-        >= count
-    )
+    assert_cache_state()
 
     node.query("DROP TABLE t0 SYNC")
