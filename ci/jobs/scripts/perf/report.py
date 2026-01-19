@@ -32,9 +32,14 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 unstable_backward_incompatible_queries = 0
+benchmarks = {
+    "clickbench",
+    "tpch" # already fast enough, here for consistency
+}
 
 # max seconds to run one query by itself, not counting preparation
-allowed_single_run_time = 2
+# by default it's 2 seconds, but for benchmarks it's 8 seconds
+get_allowed_single_run_time = lambda test_name: 8 if test_name in benchmarks else 2
 
 color_bad = "#ffb0c0"
 color_good = "#b0d050"
@@ -407,6 +412,7 @@ if args.report == "main":
         attrs = ["" for c in columns]
         for row in rows:
             anchor = f"{currentTableAnchor()}.{row[2]}.{row[3]}"
+            allowed_single_run_time = get_allowed_single_run_time(row[2])
             if float(row[1]) > 0.10:
                 attrs[1] = f'style="background: {color_bad}"'
                 unstable_backward_incompatible_queries += 1
@@ -581,7 +587,7 @@ if args.report == "main":
             else:
                 attrs[5] = ""
 
-            if r[0] != "Total" and float(r[4]) > allowed_single_run_time * total_runs:
+            if r[0] != "Total" and float(r[4]) > get_allowed_single_run_time(r[0]) * total_runs:
                 slow_average_tests += 1
                 attrs[4] = f'style="background: {color_bad}"'
                 errors_explained.append(
@@ -721,7 +727,7 @@ elif args.report == "all-queries":
             else:
                 attrs[4] = attrs[5] = ""
 
-            if (float(r[2]) + float(r[3])) / 2 > allowed_single_run_time:
+            if (float(r[2]) + float(r[3])) / 2 > get_allowed_single_run_time(r[7]):
                 attrs[2] = f'style="background: {color_bad}"'
                 attrs[3] = f'style="background: {color_bad}"'
             else:

@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
+#include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
@@ -175,6 +176,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool distributed_index_analysis;
+    extern const SettingsBool distributed_index_analysis_for_non_shared_merge_tree;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
@@ -1813,7 +1815,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         indexes,
         find_exact_ranges,
         is_parallel_reading_from_replicas,
-        allow_query_condition_cache);
+        allow_query_condition_cache,
+        supportsSkipIndexesOnDataRead());
 
     return analyzed_result_ptr;
 }
@@ -2092,7 +2095,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     std::optional<Indexes> & indexes,
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_,
-    bool allow_query_condition_cache_)
+    bool allow_query_condition_cache_,
+    bool supports_skip_indexes_on_data_read)
 {
     AnalysisResult result;
     RangesInDataParts res_parts;
@@ -2125,6 +2129,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             query_info_,
             metadata_snapshot);
 
+    indexes->use_skip_indexes_on_data_read = supports_skip_indexes_on_data_read;
     if (indexes->part_values && indexes->part_values->empty())
         return std::make_shared<AnalysisResult>(std::move(result));
 
@@ -2228,7 +2233,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
         bool final_second_pass = indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode];
         /// Note, use_skip_indexes_if_final_exact_mode requires complete PK, so we cannot apply distributed_index_analysis with it
-        bool distributed_index_analysis_enabled = settings[Setting::distributed_index_analysis] && !final_second_pass;
+        bool distributed_index_analysis_enabled = settings[Setting::distributed_index_analysis]
+            && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
+            && !final_second_pass;
 
         if (!distributed_index_analysis_enabled)
         {
@@ -2920,16 +2927,25 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (!settings[Setting::use_skip_indexes_on_data_read])
         return false;
 
-    if (query_info.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
-        return false;
+    /// Remove this after statistics based cardinality estimation is enabled.
+    if (query_info.query_tree)
+    {
+        const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTree();
 
-    if (is_parallel_reading_from_replicas)
+        if (join_tree_node && (join_tree_node->getNodeType() == QueryTreeNodeType::JOIN || join_tree_node->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
+            return false;
+    }
+
+    if (query_info.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode])
         return false;
 
     /// Settings `read_overflow_mode = 'throw'` and `max_rows_to_read` are evaluated early during execution,
     /// during initialization of the pipeline based on estimated row counts. Estimation doesn't work properly
     /// if the skip index is evaluated during data read (scan).
     if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+        return false;
+
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
         return false;
 
     return true;
