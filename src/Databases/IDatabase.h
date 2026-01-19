@@ -37,6 +37,8 @@ struct ParsedTablesMetadata;
 struct QualifiedTableName;
 class IRestoreCoordination;
 
+/// This structure is returned when getLightweightTablesIterator is called
+/// It contains basic details of the table, currently only the table name
 struct LightWeightTableDetails
 {
     String name;
@@ -282,9 +284,7 @@ public:
         for (auto iterator = getTablesIterator(context, filter_by_table_name, skip_not_loaded); iterator->isValid(); iterator->next())
         {
             if (const auto & table = iterator->table())
-            {
                 result.emplace_back(iterator->name());
-            }
         }
 
         return result;

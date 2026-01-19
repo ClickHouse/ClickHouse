@@ -302,7 +302,7 @@ protected:
     }
 
 
-    size_t showTablesQuery(MutableColumns & res_columns, bool need_to_check_access_for_tables)
+    size_t fillTableNamesOnly(MutableColumns & res_columns, bool need_to_check_access_for_tables)
     {
         auto table_details = database->getLightweightTablesIterator(context,
                                 /* filter_by_table_name */ {},
@@ -311,7 +311,7 @@ protected:
         size_t count = 0;
 
         const auto access = context->getAccess();
-        for (auto & table_detail: table_details)
+        for (const auto & table_detail: table_details)
         {
             size_t src_index = 0;
             size_t res_index = 0;
@@ -493,7 +493,7 @@ protected:
             auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
             if (needed_columns.size() == 1 && needed_columns[0].name == "name")
             {
-                size_t rows_added = showTablesQuery(res_columns, need_to_check_access_for_tables);
+                size_t rows_added = fillTableNamesOnly(res_columns, need_to_check_access_for_tables);
                 rows_count += rows_added;
                 continue;
             }
