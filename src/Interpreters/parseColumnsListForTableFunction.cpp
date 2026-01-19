@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/Context.h>
@@ -17,7 +18,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_time_time64_type;
-    extern const SettingsBool allow_experimental_qbit_type;
+    extern const SettingsBool enable_qbit_type;
     extern const SettingsBool allow_suspicious_fixed_string_types;
     extern const SettingsBool allow_suspicious_low_cardinality_types;
     extern const SettingsBool allow_suspicious_variant_types;
@@ -41,7 +42,7 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_time_time64_type(settings[Setting::enable_time_time64_type])
-    , allow_experimental_qbit_type(settings[Setting::allow_experimental_qbit_type])
+    , enable_qbit_type(settings[Setting::enable_qbit_type])
 {
 }
 
@@ -96,6 +97,10 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
                         if (isBool(variants[i]) || isBool(variants[j]))
                             continue;
 
+                        const auto * custom_name = variant_type->getCustomName();
+                        if (custom_name && custom_name->getName() == "Geometry")
+                            continue;
+
                         if (auto supertype = tryGetLeastSupertype(DataTypes{variants[i], variants[j]}))
                         {
                             throw Exception(
@@ -134,14 +139,14 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
             }
         }
 
-        if (!settings.allow_experimental_qbit_type)
+        if (!settings.enable_qbit_type)
         {
             if (isQBit(data_type))
             {
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot create column with type '{}' because QBit type is not allowed. "
-                    "Set setting allow_experimental_qbit_type = 1 in order to allow it",
+                    "Set setting enable_qbit_type = 1 in order to allow it",
                     data_type.getName());
             }
         }

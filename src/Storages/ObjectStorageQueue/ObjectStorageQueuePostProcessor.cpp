@@ -6,7 +6,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/copyS3File.h>
@@ -334,7 +333,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             /*dest_key=*/ object_to.remote_path,
                             /*settings=*/ s3_settings->request_settings,
                             /*read_settings=*/ read_settings_to_use,
-                            BlobStorageLogWriter::create(getName()),
+                            BlobStorageLogWriter::create(object_storage->getDiskName()),
                             scheduler,
                             /*fallback_file_reader=*/ [&]{
                                 return s3_storage->readObject(object_from, read_settings_to_use);
