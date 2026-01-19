@@ -147,7 +147,7 @@ public:
     }
 
     bool isIceberg() override
-    { 
+    {
         return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
     }
 
