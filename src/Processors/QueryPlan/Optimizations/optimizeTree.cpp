@@ -418,8 +418,8 @@ void considerEnablingParallelReplicas(
         LOG_DEBUG(&Poco::Logger::get("optimizeTree"), "Cannot get index analysis result from MergeTree table. Skipping optimization");
         return;
     }
-    const auto rows = analysis->selected_rows;
-    if (!rows)
+    const auto rows_to_read = analysis->selected_rows;
+    if (!rows_to_read)
     {
         LOG_DEBUG(&Poco::Logger::get("optimizeTree"), "Index analysis result doesn't contain selected rows. Skipping optimization");
         return;
@@ -431,13 +431,13 @@ void considerEnablingParallelReplicas(
     if (const auto stats = stats_cache.getStats(single_replica_plan_node_hash))
     {
         bool dont_apply_plan_with_parallel_replicas = optimization_settings.automatic_parallel_replicas_mode == 2;
-        if (std::max<size_t>(stats->total_rows_to_read, rows) > std::min<size_t>(stats->total_rows_to_read, rows) * 2)
+        if (std::max<size_t>(stats->total_rows_to_read, rows_to_read) > std::min<size_t>(stats->total_rows_to_read, rows_to_read) * 2)
         {
             LOG_DEBUG(
                 getLogger("optimizeTree"),
                 "Significant difference in total rows from storage detected (previously {}, now {}). Recollecting statistics",
                 stats->total_rows_to_read,
-                rows);
+                rows_to_read);
             dont_apply_plan_with_parallel_replicas = true;
         }
         else
@@ -491,9 +491,7 @@ void considerEnablingParallelReplicas(
         || optimization_settings.automatic_parallel_replicas_mode == 2 // automatic_parallel_replicas_mode == 2 enforces statistics recollection
     )
     {
-        auto updater = source_reading_step->getContext()->getRuntimeDataflowStatisticsCacheUpdater();
-        updater->setCacheKey(single_replica_plan_node_hash);
-        updater->setTotalRowsToRead(rows);
+        auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(single_replica_plan_node_hash, rows_to_read);
         source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
     }
