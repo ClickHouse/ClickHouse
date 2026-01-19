@@ -5,15 +5,18 @@ SYSTEM STOP MERGES customer;
 
 INSERT INTO nation VALUES (5,'ETHIOPIA'),(6,'FRANCE'),(7,'GERMANY'),(100,'UNKNOWN');
 
-INSERT INTO customer SELECT number, 5, 5 FROM numbers(10000);
-INSERT INTO customer SELECT number, 6, 6 FROM numbers(10000);
-INSERT INTO customer SELECT number, 7, 7 FROM numbers(10000);
+INSERT INTO customer SELECT number, 5, 5 FROM numbers(1000);
+INSERT INTO customer SELECT number, 6, 6 FROM numbers(1000);
+INSERT INTO customer SELECT number, 7, 7 FROM numbers(1000);
 INSERT INTO customer SELECT number, 100, 100 FROM numbers(10);
 
 SET enable_analyzer=1;
 SET enable_join_runtime_filters=1;
 SET enable_parallel_replicas=0;
 SET join_algorithm = 'hash,parallel_hash';
+SET query_plan_optimize_join_order_algorithm='greedy';
+SET query_plan_optimize_join_order_limit=1;
+SET query_plan_join_swap_table=0;
 
 -- 1 row in filter
 SELECT count()
@@ -82,7 +85,7 @@ WHERE
 
 -- Too many rows in bloom filter
 SELECT count()
-FROM customer, numbers(10000) AS n
+FROM customer, numbers(2000) AS n
 WHERE
     c_nationkey = n.number::Int32
 SETTINGS join_runtime_filter_exact_values_limit=1, join_runtime_bloom_filter_bytes=100, max_block_size=10, max_threads=1, log_comment='Q4';

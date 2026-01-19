@@ -62,7 +62,8 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_statistics_optimize;
+    extern const SettingsBool use_statistics;
+    extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
 
 RelationStats getDummyStats(ContextPtr context, const String & table_name);
@@ -237,7 +238,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         String table_display_name = reading->getStorageID().getTableName();
 
-        if (reading->getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
+        if (reading->getContext()->getSettingsRef()[Setting::use_statistics])
         {
             if (auto estimator_ = reading->getConditionSelectivityEstimator())
             {
@@ -568,7 +569,7 @@ size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, Que
     RelationStats stats = estimateReadRowsCount(*node);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
-    if (num_rows_from_cache)
+    if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache)
         stats.estimated_rows = std::min<UInt64>(stats.estimated_rows.value_or(MAX_ROWS), num_rows_from_cache.value());
 
     if (!label.empty())
@@ -598,7 +599,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     bool allow_left_subgraph = !type_changing_sides.contains(JoinTableSide::Left) && (isInnerOrCross(join_kind) || isLeft(join_kind));
     size_t lhs_count = addChildQueryGraph(query_graph, lhs_plan, nodes, lhs_label, allow_left_subgraph ? join_steps_limit - 1 : 0);
     bool allow_right_subgraph = !type_changing_sides.contains(JoinTableSide::Right) && (isInnerOrCross(join_kind) || isRight(join_kind));
-    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? join_steps_limit - lhs_count : 0);
+    size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0);
 
     size_t total_inputs = query_graph.inputs.size();
     if (isRightOrFull(join_kind))

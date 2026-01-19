@@ -192,16 +192,16 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                     if (type->getName() == subcolumn_type_name)
                     {
                         subcolumn_type->getDefaultSerialization()->deserializeBinary(*subcolumn, buf, format_settings);
-                        null_map.push_back(0);
+                        null_map.push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
-                        null_map.push_back(1);
+                        null_map.push_back(static_cast<UInt8>(1));
                     }
                 }
                 else
                 {
-                    null_map.push_back(1);
+                    null_map.push_back(static_cast<UInt8>(1));
                 }
             }
 

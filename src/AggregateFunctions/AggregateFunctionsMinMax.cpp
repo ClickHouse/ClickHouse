@@ -1,8 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
-#include <Common/Concepts.h>
-#include <Common/findExtreme.h>
 
 
 namespace DB
