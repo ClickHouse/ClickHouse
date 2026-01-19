@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ITokenExtractor.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -339,7 +340,21 @@ private:
 
             ASTPtr default_expression = nullptr;
             if (!info.is_fully_materialied)
+            {
                 default_expression = convertNodeToAST(function_node);
+                if (auto function = std::dynamic_pointer_cast<ASTFunction>(default_expression))
+                {
+                    function->addConfigurator(
+                        [function_name = search_query->function_name,
+                         search_tokens = search_query->tokens,
+                         token_extractor = std::shared_ptr<ITokenExtractor>(text_index_condition.tokenExtractor()->clone())](
+                            const ActionsDAG::Node * function_dag_node) mutable
+                        {
+                            applyTextIndexFunctionParams(
+                                function_dag_node, std::move(function_name), token_extractor->clone(), std::move(search_tokens));
+                        });
+                }
+            }
 
             selected_conditions.push_back({search_query, index_name, *virtual_column_name, std::move(default_expression)});
             used_index_columns.insert(index_header.begin()->name);
