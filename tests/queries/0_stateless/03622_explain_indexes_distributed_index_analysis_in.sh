@@ -7,7 +7,7 @@
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
 # Proper IN is supported only with analyzer
-CLICKHOUSE_CLIENT_OPT="--allow_experimental_analyzer=1"
+CLICKHOUSE_CLIENT_OPT+="--allow_experimental_analyzer=1"
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
