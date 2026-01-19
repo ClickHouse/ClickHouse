@@ -103,21 +103,19 @@ def _install_bench_from_url(nodes):
 
 
 def _ensure_replay_if_requested(node0, scenario):
-    try:
-        wl = (scenario or {}).get("workload") or {}
-        replay_path = wl.get("replay")
-        if replay_path:
-            from .util import sh
+    wl = (scenario or {}).get("workload") or {}
+    replay_path = wl.get("replay")
+    if not replay_path:
+        return
 
-            r2 = sh(node0, f"test -f {replay_path} >/dev/null 2>&1; echo $?")
-            if not str(r2.get("out", " ")).strip().endswith("0"):
-                msg = (
-                    f"replay file not found inside container at {replay_path} "
-                    f"(mount it, e.g. bind-mount host log to /artifacts)"
-                )
-                raise AssertionError(msg)
-    except Exception:
-        pass
+    from .util import sh
+
+    r2 = sh(node0, f"test -f {replay_path} >/dev/null 2>&1; echo $?", timeout=5)
+    if not str(r2.get("out", " ")).strip().endswith("0"):
+        raise AssertionError(
+            f"replay file not found inside container at {replay_path} "
+            f"(mount it, e.g. bind-mount host log to /artifacts)"
+        )
 
 
 def _ensure_bench(nodes, scenario):
