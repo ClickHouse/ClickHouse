@@ -816,7 +816,7 @@ void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomA
 {
     chassert(input_creator);
     auto & creators = getOrCreateCreators(name);
-    if (creators.input_creator || creators.random_access_input_creator || creators.random_access_input_creator_with_metadata)
+    if (creators.input_creator || creators.random_access_input_creator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Input format {} is already registered", name);
     creators.random_access_input_creator = std::move(input_creator);
     registerFileExtension(name, name);
