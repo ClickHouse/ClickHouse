@@ -48,7 +48,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     WriteBuffer & response,
     const Params & params)
 {
-    auto query_tree = std::make_unique<PrometheusQueryTree>();
+    auto query_tree = std::make_shared<PrometheusQueryTree>();
     query_tree->parse(params.promql_query);
     if (!query_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse PromQL query");
@@ -56,46 +56,28 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
 
     // Create TimeSeriesTableInfo structure
-    PrometheusQueryToSQLConverter::TimeSeriesTableInfo table_info;
+    PrometheusQueryEvaluationSettings evaluation_settings;
     auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr();
-    table_info.storage_id = time_series_storage->getStorageID();
+    evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
     auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
-    UInt32 timestamp_scale = (isDecimal(timestamp_data_type) || isDateTime64(timestamp_data_type)) ? getDecimalScale(*timestamp_data_type) : 0;
-    table_info.timestamp_data_type = timestamp_data_type;
-    table_info.value_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
-
-    Field start_time;
-    Field end_time;
-    Field step;
-    Field evaluation_time;
-    Field lookback_delta = 300.0;
-    Field default_resolution = 15.0;
+    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+    evaluation_settings.timestamp_data_type = timestamp_data_type;
+    evaluation_settings.scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
 
     if (params.type == Type::Instant)
     {
-        if (params.time_param.empty())
-            evaluation_time = DecimalField<DateTime64>{DecimalUtils::getCurrentDateTime64(timestamp_scale), timestamp_scale}; /// Current time as default
-        else
-            evaluation_time = DecimalField<DateTime64>{parseTimeSeriesTimestamp(params.time_param, timestamp_scale), timestamp_scale};
+        if (!params.time_param.empty())
+            evaluation_settings.evaluation_time = parseTimeSeriesTimestamp(params.time_param, timestamp_scale);
     }
     else if (params.type == Type::Range)
     {
-        start_time = DecimalField<DateTime64>{parseTimeSeriesTimestamp(params.start_param, timestamp_scale), timestamp_scale};
-        end_time = DecimalField<DateTime64>{parseTimeSeriesTimestamp(params.end_param, timestamp_scale), timestamp_scale};
-        step = DecimalField<Decimal64>{parseTimeSeriesDuration(params.step_param, timestamp_scale), timestamp_scale};
+        evaluation_settings.evaluation_range = PrometheusQueryEvaluationRange{
+            .start_time = parseTimeSeriesTimestamp(params.start_param, timestamp_scale),
+            .end_time = parseTimeSeriesTimestamp(params.end_param, timestamp_scale),
+            .step = parseTimeSeriesDuration(params.step_param, timestamp_scale)};
     }
 
-    PrometheusQueryToSQLConverter converter(
-        *query_tree,
-        table_info,
-        lookback_delta,
-        default_resolution
-    );
-
-    if (params.type == Type::Instant)
-        converter.setEvaluationTime(evaluation_time);
-    else if (params.type == Type::Range)
-        converter.setEvaluationRange({start_time, end_time, step});
+    PrometheusQueryToSQLConverter converter{query_tree, evaluation_settings};
 
     auto sql_query = converter.getSQL();
     if (!sql_query)

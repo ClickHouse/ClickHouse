@@ -38,9 +38,11 @@ namespace ErrorCodes
 namespace
 {
     using ResultType = PrometheusQueryResultType;
+    using TimestampType = PrometheusQueryEvaluationSettings::TimestampType;
+    using DurationType = PrometheusQueryEvaluationSettings::DurationType;
 
     /// Increases a timestamp to make it divisible by `step`.
-    DateTime64 alignUp(DateTime64 time, Decimal64 step)
+    TimestampType alignUp(TimestampType time, DurationType step)
     {
         chassert(step > 0);
         auto x = time % step;
@@ -50,7 +52,7 @@ namespace
     }
 
     /// Decreases a timestamp to make it divisible by `step`.
-    DateTime64 alignDown(DateTime64 time, Decimal64 step)
+    TimestampType alignDown(TimestampType time, DurationType step)
     {
         chassert(step > 0);
         auto x = time % step;
@@ -67,23 +69,43 @@ class PrometheusQueryToSQLConverter::ASTBuilder
 public:
     explicit ASTBuilder(const PrometheusQueryToSQLConverter & converter_)
         : converter(converter_)
-        , timestamp_data_type(getTimeSeriesTableInfo().timestamp_data_type)
+        , timestamp_data_type(getEvaluationSettings().timestamp_data_type)
         , timestamp_scale((isDecimal(timestamp_data_type) || isDateTime64(timestamp_data_type)) ? getDecimalScale(*timestamp_data_type) : 0)
-        , value_data_type(getTimeSeriesTableInfo().value_data_type)
-        , lookback_delta(fieldToInterval(converter_.lookback_delta))
-        , default_resolution(fieldToInterval(converter_.default_resolution))
+        , value_data_type(getEvaluationSettings().scalar_data_type)
         , result_type(converter_.result_type)
     {
-        if (!converter_.evaluation_time.isNull())
+        if (getEvaluationSettings().evaluation_range)
         {
-            evaluation_time = fieldToTimestamp(converter_.evaluation_time);
+            evaluation_range = *getEvaluationSettings().evaluation_range;
         }
-        else if (!converter_.evaluation_range.isNull())
+        else if (getEvaluationSettings().evaluation_time)
         {
-            evaluation_range.emplace();
-            evaluation_range->start_time = fieldToTimestamp(converter_.evaluation_range.start_time);
-            evaluation_range->end_time = fieldToTimestamp(converter_.evaluation_range.end_time);
-            evaluation_range->step = fieldToInterval(converter_.evaluation_range.step);
+            evaluation_time = *getEvaluationSettings().evaluation_time;
+        }
+        else
+        {
+            /// The default value for the evaluation time is the current time.
+            evaluation_time = DecimalUtils::getCurrentDateTime64(timestamp_scale);
+        }
+
+        if (getEvaluationSettings().lookback_delta)
+        {
+            lookback_delta = *getEvaluationSettings().lookback_delta;
+        }
+        else
+        {
+            /// The default value for the lookback period is 5 minutes.
+            lookback_delta = 5 * 60 * DecimalUtils::scaleMultiplier<DurationType>(timestamp_scale);
+        }
+
+        if (getEvaluationSettings().default_resolution)
+        {
+            default_resolution = *getEvaluationSettings().default_resolution;
+        }
+        else
+        {
+            /// The default value for the default resolution is 15 seconds.
+            default_resolution = 15 * DecimalUtils::scaleMultiplier<DurationType>(timestamp_scale);
         }
     }
 
@@ -100,25 +122,19 @@ private:
     DataTypePtr timestamp_data_type;
     UInt32 timestamp_scale;
     DataTypePtr value_data_type;
-    Decimal64 lookback_delta;
-    Decimal64 default_resolution;
+    DurationType lookback_delta;
+    DurationType default_resolution;
     PrometheusQueryResultType result_type;
 
-    std::optional<DateTime64> evaluation_time;
-
-    struct EvaluationRange
-    {
-        DateTime64 start_time;
-        DateTime64 end_time;
-        Decimal64 step;
-    };
-    std::optional<EvaluationRange> evaluation_range;
+    std::optional<TimestampType> evaluation_time;
+    std::optional<PrometheusQueryEvaluationRange> evaluation_range;
 
     mutable std::vector<const PrometheusQueryTree::Node *> parent_nodes;
 
-    const PrometheusQueryTree & getPromQLTree() const { return converter.promql; }
+    const PrometheusQueryTree & getPromQLTree() const { return *converter.promql_query; }
     std::string_view getPromQLText(const PrometheusQueryTree::Node * node) const { return getPromQLTree().getQuery(node); }
-    const TimeSeriesTableInfo & getTimeSeriesTableInfo() const { return converter.time_series_table_info; }
+    const PrometheusQueryEvaluationSettings & getEvaluationSettings() const { return converter.evaluation_settings; }
+    const StorageID & getTimeSeriesStorageID() const { return getEvaluationSettings().time_series_storage_id; }
 
     using NodeType = PrometheusQueryTree::NodeType;
 
@@ -130,7 +146,7 @@ private:
         ResultType result_type;
 
         /// A window is extracted from a range selector. The window is used only by functions accepting range vectors, e.g. rate().
-        Decimal64 window;
+        DurationType window;
 
         /// Columns to select (nullptr if there is no such column).
         /// The names of these columns are always TimeSeriesColumnNames::Group, TimeSeriesColumnNames::Tags and so on.
@@ -311,7 +327,7 @@ private:
         res.scalar_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Scalar);
 
         if (piece.empty())
-            res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(fmt::format("{} {}", TimeSeriesColumnNames::Scalar, getTimeSeriesTableInfo().value_data_type)));
+            res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(fmt::format("{} {}", TimeSeriesColumnNames::Scalar, value_data_type)));
         else
             res.from_subquery = addSubquery(std::move(piece));
 
@@ -334,8 +350,8 @@ private:
             res.value_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value);
             res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(
                 fmt::format("{} Array(Tuple(String, String)), {} {}, {} {}",
-                            TimeSeriesColumnNames::Tags, TimeSeriesColumnNames::Timestamp, getTimeSeriesTableInfo().timestamp_data_type,
-                            TimeSeriesColumnNames::Value, getTimeSeriesTableInfo().value_data_type)));
+                            TimeSeriesColumnNames::Tags, TimeSeriesColumnNames::Timestamp, timestamp_data_type,
+                            TimeSeriesColumnNames::Value, value_data_type)));
             return res;
         }
 
@@ -396,7 +412,7 @@ private:
             res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(
                 fmt::format("{} Array(Tuple(String, String)), {} Array(Tuple({}, {}))",
                             TimeSeriesColumnNames::Tags, TimeSeriesColumnNames::TimeSeries,
-                            getTimeSeriesTableInfo().timestamp_data_type, getTimeSeriesTableInfo().value_data_type)));
+                            timestamp_data_type, value_data_type)));
             return res;
         }
 
@@ -484,9 +500,9 @@ private:
         /// Lookback deltas are left-open (and right-closed), so we decrease `window` a little bit to consider both boundaries close.
         auto window = lookback_delta;
 
-        DateTime64 start_time;
-        DateTime64 end_time;
-        Decimal64 step;
+        TimestampType start_time;
+        TimestampType end_time;
+        DurationType step;
         extractRangeAndStep(instant_selector, start_time, end_time, step);
 
         /// We can get an empty interval here because of aligning in extractRangeAndStep().
@@ -496,8 +512,8 @@ private:
         Piece res;
 
         res.from_table_function = makeASTFunction("timeSeriesSelector",
-            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
-            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
+            make_intrusive<ASTLiteral>(getTimeSeriesStorageID().getDatabaseName()),
+            make_intrusive<ASTLiteral>(getTimeSeriesStorageID().getTableName()),
             make_intrusive<ASTLiteral>(getPromQLText(instant_selector)),
             timestampToAST(start_time - window + 1),
             timestampToAST(end_time));
@@ -528,9 +544,9 @@ private:
         /// Ranges are left-open (and right-closed), so we decrease `window` a little bit to consider both boundaries close.
         auto window = range;
 
-        DateTime64 start_time;
-        DateTime64 end_time;
-        Decimal64 step;
+        TimestampType start_time;
+        TimestampType end_time;
+        DurationType step;
         extractRangeAndStep(range_selector, start_time, end_time, step);
 
         /// We can get an empty interval here because of aligning in extractRangeAndStep().
@@ -540,8 +556,8 @@ private:
         Piece res;
 
         res.from_table_function = makeASTFunction("timeSeriesSelector",
-            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
-            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
+            make_intrusive<ASTLiteral>(getTimeSeriesStorageID().getDatabaseName()),
+            make_intrusive<ASTLiteral>(getTimeSeriesStorageID().getTableName()),
             make_intrusive<ASTLiteral>(getPromQLText(instant_selector)),
             timestampToAST(start_time - window + 1),
             timestampToAST(end_time));
@@ -671,9 +687,9 @@ private:
 
         auto window = argument.window;
 
-        DateTime64 start_time;
-        DateTime64 end_time;
-        Decimal64 step;
+        TimestampType start_time;
+        TimestampType end_time;
+        DurationType step;
         extractRangeAndStep(func, start_time, end_time, step);
 
         /// We can get an empty interval here because of aligning in extractRangeAndStep().
@@ -745,8 +761,8 @@ private:
     /// Builds an AST to call functions generating time series on a grid.
     /// Returns something like timeSeriesFromGrid(<start_time>, <step>, timeSeries*ToGrid(<start_time>, <end_time>, <step>, <window>)(<timestamp>, <value>)
     ASTPtr makeGridFunction(std::string_view grid_function_name,
-                            DateTime64 start_time, DateTime64 end_time,
-                            Decimal64 step, Decimal64 window,
+                            TimestampType start_time, TimestampType end_time,
+                            DurationType step, DurationType window,
                             ASTPtr timestamp_column, ASTPtr value_column) const
     {
         auto aggregate_function = makeASTFunction(grid_function_name, timestamp_column, value_column);
@@ -762,7 +778,7 @@ private:
     /// and determine the total time range and optionally the step used in the most inner subquery.
     /// The function always set `start_time` and `end_time`. If the node isn't used in any subquery the function sets `step` to 0.
     void extractRangeAndStep(const PrometheusQueryTree::Node * node,
-                             DateTime64 & start_time, DateTime64 & end_time, Decimal64 & step) const
+                             TimestampType & start_time, TimestampType & end_time, DurationType & step) const
     {
         parent_nodes.clear();
         for (const auto * parent = node; parent; parent = parent->parent)
@@ -829,26 +845,14 @@ private:
         }
     }
 
-    /// Converts a scalar or an interval value to a timestamp compatible with the data types used in the TimeSeries table.
-    DateTime64 fieldToTimestamp(const Field & field) const
-    {
-        return parseTimeSeriesTimestamp(field, timestamp_scale);
-    }
-
-    /// Converts a scalar or an interval value to an interval compatible with the data types used in the TimeSeries table.
-    Decimal64 fieldToInterval(const Field & field) const
-    {
-        return parseTimeSeriesDuration(field, timestamp_scale);
-    }
-
     /// Converts a timestamp to AST.
-    ASTPtr timestampToAST(DateTime64 timestamp) const
+    ASTPtr timestampToAST(TimestampType timestamp) const
     {
         return timeSeriesTimestampToAST(timestamp, timestamp_data_type);
     }
 
     /// Converts a interval to AST.
-    ASTPtr intervalToAST(Decimal64 interval) const
+    ASTPtr intervalToAST(DurationType interval) const
     {
         return timeSeriesDurationToAST(interval, timestamp_data_type);
     }
@@ -856,42 +860,31 @@ private:
 
 
 PrometheusQueryToSQLConverter::PrometheusQueryToSQLConverter(
-    const PrometheusQueryTree & promql_,
-    const TimeSeriesTableInfo & time_series_table_info_,
-    const Field & lookback_delta_,
-    const Field & default_resolution_)
-    : promql(promql_)
-    , time_series_table_info(time_series_table_info_)
-    , lookback_delta(lookback_delta_)
-    , default_resolution(default_resolution_)
+    std::shared_ptr<const PrometheusQueryTree> promql_query_, const PrometheusQueryEvaluationSettings & evaluation_settings_)
+    : promql_query(promql_query_)
+    , evaluation_settings(evaluation_settings_)
 {
-}
+    result_type = promql_query->getResultType();
 
-void PrometheusQueryToSQLConverter::setEvaluationTime(const Field & time_)
-{
-    evaluation_time = time_;
-    evaluation_range = {};
-    result_type = promql.getResultType();
-}
-
-void PrometheusQueryToSQLConverter::setEvaluationRange(const PrometheusQueryEvaluationRange & range_)
-{
-    if (promql.getResultType() != PrometheusQueryResultType::INSTANT_VECTOR &&
-        promql.getResultType() != PrometheusQueryResultType::SCALAR)
+    if (evaluation_settings.evaluation_range)
     {
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Invalid expression type '{}' for range query, must be scalar or instant Vector",
-                        promql.getResultType());
+        if (result_type != PrometheusQueryResultType::INSTANT_VECTOR &&
+            result_type != PrometheusQueryResultType::SCALAR)
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Invalid expression type '{}' for range query, must be scalar or instant Vector",
+                            result_type);
+        }
+        result_type = PrometheusQueryResultType::RANGE_VECTOR;
     }
-    evaluation_range = range_;
-    evaluation_time = Field{};
-    result_type = PrometheusQueryResultType::RANGE_VECTOR;
 }
+
 
 ASTPtr PrometheusQueryToSQLConverter::getSQL() const
 {
     return ASTBuilder{*this}.getSQL();
 }
+
 
 ColumnsDescription PrometheusQueryToSQLConverter::getResultColumns() const
 {
@@ -901,7 +894,7 @@ ColumnsDescription PrometheusQueryToSQLConverter::getResultColumns() const
     {
         case ResultType::SCALAR:
         {
-            columns.add(ColumnDescription{TimeSeriesColumnNames::Scalar, time_series_table_info.value_data_type});
+            columns.add(ColumnDescription{TimeSeriesColumnNames::Scalar, evaluation_settings.scalar_data_type});
             break;
         }
         case ResultType::STRING:
@@ -919,11 +912,11 @@ ColumnsDescription PrometheusQueryToSQLConverter::getResultColumns() const
             columns.add(
                 ColumnDescription{
                     TimeSeriesColumnNames::Timestamp,
-                    time_series_table_info.timestamp_data_type});
+                    evaluation_settings.timestamp_data_type});
             columns.add(
                 ColumnDescription{
                     TimeSeriesColumnNames::Value,
-                    time_series_table_info.value_data_type});
+                    evaluation_settings.scalar_data_type});
             break;
         }
         case ResultType::RANGE_VECTOR:
@@ -937,7 +930,7 @@ ColumnsDescription PrometheusQueryToSQLConverter::getResultColumns() const
                 ColumnDescription{
                     TimeSeriesColumnNames::TimeSeries,
                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
-                        DataTypes{time_series_table_info.timestamp_data_type, time_series_table_info.value_data_type}))});
+                        DataTypes{evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type}))});
             break;
         }
     }
