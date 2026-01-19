@@ -4,6 +4,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
 
@@ -30,38 +31,35 @@ static std::optional<Field> tryConvertFloat64Strict(Float64 value, const DataTyp
     }
 }
 
-/// Get boundary field for min value when Float64 precision is exceeded.
-/// If value >= 2^53, use 2^53 as conservative lower bound.
-/// If value <= -2^53, we cannot determine a safe lower bound, return nullopt.
-static std::optional<Field> getMinBoundaryField(Float64 value, const DataTypePtr & data_type)
+/// Get boundary fields for min/max values when Float64 precision is exceeded.
+/// For min: if value >= 2^53, use 2^53 as conservative lower bound.
+/// For max: if value <= -2^53, use -2^53 as conservative upper bound.
+/// Returns a pair of optional fields: (min_boundary, max_boundary).
+static std::pair<std::optional<Field>, std::optional<Field>> getBoundaryFields(
+    Float64 min_value, Float64 max_value, const DataTypePtr & data_type)
 {
-    if (value >= MAX_EXACT_FLOAT64)
+    std::optional<Field> min_boundary;
+    std::optional<Field> max_boundary;
+
+    WhichDataType which(data_type);
+
+    /// For min: if value >= 2^53, use 2^53 as conservative lower bound
+    if (min_value >= MAX_EXACT_FLOAT64)
     {
-        WhichDataType which(data_type);
         if (which.isUInt())
-            return convertFieldToType(Field(static_cast<UInt64>(MAX_EXACT_FLOAT64)), *data_type);
+            min_boundary = convertFieldToType(Field(static_cast<UInt64>(MAX_EXACT_FLOAT64)), *data_type);
         else
-            return convertFieldToType(Field(static_cast<Int64>(MAX_EXACT_FLOAT64)), *data_type);
+            min_boundary = convertFieldToType(Field(static_cast<Int64>(MAX_EXACT_FLOAT64)), *data_type);
     }
 
-    return std::nullopt;
-}
-
-/// Get boundary field for max value when Float64 precision is exceeded.
-/// If value <= -2^53, use -2^53 as conservative upper bound.
-/// If value >= 2^53, we cannot determine a safe upper bound, return nullopt.
-static std::optional<Field> getMaxBoundaryField(Float64 value, const DataTypePtr & data_type)
-{
-    if (value <= -MAX_EXACT_FLOAT64)
+    /// For max: if value <= -2^53, use -2^53 as conservative upper bound
+    if (max_value <= -MAX_EXACT_FLOAT64)
     {
-        WhichDataType which(data_type);
-        if (which.isUInt())
-            return std::nullopt;
-        else
-            return convertFieldToType(Field(static_cast<Int64>(-MAX_EXACT_FLOAT64)), *data_type);
+        if (!which.isUInt())
+            max_boundary = convertFieldToType(Field(static_cast<Int64>(-MAX_EXACT_FLOAT64)), *data_type);
     }
 
-    return std::nullopt;
+    return {min_boundary, max_boundary};
 }
 
 /// Check if Float64 value exceeds the exact representable range [-2^53, 2^53].
@@ -70,7 +68,10 @@ static bool exceedsFloat64PrecisionRange(Float64 value)
     return value >= MAX_EXACT_FLOAT64 || value <= -MAX_EXACT_FLOAT64;
 }
 
-static std::optional<Range> createRangeFromEstimate(const Estimate & est, const DataTypePtr & data_type)
+/// Create a Range from statistics estimate for use in part pruning.
+/// For nullable columns, the range is conservatively extended to POSITIVE_INFINITY
+/// This is a conservative approach because StatisticsMinMax loses information about whether the column actually contains NULL values.                             
+static std::optional<Range> createRangeFromEstimate(const Estimate & est, const DataTypePtr & data_type, bool is_nullable)
 {
     if (!est.estimated_min.has_value() || !est.estimated_max.has_value())
         return std::nullopt;
@@ -78,15 +79,16 @@ static std::optional<Range> createRangeFromEstimate(const Estimate & est, const 
     Float64 min_value = est.estimated_min.value();
     Float64 max_value = est.estimated_max.value();
 
-    /// If min > max, the part likely has all NULL values, create a range containing only POSITIVE_INFINITY.
+    /// If min > max, the part has all NULL values.
     if (min_value > max_value)
     {
         chassert(min_value == std::numeric_limits<Float64>::max());
         chassert(max_value == std::numeric_limits<Float64>::min());
-        return Range(POSITIVE_INFINITY);
+        return Range(POSITIVE_INFINITY, true, POSITIVE_INFINITY, true);
     }
 
-    WhichDataType which(data_type);
+    DataTypePtr inner_data_type = removeLowCardinalityAndNullable(data_type);
+    WhichDataType which(inner_data_type);
     bool needs_precision_handling = which.isInt64() || which.isInt128() || which.isInt256()
                                  || which.isUInt64() || which.isUInt128() || which.isUInt256()
                                  || which.isDecimal();
@@ -126,19 +128,40 @@ static std::optional<Range> createRangeFromEstimate(const Estimate & est, const 
         if (min_field.isNull() || max_field.isNull())
             return std::nullopt;
 
+        /// For nullable columns, extend max to POSITIVE_INFINITY to include NULL values.
+        if (is_nullable)
+            return Range(min_field, true, POSITIVE_INFINITY, true);
+
         return Range(min_field, true, max_field, true);
     }
 
-    /// For types that may exceed Float64 precision, use strict conversion first
-    std::optional<Field> min_field_opt = tryConvertFloat64Strict(min_value, data_type);
-    std::optional<Field> max_field_opt = tryConvertFloat64Strict(max_value, data_type);
+    /// For types that may exceed Float64 precision, check precision range first.
+    /// If the value exceeds Float64 precision range, use conservative boundary values directly
+    /// since tryConvertFloat64Strict doesn't detect precision loss for integer types.
+    std::optional<Field> min_field_opt;
+    std::optional<Field> max_field_opt;
 
-    /// If strict conversion failed, try to use boundary values for out-of-precision-range cases
-    if (!min_field_opt.has_value() && exceedsFloat64PrecisionRange(min_value))
-        min_field_opt = getMinBoundaryField(min_value, data_type);
+    bool min_exceeds_precision = exceedsFloat64PrecisionRange(min_value);
+    bool max_exceeds_precision = exceedsFloat64PrecisionRange(max_value);
 
-    if (!max_field_opt.has_value() && exceedsFloat64PrecisionRange(max_value))
-        max_field_opt = getMaxBoundaryField(max_value, data_type);
+    if (min_exceeds_precision || max_exceeds_precision)
+    {
+        auto [min_boundary, max_boundary] = getBoundaryFields(min_value, max_value, data_type);
+        if (min_exceeds_precision)
+            min_field_opt = min_boundary;
+        else
+            min_field_opt = tryConvertFloat64Strict(min_value, data_type);
+
+        if (max_exceeds_precision)
+            max_field_opt = max_boundary;
+        else
+            max_field_opt = tryConvertFloat64Strict(max_value, data_type);
+    }
+    else
+    {
+        min_field_opt = tryConvertFloat64Strict(min_value, data_type);
+        max_field_opt = tryConvertFloat64Strict(max_value, data_type);
+    }
 
     if (!min_field_opt.has_value() && !max_field_opt.has_value())
     {
@@ -147,41 +170,35 @@ static std::optional<Range> createRangeFromEstimate(const Estimate & est, const 
     }
     else if (!min_field_opt.has_value())
     {
-        /// Only max is valid: range is (-inf, max]
+        /// Only max is valid: range is (-inf, max] or (-inf, +inf] for nullable
+        if (is_nullable)
+            return Range::createWholeUniverse();
         return Range::createRightBounded(max_field_opt.value(), true);
     }
     else if (!max_field_opt.has_value())
     {
         /// Only min is valid: range is [min, +inf)
-        return Range::createLeftBounded(min_field_opt.value(), true);
+        /// For nullable, this already includes POSITIVE_INFINITY with with_null=true
+        return Range::createLeftBounded(min_field_opt.value(), true, is_nullable);
     }
     else
     {
-        /// Both valid: range is [min, max]
+        /// Both valid: range is [min, max] or [min, +inf] for nullable
+        if (is_nullable)
+            return Range(min_field_opt.value(), true, POSITIVE_INFINITY, true);
         return Range(min_field_opt.value(), true, max_field_opt.value(), true);
     }
 }
 
 StatisticsPartPruner::StatisticsPartPruner(
-    KeyCondition key_condition_,
-    std::map<String, DataTypePtr> stats_column_name_to_type_map_,
-    std::vector<String> used_column_names_)
-    : key_condition(std::move(key_condition_))
-    , stats_column_name_to_type_map(std::move(stats_column_name_to_type_map_))
-    , used_column_names(std::move(used_column_names_))
-{
-}
-
-std::optional<StatisticsPartPruner> StatisticsPartPruner::create(
     const StorageMetadataPtr & metadata,
     const ActionsDAG::Node * filter_node,
     ContextPtr context)
 {
     if (!filter_node || !metadata)
-        return std::nullopt;
+        return;
 
     /// Collect columns that have MinMax statistics
-    std::map<String, DataTypePtr> stats_column_name_to_type_map;
     const auto & columns = metadata->getColumns();
     for (const auto & column : columns)
     {
@@ -190,7 +207,7 @@ std::optional<StatisticsPartPruner> StatisticsPartPruner::create(
     }
 
     if (stats_column_name_to_type_map.empty())
-        return std::nullopt;
+        return;
 
     /// Build column names in sorted order
     Names stats_column_names;
@@ -205,17 +222,16 @@ std::optional<StatisticsPartPruner> StatisticsPartPruner::create(
     auto expression = std::make_shared<ExpressionActions>(std::move(actions_dag));
 
     ActionsDAGWithInversionPushDown filter_dag(filter_node, context);
-    KeyCondition key_condition(filter_dag, context, stats_column_names, expression);
+    key_condition.emplace(filter_dag, context, stats_column_names, expression);
 
-    if (key_condition.alwaysUnknownOrTrue())
-        return std::nullopt;
+    if (key_condition->alwaysUnknownOrTrue())
+        return;
 
-    std::vector<String> used_column_names;
-    for (size_t col_idx : key_condition.getUsedColumns())
+    for (size_t col_idx : key_condition->getUsedColumns())
         if (col_idx < stats_column_names.size())
             used_column_names.push_back(stats_column_names[col_idx]);
 
-    return StatisticsPartPruner(std::move(key_condition), std::move(stats_column_name_to_type_map), std::move(used_column_names));
+    useless = false;
 }
 
 BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates) const
@@ -236,7 +252,7 @@ BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates) co
             continue;
         }
 
-        auto range = createRangeFromEstimate(est_it->second, col_type);
+        auto range = createRangeFromEstimate(est_it->second, col_type, isNullableOrLowCardinalityNullable(col_type));
         if (range.has_value())
             hyperrectangle.push_back(std::move(*range));
         else
@@ -249,7 +265,7 @@ BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates) co
         types.push_back(col_type);
     }
 
-    return key_condition.checkInHyperrectangle(hyperrectangle, types);
+    return key_condition->checkInHyperrectangle(hyperrectangle, types);
 }
 
 }

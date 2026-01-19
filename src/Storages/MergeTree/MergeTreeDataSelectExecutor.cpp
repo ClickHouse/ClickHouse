@@ -95,7 +95,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
-    extern const SettingsBool use_statistics_part_pruning;
+    extern const SettingsBool use_statistics_for_part_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
@@ -665,7 +665,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     /// 1. The setting is disabled
     /// 2. The query uses FINAL
     /// 3. There are on-fly mutations or patch parts (statistics only reflects original data)
-    if (!settings[Setting::use_statistics_part_pruning]
+    if (!settings[Setting::use_statistics_for_part_pruning]
         || query_info.isFinal()
         || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
     {
@@ -673,9 +673,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     }
 
     const auto * filter_node = query_info.filter_actions_dag ? query_info.filter_actions_dag->getOutputs().front() : nullptr;
-    auto statistics_pruner = StatisticsPartPruner::create(metadata_snapshot, filter_node, context);
+    StatisticsPartPruner statistics_pruner(metadata_snapshot, filter_node, context);
 
-    if (!statistics_pruner)
+    if (statistics_pruner.isUseless())
         return parts;
 
     RangesInDataParts res_parts;
@@ -684,7 +684,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     for (const auto & part : parts)
     {
         auto estimates = part.data_part->getEstimates();
-        if (!estimates.empty() && !statistics_pruner->checkPartCanMatch(estimates).can_be_true)
+        if (!estimates.empty() && !statistics_pruner.checkPartCanMatch(estimates).can_be_true)
         {
             LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
             continue;
@@ -702,7 +702,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 
         index_stats.emplace_back(ReadFromMergeTree::IndexStat{
             .type = ReadFromMergeTree::IndexType::Statistics,
-            .used_keys = statistics_pruner->getUsedColumns(),
+            .used_keys = statistics_pruner.getUsedColumns(),
             .num_parts_after = res_parts.size(),
             .num_granules_after = total_granules_after});
 

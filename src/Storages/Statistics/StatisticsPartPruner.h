@@ -6,30 +6,33 @@
 namespace DB
 {
 
-/// Part pruner based on Column Statistics, now only support MinMax
+/// Part pruner based on column statistics, now only support MinMax.
+/// Similar to PartitionPruner but uses per-column statistics instead of partition keys.
+/// When MinMax statistics are available for columns used in the filter condition,
+/// this pruner can skip entire parts where the min/max range doesn't overlap with the query condition.
 class StatisticsPartPruner
 {
 public:
-    static std::optional<StatisticsPartPruner> create(
+    StatisticsPartPruner(
         const StorageMetadataPtr & metadata,
         const ActionsDAG::Node * filter_node,
         ContextPtr context);
 
+    /// Check if the part can potentially match the filter condition based on statistics.
+    /// Returns BoolMask indicating whether the condition can be true/false for this part.
     BoolMask checkPartCanMatch(const Estimates & estimates) const;
 
-    bool hasUsefulConditions() const { return !key_condition.alwaysUnknownOrTrue(); }
+    /// Returns true if the pruner has no useful conditions, then all parts will match.
+    bool isUseless() const { return useless; }
 
+    /// Get the list of column names used in the filter condition that have statistics.
     const std::vector<String> & getUsedColumns() const { return used_column_names; }
 
 private:
-    StatisticsPartPruner(
-        KeyCondition key_condition_,
-        std::map<String, DataTypePtr> stats_column_name_to_type_map_,
-        std::vector<String> used_column_names_);
-
-    KeyCondition key_condition;
+    std::optional<KeyCondition> key_condition;
     std::map<String, DataTypePtr> stats_column_name_to_type_map;
     std::vector<String> used_column_names;
+    bool useless = true;
 };
 
 }

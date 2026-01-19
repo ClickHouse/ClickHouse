@@ -1617,10 +1617,10 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_statistics_part_pruning, true, R"(
+    DECLARE(Bool, use_statistics_for_part_pruning, true, R"(
 Use statistics to filter out parts during query execution.
 
-When enabled, part pruning will use column statistics (e.g., MinMax) to eliminate parts that cannot contain matching data before reading any data.
+When enabled, pruning in SELECT queries will use column statistics (e.g. MinMax statistics) to eliminate parts that cannot contain matching data before reading any data.
 
 Possible values:
 
