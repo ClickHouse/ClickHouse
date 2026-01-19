@@ -18,6 +18,7 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/RangeRef.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
@@ -2978,6 +2979,260 @@ public:
                 return {true, is_constant_positive, true, is_strict};
             }
         }
+        return {false, true, false};
+    }
+
+    Monotonicity
+    getMonotonicityForRange(const IDataType & type, const ColumnValueRef & left_point, const ColumnValueRef & right_point) const override
+    {
+        const std::string_view name_view = Name::name;
+
+        auto is_null_like = [](const ColumnValueRef & ref) { return ref.isInfinity() || !ref.column || ref.isNullAt(); };
+
+        auto const_is_zero = [](const ColumnWithTypeAndName & arg) -> bool
+        {
+            if (!arg.column)
+                return true;
+
+            const IColumn * column = arg.column.get();
+            if (const auto * column_const = checkAndGetColumn<ColumnConst>(column))
+                column = &column_const->getDataColumn();
+
+            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column))
+            {
+                if (column_nullable->isNullAt(0))
+                    return false;
+                column = column_nullable->getNestedColumnPtr().get();
+            }
+
+            return column->isDefaultAt(0);
+        };
+
+        auto const_is_positive = [&](const ColumnWithTypeAndName & arg) -> bool
+        {
+            if (!arg.column)
+                return false;
+
+            const IDataType * arg_type = arg.type.get();
+            if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(arg_type))
+                arg_type = low_cardinality_type->getDictionaryType().get();
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(arg_type))
+                arg_type = nullable_type->getNestedType().get();
+
+            const IColumn * column = arg.column.get();
+            if (const auto * column_const = checkAndGetColumn<ColumnConst>(column))
+                column = &column_const->getDataColumn();
+            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(column))
+            {
+                if (column_nullable->isNullAt(0))
+                    return false;
+                column = column_nullable->getNestedColumnPtr().get();
+            }
+
+            if (column->isDefaultAt(0))
+                return false;
+
+            /// Unsigned types are always >= 0
+            if (arg_type->isValueRepresentedByUnsignedInteger())
+                return true;
+
+            Float64 value = column->getFloat64(0);
+            return value > 0;
+        };
+
+        auto accurate_equals = [&](const ColumnValueRef & l, const ColumnValueRef & r) -> bool
+        {
+            const IDataType * value_type = &type;
+            if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(value_type))
+                value_type = low_cardinality_type->getDictionaryType().get();
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(value_type))
+                value_type = nullable_type->getNestedType().get();
+
+            const auto which = WhichDataType(*value_type);
+            if (which.isFloat())
+            {
+                const Float64 lv = l.column->getFloat64(l.row);
+                const Float64 rv = r.column->getFloat64(r.row);
+                return lv == rv;
+            }
+
+            return l.compare(r) == 0;
+        };
+
+        auto accurate_less = [&](const IDataType & value_type, const ColumnValueRef & l, const ColumnValueRef & r) -> bool
+        {
+            const IDataType * type_ptr = &value_type;
+            if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_ptr))
+                type_ptr = low_cardinality_type->getDictionaryType().get();
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type_ptr))
+                type_ptr = nullable_type->getNestedType().get();
+
+            const auto which = WhichDataType(*type_ptr);
+            if (which.isFloat())
+            {
+                const Float64 lv = l.column->getFloat64(l.row);
+                const Float64 rv = r.column->getFloat64(r.row);
+                return lv < rv;
+            }
+
+            return l.compare(r) < 0;
+        };
+
+        auto normalize_column = [](ColumnPtr col) -> ColumnPtr
+        {
+            while (true)
+            {
+                ColumnPtr converted = col->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+                if (converted.get() != col.get())
+                {
+                    col = std::move(converted);
+                    continue;
+                }
+
+                if (const auto * nullable = checkAndGetColumn<ColumnNullable>(col.get()))
+                {
+                    col = nullable->getNestedColumnPtr();
+                    continue;
+                }
+
+                break;
+            }
+            return col;
+        };
+
+        auto transform = [&](const ColumnWithTypeAndName & constant_arg,
+                             const DataTypePtr & constant_type,
+                             const ColumnWithTypeAndName & variable_arg,
+                             const DataTypePtr & variable_type,
+                             const ColumnValueRef & point,
+                             const DataTypePtr & result_type) -> ColumnPtr
+        {
+            ColumnsWithTypeAndName args;
+            args.reserve(2);
+
+            ColumnPtr constant_col = normalize_column(constant_arg.column->cloneResized(1));
+            ColumnPtr point_col = normalize_column(point.column->cut(point.row, 1));
+
+            args.push_back({constant_col, constant_type, constant_arg.name});
+            args.push_back({point_col, variable_type, variable_arg.name});
+
+            ColumnPtr res = Base::executeImpl(args, result_type, 1);
+            return normalize_column(std::move(res));
+        };
+
+        /// For simplicity, we treat null values as monotonicity breakers, except for variable / non-zero constant.
+        if (is_null_like(left_point) || is_null_like(right_point))
+        {
+            if (name_view == "divide" || name_view == "intDiv")
+            {
+                /// variable / constant
+                if (right.column && isColumnConst(*right.column))
+                {
+                    if (const_is_zero(right))
+                        return {false, true, false}; /// variable / 0 is undefined, let's treat it as non-monotonic
+
+                    bool is_constant_positive = const_is_positive(right);
+                    /// division is saturated to `inf`, thus it doesn't have overflow issues.
+                    return {true, is_constant_positive, true};
+                }
+            }
+            return {false, true, false, false};
+        }
+
+        /// For simplicity, we treat every single value interval as positive monotonic.
+        if (accurate_equals(left_point, right_point))
+            return {true, true, false, false};
+
+        if (name_view == "minus" || name_view == "plus")
+        {
+            // const +|- variable
+            if (left.column && isColumnConst(*left.column))
+            {
+                auto left_type = removeNullable(removeLowCardinality(left.type));
+                auto right_type = removeNullable(removeLowCardinality(right.type));
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
+
+                ColumnPtr left_transformed = transform(left, left_type, right, right_type, left_point, ret_type);
+                ColumnPtr right_transformed = transform(left, left_type, right, right_type, right_point, ret_type);
+
+                ColumnValueRef out_left = ColumnValueRef::normal(left_transformed.get(), 0);
+                ColumnValueRef out_right = ColumnValueRef::normal(right_transformed.get(), 0);
+
+                bool is_positive_monotonicity
+                    = accurate_less(type, left_point, right_point) == accurate_less(*ret_type, out_left, out_right);
+
+                if (name_view == "plus")
+                {
+                    if (is_positive_monotonicity)
+                        return {true, true, false, true};
+                    return {false, true, false, false};
+                }
+
+                if (!is_positive_monotonicity)
+                    return {true, false, false, true};
+                return {false, false, false, false};
+            }
+
+            /// variable +|- constant
+            if (right.column && isColumnConst(*right.column))
+            {
+                auto left_type = removeNullable(removeLowCardinality(left.type));
+                auto right_type = removeNullable(removeLowCardinality(right.type));
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
+
+                ColumnsWithTypeAndName args_left;
+                args_left.reserve(2);
+                args_left.push_back({normalize_column(left_point.column->cut(left_point.row, 1)), left_type, left.name});
+                args_left.push_back({normalize_column(right.column->cloneResized(1)), right_type, right.name});
+                ColumnPtr left_transformed = normalize_column(Base::executeImpl(args_left, ret_type, 1));
+
+                ColumnsWithTypeAndName args_right;
+                args_right.reserve(2);
+                args_right.push_back({normalize_column(right_point.column->cut(right_point.row, 1)), left_type, left.name});
+                args_right.push_back({normalize_column(right.column->cloneResized(1)), right_type, right.name});
+                ColumnPtr right_transformed = normalize_column(Base::executeImpl(args_right, ret_type, 1));
+
+                ColumnValueRef out_left = ColumnValueRef::normal(left_transformed.get(), 0);
+                ColumnValueRef out_right = ColumnValueRef::normal(right_transformed.get(), 0);
+
+                if (accurate_less(type, left_point, right_point) == accurate_less(*ret_type, out_left, out_right))
+                    return {true, true, false, true};
+                return {false, true, false, false};
+            }
+        }
+
+        if (name_view == "divide" || name_view == "intDiv")
+        {
+            bool is_strict = name_view == "divide";
+
+            auto less_than_zero = [](const ColumnValueRef & ref) { return ref.column->getFloat64(ref.row) < 0; };
+            auto greater_than_zero = [](const ColumnValueRef & ref) { return 0 < ref.column->getFloat64(ref.row); };
+
+            /// const / variable
+            if (left.column && isColumnConst(*left.column))
+            {
+                if (const_is_zero(left))
+                    return {true, true, false, false}; /// 0 / 0 is undefined, thus it's not always monotonic
+
+                bool is_constant_positive = const_is_positive(left);
+                if (less_than_zero(left_point) && less_than_zero(right_point))
+                    return {true, is_constant_positive, false, is_strict};
+
+                if (greater_than_zero(left_point) && greater_than_zero(right_point))
+                    return {true, !is_constant_positive, false, is_strict};
+            }
+            /// variable / constant
+            else if (right.column && isColumnConst(*right.column))
+            {
+                if (const_is_zero(right))
+                    return {false, true, false, false}; /// variable / 0 is undefined, let's treat it as non-monotonic
+
+                bool is_constant_positive = const_is_positive(right);
+                /// division is saturated to `inf`, thus it doesn't have overflow issues.
+                return {true, is_constant_positive, true, is_strict};
+            }
+        }
+
         return {false, true, false};
     }
 
