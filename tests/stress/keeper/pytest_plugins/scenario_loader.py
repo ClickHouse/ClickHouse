@@ -3,7 +3,6 @@ import hashlib
 import inspect
 import os
 import pathlib
-import random
 
 import pytest
 import yaml
@@ -35,7 +34,6 @@ _PREFIX_TAGS = {
     "imp",
 }
 from keeper.framework import presets as _presets
-from keeper.framework.fuzz import generate_fuzz_scenario
 
 
 def _cap_duration(obj, cap_s):
@@ -335,33 +333,6 @@ def pytest_generate_tests(metafunc):
         # Build matrix expansions
         for clone in expand_matrix_clones(s, mb, mtops):
             params.append(pytest.param(clone, id=clone["id"]))
-    # Optional fuzz scenario
-    if bool(_getopt(metafunc.config, "--fuzz", None, False)):
-        seed = int(_getopt(metafunc.config, "--fuzz-seed", None, 0) or 0)
-        if seed <= 0:
-            seed = random.randint(1, 2**31 - 1)
-        steps = int(_getopt(metafunc.config, "--fuzz-steps", None, 8) or 8)
-        dur = int(_getopt(metafunc.config, "--fuzz-duration", None, 180) or 180)
-        # parse weights (format: "key1=val1,key2=val2")
-        wstr = _getopt(metafunc.config, "--fuzz-weights", None, "") or ""
-        weights = {}
-        for part in wstr.split(","):
-            if "=" in part:
-                k, v = part.split("=", 1)
-                try:
-                    weights[k.strip()] = int(v.strip())
-                except ValueError:
-                    continue
-        dmin = int(_getopt(metafunc.config, "--fuzz-dur-min", None, 15) or 15)
-        dmax = int(_getopt(metafunc.config, "--fuzz-dur-max", None, 120) or 120)
-        fs = generate_fuzz_scenario(
-            seed, steps, dur, weights=weights, dur_min=dmin, dur_max=dmax
-        )
-        fs["id"] = f"FUZZ-{seed}"
-        errs = validate_scenario(fs)
-        if errs:
-            raise AssertionError(f"Fuzz scenario invalid: {', '.join(errs)}")
-        params.append(pytest.param(fs, id=fs["id"]))
     metafunc.parametrize("scenario", params)
 
 

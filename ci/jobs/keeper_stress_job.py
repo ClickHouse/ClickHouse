@@ -31,6 +31,10 @@ DEFAULT_TIMEOUT = 120
 DEFAULT_READY_TIMEOUT = 600
 
 
+def _result_name():
+    return os.environ.get("JOB_NAME") or os.environ.get("CHECK_NAME") or "Keeper Stress"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -61,7 +65,7 @@ def set_default_env():
         "KEEPER_DEFAULT_ERROR_RATE": "0.01",
         # CI behavior
         "KEEPER_KEEP_ON_FAIL": "1",
-        "KEEPER_CLEAN_ARTIFACTS": "1",
+        "KEEPER_CLEAN_ARTIFACTS": "0",
         "KEEPER_XDIST_PORT_STEP": "100",
         "CI_HEARTBEAT_SEC": "60",
     }
@@ -435,7 +439,12 @@ def main():
                 ],
             )
         )
-        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+        Result.create_from(
+            name=_result_name(),
+            results=results,
+            status=Result.Status.ERROR,
+            stopwatch=stop_watch,
+        ).complete_job()
         return
 
     # Preflight
@@ -461,19 +470,25 @@ def main():
         )
     )
     if not results[-1].is_ok():
-        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+        Result.create_from(
+            name=_result_name(), results=results, stopwatch=stop_watch
+        ).complete_job()
         return
 
     # ClickHouse binary
     ch_path, ch_results = get_clickhouse_binary()
     results.extend(ch_results)
     if ch_results and not ch_results[-1].is_ok():
-        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+        Result.create_from(
+            name=_result_name(), results=results, stopwatch=stop_watch
+        ).complete_job()
         return
 
     results.append(install_clickhouse_binary(ch_path))
     if not results[-1].is_ok():
-        Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+        Result.create_from(
+            name=_result_name(), results=results, stopwatch=stop_watch
+        ).complete_job()
         return
     ch_path = "/usr/local/bin/clickhouse"
 
@@ -591,7 +606,10 @@ def main():
     )
 
     Result.create_from(
-        results=results, stopwatch=stop_watch, files=files_to_attach
+        name=_result_name(),
+        results=results,
+        stopwatch=stop_watch,
+        files=files_to_attach,
     ).complete_job()
 
 
@@ -608,11 +626,9 @@ if __name__ == "__main__":
         except Exception:
             pass
         Result.create_from(
-            results=[
-                Result.from_commands_run(
-                    name="Keeper Stress fatal error", command=["true"]
-                )
-            ],
+            name=_result_name(),
+            status=Result.Status.ERROR,
+            info=err_txt,
             stopwatch=Utils.Stopwatch(),
             files=[err_path] if os.path.exists(err_path) else [],
         ).complete_job()

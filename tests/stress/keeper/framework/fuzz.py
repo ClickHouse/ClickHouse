@@ -1,4 +1,3 @@
-import os
 import random
 
 from keeper.framework.core.registry import fault_registry
@@ -143,16 +142,8 @@ def generate_fuzz_scenario(
         sb.pre({"kind": "record_watch_baseline"})
     node_names = ["keeper1", "keeper2", "keeper3"]
     w = weights or {}
-    dmin = int(
-        dur_min
-        if dur_min is not None
-        else int(os.environ.get("KEEPER_FUZZ_DUR_MIN", "15"))
-    )
-    dmax = int(
-        dur_max
-        if dur_max is not None
-        else int(os.environ.get("KEEPER_FUZZ_DUR_MAX", "120"))
-    )
+    dmin = int(dur_min if dur_min is not None else 15)
+    dmax = int(dur_max if dur_max is not None else 120)
     for _ in range(max(1, steps)):
         sb.fault(_rand_fault(rnd, node_names, w, dmin, dmax))
     # Gates (invariants)

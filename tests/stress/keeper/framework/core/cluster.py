@@ -96,12 +96,6 @@ def _build_feature_flags(feature_flags):
     return ff
 
 
-
-
-def _build_disks_block():
-    return ""
-
-
 def _build_peers_xml(names, start_sid):
     return "\n".join(
         [
@@ -128,7 +122,6 @@ def _keeper_server_xml(
     http_ctrl,
     coord_settings,
     feature_flags_xml,
-    disk_select,
 ):
     return (
         "<keeper_server>"
@@ -141,7 +134,6 @@ def _keeper_server_xml(
         + "<raft_configuration>\n"
         + peers_xml
         + "\n    </raft_configuration>"
-        + disk_select
         + "</keeper_server>"
     )
 
@@ -191,19 +183,12 @@ class ClusterBuilder:
         if coord_overrides_xml:
             coord_settings = coord_overrides_xml
         feature_flags_xml = _feature_flags_xml(ff)
-        disk_select = ""
 
         # Per-instance configs and add instances
         nodes = []
         # Use 1-based server ids by default for raft members
         start_sid = 1 if ID_BASE <= 0 else ID_BASE
         peers_xml = _build_peers_xml(names, start_sid)
-        disks_block = _build_disks_block()
-        # Avoid emitting additional top-level sections that may already exist in base config
-        # Do not inject a Prometheus block; base configs may already enable it
-        prom_block = ""
-        # Do not inject <zookeeper> for keeper_server tests to avoid collisions with base configs
-        zk_block = ""
 
         for i, name in enumerate(names, start=start_sid):
             # Build a single per-node config file with all required sections (minimal to avoid collisions)
@@ -218,7 +203,6 @@ class ClusterBuilder:
                 "",
                 coord_settings,
                 feature_flags_xml,
-                disk_select,
             )
             # Ensure server listens on container IPs; do not duplicate tcp_port
             net_block = _listen_hosts_xml()
@@ -226,8 +210,6 @@ class ClusterBuilder:
                 "<clickhouse>"
                 + keeper_server
                 + net_block
-                + prom_block
-                + disks_block
                 + "</clickhouse>"
             )
             cfg_path = _write_keeper_config(conf_dir, base_dir, cname, name, full_xml)
