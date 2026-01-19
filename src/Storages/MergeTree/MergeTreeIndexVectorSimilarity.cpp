@@ -28,6 +28,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <Common/randomSeed.h>
+#include <pcg_random.hpp>
 
 #include <fmt/ranges.h>
 
@@ -332,7 +333,7 @@ void performHubPruning(
     std::unordered_map<USearchIndex::vector_key_t, size_t> node_visit_counts;
 
     /// Use a subset of stored vectors as random query vectors
-    std::mt19937 rng(randomSeed());
+    pcg64_fast rng{randomSeed()};
     std::uniform_int_distribution<size_t> dist(0, stored_vectors.size() - 1);
 
     const size_t search_limit = std::min(static_cast<size_t>(50), index->size() / 2); /// Search for top 50 or half the index
