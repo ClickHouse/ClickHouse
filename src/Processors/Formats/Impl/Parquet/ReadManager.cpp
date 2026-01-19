@@ -875,6 +875,8 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
 
                 chassert(task.row_subgroup_idx != UINT64_MAX);
                 RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
+                if (row_subgroup.filter.rows_pass == 0)
+                    break;
                 reader.decodePrimitiveColumn(
                     column, column_info, row_subgroup.columns.at(task.column_idx),
                     row_group, row_subgroup);
