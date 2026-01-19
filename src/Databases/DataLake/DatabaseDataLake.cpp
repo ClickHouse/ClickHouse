@@ -710,7 +710,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
 
 std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesIterator(
     ContextPtr /*context_*/,
-    const FilterByNameFunction & /*filter_by_table_name*/,
+    const FilterByNameFunction & filter_by_table_name,
     bool /*skip_not_loaded*/) const
 {
     auto catalog = getCatalog();
@@ -730,6 +730,8 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
 
     for (const auto & table_name : iceberg_tables)
     {
+		if (filter_by_table_name && !filter_by_table_name(table_name))
+            continue;
         result.emplace_back(table_name);
     }
 
