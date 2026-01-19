@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.1",
         {
+            {"use_statistics", true, true, "Enable this optimization by default."},
             {"ignore_on_cluster_for_replicated_database", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."},
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
             {"distributed_cache_file_cache_name", "", "", "New setting."},
@@ -64,6 +65,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_qbit_type", false, true, "QBit was moved to Beta. Added an alias for setting 'allow_experimental_qbit_type'."},
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
             {"use_sparse_lightweight_representation_of_primary_key_for_index_analysis", false, true, "New setting"},
+            {"use_hash_table_stats_for_join_reordering", true, true, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."},
+            {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {

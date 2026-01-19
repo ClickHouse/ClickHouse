@@ -147,8 +147,8 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
             }
             else
             {
-                s.def.push_back(1);
-                s.rep.push_back(1);
+                s.def.push_back(static_cast<UInt8>(1));
+                s.rep.push_back(static_cast<UInt8>(1));
                 s.def[i] = 0;
                 s.rep[i] = 0;
                 i += 1;
@@ -195,7 +195,7 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
         }
         else
         {
-            mask.push_back(1);
+            mask.push_back(static_cast<UInt8>(1));
             mask[i + empty_arrays] = 0;
             ++empty_arrays;
         }

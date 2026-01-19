@@ -62,6 +62,7 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event FilterPartsByVirtualColumnsMicroseconds;
 }
 
 namespace DB
@@ -373,8 +374,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
         RelativeSize lower_limit_rational = relative_sample_offset * size_of_universum;
         RelativeSize upper_limit_rational = (relative_sample_offset + relative_sample_size) * size_of_universum;
 
-        UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
-        UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
+        UInt64 lower = static_cast<UInt64>(boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational));
+        UInt64 upper = static_cast<UInt64>(boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational));
 
         if (lower > 0)
             has_lower_limit = true;
@@ -556,9 +557,31 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     if (!dag)
         return {};
 
+    /// Check if the extracted DAG actually uses any virtual columns.
+    /// If it only contains constants (e.g., "greater(45, 0)"), skip the parts filtering that can be expensive
+    /// if there are many parts (because it does a linear search over all parts).
+    bool has_virtual_column_input = false;
+    for (const auto & input : dag->getInputs())
+    {
+        if (sample.has(input->result_name))
+        {
+            has_virtual_column_input = true;
+            break;
+        }
+    }
+    if (!has_virtual_column_input)
+        return {};
+
+    auto start_time = std::chrono::steady_clock::now();
+
     auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
     VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), virtual_columns_block);
-    return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+    auto result = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+
+    auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start_time).count();
+    ProfileEvents::increment(ProfileEvents::FilterPartsByVirtualColumnsMicroseconds, elapsed_us);
+
+    return result;
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(

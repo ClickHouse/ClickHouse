@@ -2574,9 +2574,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
             // if right join position is after left/inner join then we can't parallelize the left/inner join
             if (first_left_or_inner_join_pos < 0 && (join_node.getKind() == JoinKind::Left || join_node.getKind() == JoinKind::Inner))
-                first_left_or_inner_join_pos = i;
+                first_left_or_inner_join_pos = static_cast<int>(i);
             if (first_right_join_pos < 0 && join_node.getKind() == JoinKind::Right)
-                first_right_join_pos = i;
+                first_right_join_pos = static_cast<int>(i);
 
             /// For RIGHT JOIN with a distributed table on the right side, disable parallel replicas.
             /// The distributed table on the right side would be wrapped into a subquery,

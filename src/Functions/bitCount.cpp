@@ -29,16 +29,16 @@ struct BitCountImpl
                 res += std::popcount(item);
             return res;
         }
-        if constexpr (std::is_same_v<A, UInt64> || std::is_same_v<A, Int64>)
-            return std::popcount(static_cast<UInt64>(a));
-        if constexpr (std::is_same_v<A, UInt32> || std::is_same_v<A, Int32> || std::is_unsigned_v<A>)
-            return std::popcount(static_cast<UInt32>(a));
-        if constexpr (std::is_same_v<A, Int16>)
-            return std::popcount(static_cast<UInt16>(a));
-        if constexpr (std::is_same_v<A, Int8>)
-            return std::popcount(static_cast<uint8_t>(a));
+        else if constexpr (std::is_same_v<A, UInt64> || std::is_same_v<A, Int64>)
+            return static_cast<ResultType>(std::popcount(static_cast<UInt64>(a)));
+        else if constexpr (std::is_same_v<A, UInt32> || std::is_same_v<A, Int32>)
+            return static_cast<ResultType>(std::popcount(static_cast<UInt32>(a)));
+        else if constexpr (std::is_same_v<A, Int16>)
+            return static_cast<ResultType>(std::popcount(static_cast<UInt16>(a)));
+        else if constexpr (std::is_same_v<A, Int8>)
+            return static_cast<ResultType>(std::popcount(static_cast<uint8_t>(a)));
         else
-            return std::popcount(bit_cast<uint64_t>(a));
+            return static_cast<ResultType>(std::popcount(bit_cast<uint64_t>(a)));
     }
 
 #if USE_EMBEDDED_COMPILER
