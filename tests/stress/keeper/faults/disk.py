@@ -73,6 +73,7 @@ def dm_delay(node, ms=3):
         dm_name = _dm_name("kdelay", node)
         img = _dm_img("delay", node)
         backend_dev = ""
+        pids = ""
         # Prefer RAM block device if present inside container
         ram = _ram_block_device(node)
         if ram:
@@ -87,7 +88,7 @@ def dm_delay(node, ms=3):
         try:
             sh(
                 node,
-                "pkill -STOP -x clickhouse || pkill -STOP clickhouse-server || true",
+                "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -STOP $PIDS || true",
                 timeout=30,
             )
         except Exception:
@@ -126,7 +127,7 @@ def dm_delay(node, ms=3):
         try:
             sh(
                 node,
-                "pkill -CONT -x clickhouse || pkill -CONT clickhouse-server || true",
+                "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -CONT $PIDS || true",
                 timeout=30,
             )
         except Exception:
@@ -202,7 +203,7 @@ def dm_delay(node, ms=3):
             try:
                 sh(
                     node,
-                    "pkill -CONT -x clickhouse || pkill -CONT clickhouse-server || true",
+                    "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -CONT $PIDS || true",
                     timeout=30,
                 )
             except Exception:
@@ -214,7 +215,7 @@ def dm_delay(node, ms=3):
         try:
             sh(
                 node,
-                "pkill -STOP -x clickhouse || pkill -STOP clickhouse-server || true",
+                "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -STOP $PIDS || true",
                 timeout=30,
             )
         except Exception:
@@ -233,7 +234,7 @@ def dm_delay(node, ms=3):
         try:
             sh(
                 node,
-                "pkill -CONT -x clickhouse || pkill -CONT clickhouse-server || true",
+                "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -CONT $PIDS || true",
                 timeout=30,
             )
         except Exception:

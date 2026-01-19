@@ -29,16 +29,6 @@ def pytest_addoption(parser):
     # Sink URL is resolved via CI ClickHouse helper; no explicit option needed
     pa("--duration", type=int, default=None)
     pa(
-        "--total-shards",
-        type=int,
-        default=int(os.environ.get("KEEPER_TOTAL_SHARDS", "1") or "1"),
-    )
-    pa(
-        "--shard-index",
-        type=int,
-        default=int(os.environ.get("KEEPER_SHARD_INDEX", "0") or "0"),
-    )
-    pa(
         "--matrix-backends",
         action="store",
         default=os.environ.get("KEEPER_MATRIX_BACKENDS", ""),

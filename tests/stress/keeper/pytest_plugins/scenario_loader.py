@@ -1,5 +1,4 @@
 import copy
-import hashlib
 import inspect
 import os
 import pathlib
@@ -224,13 +223,6 @@ def _tags_ok(tags):
     return True
 
 
-def _should_run(sid, total, index):
-    if total <= 1:
-        return True
-    h = int(hashlib.sha1(sid.encode()).hexdigest(), 16)
-    return (h % total) == index
-
-
 def _has_gate(s, gate_type):
     return any(g.get("type") == gate_type for g in (s.get("gates") or []))
 
@@ -311,99 +303,83 @@ def _getopt(cfg, name, env_name=None, default=""):
     return default
 
 
-def pytest_generate_tests(metafunc):
-    if "scenario" not in metafunc.fixturenames:
-        return
-    cli_duration = None
-    try:
-        opt_dur = metafunc.config.getoption("--duration")
-        if opt_dur not in (None, ""):
-            cli_duration = int(opt_dur)
-    except Exception:
-        cli_duration = None
-    if cli_duration is None:
-        env_dur = os.environ.get("KEEPER_DURATION", "")
-        if str(env_dur or "").strip():
-            try:
-                cli_duration = int(env_dur)
-            except (ValueError, TypeError):
-                cli_duration = None
-    if cli_duration is not None and cli_duration <= 0:
-        cli_duration = None
-    # accept alt env names; robust to missing CLI options
-    total = int(
-        _getopt(metafunc.config, "--total-shards", "KEEPER_TOTAL_SHARDS", 1) or 1
-    )
-    index = int(_getopt(metafunc.config, "--shard-index", "KEEPER_SHARD_INDEX", 0) or 0)
-    # Load primary scenario file(s) + optional extras
-    # Default: full modular suite (exclude legacy keeper_e2e.yaml)
+def _resolve_cli_duration(cfg):
+    cli_duration = _getopt(cfg, "--duration", "KEEPER_DURATION", "")
+    if cli_duration:
+        try:
+            val = int(cli_duration)
+            return val if val > 0 else None
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
+def _resolve_scenario_files():
     env_target = os.environ.get("KEEPER_SCENARIO_FILE", "all")
     if env_target.lower() == "all":
         files = sorted(
-            p
-            for p in _SCN_BASE.glob("*.yaml")
-            if p.name not in ("keeper_e2e.yaml", "e2e_unique.yaml")
+            p for p in _SCN_BASE.glob("*.yaml")
+            if p.name not in {"keeper_e2e.yaml", "e2e_unique.yaml"}
         )
     elif "," in env_target:
-        files = [(_SCN_BASE / p.strip()) for p in env_target.split(",") if p.strip()]
+        files = [_SCN_BASE / p.strip() for p in env_target.split(",") if p.strip()]
     else:
         files = [_SCN_BASE / env_target]
     extra = os.environ.get("KEEPER_EXTRA_SCENARIOS", "")
-    for p in [x.strip() for x in extra.split(",") if x.strip()]:
-        files.append(pathlib.Path(p))
+    files.extend(pathlib.Path(p.strip()) for p in extra.split(",") if p.strip())
+    return files
+
+
+def _load_scenarios_from_files(files):
     scenarios_raw = []
     for f in files:
-        if f.exists():
-            d = yaml.safe_load(f.read_text())
-            if isinstance(d, dict) and isinstance(d.get("scenarios"), list):
-                defaults = (
-                    d.get("defaults") if isinstance(d.get("defaults"), dict) else {}
-                )
-                for s in d["scenarios"]:
-                    if not isinstance(s, dict):
-                        continue
-                    sc = apply_file_defaults_to_scenario(s, defaults)
-                    if defaults:
-                        sc["_defaults"] = dict(defaults)
-                    scenarios_raw.append(sc)
-    data = {"scenarios": scenarios_raw}
-    include_ids_str = (
-        _getopt(metafunc.config, "--keeper-include-ids", "KEEPER_INCLUDE_IDS", "") or ""
-    )
-    include_ids = set(sid for sid in include_ids_str.split(",") if sid)
-    scenarios = []
-    # matrix options - allow env override via KEEPER_MATRIX_BACKENDS / KEEPER_MATRIX_TOPOLOGIES
-    # If no matrix specified, fall back to --keeper-backend CLI option
-    mb_raw = (
-        _getopt(metafunc.config, "--matrix-backends", "KEEPER_MATRIX_BACKENDS", "")
-        or ""
-    )
+        if not f.exists():
+            continue
+        d = yaml.safe_load(f.read_text())
+        if not (isinstance(d, dict) and isinstance(d.get("scenarios"), list)):
+            continue
+        defaults = d.get("defaults") if isinstance(d.get("defaults"), dict) else {}
+        for s in d["scenarios"]:
+            if not isinstance(s, dict):
+                continue
+            sc = apply_file_defaults_to_scenario(s, defaults)
+            if defaults:
+                sc["_defaults"] = dict(defaults)
+            scenarios_raw.append(sc)
+    return scenarios_raw
+
+
+def _parse_include_ids(cfg):
+    include_ids_str = _getopt(cfg, "--keeper-include-ids", "KEEPER_INCLUDE_IDS", "") or ""
+    return set(sid for sid in include_ids_str.split(",") if sid)
+
+
+def _resolve_matrix_backends(cfg):
+    mb_raw = _getopt(cfg, "--matrix-backends", "KEEPER_MATRIX_BACKENDS", "") or ""
     mb = [x.strip() for x in mb_raw.split(",") if x.strip()]
     if not mb:
-        # Fall back to CLI --keeper-backend option
-        cli_backend = _getopt(metafunc.config, "--keeper-backend", "KEEPER_BACKEND", "")
+        cli_backend = _getopt(cfg, "--keeper-backend", "KEEPER_BACKEND", "")
         if cli_backend:
             mb = [cli_backend]
-    mtops_raw = (
-        _getopt(metafunc.config, "--matrix-topologies", "KEEPER_MATRIX_TOPOLOGIES", "")
-        or ""
-    )
-    mtops = [int(x.strip()) for x in mtops_raw.split(",") if x.strip()]
+    return mb
 
+
+def _resolve_matrix_topologies(cfg):
+    mtops_raw = _getopt(cfg, "--matrix-topologies", "KEEPER_MATRIX_TOPOLOGIES", "") or ""
+    return [int(x.strip()) for x in mtops_raw.split(",") if x.strip()]
+
+
+def _build_params(scenarios_raw, *, cli_duration, include_ids, mb, mtops):
     params = []
     seen_ids = set()
-    for s in data["scenarios"]:
+    for s in scenarios_raw:
         defaults = s.pop("_defaults", {}) if isinstance(s, dict) else {}
         s = build_preset_scenario(s, cli_duration=cli_duration)
-        s = normalize_scenario_durations(
-            s, defaults=defaults, cli_duration=cli_duration
-        )
+        s = normalize_scenario_durations(s, defaults=defaults, cli_duration=cli_duration)
         sid_val = s.get("id")
         if sid_val in seen_ids:
             continue
         if include_ids and sid_val not in include_ids:
-            continue
-        if not _should_run(s["id"], total, index):
             continue
         if not _tags_ok(s.get("tags")):
             continue
@@ -413,9 +389,30 @@ def pytest_generate_tests(metafunc):
         if errs:
             raise AssertionError(f"Scenario {s.get('id')} invalid: {', '.join(errs)}")
         seen_ids.add(s.get("id"))
-        # Build matrix expansions
         for clone in expand_matrix_clones(s, mb, mtops):
             params.append(pytest.param(clone, id=clone["id"]))
+    return params
+
+
+def pytest_generate_tests(metafunc):
+    if "scenario" not in metafunc.fixturenames:
+        return
+    cli_duration = _resolve_cli_duration(metafunc.config)
+
+    files = _resolve_scenario_files()
+    scenarios_raw = _load_scenarios_from_files(files)
+    include_ids = _parse_include_ids(metafunc.config)
+
+    mb = _resolve_matrix_backends(metafunc.config)
+    mtops = _resolve_matrix_topologies(metafunc.config)
+
+    params = _build_params(
+        scenarios_raw,
+        cli_duration=cli_duration,
+        include_ids=include_ids,
+        mb=mb,
+        mtops=mtops,
+    )
     metafunc.parametrize("scenario", params)
 
 

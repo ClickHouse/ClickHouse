@@ -38,15 +38,6 @@ def load_files(files_arg):
     return files
 
 
-def should_run(sid, total, index):
-    if total <= 1:
-        return True
-    import hashlib
-
-    h = int(hashlib.sha1(sid.encode()).hexdigest(), 16)
-    return (h % total) == index
-
-
 def main():
     ap = argparse.ArgumentParser(
         description="List Keeper stress scenarios after injections (no cluster)"
@@ -57,16 +48,6 @@ def main():
         help="Scenario file spec (core.yaml, a.yaml,b.yaml, or all)",
     )
     ap.add_argument("--include-ids", default=os.environ.get("KEEPER_INCLUDE_IDS", ""))
-    ap.add_argument(
-        "--total-shards",
-        type=int,
-        default=int(os.environ.get("KEEPER_TOTAL_SHARDS", "1") or "1"),
-    )
-    ap.add_argument(
-        "--shard-index",
-        type=int,
-        default=int(os.environ.get("KEEPER_SHARD_INDEX", "0") or "0"),
-    )
     ap.add_argument(
         "--matrix-backends", default=os.environ.get("KEEPER_MATRIX_BACKENDS", "")
     )
@@ -116,8 +97,6 @@ def main():
         if sid in seen:
             continue
         if include_ids and sid not in include_ids:
-            continue
-        if not should_run(sid, int(args.total_shards or 1), int(args.shard_index or 0)):
             continue
         loader.inject_gate_macros(s)
         loader.inject_prefix_tags(s)
