@@ -301,16 +301,21 @@ protected:
         }
     }
 
-    void showTablesQuery(MutableColumns & res_columns)
+
+    void showTablesQuery(MutableColumns & res_columns, bool need_to_check_access_for_tables)
     {
         auto table_details = database->getLightweightTablesIterator(context,
                                 /* filter_by_table_name */ {},
                                 /* skip_not_loaded */ false);
 
+        const auto access = context->getAccess();
         for (auto & table_detail: table_details)
         {
             size_t src_index = 0;
             size_t res_index = 0;
+
+            if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_detail.name))
+                continue;
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(database_name);
@@ -482,7 +487,8 @@ protected:
             auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
             if (needed_columns.size() == 1 && needed_columns[0].name == "name")
             {
-                showTablesQuery(res_columns);
+                showTablesQuery(res_columns, need_to_check_access_for_tables);
+                done = true;
                 UInt64 num_rows = res_columns.at(0)->size();
                 return Chunk(std::move(res_columns), num_rows);
             }
