@@ -210,6 +210,26 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
     return written_files;
 }
 
+void IMergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & data, const String & part_path, WriteBuffer & buf) const
+{
+    if (!initialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to store uninitialized MinMax index for part {}" , part_path);
+
+    auto metadata_snapshot = data.getInMemoryMetadataPtr();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+
+    auto minmax_column_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
+    auto minmax_column_types = MergeTreeData::getMinMaxColumnsTypes(partition_key);
+
+    for (size_t i = 0; i < minmax_column_names.size(); ++i)
+    {
+        auto serialization = minmax_column_types.at(i)->getDefaultSerialization();
+
+        serialization->serializeBinary(hyperrectangle[i].left, buf, FormatSettings{});
+        serialization->serializeBinary(hyperrectangle[i].right, buf, FormatSettings{});
+    }
+}
+
 void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & column_names)
 {
     if (!initialized)

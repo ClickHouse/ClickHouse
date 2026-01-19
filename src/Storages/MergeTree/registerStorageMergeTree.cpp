@@ -6,6 +6,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/StorageManifestMergeTree.h>
 #include <Storages/TableZnodeInfo.h>
 
 #include <Core/ServerSettings.h>
@@ -193,12 +194,20 @@ static bool isReplicated(const String & engine_name)
     return engine_name.starts_with("Replicated") && engine_name.ends_with("MergeTree");
 }
 
+/// Returns whether this is a Manifest table engine?
+static bool isManifest(const String & engine_name)
+{
+    return engine_name.starts_with("Manifest") && engine_name.ends_with("MergeTree");
+}
+
 /// Returns the part of the name of a table engine between "Replicated" (if any) and "MergeTree".
 static std::string_view getNamePart(const String & engine_name)
 {
     std::string_view name_part = engine_name;
     if (name_part.starts_with("Replicated"))
         name_part.remove_prefix(strlen("Replicated"));
+    if (name_part.starts_with("Manifest"))
+        name_part.remove_prefix(strlen("Manifest"));
 
     if (name_part.ends_with("MergeTree"))
         name_part.remove_suffix(strlen("MergeTree"));
@@ -395,6 +404,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     const Settings & local_settings = args.getLocalContext()->getSettingsRef();
 
     bool replicated = isReplicated(args.engine_name);
+    bool manifest = isManifest(args.engine_name);
     std::string_view name_part = getNamePart(args.engine_name);
 
     MergeTreeData::MergingParams merging_params;
@@ -860,6 +870,21 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (arg_num != arg_cnt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of engine arguments.");
 
+    /// Extract manifest_storage_type from settings for ManifestMergeTree
+    String manifest_storage_type;
+    if (manifest && args.storage_def && args.storage_def->settings)
+    {
+        const auto & settings = args.storage_def->settings->as<ASTSetQuery &>().changes;
+        for (const auto & setting : settings)
+        {
+            if (setting.name == "manifest_storage_type")
+            {
+                manifest_storage_type = setting.value.safeGet<String>();
+                break;
+            }
+        }
+    }
+
     if (replicated)
     {
         bool need_check_table_structure = true;
@@ -884,6 +909,20 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             std::move(storage_settings),
             need_check_table_structure,
             create_query_zk_retries_info);
+    }
+
+    if (manifest)
+    {
+        return std::make_shared<StorageManifestMergeTree>(
+            args.table_id,
+            args.relative_data_path,
+            metadata,
+            args.mode,
+            context,
+            date_column_name,
+            merging_params,
+            std::move(storage_settings),
+            manifest_storage_type);
     }
 
     return std::make_shared<StorageMergeTree>(
@@ -931,6 +970,8 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedCoalescingMergeTree", create, features);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create, features);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, features);
+
+    factory.registerStorage("ManifestMergeTree", create, features);
 }
 
 }

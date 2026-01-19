@@ -1893,6 +1893,7 @@ private:
     bool allow_nullable_key = false;
     bool allow_reverse_key = false;
 
+protected:
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);
 
@@ -1902,6 +1903,7 @@ private:
     void addPartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
     void removePartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
 
+private:
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
     std::atomic<size_t> total_active_size_parts = 0;
@@ -1919,7 +1921,7 @@ private:
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
 
-    LoadPartResult loadDataPart(
+    virtual LoadPartResult loadDataPart(
         const MergeTreePartInfo & part_info,
         const String & part_name,
         const DiskPtr & part_disk_ptr,

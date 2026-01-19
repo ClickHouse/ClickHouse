@@ -56,6 +56,8 @@ struct MergeTreePartition
         MergeTreeDataPartChecksums & checksums,
         const WriteSettings & settings) const;
 
+    void store(const MergeTreeData & storage, WriteBuffer & buf) const;
+
     void assign(const MergeTreePartition & other) { value = other.value; }
 
     void create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context);

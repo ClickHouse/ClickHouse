@@ -29,7 +29,7 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
 /** See the description of the data structure in MergeTreeData.
   */
-class StorageMergeTree final : public MergeTreeData
+class StorageMergeTree : public MergeTreeData
 {
 public:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),

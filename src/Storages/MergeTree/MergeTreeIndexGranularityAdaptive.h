@@ -37,9 +37,10 @@ public:
     std::shared_ptr<MergeTreeIndexGranularity> optimize() override;
     std::string describe() const override;
 
+    std::vector<size_t> getMarksRowsPartialSums() const override { return marks_rows_partial_sums; }
+
 private:
     std::vector<size_t> marks_rows_partial_sums;
 };
 
 }
-
