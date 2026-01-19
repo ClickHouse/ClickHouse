@@ -233,10 +233,18 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
                             null_map->push_back(0);
                     }
                 }
+                else if (is_null_map_subcolumn)
+                {
+                    null_map->push_back(1);
+                }
                 else
                 {
                     variant_column->insertDefault();
                 }
+            }
+            else if (is_null_map_subcolumn)
+            {
+                null_map->push_back(1);
             }
             else
             {
