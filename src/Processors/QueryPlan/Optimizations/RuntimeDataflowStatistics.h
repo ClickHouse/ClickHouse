@@ -27,7 +27,7 @@ struct RuntimeDataflowStatistics
 {
     size_t input_bytes = 0;
     size_t output_bytes = 0;
-    size_t total_rows_from_storage = 0;
+    size_t total_rows_to_read = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
@@ -79,11 +79,11 @@ public:
 
     void setCacheKey(size_t key) { cache_key = key; }
 
-    void setTotalRowsFromStorage(size_t rows)
+    void setTotalRowsToRead(size_t rows)
     {
         if (rows == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Total rows from storage cannot be zero");
-        total_rows_from_storage = rows;
+        total_rows_to_read = rows;
     }
 
     void recordOutputChunk(const Chunk & chunk, const Block & header);
@@ -99,7 +99,7 @@ public:
 private:
     /// TODO(nickitat): make construction arguments
     std::optional<size_t> cache_key;
-    size_t total_rows_from_storage = 0;
+    size_t total_rows_to_read = 0;
 
     std::atomic_bool unsupported_case{false};
 

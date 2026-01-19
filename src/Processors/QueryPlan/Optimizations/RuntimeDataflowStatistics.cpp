@@ -61,7 +61,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.elapsed_microseconds);
     };
 
-    RuntimeDataflowStatistics res{.total_rows_from_storage = total_rows_from_storage};
+    RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read};
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
         const auto & stats = input_bytes_statistics[i];
