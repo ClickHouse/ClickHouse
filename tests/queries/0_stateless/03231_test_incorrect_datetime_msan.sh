@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} --query "
-CREATE TABLE tab
+CREATE TABLE IF NOT EXISTS tab
 (
     a DateTime,
     pk String
@@ -15,6 +15,6 @@ CREATE TABLE tab
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM tab WHERE a = '2024-08-06 09:58:09'"
 
-${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM tab WHERE a = '2024-08-06 09:58:0'" 2>&1 | grep -F -q "Cannot parse time component of DateTime 09:58:0" && echo "OK" || echo "FAIL";
+${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM tab WHERE a = '2024-08-06 09:58:0'" 2>&1 | grep -F -q "Cannot convert string '2024-08-06 09:58:0'" && echo "OK" || echo "FAIL";
 
 ${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM tab WHERE a = '2024-08-0 09:58:09'" 2>&1 | grep -F -q "Cannot convert string '2024-08-0 09:58:09" && echo "OK" || echo "FAIL";

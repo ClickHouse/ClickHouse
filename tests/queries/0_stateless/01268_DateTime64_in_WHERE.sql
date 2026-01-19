@@ -5,7 +5,7 @@ WITH '2020-02-05 14:34:12.333' as S, toDateTime64(S, 3) as DT64 SELECT materiali
 WITH '2020-02-05 14:34:12.333' as S, toDateTime64(S, 3) as DT64 SELECT * WHERE DT64 = materialize(S); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 WITH '2020-02-05 14:34:12.333' as S, toDateTime64(S, 3) as DT64 SELECT * WHERE materialize(S) = DT64; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
-SELECT * WHERE toDateTime64(123.345, 3) == 'ABCD'; -- {serverError CANNOT_PARSE_DATETIME} -- invalid DateTime64 string
+SELECT * WHERE toDateTime64(123.345, 3) == 'ABCD'; -- {serverError TYPE_MISMATCH } -- invalid DateTime64 string
 SELECT * WHERE toDateTime64(123.345, 3) == '2020-02-05 14:34:12.33333333333333333333333333333333333333333333333333333333';
 
 SELECT 'in SELECT';

@@ -7,27 +7,43 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 FORMATS=('TSVWithNamesAndTypes' 'CSVWithNamesAndTypes' 'JSONStringsEachRow' 'JSONCompactEachRowWithNamesAndTypes' 'JSONCompactStringsEachRowWithNamesAndTypes')
+
+tmpdir="$(mktemp -d "${CURDIR}/00167_data.XXXXXX")"
+trap 'rm -rf "$tmpdir"' EXIT
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS parsing_with_names"
 
 for format in "${FORMATS[@]}"
 do
-    # Columns are permuted
+    TMP_FILE_PATH="$(mktemp "${tmpdir}/file.XXXXXX.$format")"
+
     $CLICKHOUSE_CLIENT -q "CREATE TABLE parsing_with_names(c FixedString(16), a DateTime('Asia/Dubai'),  b String) ENGINE=Memory()"
 
-    echo "$format, false";
+    echo "$format, false"
     $CLICKHOUSE_CLIENT --max_threads=0 --output_format_parallel_formatting=false -q \
-    "SELECT URLRegions as d, toTimeZone(ClientEventTime, 'Asia/Dubai') as a, MobilePhoneModel as b, ParamPrice as e, ClientIP6 as c FROM test.hits LIMIT 5000 Format $format" | \
-    $CLICKHOUSE_CLIENT --max_threads=0 --input_format_skip_unknown_fields=1 --input_format_parallel_parsing=false -q "INSERT INTO parsing_with_names SETTINGS input_format_null_as_default=0 FORMAT $format"
+        "SELECT URLRegions as d, toTimeZone(ClientEventTime, 'Asia/Dubai') as a, MobilePhoneModel as b, ParamPrice as e, ClientIP6 as c FROM test.hits LIMIT 5000 FORMAT $format" \
+        > "$TMP_FILE_PATH"
+
+    $CLICKHOUSE_CLIENT --max_threads=0 --input_format_skip_unknown_fields=1 --input_format_parallel_parsing=false -q \
+        "INSERT INTO parsing_with_names SETTINGS input_format_null_as_default=0 FORMAT $format" \
+        < "$TMP_FILE_PATH"
 
     $CLICKHOUSE_CLIENT -q "SELECT * FROM parsing_with_names;" | md5sum
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS parsing_with_names"
 
 
     $CLICKHOUSE_CLIENT -q "CREATE TABLE parsing_with_names(c FixedString(16), a DateTime('Asia/Dubai'),  b String) ENGINE=Memory()"
-    echo "$format, true";
+    echo "$format, true"
+
+    TMP_FILE_PATH="$(mktemp "${tmpdir}/file.XXXXXX.$format")"
+
     $CLICKHOUSE_CLIENT --max_threads=0 --output_format_parallel_formatting=false -q \
-    "SELECT URLRegions as d, toTimeZone(ClientEventTime, 'Asia/Dubai') as a, MobilePhoneModel as b, ParamPrice as e, ClientIP6 as c FROM test.hits LIMIT 5000 Format $format" | \
-    $CLICKHOUSE_CLIENT --max_threads=0 --input_format_skip_unknown_fields=1 --input_format_parallel_parsing=true -q "INSERT INTO parsing_with_names SETTINGS input_format_null_as_default=0 FORMAT $format"
+        "SELECT URLRegions as d, toTimeZone(ClientEventTime, 'Asia/Dubai') as a, MobilePhoneModel as b, ParamPrice as e, ClientIP6 as c FROM test.hits LIMIT 5000 FORMAT $format" \
+        > "$TMP_FILE_PATH"
+
+    $CLICKHOUSE_CLIENT --max_threads=0 --input_format_skip_unknown_fields=1 --input_format_parallel_parsing=true -q \
+        "INSERT INTO parsing_with_names SETTINGS input_format_null_as_default=0 FORMAT $format" \
+        < "$TMP_FILE_PATH"
 
     $CLICKHOUSE_CLIENT -q "SELECT * FROM parsing_with_names;" | md5sum
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS parsing_with_names"

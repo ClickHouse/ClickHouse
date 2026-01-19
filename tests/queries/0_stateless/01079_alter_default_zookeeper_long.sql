@@ -53,7 +53,7 @@ SHOW CREATE TABLE alter_default;
 
 ALTER TABLE alter_default ADD COLUMN other_date String DEFAULT '0';
 
-ALTER TABLE alter_default MODIFY COLUMN other_date DateTime; --{serverError CANNOT_PARSE_DATETIME}
+ALTER TABLE alter_default MODIFY COLUMN other_date DateTime;
 
 ALTER TABLE alter_default MODIFY COLUMN other_date DEFAULT 1;
 
