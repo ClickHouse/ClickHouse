@@ -70,7 +70,7 @@ static bool exceedsFloat64PrecisionRange(Float64 value)
 
 /// Create a Range from statistics estimate for use in part pruning.
 /// For nullable columns, the range is conservatively extended to POSITIVE_INFINITY
-/// This is a conservative approach because StatisticsMinMax loses information about whether the column actually contains NULL values.                             
+/// This is a conservative approach because StatisticsMinMax loses information about whether the column actually contains NULL values.
 static std::optional<Range> createRangeFromEstimate(const Estimate & est, const DataTypePtr & data_type, bool is_nullable)
 {
     if (!est.estimated_min.has_value() || !est.estimated_max.has_value())
