@@ -100,7 +100,7 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
     }
 
     String index_for_step;
-    String non_index_column;
+    bool has_non_index_columns = false;
 
     for (const auto & column : columns_to_read)
     {
@@ -108,7 +108,7 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
 
         if (it == column_to_index.end())
         {
-            non_index_column = column.name;
+            has_non_index_columns = true;
         }
         else if (index_for_step.empty())
         {
@@ -120,8 +120,12 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
         }
     }
 
-    if (!index_for_step.empty() && !non_index_column.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Found non-index column {} in read step for index {}", non_index_column, index_for_step);
+    /// Allow mixing index columns with regular columns when the regular columns are dependencies
+    /// for evaluating default expressions of text index virtual columns (e.g., for partially materialized text indexes).
+    /// In this case, don't return an index task - let the main reader handle all columns.
+    /// The main reader will check per-part if the index is materialized and handle accordingly.
+    if (!index_for_step.empty() && has_non_index_columns)
+        return nullptr;
 
     return index_for_step.empty() ? nullptr : &index_read_tasks.at(index_for_step);
 }
