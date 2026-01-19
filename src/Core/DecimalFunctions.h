@@ -118,6 +118,12 @@ inline T multiplyAdd(const T & x, const T & multiplier, const T & delta)
     return res;
 }
 
+template <typename T>
+inline bool tryMultiplyAdd(const T & x, const T & multiplier, const T & delta, T & result)
+{
+    return multiplyAdd<T, false>(x, multiplier, delta, result);
+}
+
 /** Make a decimal value from whole and fractional components with given scale multiplier.
   * where scale_multiplier = scaleMultiplier<T>(scale)
   * this is to reduce number of calls to scaleMultiplier when scale is known.

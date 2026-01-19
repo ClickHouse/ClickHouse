@@ -252,7 +252,7 @@ void PrometheusQueryTree::parse(std::string_view promql_query_, UInt32 timestamp
 {
     String error_message;
     size_t error_pos;
-    if (PrometheusQueryParsingUtil::parseQuery(promql_query_, timestamp_scale_, *this, error_message, error_pos))
+    if (PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, &error_message, &error_pos))
         return;
 
     throw Exception(ErrorCodes::CANNOT_PARSE_PROMQL_QUERY, "{} at position {} while parsing PromQL query: {}",
@@ -261,16 +261,7 @@ void PrometheusQueryTree::parse(std::string_view promql_query_, UInt32 timestamp
 
 bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 timestamp_scale_, String * error_message_, size_t * error_pos_)
 {
-    String error_message;
-    size_t error_pos;
-    if (PrometheusQueryParsingUtil::parseQuery(promql_query_, timestamp_scale_, *this, error_message, error_pos))
-        return true;
-
-    if (error_message_)
-        *error_message_ = std::move(error_message);
-    if (error_pos_)
-        *error_pos_ = error_pos;
-    return false;
+    return PrometheusQueryParsingUtil::tryParseQuery(promql_query_, timestamp_scale_, *this, error_message_, error_pos_);
 }
 
 }
