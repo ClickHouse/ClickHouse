@@ -61,7 +61,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/logger_useful.h>
-#include "Core/DeduplicateInsert.h"
+#include <Core/DeduplicateInsert.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Core/Block.h>

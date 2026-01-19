@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Settings.h>
+#include <memory>
 
 namespace Poco
 {
@@ -10,6 +10,7 @@ using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 namespace DB
 {
+    struct Settings;
     class Context;
     using ContextMutablePtr = std::shared_ptr<Context>;
 
