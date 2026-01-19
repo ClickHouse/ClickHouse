@@ -694,6 +694,19 @@ struct ContextSharedPart : boost::noncopyable
 
     ~ContextSharedPart()
     {
+        /// Shutdown must be called first to stop all background tasks (like loadOutdatedDataParts)
+        /// that may be using the thread pool readers. Otherwise there is a data race between
+        /// background tasks calling getThreadPoolReader() and the destructor resetting the readers.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/62143
+        try
+        {
+            shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
 #if USE_NURAFT
         if (keeper_dispatcher)
         {
@@ -792,15 +805,6 @@ struct ContextSharedPart : boost::noncopyable
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
-        }
-
-        try
-        {
-            shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 

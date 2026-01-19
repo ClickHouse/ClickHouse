@@ -35,7 +35,7 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-ClickHouse release 25.12, 2025-12-18. [Presentation](https://presentations.clickhouse.com/2025-release-25.12/), [Video](https://www.youtube.com/watch?v=UdxLygnjsRY)
+Join us for the [ClickHouse **26.1** Release Call](https://clickhouse.com/company/events/v26-01-community-release-call) on January 29, 2026.
 
 Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
 
