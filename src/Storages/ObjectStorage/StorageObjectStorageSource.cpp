@@ -626,20 +626,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             object_info->getObjectMetadata()->size_bytes,
             object_info->getFileFormat().value_or(configuration->format));
 
-        auto input_format = FormatFactory::instance().getInput(
-            object_info->getFileFormat().value_or(configuration->format),
-            *read_buf,
-            initial_header,
-            context_,
-            max_block_size,
-            format_settings,
-            parser_shared_resources,
-            filter_info,
-            true /* is_remote_fs */,
-            compression_method,
-            need_only_count);
-
-#if USE_PARQUET
+        InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache])
         {
             auto cache_log = getLogger("ParquetMetadataCache");
@@ -669,10 +656,24 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
             else
             {
-                LOG_DEBUG(cache_log, "failed format check or etag is empty etag: {}", object_info->getObjectMetadata()->etag);
+                LOG_DEBUG(cache_log, "failed format check or etag is empty etag, skipping parquet metadata cache");
             }
         }
-#endif
+        else
+        {
+            input_format = FormatFactory::instance().getInput(
+            object_info->getFileFormat().value_or(configuration->format),
+            *read_buf,
+            initial_header,
+            context_,
+            max_block_size,
+            format_settings,
+            parser_shared_resources,
+            filter_info,
+            true /* is_remote_fs */,
+            compression_method,
+            need_only_count);
+        }
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);

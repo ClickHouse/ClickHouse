@@ -487,7 +487,7 @@ InputFormatPtr FormatFactory::getInputImpl(
     // Create the InputFormat in one of a few ways.
 
     InputFormatPtr format;
-
+    // 1. Try parallel processing first
     if (parallel_parsing)
     {
         const auto & input_getter = creators.input_creator;
@@ -513,22 +513,21 @@ InputFormatPtr FormatFactory::getInputImpl(
 
         format = std::make_shared<ParallelParsingInputFormat>(params);
     }
-    else if (creators.random_access_input_creator_with_metadata)
+    // 2. Prefer to use metadata-aware creator if we have format metadata
+    else if (creators.random_access_input_creator_with_metadata && metadata.has_value())
     {
-        if (metadata)
-        {
-            format = creators.random_access_input_creator_with_metadata(
-                buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info, metadata);
-        }
-        else
-        {
-            format = creators.random_access_input_creator_with_metadata(buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info, std::nullopt);
-        }
+        format = creators.random_access_input_creator_with_metadata(
+            buf, sample, format_settings, context->getReadSettings(), is_remote_fs,
+            parser_shared_resources, format_filter_info, metadata);
     }
+    // 3. Use the normal random access creator for formats that need to jump around in the file
     else if (creators.random_access_input_creator)
     {
-        format = creators.random_access_input_creator(buf, sample, format_settings, context->getReadSettings(), is_remote_fs, parser_shared_resources, format_filter_info);
+        format = creators.random_access_input_creator(
+            buf, sample, format_settings, context->getReadSettings(), is_remote_fs,
+            parser_shared_resources, format_filter_info);
     }
+    // 4. Use the normal creator for sequential reading
     else
     {
         format = creators.input_creator(buf, sample, row_input_format_params, format_settings);

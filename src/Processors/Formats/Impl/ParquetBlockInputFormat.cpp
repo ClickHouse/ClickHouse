@@ -1412,7 +1412,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             return std::make_shared<ParquetFileBucketInfo>();
         }
     );
-    LOG_DEBUG(log, "beginning registerRandomAccessInputFormat");
+    LOG_DEBUG(log, "beginning registerRandomAccessInputFormatWithMetadata");
     factory.registerRandomAccessInputFormatWithMetadata(
         "Parquet",
         [](ReadBuffer & buf,
@@ -1455,6 +1455,47 @@ void registerInputFormatParquet(FormatFactory & factory)
                 );
             }
         });
+    LOG_DEBUG(log, "beginning registerRandomAccessInputFormat");
+    factory.registerRandomAccessInputFormat(
+        "Parquet",
+        [](ReadBuffer & buf,
+        const Block & sample,
+        const FormatSettings & settings,
+        const ReadSettings & read_settings,
+        bool is_remote_fs,
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        FormatFilterInfoPtr format_filter_info) -> InputFormatPtr
+    {
+        auto lambda_logger = getLogger("ParquetMetadataCache");
+        size_t min_bytes_for_seek
+            = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+        if (settings.parquet.use_native_reader_v3)
+        {
+            LOG_DEBUG(lambda_logger, "using native reader v3 in ParquetBlockInputFormat with no metadata cache");
+            return std::make_shared<ParquetV3BlockInputFormat>(
+                buf,
+                std::make_shared<const Block>(sample),
+                settings,
+                std::move(parser_shared_resources),
+                std::move(format_filter_info),
+                min_bytes_for_seek,
+                nullptr,
+                std::nullopt
+            );
+        }
+        else
+        {
+            LOG_DEBUG(lambda_logger, "using arrow reader in ParquetBlockInputFormat without metadata cache");
+            return std::make_shared<ParquetBlockInputFormat>(
+                buf,
+                    std::make_shared<const Block>(sample),
+                settings,
+                std::move(parser_shared_resources),
+                std::move(format_filter_info),
+                min_bytes_for_seek
+            );
+        }
+    });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
     factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings & settings)
     {
@@ -1484,7 +1525,7 @@ void registerParquetSchemaReader(FormatFactory & factory)
                 return std::make_shared<ArrowParquetSchemaReader>(buf, settings);
             }
         }
-        );
+    );
 
     factory.registerAdditionalInfoForSchemaCacheGetter(
         "Parquet",
