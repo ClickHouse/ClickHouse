@@ -794,7 +794,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (!create.as_table.empty())
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
-        getContext()->checkAccess(AccessType::SHOW_TABLES, as_database_name, create.as_table);
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
