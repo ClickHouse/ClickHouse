@@ -13,7 +13,8 @@
 <!-- Q1 -->
 <query><![CDATA[
 SELECT
-    l_returnflag, l_linestatus,
+    l_returnflag,
+    l_linestatus,
     sum(l_quantity) AS sum_qty,
     sum(l_extendedprice) AS sum_base_price,
     sum(l_extendedprice * (1 - l_discount)) AS sum_disc_price,
@@ -172,7 +173,7 @@ FROM
 WHERE
     l_shipdate >= DATE '1994-01-01'
     AND l_shipdate < DATE '1994-01-01' + INTERVAL '1' year
-    AND l_discount BETWEEN 0.06 - 0.01 AND 0.06 + 0.01
+    AND l_discount BETWEEN toDecimal32(0.06, 2) - toDecimal32(0.01, 2) AND toDecimal32(0.06, 2) + toDecimal32(0.01, 2)
     AND l_quantity < 24;
 ]]></query>
 
