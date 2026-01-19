@@ -415,7 +415,7 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementTypeMetric(part_type);
 
     /// They can be null in case if part is in broken state.
-    chassert(!(static_cast<bool>(columns) ^ static_cast<bool>(columns_description)), "Both columns and columns_description are null or both are not null");
+    chassert(!(static_cast<bool>(columns) ^ static_cast<bool>(columns_description)), "Both columns and columns_description should be null or both should be not null");
 
     if (columns_description)
     {
