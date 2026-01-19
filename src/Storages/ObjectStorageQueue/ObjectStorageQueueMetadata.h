@@ -169,8 +169,6 @@ private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
     void cleanupPersistentProcessingNodes();
-    void cleanupProcessedNodes();
-    void cleanupFailedNodes();
     void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description);
 
     void migrateToBucketsInKeeper(size_t value);
