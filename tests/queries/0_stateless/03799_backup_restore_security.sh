@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# Test for security fixes related to BACKUP and RESTORE operations:
+# 1. RESTORE should be forbidden in readonly mode
+# 2. The 'internal' setting should not be allowed for initial queries
+# 3. Permission check should happen before backup destination is opened (e.g., S3 connection)
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+backup_name="${CLICKHOUSE_DATABASE}_03799_backup_security"
+user_name="test_03799_user_${CLICKHOUSE_DATABASE}"
+
+$CLICKHOUSE_CLIENT -m -q "
+DROP TABLE IF EXISTS test_backup_security;
+CREATE TABLE test_backup_security (id Int32) ENGINE=MergeTree() ORDER BY id;
+INSERT INTO test_backup_security VALUES (1), (2), (3);
+BACKUP TABLE test_backup_security TO File('$backup_name.zip') FORMAT Null;
+"
+
+# Test 1: RESTORE should be forbidden in readonly mode
+# Note: we can't use -m here because test framework tries to inject settings which fails in readonly mode
+$CLICKHOUSE_CLIENT --readonly=1 -q "RESTORE TABLE test_backup_security AS test_restored FROM File('$backup_name.zip')" 2>&1 | grep -q "ACCESS_DENIED" && echo "OK" || echo "FAIL"
+
+# Test 2: The 'internal' setting should not be allowed for initial BACKUP query
+$CLICKHOUSE_CLIENT -m -q "
+BACKUP TABLE test_backup_security TO File('${backup_name}_internal.zip') SETTINGS internal=1; -- { serverError ACCESS_DENIED }
+"
+
+# Test 3: The 'internal' setting should not be allowed for initial RESTORE query
+$CLICKHOUSE_CLIENT -m -q "
+RESTORE TABLE test_backup_security AS test_restored FROM File('$backup_name.zip') SETTINGS internal=1; -- { serverError ACCESS_DENIED }
+"
+
+# Test 4: User without BACKUP permission should get ACCESS_DENIED (not S3_ERROR)
+# This tests that permission check happens before opening backup destination.
+# We use S3 with invalid credentials - if we get ACCESS_DENIED instead of S3_ERROR,
+# it proves the permission check happens before attempting to connect to S3.
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $user_name"
+$CLICKHOUSE_CLIENT -q "CREATE USER $user_name"
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.test_backup_security TO $user_name"
+# User has SELECT but not BACKUP permission - should get ACCESS_DENIED, not S3_ERROR
+$CLICKHOUSE_CLIENT --user=$user_name -m -q "
+BACKUP TABLE test_backup_security TO S3('http://localhost:11111/test/backups/${CLICKHOUSE_DATABASE}/no_permission_backup', 'INVALID_ACCESS_KEY', 'INVALID_SECRET'); -- { serverError ACCESS_DENIED }
+"
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $user_name"
+
+# Cleanup
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_backup_security"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_restored"

@@ -61,6 +61,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsUInt64 readonly;
     extern const SettingsBool s3_disable_checksum;
 }
 
@@ -71,6 +72,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
@@ -390,6 +392,12 @@ struct BackupsWorker::BackupStarter
         backup_info = BackupInfo::fromAST(*backup_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_backup = backup_settings.internal;
+
+        /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
+        /// It should not be allowed for an initial query explicitly specified by a user.
+        if (is_internal_backup && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
+
         on_cluster = !backup_query->cluster.empty() || is_internal_backup;
 
         if (!backup_settings.backup_uuid)
@@ -462,6 +470,16 @@ struct BackupsWorker::BackupStarter
             cluster = backup_context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
         }
+
+        /// Check access rights before opening the backup destination (e.g., S3).
+        /// This ensures we fail fast with a proper ACCESS_DENIED error instead of trying to connect to external storage first.
+        if (!on_cluster)
+        {
+            backup_query->setCurrentDatabase(backup_context->getCurrentDatabase());
+            auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+            query_context->checkAccess(required_access);
+        }
+
         chassert(backup_settings.data_file_name_prefix_length);
         backup_coordination = backups_worker.makeBackupCoordination(on_cluster, backup_settings, backup_context);
         backup_coordination->startup();
@@ -852,6 +870,16 @@ struct BackupsWorker::RestoreStarter
         backup_info = BackupInfo::fromAST(*restore_query->backup_name);
         backup_name_for_logging = backup_info.toStringForLogging();
         is_internal_restore = restore_settings.internal;
+
+        /// The "internal" option can only be used by a query that was initiated by another query (e.g., ON CLUSTER query).
+        /// It should not be allowed for an initial query explicitly specified by a user.
+        if (is_internal_restore && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
+
+        /// RESTORE is a write operation, it should be forbidden in readonly mode.
+        if (query_context->getSettingsRef()[Setting::readonly])
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot execute RESTORE in readonly mode");
+
         on_cluster = !restore_query->cluster.empty() || is_internal_restore;
 
         if (!restore_settings.restore_uuid)
