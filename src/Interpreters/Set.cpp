@@ -828,7 +828,7 @@ BoolMask MergeTreeSetIndex::checkInRange(
     const DataTypes & data_types,
     bool single_point,
     ColumnsWithTypeAndName & key_columns,
-    IndexAnalysisContext & index_analysis_context) const
+    PrimaryKeyIndexAnalysisContext & index_analysis_context) const
 {
     size_t tuple_size = indexes_mapping.size();
 

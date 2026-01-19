@@ -1585,7 +1585,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     size_t used_key_size = num_key_columns;
 
     const bool use_sparse_pk_representation = settings[Setting::use_sparse_lightweight_representation_of_primary_key_for_index_analysis];
-    IndexAnalysisContext index_analysis_context;
+    PrimaryKeyIndexAnalysisContext pk_index_analysis_context;
 
     /// If there are no monotonic functions, there is no need to save block reference.
     /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
@@ -1663,7 +1663,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 }
 
                 return key_condition.checkInRange(
-                    used_key_size, *index_columns, index_left_refs.data(), index_right_refs.data(), key_types, index_analysis_context, initial_mask);
+                    used_key_size, *index_columns, index_left_refs.data(), index_right_refs.data(), key_types, pk_index_analysis_context, initial_mask);
             }
 
             if (range.end == marks_count)

@@ -38,7 +38,7 @@ class MergeTreeSetIndex;
 /// Context for analysis during index evaluation for Primary Key. Currently, it is only used in the
 /// ColumnValueRef path, and only contains the cache of index position of function result columns
 /// when applying monotonic functions to index columns.
-struct IndexAnalysisContext
+struct PrimaryKeyIndexAnalysisContext
 {
     struct FunctionResultColumnKey
     {
@@ -148,7 +148,7 @@ public:
     BoolMask checkInHyperrectangle(
         std::span<const RangeRef> hyperrectangle,
         ColumnsWithTypeAndName & key_columns_block,
-        IndexAnalysisContext & index_analysis_context,
+        PrimaryKeyIndexAnalysisContext & index_analysis_context,
         const DataTypes & data_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
@@ -170,7 +170,7 @@ public:
         const ColumnValueRef * left_keys,
         const ColumnValueRef * right_keys,
         const DataTypes & data_types,
-        IndexAnalysisContext & index_analysis_context,
+        PrimaryKeyIndexAnalysisContext & index_analysis_context,
         BoolMask initial_mask = BoolMask(false, false)) const;
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
@@ -250,7 +250,7 @@ public:
         ColumnsWithTypeAndName & key_columns,
         const MonotonicFunctionsChain & functions,
         DataTypePtr current_type,
-        IndexAnalysisContext & index_analysis_context,
+        PrimaryKeyIndexAnalysisContext & index_analysis_context,
         bool single_point = false);
 
     bool matchesExactContinuousRange() const;

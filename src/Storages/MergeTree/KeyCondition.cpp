@@ -3159,13 +3159,13 @@ void KeyCondition::rebuildPreparedRangeForRefs()
 
 static std::optional<size_t> getOrCreateFunctionResultColumnIndex(
     ColumnsWithTypeAndName & key_columns,
-    IndexAnalysisContext & index_analysis_context,
+    PrimaryKeyIndexAnalysisContext & index_analysis_context,
     size_t input_column_idx,
     const FunctionBasePtr & func)
 {
     chassert(func);
 
-    const IndexAnalysisContext::FunctionResultColumnKey cache_key{func.get(), input_column_idx};
+    const PrimaryKeyIndexAnalysisContext::FunctionResultColumnKey cache_key{func.get(), input_column_idx};
     if (auto it = index_analysis_context.function_result_column_to_index.find(cache_key);
         it != index_analysis_context.function_result_column_to_index.end())
     {
@@ -3206,7 +3206,7 @@ std::optional<RangeRef> KeyCondition::applyMonotonicFunctionsChainToRange(
     ColumnsWithTypeAndName & key_columns,
     const MonotonicFunctionsChain & functions,
     DataTypePtr current_type,
-    IndexAnalysisContext & index_analysis_context,
+    PrimaryKeyIndexAnalysisContext & index_analysis_context,
     bool single_point)
 {
     size_t current_column_idx = key_column_idx;
@@ -3384,7 +3384,7 @@ BoolMask KeyCondition::checkInRange(
 BoolMask KeyCondition::checkInHyperrectangle(
     std::span<const RangeRef> hyperrectangle,
     ColumnsWithTypeAndName & key_columns_block,
-    IndexAnalysisContext & index_analysis_context,
+    PrimaryKeyIndexAnalysisContext & index_analysis_context,
     const DataTypes & data_types) const
 {
     const auto & prepared = prepared_range_for_refs;
@@ -3804,7 +3804,7 @@ BoolMask KeyCondition::checkInRange(
     const ColumnValueRef * left_keys,
     const ColumnValueRef * right_keys,
     const DataTypes & data_types,
-    IndexAnalysisContext & index_analysis_context,
+    PrimaryKeyIndexAnalysisContext & index_analysis_context,
     BoolMask initial_mask) const
 {
     PODArrayWithStackMemory<RangeRef, 1024> key_ranges(used_key_size);

@@ -17,7 +17,7 @@ namespace DB
 
 struct Range;
 struct RangeRef;
-struct IndexAnalysisContext;
+struct PrimaryKeyIndexAnalysisContext;
 
 class Context;
 class IFunctionBase;
@@ -227,7 +227,7 @@ public:
         const DataTypes & data_types,
         bool single_point,
         ColumnsWithTypeAndName & key_columns,
-        IndexAnalysisContext & index_analysis_context) const;
+        PrimaryKeyIndexAnalysisContext & index_analysis_context) const;
 
     const Columns & getOrderedSet() const { return ordered_set; }
 
