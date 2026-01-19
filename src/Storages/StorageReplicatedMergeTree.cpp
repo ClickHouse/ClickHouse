@@ -2732,7 +2732,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
     getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.getPartitionId(), drop_range_info.max_block);
     {
-        auto pause_checking_parts = part_check_thread.pausePartsCheck();
+        auto pause_checking_parts = part_check_thread.temporaryPause();
         queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
         part_check_thread.cancelRemovedPartsCheck(drop_range_info);
     }
@@ -2804,7 +2804,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
     if (replace)
     {
         getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.getPartitionId(), drop_range.max_block);
-        auto pause_checking_parts = part_check_thread.pausePartsCheck();
+        auto pause_checking_parts = part_check_thread.temporaryPause();
         queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
         part_check_thread.cancelRemovedPartsCheck(drop_range);
     }
@@ -8715,7 +8715,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.getPartitionId(), drop_range.max_block);
             queue.waitForCurrentlyExecutingOpsInRange(drop_range);
             {
-                auto pause_checking_parts = part_check_thread.pausePartsCheck();
+                auto pause_checking_parts = part_check_thread.temporaryPause();
                 part_check_thread.cancelRemovedPartsCheck(drop_range);
             }
         }
@@ -8974,7 +8974,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         queue.waitForCurrentlyExecutingOpsInRange(drop_range);
         {
-            auto pause_checking_parts = part_check_thread.pausePartsCheck();
+            auto pause_checking_parts = part_check_thread.temporaryPause();
             part_check_thread.cancelRemovedPartsCheck(drop_range);
         }
 
@@ -9769,8 +9769,8 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto part_check_lock = part_check_thread.pausePartsCheck();
-    return std::make_unique<DataValidationTasks>(std::move(data_parts), std::move(part_check_lock));
+    auto pause = part_check_thread.temporaryPause();
+    return std::make_unique<DataValidationTasks>(std::move(data_parts), std::move(pause));
 }
 
 std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
