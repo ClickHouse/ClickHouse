@@ -4,15 +4,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSimilarity.h>
-#include "Common/HashTable/Hash.h"
 #include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
 #include <Common/HashTable/HashSet.h>
-#include "base/types.h"
 
 #include <algorithm>
-#include <bitset>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -155,14 +152,13 @@ struct ByteJaccardIndexImpl
 
     struct ScratchASCII
     {
-        /// For byte strings (and ASCII chars of UTF8) use a bitset as a set
+        /// For byte strings (and ASCII chars of UTF8) use an array
         constexpr static size_t max_size = std::numeric_limits<unsigned char>::max() + 1;
-        using Bitset = std::bitset<max_size>;
-        Bitset haystack_set;
-        Bitset needle_set;
+        alignas(64) UInt8 haystack_set[max_size]{};
+        alignas(64) UInt8 needle_set[max_size]{};
     };
 
-    /// For UTF8 - still use bitset for ASCII but a hash set for wider codepoints
+    /// For UTF8 - still use an array for ASCII but a hash set for wider codepoints
     struct ScratchUTF8 : public ScratchASCII
     {
         using Set = HashSet<UInt32, DefaultHash<UInt32>>;
@@ -190,9 +186,9 @@ struct ByteJaccardIndexImpl
                 haystack,
                 haystack_size,
                 [&](UInt32 data) { scratch.haystack_utf8_set.insert(data); },
-                [&](unsigned char data) { scratch.haystack_set.set(data); });
+                {});
             parseUTF8String(
-                needle, needle_size, [&](UInt32 data) { scratch.needle_utf8_set.insert(data); }, [&](unsigned char data) { scratch.needle_set[data] = 1; });
+                needle, needle_size, [&](UInt32 data) { scratch.needle_utf8_set.insert(data); }, {});
         }
         else
         {
@@ -200,20 +196,20 @@ struct ByteJaccardIndexImpl
             {
                 while (ptr + 7 < end)
                 {
-                    bitset.set(static_cast<unsigned char>(ptr[0]));
-                    bitset.set(static_cast<unsigned char>(ptr[1]));
-                    bitset.set(static_cast<unsigned char>(ptr[2]));
-                    bitset.set(static_cast<unsigned char>(ptr[3]));
-                    bitset.set(static_cast<unsigned char>(ptr[4]));
-                    bitset.set(static_cast<unsigned char>(ptr[5]));
-                    bitset.set(static_cast<unsigned char>(ptr[6]));
-                    bitset.set(static_cast<unsigned char>(ptr[7]));
+                    bitset[static_cast<unsigned char>(ptr[0])] = 1;
+                    bitset[static_cast<unsigned char>(ptr[1])] = 1;
+                    bitset[static_cast<unsigned char>(ptr[2])] = 1;
+                    bitset[static_cast<unsigned char>(ptr[3])] = 1;
+                    bitset[static_cast<unsigned char>(ptr[4])] = 1;
+                    bitset[static_cast<unsigned char>(ptr[5])] = 1;
+                    bitset[static_cast<unsigned char>(ptr[6])] = 1;
+                    bitset[static_cast<unsigned char>(ptr[7])] = 1;
                     ptr += 8;
                 }
 
                 while (ptr < end)
                 {
-                    bitset.set(static_cast<unsigned char>(*ptr));
+                    bitset[static_cast<unsigned char>(*ptr)] = 1;
                     ++ptr;
                 }
             };
@@ -238,8 +234,14 @@ struct ByteJaccardIndexImpl
             }
             union_size = static_cast<UInt32>(scratch.haystack_utf8_set.size() + scratch.needle_utf8_set.size() - intersection);
         }
-        intersection += static_cast<UInt32>((scratch.haystack_set & scratch.needle_set).count());
-        union_size += static_cast<UInt32>((scratch.haystack_set | scratch.needle_set).count());
+        else
+        {
+            for (size_t i = 0; i < ScratchType::max_size; ++i)
+            {
+                intersection += (scratch.haystack_set[i] & scratch.needle_set[i]);
+                union_size += (scratch.haystack_set[i] | scratch.needle_set[i]);
+            }
+        }
 
         return static_cast<ResultType>(intersection) / static_cast<ResultType>(union_size);
     }
