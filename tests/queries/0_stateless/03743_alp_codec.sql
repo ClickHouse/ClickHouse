@@ -66,3 +66,9 @@ WHERE database = currentDatabase() AND active AND table IN ('alp64')
 GROUP BY table
 ORDER BY compression_ratio DESC;
 
+DROP TABLE base32;
+DROP TABLE base64;
+DROP TABLE alp32;
+DROP TABLE alp64;
+DROP TABLE gorilla32;
+DROP TABLE gorilla64;

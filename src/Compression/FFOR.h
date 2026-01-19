@@ -13,12 +13,12 @@
  *   2. Pack resulting values using only the required number of bits (e.g. 7 bits for values [0, 127]).
  *
  * Important:
- *   * Original FastLanes implementation processes 1024 values only.
+ *   * Original FastLanes implementation processes 1024 values only. Avoid using values other than 1024 at all costs as code likely won't auto-vectorise!
  *   * Input and output arrays must be aligned to 64-byte boundary for optimal access performance.
  *   * This implementation is generic to number of values, but changing this affects compatibility with FastLanes reference implementation.
 */
 
-#include <DataTypes/IDataType.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -295,7 +295,9 @@ consteval auto makeBitUnpackDispatchTable()
 
 /**
  * Default number of values processed by FFOR.
- * \note The FastLanes reference implementation expects 1024 values only. Changing this affects compatibility with FastLanes.
+ * The FastLanes implementation expects 1024 values.
+ * Changing this affects compatibility, and it likely won't auto-vectorise. Avoid at all cost!
+ * More context: https://www.vldb.org/pvldb/vol16/p2132-afroozeh.pdf
  */
 constexpr UInt16 DEFAULT_VALUES = 1024;
 

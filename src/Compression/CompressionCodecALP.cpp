@@ -76,7 +76,7 @@ namespace DB
  *       - raw value (float or double)
  *
  * Per-Block Encoding Schema (Uncompressed Case)
- *   - 1 byte equals to 255
+ *   - 1 byte: 255 (uncompressed block marker)
  *   - Raw numbers for the block
  *
  * Notes:
@@ -130,7 +130,8 @@ constexpr UInt8 ALP_UNENCODED_BLOCK_EXPONENT = 255;
 
 /**
  * Maximum number of floats per ALP block. Reference FastLanes implementation uses 1024 values only.
- * \note Exactly the same size is used for FastLanes FFOR. Changing this value affects compatibility with FastLanes.
+ * Exactly the same size is used for FastLanes FFOR.
+ * Changing this value affects compatibility with FastLanes, and it likely won't auto-vectorise. Don't do it.
  */
 constexpr UInt32 ALP_BLOCK_MAX_FLOAT_COUNT = Compression::FFOR::DEFAULT_VALUES;
 
@@ -228,7 +229,7 @@ template <FLOAT T>
 class ALPCodecEncoder
 {
 public:
-    explicit ALPCodecEncoder() = default;
+    ALPCodecEncoder() = default;
 
     UInt32 encode(const char * source, const UInt32 source_size, char * dest)
     {
@@ -510,7 +511,7 @@ private:
             param_candidates.push_back(estimations[i].params);
     }
 
-    static UInt32 estimateEncodedSize(const T * const source, const UInt32 float_count, const EncodingParams & params)
+    static size_t estimateEncodedSize(const T * const source, const UInt32 float_count, const EncodingParams & params)
     {
         Int64 min = std::numeric_limits<Int64>::max();
         Int64 max = std::numeric_limits<Int64>::min();
@@ -532,7 +533,7 @@ private:
         }
 
         const UInt8 bits = calculateEncodeBits(min, max);
-        const UInt32 total_size = ALP_BLOCK_HEADER_SIZE + float_count * bits / 8 + exception_count * (sizeof(UInt16) + sizeof(T));
+        const size_t total_size = ALP_BLOCK_HEADER_SIZE + float_count * bits / 8 + exception_count * (sizeof(UInt16) + sizeof(T));
         return total_size;
     }
 
@@ -571,8 +572,8 @@ public:
             decodeBlock(source, source_end, dest, dest_end, block_float_count);
         }
 
-        assert(source == source_end);
-        assert(dest == dest_end);
+        if (source != source_end || dest != dest_end)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data. Stream size mismatch");
 
         return dest - dest_start;
     }

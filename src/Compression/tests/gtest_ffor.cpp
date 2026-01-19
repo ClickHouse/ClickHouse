@@ -9,31 +9,61 @@ using namespace DB;
 namespace
 {
 template <typename T, UInt16 values>
-void runFFORPackUnpackTest(UInt8 bits)
-{
-    if (bits > sizeof(T) * 8)
-        GTEST_SKIP() << "Skipping invalid bit width for " << typeid(T).name() << ": " << static_cast<UInt32>(bits);
+using InputGeneratorFn = std::function<T(T * in, UInt8 bits)>;
 
+template <typename T>
+T calculateMaxValue(T min, UInt8 bits)
+{
+    constexpr UInt8 max_bits = sizeof(T) * 8;
+    return bits == max_bits ? ~T{0} : (T{1} << bits) - T{1} + min;
+}
+
+template <typename T, UInt16 values = Compression::FFOR::DEFAULT_VALUES>
+T generateRandomInput(T * in, UInt8 bits)
+{
+    T min = T{5};
+    T max = calculateMaxValue(min, bits);
+
+    std::default_random_engine rng(17); // NOLINT
+    std::uniform_int_distribution<T> in_dist(min, max);
+    for (UInt16 i = 0; i < values; ++i)
+        in[i] = in_dist(rng);
+
+    return min;
+}
+
+template <typename T, UInt16 values = Compression::FFOR::DEFAULT_VALUES>
+T generateMinMaxInput(T * in, UInt8 bits)
+{
+    T min = T{0};
+    T max = calculateMaxValue(min, bits);
+
+    for (UInt16 i = 0; i < values; ++i)
+        in[i] = i % 2 == 0 ? max : (i % 3 == 0 ? max : min);
+
+    return min;
+}
+
+template <typename T, UInt16 values = Compression::FFOR::DEFAULT_VALUES>
+void runPackUnpackCorrectnessTest(UInt8 bits, InputGeneratorFn<T, values> generator)
+{
     alignas(64) T in[values];
     alignas(64) T coded[values];
     alignas(64) T decoded[values];
 
-    // Generate random input data
-    const T max_value = (T{1} << std::min<UInt16>(bits, sizeof(T) * 8 - 1)) - T{1};
-    std::default_random_engine rng(T{42}); // NOLINT
-    std::uniform_int_distribution<T> in_dist(T{0}, max_value);
-    T base = in_dist(rng);
-    for (auto & i : in)
-        i = base + in_dist(rng);
+    // Generate input data using the provided generator
+    T base = generator(in, bits);
 
     // Encode
     Compression::FFOR::bitPack<values>(in, coded, bits, base);
 
     // Set unused bytes to random values to ensure decoder does not rely on them
     const UInt16 used_bytes = Compression::FFOR::calculateBitpackedBytes<values>(bits);
-    std::uniform_int_distribution<UInt16> byte_dist(0, 255);
+    UInt16 total_bytes = sizeof(coded);
     char * coded_bytes = reinterpret_cast<char *>(coded);
-    for (UInt32 i = used_bytes; i < sizeof(coded); ++i)
+    std::default_random_engine rng(13); // NOLINT
+    std::uniform_int_distribution<UInt16> byte_dist(0, 255);
+    for (auto i = used_bytes; i < total_bytes; ++i)
         coded_bytes[i] = static_cast<char>(byte_dist(rng));
 
     // Decode
@@ -44,38 +74,42 @@ void runFFORPackUnpackTest(UInt8 bits)
         ASSERT_EQ(decoded[i], in[i]) << "bits=" << static_cast<UInt32>(bits) << " index=" << i;
 }
 
-class FFORTest : public ::testing::TestWithParam<UInt8> { };
+class FFOR16BitTest : public ::testing::TestWithParam<UInt8> { };
+class FFOR32BitTest : public ::testing::TestWithParam<UInt8> { };
+class FFOR64BitTest : public ::testing::TestWithParam<UInt8> { };
 
-TEST_P(FFORTest, UInt16PackUnpack1024Values)
+TEST_P(FFOR16BitTest, RandomPackUnpackCorrectnessTest)
 {
-    runFFORPackUnpackTest<UInt16, 1024>(GetParam());
+    runPackUnpackCorrectnessTest<UInt16>(GetParam(), generateRandomInput<UInt16>);
 }
 
-TEST_P(FFORTest, UInt16PackUnpack2048Values)
+TEST_P(FFOR16BitTest, MinMaxPackUnpackCorrectnessTest)
 {
-    runFFORPackUnpackTest<UInt16, 2048>(GetParam());
+    runPackUnpackCorrectnessTest<UInt16>(GetParam(), generateMinMaxInput<UInt16>);
 }
 
-TEST_P(FFORTest, UInt32PackUnpack1024Values)
+TEST_P(FFOR32BitTest, RandomPackUnpackCorrectnessTest)
 {
-    runFFORPackUnpackTest<UInt32, 1024>(GetParam());
+    runPackUnpackCorrectnessTest<UInt32>(GetParam(), generateRandomInput<UInt32>);
 }
 
-TEST_P(FFORTest, UInt32PackUnpack2048Values)
+TEST_P(FFOR32BitTest, MinMaxPackUnpackCorrectnessTest)
 {
-    runFFORPackUnpackTest<UInt32, 2048>(GetParam());
+    runPackUnpackCorrectnessTest<UInt32>(GetParam(), generateMinMaxInput<UInt32>);
 }
 
-TEST_P(FFORTest, UInt64PackUnpack1024Values)
+TEST_P(FFOR64BitTest, RandomPackUnpackCorrectnessTest)
 {
-    runFFORPackUnpackTest<UInt64, 1024>(GetParam());
+    runPackUnpackCorrectnessTest<UInt64>(GetParam(), generateRandomInput<UInt64>);
 }
 
-TEST_P(FFORTest, UInt64PackUnpack2048Values)
+TEST_P(FFOR64BitTest, MinMaxPackUnpackCorrectnessTest)
 {
-    runFFORPackUnpackTest<UInt64, 2048>(GetParam());
+    runPackUnpackCorrectnessTest<UInt64>(GetParam(), generateMinMaxInput<UInt64>);
 }
 
-INSTANTIATE_TEST_SUITE_P(FFORTest, FFORTest, ::testing::Range<UInt8>(0, 65));
+INSTANTIATE_TEST_SUITE_P(FFOR, FFOR16BitTest, ::testing::Range<UInt8>(0, sizeof(UInt16) * 8 + 1));
+INSTANTIATE_TEST_SUITE_P(FFOR, FFOR32BitTest, ::testing::Range<UInt8>(0, sizeof(UInt32) * 8 + 1));
+INSTANTIATE_TEST_SUITE_P(FFOR, FFOR64BitTest, ::testing::Range<UInt8>(0, sizeof(UInt64) * 8 + 1));
 
 }
