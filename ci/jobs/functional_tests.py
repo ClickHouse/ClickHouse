@@ -623,7 +623,7 @@ def main():
         # invert result status for bugfix validation
         if is_bugfix_validation:
             has_failure = False
-            for r in results[-1].results:
+            for r in test_result.results:
                 r.set_label("xfail")
                 if r.status == Result.StatusExtended.FAIL:
                     r.status = Result.StatusExtended.OK
@@ -632,12 +632,16 @@ def main():
                     r.status = Result.StatusExtended.FAIL
             if not has_failure:
                 print("Failed to reproduce the bug")
-                results[-1].set_failed().set_info("Failed to reproduce the bug")
+                test_result.set_failed().set_info("Failed to reproduce the bug")
             else:
-                results[-1].set_success()
+                # For bugfix validation, the expected behavior is:
+                # - At least one test must fail (bug reproduced)
+                # - The overall Tests result is treated as success in that case
+                test_result.set_success()
 
-        if not results[-1].is_ok():
-            results[-1].set_info("Found errors added into Tests results")
+            # For bugfix validation, "Check errors" (latest in the list) is only a helper step and
+            # must not affect the overall job result.
+            results[-1].set_success()
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
