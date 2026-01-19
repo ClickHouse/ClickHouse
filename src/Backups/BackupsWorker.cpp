@@ -473,6 +473,7 @@ struct BackupsWorker::BackupStarter
 
         /// Check access rights before opening the backup destination (e.g., S3).
         /// This ensures we fail fast with a proper ACCESS_DENIED error instead of trying to connect to external storage first.
+        /// For ON CLUSTER queries, access rights are checked in executeDDLQueryOnCluster() before distributing the query.
         if (!on_cluster)
         {
             backup_query->setCurrentDatabase(backup_context->getCurrentDatabase());

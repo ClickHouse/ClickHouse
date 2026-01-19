@@ -22,6 +22,8 @@ BACKUP TABLE test_backup_security TO File('$backup_name.zip') FORMAT Null;
 # Test 1: RESTORE should be forbidden in readonly mode
 # Note: we can't use -m here because test framework tries to inject settings which fails in readonly mode
 $CLICKHOUSE_CLIENT --readonly=1 -q "RESTORE TABLE test_backup_security AS test_restored FROM File('$backup_name.zip')" 2>&1 | grep -q "ACCESS_DENIED" && echo "OK" || echo "FAIL"
+# Verify that the table was not created
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'test_restored'"
 
 # Test 2: The 'internal' setting should not be allowed for initial BACKUP query
 $CLICKHOUSE_CLIENT -m -q "
