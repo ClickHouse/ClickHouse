@@ -616,9 +616,6 @@ def main():
                 stopwatch=sw_,
             )
         )
-        # fatal failures found in logs represented as normal test cases
-        test_result.extend_sub_results(results[-1].results)
-        results[-1].results = []
 
         # invert result status for bugfix validation
         if is_bugfix_validation:
@@ -638,6 +635,10 @@ def main():
 
         if not results[-1].is_ok():
             results[-1].set_info("Found errors added into Tests results")
+
+        # fatal failures found in logs represented as normal test cases
+        test_result.extend_sub_results(results[-1].results)
+        results[-1].results = []
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
