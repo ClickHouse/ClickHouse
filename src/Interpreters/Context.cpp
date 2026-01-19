@@ -9,7 +9,6 @@
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
-#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
@@ -47,16 +46,15 @@
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
+#include <IO/AsynchronousReader.h>
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/getIOUringReader.h>
-#include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -100,8 +98,6 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/WriteSettings.h>
@@ -116,7 +112,6 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -699,6 +694,19 @@ struct ContextSharedPart : boost::noncopyable
 
     ~ContextSharedPart()
     {
+        /// Shutdown must be called first to stop all background tasks (like loadOutdatedDataParts)
+        /// that may be using the thread pool readers. Otherwise there is a data race between
+        /// background tasks calling getThreadPoolReader() and the destructor resetting the readers.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/62143
+        try
+        {
+            shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
 #if USE_NURAFT
         if (keeper_dispatcher)
         {
@@ -797,15 +805,6 @@ struct ContextSharedPart : boost::noncopyable
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
-        }
-
-        try
-        {
-            shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
@@ -2406,20 +2405,20 @@ void Context::addQueryAccessInfo(
     addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
 }
 
-ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector()
+std::shared_ptr<ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector()
 {
     {
         SharedLockGuard lock(mutex);
         if (time_series_tags_collector)
-            return *time_series_tags_collector;
+            return time_series_tags_collector;
     }
     std::lock_guard lock(mutex);
     if (!time_series_tags_collector)
         time_series_tags_collector = std::make_shared<ContextTimeSeriesTagsCollector>();
-    return *time_series_tags_collector;
+    return time_series_tags_collector;
 }
 
-const ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector() const
+std::shared_ptr<const ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector() const
 {
     return const_cast<Context *>(this)->getTimeSeriesTagsCollector();
 }
@@ -5072,7 +5071,7 @@ const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 UInt16 Context::getTCPPort() const
 {
     const auto & config = getConfigRef();
-    return config.getInt("tcp_port", DBMS_DEFAULT_PORT);
+    return static_cast<UInt16>(config.getInt("tcp_port", DBMS_DEFAULT_PORT));
 }
 
 std::optional<UInt16> Context::getTCPPortSecure() const

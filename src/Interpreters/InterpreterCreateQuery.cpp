@@ -167,6 +167,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE;
     extern const int PATH_ACCESS_DENIED;
+    extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_STORAGE;
@@ -944,7 +945,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+                getContext(),
+                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
         }
         else
         {
@@ -1099,7 +1102,9 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
                 context->setQueryKindInitial();
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), context, SelectQueryOptions{}.analyze().createView());
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+                    context,
+                    SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
             }
             else
             {
@@ -1108,8 +1113,11 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                     SelectQueryOptions().analyze()).getSampleBlock();
             }
         }
-        catch (Exception &)
+        catch (Exception & e)
         {
+            if (e.code() == ErrorCodes::ACCESS_DENIED)
+                throw;
+
             if (!getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
                 throw;
             check_columns = false;

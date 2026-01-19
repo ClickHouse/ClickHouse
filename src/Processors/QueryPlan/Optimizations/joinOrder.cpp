@@ -40,7 +40,7 @@ DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
-    , relation_id(id)
+    , relation_id(static_cast<int>(id))
 {
     relations.set(id);
 }
