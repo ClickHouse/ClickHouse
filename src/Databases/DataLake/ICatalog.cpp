@@ -44,7 +44,7 @@ StorageType parseStorageTypeFromString(const std::string & type)
     {
         auto result = Poco::toLower(s);
         if (!result.empty())
-            result[0] = std::toupper(result[0]);
+            result[0] = static_cast<char>(std::toupper(result[0]));
         return result;
     };
 

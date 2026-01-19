@@ -8,7 +8,6 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Parsers/ASTSubquery.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
 #include <Planner/findQueryForParallelReplicas.h>

@@ -75,7 +75,7 @@ int SSHEvent::poll()
 
 void SSHEvent::addFd(int fd, int events, EventCallback cb, void * userdata)
 {
-    if (ssh_event_add_fd(event.get(), fd, events, cb, userdata) != SSH_OK)
+    if (ssh_event_add_fd(event.get(), fd, static_cast<int16_t>(events), cb, userdata) != SSH_OK)
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Error on adding custom file descriptor to ssh event");
 }
 
