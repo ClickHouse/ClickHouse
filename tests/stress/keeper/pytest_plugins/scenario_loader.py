@@ -317,10 +317,7 @@ def _resolve_cli_duration(cfg):
 def _resolve_scenario_files():
     env_target = os.environ.get("KEEPER_SCENARIO_FILE", "all")
     if env_target.lower() == "all":
-        files = sorted(
-            p for p in _SCN_BASE.glob("*.yaml")
-            if p.name not in {"keeper_e2e.yaml", "e2e_unique.yaml"}
-        )
+        files = sorted(p for p in _SCN_BASE.glob("*.yaml"))
     elif "," in env_target:
         files = [_SCN_BASE / p.strip() for p in env_target.split(",") if p.strip()]
     else:

@@ -253,7 +253,14 @@ def build_pytest_command(args):
     extra.extend([f"--timeout={timeout_val}", "--timeout-method=signal"])
 
     # xdist workers
-    xdist_workers = DEFAULT_XDIST_WORKERS
+    xdist_workers = str(os.environ.get("KEEPER_XDIST_WORKERS", "") or "").strip()
+    if not xdist_workers:
+        # If we run a matrix over multiple backends, parallelize them by default.
+        try:
+            bcnt = len([p for p in matrix_backends.split(",") if p.strip()])
+        except Exception:
+            bcnt = 0
+        xdist_workers = str(bcnt) if bcnt > 1 else DEFAULT_XDIST_WORKERS
     extra.append(f"-n {xdist_workers}")
     is_parallel = xdist_workers not in ("1", "no", "0")
 
@@ -325,7 +332,7 @@ def build_pytest_env(ch_path, timeout_val):
     env["COMMIT_SHA"] = get_commit_sha(env)
 
     # PYTEST_ADDOPTS
-    fh_to = max(1200, min(timeout_val - 60, 1800))
+    fh_to = timeout_val - 60
     env["PYTEST_ADDOPTS"] = (
         f"--ignore-glob=tests/stress/keeper/tests/_instances-* -o faulthandler_timeout={fh_to}"
     )

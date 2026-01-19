@@ -57,6 +57,45 @@ def _percentile_from_list(percentiles, target):
     return None
 
 
+def _percentiles_map(percentiles):
+    out = {}
+    if not isinstance(percentiles, list):
+        return out
+    for ent in percentiles:
+        if not isinstance(ent, dict) or not ent:
+            continue
+        for k, v in ent.items():
+            try:
+                fk = float(str(k))
+            except Exception:
+                continue
+            val = _to_ms(v)
+            if val is None:
+                continue
+            out[fk] = float(val)
+    return out
+
+
+def _merge_percentiles_max(dst, src):
+    if not isinstance(dst, dict) or not isinstance(src, dict):
+        return dst
+    for k, v in src.items():
+        try:
+            fk = float(k)
+            fv = float(v)
+        except Exception:
+            continue
+        prev = dst.get(fk)
+        if prev is None:
+            dst[fk] = fv
+        else:
+            try:
+                dst[fk] = max(float(prev), fv)
+            except Exception:
+                dst[fk] = fv
+    return dst
+
+
 def _search_latency(obj, keys):
     """Search for latency value matching any of the keys in nested dict."""
     stack = [obj]
@@ -810,6 +849,8 @@ class KeeperBench:
             "write_p50_ms": 0.0,
             "write_p95_ms": 0.0,
             "write_p99_ms": 0.0,
+            "read_percentiles_ms": {},
+            "write_percentiles_ms": {},
         }
         try:
             extracted = self._extract_json_text(out_text)
@@ -851,6 +892,12 @@ class KeeperBench:
             )
             s["errors"] = int(data.get("errors") or data.get("failed") or 0)
 
+            try:
+                s["read_percentiles_ms"] = _percentiles_map(rr.get("percentiles"))
+                s["write_percentiles_ms"] = _percentiles_map(wr.get("percentiles"))
+            except Exception:
+                pass
+
             rp50 = _percentile_from_list(rr.get("percentiles"), 50.0)
             rp95 = _percentile_from_list(rr.get("percentiles"), 95.0)
             rp99 = _percentile_from_list(rr.get("percentiles"), 99.0)
@@ -884,6 +931,27 @@ class KeeperBench:
                 s["write_p95_ms"] = float(wp95)
             if wp99 is not None:
                 s["write_p99_ms"] = float(wp99)
+
+            # Ensure percentile maps contain at least the canonical exported ones
+            try:
+                rpmap = s.get("read_percentiles_ms")
+                if isinstance(rpmap, dict):
+                    if rp50 is not None:
+                        rpmap[50.0] = float(rp50)
+                    if rp95 is not None:
+                        rpmap[95.0] = float(rp95)
+                    if rp99 is not None:
+                        rpmap[99.0] = float(rp99)
+                wpmap = s.get("write_percentiles_ms")
+                if isinstance(wpmap, dict):
+                    if wp50 is not None:
+                        wpmap[50.0] = float(wp50)
+                    if wp95 is not None:
+                        wpmap[95.0] = float(wp95)
+                    if wp99 is not None:
+                        wpmap[99.0] = float(wp99)
+            except Exception:
+                pass
 
             s["has_latency"] = any(
                 x is not None and float(x) > 0
@@ -983,6 +1051,23 @@ class KeeperBench:
                 float(summary.get("write_p99_ms") or 0.0),
                 float(st.get("write_p99_ms") or 0.0),
             )
+            try:
+                if "read_percentiles_ms" not in summary or not isinstance(
+                    summary.get("read_percentiles_ms"), dict
+                ):
+                    summary["read_percentiles_ms"] = {}
+                if "write_percentiles_ms" not in summary or not isinstance(
+                    summary.get("write_percentiles_ms"), dict
+                ):
+                    summary["write_percentiles_ms"] = {}
+                _merge_percentiles_max(
+                    summary["read_percentiles_ms"], st.get("read_percentiles_ms")
+                )
+                _merge_percentiles_max(
+                    summary["write_percentiles_ms"], st.get("write_percentiles_ms")
+                )
+            except Exception:
+                pass
             summary["has_latency"] = summary.get("has_latency") or bool(
                 st.get("has_latency")
             )
@@ -1111,10 +1196,12 @@ class KeeperBench:
             "write_p50_ms": 0.0,
             "write_p95_ms": 0.0,
             "write_p99_ms": 0.0,
+            "read_percentiles_ms": {},
+            "write_percentiles_ms": {},
         }
         adapt_env = os.environ.get("KEEPER_BENCH_ADAPTIVE")
         if str(adapt_env or "").strip().lower() in ("1", "true", "yes", "on"):
-            return self._run_adaptive(bench_cfg, self.clients, summary)
+            return self._run_adaptive(bench_cfg, env_clients, summary)
         # Execute the bench tool (replay mode or generator mode)
         # Hard-cap execution: duration + 30s
         hard_cap = max(5, int(self.duration_s) + 60)
