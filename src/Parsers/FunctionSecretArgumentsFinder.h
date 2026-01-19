@@ -724,6 +724,9 @@ protected:
 
     void findBackupDatabaseSecretArguments()
     {
+        if (function->arguments->size() < 2)
+            return;
+
         auto storage_arg = function->arguments->at(1);
         auto storage_function = storage_arg->getFunction();
 

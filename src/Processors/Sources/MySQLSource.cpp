@@ -151,11 +151,11 @@ namespace
         switch (type)
         {
             case ValueType::vtUInt8:
-                assert_cast<ColumnUInt8 &>(column).insertValue(value.getUInt());
+                assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value.getUInt()));
                 read_bytes_size += 1;
                 break;
             case ValueType::vtUInt16:
-                assert_cast<ColumnUInt16 &>(column).insertValue(value.getUInt());
+                assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value.getUInt()));
                 read_bytes_size += 2;
                 break;
             case ValueType::vtUInt32:
@@ -188,11 +188,11 @@ namespace
                 break;
             }
             case ValueType::vtInt8:
-                assert_cast<ColumnInt8 &>(column).insertValue(value.getInt());
+                assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value.getInt()));
                 read_bytes_size += 1;
                 break;
             case ValueType::vtInt16:
-                assert_cast<ColumnInt16 &>(column).insertValue(value.getInt());
+                assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value.getInt()));
                 read_bytes_size += 2;
                 break;
             case ValueType::vtInt32:
@@ -235,11 +235,11 @@ namespace
                 read_bytes_size += 8;
                 break;
             case ValueType::vtEnum8:
-                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>());
+                assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>()));
                 read_bytes_size += assert_cast<ColumnInt8 &>(column).byteSize();
                 break;
             case ValueType::vtEnum16:
-                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>());
+                assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>()));
                 read_bytes_size += assert_cast<ColumnInt16 &>(column).byteSize();
                 break;
             case ValueType::vtString:

@@ -1,4 +1,3 @@
-#include <iostream>
 #include <memory>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypesNumber.h>
