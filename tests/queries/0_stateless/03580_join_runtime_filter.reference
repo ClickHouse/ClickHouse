@@ -2,8 +2,8 @@
 499.5
       Algorithm: HashJoin
             Algorithm: HashJoin
-                BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
-          BuildRuntimeFilter (Build runtime join filter on __table1.o_custkey)
+                BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
+          BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
 6000
 0
 6000
@@ -18,8 +18,8 @@
 499.5
       Algorithm: ConcurrentHashJoin
             Algorithm: ConcurrentHashJoin
-                BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
-          BuildRuntimeFilter (Build runtime join filter on __table1.o_custkey)
+                BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
+          BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
 6000
 0
 6000
@@ -34,8 +34,8 @@
 499.5
       Algorithm: GraceHashJoin
             Algorithm: GraceHashJoin
-                BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
-          BuildRuntimeFilter (Build runtime join filter on __table1.o_custkey)
+                BuildRuntimeFilter (Build runtime join filter on __table2.c_custkey)
+          BuildRuntimeFilter (Build runtime join filter on __table3.n_nationkey)
 6000
 0
 6000
