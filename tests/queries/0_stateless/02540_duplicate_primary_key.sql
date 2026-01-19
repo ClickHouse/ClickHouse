@@ -86,4 +86,4 @@ CREATE TABLE test
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(coverage)
-ORDER BY (coverage, situation_name, NAME_toe, NAME_cockroach); -- { serverError BAD_ARGUMENTS }
+ORDER BY (coverage, situation_name, NAME_toe, NAME_cockroach); -- { serverError ILLEGAL_PROJECTION }
