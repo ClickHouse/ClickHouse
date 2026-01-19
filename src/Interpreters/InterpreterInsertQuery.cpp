@@ -437,7 +437,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     if (deduplicate_insert_select != isDeduplicationEnabledForInsert(false, context->getSettingsRef()))
     {
         auto tmp_context = Context::createCopy(context);
-        overideDeduplicationSetting(deduplicate_insert_select, tmp_context);
+        overrideDeduplicationSetting(deduplicate_insert_select, tmp_context);
         context = tmp_context;
     }
 
