@@ -158,7 +158,7 @@ public:
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
-    const Node & addColumn(ColumnWithTypeAndName column);
+    const Node & addColumn(ColumnWithTypeAndName column, bool is_deterministic_constant = true);
     const Node & addAlias(const Node & child, std::string alias);
     const Node & addArrayJoin(const Node & child, std::string result_name);
     const Node & addFunction(
@@ -370,8 +370,8 @@ public:
         ContextPtr context,
         bool ignore_constant_values = false,
         bool add_cast_columns = false,
-        NameToNameMap * new_names = nullptr);
-
+        NameToNameMap * new_names = nullptr,
+        NameSet * columns_contain_compiled_function = nullptr);
     /// Create expression which add const column and then materialize it.
     static ActionsDAG makeAddingColumnActions(ColumnWithTypeAndName column);
 

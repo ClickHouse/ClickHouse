@@ -17,4 +17,11 @@
             </shard>
         </cluster_simple>
     </remote_servers>
+
+    <!-- increase for concurrency test -->
+    <background_schedule_pool_size>150</background_schedule_pool_size>
+    <background_pool_size>50</background_pool_size>
+    <max_thread_pool_size>1800</max_thread_pool_size>
+    <thread_pool_queue_size>1800</thread_pool_queue_size>
+
 </clickhouse>

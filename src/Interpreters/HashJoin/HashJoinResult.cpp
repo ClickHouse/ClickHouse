@@ -338,17 +338,23 @@ static size_t getAvgBytesPerRow(const Block & block)
     return block.allocatedBytes() / std::max<size_t>(1, block.rows());
 }
 
+void HashJoinResult::setNextBlock(ScatteredBlock && block)
+{
+    next_scattered_block.emplace(std::move(block));
+}
+
 IJoinResult::JoinResultBlock HashJoinResult::next()
 {
+    ScatteredBlock * next_block_ptr = next_scattered_block ? &next_scattered_block.value() : nullptr;
     if (current_row_state)
     {
         bool is_last = current_row_state->is_last;
         auto block = generateBlock(current_row_state, lazy_output, properties);
-        return {std::move(block), is_last && !current_row_state.has_value()};
+        return {std::move(block), next_block_ptr, is_last && !current_row_state.has_value()};
     }
 
     if (!scattered_block)
-        return {};
+        return {Block(), next_block_ptr, true};
 
     size_t limit_rows_per_key = 0;
     size_t limit_bytes_per_key = 0;
@@ -396,7 +402,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
 
         auto block = generateBlock(current_row_state, lazy_output, properties);
         scattered_block.reset();
-        return {std::move(block), !current_row_state.has_value()};
+        return {std::move(block), next_block_ptr, !current_row_state.has_value()};
     }
 
     const size_t prev_offset = next_row ? offsets[next_row - 1] : 0;
@@ -524,7 +530,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
     if (is_last)
         scattered_block.reset();
 
-    return {std::move(block), is_last && !current_row_state.has_value()};
+    return {std::move(block), next_block_ptr, is_last && !current_row_state.has_value()};
 }
 
 }

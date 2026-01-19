@@ -117,7 +117,7 @@ bool ColumnMap::isDefaultAt(size_t n) const
     return nested->isDefaultAt(n);
 }
 
-StringRef ColumnMap::getDataAt(size_t) const
+std::string_view ColumnMap::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -151,34 +151,24 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeValueIntoArena(n, arena, begin);
+    return nested->serializeValueIntoArena(n, arena, begin, settings);
 }
 
-StringRef ColumnMap::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeAggregationStateValueIntoArena(n, arena, begin);
+    return nested->serializeValueIntoMemory(n, memory, settings);
 }
 
-char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeValueIntoMemory(n, memory);
+    return nested->getSerializedValueSize(n, settings);
 }
 
-std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
+void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return nested->getSerializedValueSize(n);
-}
-
-void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in)
-{
-    nested->deserializeAndInsertFromArena(in);
-}
-
-void ColumnMap::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    nested->deserializeAndInsertAggregationStateValueFromArena(in);
+    nested->deserializeAndInsertFromArena(in, settings);
 }
 
 void ColumnMap::skipSerializedInArena(ReadBuffer & in) const
@@ -234,6 +224,11 @@ ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     auto filtered = nested->filter(filt, result_size_hint);
     return ColumnMap::create(filtered);
+}
+
+void ColumnMap::filter(const Filter & filt)
+{
+    nested->filter(filt);
 }
 
 void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)

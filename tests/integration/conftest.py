@@ -8,7 +8,6 @@ import os
 import pytest  # pylint:disable=import-error; for style check
 
 from helpers.cluster import is_port_free, run_and_check
-from helpers.network import _NetworkManager
 
 # This is a workaround for a problem with logging in pytest [1].
 #
@@ -63,9 +62,6 @@ def tune_local_port_range():
 @pytest.fixture(autouse=True, scope="session")
 def cleanup_environment():
     try:
-        if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) == 1:
-            logging.debug("Cleaning all iptables rules")
-            _NetworkManager.clean_all_user_iptables_rules()
         result = run_and_check(["docker ps | wc -l"], shell=True)
         if int(result) > 1:
             if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS", 0)) != 1:

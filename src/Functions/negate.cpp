@@ -18,7 +18,7 @@ struct NegateImpl
         if constexpr (is_decimal<A>)
             return negateOverflow(a);
 
-        return -static_cast<ResultType>(a);
+        return static_cast<ResultType>(-static_cast<ResultType>(a));
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -92,7 +92,7 @@ REGISTER_FUNCTION(Negate)
     FunctionDocumentation::Examples examples = {example1};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, categories};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, categories};
 
     factory.registerFunction<FunctionNegate>(documentation);
 }

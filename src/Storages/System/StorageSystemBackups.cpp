@@ -19,6 +19,8 @@ namespace DB
 
 ColumnsDescription StorageSystemBackups::getColumnsDescription()
 {
+    auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+
     return ColumnsDescription
     {
         {"id", std::make_shared<DataTypeString>(), "Operation ID, can be either passed via SETTINGS id=... or be randomly generated UUID."},
@@ -36,7 +38,7 @@ ColumnsDescription StorageSystemBackups::getColumnsDescription()
         {"compressed_size", std::make_shared<DataTypeUInt64>(), "The compressed size of the backup."},
         {"files_read", std::make_shared<DataTypeUInt64>(), "Returns the number of files read during RESTORE from this backup."},
         {"bytes_read", std::make_shared<DataTypeUInt64>(), "Returns the total size of files read during RESTORE from this backup."},
-        {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
+        {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
     };
 }
 

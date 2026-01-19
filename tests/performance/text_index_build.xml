@@ -1,6 +1,6 @@
 <test>
   <settings>
-      <allow_experimental_full_text_index>1</allow_experimental_full_text_index>
+      <enable_full_text_index>1</enable_full_text_index>
   </settings>
 
   <create_query>

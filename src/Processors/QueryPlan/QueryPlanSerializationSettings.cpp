@@ -2,6 +2,16 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
+/**
+ * This file declares the concrete list of settings that are considered relevant for query plan step (de)serialization.
+ * They are defined through the PLAN_SERIALIZATION_SETTINGS macro which is consumed by BaseSettings machinery
+ * to generate traits, storage and accessor helpers.
+ *
+ * Macro structure:
+ *  DECLARE(Type, name, default, description, flags)
+ *  "flags" originate from BaseSettings (e.g. IMPORTANT) and may influence exposure or validation.
+ */
+
 namespace DB
 {
 
@@ -77,7 +87,7 @@ namespace DB
     \
     DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, "Maximal size of the set to filter joined tables by each other's row sets before joining.", 0) \
     DECLARE(String, temporary_files_codec, "LZ4", "Sets compression codec for temporary files used in sorting and joining operations on disk.", 0) \
-    DECLARE(UInt64, temporary_files_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption.", 0) \
+    DECLARE(NonZeroUInt64, temporary_files_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption.", 0) \
     \
     DECLARE(Bool, collect_hash_table_stats_during_joins, true, "Enable collecting hash table statistics to optimize memory allocation", 0) \
     DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, "For how many elements it is allowed to preallocate space in all hash tables in total before join", 0) \
@@ -91,7 +101,12 @@ namespace DB
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, "Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512 * 1024, "Size in bytes of a bloom filter used as JOIN runtime filter.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, "Number of hash functions in a bloom filter used as JOIN runtime filter.", 0) \
+    DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, "If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.", 0) \
+    DECLARE(UInt64, join_runtime_filter_blocks_to_skip_before_reenabling, 30, "Number of blocks that are skipped before trying to dynamically re-enable a runtime filter that previously was disabled due to poor filtering ratio.", 0) \
+    DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, "If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, false, "When enabled, replication of columns data during ARRAY JOIN and JOIN is performed lazily", 0) \
+    DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
+    DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
 
 
 // clang-format on
