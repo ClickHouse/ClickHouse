@@ -304,6 +304,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
         env.dump()
 
+    _GH_Auth(workflow)
+
     # refresh PR data
     if env.PR_NUMBER > 0:
         title, body, labels = GH.get_pr_title_body_labels()
