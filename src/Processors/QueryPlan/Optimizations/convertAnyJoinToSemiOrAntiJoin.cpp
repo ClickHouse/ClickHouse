@@ -1,7 +1,6 @@
 #include <memory>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
 #include <Common/Logger.h>
 #include <Core/ColumnsWithTypeAndName.h>

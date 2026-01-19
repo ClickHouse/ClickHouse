@@ -320,7 +320,16 @@ static void splitAndModifyMutationCommands(
                         mutated_columns.emplace(command.column_name);
 
                     if (command.type == MutationCommand::Type::DROP_COLUMN)
-                        dropped_columns.emplace(command.column_name);
+                    {
+                        /// We need to keep the clear command so we also clear dependent indices
+                        if (command.clear)
+                        {
+                            for_interpreter.push_back(command);
+                            for_file_renames.push_back(command); /// For packed parts
+                        }
+                        else
+                            dropped_columns.emplace(command.column_name);
+                    }
                 }
             }
         }
@@ -1678,8 +1687,11 @@ private:
         NameSet entries_to_hardlink;
         NameSet removed_indices;
         NameSet removed_stats;
+        NameSet removed_projections;
         /// A stat file need to be renamed iff the column is renamed.
         NameToNameMap renamed_stats;
+
+        bool is_full_part_storage = isFullPartStorage(ctx->new_data_part->getDataPartStorage());
 
         for (const auto & command : ctx->for_file_renames)
         {
@@ -1692,7 +1704,11 @@ private:
                 auto current_removed_stats = MutationHelpers::getRemovedStatistics(ctx->metadata_snapshot, command);
                 std::move(current_removed_stats.begin(), current_removed_stats.end(), std::inserter(removed_stats, removed_stats.end()));
             }
-            else if (command.type == MutationCommand::RENAME_COLUMN)
+            else if (command.type == MutationCommand::DROP_COLUMN)
+            {
+                removed_stats.insert(command.column_name);
+            }
+            else if (command.type == MutationCommand::RENAME_COLUMN && is_full_part_storage)
             {
                 if (auto filename = MutationHelpers::getStatisticFilename(STATS_FILE_PREFIX + command.column_name, *ctx->source_part))
                 {
@@ -1700,9 +1716,12 @@ private:
                     renamed_stats[*filename] = std::move(new_filename);
                 }
             }
+            else if (command.type == MutationCommand::DROP_PROJECTION)
+            {
+                removed_projections.insert(command.column_name);
+            }
         }
 
-        bool is_full_part_storage = isFullPartStorage(ctx->source_part->getDataPartStorage());
         bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->new_data_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
@@ -1765,13 +1784,6 @@ private:
                     ctx->existing_indices_stats_checksums.addFile(*stat_filename, checksum);
                 }
             }
-        }
-
-        NameSet removed_projections;
-        for (const auto & command : ctx->for_file_renames)
-        {
-            if (command.type == MutationCommand::DROP_PROJECTION)
-                removed_projections.insert(command.column_name);
         }
 
         bool lightweight_delete_mode = ctx->updated_header.has(RowExistsColumn::name);

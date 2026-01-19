@@ -135,4 +135,11 @@ private:
     std::shared_ptr<const QueryPlan> query_plan;
 };
 
+ASTPtr tryBuildAdditionalFilterAST(
+    const ActionsDAG & dag,
+    const std::unordered_set<std::string> & projection_names,
+    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    Tables * external_tables,
+    ContextMutablePtr & context);
+
 }
