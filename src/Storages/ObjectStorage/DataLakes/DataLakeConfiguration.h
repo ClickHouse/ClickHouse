@@ -148,7 +148,11 @@ public:
 
     bool isIceberg() override
     {
+#if USE_AVRO
         return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
+#else
+        return false;
+#endif
     }
 
     void checkMutationIsPossible(const MutationCommands & commands) override
