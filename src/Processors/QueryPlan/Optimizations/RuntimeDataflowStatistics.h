@@ -74,7 +74,12 @@ public:
 
     void setCacheKey(size_t key) { cache_key = key; }
 
-    void setTotalRowsFromStorage(size_t rows) { total_rows_from_storage = rows; }
+    void setTotalRowsFromStorage(size_t rows)
+    {
+        if (rows == 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Total rows from storage cannot be zero");
+        total_rows_from_storage = rows;
+    }
 
     void recordOutputChunk(const Chunk & chunk, const Block & header);
 
@@ -87,8 +92,8 @@ public:
     void markUnsupportedCase() { unsupported_case.store(true, std::memory_order_relaxed); }
 
 private:
+    /// TODO(nickitat): make construction arguments
     std::optional<size_t> cache_key;
-
     size_t total_rows_from_storage = 0;
 
     std::atomic_bool unsupported_case{false};
