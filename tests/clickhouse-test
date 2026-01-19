@@ -67,6 +67,9 @@ MESSAGES_TO_RETRY = [
     "is already started to be removing by another replica right now",
     # This is from LSan, and it indicates its own internal problem:
     "Unable to get registers from thread",
+    # Next two can be caused by a flaky tmp FS; normally fine upon retry; details at #93451
+    "No such file or directory",
+    "Permission denied",
 ]
 
 IGNORED_SANITIZER_ERRORS = [
@@ -1185,8 +1188,12 @@ class SettingsRandomizer:
         "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
+        "short_circuit_function_evaluation_for_nulls_threshold": lambda: random.random() * 1.1,
         "automatic_parallel_replicas_mode": lambda: 2 if random.random() < 0.25 else 0,
         "temporary_files_buffer_size": lambda: random.randint(800 * 1024, 1200 * 1024),
+        # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
+        # That is why we use it with fallback to 'greedy'.
+        "query_plan_optimize_join_order_algorithm": lambda: random.choice(['greedy', 'dpsize,greedy', 'greedy,dpsize']),
         **randomize_external_sort_group_by(),
     }
 
@@ -1287,6 +1294,7 @@ class MergeTreeSettingsRandomizer:
         "string_serialization_version": lambda: random.choice(["single_stream", "with_size_stream"]),
         "nullable_serialization_version": lambda: random.choice(["basic", "allow_sparse"]),
         "enable_shared_storage_snapshot_in_query": lambda: random.randint(0, 1),
+        "min_columns_to_activate_adaptive_write_buffer": lambda: random.randint(0, 1000)
     }
 
     @staticmethod
@@ -2793,8 +2801,8 @@ class TestSuite:
         self.cloud_skip_list: List[str] = []
         self.private_skip_list: List[str] = []
         # List of tests included in a blacklist.
-        # They will be run, and if they succeed, the status will be changed to FAIL to notify
-        # that the changes in PR fixes this test.
+        # They will be run, and if they succeed, the test status will be changed to FAIL
+        # to notify PR author that the changes in PR fixes this test.
         self.blacklist_check: List[str] = []
 
         if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
@@ -3814,7 +3822,7 @@ def main(args):
         skip_list_async_inserts = try_get_skip_list(
             base_dir, "../async_insert_blacklist.txt"
         )
-        skip_list.extend(skip_list_async_inserts)
+        blacklist_check.extend(skip_list_async_inserts)
 
     for suite in sorted(os.listdir(base_dir), key=suite_key_func):
         if server_died.is_set():

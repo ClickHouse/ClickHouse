@@ -178,13 +178,15 @@ std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSpars
 
 void TokenizerFactory::isAllowedTokenizer(std::string_view tokenizer, const std::vector<String> & allowed_tokenizers, std::string_view caller_name)
 {
+    chassert(!allowed_tokenizers.empty());
+
     if (std::ranges::find(allowed_tokenizers, tokenizer) == allowed_tokenizers.end())
     {
         WriteBufferFromOwnString buf;
         for (size_t i = 0; i < allowed_tokenizers.size(); ++i)
         {
             if (i < allowed_tokenizers.size() - 1)
-                buf << "'" << allowed_tokenizers[0] << "', "; /// asserted not empty in constructor
+                buf << "'" << allowed_tokenizers[i] << "', ";
             else
                 buf << "and '" << allowed_tokenizers[i] << "'";
         }
@@ -242,6 +244,8 @@ bool NgramsTokenExtractor::nextInString(const char * data, size_t length, size_t
         size_t sz = UTF8::seqLength(static_cast<UInt8>(data[token_start + token_length]));
         token_length += sz;
     }
+    /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+    token_length = std::min(token_length, length - token_start);
     pos += UTF8::seqLength(static_cast<UInt8>(data[pos]));
     return code_points == n;
 }
@@ -267,7 +271,8 @@ bool NgramsTokenExtractor::nextInStringLike(const char * data, size_t length, si
             token.clear();
             code_points = 0;
             escaped = false;
-            pos = ++i;
+            ++i;
+            pos = i;
         }
         else if (!escaped && data[i] == '\\')
         {
@@ -277,7 +282,8 @@ bool NgramsTokenExtractor::nextInStringLike(const char * data, size_t length, si
         else
         {
             const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));
-            for (size_t j = 0; j < sz; ++j)
+            /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+            for (size_t j = 0; j < sz && i + j < length; ++j)
                 token += data[i + j];
             i += sz;
             ++code_points;
@@ -441,7 +447,8 @@ bool SplitByNonAlphaTokenExtractor::nextInStringLike(const char * data, size_t l
         else
         {
             const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[pos]));
-            for (size_t j = 0; j < sz; ++j)
+            /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+            for (size_t j = 0; j < sz && pos < length; ++j)
             {
                 token += data[pos];
                 ++pos;
@@ -619,7 +626,8 @@ bool SparseGramsTokenExtractor::nextInStringLike(const char * data, size_t lengt
             else
             {
                 const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));
-                for (size_t j = 0; j < sz; ++j)
+                /// The sequence length is determined by the first character, but we should always check it does not go beyond the buffer length.
+                for (size_t j = 0; j < sz && i + j < length; ++j)
                     token.push_back(data[i + j]);
                 i += sz;
             }
@@ -630,6 +638,38 @@ bool SparseGramsTokenExtractor::nextInStringLike(const char * data, size_t lengt
             return true;
         }
     }
+}
+
+std::vector<String> SparseGramsTokenExtractor::compactTokens(const std::vector<String> & tokens) const
+{
+    std::unordered_set<String> result;
+    auto sorted_tokens = tokens;
+
+    /// Bug in clang-tidy: https://github.com/llvm/llvm-project/issues/78132
+    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.size() > rhs.size(); }); /// NOLINT(clang-analyzer-cplusplus.Move)
+
+    /// Filter out sparse grams that are covered by longer ones,
+    /// because if index has longer sparse gram, it has all shorter covered ones.
+    /// Using dumb O(n^2) algorithm to avoid unnecessary complexity, because this method
+    /// is used only for transforming constant searched tokens, which amount is usually small.
+    for (const auto & token : sorted_tokens)
+    {
+        bool is_covered = false;
+
+        for (const auto & existing_token : result)
+        {
+            if (existing_token.find(token) != std::string::npos)
+            {
+                is_covered = true;
+                break;
+            }
+        }
+
+        if (!is_covered)
+            result.insert(token);
+    }
+
+    return std::vector<String>(result.begin(), result.end());
 }
 
 }

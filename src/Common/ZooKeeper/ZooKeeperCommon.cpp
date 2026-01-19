@@ -900,7 +900,7 @@ void ZooKeeperCheckRequest::writeImpl(WriteBuffer & out) const
 
 size_t ZooKeeperCheckRequest::sizeImpl() const
 {
-    return Coordination::size(path) + Coordination::size(version);
+    return Coordination::size(path) + Coordination::size(version) + (stat_to_check.has_value() ? Coordination::size(stat_to_check.value()) : 0);
 }
 
 void ZooKeeperCheckRequest::readImpl(ReadBuffer & in)
