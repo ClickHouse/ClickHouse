@@ -11,6 +11,9 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=1, parallel_rep
 
 SET max_threads=2;
 
+-- For runs with the old analyzer
+SET parallel_replicas_only_with_analyzer=0;
+
 SET use_query_condition_cache=1;
 SET automatic_parallel_replicas_min_bytes_per_replica='1Mi';
 
