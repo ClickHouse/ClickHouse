@@ -364,25 +364,11 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
                     addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::OffsetIndex, next_step, diff);
                     return;
                 }
-                else if (row_subgroup.filter.rows_pass > 0)
+                else
                 {
                     /// All prewhere steps done, move to step 0
                     addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::OffsetIndex, 0, diff);
                     return;
-                }
-                else
-                {
-                    /// Subgroup was filtered out, skip to next subgroup.
-                    LOG_DEBUG(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} filtered out on step={}, advancing next_subgroup_for_step[{}]",
-                              row_group_idx, row_subgroup_idx, step_idx, step_idx);
-                    size_t prev = row_group.next_subgroup_for_step[step_idx].exchange(row_subgroup_idx + 1);
-                    chassert(prev == row_subgroup_idx);
-                    advanced_ptr = prev + 1;
-                    delivery_cv.notify_one();
-
-                    row_subgroup.stage.store(ReadStage::Deallocated);
-                    clearRowSubgroup(row_subgroup, diff);
-                    break;
                 }
             }
             else if (step_idx == 0)
