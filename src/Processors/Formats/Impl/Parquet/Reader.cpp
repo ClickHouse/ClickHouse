@@ -738,12 +738,12 @@ void Reader::preparePrewhere()
             for (size_t i = 0; i < prewhere_expr_info.steps.size(); ++i)
             {
                 auto filter = prewhere_expr_info.steps[i];
-                add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);   
+                add_single_step(filter->actions->getActionsDAG(), filter->filter_column_name, true, i);
             }
         }
         else
         {
-            /// Execute everyting as one large step
+            /// Execute everything as one large step
             add_single_step(dag, filter_column_name, needs_filter, 0);
         }
     };
@@ -2143,7 +2143,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
             row_subgroup.filter.rows_pass = 0;
             return;
         }
-        
+
         /// Filter columns that were already read.
         for (auto & state : row_subgroup.output)
             if (state.column)
