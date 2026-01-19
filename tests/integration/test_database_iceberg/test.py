@@ -669,3 +669,26 @@ def test_not_specified_catalog_type(started_cluster):
     )
     with pytest.raises(Exception):
         node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+def test_gcs(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    node.query("SYSTEM ENABLE FAILPOINT database_iceberg_gcs")
+    node.query(
+        f"""
+        DROP DATABASE IF EXISTS {CATALOG_NAME};
+        SET allow_database_iceberg = 1;
+        """
+    )
+
+    with pytest.raises(Exception) as err:
+        node.query(
+            f"""
+            CREATE DATABASE {CATALOG_NAME}
+            ENGINE = DataLakeCatalog('{BASE_URL_DOCKER}', 'gcs', 'dummy')
+            SETTINGS
+                catalog_type = 'rest',
+                warehouse = 'demo',
+            """
+        )
+        assert "Google cloud storage converts to S3" in str(err.value)
