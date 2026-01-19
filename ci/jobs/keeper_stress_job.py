@@ -21,6 +21,11 @@ from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Shell, Utils
 
+try:
+    from praktika._environment import _Environment
+except Exception:
+    _Environment = None
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
@@ -428,7 +433,13 @@ def main():
     set_default_env()
     apply_cli_params(args)
 
-    result_name = os.environ.get("JOB_NAME") or os.environ.get("CHECK_NAME") or "Keeper Stress"
+    job_name = os.environ.get("JOB_NAME") or os.environ.get("CHECK_NAME")
+    if not job_name and _Environment is not None:
+        try:
+            job_name = _Environment.get().JOB_NAME
+        except Exception:
+            job_name = None
+    job_name = job_name or "Keeper Stress"
 
     stop_watch = Utils.Stopwatch()
     results = []
@@ -447,7 +458,7 @@ def main():
             )
         )
         Result.create_from(
-            name=result_name,
+            name=job_name,
             results=results,
             status=Result.Status.ERROR,
             stopwatch=stop_watch,
@@ -478,7 +489,7 @@ def main():
     )
     if not results[-1].is_ok():
         Result.create_from(
-            name=result_name, results=results, stopwatch=stop_watch
+            name=job_name, results=results, stopwatch=stop_watch
         ).complete_job()
         return
 
@@ -487,14 +498,14 @@ def main():
     results.extend(ch_results)
     if ch_results and not ch_results[-1].is_ok():
         Result.create_from(
-            name=result_name, results=results, stopwatch=stop_watch
+            name=job_name, results=results, stopwatch=stop_watch
         ).complete_job()
         return
 
     results.append(install_clickhouse_binary(ch_path))
     if not results[-1].is_ok():
         Result.create_from(
-            name=result_name, results=results, stopwatch=stop_watch
+            name=job_name, results=results, stopwatch=stop_watch
         ).complete_job()
         return
     ch_path = "/usr/local/bin/clickhouse"
@@ -620,7 +631,7 @@ def main():
     )
 
     Result.create_from(
-        name=result_name,
+        name=job_name,
         results=results,
         stopwatch=stop_watch,
         files=files_to_attach,
@@ -631,9 +642,13 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        result_name = (
-            os.environ.get("JOB_NAME") or os.environ.get("CHECK_NAME") or "Keeper Stress"
-        )
+        job_name = os.environ.get("JOB_NAME") or os.environ.get("CHECK_NAME")
+        if not job_name and _Environment is not None:
+            try:
+                job_name = _Environment.get().JOB_NAME
+            except Exception:
+                job_name = None
+        job_name = job_name or "Keeper Stress"
         err_txt = f"{e}\n{traceback.format_exc()}"
         os.makedirs("./ci/tmp", exist_ok=True)
         err_path = "./ci/tmp/keeper_job_fatal_error.txt"
@@ -643,7 +658,7 @@ if __name__ == "__main__":
         except Exception:
             pass
         Result.create_from(
-            name=result_name,
+            name=job_name,
             status=Result.Status.ERROR,
             info=err_txt,
             stopwatch=Utils.Stopwatch(),
