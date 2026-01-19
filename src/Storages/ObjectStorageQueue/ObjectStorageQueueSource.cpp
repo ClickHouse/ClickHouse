@@ -15,7 +15,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -289,29 +289,19 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
                         else
                         {
-                            auto processing_paths_responses = zk_client->tryGet(processing_paths);
-                            for (size_t i = 0; i < processing_paths_responses.size(); ++i)
+                            String data;
+                            for (const auto & path : processing_paths)
                             {
-                                const auto & response = processing_paths_responses[i];
-                                if (response.error == Coordination::Error::ZNONODE)
+                                if (!zk_client->tryGet(path, data))
                                 {
-                                    LOG_TEST(log, "Path {} does not exist", processing_paths[i]);
+                                    LOG_TEST(log, "Path {} does not exist", path);
                                     failed = true;
                                     break;
                                 }
-                                if (response.error == Coordination::Error::ZOK)
+
+                                LOG_TEST(log, "Having {}, current processor: {}", data, processor_info);
+                                if (data != processor_info)
                                 {
-                                    LOG_TEST(log, "Having {}, current processor: {}", response.data, processor_info);
-                                    if (response.data != processor_info)
-                                    {
-                                        failed = true;
-                                        break;
-                                    }
-                                }
-                                else
-                                {
-                                    LOG_WARNING(log, "Unexpected error: {}, path: {}", response.error, processing_paths[i]);
-                                    chassert(false);
                                     failed = true;
                                     break;
                                 }
@@ -578,26 +568,6 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
     }
 }
 
-std::string ObjectStorageQueueSource::FileIterator::bucketHoldersToString() const
-{
-    std::string processors_infos;
-    for (const auto & [processor, bucket_holder] : bucket_holders)
-    {
-        if (!processors_infos.empty())
-            processors_infos += ", ";
-
-        processors_infos += fmt::format("processor {} -> {} buckets ", processor, bucket_holder.size());
-        if (!bucket_holder.empty())
-        {
-            processors_infos += "(";
-            for (const auto & bucket : bucket_holder)
-                processors_infos += toString(bucket->getBucket()) + " ";
-            processors_infos += ")";
-        }
-    }
-    return processors_infos;
-}
-
 ObjectStorageQueueSource::FileIterator::NextKeyFromBucket
 ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processor)
 {
@@ -638,10 +608,10 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 {
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Expected current processor {} to be equal to {} for bucket {} ({})",
+                        "Expected current processor {} to be equal to {} for bucket {}",
                         current_processor,
                         bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
-                        bucket, bucketHoldersToString());
+                        bucket);
                 }
 
                 if (current_bucket_holder)
@@ -720,15 +690,17 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                     continue;
                 }
 
-                LOG_TRACE(log, "Processor {} acquired bucket: {}", current_processor, bucket);
-
                 bucket_holder_it->second.push_back(acquired_bucket);
                 current_bucket_holder = bucket_holder_it->second.back().get();
+
                 bucket_processor = current_processor;
 
                 /// Take the key from the front, the order is important.
                 auto [object_info, file_metadata] = bucket_keys.front();
                 bucket_keys.pop_front();
+
+                LOG_TEST(log, "Acquired bucket: {}, will process file: {}",
+                         bucket, object_info->getFileName());
 
                 return {object_info, file_metadata, current_bucket_holder->getBucketInfo()};
             }
@@ -768,12 +740,10 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             auto acquired_bucket = metadata->tryAcquireBucket(bucket);
             if (acquired_bucket)
             {
-                LOG_TRACE(log, "Processor {} acquired bucket: {}, updated bucket cache", current_processor, bucket);
-
                 bucket_holder_it->second.push_back(acquired_bucket);
                 current_bucket_holder = bucket_holder_it->second.back().get();
-                bucket_cache.processor = current_processor;
 
+                bucket_cache.processor = current_processor;
                 if (!bucket_cache.keys.empty())
                 {
                     /// We have to maintain ordering between keys,
@@ -810,7 +780,6 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const std::optional<FormatSettings> & format_settings_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     const CommitSettings & commit_settings_,
-    const AfterProcessingSettings & after_processing_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
     size_t max_block_size_,
@@ -832,7 +801,6 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , format_settings(format_settings_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , commit_settings(commit_settings_)
-    , after_processing_settings(after_processing_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
     , mode(files_metadata->getTableMetadata().getMode())
@@ -1279,63 +1247,51 @@ void ObjectStorageQueueSource::finalizeCommit(
     if (processed_files.empty())
         return;
 
-    std::exception_ptr finalize_exception;
     for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
     {
-        try
+        switch (file_state)
         {
-            switch (file_state)
+            case FileState::Processed:
             {
-                case FileState::Processed:
+                if (insert_succeeded)
                 {
-                    if (insert_succeeded)
-                    {
-                        file_metadata->finalizeProcessed();
-                    }
-                    else
-                    {
-                        file_metadata->finalizeFailed(exception_message);
-                    }
-                    break;
+                    file_metadata->finalizeProcessed();
                 }
-                case FileState::Cancelled: [[fallthrough]];
-                case FileState::Processing:
+                else
                 {
-                    if (insert_succeeded)
-                    {
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Unexpected state {} of file {} while insert succeeded",
-                            file_state, file_metadata->getPath());
-                    }
-
                     file_metadata->finalizeFailed(exception_message);
-                    break;
                 }
-                case FileState::ErrorOnRead:
-                {
-                    chassert(!exception_during_read.empty());
-                    file_metadata->finalizeFailed(exception_during_read);
-                    break;
-                }
+                break;
             }
+            case FileState::Cancelled: [[fallthrough]];
+            case FileState::Processing:
+            {
+                if (insert_succeeded)
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Unexpected state {} of file {} while insert succeeded",
+                        file_state, file_metadata->getPath());
+                }
 
-            appendLogElement(
-                file_metadata,
-                /* processed */insert_succeeded && file_state == FileState::Processed,
-                commit_id,
-                commit_time,
-                transaction_start_time_);
+                file_metadata->finalizeFailed(exception_message);
+                break;
+            }
+            case FileState::ErrorOnRead:
+            {
+                chassert(!exception_during_read.empty());
+                file_metadata->finalizeFailed(exception_during_read);
+                break;
+            }
         }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            if (!finalize_exception)
-                finalize_exception = std::current_exception();
-        }
+
+        appendLogElement(
+            file_metadata,
+            /* processed */insert_succeeded && file_state == FileState::Processed,
+            commit_id,
+            commit_time,
+            transaction_start_time_);
     }
-    if (finalize_exception)
-        std::rethrow_exception(finalize_exception);
 }
 
 void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
@@ -1348,16 +1304,11 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
 
     if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
+        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
     {
-        auto postProcessor = ObjectStorageQueuePostProcessor(
-            getContext(),
-            configuration->getType(),
-            object_storage,
-            getName(),
-            files_metadata->getTableMetadata(),
-            after_processing_settings);
-        postProcessor.process(successful_objects);
+        /// We do need to apply after-processing action before committing requests to keeper.
+        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
+        object_storage->removeObjectsIfExist(successful_objects);
     }
 
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);

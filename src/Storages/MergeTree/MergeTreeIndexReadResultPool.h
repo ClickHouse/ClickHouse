@@ -20,8 +20,6 @@ class MergeTreeSkipIndexReader
 public:
     MergeTreeSkipIndexReader(
         UsefulSkipIndexes skip_indexes_,
-        std::optional<KeyCondition> & key_condition_rpn_template_,
-        bool use_for_disjunctions_,
         MarkCachePtr mark_cache_,
         UncompressedCachePtr uncompressed_cache_,
         VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
@@ -34,8 +32,6 @@ public:
 
 private:
     UsefulSkipIndexes skip_indexes;
-    std::optional<KeyCondition> key_condition_rpn_template;
-    bool use_for_disjunctions;
     MarkCachePtr mark_cache;
     UncompressedCachePtr uncompressed_cache;
     VectorSimilarityIndexCachePtr vector_similarity_index_cache;

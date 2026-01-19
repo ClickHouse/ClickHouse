@@ -319,11 +319,6 @@ parser.add_argument(
     default=(20, 30),
     help="In seconds. Two ordered integers separated by comma (e.g., 30,60)",
 )
-parser.add_argument(
-    "--set-shared-mergetree-disk",
-    action="store_true",
-    help="Set shared merge tree disk or policy",
-)
 
 args = parser.parse_args()
 
@@ -490,7 +485,7 @@ catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_var
 # Start the load generator, at the moment only BuzzHouse is available
 generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
 if args.generator == "buzzhouse":
-    generator = BuzzHouseGenerator(args, cluster, catalog_server, server_settings)
+    generator = BuzzHouseGenerator(args, cluster, catalog_server)
 logger.info("Start load generator")
 client = generator.run_generator(servers[0], logger, args)
 

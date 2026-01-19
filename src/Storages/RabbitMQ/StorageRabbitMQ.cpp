@@ -246,13 +246,13 @@ StorageRabbitMQ::StorageRabbitMQ(
     }
 
     /// One looping task for all consumers as they share the same connection == the same handler == the same event loop
-    looping_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQLoopingTask", [this]{ loopingFunc(); });
+    looping_task = getContext()->getMessageBrokerSchedulePool().createTask("RabbitMQLoopingTask", [this]{ loopingFunc(); });
     looping_task->deactivate();
 
-    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
+    streaming_task = getContext()->getMessageBrokerSchedulePool().createTask("RabbitMQStreamingTask", [this]{ streamingToViewsFunc(); });
     streaming_task->deactivate();
 
-    init_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "RabbitMQConnectionTask", [this]{ connectionFunc(); });
+    init_task = getContext()->getMessageBrokerSchedulePool().createTask("RabbitMQConnectionTask", [this]{ connectionFunc(); });
     init_task->deactivate();
 }
 

@@ -1,8 +1,7 @@
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Common/Exception.h>
 #include <Core/SettingsEnums.h>
 #include <base/EnumReflection.h>
-#include <Common/Exception.h>
-#include <Formats/FormatSettings.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -117,11 +116,6 @@ IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
 
-IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"state", FormatSettings::AggregateFunctionInputFormat::State},
-    {"value", FormatSettings::AggregateFunctionInputFormat::Value},
-    {"array", FormatSettings::AggregateFunctionInputFormat::Array}})
-
 IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_AUTO_ENUM(LogQueriesType, ErrorCodes::BAD_ARGUMENTS)
@@ -215,12 +209,6 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
-IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", AlterColumnSecondaryIndexMode::THROW},
-     {"drop", AlterColumnSecondaryIndexMode::DROP},
-     {"rebuild", AlterColumnSecondaryIndexMode::REBUILD},
-     {"compatibility", AlterColumnSecondaryIndexMode::COMPATIBILITY}})
-
 IMPLEMENT_SETTING_ENUM(ParallelReplicasMode, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", ParallelReplicasMode::AUTO},
      {"read_tasks", ParallelReplicasMode::READ_TASKS},
@@ -262,9 +250,7 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                        {{"keep", ObjectStorageQueueAction::KEEP},
-                        {"delete", ObjectStorageQueueAction::DELETE},
-                        {"move", ObjectStorageQueueAction::MOVE},
-                        {"tag", ObjectStorageQueueAction::TAG}})
+                        {"delete", ObjectStorageQueueAction::DELETE}})
 
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
@@ -354,12 +340,6 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"single_stream", MergeTreeStringSerializationVersion::SINGLE_STREAM},
      {"with_size_stream", MergeTreeStringSerializationVersion::WITH_SIZE_STREAM}})
-
-IMPLEMENT_SETTING_ENUM(
-    MergeTreeNullableSerializationVersion,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"basic", MergeTreeNullableSerializationVersion::BASIC},
-     {"allow_sparse", MergeTreeNullableSerializationVersion::ALLOW_SPARSE}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSerializationVersion,

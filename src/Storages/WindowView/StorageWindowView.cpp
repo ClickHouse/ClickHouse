@@ -502,9 +502,9 @@ void StorageWindowView::alter(
 
     shutdown_called = false;
 
-    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
+    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     fire_task = getContext()->getSchedulePool().createTask(
-        getStorageID(), getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
+        getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
     clean_cache_task->deactivate();
     fire_task->deactivate();
 
@@ -1311,9 +1311,9 @@ StorageWindowView::StorageWindowView(
     if (disabled_due_to_analyzer)
         return;
 
-    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID(), getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
+    clean_cache_task = getContext()->getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanup(); });
     fire_task = getContext()->getSchedulePool().createTask(
-        getStorageID(), getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
+        getStorageID().getFullTableName(), [this] { is_proctime ? threadFuncFireProc() : threadFuncFireEvent(); });
     clean_cache_task->deactivate();
     fire_task->deactivate();
 }

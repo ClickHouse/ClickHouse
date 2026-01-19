@@ -57,7 +57,7 @@ class ExtractKeyValuePairs : public IFunction
 
         if (parsed_arguments.unexpected_quoting_character_strategy)
         {
-            const std::string unexpected_quoting_character_strategy_string{parsed_arguments.unexpected_quoting_character_strategy->getDataAt(0)};
+            const auto unexpected_quoting_character_strategy_string = parsed_arguments.unexpected_quoting_character_strategy->getDataAt(0).toString();
             const auto unexpected_quoting_character_strategy = magic_enum::enum_cast<extractKV::Configuration::UnexpectedQuotingCharacterStrategy>(
                     unexpected_quoting_character_strategy_string, magic_enum::case_insensitive);
 
@@ -90,7 +90,7 @@ class ExtractKeyValuePairs : public IFunction
 
         for (auto i = 0u; i < input_rows_count; i++)
         {
-            auto row = data_column->getDataAt(i);
+            auto row = data_column->getDataAt(i).toView();
 
             auto pairs_count = extractor.extract(row, keys, values);
 
@@ -315,7 +315,7 @@ REGISTER_FUNCTION(ExtractKeyValuePairs)
 
             Escape sequences supported: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
             Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
-            `\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (`c <= 31`).
+            `\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
 
             This function will satisfy the use case where pre-escaping and post-escaping are not suitable. For instance, consider the following
             input string: `a: "aaaa\"bbb"`. The expected output is: `a: aaaa\"bbbb`.

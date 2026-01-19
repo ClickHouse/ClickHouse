@@ -1259,7 +1259,6 @@ class MergeTreeSettingsRandomizer:
         "auto_statistics_types": auto_statistics_generator(),
         "serialization_info_version": lambda: random.choice(["basic", "with_types"]),
         "string_serialization_version": lambda: random.choice(["single_stream", "with_size_stream"]),
-        "nullable_serialization_version": lambda: random.choice(["basic", "allow_sparse"]),
         "enable_shared_storage_snapshot_in_query": lambda: random.randint(0, 1),
     }
 
@@ -1759,8 +1758,8 @@ class TestCase:
 
         if tags:
             for build_flag in args.build_flags:
-                # We ignore no-buildflag for flaky check
-                if "no-" + build_flag in tags and not args.flaky_check:
+                # We ignore no-buildflag for flaky tests
+                if "no-" + build_flag in tags and args.test_runs == 1:
                     return FailureReason.BUILD
             for tag in tags:
                 tag = tag.replace("-", "_")
@@ -1982,7 +1981,6 @@ class TestCase:
 
         if (
             self.testcase_args.test_runs > 1
-            and self.testcase_args.flaky_check
             and total_time > TEST_MAX_RUN_TIME_IN_SECONDS
             and "long" not in self.tags
         ):
@@ -2749,7 +2747,6 @@ class TestSuite:
                 continue
             if USE_JINJA and test_name.endswith(".gen.sql"):
                 continue
-
             if not filter_func(test_name):
                 continue
             test_name = self.render_test_template(j2env, self.suite_path, test_name)
@@ -3543,7 +3540,6 @@ def main(args):
     runner_process_killed = multiprocessing.Event()
     multiprocessing_manager = multiprocessing.Manager()
     restarted_tests = multiprocessing_manager.list()
-    tests_start_time = time()
 
     if not check_server_started(args):
         msg = "Server is not responding. Cannot execute 'SELECT 1' query."
@@ -3764,37 +3760,9 @@ def main(args):
     else:
         print("All tests have finished.")
 
-    try:
-        clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
-
-        unchecked_memory = int(clickhouse_execute(args, f"""
-        SELECT sum(size) FROM system.trace_log
-        WHERE
-            trace_type = 'MemoryAllocatedWithoutCheck'
-            AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
-            AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-        """))
-        if unchecked_memory > 1e9:
-            print(f"""
-            Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.
-            Take a look at:
-
-            SELECT arrayStringConcat(symbols, '\\n'), sum(size)
-            FROM system.trace_log
-            WHERE trace_type = 'MemoryAllocatedWithoutCheck'
-                AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
-                AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-            GROUP BY 1
-            ORDER BY 2
-            LIMIT -10
-            FORMAT Vertical
-
-            See also at
-            - MemoryTrackerDebugBlockerInThread
-            - AllocatorWithMemoryTracking
-            """)
-    except Exception as e:
-        print(f"Failed get MemoryAllocatedWithoutCheck events from trace_log: {e}")
+    unchecked_memory = int(clickhouse_execute(args, "SELECT sum(value) FROM system.events WHERE event = 'MemoryAllocatedWithoutCheckBytes'"))
+    if unchecked_memory > 1e9:
+        print(f"Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB")
 
     if args.report_logs_stats:
         try:
@@ -4173,11 +4141,6 @@ def parse_args():
         action="store_true",
         help="Run tests for further server upgrade testing by ignoring all"
         "drop queries in tests for collecting data from new version of server",
-    )
-    parser.add_argument(
-        "--flaky-check",
-        action="store_true",
-        help="Enables CI flakiness detection by running new tests multiple times. This mode adds specific checks for the flaky-check job and requires the --test-runs argument.",
     )
     parser.add_argument(
         "--secure",

@@ -49,7 +49,6 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
 }
 
@@ -180,7 +179,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.throw_on_bad_escape_sequence = settings[Setting::input_format_json_throw_on_bad_escape_sequence];
     format_settings.json.ignore_unnecessary_fields = settings[Setting::input_format_json_ignore_unnecessary_fields];
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
-    format_settings.json.type_json_skip_invalid_typed_paths = settings[Setting::type_json_skip_invalid_typed_paths];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
     format_settings.json.pretty_print = settings[Setting::output_format_json_pretty_print];
     format_settings.json.infer_array_of_dynamic_from_array_of_different_values = settings[Setting::input_format_json_infer_array_of_dynamic_from_array_of_different_types];
@@ -199,6 +197,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
+    format_settings.parquet.use_native_reader = settings[Setting::input_format_parquet_use_native_reader];
     format_settings.parquet.use_native_reader_v3 = settings[Setting::input_format_parquet_use_native_reader_v3];
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
     format_settings.parquet.memory_low_watermark = settings[Setting::input_format_parquet_memory_low_watermark];
@@ -361,7 +360,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
     format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
-    format_settings.aggregate_function_input_format = settings[Setting::aggregate_function_input_format];
     format_settings.allow_special_serialization_kinds = settings[Setting::allow_special_serialization_kinds_in_output_formats];
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
@@ -669,13 +667,6 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     format->setProgressWriteFrequencyMicroseconds(context->getSettingsRef()[Setting::interactive_delay]);
 
     return format;
-}
-
-OutputFormatPtr FormatFactory::getDefaultJSONEachRowOutputFormat(WriteBuffer & buf, const Block & sample) const
-{
-    const auto & output_getter = getCreators("JSONEachRow").output_creator;
-    chassert(output_getter);
-    return output_getter(buf, sample, {}, {});
 }
 
 String FormatFactory::getContentType(const String & name, const std::optional<FormatSettings> & settings) const

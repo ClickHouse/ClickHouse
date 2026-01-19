@@ -619,7 +619,7 @@ inline bool tryToConvertToDayNum(DayNum & date, ExtendedDayNum & from)
 }
 
 template <typename ReturnType = void>
-inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr)
+inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr, bool saturate_on_overflow = true)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -636,12 +636,22 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
         if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
             return false;
 
-        auto ret = tryToMakeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
-        if (!ret)
-            return false;
+        if (saturate_on_overflow)
+        {
+            /// Use saturating versions - makeDayNum saturates out-of-range years, convertToDayNum saturates to 0 or 0xFFFF
+            ExtendedDayNum ret = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
+            convertToDayNum(date, ret);
+        }
+        else
+        {
+            /// Use non-saturating versions - return false for out-of-range values
+            auto ret = tryToMakeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
+            if (!ret)
+                return false;
 
-        if (!tryToConvertToDayNum(date, *ret))
-            return false;
+            if (!tryToConvertToDayNum(date, *ret))
+                return false;
+        }
 
         return true;
     }
@@ -685,9 +695,9 @@ inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf, const char * all
     return readDateTextImpl<bool>(date, buf, allowed_delimiters);
 }
 
-inline bool tryReadDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_delimiters = nullptr)
+inline bool tryReadDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_delimiters = nullptr, bool saturate_on_overflow = true)
 {
-    return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters);
+    return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters, saturate_on_overflow);
 }
 
 inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_delimiters = nullptr)
@@ -815,7 +825,7 @@ inline T parseFromStringWithoutAssertEOF(std::string_view str)
 }
 
 template <typename ReturnType = void, bool dt64_mode = false>
-ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true);
 
 template <typename ReturnType = void, bool t64_mode = false>
 ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
@@ -824,7 +834,7 @@ ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTIm
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
 template <typename ReturnType = void, bool dt64_mode = false>
-inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -898,15 +908,30 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             }
             else
             {
-                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-                if (!datetime_maybe)
-                    return false;
+                if (saturate_on_overflow)
+                {
+                    /// Use saturating version - makeDateTime saturates out-of-range years
+                    if (unlikely(year == 0))
+                        datetime = 0;
+                    else
+                        datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+                }
+                else
+                {
+                    /// Use non-saturating version - return false for out-of-range values
+                    auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                    if (!datetime_maybe)
+                        return false;
 
-                /// For usual DateTime check if value is within supported range
-                if (!dt64_mode && (*datetime_maybe < 0 || *datetime_maybe > UINT32_MAX))
-                    return false;
+                    /// For usual DateTime check if value is within supported range
+                    if constexpr (!dt64_mode)
+                    {
+                        if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                            return false;
+                    }
 
-                datetime = *datetime_maybe;
+                    datetime = *datetime_maybe;
+                }
             }
 
             if (dt_long)
@@ -919,7 +944,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
         /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
-    return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+    return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
 }
 
 /** In hhh:mm:ss format, according to specified time zone.
@@ -1107,7 +1132,7 @@ inline ReturnType readTimeTextImpl(time_t & time, ReadBuffer & buf, const DateLU
 }
 
 template <typename ReturnType>
-inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1121,7 +1146,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         {
             try
             {
-                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
             }
             catch (const DB::Exception &)
             {
@@ -1131,7 +1156,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         }
         else
         {
-            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters))
+            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow))
                 return ReturnType(false);
         }
     }
@@ -1366,14 +1391,14 @@ inline bool tryReadTimeText(time_t & time, ReadBuffer & buf, const DateLUTImpl &
     return readTimeTextImpl<bool>(time, buf, time_zone, allowed_date_delimiters, allowed_time_delimiters);
 }
 
-inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true)
 {
-    return readDateTimeTextImpl<bool>(datetime, buf, time_zone, allowed_date_delimiters, allowed_time_delimiters);
+    return readDateTimeTextImpl<bool>(datetime, buf, time_zone, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
 }
 
-inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true)
 {
-    return readDateTimeTextImpl<bool>(datetime64, scale, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+    return readDateTimeTextImpl<bool>(datetime64, scale, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
 }
 
 inline bool tryReadTime64Text(Time64 & time64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)

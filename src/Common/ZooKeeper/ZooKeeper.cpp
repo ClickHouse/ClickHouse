@@ -16,7 +16,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/StorageID.h>
 #include <base/getFQDNOrHostName.h>
 #include <base/sort.h>
 
@@ -152,7 +151,7 @@ void ZooKeeper::init(ZooKeeperArgs args_, std::unique_ptr<Coordination::IKeeper>
                            " To preserve balance in ZooKeeper usage, this ZooKeeper session will expire in {} seconds",
                       impl->getConnectedHostPort(), *node_idx, reconnect_timeout_sec);
 
-            auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool().createTask(DB::StorageID::createEmpty(), "ZKReconnect", [this, optimal_host = shuffled_hosts[0]]()
+            auto reconnect_task_holder = DB::Context::getGlobalContextInstance()->getSchedulePool().createTask("ZKReconnect", [this, optimal_host = shuffled_hosts[0]]()
             {
                 try
                 {
@@ -1121,10 +1120,7 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
     if (reconnect_task)
         (*reconnect_task)->deactivate();
 
-    auto args_copy = args;
-    args_copy.last_zxid_seen = impl->getLastZXIDSeen();
-
-    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(args_copy, zk_log, aggregated_zookeeper_log, availability_zones, std::move(optimal_impl)));
+    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(args, zk_log, aggregated_zookeeper_log, availability_zones, std::move(optimal_impl)));
     res->initSession();
     return res;
 }

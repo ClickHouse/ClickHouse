@@ -792,14 +792,11 @@ CONV_FN(BinaryOperator, bop)
         case BINOP_LEGR:
             ret += " <> ";
             break;
-        case BINOP_LEEQGR:
-            ret += " <=> ";
-            break;
-        case BINOP_IS_DISTINCT_FROM:
-            ret += " IS DISTINCT FROM ";
-            break;
         case BINOP_IS_NOT_DISTINCT_FROM:
             ret += " IS NOT DISTINCT FROM ";
+            break;
+        case BINOP_LEEQGR:
+            ret += " <=> ";
             break;
         case BINOP_AND:
             ret += " AND ";
@@ -2696,24 +2693,30 @@ CONV_FN(GroupByStatement, gbs)
     }
 }
 
-CONV_FN(LimitByStatement, ls)
+CONV_FN(LimitStatement, ls)
 {
     ret += "LIMIT ";
     ExprToString(ret, ls.limit());
     if (ls.has_offset())
     {
-        ret += ls.comma() ? "," : " OFFSET";
-        ret += " ";
+        ret += ", ";
         ExprToString(ret, ls.offset());
     }
-    ret += " BY ";
-    if (ls.has_by_expr())
+    if (ls.with_ties())
     {
-        ExprToString(ret, ls.by_expr());
+        ret += " WITH TIES";
     }
-    else
+    if (ls.has_by_expr() || ls.lall())
     {
-        ret += "ALL";
+        ret += " BY ";
+        if (ls.has_by_expr())
+        {
+            ExprToString(ret, ls.by_expr());
+        }
+        else
+        {
+            ret += "ALL";
+        }
     }
 }
 
@@ -2723,22 +2726,18 @@ CONV_FN(FetchStatement, fet)
     ret += fet.first() ? "FIRST" : "NEXT";
     ret += " ";
     ExprToString(ret, fet.row_count());
-    ret += " ";
-    ret += RowsKeyword_Name(fet.rows()).substr(4);
+    ret += " ROW";
+    ret += fet.rows() ? "S" : "";
     ret += " ";
     ret += fet.only() ? "ONLY" : "WITH TIES";
 }
 
-void OffsetStatementToString(String & ret, const bool has_limit, const OffsetStatement & off)
+CONV_FN(OffsetStatement, off)
 {
-    ret += (has_limit && off.comma()) ? "," : "OFFSET";
-    ret += " ";
+    ret += "OFFSET ";
     ExprToString(ret, off.row_count());
-    if (off.has_rows() || off.has_fetch())
-    {
-        ret += " ";
-        ret += off.has_rows() ? RowsKeyword_Name(off.rows()).substr(4) : "ROWS";
-    }
+    ret += " ROW";
+    ret += off.rows() ? "S" : "";
     if (off.has_fetch())
     {
         ret += " ";
@@ -2819,20 +2818,15 @@ CONV_FN(SelectStatementCore, ssc)
         ret += " ";
         OrderByStatementToString(ret, ssc.orderby());
     }
-    if (ssc.has_limit_by())
-    {
-        ret += " ";
-        LimitByStatementToString(ret, ssc.limit_by());
-    }
     if (ssc.has_limit())
     {
-        ret += " LIMIT ";
-        ExprToString(ret, ssc.limit());
+        ret += " ";
+        LimitStatementToString(ret, ssc.limit());
     }
-    if (ssc.has_offset() && (ssc.has_limit() || !ssc.has_limit_by()))
+    else if (ssc.has_offset())
     {
         ret += " ";
-        OffsetStatementToString(ret, ssc.has_limit(), ssc.offset());
+        OffsetStatementToString(ret, ssc.offset());
     }
 }
 
@@ -5081,10 +5075,6 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kDropTextIndexPostingsCache:
             ret += "DROP TEXT INDEX POSTINGS CACHE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kDropTextIndexCaches:
-            ret += "DROP TEXT INDEX CACHES";
             can_set_cluster = true;
             break;
         default:

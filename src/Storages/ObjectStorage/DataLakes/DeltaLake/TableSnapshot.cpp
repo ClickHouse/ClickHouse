@@ -423,6 +423,8 @@ private:
     ThreadFromGlobalPool thread;
 };
 
+static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
+
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
     DB::ObjectStoragePtr object_storage_,
@@ -447,7 +449,12 @@ void TableSnapshot::updateSettings(const DB::ContextPtr & context)
     enable_expression_visitor_logging = settings[DB::Setting::delta_lake_enable_expression_visitor_logging];
     throw_on_engine_visitor_error = settings[DB::Setting::delta_lake_throw_on_engine_predicate_error];
     enable_engine_predicate = settings[DB::Setting::delta_lake_enable_engine_predicate];
-    if (settings[DB::Setting::delta_lake_snapshot_version].value != LATEST_SNAPSHOT_VERSION)
+
+    if (settings[DB::Setting::delta_lake_snapshot_version].value == LATEST_SNAPSHOT_VERSION)
+    {
+        snapshot_version_to_read = std::nullopt;
+    }
+    else
     {
         if (settings[DB::Setting::delta_lake_snapshot_version].value < 0)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Snapshot version cannot be a negative value");

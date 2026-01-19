@@ -18,7 +18,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
-#include <Interpreters/RenameMultipleColumnsVisitor.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -82,7 +81,6 @@
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Poco/Net/SocketAddress.h>
@@ -102,8 +100,6 @@ namespace ProfileEvents
     extern const Event FailedInternalQuery;
     extern const Event FailedInternalInsertQuery;
     extern const Event FailedInternalSelectQuery;
-    extern const Event FailedInitialQuery;
-    extern const Event FailedInitialSelectQuery;
     extern const Event QueryTimeMicroseconds;
     extern const Event SelectQueryTimeMicroseconds;
     extern const Event InsertQueryTimeMicroseconds;
@@ -271,31 +267,6 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
                 "OpenTelemetry traceparent '{}'",
                 client_info.client_trace_context.composeTraceparentHeader());
         }
-    }
-}
-
-static void renameSimpleAliases(ASTPtr node, const StoragePtr & table)
-{
-    if (!node)
-        return;
-
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
-    std::unordered_map<String, String> column_rename_map;
-    for (const auto & [name, default_desc] : metadata_snapshot->columns.getDefaults())
-    {
-        if (default_desc.kind == ColumnDefaultKind::Alias)
-        {
-            const ASTPtr & alias_expression = default_desc.expression;
-            if (const ASTIdentifier * actual_column = typeid_cast<const ASTIdentifier *>(alias_expression.get()))
-                column_rename_map[name] = actual_column->full_name;
-        }
-    }
-
-    if (!column_rename_map.empty())
-    {
-        RenameMultipleColumnsData rename_data{column_rename_map};
-        RenameMultipleColumnsVisitor rename_columns_visitor{rename_data};
-        rename_columns_visitor.visit(node);
     }
 }
 
@@ -719,8 +690,6 @@ void logQueryFinishImpl(
                 ReadableSize(elem.read_bytes / elapsed_seconds));
         }
 
-        context->getRuntimeFilterLookup()->logStats();
-
         elem.query_result_cache_usage = query_result_cache_usage;
 
         elem.is_internal = internal;
@@ -814,13 +783,6 @@ void logQueryException(
         ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
     else if (query_ast->as<ASTInsertQuery>())
         ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
-
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
-        if (!query_ast || query_ast->as<ASTSelectQuery>() || query_ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
-    }
 
     if (internal)
     {
@@ -948,13 +910,6 @@ void logExceptionBeforeStart(
         ProfileEvents::increment(ProfileEvents::FailedSelectQuery);
     else if (ast->as<ASTInsertQuery>())
         ProfileEvents::increment(ProfileEvents::FailedInsertQuery);
-
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-    {
-        ProfileEvents::increment(ProfileEvents::FailedInitialQuery);
-        if (!ast || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
-            ProfileEvents::increment(ProfileEvents::FailedInitialSelectQuery);
-    }
 
     QueryStatusInfoPtr info;
     if (QueryStatusPtr process_list_elem = context->getProcessListElementSafe())
@@ -1442,13 +1397,8 @@ static BlockIO executeQueryImpl(
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
 
             if (insert_query->table_id)
-            {
                 if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context))
-                {
                     async_insert_enabled |= table->areAsynchronousInsertsEnabled();
-                    renameSimpleAliases(insert_query->columns, table);
-                }
-            }
         }
 
         if (insert_query && insert_query->select)
@@ -1470,6 +1420,8 @@ static BlockIO executeQueryImpl(
                     input_storage.setPipe(std::move(pipe));
                 }
             }
+
+            insert_query->tail.reset();
         }
         else
         {
@@ -1613,13 +1565,16 @@ static BlockIO executeQueryImpl(
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
-                        result_details.query_cache_entry_created_at = reader.entryCreatedAt();
-                        result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
-
                         QueryPipeline pipeline;
                         pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
+
+                        if (const auto & used_key = reader.getKey(); used_key)
+                        {
+                            result_details.query_cache_created_at = used_key->created_at;
+                            result_details.query_cache_expires_at = used_key->expires_at;
+                        }
 
                         return true;
                     }
@@ -1775,10 +1730,11 @@ static BlockIO executeQueryImpl(
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }
 
-                            /// We will expose the info in HTTP headers, but only if the cache is enabled for reading (otherwise browsers should not cache either)
-                            /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
+                            /// We will also provide the info in HTTP headers,
+                            /// but only if the cache is enabled for reading (otherwise browsers should not cache either)
+                            /// and we set only "expires_at", not "Age" as the entry has not aged at this moment in time.
                             if (settings[Setting::enable_reads_from_query_cache])
-                                result_details.query_cache_entry_expires_at = expires_at;
+                                result_details.query_cache_expires_at = expires_at;
                         }
                     }
                 }

@@ -36,7 +36,6 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool query_plan_convert_join_to_in;
-    extern const SettingsBool query_plan_remove_unused_columns;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool collect_hash_table_stats_during_joins;
@@ -77,7 +76,6 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsBool query_plan_read_in_order_through_join;
 }
 
 namespace ServerSetting
@@ -132,7 +130,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
     use_join_disjunctions_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::use_join_disjunctions_push_down];
-    remove_unused_columns = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_unused_columns];
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
@@ -143,7 +140,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     query_condition_cache_store_conditions_as_plaintext = from[Setting::query_condition_cache_store_conditions_as_plaintext];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes] && from[Setting::use_skip_indexes_on_data_read];
-    read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];

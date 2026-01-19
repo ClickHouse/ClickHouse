@@ -137,11 +137,11 @@ jobs:
             python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
           fi
 
-  build_arm_fuzzers:
+  build_fuzzers:
     runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9mdXp6ZXJzKQ==') }}
-    name: "Build (arm_fuzzers)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGZ1enplcnMp') }}
+    name: "Build (fuzzers)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status }}
@@ -173,13 +173,13 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_fuzzers)' --workflow "NightlyFuzzers" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (fuzzers)' --workflow "NightlyFuzzers" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_fuzzers)' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (fuzzers)' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
           fi
 
   build_amd_coverage:
-    runs-on: [self-hosted, arm-large]
+    runs-on: [self-hosted, amd-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9jb3ZlcmFnZSk=') }}
     name: "Build (amd_coverage)"
@@ -221,7 +221,7 @@ jobs:
 
   libfuzzer_tests:
     runs-on: [self-hosted, arm-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_fuzzers]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_fuzzers]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'bGliRnV6emVyIHRlc3Rz') }}
     name: "libFuzzer tests"
     outputs:
@@ -590,7 +590,7 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_fuzzers, build_amd_coverage, libfuzzer_tests, stateless_tests_amd_coverage_1_8, stateless_tests_amd_coverage_2_8, stateless_tests_amd_coverage_3_8, stateless_tests_amd_coverage_4_8, stateless_tests_amd_coverage_5_8, stateless_tests_amd_coverage_6_8, stateless_tests_amd_coverage_7_8, stateless_tests_amd_coverage_8_8]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_fuzzers, build_amd_coverage, libfuzzer_tests, stateless_tests_amd_coverage_1_8, stateless_tests_amd_coverage_2_8, stateless_tests_amd_coverage_3_8, stateless_tests_amd_coverage_4_8, stateless_tests_amd_coverage_5_8, stateless_tests_amd_coverage_6_8, stateless_tests_amd_coverage_7_8, stateless_tests_amd_coverage_8_8]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:

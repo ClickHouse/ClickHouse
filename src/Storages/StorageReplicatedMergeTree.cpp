@@ -29,7 +29,7 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 
-#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/SingleDiskVolume.h>
 
 #include <base/sort.h>
@@ -239,7 +239,6 @@ namespace FailPoints
     extern const char zero_copy_unlock_zk_fail_before_op[];
     extern const char zero_copy_unlock_zk_fail_after_op[];
     extern const char rmt_lightweight_update_sleep_after_block_allocation[];
-    extern const char rmt_merge_selecting_task_pause_when_scheduled[];
 }
 
 namespace ErrorCodes
@@ -436,24 +435,24 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     /// We create and deactivate all tasks for consistency.
     /// They all will be scheduled and activated by the restarting thread.
     queue_updating_task = getContext()->getSchedulePool().createTask(
-        getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
+        getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
 
     queue_updating_task->deactivate();
 
     mutations_updating_task = getContext()->getSchedulePool().createTask(
-        getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsUpdatingTask)", [this]{ mutationsUpdatingTask(); });
+        getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsUpdatingTask)", [this]{ mutationsUpdatingTask(); });
 
     mutations_updating_task->deactivate();
 
     merge_selecting_task = getContext()->getSchedulePool().createTask(
-        getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
+        getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
 
     /// Will be activated if we will achieve leader state.
     merge_selecting_task->deactivate();
     merge_selecting_sleep_ms = (*getSettings())[MergeTreeSetting::merge_selecting_sleep_ms];
 
     mutations_finalizing_task = getContext()->getSchedulePool().createTask(
-        getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
+        getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
 
     /// This task can be scheduled by different parts of code even when storage is readonly.
     /// This can lead to redundant exceptions during startup.
@@ -2738,23 +2737,36 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     /// And, if you do not, the parts will come to life after the server is restarted.
     /// Therefore, we use all data parts.
 
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     PartsToRemoveFromZooKeeper parts_to_remove;
     {
         auto data_parts_lock = lockParts();
-        bool clone_to_detached = entry.detach;
-
-        if (clone_to_detached)
-            LOG_DEBUG(log, "Detaching parts.");
-        else
-            LOG_DEBUG(log, "Removing parts.");
-
-        parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range_info, data_parts_lock, /*create_empty_part=*/ true, clone_to_detached);
-
+        parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range_info, data_parts_lock);
         if (parts_to_remove.empty())
         {
             if (!drop_range_info.isFakeDropRangePart())
                 LOG_INFO(log, "Log entry {} tried to drop single part {}, but part does not exist", entry.znode_name, entry.new_part_name);
             return;
+        }
+    }
+
+    if (entry.detach)
+        LOG_DEBUG(log, "Detaching parts.");
+    else
+        LOG_DEBUG(log, "Removing parts.");
+
+    if (entry.detach)
+    {
+        /// If DETACH clone parts to detached/ directory
+        for (const auto & part : parts_to_remove)
+        {
+            if (auto part_to_detach = part.getPartIfItWasActive())
+            {
+                String part_dir = part_to_detach->getDataPartStorage().getPartDirectory();
+                LOG_INFO(log, "Detaching {}", part_dir);
+                auto holder = getTemporaryPartDirectoryHolder(fs::path(DETACHED_DIR_NAME) / part_dir);
+                part_to_detach->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
+            }
         }
     }
 
@@ -4079,8 +4091,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 {
     if (!is_leader)
         return;
-
-    FailPointInjection::pauseFailPoint(FailPoints::rmt_merge_selecting_task_pause_when_scheduled);
 
     const auto storage_settings_ptr = getSettings();
     const bool deduplicate = false; /// TODO: read deduplicate option from table config
@@ -6581,8 +6591,8 @@ void StorageReplicatedMergeTree::alter(
                 future_metadata_in_zk.ttl_table = "";
         }
 
-        String new_indices_str = future_metadata.secondary_indices.explicitToString();
-        if (new_indices_str != current_metadata->secondary_indices.explicitToString())
+        String new_indices_str = future_metadata.secondary_indices.toString();
+        if (new_indices_str != current_metadata->secondary_indices.toString())
             future_metadata_in_zk.skip_indices = new_indices_str;
 
         String new_projections_str = future_metadata.projections.toString();
@@ -11116,7 +11126,7 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
-void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const
+void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const
 {
     try
     {

@@ -612,7 +612,7 @@ namespace
 
         if (!type->equals(*node->result_type))
         {
-            cast_col = tryCastColumn(column, value->result_type, node->result_type);
+            cast_col = tryCastColumn(column, type, node->result_type);
             if (!cast_col)
                 return {};
             const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);

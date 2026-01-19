@@ -20,11 +20,9 @@ public:
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
         String filter_name_,
-        size_t filters_to_merge_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_bytes_,
-        UInt64 bloom_filter_hash_functions_,
-        bool allow_to_use_not_exact_filter_);
+        UInt64 bloom_filter_hash_functions_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
 
@@ -41,7 +39,7 @@ private:
 
     FunctionBasePtr cast_to_target_type;
 
-    UniqueRuntimeFilterPtr built_filter;
+    std::unique_ptr<RuntimeFilter> built_filter;
 
     void finish();
 };

@@ -907,10 +907,4 @@ DataTypePtr decodeDataType(const String & data)
     return decodeDataType(buf);
 }
 
-DataTypePtr decodeDataType(std::string_view data)
-{
-    ReadBufferFromString buf(data);
-    return decodeDataType(buf);
-}
-
 }

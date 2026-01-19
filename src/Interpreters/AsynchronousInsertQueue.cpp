@@ -12,7 +12,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromTrackedString.h>
+#include <IO/WriteBufferFromStrictString.h>
 #include <IO/copyData.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AsynchronousInsertLog.h>
@@ -420,7 +420,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
     }
     preprocessInsertQuery(query, query_context);
 
-    TrackedString bytes;
+    StrictString bytes;
     {
         /// Read at most 'async_insert_max_data_size' bytes of data.
         /// If limit is exceeded we will fallback to synchronous insert
@@ -445,7 +445,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         }
 
         {
-            WriteBufferFromTrackedString write_buf(bytes);
+            WriteBufferFromStrictString write_buf(bytes);
             copyData(limit_buf, write_buf);
         }
 
@@ -918,8 +918,8 @@ try
     /// 'resetParser' doesn't work for parallel parsing.
     key.settings->set("input_format_parallel_parsing", false);
     /// It maybe insert into distributed table.
-    /// It doesn't make sense to make insert into destination tables asynchronous.
-    key.settings->set("async_insert", false);
+    /// We want the remote part to decide if the insert will be async or not.
+    key.settings->setDefaultValue("async_insert");
 
     insert_context->makeQueryContext();
 

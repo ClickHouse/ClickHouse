@@ -8,7 +8,6 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Interpreters/ActionsDAG.h>
 
-#include <boost/dynamic_bitset.hpp>
 
 namespace DB
 {
@@ -22,8 +21,6 @@ class VectorSimilarityIndexCache;
 class MergeTreeDataSelectExecutor
 {
 public:
-    using PartialDisjunctionResult = boost::dynamic_bitset<>;
-
     explicit MergeTreeDataSelectExecutor(const MergeTreeData & data_);
 
     /** When reading, selects a set of parts that covers the desired range of the index.
@@ -81,7 +78,6 @@ public:
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
-        const std::optional<KeyCondition> & key_condition_rpn_template,
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const RangesInDataPartReadHints & in_read_hints,
@@ -89,8 +85,6 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
-        bool use_skip_indexes_for_disjunctions,
-        PartialDisjunctionResult & partial_disjunction_result,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -103,14 +97,6 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
-
-    /// Maximum number of elements in the RPN condition when evaluation of OR-connected filter conditions using skip indexes (setting
-    /// 'use_skip_indexes_for_disjunctions') is enabled.
-    /// One bit per RPN element is consumed to store the partial evaluation results.
-    /// Example:
-    /// - (A = 5 OR B = 5) requires 3 bits - for A, for B and for OR(A, B).
-    /// - Likewise, (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits.
-    static constexpr size_t MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT = 32;
 
 private:
     const MergeTreeData & data;
@@ -214,14 +200,12 @@ public:
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
         const std::optional<KeyCondition> & total_offset_condition,
-        const std::optional<KeyCondition> & key_condition_rpn_template,
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
-        bool use_skip_indexes_for_disjunctions_,
         bool find_exact_ranges,
         bool is_final_query,
         bool is_parallel_reading_from_replicas);
@@ -254,15 +238,6 @@ public:
         const MergeTreeData & data,
         const ReadFromMergeTree::AnalysisResult & result,
         const ContextPtr & context);
-
-    static MarkRanges mergePartialResultsForDisjunctions(
-        MergeTreeData::DataPartPtr part,
-        const MarkRanges & ranges,
-        const KeyCondition & rpn_template_for_eval_result,
-        const PartialDisjunctionResult & partial_eval_results,
-        MergeTreeReaderSettings reader_settings,
-        LoggerPtr log);
-
 };
 
 }

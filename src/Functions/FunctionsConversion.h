@@ -237,25 +237,20 @@ struct ToTimeImpl
 
     static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
     {
-        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
-        Int64 offset = time_zone.timezoneOffset(dt64);
-        Int64 local_seconds = (dt64 + offset) % 86400;
-        if (local_seconds < 0)
-            local_seconds += 86400;
-
-        if (local_seconds > MAX_TIME_TIMESTAMP) [[unlikely]]
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
+            return static_cast<Int32>(time_zone.toTime(dt64));
+        else
         {
-            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            if (dt64 > MAX_TIME_TIMESTAMP || dt64 < (-1 * MAX_TIME_TIMESTAMP))
             {
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", dt64);
+                if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    return MAX_TIME_TIMESTAMP;
+                else
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", dt64);
             }
-            else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-            {
-                return MAX_TIME_TIMESTAMP;
-            }
+            else
+                return static_cast<Int32>(time_zone.toTime(dt64));
         }
-
-        return static_cast<Int32>(local_seconds);
     }
 };
 
@@ -399,12 +394,9 @@ struct ToTimeTransformFromDateTime
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         auto utc_seconds = from;
-        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
-        Int64 offset = time_zone.timezoneOffset(utc_seconds);
+        UInt64 offset = time_zone.timezoneOffset(utc_seconds);
         /// compute local time-of-day in seconds
-        Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
-        if (local_seconds < 0)
-            local_seconds += 86400;
+        UInt64 local_seconds = (utc_seconds + offset) % 86400;
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -671,20 +663,15 @@ struct ToTime64Transform
         return execute(dt, time_zone);
     }
 
-    Time64::NativeType execute(Int32 d, const DateLUTImpl & /*time_zone*/) const
+    Time64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
     {
-        // DataTypeTime stores seconds (or total seconds for hhh:mm:ss). Preserve value and add scale
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(d, 0, scale_multiplier);
+        Int32 dt = static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<int>(d))));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(dt, 0, scale_multiplier);
     }
 
     Time64::NativeType execute(UInt32 dt, const DateLUTImpl & time_zone) const
     {
-        /// Compute local seconds-of-day using timezone offset at this moment.
-        Int64 offset = time_zone.timezoneOffset(dt);
-        Int64 local_seconds = (static_cast<Int64>(dt) + offset) % 86400;
-        if (local_seconds < 0)
-            local_seconds += 86400;
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(local_seconds, 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(time_zone.toTime(dt), 0, scale_multiplier);
     }
 };
 
@@ -782,7 +769,7 @@ struct FormatImpl<DataTypeEnum<FieldType>>
         }
         else
         {
-            std::string_view res;
+            StringRef res;
             bool is_ok = type->getNameForValue(x, res);
             if (is_ok)
                 writeString(res, wb);
@@ -1718,14 +1705,13 @@ struct ConvertImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
-            // Prefer the source DateTime64's timezone so Time64 reflects the same wall-clock time
-            const auto & from_type = static_cast<const DataTypeDateTime64 &>(*arguments[0].type);
-            time_zone = &from_type.getTimeZone();
+            if (!time_zone && arguments.size() <= 2)
+                time_zone = &DateLUT::instance();
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                if (arguments.size() > 2 && !arguments[2].column.get()->getDataAt(i).empty())
-                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
+                if (arguments.size() > 2 && !arguments[2].column.get()->getDataAt(i).toString().empty())
+                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
 
                 if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
@@ -1753,11 +1739,11 @@ struct ConvertImpl
                 auto utc_seconds = vec_to[i] / scale_mult;
                 auto fraction = vec_to[i] % scale_mult;
 
-                /// Compute local seconds-of-day using timezone offset (aligned with other toTime/toTime64 conversions)
-                Int64 offset = time_zone->timezoneOffset(utc_seconds);
-                Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
-                if (local_seconds < 0)
-                    local_seconds += 86400;
+                // Get the timezone offset (in seconds) for the target timezone at this moment
+                UInt64 offset = time_zone->timezoneOffset(utc_seconds);
+
+                // Compute local time-of-day in seconds
+                UInt64 local_seconds = (utc_seconds + offset) % 86400;
 
                 // Reassemble the result
                 vec_to[i] = local_seconds * scale_mult + fraction;
@@ -1848,8 +1834,8 @@ struct ConvertImpl
                     {
                         if (!time_zone_column && arguments.size() > 1)
                         {
-                            if (!arguments[1].column.get()->getDataAt(i).empty())
-                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i));
+                            if (!arguments[1].column.get()->getDataAt(i).toString().empty())
+                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
@@ -1882,8 +1868,8 @@ struct ConvertImpl
                     {
                         if (!time_zone_column && arguments.size() > 1)
                         {
-                            if (!arguments[1].column.get()->getDataAt(i).empty())
-                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i));
+                            if (!arguments[1].column.get()->getDataAt(i).toString().empty())
+                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
@@ -2226,7 +2212,6 @@ struct ConvertImpl
                 {
                     vec_to[i] = static_cast<ToFieldType>(0); // when we convert date toTime, we should have 000:00:00 as a result, and conversely
                 }
-                /// Time64->Time64 scale conversion is handled by the generic decimal conversion logic below.
                 else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 {
                     if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2410,8 +2395,8 @@ struct ConvertImplGenericFromString
                 continue;
             }
 
-            const auto val = column_from.getDataAt(i);
-            ReadBufferFromMemory read_buffer(val);
+            const auto & val = column_from.getDataAt(i);
+            ReadBufferFromMemory read_buffer(val.data, val.size);
             try
             {
                 serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
@@ -2506,7 +2491,7 @@ struct ConvertImplFromDynamicToColumn
                 if (local_discriminators[i] == shared_variant_local_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value);
+                    ReadBufferFromMemory buf(value.data, value.size);
                     auto type = decodeDataType(buf);
                     auto type_name = type->getName();
                     auto it = shared_variant_to_index.find(type_name);
@@ -4892,26 +4877,31 @@ private:
     template <typename T>
     WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const
     {
-        const DataTypePtr & nested_type = from_array_type.getNestedType();
+        const DataTypePtr & from_nested_type = from_array_type.getNestedType();
+        const DataTypePtr & to_nested_type = to_qbit_type.getElementType();
+        const size_t dimension = to_qbit_type.getDimension();
+        const size_t element_size = to_qbit_type.getElementSize();
 
-        if (!nested_type->equals(*to_qbit_type.getElementType()))
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Cannot convert from Array({}) to QBit({}, {})",
-                nested_type->getName(),
-                to_qbit_type.getElementType()->getName(),
-                to_qbit_type.getDimension());
-
-        /// Number of elements in the vector and width (in bits) of each element
-        size_t n = to_qbit_type.getDimension();
-        size_t size = to_qbit_type.getElementSize();
-
-        return [n, size](
+        return [nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type),
+                from_nested_type,
+                to_nested_type,
+                to_array_type = std::make_shared<DataTypeArray>(to_nested_type),
+                dimension,
+                element_size](
                    ColumnsWithTypeAndName & arguments,
                    const DataTypePtr & result_type,
                    const ColumnNullable * nullable_source,
                    size_t /* input_rows_count */) -> ColumnPtr
-        { return convertArrayToQBit<T>(arguments, result_type, nullable_source, n, size); };
+        {
+            const auto & col_array = assert_cast<const ColumnArray &>(*arguments.front().column);
+
+            ColumnsWithTypeAndName nested_columns{{col_array.getDataPtr(), from_nested_type, ""}};
+            auto converted_nested = nested_function(nested_columns, to_nested_type, nullable_source, nested_columns.front().column->size());
+            auto converted_array = ColumnArray::create(converted_nested, col_array.getOffsetsPtr());
+            ColumnsWithTypeAndName converted_arguments{{std::move(converted_array), std::make_shared<DataTypeArray>(to_nested_type), ""}};
+
+            return convertArrayToQBit<T>(converted_arguments, result_type, nullable_source, dimension, element_size);
+        };
     }
 
     /// The case of: tuple([key1, key2, ..., key_n], [value1, value2, ..., value_n])
@@ -5802,7 +5792,7 @@ private:
                         if (!nullable_col->isNullAt(i))
                         {
                             const auto & value = enum_type->getNameForValue(enum_data[i]);
-                            res->insertData(value.data(), value.size());
+                            res->insertData(value.data, value.size);
                         }
                         else
                             res->insertDefault();
@@ -5813,7 +5803,7 @@ private:
                     for (size_t i = 0; i < size; ++i)
                     {
                         const auto & value = enum_type->getNameForValue(enum_data[i]);
-                        res->insertData(value.data(), value.size());
+                        res->insertData(value.data, value.size);
                     }
                 }
 

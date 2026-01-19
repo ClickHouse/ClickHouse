@@ -395,7 +395,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
             const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
             for (size_t i = 0; i != shared_data_paths->size(); ++i)
             {
-                auto path = shared_data_paths->getDataAt(i);
+                auto path = shared_data_paths->getDataAt(i).toView();
                 if (auto it = shared_data_paths_statistics.find(path); it != shared_data_paths_statistics.end())
                     ++it->second;
                 else if (shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
@@ -815,6 +815,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         return;
     }
 
+    column_object.validateDynamicPathsSizes();
     const auto & dynamic_paths = column_object.getDynamicPaths();
     const auto & shared_data = column_object.getSharedDataPtr();
 
@@ -863,7 +864,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[offset + limit - 1];
         for (size_t i = start; i != end; ++i)
         {
-            auto path = shared_data_paths->getDataAt(i);
+            auto path = shared_data_paths->getDataAt(i).toView();
             if (auto it = object_state->statistics.shared_data_paths_statistics.find(path); it != object_state->statistics.shared_data_paths_statistics.end())
                 ++it->second;
             else if (object_state->statistics.shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
@@ -1046,7 +1047,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
     settings.path.pop_back();
 
-    column_object.validateDynamicPathsAndSharedData(shared_data_previous_size);
+    column_object.repairDuplicatesInDynamicPathsAndSharedData(shared_data_previous_size);
 }
 
 void SerializationObject::serializeBinary(const Field & field, WriteBuffer & ostr, const DB::FormatSettings & settings) const
@@ -1109,7 +1110,7 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
     {
         writeStringBinary(shared_data_paths->getDataAt(i), ostr);
         auto value = shared_data_values->getDataAt(i);
-        ostr.write(value.data(), value.size());
+        ostr.write(value.data, value.size);
     }
 }
 

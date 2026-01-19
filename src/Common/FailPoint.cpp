@@ -65,7 +65,6 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
-    ONCE(distributed_cache_fail_continue_request) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(object_storage_queue_fail_commit) \
@@ -89,6 +88,7 @@ static struct InitFiu
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
+    ONCE(column_aggregate_function_ensureOwnership_exception) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \

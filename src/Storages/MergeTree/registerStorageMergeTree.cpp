@@ -719,18 +719,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
 
-        metadata.add_minmax_index_for_numeric_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns];
-        metadata.add_minmax_index_for_string_columns = (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns];
         if (args.query.columns_list && args.query.columns_list->indices)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, context));
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
-
-                if (args.mode <= LoadingStrictnessLevel::CREATE
-                    && (metadata.add_minmax_index_for_numeric_columns || metadata.add_minmax_index_for_string_columns)
-                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+                if (args.mode <= LoadingStrictnessLevel::CREATE && (
+                    ((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
+                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
+                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
                 }
@@ -740,7 +738,26 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// Try to add "implicit" min-max indexes on all columns
         for (const auto & column : metadata.columns)
         {
-            metadata.addImplicitIndicesForColumn(column, context);
+            if ((isNumber(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns])
+                || (isString(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns]))
+            {
+                bool minmax_index_exists = false;
+
+                for (const auto & index : metadata.secondary_indices)
+                {
+                    if (index.column_names.front() == column.name && index.type == "minmax")
+                    {
+                        minmax_index_exists = true;
+                        break;
+                    }
+                }
+
+                if (minmax_index_exists)
+                    continue;
+
+                auto new_index = createImplicitMinMaxIndexDescription(column.name, columns, context);
+                metadata.secondary_indices.push_back(std::move(new_index));
+            }
         }
 
         String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];

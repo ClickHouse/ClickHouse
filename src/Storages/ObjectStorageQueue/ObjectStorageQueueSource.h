@@ -6,7 +6,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <base/defines.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -127,7 +126,6 @@ public:
         };
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
         bool hasKeysForProcessor(const Processor & processor) const;
-        std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
     };
 
     struct CommitSettings
@@ -146,7 +144,6 @@ public:
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
     };
     using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
-    using AfterProcessingSettings = ObjectStorageQueuePostProcessor::AfterProcessingSettings;
 
     ObjectStorageQueueSource(
         String name_,
@@ -159,7 +156,6 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         const CommitSettings & commit_settings_,
-        const AfterProcessingSettings & after_processing_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
         size_t max_block_size_,
@@ -219,7 +215,6 @@ private:
     const std::optional<FormatSettings> format_settings;
     FormatParserSharedResourcesPtr parser_shared_resources;
     const CommitSettings commit_settings;
-    const AfterProcessingSettings after_processing_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
     const ObjectStorageQueueMode mode;

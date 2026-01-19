@@ -178,7 +178,7 @@ struct DictionaryBlockBase
     bool empty() const;
     size_t size() const;
 
-    size_t upperBound(std::string_view token) const;
+    size_t upperBound(const StringRef & token) const;
 };
 
 struct DictionaryBlock : public DictionaryBlockBase
@@ -232,7 +232,7 @@ using TextIndexHeaderPtr = std::shared_ptr<TextIndexHeader>;
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokenToPostingsInfosMap = absl::flat_hash_map<std::string_view, TokenPostingsInfo>;
+    using TokenToPostingsInfosMap = absl::flat_hash_map<StringRef, TokenPostingsInfo>;
 
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
     ~MergeTreeIndexGranuleText() override = default;
@@ -244,9 +244,8 @@ public:
     bool empty() const override { return header->numberOfTokens() == 0; }
     size_t memoryUsageBytes() const override;
 
-    bool hasAnyQueryTokens(const TextSearchQuery & query) const;
-    bool hasAllQueryTokens(const TextSearchQuery & query) const;
-    bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
+    bool hasAnyTokenFromQuery(const TextSearchQuery & query) const;
+    bool hasAllTokensFromQuery(const TextSearchQuery & query) const;
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     void resetAfterAnalysis();
@@ -269,7 +268,7 @@ private:
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsMap = StringHashMap<PostingListBuilder>;
-using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
+using SortedTokensAndPostings = std::vector<std::pair<StringRef, PostingListBuilder *>>;
 
 /// Text index granule created on writing of the index.
 /// It differs from MergeTreeIndexGranuleText because it
@@ -314,7 +313,7 @@ struct MergeTreeIndexTextGranuleBuilder
         TokenExtractorPtr token_extractor_);
 
     /// Extracts tokens from the document and adds them to the granule.
-    void addDocument(std::string_view document);
+    void addDocument(StringRef document);
     void incrementCurrentRow() { ++current_row; }
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();

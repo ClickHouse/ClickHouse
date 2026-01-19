@@ -47,10 +47,10 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/S3Settings.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
@@ -64,7 +64,6 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
-#include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
@@ -249,7 +248,6 @@ namespace CurrentMetrics
     extern const Metric IndexUncompressedCacheBytes;
     extern const Metric IndexUncompressedCacheCells;
     extern const Metric ZooKeeperSessionExpired;
-    extern const Metric ZooKeeperConnectionLossStartedTimestampSeconds;
 }
 
 
@@ -324,7 +322,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
-    extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
 
 namespace MergeTreeSetting
@@ -984,6 +981,8 @@ struct ContextSharedPart : boost::noncopyable
         {
             /// Stop zookeeper connection
             std::lock_guard lock(zookeeper_mutex);
+            if (zookeeper)
+                zookeeper->finalize("shutdown");
             zookeeper.reset();
         }
 
@@ -2581,7 +2580,13 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     }
     auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     auto key = toString(hash);
-    StoragePtr & res = table_function_results[key];
+
+    StoragePtr res;
+    {
+        std::lock_guard lock(table_function_results_mutex);
+        res = table_function_results[key];
+    }
+
     if (!res)
     {
         TableFunctionPtr table_function_ptr;
@@ -2742,6 +2747,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
         ///
         auto new_hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
+
+        std::lock_guard lock(table_function_results_mutex);
+        table_function_results[key] = res;
         if (hash != new_hash)
         {
             key = toString(new_hash);
@@ -2755,11 +2763,20 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 {
     const auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     const auto key = toString(hash);
-    StoragePtr & res = table_function_results[key];
+
+    StoragePtr res;
+    {
+        std::lock_guard lock(table_function_results_mutex);
+        res = table_function_results[key];
+    }
 
     if (!res)
     {
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+        std::lock_guard lock(table_function_results_mutex);
+        /// In case of race, another thread might have inserted a result already.
+        /// We just overwrite it since both should be equivalent.
+        table_function_results[key] = res;
     }
 
     return res;
@@ -4517,23 +4534,6 @@ DDLWorker & Context::getDDLWorker() const
     throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
 }
 
-namespace
-{
-
-void recordZooKeeperConnectionLoss()
-{
-    /// Use CAS to make sure we only set the timestamp for the first connection loss.
-    CurrentMetrics::cas(
-        CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds,
-        0,
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()
-        ).count()
-    );
-}
-
-}
-
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -4545,20 +4545,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
         args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
 
-        try
-        {
-            shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
-            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
-            {
-                recordZooKeeperConnectionLoss();
-            }
-            throw;
-        }
-
+        shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(
                 ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4573,19 +4560,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
         auto old_zookeeper = shared->zookeeper;
 
-        try
-        {
-            shared->zookeeper = shared->zookeeper->startNewSession();
-            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
-            {
-                recordZooKeeperConnectionLoss();
-            }
-            throw;
-        }
+        shared->zookeeper = shared->zookeeper->startNewSession();
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
         {
@@ -4601,12 +4576,6 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     }
 
     return shared->zookeeper;
-}
-
-int64_t Context::getZooKeeperLastZXIDSeen() const
-{
-    std::lock_guard lock(shared->zookeeper_mutex);
-    return shared->zookeeper ? shared->zookeeper->getLastZXIDSeen() : 0;
 }
 
 namespace
@@ -5407,16 +5376,6 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
     return shared->system_logs->part_log;
 }
 
-std::shared_ptr<BackgroundSchedulePoolLog> Context::getBackgroundSchedulePoolLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->background_schedule_pool_log;
-}
-
 std::shared_ptr<TraceLog> Context::getTraceLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5426,6 +5385,7 @@ std::shared_ptr<TraceLog> Context::getTraceLog() const
 
     return shared->system_logs->trace_log;
 }
+
 
 std::shared_ptr<TextLog> Context::getTextLog() const
 {
@@ -7168,26 +7128,6 @@ void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
 PreparedSetsCachePtr Context::getPreparedSetsCache() const
 {
     return prepared_sets_cache;
-}
-
-ReverseLookupCache & Context::getReverseLookupCache() const
-{
-    auto query_context = getQueryContext();
-
-    const auto & settings_ref = getSettingsRef();
-
-    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
-    if (!query_context->reverse_lookup_cache)
-    {
-        query_context->reverse_lookup_cache = std::make_shared<ReverseLookupCache>(
-            "LRU",
-            CurrentMetrics::end(),
-            CurrentMetrics::end(),
-            settings_ref[Setting::max_reverse_dictionary_lookup_cache_size_bytes],
-            ReverseLookupCache::NO_MAX_COUNT,
-            ReverseLookupCache::DEFAULT_SIZE_RATIO);
-    }
-    return *query_context->reverse_lookup_cache;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)

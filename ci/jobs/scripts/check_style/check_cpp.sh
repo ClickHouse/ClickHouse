@@ -91,10 +91,9 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::add
     CurrentMetrics::sub
     CurrentMetrics::get
-    CurrentMetrics::set
-    CurrentMetrics::cas
     CurrentMetrics::getDocumentation
     CurrentMetrics::getName
+    CurrentMetrics::set
     CurrentMetrics::end
     CurrentMetrics::Increment
     CurrentMetrics::Metric

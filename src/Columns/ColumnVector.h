@@ -165,10 +165,6 @@ public:
 
 #endif
 
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-        int direction, int nan_direction_hint) const override;
-
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
@@ -280,9 +276,9 @@ public:
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    std::string_view getDataAt(size_t n) const override
+    StringRef getDataAt(size_t n) const override
     {
-        return std::string_view(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     bool isDefaultAt(size_t n) const override { return data[n] == T{}; }

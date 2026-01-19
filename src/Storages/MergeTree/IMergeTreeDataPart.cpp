@@ -474,14 +474,6 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     index_cache->remove(key);
 }
 
-void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const
-{
-    if (!vector_similarity_index_cache)
-        return;
-
-    vector_similarity_index_cache->removeEntriesFromCache(getRelativePathOfActivePart());
-}
-
 void IMergeTreeDataPart::setIndex(Columns index_columns)
 {
     std::scoped_lock lock(index_mutex);
@@ -608,9 +600,10 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     size_t pos = 0;
 
     for (const auto & column : columns)
-    {
         column_name_to_position.emplace(column.name, pos++);
 
+    for (const auto & column : columns)
+    {
         auto it = serialization_infos.find(column.name);
         auto serialization = it == serialization_infos.end()
             ? IDataType::getSerialization(column, serialization_infos.getSettings())
@@ -621,7 +614,9 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
         {
             auto full_name = Nested::concatenateName(column.name, subname);
-            serializations.emplace(full_name, subdata.serialization);
+            /// Don't override the column serialization with subcolumn serialization if column with the same name exists.
+            if (!column_name_to_position.contains(full_name))
+                serializations.emplace(full_name, subdata.serialization);
         }, ISerialization::SubstreamData(serialization));
     }
 
@@ -706,9 +701,6 @@ void IMergeTreeDataPart::clearCaches()
     /// even if the overall index size is much less.
     removeMarksFromCache(storage.getContext()->getMarkCache().get());
     removeIndexFromCache(storage.getPrimaryIndexCache().get());
-
-    /// Remove from other caches of secondary indexes
-    removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -2662,8 +2654,19 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const Checksums & checksums_,
     const MergeTreeSettingsPtr & settings)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, ISerialization::StreamFileNameSettings(*settings));
-    return getStreamNameOrHash(stream_name, extension, checksums_);
+    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
+    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
+    if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, checksums_))
+        return result_stream_name;
+
+    /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
+    if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
+    {
+        stream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
+        return getStreamNameOrHash(stream_name, extension, checksums_);
+    }
+
+    return std::nullopt;
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
@@ -2673,8 +2676,19 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const Checksums & checksums_,
     const MergeTreeSettingsPtr & settings)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*settings));
-    return getStreamNameOrHash(stream_name, extension, checksums_);
+    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
+    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+    if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, checksums_))
+        return result_stream_name;
+
+    /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
+    if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
+    {
+        stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+        return getStreamNameOrHash(stream_name, extension, checksums_);
+    }
+
+    return std::nullopt;
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
@@ -2684,8 +2698,19 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const IDataPartStorage & storage_,
     const MergeTreeSettingsPtr & settings)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, ISerialization::StreamFileNameSettings(*settings));
-    return getStreamNameOrHash(stream_name, extension, storage_);
+    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
+    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
+    if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, storage_))
+        return result_stream_name;
+
+    /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
+    if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
+    {
+        stream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
+        return getStreamNameOrHash(stream_name, extension, storage_);
+    }
+
+    return std::nullopt;
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
@@ -2695,8 +2720,19 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const IDataPartStorage & storage_,
     const MergeTreeSettingsPtr & settings)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*settings));
-    return getStreamNameOrHash(stream_name, extension, storage_);
+    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
+    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+    if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, storage_))
+        return result_stream_name;
+
+    /// To be able to read old parts after changes in stream file name settings, try to change settings and try to find it again.
+    if (ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(substream_path, stream_file_name_settings))
+    {
+        stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+        return getStreamNameOrHash(stream_name, extension, storage_);
+    }
+
+    return std::nullopt;
 }
 
 void IMergeTreeDataPart::markProjectionPartAsBroken(const String & projection_name, const String & message, int code) const

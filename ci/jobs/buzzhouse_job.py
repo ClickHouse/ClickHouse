@@ -11,9 +11,12 @@ from ci.praktika.utils import Utils
 def main():
     temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
     workspace_path = temp_dir / "workspace"
+    buzz_out = workspace_path / "fuzzer_out.sql"
     buzz_config_file = workspace_path / "fuzz.json"
 
     workspace_path.mkdir(parents=True, exist_ok=True)
+    buzz_out.touch()
+    buzz_config_file.touch()
 
     # Sometimes disallow SQL types to reduce number of combinations
     disabled_types_str = ""
@@ -117,16 +120,13 @@ def main():
 
     # Generate configuration file
     # No PARALLEL WITH with slow sanitizers
-    # If hardcoded inserts are allowed, reduce insert size, so logs don't grow as much
-    allow_hardcoded_inserts = random.choice([True, False])
     min_nested_rows = random.randint(0, 5)
     min_insert_rows = random.randint(1, 100)
-    max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 1000)
     min_string_length = random.randint(0, 100)
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
-        "max_depth": random.randint(2, 6),
-        "max_width": random.randint(2, 8),
+        "max_depth": random.randint(2, 5),
+        "max_width": random.randint(2, 5),
         "max_databases": random.randint(2, 5),
         "max_tables": random.randint(3, 10),
         "max_views": random.randint(0, 10),
@@ -135,7 +135,7 @@ def main():
         "min_nested_rows": min_nested_rows,
         "max_nested_rows": random.randint(min_nested_rows, min_nested_rows + 5),
         "min_insert_rows": min_insert_rows,
-        "max_insert_rows": random.randint(min_insert_rows, max_insert_rows),
+        "max_insert_rows": random.randint(min_insert_rows, min_insert_rows + 400),
         "min_string_length": min_string_length,
         "max_string_length": random.randint(min_string_length, min_string_length + 500),
         "max_parallel_queries": (
@@ -151,24 +151,23 @@ def main():
         "enable_fault_injection_settings": random.choice([True, False]),
         "enable_force_settings": random.choice([True, False]),
         # Don't compare for correctness yet, false positives maybe
-        "use_dump_table_oracle": random.randint(1, 3) == 1,
+        "use_dump_table_oracle": random.randint(0, 1),
         "test_with_fill": False,  # Creating too many issues
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": False,  # Creating too many issues
-        "allow_hardcoded_inserts": allow_hardcoded_inserts,
+        "allow_hardcoded_inserts": random.choice([True, False]),
+        # These are the error codes that I disallow at the moment
+        "disallowed_error_codes": "9,11,13,15,99,100,101,102,108,127,162,165,166,167,168,172,209,230,231,234,235,246,256,257,261,271,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",
+        "oracle_ignore_error_codes": "1,36,43,47,48,53,59,210,262,321,386,403,467",
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
-        "log_path": "/workspace/fuzzerout.sql",
+        "log_path": str(buzz_out),
         "read_log": False,
         "allow_memory_tables": random.choice([True, False]),
         "allow_client_restarts": random.choice([True, False]),
-        # Sometimes use a small range of integer values
-        "random_limited_values": random.choice([True, False]),
         "max_reconnection_attempts": 3,
         "time_to_sleep_between_reconnects": 5000,
         "keeper_map_path_prefix": "/keeper_map_tables",
-        # Oracles don't run check correctness on CI, so set deterministic probability low
-        "deterministic_prob": random.randint(0, 20),
         "disabled_types": disabled_types_str,
         "disabled_engines": disabled_engines_str,
         # Make CI logs less verbose
@@ -206,14 +205,13 @@ def main():
             "union_default_mode",
             "except_default_mode",
             "input_format_skip_unknown_fields",
-            "unknown_packet_in_send_data",
         ],
         # MergeTree settings to set more often
         "hot_table_settings": [
             "add_minmax_index_for_numeric_columns",
             "add_minmax_index_for_string_columns",
             "allow_coalescing_columns_in_partition_or_order_key",
-            # "allow_experimental_replacing_merge_with_cleanup",
+            "allow_experimental_replacing_merge_with_cleanup",
             "allow_experimental_reverse_key",
             "allow_floating_point_partition_key",
             "allow_nullable_key",
@@ -224,16 +222,11 @@ def main():
             "enable_block_offset_column",
             "enable_vertical_merge_algorithm",
             "index_granularity",
-            "merge_max_block_size",
             "min_bytes_for_full_part_storage",
             "min_bytes_for_wide_part",
-            "min_rows_for_full_part_storage",
-            "min_rows_for_wide_part",
-            "remove_empty_parts",
             "ttl_only_drop_parts",
-            "use_const_adaptive_granularity",
             "vertical_merge_algorithm_min_bytes_to_activate",
-            "vertical_merge_algorithm_min_rows_to_activate",
+            "use_const_adaptive_granularity",
         ],
     }
     with open(buzz_config_file, "w") as outfile:

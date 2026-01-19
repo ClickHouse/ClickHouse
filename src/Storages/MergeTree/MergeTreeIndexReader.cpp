@@ -148,8 +148,8 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         {
             .version = version,
             .condition = condition,
-            .part = *part,
-            .index = *index,
+            .path_to_data_part = part->getDataPartStorage().getFullPath(),
+            .index_name = index->getFileName(),
             .index_mark = mark
         };
 
@@ -165,9 +165,10 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     /// would create too much lock contention in the cache (this was learned the hard way).
     if (index->isVectorSimilarityIndex())
     {
-        VectorSimilarityIndexCacheKey key{part->getDataPartStorage().getFullPath(),
-                                          index->getFileName(),
-                                          mark};
+        UInt128 key = VectorSimilarityIndexCache::hash(
+            part->getDataPartStorage().getFullPath(),
+            index->getFileName(),
+            mark);
 
         granule = vector_similarity_index_cache->getOrSet(key, load_func);
     }

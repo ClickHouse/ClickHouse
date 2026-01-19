@@ -7,6 +7,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
+#include <base/StringRef.h>
 #include <Common/FunctionDocumentation.h>
 
 namespace DB

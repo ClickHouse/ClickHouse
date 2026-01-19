@@ -9,16 +9,16 @@ SELECT * FROM format('Values', 'qbit QBit(Float64, 2)', '(array(0.1,1.1))');
 
 
 SELECT 'Test Array → QBit CAST AS: Float32';
-SELECT CAST((SELECT groupArray(toFloat32(number + 0.1)) FROM numbers(2)) AS QBit(Float32, 2));
-SELECT CAST((SELECT groupArray(toFloat32(number + 0.1)) FROM numbers(2)) AS QBit(Float32, 2));
-SELECT CAST((SELECT groupArray(toFloat32(number + 0.1)) FROM numbers(2)) AS QBit(Float32, 2));
+SELECT CAST((SELECT groupArray(number + 0.1) FROM numbers(2)) AS QBit(Float32, 2));
+SELECT CAST((SELECT groupArray(number + 0.1) FROM numbers(2)) AS QBit(Float32, 2));
+SELECT CAST((SELECT groupArray(number + 0.1) FROM numbers(2)) AS QBit(Float32, 2));
 SELECT * FROM format('Values', 'qbit QBit(Float32, 2)', '(array(0.1,1.1))');
 
 
 SELECT 'Test Array → QBit CAST AS: BFloat16';
-SELECT CAST((SELECT groupArray(toBFloat16(number + 0.1)) FROM numbers(2)) AS QBit(BFloat16, 2));
-SELECT CAST((SELECT groupArray(toBFloat16(number + 0.1)) FROM numbers(2)) AS QBit(BFloat16, 2));
-SELECT CAST((SELECT groupArray(toBFloat16(number + 0.1)) FROM numbers(2)) AS QBit(BFloat16, 2));
+SELECT CAST((SELECT groupArray(number + 0.1) FROM numbers(2)) AS QBit(BFloat16, 2));
+SELECT CAST((SELECT groupArray(number + 0.1) FROM numbers(2)) AS QBit(BFloat16, 2));
+SELECT CAST((SELECT groupArray(number + 0.1) FROM numbers(2)) AS QBit(BFloat16, 2));
 SELECT * FROM format('Values', 'qbit QBit(BFloat16, 2)', '(array(0.1,1.1))');
 
 SELECT * FROM format('Values', 'qbit QBit(BFloat16, 3)', '(tuple([1,2,3]::QBit(BFloat16, 3).1,

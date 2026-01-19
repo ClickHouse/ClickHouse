@@ -298,8 +298,8 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                auto value = column.getDataAt(row_num);
-                data.set.insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()));
+                StringRef value = column.getDataAt(row_num);
+                data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
             }
             else
             {
@@ -313,10 +313,10 @@ struct Adder
             const auto & column = *columns[0];
             if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
             {
-                auto value = column.getDataAt(row_num);
+                StringRef value = column.getDataAt(row_num);
 
                 SipHash hash;
-                hash.update(value);
+                hash.update(value.data, value.size);
                 const auto key = hash.get128();
 
                 data.set.template insert<const UInt128 &, hint>(key);

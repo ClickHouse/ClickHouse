@@ -122,8 +122,6 @@ static constexpr auto DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLU
 
 static constexpr auto DBMS_MIN_REVISION_WITH_REPLICATED_SERIALIZATION = 54482;
 
-static constexpr auto DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION = 54483;
-
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -132,5 +130,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_NULLABLE_SPARSE_SERIALIZATION = 544
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54483;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54482;
 }

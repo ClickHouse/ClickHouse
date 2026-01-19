@@ -355,7 +355,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          [&](const JSONObjectType & value) { max_parallel_queries = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"max_number_alters",
          [&](const JSONObjectType & value) { max_number_alters = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
-        {"deterministic_prob", [&](const JSONObjectType & value) { deterministic_prob = static_cast<uint32_t>(value.getUInt64()); }},
         {"query_time", [&](const JSONObjectType & value) { metrics.insert({{"query_time", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_memory", [&](const JSONObjectType & value) { metrics.insert({{"query_memory", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_bytes_read",
@@ -372,7 +371,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"allow_async_requests", [&](const JSONObjectType & value) { allow_async_requests = value.getBool(); }},
         {"allow_memory_tables", [&](const JSONObjectType & value) { allow_memory_tables = value.getBool(); }},
         {"allow_client_restarts", [&](const JSONObjectType & value) { allow_client_restarts = value.getBool(); }},
-        {"set_smt_disk", [&](const JSONObjectType & value) { set_smt_disk = value.getBool(); }},
         {"max_reconnection_attempts",
          [&](const JSONObjectType & value)
          { max_reconnection_attempts = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
@@ -382,7 +380,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
         {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
-        {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
         {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
@@ -445,10 +442,6 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     if (max_columns == 0)
     {
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "max_columns must be at least 1");
-    }
-    if (deterministic_prob > 100)
-    {
-        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Deterministic table probability must be 100 at most");
     }
     for (const auto & entry : std::views::values(metrics))
     {

@@ -408,11 +408,11 @@ FunctionArrayIntersect<Mode>::UnpackedArrays FunctionArrayIntersect<Mode>::prepa
                 {
                     /// Compare original and cast columns. It seem to be the easiest way.
                     auto overflow_mask = callFunctionNotEquals(
-                            {arg.nested_column->getPtr(), nested_cast_type, ""},
-                            {initial_column->getPtr(), nested_init_type, ""},
+                            {arg.nested_column->getPtr(), nested_init_type, ""},
+                            {initial_column->getPtr(), nested_cast_type, ""},
                             context);
 
-                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*removeNullable(overflow_mask)).getData();
+                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*overflow_mask).getData();
                     arrays.column_holders.emplace_back(std::move(overflow_mask));
                 }
             }
@@ -487,8 +487,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::executeImpl(const ColumnsWithTypeAndName
         DataTypeDateTime::FieldType, size_t,
         DefaultHash<DataTypeDateTime::FieldType>, INITIAL_SIZE_DEGREE>;
 
-    using StringMap = ClearableHashMapWithStackMemory<std::string_view, size_t,
-        StringViewHash, INITIAL_SIZE_DEGREE>;
+    using StringMap = ClearableHashMapWithStackMemory<StringRef, size_t,
+        StringRefHash, INITIAL_SIZE_DEGREE>;
 
     if (!result_column)
     {
@@ -750,11 +750,11 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
     }
     else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
     {
-        result_data.insertData(pair->getKey().data(), pair->getKey().size());
+        result_data.insertData(pair->getKey().data, pair->getKey().size);
     }
     else
     {
-        ReadBufferFromString in(pair->getKey());
+        ReadBufferFromString in({pair->getKey().data, pair->getKey().size});
         result_data.deserializeAndInsertFromArena(in, /*settings=*/nullptr);
     }
     if (use_null_map)

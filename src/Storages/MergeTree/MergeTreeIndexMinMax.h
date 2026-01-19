@@ -29,9 +29,6 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     const Block & index_sample_block;
 
     std::vector<Range> hyperrectangle;
-    Serializations serializations;
-    DataTypes datatypes;
-    FormatSettings format_settings;
 };
 
 
@@ -60,7 +57,7 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
