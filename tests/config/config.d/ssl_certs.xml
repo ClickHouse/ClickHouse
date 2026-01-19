@@ -4,12 +4,5 @@
               <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
               <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
           </server>
-
-          <privateKeyPassphraseHandler>
-              <name>KeyFileHandler</name>
-              <options>
-                  <password>1234</password>
-              </options>
-          </privateKeyPassphraseHandler>
     </openSSL>
 </clickhouse>
