@@ -311,7 +311,7 @@ SELECT count() FROM tab WHERE has(array, 'clickhouse');
 
 #### `mapContains` {#functions-example-mapcontains}
 
-Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.
+Function [mapContains](/sql-reference/functions/tuple-map-functions#mapContains) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.
 The behaviour is similar to the `equals` function with a `String` column.
 The text index is only used if it was created on a `mapKeys(map)` expression.
 
@@ -325,7 +325,7 @@ SELECT count() FROM tab WHERE mapContains(map, 'clickhouse');
 
 #### `mapContainsValue` {#functions-example-mapcontainsvalue}
 
-Function [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapcontainsvalue) matches against tokens extracted from the searched string in the values of a map.
+Function [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue) matches against tokens extracted from the searched string in the values of a map.
 The behaviour is similar to the `equals` function with a `String` column.
 The text index is only used if it was created on a `mapValues(map)` expression.
 
