@@ -41,6 +41,9 @@ private:
     size_t mark_segment_size{0};
     RangesInDataPartsDescription buffered_ranges;
     bool no_more_tasks_available{false};
+
+    /// See the comment in getTask method.
+    bool failed_to_get_task{false};
 };
 
 }
