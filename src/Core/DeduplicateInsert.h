@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
 #include <Core/Settings.h>
 
 namespace Poco
@@ -19,5 +18,5 @@ namespace DB
 
     bool isDeduplicationEnabledForInsertSelect(bool select_query_sorted, const Settings & settings, LoggerPtr logger = nullptr);
 
-    void overideDeduplicationSetting(bool is_on, ContextMutablePtr context);
+    void overrideDeduplicationSetting(bool is_on, ContextMutablePtr context);
 }
