@@ -1,3 +1,5 @@
+import os
+import re
 import threading
 import time as _time
 from contextlib import contextmanager
@@ -36,12 +38,40 @@ def _loop_device_for_image(node, img, size_mb):
     return sh_root_strict(node, f"losetup -f --show {img}", timeout=60)["out"].strip()
 
 
+def _safe_dm_token(s):
+    if not s:
+        return ""
+    try:
+        s = str(s)
+    except Exception:
+        return ""
+    s = re.sub(r"[^A-Za-z0-9_.-]+", "_", s)
+    return s.strip("_")
+
+
+def _dm_name(prefix, node):
+    suffix = getattr(node, "name", "node")
+    run = _safe_dm_token(os.environ.get("KEEPER_CLUSTER_NAME", ""))
+    if run:
+        run = run[:32]
+        return f"{prefix}_{run}_{suffix}"
+    return f"{prefix}_{suffix}"
+
+
+def _dm_img(prefix, node):
+    suffix = getattr(node, "name", "node")
+    run = _safe_dm_token(os.environ.get("KEEPER_CLUSTER_NAME", ""))
+    if run:
+        run = run[:32]
+        return f"/var/lib/keeper_{prefix}_{run}_{suffix}.img"
+    return f"/var/lib/keeper_{prefix}_{suffix}.img"
+
+
 @contextmanager
 def dm_delay(node, ms=3):
     try:
-        suffix = getattr(node, "name", "node")
-        dm_name = f"kdelay_{suffix}"
-        img = f"/var/lib/keeper_delay_{suffix}.img"
+        dm_name = _dm_name("kdelay", node)
+        img = _dm_img("delay", node)
         backend_dev = ""
         # Prefer RAM block device if present inside container
         ram = _ram_block_device(node)
@@ -179,9 +209,8 @@ def dm_delay(node, ms=3):
                 pass
         yield
     finally:
-        suffix = getattr(node, "name", "node")
-        dm_name = f"kdelay_{suffix}"
-        img = f"/var/lib/keeper_delay_{suffix}.img"
+        dm_name = _dm_name("kdelay", node)
+        img = _dm_img("delay", node)
         try:
             sh(
                 node,
@@ -217,9 +246,8 @@ def dm_delay(node, ms=3):
 @contextmanager
 def dm_error(node):
     try:
-        suffix = getattr(node, "name", "node")
-        dm_name = f"kerr_{suffix}"
-        img = f"/var/lib/keeper_err_{suffix}.img"
+        dm_name = _dm_name("kerr", node)
+        img = _dm_img("err", node)
         backend_dev = ""
         ram = _ram_block_device(node)
         if ram:
@@ -251,9 +279,8 @@ def dm_error(node):
         )
         yield
     finally:
-        suffix = getattr(node, "name", "node")
-        dm_name = f"kerr_{suffix}"
-        img = f"/var/lib/keeper_err_{suffix}.img"
+        dm_name = _dm_name("kerr", node)
+        img = _dm_img("err", node)
         sh_root(
             node,
             f"umount /var/lib/clickhouse/coordination || true; dmsetup remove --retry -f {dm_name} || true",
@@ -322,8 +349,7 @@ def _f_dm_delay(ctx, nodes, leader, step):
             return False
 
     def _run_one(t):
-        suffix = getattr(t, "name", "node")
-        dm_name = f"kdelay_{suffix}"
+        dm_name = _dm_name("kdelay", t)
         t0 = _time.time()
         _emit(t, "start", {"duration_s": int(dur), "ms": ms})
         with dm_delay(t, ms):
@@ -413,8 +439,7 @@ def _f_dm_error(ctx, nodes, leader, step):
             return False
 
     def _run_one(t):
-        suffix = getattr(t, "name", "node")
-        dm_name = f"kerr_{suffix}"
+        dm_name = _dm_name("kerr", t)
         t0 = _time.time()
         _emit(t, "start", {"duration_s": int(dur)})
         with dm_error(t):

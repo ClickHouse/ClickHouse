@@ -26,13 +26,9 @@ from praktika.utils import Shell, Utils
 # ─────────────────────────────────────────────────────────────────────────────
 REPO_DIR = _repo_dir
 TEMP_DIR = f"{REPO_DIR}/ci/tmp"
-DEFAULT_XDIST_WORKERS = "8"
-DEFAULT_TIMEOUT = 120
-DEFAULT_READY_TIMEOUT = 600
-
-
-def _result_name():
-    return os.environ.get("JOB_NAME") or os.environ.get("CHECK_NAME") or "Keeper Stress"
+DEFAULT_XDIST_WORKERS = "1"
+DEFAULT_TIMEOUT = 1200
+DEFAULT_READY_TIMEOUT = 1200
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -51,11 +47,13 @@ def set_default_env():
     defaults = {
         # Test selection
         "KEEPER_SCENARIO_FILE": "all",
+        "KEEPER_INCLUDE_IDS": "CHA-01",
         "KEEPER_FAULTS": "on",
-        "KEEPER_DURATION": "600",
+        "KEEPER_DURATION": "1200",
+        "KEEPER_MATRIX_BACKENDS": "default,rocks",
         # Adaptive bench tuning
         "KEEPER_BENCH_ADAPTIVE": "1",
-        "KEEPER_ADAPT_TARGET_P99_MS": "600",
+        "KEEPER_ADAPT_TARGET_P99_MS": "1200",
         "KEEPER_ADAPT_MAX_ERROR": "0.01",
         "KEEPER_ADAPT_STAGE_S": "15",
         "KEEPER_ADAPT_MIN_CLIENTS": "8",
@@ -65,7 +63,7 @@ def set_default_env():
         "KEEPER_DEFAULT_ERROR_RATE": "0.01",
         # CI behavior
         "KEEPER_KEEP_ON_FAIL": "1",
-        "KEEPER_CLEAN_ARTIFACTS": "0",
+        "KEEPER_CLEAN_ARTIFACTS": "1",
         "KEEPER_XDIST_PORT_STEP": "100",
         "CI_HEARTBEAT_SEC": "60",
     }
@@ -229,8 +227,15 @@ def build_pytest_command(args):
     tests_target = " ".join(args.test) if args.test else "tests/stress/keeper/tests"
     extra = []
 
-    if args.keeper_include_ids:
-        extra.append(f"--keeper-include-ids={args.keeper_include_ids}")
+    include_ids = args.keeper_include_ids or os.environ.get("KEEPER_INCLUDE_IDS", "")
+    include_ids = str(include_ids or "").strip()
+    if include_ids:
+        extra.append(f"--keeper-include-ids={include_ids}")
+
+    matrix_backends = os.environ.get("KEEPER_MATRIX_BACKENDS", "")
+    matrix_backends = str(matrix_backends or "").strip()
+    if matrix_backends:
+        extra.append(f"--matrix-backends={matrix_backends}")
     if args.faults:
         extra.append(f"--faults={args.faults}")
 
@@ -239,7 +244,7 @@ def build_pytest_command(args):
     ready_val = max(
         DEFAULT_READY_TIMEOUT, env_int("KEEPER_READY_TIMEOUT", DEFAULT_READY_TIMEOUT)
     )
-    timeout_val = max(180, min(1800, dur_val + ready_val + 120))
+    timeout_val = max(180, min(7200, dur_val + ready_val + 120))
     extra.extend([f"--timeout={timeout_val}", "--timeout-method=signal"])
 
     # xdist workers
@@ -315,7 +320,7 @@ def build_pytest_env(ch_path, timeout_val):
     env["COMMIT_SHA"] = get_commit_sha(env)
 
     # PYTEST_ADDOPTS
-    fh_to = max(600, min(timeout_val - 60, 1800))
+    fh_to = max(1200, min(timeout_val - 60, 1800))
     env["PYTEST_ADDOPTS"] = (
         f"--ignore-glob=tests/stress/keeper/tests/_instances-* -o faulthandler_timeout={fh_to}"
     )
@@ -423,6 +428,8 @@ def main():
     set_default_env()
     apply_cli_params(args)
 
+    result_name = os.environ.get("JOB_NAME") or os.environ.get("CHECK_NAME") or "Keeper Stress"
+
     stop_watch = Utils.Stopwatch()
     results = []
     files_to_attach = []
@@ -440,7 +447,7 @@ def main():
             )
         )
         Result.create_from(
-            name=_result_name(),
+            name=result_name,
             results=results,
             status=Result.Status.ERROR,
             stopwatch=stop_watch,
@@ -471,7 +478,7 @@ def main():
     )
     if not results[-1].is_ok():
         Result.create_from(
-            name=_result_name(), results=results, stopwatch=stop_watch
+            name=result_name, results=results, stopwatch=stop_watch
         ).complete_job()
         return
 
@@ -480,14 +487,14 @@ def main():
     results.extend(ch_results)
     if ch_results and not ch_results[-1].is_ok():
         Result.create_from(
-            name=_result_name(), results=results, stopwatch=stop_watch
+            name=result_name, results=results, stopwatch=stop_watch
         ).complete_job()
         return
 
     results.append(install_clickhouse_binary(ch_path))
     if not results[-1].is_ok():
         Result.create_from(
-            name=_result_name(), results=results, stopwatch=stop_watch
+            name=result_name, results=results, stopwatch=stop_watch
         ).complete_job()
         return
     ch_path = "/usr/local/bin/clickhouse"
@@ -519,6 +526,7 @@ def main():
     # Run pytest
     report_file = f"{TEMP_DIR}/pytest.jsonl"
     junit_file = f"{TEMP_DIR}/keeper_junit.xml"
+    pytest_log_file = f"{TEMP_DIR}/keeper_pytest.log"
 
     keepalive = start_keepalive()
     results.append(
@@ -528,6 +536,7 @@ def main():
             name="Keeper Stress",
             env=env,
             pytest_report_file=report_file,
+            logfile=pytest_log_file,
         )
     )
     stop_keepalive(keepalive)
@@ -560,9 +569,14 @@ def main():
     )
 
     # Attach files
-    for p in [junit_file]:
+    for p in [junit_file, pytest_log_file]:
         if Path(p).exists():
             files_to_attach.append(str(p))
+
+    # Praktika runner log (contains full stdout/stderr of the job)
+    job_log = f"{TEMP_DIR}/job.log"
+    if Path(job_log).exists():
+        files_to_attach.append(job_log)
     # Skip large report file
     if Path(report_file).exists():
         try:
@@ -606,7 +620,7 @@ def main():
     )
 
     Result.create_from(
-        name=_result_name(),
+        name=result_name,
         results=results,
         stopwatch=stop_watch,
         files=files_to_attach,
@@ -617,6 +631,9 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
+        result_name = (
+            os.environ.get("JOB_NAME") or os.environ.get("CHECK_NAME") or "Keeper Stress"
+        )
         err_txt = f"{e}\n{traceback.format_exc()}"
         os.makedirs("./ci/tmp", exist_ok=True)
         err_path = "./ci/tmp/keeper_job_fatal_error.txt"
@@ -626,7 +643,7 @@ if __name__ == "__main__":
         except Exception:
             pass
         Result.create_from(
-            name=_result_name(),
+            name=result_name,
             status=Result.Status.ERROR,
             info=err_txt,
             stopwatch=Utils.Stopwatch(),

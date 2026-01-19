@@ -1042,33 +1042,52 @@ class ClickHouseCluster:
         return self._ytsaurus_internal_ports_list
 
     def print_all_docker_pieces(self):
-        res_networks = subprocess.check_output(
-            f"docker network ls --filter name='{self.project_name}*'",
-            shell=True,
-            universal_newlines=True,
-            timeout=30,
+        try:
+            timeout = int(os.environ.get("DOCKER_DIAG_TIMEOUT", "120"))
+        except Exception:
+            timeout = 120
+        timeout = max(5, min(timeout, 600))
+
+        def _try_list(cmd):
+            try:
+                return subprocess.check_output(
+                    cmd,
+                    shell=True,
+                    universal_newlines=True,
+                    timeout=timeout,
+                )
+            except Exception as ex:
+                logging.debug(
+                    "Failed to run docker diagnostic command [%s] with timeout=%ss: %s",
+                    cmd,
+                    timeout,
+                    ex,
+                )
+                return ""
+
+        res_networks = _try_list(
+            f"docker network ls --filter name='{self.project_name}*'"
         )
-        logging.debug(
-            f"Docker networks for project {self.project_name} are {res_networks}"
+        if res_networks:
+            logging.debug(
+                f"Docker networks for project {self.project_name} are {res_networks}"
+            )
+
+        res_containers = _try_list(
+            f"docker container ls -a --filter name='{self.project_name}*'"
         )
-        res_containers = subprocess.check_output(
-            f"docker container ls -a --filter name='{self.project_name}*'",
-            shell=True,
-            universal_newlines=True,
-            timeout=30,
+        if res_containers:
+            logging.debug(
+                f"Docker containers for project {self.project_name} are {res_containers}"
+            )
+
+        res_volumes = _try_list(
+            f"docker volume ls --filter name='{self.project_name}*'"
         )
-        logging.debug(
-            f"Docker containers for project {self.project_name} are {res_containers}"
-        )
-        res_volumes = subprocess.check_output(
-            f"docker volume ls --filter name='{self.project_name}*'",
-            shell=True,
-            universal_newlines=True,
-            timeout=30,
-        )
-        logging.debug(
-            f"Docker volumes for project {self.project_name} are {res_volumes}"
-        )
+        if res_volumes:
+            logging.debug(
+                f"Docker volumes for project {self.project_name} are {res_volumes}"
+            )
 
     def cleanup(self):
         logging.debug("Cleanup called")

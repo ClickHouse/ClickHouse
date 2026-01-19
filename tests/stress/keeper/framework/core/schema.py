@@ -14,6 +14,8 @@ def validate_scenario(s):
         errs.append("backend_not_str")
     if "faults" in s and not isinstance(s.get("faults"), list):
         errs.append("faults_not_list")
+    if "post" in s and not isinstance(s.get("post"), list):
+        errs.append("post_not_list")
     if "gates" in s and not isinstance(s.get("gates"), list):
         errs.append("gates_not_list")
     if "workload" in s and not isinstance(s.get("workload"), dict):

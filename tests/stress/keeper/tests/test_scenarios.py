@@ -23,6 +23,7 @@ from keeper.framework.fuzz import generate_fuzz_scenario
 from keeper.framework.io.probes import (
     ch_async_metrics,
     ch_metrics,
+    count_leaders,
     dirs,
     is_leader,
     lgif,
@@ -38,6 +39,55 @@ from keeper.gates.base import apply_gate, single_leader
 from keeper.workloads.adapter import servers_arg
 
 WORKDIR = pathlib.Path(__file__).parents[1]
+
+
+def _tail_file(path, max_lines=200):
+    try:
+        p = pathlib.Path(str(path))
+        if not p.exists() or not p.is_file():
+            return ""
+        lines = p.read_text(errors="replace").splitlines()
+        tail = lines[-int(max_lines) :] if max_lines and max_lines > 0 else lines
+        return "\n".join(tail)
+    except Exception:
+        return ""
+
+
+def _print_gate_failure_diagnostics(cluster, nodes, gate_type, exc):
+    try:
+        print(f"[keeper][gate-failed] type={gate_type} error={repr(exc)}")
+    except Exception:
+        pass
+    try:
+        print(f"[keeper][gate-failed] leaders={count_leaders(nodes)}")
+    except Exception:
+        pass
+    for n in nodes or []:
+        try:
+            m = mntr(n)
+        except Exception:
+            m = {}
+        try:
+            s = srvr_kv(n)
+        except Exception:
+            s = {}
+        try:
+            print(
+                f"[keeper][gate-failed] node={getattr(n,'name','')} mntr={m or {}} srvr={s or {}}"
+            )
+        except Exception:
+            pass
+    try:
+        dl = getattr(cluster, "docker_logs_path", "")
+        if dl:
+            print(f"[keeper][gate-failed] docker_log={dl}")
+            txt = _tail_file(dl, max_lines=200)
+            if txt:
+                print("[keeper][gate-failed] docker_log_tail begin")
+                print(txt)
+                print("[keeper][gate-failed] docker_log_tail end")
+    except Exception:
+        pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -168,22 +218,20 @@ def _cleanup_ctx_resources(ctx):
                 pass
 
 
-def resolve_duration(request, env_name, yaml_default=None, hard_default=120):
-    """Resolve duration from CLI > env > yaml > hard default."""
-    cli_dur = _get_int_option(request, "--duration", "", None)
-    if cli_dur:
-        return cli_dur
-    env_val = os.environ.get(env_name, "").strip()
-    if env_val:
-        try:
-            return int(env_val)
-        except ValueError:
-            pass
-    if yaml_default is not None:
-        try:
-            return int(yaml_default)
-        except (ValueError, TypeError):
-            pass
+def resolve_duration(scenario, hard_default=120):
+    """Resolve duration from scenario loader output."""
+    try:
+        v = (scenario or {}).get("_duration_s")
+        if v:
+            return int(v)
+    except Exception:
+        pass
+    try:
+        v = (scenario or {}).get("workload")
+        if isinstance(v, dict) and v.get("duration"):
+            return int(v.get("duration"))
+    except Exception:
+        pass
     return int(hard_default)
 
 
@@ -254,13 +302,7 @@ def _resolve_faults_mode(request):
 
 def _resolve_random_faults(request, scenario, rnd_count, seed_val):
     try:
-        cli_dur = request.config.getoption("--duration")
-    except Exception:
-        cli_dur = None
-    env_dur = os.environ.get("KEEPER_DURATION")
-    yaml_dur = (scenario.get("workload") or {}).get("duration")
-    try:
-        dur_default = int(cli_dur or env_dur or yaml_dur or 120)
+        dur_default = int(resolve_duration(scenario, 120))
     except (ValueError, TypeError):
         dur_default = 120
     if seed_val <= 0:
@@ -311,7 +353,7 @@ def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx):
         if wc_env:
             wl = dict(wl or {})
             wl["config"] = wc_env
-        eff_dur = resolve_duration(request, "KEEPER_DURATION", wl.get("duration"), 120)
+        eff_dur = resolve_duration(scenario, 120)
         rb = build_bench_step(wl, eff_dur)
         ctx["workload"] = wl
         ctx["bench_node"] = nodes[0]
@@ -321,7 +363,7 @@ def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx):
         bench_injected = True
         ensure_default_gates(scenario)
     if not bench_injected:
-        eff_dur_fb = resolve_duration(request, "KEEPER_DURATION", None, 120)
+        eff_dur_fb = resolve_duration(scenario, 120)
         cfg_name = wc_env or "workloads/prod_mix.yaml"
         wl_fb = {"config": cfg_name}
         rb = build_bench_step(wl_fb, eff_dur_fb)
@@ -1010,6 +1052,13 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     sink_url = "ci" if has_ci_sink() else ""
     summary = {}
     ctx = {"cluster": cluster, "faults_mode": faults_mode, "seed": seed_val}
+    if sink_url:
+        try:
+            mf = (os.environ.get("KEEPER_METRICS_FILE") or "").strip()
+            if mf:
+                ctx["metrics_file"] = os.path.abspath(mf)
+        except Exception:
+            pass
     sampler = None
     leader = None
     pre_rows = []
@@ -1060,6 +1109,16 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         for action in fs_effective:
             _apply_step(action, nodes, leader, ctx)
         summary = ctx.get("bench_summary") or {}
+        try:
+            leader = next(n for n in nodes if is_leader(n))
+        except Exception:
+            pass
+        for step in scenario.get("post", []) or []:
+            _apply_step(step, nodes, leader, ctx)
+        try:
+            leader = next(n for n in nodes if is_leader(n))
+        except Exception:
+            pass
         # Sink keeper-bench summary to CIDB as scalar metrics tagged to this run
         if summary:
             bench_ran_flag = _emit_bench_summary(
@@ -1076,6 +1135,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             try:
                 _apply_gate(gate, nodes, leader, ctx, summary)
             except Exception as e:
+                _best_effort(_print_gate_failure_diagnostics, cluster, nodes, gtype, e)
                 if sink_url:
                     try:
                         rows = _gate_event_rows(
@@ -1242,6 +1302,12 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             os.environ.get("KEEPER_CLUSTER_NAME", ""),
         )
         _best_effort(_print_manual_znode_counts, nodes)
+        try:
+            mf = (ctx or {}).get("metrics_file")
+            if mf:
+                print(f"[keeper][metrics] jsonl={mf}")
+        except Exception:
+            pass
         # Cleanup context resources (pools, clients, watches)
         _cleanup_ctx_resources(ctx)
         # Keep containers on fail if requested
