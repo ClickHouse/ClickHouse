@@ -141,6 +141,7 @@ public:
             return;
         }
 
+        /// If only 1 element in the set then use " == const" instead of set lookup
         /// But if the argument is Nullable we cannot use "==" so fallback to Set because it can handle NULLs
         if (exact_values->getTotalRowCount() == 1 && !argument_is_nullable)
         {
