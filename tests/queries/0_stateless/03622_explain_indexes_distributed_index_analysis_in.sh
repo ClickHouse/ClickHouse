@@ -23,7 +23,7 @@ $CLICKHOUSE_CLIENT -nm -q "
   -- -merge_selector_base = 1000 -- disable merges
   create table test_1m (key Int, value Int) engine=MergeTree() order by key settings merge_selector_base = 1000, index_granularity=8192, index_granularity_bytes=10e9, min_bytes_for_wide_part=1e9;
   system stop merges test_1m;
-  insert into test_1m select number, number*100 from numbers(1e6) settings max_block_size=10000, min_insert_block_size_rows=10000, max_insert_threads=1;
+  insert into test_1m select number, number*100 from numbers(100e3) settings max_block_size=10000, min_insert_block_size_rows=10000, max_insert_threads=1;
   select count(), sum(marks) from system.parts where database = currentDatabase() and table = 'test_1m' and active;
 "
 
@@ -58,9 +58,9 @@ function explain_indexes()
 }
 
 echo "IN (1000-element set)"
-explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m) where key in (select key from test_1m where (key % 1000) = 0)"
+explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m) where key in (select key from test_1m where (key % 100) = 0)"
 echo "GLOBAL IN (1000-element set)"
-explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m) where key global in (select key from test_1m where (key % 1000) = 0)"
+explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m) where key global in (select key from test_1m where (key % 100) = 0)"
 echo "IN (10-element set)"
 explain_indexes "explain indexes=1, json=1 select * from (select * from test_1m) where key in (select * from numbers(1000, 10))"
 echo "GLOBAL IN (10-element set)"
