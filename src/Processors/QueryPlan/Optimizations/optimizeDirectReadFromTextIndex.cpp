@@ -1,6 +1,10 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -71,7 +75,7 @@ const ActionsDAG::Node * replaceNodes(ActionsDAG & dag, const ActionsDAG::Node *
     return node;
 }
 
-String optimizationInfoToString(const IndexReadColumns & added_columns, const Names & removed_columns)
+String optimizationInfoToString(const TextIndexReadColumns & added_columns, const Names & removed_columns)
 {
     chassert(!added_columns.empty());
 
@@ -79,13 +83,13 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
 
     /// This will list the index and the new associated columns
     size_t idx = 0;
-    for (const auto & [_, columns_names_and_types] : added_columns)
+    for (const auto & [_, added_virtual_columns] : added_columns)
     {
-        for (const String & column_name : columns_names_and_types.getNames())
+        for (const auto & added_virtual_column : added_virtual_columns)
         {
             if (++idx > 1)
                 result += ", ";
-            result += column_name;
+            result += added_virtual_column.name;
         }
     }
     result += "]";
@@ -145,6 +149,46 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     }
 }
 
+/// Convert ActionsDAG::Node to AST for use as default expression
+ASTPtr convertNodeToAST(const ActionsDAG::Node & node)
+{
+    switch (node.type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+            return std::make_shared<ASTIdentifier>(node.result_name);
+
+        case ActionsDAG::ActionType::COLUMN:
+            if (node.column)
+                return std::make_shared<ASTLiteral>((*node.column)[0]);
+            return std::make_shared<ASTLiteral>(Field{});
+
+        case ActionsDAG::ActionType::ALIAS:
+            if (!node.children.empty())
+                return convertNodeToAST(*node.children[0]);
+            return nullptr;
+
+        case ActionsDAG::ActionType::FUNCTION: {
+            if (!node.function_base)
+                return nullptr;
+
+            auto function = std::make_shared<ASTFunction>();
+            function->name = node.function_base->getName();
+            function->arguments = std::make_shared<ASTExpressionList>();
+            function->children.push_back(function->arguments);
+
+            for (const auto * child : node.children)
+            {
+                if (auto arg_ast = convertNodeToAST(*child))
+                    function->arguments->children.push_back(arg_ast);
+            }
+
+            return function;
+        }
+
+        default:
+            return nullptr;
+    }
+}
 }
 
 /// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
@@ -175,7 +219,7 @@ public:
 
     struct ResultReplacement
     {
-        IndexReadColumns added_columns;
+        TextIndexReadColumns added_columns;
         Names removed_columns;
         const ActionsDAG::Node * filter_node = nullptr;
     };
@@ -199,8 +243,9 @@ public:
             {
                 replacements[&node] = replaced->node;
 
-                for (const auto & [index_name, column_name] : replaced->added_virtual_columns)
-                    result.added_columns[index_name].emplace_back(column_name, std::make_shared<DataTypeUInt8>());
+                for (const auto & [index_name, added_virtual_column] : replaced->added_virtual_columns)
+                    result.added_columns[index_name].emplace_back(
+                        added_virtual_column.column_name, std::make_shared<DataTypeUInt8>(), added_virtual_column.default_expression);
             }
         }
 
@@ -234,8 +279,14 @@ public:
 private:
     struct NodeReplacement
     {
+        struct VirtualColumn
+        {
+            String column_name;
+            ASTPtr default_expression;
+        };
+
         const ActionsDAG::Node * node;
-        std::unordered_map<String, String> added_virtual_columns;
+        std::unordered_map<String, VirtualColumn> added_virtual_columns;
     };
 
     ActionsDAG & actions_dag;
@@ -260,6 +311,7 @@ private:
             TextSearchQueryPtr search_query;
             String index_name;
             String virtual_column_name;
+            ASTPtr default_expression;
         };
 
         NameSet used_index_columns;
@@ -285,7 +337,11 @@ private:
             if (!virtual_column_name)
                 continue;
 
-            selected_conditions.push_back({search_query, index_name, *virtual_column_name});
+            ASTPtr default_expression = nullptr;
+            if (!info.is_fully_materialied)
+                default_expression = convertNodeToAST(function_node);
+
+            selected_conditions.push_back({search_query, index_name, *virtual_column_name, std::move(default_expression)});
             used_index_columns.insert(index_header.begin()->name);
 
             if (search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
@@ -310,7 +366,7 @@ private:
             if (inserted)
             {
                 it->second = &actions_dag.addInput(condition.virtual_column_name, std::make_shared<DataTypeUInt8>());
-                replacement.added_virtual_columns.emplace(condition.index_name, condition.virtual_column_name);
+                replacement.added_virtual_columns.emplace(condition.index_name, NodeReplacement::VirtualColumn{condition.virtual_column_name, condition.default_expression});
             }
 
             return it->second;
