@@ -90,6 +90,14 @@ struct BackupSettings
     /// Is it allowed to use blob paths to calculate checksums of backup entries?
     bool allow_checksums_from_remote_paths = true;
 
+    /// Should we back up data from refreshable materialized view targets?
+    ///
+    /// Data is skipped only for targets of refreshable views that fully
+    /// replace the table on each refresh (without APPEND), as they contain
+    /// transient data that can be recomputed. Targets with APPEND or regular
+    /// materialized views are always backed up because they may store history.
+    bool backup_data_from_refreshable_materialized_view_targets = false;
+
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;
