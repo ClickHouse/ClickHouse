@@ -448,7 +448,7 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
     }
 
     PostingList range_posting;
-    range_posting.addRangeClosed(current_range->begin, current_range->end);
+    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
 
     for (const auto & token : query.tokens)
     {
@@ -498,7 +498,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     }
 
     PostingList intersection;
-    intersection.addRangeClosed(current_range->begin, current_range->end);
+    intersection.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
 
     for (const auto & token : query.tokens)
     {
@@ -634,7 +634,7 @@ std::vector<roaring::api::roaring_bitmap_t> splitPostings(const PostingList & po
         roaring::api::roaring_bitmap_t bitmap;
         auto & new_container = bitmap.high_low_container;
 
-        new_container.size = size;
+        new_container.size = static_cast<int32_t>(size);
         new_container.allocation_size = 0;
         new_container.containers = container.containers + begin;
         new_container.typecodes = container.typecodes + begin;
@@ -701,7 +701,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     using enum PostingsSerialization::Flags;
     TokenPostingsInfo info;
     info.header = 0;
-    info.cardinality = postings.size();
+    info.cardinality = static_cast<UInt32>(postings.size());
 
     if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
     {
@@ -1064,7 +1064,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
             tokens_map.emplace(key_holder, it, inserted);
 
             auto & posting_list_builder = it->getMapped();
-            posting_list_builder.add(current_row, posting_lists);
+            posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
             ++num_processed_tokens;
             return false;
         });

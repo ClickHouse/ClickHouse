@@ -315,7 +315,7 @@ SELECT count() FROM tab WHERE has(array, 'clickhouse');
 
 #### `mapContains` {#functions-example-mapcontains}
 
-Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.
+Function [mapContains](/sql-reference/functions/tuple-map-functions#mapContains) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.
 The behaviour is similar to the `equals` function with a `String` column.
 The text index is only used if it was created on a `mapKeys(map)` expression.
 
@@ -329,7 +329,7 @@ SELECT count() FROM tab WHERE mapContains(map, 'clickhouse');
 
 #### `mapContainsValue` {#functions-example-mapcontainsvalue}
 
-Function [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapcontainsvalue) matches against tokens extracted from the searched string in the values of a map.
+Function [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue) matches against tokens extracted from the searched string in the values of a map.
 The behaviour is similar to the `equals` function with a `String` column.
 The text index is only used if it was created on a `mapValues(map)` expression.
 
@@ -475,8 +475,8 @@ The direct read optimization in ClickHouse answers the query exclusively using t
 Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering remaining granules).
 
 Direct read is controlled by two settings:
-- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) which specifies if direct read is generally enabled.
-- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
+- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (true by default) which specifies if direct read is generally enabled.
+- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read), another prerequisite for direct read. In ClickHouse versions >= 26.1, the setting is enabled by default. In earlier versions, you need to run `SET use_skip_indexes_on_data_read = 1` explicitly.
 
 Also, the text index must be fully materialized to use direct reading (use `ALTER TABLE ... MATERIALIZE INDEX` for that).
 

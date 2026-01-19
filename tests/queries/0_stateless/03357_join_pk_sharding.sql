@@ -1,6 +1,6 @@
 -- Tags: long, no-asan, no-msan
 
-SET allow_statistics_optimize = 0;
+SET use_statistics = 0;
 drop table if exists tab_l;
 drop table if exists tab_m;
 drop table if exists tab_r;

@@ -8,11 +8,8 @@
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/createArchiveWriter.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
