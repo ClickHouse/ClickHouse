@@ -42,7 +42,9 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric FilesystemCacheDownloadQueueElements;
+    extern const Metric FilesystemCacheSizeLimit;
 }
+
 
 namespace DB
 {
@@ -145,6 +147,8 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
         query_limit = std::make_unique<FileCacheQueryLimit>();
+
+    CurrentMetrics::add(CurrentMetrics::FilesystemCacheSizeLimit, settings[FileCacheSetting::max_size]);
 }
 
 const FileCache::UserInfo & FileCache::getCommonUser()
