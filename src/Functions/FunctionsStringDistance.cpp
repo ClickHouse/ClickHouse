@@ -4,9 +4,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringSimilarity.h>
+#include "Common/HashTable/Hash.h"
 #include <Common/PODArray.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
+#include <Common/HashTable/HashSet.h>
+#include "base/types.h"
 
 #include <algorithm>
 #include <bitset>
@@ -149,6 +152,26 @@ void parseUTF8String(const char * __restrict data, size_t size, std::function<vo
 template <bool is_utf8>
 struct ByteJaccardIndexImpl
 {
+
+    struct ScratchASCII
+    {
+        /// For byte strings (and ASCII chars of UTF8) use a bitset as a set
+        constexpr static size_t max_size = std::numeric_limits<unsigned char>::max() + 1;
+        using Bitset = std::bitset<max_size>;
+        Bitset haystack_set;
+        Bitset needle_set;
+    };
+
+    /// For UTF8 - still use bitset for ASCII but a hash set for wider codepoints
+    struct ScratchUTF8 : public ScratchASCII
+    {
+        using Set = HashSet<UInt32, DefaultHash<UInt32>>;
+        Set haystack_utf8_set;
+        Set needle_utf8_set;
+    };
+
+    using ScratchType = std::conditional_t<is_utf8, ScratchUTF8, ScratchASCII>;
+
     using ResultType = Float64;
     static ResultType process(
         const char * __restrict haystack, size_t haystack_size, const char * __restrict needle, size_t needle_size)
@@ -159,36 +182,28 @@ struct ByteJaccardIndexImpl
         const char * haystack_end = haystack + haystack_size;
         const char * needle_end = needle + needle_size;
 
-        /// For byte strings use plain array as a set
-        constexpr size_t max_size = std::numeric_limits<unsigned char>::max() + 1;
-        using Bitset = std::bitset<max_size>;
-        Bitset haystack_set;
-        Bitset needle_set;
-
-        /// For UTF-8 strings we also use sets of code points greater than max_size
-        std::set<UInt32> haystack_utf8_set;
-        std::set<UInt32> needle_utf8_set;
+        ScratchType scratch;
 
         if constexpr (is_utf8)
         {
             parseUTF8String(
                 haystack,
                 haystack_size,
-                [&](UInt32 data) { haystack_utf8_set.insert(data); },
-                [&](unsigned char data) { haystack_set.set(data); });
+                [&](UInt32 data) { scratch.haystack_utf8_set.insert(data); },
+                [&](unsigned char data) { scratch.haystack_set.set(data); });
             parseUTF8String(
-                needle, needle_size, [&](UInt32 data) { needle_utf8_set.insert(data); }, [&](unsigned char data) { needle_set[data] = 1; });
+                needle, needle_size, [&](UInt32 data) { scratch.needle_utf8_set.insert(data); }, [&](unsigned char data) { scratch.needle_set[data] = 1; });
         }
         else
         {
             while (haystack < haystack_end)
             {
-                haystack_set.set(static_cast<unsigned char>(*haystack));
+                scratch.haystack_set.set(static_cast<unsigned char>(*haystack));
                 ++haystack;
             }
             while (needle < needle_end)
             {
-                needle_set.set(static_cast<unsigned char>(*needle));
+                scratch.needle_set.set(static_cast<unsigned char>(*needle));
                 ++needle;
             }
         }
@@ -198,25 +213,19 @@ struct ByteJaccardIndexImpl
 
         if constexpr (is_utf8)
         {
-            auto lit = haystack_utf8_set.begin();
-            auto rit = needle_utf8_set.begin();
-            while (lit != haystack_utf8_set.end() && rit != needle_utf8_set.end())
+            const auto & small = (scratch.haystack_utf8_set.size() < scratch.needle_utf8_set.size()) ? scratch.haystack_utf8_set : scratch.needle_utf8_set;
+            const auto & large = (scratch.haystack_utf8_set.size() < scratch.needle_utf8_set.size()) ? scratch.needle_utf8_set : scratch.haystack_utf8_set;
+
+            for (auto it = small.begin(); it != small.end(); ++it)
             {
-                if (*lit == *rit)
-                {
+                const auto & key = it->getKey();
+                if (large.has(key))
                     ++intersection;
-                    ++lit;
-                    ++rit;
-                }
-                else if (*lit < *rit)
-                    ++lit;
-                else
-                    ++rit;
             }
-            union_size = static_cast<UInt32>(haystack_utf8_set.size() + needle_utf8_set.size() - intersection);
+            union_size = static_cast<UInt32>(scratch.haystack_utf8_set.size() + scratch.needle_utf8_set.size() - intersection);
         }
-        intersection += static_cast<UInt32>((haystack_set & needle_set).count());
-        union_size += static_cast<UInt32>((haystack_set | needle_set).count());
+        intersection += static_cast<UInt32>((scratch.haystack_set & scratch.needle_set).count());
+        union_size += static_cast<UInt32>((scratch.haystack_set | scratch.needle_set).count());
 
         return static_cast<ResultType>(intersection) / static_cast<ResultType>(union_size);
     }
