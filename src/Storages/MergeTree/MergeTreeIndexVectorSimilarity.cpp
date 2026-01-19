@@ -417,7 +417,7 @@ void performHubPruning(
         const auto & vector = stored_vectors[key];
         auto new_key = static_cast<USearchIndex::vector_key_t>(hub_index++);
 
-        runner.enqueueAndKeepTrack([&pruned_index, &vector, new_key, dimensions] {
+        runner.enqueueAndKeepTrack([&pruned_index, &vector, new_key] {
             auto result = pruned_index->add(new_key, vector.data());
             if (!result)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add hub node to pruned index. Error: {}", result.error.release());
@@ -578,7 +578,8 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
 
         if (which.isFloat32())
         {
-            const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(column_array->getData().get());
+            const auto & column_array_data = column_array->getData();
+            const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(column_array_data.get());
             const auto & data = column_float32->getData();
             for (size_t row = 0; row < rows; ++row)
             {
@@ -589,7 +590,8 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
         }
         else if (which.isFloat64())
         {
-            const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(column_array->getData().get());
+            const auto & column_array_data = column_array->getData();
+            const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(column_array_data.get());
             const auto & data = column_float64->getData();
             for (size_t row = 0; row < rows; ++row)
             {
@@ -604,7 +606,8 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
         }
         else if (which.isBFloat16())
         {
-            const auto * column_bf16 = typeid_cast<const ColumnBFloat16 *>(column_array->getData().get());
+            const auto & column_array_data = column_array->getData();
+            const auto * column_bf16 = typeid_cast<const ColumnBFloat16 *>(column_array_data.get());
             const auto & data = column_bf16->getData();
             for (size_t row = 0; row < rows; ++row)
             {
@@ -863,7 +866,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Seventh argument of vector similarity index (leann_mode) must be of type String");
 
         String leann_arg = index.arguments[6].safeGet<String>();
-        if (leann_arg != "enable_hub_pruning" && leann_arg != "true" && leann_arg != "false" && leann_arg != "")
+        if (leann_arg != "enable_hub_pruning" && leann_arg != "true" && leann_arg != "false" && !leann_arg.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (leann_mode) of vector similarity index must be 'enable_hub_pruning', 'true', 'false', or empty string");
     }
 
