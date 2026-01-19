@@ -2145,13 +2145,9 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         }
         
         /// Filter columns that were already read.
-        if (rows_pass != filter.size())
-        {
-            /// Some rows were filtered out by this step, so we need to filter the columns.
-            for (auto & state : row_subgroup.output)
-                if (state.column)
-                    state.column = state.column->filter(filter, /*result_size_hint=*/ rows_pass);
-        }
+        for (auto & state : row_subgroup.output)
+            if (state.column)
+                state.column = state.column->filter(filter, /*result_size_hint=*/ rows_pass);
 
         /// Expand the filter to correspond to all column subchunk rows, rather than only rows that
         /// passed previous filters (previous prewhere steps).
@@ -2160,8 +2156,7 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
             mut_filter.expand(row_subgroup.filter.filter, /*inverted*/ false);
         row_subgroup.filter.filter = std::move(mut_filter.getData());
-        /// Recalculate rows_pass for the combined filter after expansion
-        row_subgroup.filter.rows_pass = countBytesInFilter(row_subgroup.filter.filter.data(), 0, row_subgroup.filter.filter.size());
+        row_subgroup.filter.rows_pass = rows_pass;
     }
 }
 
