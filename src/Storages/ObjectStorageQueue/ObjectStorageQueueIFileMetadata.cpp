@@ -269,7 +269,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     {
         file_status->onProcessing();
     }
-    else
+    else if (file_state != FileStatus::State::None)
     {
         LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state);
         file_status->updateState(file_state);

@@ -280,6 +280,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
     const size_t max_num_tries = 100;
     Coordination::Error code;
+    std::string failed_path;
     for (size_t i = 0; i < max_num_tries; ++i)
     {
         std::optional<NodeMetadata> processed_node;
@@ -404,7 +405,8 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         /// 6. check processed node version did not change
 
         auto failed_idx = zkutil::getFailedOpIndex(code, responses);
-        LOG_DEBUG(log, "Code: {}, failed idx: {}, failed path: {}", code, failed_idx, requests[failed_idx]->getPath());
+        failed_path = requests[failed_idx]->getPath();
+        LOG_DEBUG(log, "Code: {}, failed idx: {}, failed path: {}", code, failed_idx, failed_path);
 
         if (has_request_failed(failed_path_doesnt_exist_idx))
             return {false, FileStatus::State::Failed};
@@ -431,10 +433,9 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         LOG_DEBUG(log, "Retrying setProcessing because processing node id path is unexpectedly missing or was created (error code: {})", code);
     }
 
-    throw Exception(
-        ErrorCodes::LOGICAL_ERROR,
-        "Failed to set file processing within {} retries, last error: {}",
-        max_num_tries, code);
+    LOG_WARNING(log, "Failed to set file processing within {} retries, last error {} for path {}", max_num_tries, code, failed_path);
+    chassert(false); /// Catch in CI.
+    return {false, FileStatus::State::None};
 }
 
 void ObjectStorageQueueOrderedFileMetadata::prepareProcessedAtStartRequests(
