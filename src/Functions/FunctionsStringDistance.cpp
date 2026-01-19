@@ -9,6 +9,7 @@
 #include <Common/iota.h>
 
 #include <algorithm>
+#include <bitset>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -160,15 +161,13 @@ struct ByteJaccardIndexImpl
 
         /// For byte strings use plain array as a set
         constexpr size_t max_size = std::numeric_limits<unsigned char>::max() + 1;
-        std::array<UInt8, max_size> haystack_set;
-        std::array<UInt8, max_size> needle_set;
+        using Bitset = std::bitset<max_size>;
+        Bitset haystack_set;
+        Bitset needle_set;
 
         /// For UTF-8 strings we also use sets of code points greater than max_size
         std::set<UInt32> haystack_utf8_set;
         std::set<UInt32> needle_utf8_set;
-
-        haystack_set.fill(0);
-        needle_set.fill(0);
 
         if constexpr (is_utf8)
         {
@@ -176,7 +175,7 @@ struct ByteJaccardIndexImpl
                 haystack,
                 haystack_size,
                 [&](UInt32 data) { haystack_utf8_set.insert(data); },
-                [&](unsigned char data) { haystack_set[data] = 1; });
+                [&](unsigned char data) { haystack_set.set(data); });
             parseUTF8String(
                 needle, needle_size, [&](UInt32 data) { needle_utf8_set.insert(data); }, [&](unsigned char data) { needle_set[data] = 1; });
         }
@@ -184,18 +183,18 @@ struct ByteJaccardIndexImpl
         {
             while (haystack < haystack_end)
             {
-                haystack_set[static_cast<unsigned char>(*haystack)] = 1;
+                haystack_set.set(static_cast<unsigned char>(*haystack));
                 ++haystack;
             }
             while (needle < needle_end)
             {
-                needle_set[static_cast<unsigned char>(*needle)] = 1;
+                needle_set.set(static_cast<unsigned char>(*needle));
                 ++needle;
             }
         }
 
-        UInt8 intersection = 0;
-        UInt8 union_size = 0;
+        UInt32 intersection = 0;
+        UInt32 union_size = 0;
 
         if constexpr (is_utf8)
         {
@@ -214,14 +213,10 @@ struct ByteJaccardIndexImpl
                 else
                     ++rit;
             }
-            union_size = static_cast<UInt8>(haystack_utf8_set.size() + needle_utf8_set.size() - intersection);
+            union_size = static_cast<UInt32>(haystack_utf8_set.size() + needle_utf8_set.size() - intersection);
         }
-
-        for (size_t i = 0; i < max_size; ++i)
-        {
-            intersection += haystack_set[i] & needle_set[i];
-            union_size += haystack_set[i] | needle_set[i];
-        }
+        intersection += static_cast<UInt32>((haystack_set & needle_set).count());
+        union_size += static_cast<UInt32>((haystack_set | needle_set).count());
 
         return static_cast<ResultType>(intersection) / static_cast<ResultType>(union_size);
     }
