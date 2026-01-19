@@ -310,6 +310,15 @@ static std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleN
         {
             if (nopr_hash == it->second)
             {
+                if (!nopr_node->step->supportsDataflowStatisticsCollection())
+                {
+                    LOG_DEBUG(
+                        getLogger("optimizeTree"),
+                        "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
+                        nopr_node->step->getName());
+                    return std::make_pair(nullptr, 0);
+                }
+
                 LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", nopr_node->step->getName());
                 return std::make_pair(nopr_node, nopr_hash);
             }
@@ -395,14 +404,6 @@ void considerEnablingParallelReplicas(
         = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
     if (!corresponding_node_in_single_replica_plan)
         return;
-    if (!corresponding_node_in_single_replica_plan->step->supportsDataflowStatisticsCollection())
-    {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
-            corresponding_node_in_single_replica_plan->step->getName());
-        return;
-    }
 
     /// Now we need to identify the reading step that should be instrumented for statistics collection
     ReadFromMergeTree * source_reading_step = findReadingStep(*corresponding_node_in_single_replica_plan);
