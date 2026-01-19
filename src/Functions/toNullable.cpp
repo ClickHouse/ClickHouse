@@ -4,6 +4,10 @@
 #include <Columns/ColumnNullable.h>
 #include <Core/ColumnNumbers.h>
 
+#if USE_EMBEDDED_COMPILER
+#include <DataTypes/Native.h>
+#endif
+
 
 namespace DB
 {
@@ -41,6 +45,19 @@ public:
     {
         return makeNullable(arguments[0].column);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        return nativeCast(b, arguments[0], result_type);
+    }
+#endif
+
+
 };
 
 }

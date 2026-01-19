@@ -41,7 +41,7 @@ struct ChooseContext
     const PartitionsStatistics & partitions_stats;
     const IMergePredicate & predicate;
     const IMergeSelector::RangeFilter & range_filter;
-    const IMergeSelector::MergeSizes & max_merge_sizes;
+    const MergeConstraints & merge_constraints;
     const StorageInMemoryMetadata & metadata_snapshot;
     const MergeTreeSettings & merge_tree_settings;
     const PartitionIdToTTLs & next_delete_times;
@@ -71,31 +71,31 @@ MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, Merg
 MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
 {
     /// Drop parts - 1 priority
-    if (!ctx.max_merge_sizes.empty())
+    if (!ctx.merge_constraints.empty())
     {
-        /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space
-        std::vector<size_t> max_sizes(ctx.max_merge_sizes.size(), std::numeric_limits<size_t>::max());
+        /// The size of the completely expired part of TTL drop is not affected by the merge pressure and the size of the storage space.
+        std::vector<MergeConstraint> ttl_constraints(ctx.merge_constraints.size(), {std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()});
         TTLPartDropMergeSelector drop_ttl_selector(ctx.current_time);
 
-        if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, max_sizes, ctx.range_filter); !merge_ranges.empty())
+        if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, ttl_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDrop);
     }
 
     /// Delete rows - 2 priority
-    if (!ctx.max_merge_sizes.empty() && !ctx.merge_tree_settings[MergeTreeSetting::ttl_only_drop_parts])
+    if (!ctx.merge_constraints.empty() && !ctx.merge_tree_settings[MergeTreeSetting::ttl_only_drop_parts])
     {
         TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
 
-        if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter); !merge_ranges.empty())
+        if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
 
     /// Recompression - 3 priority
-    if (!ctx.max_merge_sizes.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
+    if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
     {
         TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
 
-        if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter); !merge_ranges.empty())
+        if (auto merge_ranges = recompress_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLRecompress);
     }
 
@@ -157,24 +157,28 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
     }
 
     chassert(selector != nullptr);
-    auto merge_ranges = selector->select(ctx.ranges, ctx.max_merge_sizes, ctx.range_filter);
+    auto merge_ranges = selector->select(ctx.ranges, ctx.merge_constraints, ctx.range_filter);
     return pack(ctx, std::move(merge_ranges), MergeType::Regular);
 }
 
 }
 
 MergeSelectorApplier::MergeSelectorApplier(
-    std::vector<size_t> && max_merge_sizes_,
+    std::vector<MergeConstraint> && merge_constraints_,
     bool merge_with_ttl_allowed_,
     bool aggressive_,
     IMergeSelector::RangeFilter range_filter_)
-    : max_merge_sizes(std::move(max_merge_sizes_))
+    : merge_constraints(std::move(merge_constraints_))
     , merge_with_ttl_allowed(merge_with_ttl_allowed_)
     , aggressive(aggressive_)
     , range_filter(std::move(range_filter_))
 {
-    chassert(!max_merge_sizes.empty(), "At least one merge size constraint should be passed");
-    chassert(std::is_sorted(max_merge_sizes.rbegin(), max_merge_sizes.rend()), "Merge size constraints must be sorted in desc order");
+    chassert(!merge_constraints.empty(), "At least one merge constraint should be passed");
+
+    chassert(std::ranges::is_sorted(
+        merge_constraints,
+        [](const auto & lhs, const auto & rhs) { return lhs.max_size_bytes > rhs.max_size_bytes; }),
+        "Merge constraints must be sorted in desc order");
 }
 
 MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
@@ -193,7 +197,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .partitions_stats = partitions_stats,
         .predicate = predicate,
         .range_filter = range_filter,
-        .max_merge_sizes = max_merge_sizes,
+        .merge_constraints = merge_constraints,
         .metadata_snapshot = *metadata_snapshot,
         .merge_tree_settings = *merge_tree_settings,
         .next_delete_times = next_delete_times,

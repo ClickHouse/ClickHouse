@@ -24,8 +24,8 @@ no_warning(zero-length-array) # Clang extension
 no_warning(c++98-compat-pedantic) # We don't care about C++98 compatibility (We use aliases, variadic macros...)
 no_warning(c++20-compat) # Use C++20 features incompatible with older standards (consteval, constinit, implicit typename...)
 no_warning(sign-conversion) # TODO: Fix the code and enable it
-no_warning(implicit-int-conversion) # TODO: Fix the code and enable it
 no_warning(implicit-int-float-conversion) # TODO: Fix the code and enable it
+no_warning(deprecated-declarations) # TODO: Fix the code and enable it
 no_warning(disabled-macro-expansion)
 no_warning(documentation-unknown-command)
 no_warning(double-promotion)
@@ -46,11 +46,10 @@ no_warning(switch-default) # conflicts with "defaults in a switch covering all e
 no_warning(nrvo) # not eliding copy on return - too aggressive
 no_warning(missing-noreturn) # too aggressive with no clear benefit, see https://github.com/ClickHouse/ClickHouse/pull/86416
 if (ARCH_E2K)
-    # disable "__builtin_ia32_pcmpestric128 / __builtin_ia32_pcmpestri128 is deprecated: The function may be slow due to inefficient implementation" warning
-    no_warning(deprecated-declarations)
     # disable "use of GNU statement expression extension from macro expansion" warning
     no_warning(gnu-statement-expression-from-macro-expansion)
 endif ()
 # For __COUNTER__ support (now it is part of C2y)
 # Note: right now cmake 4.2.1 does not recognize "set (CMAKE_C_STANDARD 2y)"
 no_warning(c2y-extensions)
+no_warning(c23-extensions) # For #embed
