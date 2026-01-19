@@ -441,9 +441,6 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
     {
         RowSubgroup & next_subgroup = row_group.subgroups[main_ptr];
         ReadStage next_subgroup_stage = next_subgroup.stage.load();
-        if (next_subgroup_stage >= ReadStage::OffsetIndex)
-            break;
-
         if (!next_subgroup.stage.compare_exchange_strong(
                 next_subgroup_stage, ReadStage::OffsetIndex))
             break;
