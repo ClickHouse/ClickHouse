@@ -158,8 +158,8 @@ struct ByteJaccardIndexImpl
         alignas(64) UInt8 needle_set[max_size]{};
     };
 
-    /// For UTF8 - still use an array for ASCII but a hash set for wider codepoints
-    struct ScratchUTF8 : public ScratchASCII
+    /// For UTF8 use a hash set for wider codepoints
+    struct ScratchUTF8
     {
         using Set = HashSet<UInt32, DefaultHash<UInt32>>;
         Set haystack_utf8_set;
