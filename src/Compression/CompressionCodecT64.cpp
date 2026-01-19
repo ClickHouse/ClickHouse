@@ -708,9 +708,9 @@ void pext(T * buf, T positive_mask, T negative_mask, T negative_bit, UInt32 tail
     {
         T current = buf[i];
         if (current >= 0)
-            buf[i] = bitCompress64(current, positive_mask);
+            buf[i] = static_cast<T>(bitCompress64(current, positive_mask));
         else
-            buf[i] = bitCompress64(current, negative_mask) | negative_bit;
+            buf[i] = static_cast<T>(bitCompress64(current, negative_mask) | negative_bit);
     }
 }
 
@@ -990,8 +990,8 @@ UInt32 decompressData(const char * src, UInt32 src_size, char * dst, UInt32 unco
 
 UInt32 CompressionCodecT64::doCompressData(const char * src, UInt32 src_size, char * dst) const
 {
-    UInt8 bit_flag = static_cast<UInt8>(variant) << 7;
-    UInt8 mask_flag = (static_cast<UInt8>(variant) & 0x2) << 5;
+    UInt8 bit_flag = static_cast<UInt8>(static_cast<UInt8>(variant) << 7);
+    UInt8 mask_flag = static_cast<UInt8>((static_cast<UInt8>(variant) & 0x2) << 5);
     UInt8 cookie = static_cast<UInt8>(serializeTypeId(type_idx)) | bit_flag | mask_flag;
     memcpy(dst, &cookie, 1);
     dst += 1;
