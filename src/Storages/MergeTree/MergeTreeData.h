@@ -403,7 +403,7 @@ public:
         }
 
         /// Adds part to rename. Both names are relative to relative_data_path.
-        void addPart(const String & old_name, const String & new_name, const DiskPtr & disk);
+        void addPart(const String & part_name, const String & old_dir, const String & new_dir, const DiskPtr & disk);
 
         /// Renames part from old_name to new_name
         void tryRenameAll();
@@ -415,8 +415,9 @@ public:
 
         struct RenameInfo
         {
-            String old_name;
-            String new_name;
+            String part_name;
+            String old_dir;
+            String new_dir;
             /// Disk cannot be changed
             DiskPtr disk;
         };
@@ -764,8 +765,7 @@ public:
 
     void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
 
-    MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
-                                                ContextPtr context, PartsTemporaryRename & renamed_parts);
+    MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
 
     bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
 
@@ -1650,7 +1650,7 @@ protected:
 
     virtual void dropPart(const String & part_name, bool detach, ContextPtr context) = 0;
     virtual void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) = 0;
-    virtual PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr context) = 0;
+    virtual PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) = 0;
     virtual void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) = 0;
     virtual void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr context) = 0;
 
@@ -1997,5 +1997,7 @@ struct CurrentlySubmergingEmergingTagger
 /// Look at MutationCommands if it contains mutations for AlterConversions, update the counter.
 void incrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
 void decrementMutationsCounters(MutationCounters & mutation_counters, const MutationCommands & commands);
+
+String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSettings & storage_settings, const IDataPartStorage * data_part_storage);
 
 }

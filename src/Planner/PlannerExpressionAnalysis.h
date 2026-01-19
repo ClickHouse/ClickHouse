@@ -51,6 +51,7 @@ struct SortAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
+    ActionsAndProjectInputsFlagPtr before_interpolate_actions;
 };
 
 struct LimitByAnalysisResult

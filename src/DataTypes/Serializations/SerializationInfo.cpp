@@ -424,7 +424,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
     {
-        size_t version_value = object->getValue<size_t>(KEY_VERSION);
+        auto version_value = static_cast<std::underlying_type_t<MergeTreeSerializationInfoVersion>>(object->getValue<size_t>(KEY_VERSION));
         auto maybe_enum = magic_enum::enum_cast<MergeTreeSerializationInfoVersion>(version_value);
         if (!maybe_enum)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown version of serialization infos ({})", version_value);
@@ -467,7 +467,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
         for (const auto & [type_name, value] : *type_versions_obj)
         {
-            size_t version_value = value.convert<size_t>();
+            auto version_value = static_cast<std::underlying_type_t<MergeTreeStringSerializationVersion>>(value.convert<size_t>());
             if (type_name == KEY_STRING_SERIALIZATION_VERSION)
             {
                 auto maybe_enum = magic_enum::enum_cast<MergeTreeStringSerializationVersion>(version_value);
