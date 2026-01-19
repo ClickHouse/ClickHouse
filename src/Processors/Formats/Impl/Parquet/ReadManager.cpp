@@ -740,6 +740,8 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(task.column_idx);
 
+                if (row_subgroup.filter.rows_pass == 0)
+                    return;
                 reader.determinePagesToPrefetch(column, row_subgroup, row_group, prefetches);
 
                 /// Side note: would be nice to avoid reading the dictionary if all dictionary-encoded
