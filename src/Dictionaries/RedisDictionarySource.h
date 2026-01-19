@@ -26,18 +26,18 @@ namespace DB
 
         ~RedisDictionarySource() override;
 
-        BlockIO loadAll() override;
+        QueryPipeline loadAll() override;
 
-        BlockIO loadUpdatedAll() override
+        QueryPipeline loadUpdatedAll() override
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for RedisDictionarySource");
         }
 
         bool supportsSelectiveLoad() const override { return true; }
 
-        BlockIO loadIds(const std::vector<UInt64> & ids) override;
+        QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
 
-        BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+        QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
         bool isModified() const override { return true; }
 

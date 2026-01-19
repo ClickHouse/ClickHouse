@@ -49,7 +49,6 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_with_rollup);
     hash_state.update(group_by_with_cube);
     hash_state.update(limit_with_ties);
-    hash_state.update(limit_by_all);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -77,15 +76,9 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
 
     ostr << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
 
-    {
-        /// If part of EXCEPT clause, surround SELECT args with parens to avoid formatting inconsistency
-        FormatStateStacked frame_to_format = frame;
-        if (part_of_except_clause)
-            frame_to_format.surround_each_list_element_with_parens = true;
-
-        s.one_line ? select()->format(ostr, s, state, frame_to_format)
-                   : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame_to_format);
-    }
+    s.one_line
+        ? select()->format(ostr, s, state, frame)
+        : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
 
     if (tables())
     {
@@ -218,15 +211,9 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
         limitByLength()->format(ostr, s, state, frame);
         ostr << " BY";
-        if (limit_by_all)
-        {
-            ostr << " ALL";
-        }
-        else if (limitBy())
-        {
+        if (limitBy())
             s.one_line ? limitBy()->format(ostr, s, state, frame)
                        : limitBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
-        }
     }
 
     if (limitLength())

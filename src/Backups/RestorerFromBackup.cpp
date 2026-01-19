@@ -20,7 +20,6 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
-#include <Common/setThreadName.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
@@ -255,7 +254,7 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
     }
 }
 
-void RestorerFromBackup::schedule(std::function<void()> && task_, ThreadName thread_name_)
+void RestorerFromBackup::schedule(std::function<void()> && task_, const char * thread_name_)
 {
     if (exception_caught)
         return;
@@ -407,7 +406,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
 {
     schedule(
         [this, table_name_in_backup, skip_if_inner_table, partitions]() { findTableInBackupImpl(table_name_in_backup, skip_if_inner_table, partitions); },
-        ThreadName::RESTORE_FIND_TABLE);
+        "Restore_FindTbl");
 }
 
 void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions)
@@ -510,7 +509,7 @@ void RestorerFromBackup::findDatabaseInBackup(const String & database_name_in_ba
 {
     schedule(
         [this, database_name_in_backup, except_table_names]() { findDatabaseInBackupImpl(database_name_in_backup, except_table_names); },
-        ThreadName::RESTORE_FIND_TABLE);
+        "Restore_FindDB");
 }
 
 void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names)
@@ -700,7 +699,7 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             {
                 if (create.is_dictionary)
                     flags |= AccessType::CREATE_DICTIONARY;
-                else if (create.is_ordinary_view || create.is_materialized_view)
+                else if (create.is_ordinary_view || create.is_materialized_view || create.is_live_view)
                     flags |= AccessType::CREATE_VIEW;
                 else
                     flags |= AccessType::CREATE_TABLE;
@@ -766,7 +765,7 @@ void RestorerFromBackup::createAndCheckDatabase(const String & database_name)
 {
     schedule(
         [this, database_name]() { createAndCheckDatabaseImpl(database_name); },
-        ThreadName::RESTORE_MAKE_DATABASE);
+        "Restore_MakeDB");
 }
 
 void RestorerFromBackup::createAndCheckDatabaseImpl(const String & database_name)
@@ -833,11 +832,6 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 
         auto create_query_context = Context::createCopy(query_context);
         create_query_context->setSetting("allow_deprecated_database_ordinary", 1);
-
-        /// We shouldn't use the progress callback copied from the `query_context` because it was set in a protocol handler (e.g. HTTPHandler)
-        /// for the "RESTORE ASYNC" query which could have already finished (the restore process is working in the background).
-        /// TODO: Get rid of using `query_context` in class RestorerFromBackup.
-        create_query_context->setProgressCallback(nullptr);
 
 #if CLICKHOUSE_CLOUD
         if (shared_catalog && SharedDatabaseCatalog::instance().shouldRestoreDatabase(create_database_query))
@@ -960,7 +954,6 @@ void RestorerFromBackup::removeUnresolvedDependencies()
                 "Table {} in backup doesn't have dependencies and dependent tables as it expected to. It's a bug",
                 table_id);
 
-        LOG_TRACE(log, "Excluding dependency {}", table_id.getQualifiedName().getFullName());
         return true; /// Exclude this dependency.
     };
 
@@ -1004,7 +997,7 @@ void RestorerFromBackup::createAndCheckTable(const QualifiedTableName & table_na
 {
     schedule(
         [this, table_name]() { createAndCheckTableImpl(table_name); },
-        ThreadName::RESTORE_MAKE_TABLE);
+        "Restore_MakeTbl");
 }
 
 void RestorerFromBackup::createAndCheckTableImpl(const QualifiedTableName & table_name)
@@ -1081,11 +1074,6 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         create_query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
 
         create_query_context->setUnderRestore(true);
-
-        /// We shouldn't use the progress callback copied from the `query_context` because it was set in a protocol handler (e.g. HTTPHandler)
-        /// for the "RESTORE ASYNC" query which could have already finished (the restore process is working in the background).
-        /// TODO: Get rid of using `query_context` in class RestorerFromBackup.
-        create_query_context->setProgressCallback(nullptr);
 
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
@@ -1196,7 +1184,7 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
 
     schedule(
         [this, table_name, storage, data_path_in_backup, partitions]() { insertDataToTableImpl(table_name, storage, data_path_in_backup, partitions); },
-        ThreadName::RESTORE_TABLE_DATA);
+        "Restore_TblData");
 }
 
 void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
@@ -1252,7 +1240,7 @@ void RestorerFromBackup::runDataRestoreTasks()
             break;
 
         for (auto & task : tasks_to_run)
-            schedule(std::move(task), ThreadName::RESTORE_TABLE_TASK);
+            schedule(std::move(task), "Restore_TblTask");
 
         waitFutures();
     }
