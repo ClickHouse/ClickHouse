@@ -670,7 +670,7 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The value of the 'min_key_length' argument must be less or equal than "
-                "the value of the 'max_key_length' argument.");
+                "the value of the 'max_key_lenght' argument.");
 
         configuration.min_key_length = min_key_length;
         configuration.max_key_length = std::max(configuration.max_key_length, configuration.min_key_length);
@@ -684,7 +684,7 @@ StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_a
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
     {
         /// Perform strict validation of ASTs in addition to name collection extraction.
-        for (auto args_it = std::next(engine_args.begin()); args_it != engine_args.end(); ++args_it)
+        for (auto * args_it = std::next(engine_args.begin()); args_it != engine_args.end(); ++args_it)
             getKeyValueFromAST(*args_it, local_context);
 
         StorageFuzzJSON::processNamedCollectionResult(configuration, *named_collection);
