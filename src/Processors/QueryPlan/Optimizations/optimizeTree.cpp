@@ -218,7 +218,7 @@ void optimizeExchanges(QueryPlan::Node & root);
 ///            ReadFromMergeTree (default.hits)
 ///      ReadFromRemoteParallelReplicas (Query: ... Replicas: ...)
 ///
-QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel_replicas_root)
+static QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel_replicas_root)
 {
     QueryPlan::Node * replicas_plan_top_node = nullptr;
 
@@ -296,7 +296,7 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
 /// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
 /// replicas will send to the initiator. To do that, we found the node that will be at the top of replicas plan (e.g. Aggregating step in the example above),
 /// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
-std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
+static std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
     const QueryPlan::Node & final_node_in_replica_plan,
     QueryPlan::Node & parallel_replicas_plan_root,
     QueryPlan::Node & single_replica_plan_root)
@@ -323,12 +323,9 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
     }
 }
 
-IQueryPlanStep * findReadingStep(const QueryPlan::Node * top_of_single_replica_plan)
+static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replica_plan)
 {
-    if (!top_of_single_replica_plan)
-        return nullptr;
-
-    const auto * reading_step = top_of_single_replica_plan;
+    const auto * reading_step = &top_of_single_replica_plan;
     while (reading_step && !reading_step->children.empty())
     {
         // TODO(nickitat): support multiple read steps with parallel replicas
@@ -339,25 +336,15 @@ IQueryPlanStep * findReadingStep(const QueryPlan::Node * top_of_single_replica_p
         reading_step = reading_step->children.front();
     }
 
-    if (!reading_step->step->supportsDataflowStatisticsCollection())
-    {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "Reading step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
-            reading_step->step->getName());
-        return nullptr;
-    }
+    chassert(reading_step);
+    if (auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(reading_step->step.get()))
+        return read_from_merge_tree;
 
-    if (!top_of_single_replica_plan->step->supportsDataflowStatisticsCollection())
-    {
-        LOG_DEBUG(
-            getLogger("optimizeTree"),
-            "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
-            top_of_single_replica_plan->step->getName());
-        return nullptr;
-    }
-
-    return reading_step->step.get();
+    LOG_DEBUG(
+        getLogger("optimizeTree"),
+        "Cannot find ReadFromMergeTree step in single-replica plan (found {}). Skipping optimization",
+        reading_step->step->getName());
+    return nullptr;
 }
 
 
@@ -368,13 +355,9 @@ void considerEnablingParallelReplicas(
      QueryPlan::Nodes &,
      QueryPlan & query_plan)
 {
-    if (!optimization_settings.automatic_parallel_replicas_mode)
-        return;
-
-    if (!optimization_settings.query_plan_with_parallel_replicas_builder)
-        return;
-
-    if (optimization_settings.parallel_replicas_enabled)
+    if (!optimization_settings.automatic_parallel_replicas_mode
+        || !optimization_settings.query_plan_with_parallel_replicas_builder
+        || optimization_settings.parallel_replicas_enabled)
         return;
 
     // Cannot guarantee projection usage with parallel replicas
@@ -410,19 +393,23 @@ void considerEnablingParallelReplicas(
 
     const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
         = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
-
-    /// Now we need to identify the reading step that should be instrumented for statistics collection
-    ReadFromMergeTree * source_reading_step = nullptr;
-    if (auto * reading = findReadingStep(corresponding_node_in_single_replica_plan); reading && typeid_cast<ReadFromMergeTree *>(reading))
+    if (!corresponding_node_in_single_replica_plan)
+        return;
+    if (!corresponding_node_in_single_replica_plan->step->supportsDataflowStatisticsCollection())
     {
-        source_reading_step = static_cast<ReadFromMergeTree *>(reading);
-    }
-    else
-    {
-        LOG_DEBUG(getLogger("optimizeTree"), "Cannot find ReadFromMergeTree step in single-replica plan. Skipping optimization");
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
+            corresponding_node_in_single_replica_plan->step->getName());
         return;
     }
 
+    /// Now we need to identify the reading step that should be instrumented for statistics collection
+    ReadFromMergeTree * source_reading_step = findReadingStep(*corresponding_node_in_single_replica_plan);
+    if (!source_reading_step)
+        return;
+
+    /// TODO(nickitat): reuse index analysis result in the plan with PRs (if it will be chosen later by the heuristic)
     const auto analysis
         = source_reading_step->getAnalyzedResult() ? source_reading_step->getAnalyzedResult() : source_reading_step->selectRangesToRead();
     if (!analysis)
@@ -437,12 +424,12 @@ void considerEnablingParallelReplicas(
         return;
     }
 
-    bool skip_stats_collection = false;
+    bool table_data_drifted_significantly = true;
 
     const auto & stats_cache = getRuntimeDataflowStatisticsCache();
     if (const auto stats = stats_cache.getStats(single_replica_plan_node_hash))
     {
-        bool skip_optimization = optimization_settings.automatic_parallel_replicas_mode == 2;
+        bool dont_apply_plan_with_parallel_replicas = optimization_settings.automatic_parallel_replicas_mode == 2;
         if (std::max<size_t>(stats->total_rows_from_storage, rows) > std::min<size_t>(stats->total_rows_from_storage, rows) * 2)
         {
             LOG_DEBUG(
@@ -450,25 +437,33 @@ void considerEnablingParallelReplicas(
                 "Significant difference in total rows from storage detected (previously {}, now {}). Recollecting statistics",
                 stats->total_rows_from_storage,
                 rows);
-            skip_optimization = true;
+            dont_apply_plan_with_parallel_replicas = true;
         }
         else
         {
-            skip_stats_collection = true;
+            table_data_drifted_significantly = false;
         }
 
-        if (!skip_optimization)
+        if (!dont_apply_plan_with_parallel_replicas)
         {
             const auto max_threads = optimization_settings.max_threads;
             const auto num_replicas = optimization_settings.max_parallel_replicas;
+            const auto local_plan_cost_estimation = stats->input_bytes / max_threads;
+            const auto replicas_plan_cost_estimation
+                = (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas;
             LOG_DEBUG(
                 getLogger("optimizeTree"),
-                "stats->input_bytes={}, stats->output_bytes={}, max_threads={}, num_replicas={}",
+                "The applied formula: {} / {} ? ({} / ({} * {}) + {} / {}) ≡ {} ? {}",
                 stats->input_bytes,
-                stats->output_bytes,
                 max_threads,
-                num_replicas);
-            if (stats->input_bytes / max_threads > (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas)
+                stats->input_bytes,
+                max_threads,
+                num_replicas,
+                stats->output_bytes,
+                num_replicas,
+                local_plan_cost_estimation,
+                replicas_plan_cost_estimation);
+            if (local_plan_cost_estimation > replicas_plan_cost_estimation)
             {
                 if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
                     && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)
@@ -491,17 +486,16 @@ void considerEnablingParallelReplicas(
         LOG_DEBUG(getLogger("optimizeTree"), "No stats found for hash {}", single_replica_plan_node_hash);
     }
 
-    if (skip_stats_collection && optimization_settings.automatic_parallel_replicas_mode != 2)
+    if (table_data_drifted_significantly
+        || optimization_settings.automatic_parallel_replicas_mode == 2 // automatic_parallel_replicas_mode == 2 enforces statistics recollection
+    )
     {
-        LOG_DEBUG(getLogger("optimizeTree"), "Skipping statistics collection as cache is up to date");
-        return;
+        auto updater = source_reading_step->getContext()->getRuntimeDataflowStatisticsCacheUpdater();
+        updater->setCacheKey(single_replica_plan_node_hash);
+        updater->setTotalRowsFromStorage(rows);
+        source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
+        corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
     }
-
-    auto updater = source_reading_step->getContext()->getRuntimeDataflowStatisticsCacheUpdater();
-    updater->setCacheKey(single_replica_plan_node_hash);
-    updater->setTotalRowsFromStorage(rows);
-    source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
-    corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
 }
 
 

@@ -61,7 +61,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.elapsed_microseconds);
     };
 
-    RuntimeDataflowStatistics res;
+    RuntimeDataflowStatistics res{.total_rows_from_storage = total_rows_from_storage};
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
         const auto & stats = input_bytes_statistics[i];
@@ -82,8 +82,6 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             res.output_bytes += static_cast<size_t>(stats.bytes / compression_ratio);
         }
     }
-    chassert(total_rows_from_storage);
-    res.total_rows_from_storage = total_rows_from_storage;
 
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"),
