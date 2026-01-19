@@ -206,7 +206,9 @@ void registerCodecGorilla(CompressionCodecFactory & factory);
 void registerCodecEncrypted(CompressionCodecFactory & factory);
 void registerCodecFPC(CompressionCodecFactory & factory);
 void registerCodecGCD(CompressionCodecFactory & factory);
+#if USE_OPENZL
 void registerCodecOpenZL(CompressionCodecFactory & factory);
+#endif
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -222,7 +224,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
     registerCodecGCD(*this);
+#if USE_OPENZL
     registerCodecOpenZL(*this);
+#endif
 
     default_codec = get("LZ4", {});
 }
