@@ -29,28 +29,20 @@ FROM
     SELECT x AS y
     FROM system.one
 )
-(
-    WITH 1 AS x
-    SELECT x
-    FROM system.one
-)
+WITH 1 AS x
+SELECT x
+FROM system.one
 UNION ALL
-(
-    WITH 1 AS x
-    SELECT x
-    FROM system.one
-)
-(
-    WITH 1 AS x
-    SELECT x
-    FROM system.one
-)
+WITH 1 AS x
+SELECT x
+FROM system.one
+WITH 1 AS x
+SELECT x
+FROM system.one
 UNION ALL
-(
-    WITH 2 AS x
-    SELECT x
-    FROM system.one
-)
+WITH 2 AS x
+SELECT x
+FROM system.one
 WITH
     5 AS q1,
     x AS

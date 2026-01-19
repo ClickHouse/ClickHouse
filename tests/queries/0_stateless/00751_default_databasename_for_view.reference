@@ -12,15 +12,15 @@ AS SELECT
     platform,
     app
 FROM default.t_00751
-WHERE (app = (
+WHERE app = (
     SELECT min(app)
     FROM default.u_00751
-)) AND (platform = (
+) AND platform = (
     SELECT (
             SELECT min(platform)
             FROM default.v_00751
         )
-))
+)
 2000-01-01	a	a
 2000-01-02	b	b
 2000-01-03	a	a
