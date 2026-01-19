@@ -170,7 +170,7 @@ public:
     }
     MemoryUsageToken & operator=(MemoryUsageToken && rhs) noexcept
     {
-        //chassert(!val);
+        chassert(!val);
         alloc_stage = std::exchange(rhs.alloc_stage, ReadStage::Deallocated);
         val = std::exchange(rhs.val, 0);
         return *this;
