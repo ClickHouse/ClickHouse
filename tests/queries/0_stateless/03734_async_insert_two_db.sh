@@ -36,6 +36,9 @@ for db in $db1 $db3; do
     $CH_CLIENT --database=$db --async_insert=1 --wait_for_async_insert=0 --query "INSERT INTO test_async_insert_two_db_table VALUES (3, 'three'), (4, 'four'), (5, 'five');"
 done
 
+# to ensure that there is enough time for all the inserts to be queued
+sleep 2
+
 for db in $db1 $db3; do
     echo "Flushing inserts in ${db%$CLICKHOUSE_DATABASE}"
     $CH_CLIENT --database=$db "system flush async insert queue test_async_insert_two_db_table;"
