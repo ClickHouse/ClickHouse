@@ -616,7 +616,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 
     bool reset_evicting_flag_for_prev_entry = true;
     SCOPE_EXIT({
-        if (!reset_evicting_flag_for_prev_entry)
+        if (reset_evicting_flag_for_prev_entry)
             prev_entry->resetEvictingFlag();
     });
 
