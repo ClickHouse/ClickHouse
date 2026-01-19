@@ -624,13 +624,12 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     const auto parameter_type = flags.getParameterType();
     if (parameter_type == AccessFlags::NONE)
     {
-        const auto & database_name = getDatabase(args...);
         /// Access to temporary tables is controlled in an unusual way, not like normal tables.
         /// Creating of temporary tables is controlled by AccessType::CREATE_TEMPORARY_TABLES grant,
         /// and other grants are considered as always given.
         /// The DatabaseCatalog class won't resolve StorageID for temporary tables
         /// which shouldn't be accessed.
-        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        if (getDatabase(args...) == DatabaseCatalog::TEMPORARY_DATABASE)
             return access_granted();
     }
 

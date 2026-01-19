@@ -310,7 +310,7 @@ static DatabasePtr createMemoryDatabaseIfNotExists(ContextPtr context, const Str
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(database_name, context);
+        system_database = std::make_shared<DatabaseMemory>(database_name, false, context);
         DatabaseCatalog::instance().attachDatabase(database_name, system_database);
     }
     return system_database;

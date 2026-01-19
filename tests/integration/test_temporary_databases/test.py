@@ -30,6 +30,10 @@ def get_session_id_with_db_name(r, num: int) -> tuple[str, str]:
     return get_session_id(r, num), get_db_name(r, num)
 
 
+def get_user(r, user_num: int) -> str:
+    return f"{escape_test_name(r.node.name)}_user_{user_num}"
+
+
 def query(session_id: str, sql: str, modifying: bool = True, params: dict = None, **kwargs):
     # we can't use node1.query because it uses the cli client that does not have session_id argument yet
     return node1.http_query(
@@ -81,8 +85,8 @@ def started_cluster():
     try:
         cluster.start()
 
-        node1.query("CREATE USER user2")
-        node1.query("GRANT CURRENT GRANTS ON *.* TO user2")
+        node1.query("CREATE USER default2")
+        node1.query("GRANT CURRENT GRANTS ON *.* TO default2")
 
         yield cluster
     finally:
@@ -157,7 +161,7 @@ def test_on_cluster_unsupported(request):
     drop_db(session1, db1)
 
 
-@pytest.mark.parametrize("user2", ["default", "user2"])
+@pytest.mark.parametrize("user2", ["default", "default2"])
 def test_inaccessible_from_other_sessions(request, user2: str):
     session1, db1 = get_session_id_with_db_name(request, 1)
     session2, db2 = get_session_id_with_db_name(request, 2)
@@ -224,9 +228,46 @@ def test_system_tables(request, table: str):
     drop_db(session1, db1)
 
 
-def test_access_right():
-    # todo: what if grant for temporary databases revoked from user while session is active?
-    pass
+def test_access_rights(request):
+    session1 = get_session_id(request, 1)
+
+    session2, db2 = get_session_id_with_db_name(request, 2)
+    user2 = get_user(request, 2)
+
+    session3, db3 = get_session_id_with_db_name(request, 3)
+    user3 = get_user(request, 3)
+
+    query(session1, f"CREATE USER {user2}")
+    query(session1, f"GRANT CREATE DATABASE ON `{db2}`.* TO {user2}")
+    query(session1, f"GRANT DROP DATABASE ON `{db2}`.* TO {user2}")
+    query(session1, f"CREATE USER {user3}")
+    query(session1, f"GRANT CREATE TEMPORARY DATABASE ON `{db3}`.* TO {user3}")
+    query(session1, f"GRANT DROP DATABASE ON `{db3}`.* TO {user3}")
+
+    query(session2, f"CREATE TEMPORARY DATABASE `{db2}`", user=user2)
+    drop_db(session2, db2, user=user2)
+    query(session2, f"CREATE DATABASE `{db2}`", user=user2)
+    drop_db(session2, db2, user=user2)
+
+    with pytest.raises(Exception, match=f"To execute this query, it's necessary to have the grant CREATE TEMPORARY DATABASE ON {db3}.*"):
+        query(session2, f"CREATE TEMPORARY DATABASE `{db3}`", user=user2)
+    with pytest.raises(Exception, match=f"To execute this query, it's necessary to have the grant CREATE DATABASE ON {db3}.*"):
+        query(session2, f"CREATE DATABASE `{db3}`", user=user2)
+
+
+    query(session3, f"CREATE TEMPORARY DATABASE `{db3}`", user=user3)
+    drop_db(session3, db3, user=user3)
+
+    with pytest.raises(Exception, match=f"To execute this query, it's necessary to have the grant CREATE DATABASE ON {db3}.*"):
+        query(session3, f"CREATE DATABASE `{db3}`", user=user3)
+    with pytest.raises(Exception, match=f"To execute this query, it's necessary to have the grant CREATE TEMPORARY DATABASE ON {db2}.*"):
+        query(session3, f"CREATE TEMPORARY DATABASE `{db2}`", user=user3)
+    with pytest.raises(Exception, match=f"To execute this query, it's necessary to have the grant CREATE DATABASE ON {db2}.*"):
+        query(session3, f"CREATE DATABASE `{db2}`", user=user3)
+
+
+    query(session1, f"DROP USER {user2}")
+    query(session1, f"DROP USER {user3}")
 
 
 def test_rename(request):
@@ -299,6 +340,20 @@ def test_table_hints(request):
         query(session1, f"DROP TABLE `{db1}`.`table1_no`")
     with pytest.raises(Exception, match=rf"Database {db1} does not exist\. \(UNKNOWN_DATABASE\)"):
         query(get_session_id(request, 2), f"DROP TABLE `{db1}`.`table1_no`")
+
+    drop_db(session1, db1)
+
+
+def test_undrop_table(request):
+    session1, db1 = get_session_id_with_db_name(request, 1)
+    create_db_with_table(session1, db1)
+
+    query(session1, f"DROP TABLE `{db1}`.`table1`")
+    with pytest.raises(Exception, match=f"Unknown table expression identifier '{db1}.table1'"):
+        assert_table_filled(session1, db1)
+
+    query(session1, f"UNDROP TABLE `{db1}`.`table1`")
+    assert_table_filled(session1, db1)
 
     drop_db(session1, db1)
 

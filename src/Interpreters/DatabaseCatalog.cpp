@@ -231,7 +231,7 @@ TemporaryDatabaseHolder::~TemporaryDatabaseHolder() noexcept
 
 void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
-    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
+    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, false, getContext());
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 }
 
@@ -241,14 +241,14 @@ void DatabaseCatalog::createBackgroundTasks()
     if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec])
     {
         auto cleanup_task_holder
-            = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogCleanupStoreDirectoryTask", [this]() { cleanupStoreDirectoryTask(); });
+            = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
         cleanup_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(cleanup_task_holder));
     }
 
-    auto drop_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogDropTableTask", [this](){ dropTableDataTask(); });
+    auto drop_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogDropTableTask", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(drop_task_holder));
 
-    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogReloadDisksTask", [this](){ reloadDisksTask(); });
+    auto reload_disks_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogReloadDisksTask", [this](){ this->reloadDisksTask(); });
     reload_disks_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(reload_disks_task_holder));
 
     auto drop_temporary_databases_task_holder = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "DatabaseCatalogDropTemporaryDatabasesTask", [this](){ dropTemporaryDatabasesTask(); });
@@ -632,8 +632,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
-        if (const auto it = databases.find(database_name); it != databases.end())
-            db = it->second; // todo: check options
+        if (auto it = databases.find(database_name); it != databases.end())
+            db = it->second;
 
         if (!db)
             throw makeUnknownDatabaseException(database_name);
@@ -690,7 +690,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 }
 
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
-{ // todo: check temporary?
+{
     std::lock_guard lock{databases_mutex};
     assert(!databases.contains(new_name));
     auto it = databases.find(old_name);
@@ -767,11 +767,8 @@ DatabasePtr DatabaseCatalog::tryGetDatabase(std::string_view database_name, Cont
     assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
 
-    if (const auto it = databases.find(database_name); it != databases.end())
-    {
-        if (checkDatabaseOptions(it->second, options, context_))
-            return it->second;
-    }
+    if (const auto it = databases.find(database_name); it != databases.end() && checkDatabaseOptions(it->second, options, context_))
+        return it->second;
     return {};
 }
 
@@ -1010,7 +1007,7 @@ std::optional<std::shared_lock<SharedMutex>> DatabaseCatalog::tryGetLockForResta
 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 {
-    auto storage = tryGetTable(table_id, {}, GetDatabasesOptions{.skip_temporary_owner_check = true});
+    auto storage = tryGetTable(table_id, getContext(), GetDatabasesOptions{.skip_temporary_owner_check = true});
     bool storage_is_dictionary = storage && storage->isDictionary();
 
     return storage_is_dictionary;
@@ -1063,14 +1060,12 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
     // we need to check the dropped metadata on these disks, not just the default database disk.
     std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
-    String path = fs::path("metadata_dropped") / "";
+    String path = getMetadataDroppedDirPath(false) / "";
 
-    Databases db_map;
-    {
-        std::lock_guard lock{databases_mutex};
-        db_map = databases;
-    }
-
+    auto db_map = getDatabases(GetDatabasesOptions{
+        .with_datalake_catalogs = true,
+        .with_temporaries = false,
+    }, {});
     std::set<DiskPtr> metadata_disk_list;
     for (const auto & [_, db] : db_map)
     {
@@ -1136,7 +1131,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         auto full_path = elem.first;
         auto storage_id = elem.second.first;
         auto db_disk = elem.second.second;
-        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk]() { enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path, false, false); });
+        runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk]() { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path, false, false); });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
@@ -1189,7 +1184,10 @@ void DatabaseCatalog::dropTemporaryDatabasesTask()
 void DatabaseCatalog::enqueueTemporaryDatabaseDrop(DatabasePtr db) noexcept
 {
     if (is_shutting_down)
+    {
+        LOG_TRACE(log, "Temporary database {} tried to be enqueued to drop, but DatabaseCatalog is about to shutdown", db->getDatabaseName());
         return;
+    }
 
     std::lock_guard lock{drop_temporary_databases_mutex};
     LOG_DEBUG(log, "Temporary database {} enqueued to drop", db->getDatabaseName());
@@ -1198,7 +1196,7 @@ void DatabaseCatalog::enqueueTemporaryDatabaseDrop(DatabasePtr db) noexcept
 
 String DatabaseCatalog::getPathForTableMetadata(const StorageID & table_id) const
 {
-    auto database = getDatabase(table_id.getDatabaseName(), getContext(), {.skip_temporary_owner_check = true});
+    auto database = getDatabase(table_id.getDatabaseName(), {}, {.skip_temporary_owner_check = true});
     auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
 
     if (!database_ptr)
@@ -1289,7 +1287,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
              dropped_metadata_path,
              data_path,
              drop_time
-                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec]),});
+                 + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec])});
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
     }
@@ -2010,7 +2008,7 @@ void DatabaseCatalog::reloadDisksTask()
         disks.swap(disks_to_reload);
     }
 
-    for (auto & database : getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}, getContext()))
+    for (auto & database : getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false, .skip_temporary_owner_check = true}, {}))
     {
         // WARNING: In case of `async_load_databases = true` getTablesIterator() call wait for all table in the database to be loaded.
         // WARNING: It means that no database will be able to update configuration until all databases are fully loaded.
@@ -2185,7 +2183,7 @@ DDLGuard::~DDLGuard()
 
 std::pair<String, String> TableNameHints::getHintForTable(const String & table_name) const
 {
-    auto results = getHints(table_name, getAllRegisteredNames());
+    auto results = this->getHints(table_name, getAllRegisteredNames());
     if (results.empty())
         return getExtendedHintForTable(table_name);
     return std::make_pair(database->getDatabaseName(), results[0]);

@@ -20,9 +20,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
-    : DatabaseWithOwnTablesBase(name_, false, "DatabaseMemory(" + name_ + ")", context_)
-    , data_path(DatabaseCatalog::getDataDirPath(name_, false) / "")
+DatabaseMemory::DatabaseMemory(const String & name_, bool is_temporary_, ContextPtr context_)
+    : DatabaseWithOwnTablesBase(name_, is_temporary_, "DatabaseMemory(" + name_ + ")", context_)
+    , data_path(DatabaseCatalog::getDataDirPath(name_, is_temporary_) / "")
 {
     /// Temporary database should not have any data at the moment of its creation.
     /// In case of starting up after sudden server shutdown, remove the database folder of the temporary database.
@@ -226,6 +226,7 @@ void registerDatabaseMemory(DatabaseFactory & factory)
     {
         return make_shared<DatabaseMemory>(
             args.database_name,
+            args.is_temporary,
             args.context);
     };
     factory.registerDatabase("Memory", create_fn);
