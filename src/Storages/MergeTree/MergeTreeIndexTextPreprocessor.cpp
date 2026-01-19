@@ -121,7 +121,7 @@ String MergeTreeIndexTextPreprocessor::process(const String &input) const
     size_t nrows = 1;
     expression.execute(block, nrows);
 
-    return block.safeGetByPosition(0).column->getDataAt(0).toString();
+    return std::string{block.safeGetByPosition(0).column->getDataAt(0)};
 }
 
 ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDescription & index_description, const String & expression)

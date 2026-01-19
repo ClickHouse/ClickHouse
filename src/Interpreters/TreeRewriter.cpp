@@ -506,7 +506,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
         auto & children = select_query->interpolate()->children;
         if (!children.empty())
         {
-            for (auto * it = children.begin(); it != children.end();)
+            for (auto it = children.begin(); it != children.end();)
             {
                 if (remove_columns.contains((*it)->as<ASTInterpolateElement>()->column))
                     it = select_query->interpolate()->children.erase(it);
@@ -646,7 +646,7 @@ std::optional<bool> tryEvaluateConstCondition(ASTPtr expr, ContextPtr context)
     if (eval_res.isNull())
         return false;
 
-    UInt8 res = eval_res.template safeGet<UInt8>();
+    auto res = eval_res.template safeGet<UInt8>();
     return res > 0;
 }
 
@@ -1022,11 +1022,6 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
             source_columns.insert(source_columns.end(), columns_from_storage.begin(), columns_from_storage.end());
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        source_columns_ordinary = metadata_snapshot->getColumns().getOrdinary();
-    }
-    else
-    {
-        source_columns_ordinary = source_columns;
     }
 
     source_columns_set = removeDuplicateColumns(source_columns);
@@ -1196,7 +1191,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     /// Check for subcolumns in unknown required columns.
     if (!unknown_required_source_columns.empty() && (!storage || storage->supportsSubcolumns()))
     {
-        for (const NameAndTypePair & pair : source_columns_ordinary)
+        for (const NameAndTypePair & pair : required_source_columns)
         {
             for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
             {

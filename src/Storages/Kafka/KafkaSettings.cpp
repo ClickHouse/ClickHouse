@@ -38,6 +38,7 @@ namespace ErrorCodes
     DECLARE(UInt64, kafka_consumers_pool_ttl_ms, 60'000, "TTL for Kafka consumers (in milliseconds)", 0) \
     /* default is stream_flush_interval_ms */ \
     DECLARE(Milliseconds, kafka_flush_interval_ms, 0, "Timeout for flushing data from Kafka.", 0) \
+    DECLARE(Milliseconds, kafka_consumer_reschedule_ms, 500, "Interval for rescheduling Kafka consumer tasks when they stall.", 0) \
     DECLARE(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
     DECLARE(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after kafka_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error), dead_letter_queue (error related data will be saved in system.dead_letter).", 0) \
     DECLARE(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
@@ -132,12 +133,14 @@ void KafkaSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & na
 
 void KafkaSettings::sanityCheck(ContextPtr global_context) const
 {
-    if (impl->kafka_consumers_pool_ttl_ms < KAFKA_RESCHEDULE_MS)
+    UInt64 kafka_consumer_reschedule_ms = impl->kafka_consumer_reschedule_ms.totalMilliseconds();
+
+    if (impl->kafka_consumers_pool_ttl_ms < kafka_consumer_reschedule_ms)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The value of 'kafka_consumers_pool_ttl_ms' ({}) cannot be less then rescheduled interval ({})",
+            "The value of 'kafka_consumers_pool_ttl_ms' ({}) cannot be less than 'kafka_consumer_reschedule_ms' ({})",
             impl->kafka_consumers_pool_ttl_ms.value,
-            KAFKA_RESCHEDULE_MS);
+            kafka_consumer_reschedule_ms);
 
     if (impl->kafka_consumers_pool_ttl_ms > KAFKA_CONSUMERS_POOL_TTL_MS_MAX)
         throw Exception(

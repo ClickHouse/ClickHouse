@@ -64,6 +64,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_azurite=True,
@@ -80,6 +81,7 @@ def started_cluster():
             user_configs=[
                 "configs/users.xml",
                 "configs/enable_keeper_fault_injection.xml",
+                "configs/keeper_retries.xml",
             ],
             with_minio=True,
             with_zookeeper=True,
@@ -342,7 +344,10 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 
 
 def test_max_set_age(started_cluster):
-    node = started_cluster.instances["instance"]
+    # We use an instance without keeper fault injection,
+    # because otherwise we fail to update keeper state in 1.5 * max_age,
+    # so we cannot check max_set_age correctness properly.
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
     table_name = f"max_set_age_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
@@ -488,6 +493,7 @@ def test_max_set_size(started_cluster):
             "s3queue_cleanup_interval_min_ms": 0,
             "s3queue_cleanup_interval_max_ms": 0,
             "s3queue_processing_threads_num": 1,
+            "commit_on_select": 1
         },
     )
     total_values = generate_random_files(

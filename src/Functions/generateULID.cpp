@@ -109,7 +109,7 @@ SELECT generateULID(1), generateULID(2)
     };
     FunctionDocumentation::IntroducedIn introduced_in_generateULID = {23, 2};
     FunctionDocumentation::Category category_generateULID = FunctionDocumentation::Category::ULID;
-    FunctionDocumentation documentation_generateULID = {description_generateULID, syntax_generateULID, arguments_generateULID, returned_value_generateULID, examples_generateULID, introduced_in_generateULID, category_generateULID};
+    FunctionDocumentation documentation_generateULID = {description_generateULID, syntax_generateULID, arguments_generateULID, {}, returned_value_generateULID, examples_generateULID, introduced_in_generateULID, category_generateULID};
 
     factory.registerFunction<FunctionGenerateULID>(documentation_generateULID);
 }

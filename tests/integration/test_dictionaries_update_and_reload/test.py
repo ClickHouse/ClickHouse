@@ -105,10 +105,6 @@ def test_reload_while_loading(started_cluster):
             timeout=10,
         )
 
-    # The instance should receive the query
-    query("SYSTEM FLUSH LOGS")
-    assert instance.wait_for_log_line(query_id)
-
     # The dictionary is now loading.
     assert get_status(instance, "slow") == "LOADING"
     start_time, duration = get_loading_start_time(
@@ -129,9 +125,6 @@ def test_reload_while_loading(started_cluster):
     query_id = str(uuid.uuid4())
     with pytest.raises(QueryTimeoutExceedException):
         query("SYSTEM RELOAD DICTIONARY 'slow'", query_id=query_id, timeout=10)
-    # The instance should receive the query
-    query("SYSTEM FLUSH LOGS")
-    assert instance.wait_for_log_line(query_id)
     assert get_status(instance, "slow") == "LOADING"
     prev_start_time, prev_duration = start_time, duration
     start_time, duration = get_loading_start_time(

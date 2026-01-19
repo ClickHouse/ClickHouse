@@ -281,7 +281,7 @@ void ProgressTable::writeTable(
         if (col_doc_width)
         {
             message << setColorForDocumentation();
-            const auto * doc = getDocumentation(event_name_to_event.at(name));
+            std::string_view doc = getDocumentation(event_name_to_event.at(name));
             writeWithWidthStrict(message, doc, col_doc_width);
         }
 
@@ -328,9 +328,9 @@ void ProgressTable::updateTable(const Block & block)
         if (thread_id != THREAD_GROUP_ID)
             continue;
 
-        auto name = names.getDataAt(row_num).toString();
+        std::string name{names.getDataAt(row_num)};
         auto value = array_values[row_num];
-        auto host_name = host_names.getDataAt(row_num).toString();
+        std::string host_name{host_names.getDataAt(row_num)};
         auto type = static_cast<ProfileEvents::Type>(array_type[row_num]);
 
         /// Got unexpected event name.
@@ -386,7 +386,7 @@ void ProgressTable::MetricInfo::updateValue(Int64 new_value, double new_time)
     switch (type)
     {
         case ProfileEvents::Type::INCREMENT:
-            new_snapshot.value = new_snapshot.value + new_value;
+            common::addOverflow(new_snapshot.value, new_value, new_snapshot.value);
             break;
         case ProfileEvents::Type::GAUGE:
             new_snapshot.value = new_value;
