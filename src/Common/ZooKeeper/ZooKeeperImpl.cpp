@@ -398,7 +398,6 @@ ZooKeeper::ZooKeeper(
     : send_receive_os_threads_nice_value(args_.send_receive_os_threads_nice_value)
     , path_acls(args_.path_acls)
     , args(args_)
-    , last_zxid_seen(args_.last_zxid_seen)
 {
     log = getLogger("ZooKeeperClient");
     zk_log = std::move(zk_log_);
@@ -642,6 +641,7 @@ void ZooKeeper::connect(
 void ZooKeeper::sendHandshake()
 {
     int32_t handshake_length = 45;
+    int64_t last_zxid_seen = 0;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     std::string password = args.password;
@@ -662,7 +662,7 @@ void ZooKeeper::sendHandshake()
     {
         write(ZOOKEEPER_PROTOCOL_VERSION);
     }
-    write(last_zxid_seen.load(std::memory_order_relaxed));
+    write(last_zxid_seen);
     write(timeout);
     write(previous_session_id);
     write(password);
@@ -951,12 +951,6 @@ void ZooKeeper::receiveEvent()
     }
     read(zxid);
     read(err);
-
-    /// Watches have zxid = -1, some errors have zxid = 0.
-    if (zxid > 0)
-    {
-        last_zxid_seen.store(zxid, std::memory_order_relaxed);
-    }
 
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
@@ -1891,9 +1885,6 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
 
     auto maybe_zk_log = getZooKeeperLog();
     if (!maybe_zk_log)
-        return;
-
-    if (elapsed_microseconds < maybe_zk_log->getDurationMicrosecondsThreshold())
         return;
 
     ZooKeeperLogElement::Type log_type = ZooKeeperLogElement::UNKNOWN;

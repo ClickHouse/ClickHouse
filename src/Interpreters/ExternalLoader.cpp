@@ -1448,7 +1448,7 @@ ReturnType ExternalLoader::reloadAllTriedToLoad() const
 {
     std::unordered_set<String> names;
     boost::range::copy(getAllTriedToLoadNames(), std::inserter(names, names.end()));
-    return loadOrReload<ReturnType>([&names](const String & name) { return names.contains(name); });
+    return loadOrReload<ReturnType>([&names](const String & name) { return names.count(name); });
 }
 
 bool ExternalLoader::has(const String & name) const
