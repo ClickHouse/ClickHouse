@@ -19,6 +19,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <memory>
 #include <string>
+#include <type_traits>
 
 #include <Common/ErrorCodes.h>
 #include <Common/filesystemHelpers.h>
@@ -143,6 +144,11 @@ public:
     {
         assertInitialized();
         current_metadata->mutate(commands, shared_from_this(), context, storage_id, metadata_snapshot, catalog, format_settings);
+    }
+
+    bool isIceberg() override
+    { 
+        return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
     }
 
     void checkMutationIsPossible(const MutationCommands & commands) override

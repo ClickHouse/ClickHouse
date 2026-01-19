@@ -219,7 +219,7 @@ StorageObjectStorage::StorageObjectStorage(
             sample_path);
     }
 
-    bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
+    bool format_supports_prewhere = configuration->isIceberg() && FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
 
     /// TODO: Known problems with datalake prewhere:
     ///  * If the iceberg table went through schema evolution, columns read from file may need to
