@@ -196,16 +196,30 @@ struct ByteJaccardIndexImpl
         }
         else
         {
-            while (haystack < haystack_end)
+            auto fill_set = [&](auto& bitset, const char* ptr, const char* end)
             {
-                scratch.haystack_set.set(static_cast<unsigned char>(*haystack));
-                ++haystack;
-            }
-            while (needle < needle_end)
-            {
-                scratch.needle_set.set(static_cast<unsigned char>(*needle));
-                ++needle;
-            }
+                while (ptr + 7 < end)
+                {
+                    bitset.set(static_cast<unsigned char>(ptr[0]));
+                    bitset.set(static_cast<unsigned char>(ptr[1]));
+                    bitset.set(static_cast<unsigned char>(ptr[2]));
+                    bitset.set(static_cast<unsigned char>(ptr[3]));
+                    bitset.set(static_cast<unsigned char>(ptr[4]));
+                    bitset.set(static_cast<unsigned char>(ptr[5]));
+                    bitset.set(static_cast<unsigned char>(ptr[6]));
+                    bitset.set(static_cast<unsigned char>(ptr[7]));
+                    ptr += 8;
+                }
+
+                while (ptr < end)
+                {
+                    bitset.set(static_cast<unsigned char>(*ptr));
+                    ++ptr;
+                }
+            };
+
+            fill_set(scratch.haystack_set, haystack, haystack_end);
+            fill_set(scratch.needle_set, needle, needle_end);
         }
 
         UInt32 intersection = 0;
