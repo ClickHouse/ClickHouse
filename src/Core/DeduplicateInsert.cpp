@@ -78,9 +78,9 @@ bool isDeduplicationEnabledForInsertSelect(bool select_query_sorted, const Setti
 void overrideDeduplicationSetting(bool is_on, ContextMutablePtr context)
 {
     if (is_on)
-        context->setSetting("deduplicate_insert", Field{DeduplicateInsertMode::ENABLE});
+        context->setSetting("deduplicate_insert", Field{"enable"});
     else
-        context->setSetting("deduplicate_insert", Field{DeduplicateInsertMode::DISABLE});
+        context->setSetting("deduplicate_insert", Field{"disable"});
 }
 
 }
