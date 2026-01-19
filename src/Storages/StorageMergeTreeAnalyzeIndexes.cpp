@@ -190,6 +190,7 @@ protected:
         /// TODO: we may also want to support query condition cache here as well
 
         ReadFromMergeTree::AnalysisResult analysis_result;
+        indexes->use_skip_indexes_on_data_read = false; /// for static skip index analysis
         MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
         {
             .metadata_snapshot = metadata_snapshot,
