@@ -230,7 +230,7 @@ def main():
     if is_llvm_coverage:
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
         runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long"
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%3m.profraw"
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%1m.profraw"
 
     rerun_count = 1
     if args.count:
@@ -444,8 +444,7 @@ def main():
         print(step_name)
 
         if is_llvm_coverage:
-            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%3m.profraw"
-            os.environ["LLVM_PROFILE_VERBOSE_ERRORS"] = "1"
+            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%1m.profraw"
 
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
@@ -717,13 +716,14 @@ def main():
         profraw_files = Shell.get_output("find . -name '*.profraw'", verbose=True).strip().split('\n')
         profraw_files = [f.strip() for f in profraw_files if f.strip()]
 
-
-        profraw_files2 = Shell.get_output("find / -name '*.profraw' 2>/dev/null", verbose=True).strip().split('\n')
-        print('all', profraw_files2)
         if profraw_files:
             print(f"Found {len(profraw_files)} .profraw files:")
             for f in profraw_files:
-                print(f"  {f}")
+                try:
+                    size_bytes = os.path.getsize(f)
+                    print(f"  {size_bytes:>12} bytes | {f}")
+                except OSError:
+                    continue
 
             # Auto-detect available LLVM profdata tool
             llvm_profdata = None
