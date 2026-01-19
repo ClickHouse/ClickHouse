@@ -117,9 +117,9 @@ void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()
     if (mode == Mode::ThreadPool)
     {
 #ifdef OS_LINUX
-        UInt32 prev_size = queue_size.fetch_add(n, std::memory_order_release);
+        UInt32 prev_size = queue_size.fetch_add(static_cast<UInt32>(n), std::memory_order_release);
         if (prev_size < max_threads)
-            futexWake(&queue_size, n);
+            futexWake(&queue_size, static_cast<int>(n));
 #else
         if (n < 4)
             for (size_t i = 0; i < n; ++i)

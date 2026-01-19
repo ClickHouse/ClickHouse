@@ -6975,6 +6975,9 @@ Replace table function engines with their -Cluster alternatives
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
 )", 0) \
+    DECLARE(Bool, distributed_index_analysis, false, R"(
+Index analysis will be distributed across replicas. Requires cluster_for_parallel_replicas.
+)", EXPERIMENTAL) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
 )", BETA, allow_database_iceberg) \
@@ -7356,6 +7359,9 @@ If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` a
 )", EXPERIMENTAL) \
     \
     DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
+Allows using statistics to optimize queries
+)", BETA, allow_statistic_optimize) \
+    DECLARE_WITH_ALIAS(Bool, use_statistics, true, R"( /// preferred over 'allow_statistics_optimize' because of consistency with 'use_primary_key' and 'use_skip_indexes'
 Allows using statistics to optimize queries
 )", BETA, allow_statistic_optimize) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_statistics, false, R"(
