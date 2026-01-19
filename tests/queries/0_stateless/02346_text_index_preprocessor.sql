@@ -2,15 +2,52 @@
 -- Tag no-parallel: Messes with internal cache and global udf factory
 
 SET enable_full_text_index = 1;
-SET use_skip_indexes_on_data_read = 1;
-
--- Tests the preprocessor argument for tokenizers in the text index definitions
 
 DROP TABLE IF EXISTS tab;
 
-SELECT 'Positive tests on preprocessor construction and use.';
+-- Tests the preprocessor argument for tokenizers in the text index definitions
+SET use_skip_indexes_on_data_read = 0;
 
-SELECT '- Test single tokenizer and preprocessor argument.';
+SELECT 'Positive tests on preprocessor construction and use without direct read.';
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+)
+ENGINE = MergeTree
+ORDER BY key;
+
+INSERT INTO tab VALUES (1, 'foo'), (2, 'BAR'), (3, 'Baz');
+
+SELECT '- Test single tokenizer and preprocessor argument with hasAnyToken.';
+SELECT count() FROM tab WHERE hasAnyToken(str, 'foo');
+SELECT count() FROM tab WHERE hasAnyToken(str, 'FOO');
+
+SELECT count() FROM tab WHERE hasAnyToken(str, 'BAR');
+SELECT count() FROM tab WHERE hasAnyToken(str, 'Baz');
+
+SELECT count() FROM tab WHERE hasAnyToken(str, 'bar');
+SELECT count() FROM tab WHERE hasAnyToken(str, 'baz');
+
+SELECT '- Test single tokenizer and preprocessor argument with hasAllToken.';
+SELECT count() FROM tab WHERE hasAllToken(str, 'foo');
+SELECT count() FROM tab WHERE hasAllToken(str, 'FOO');
+
+SELECT count() FROM tab WHERE hasAllToken(str, 'BAR');
+SELECT count() FROM tab WHERE hasAllToken(str, 'Baz');
+
+SELECT count() FROM tab WHERE hasAllToken(str, 'bar');
+SELECT count() FROM tab WHERE hasAllToken(str, 'baz');
+
+DROP TABLE tab;
+
+-- Tests with direct read
+SET use_skip_indexes_on_data_read = 1;
+
+SELECT 'Positive tests on preprocessor construction and use with direct read.';
+SELECT '- Test single tokenizer and preprocessor argument with hasToken.';
 
 CREATE TABLE tab
 (

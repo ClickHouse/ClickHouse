@@ -1,5 +1,20 @@
-Positive tests on preprocessor construction and use.
-- Test single tokenizer and preprocessor argument.
+Positive tests on preprocessor construction and use without direct read.
+- Test single tokenizer and preprocessor argument with hasAnyToken.
+1
+1
+1
+1
+1
+1
+- Test single tokenizer and preprocessor argument with hasAllToken.
+1
+1
+1
+1
+1
+1
+Positive tests on preprocessor construction and use with direct read.
+- Test single tokenizer and preprocessor argument with hasToken.
 1
 1
 1

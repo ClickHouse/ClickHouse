@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
@@ -48,9 +49,6 @@ struct TextSearchQuery
 };
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
-
-class MergeTreeIndexTextPreprocessor;
-using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
 
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis

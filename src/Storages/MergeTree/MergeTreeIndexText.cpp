@@ -1100,7 +1100,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (rows_read == 0)
         return;
 
-    const auto & index_column = block.getByName(index_column_name);
+    const ColumnWithTypeAndName & index_column = block.getByName(index_column_name);
 
     if (isArray(index_column.type))
     {
