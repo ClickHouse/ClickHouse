@@ -166,6 +166,7 @@ namespace Setting
     extern const SettingsOverflowMode result_overflow_mode;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
+    extern const SettingsBool throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -184,7 +185,6 @@ namespace Setting
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
-    extern const SettingsUInt64Auto insert_quorum;
 }
 
 namespace ServerSetting
@@ -1200,14 +1200,7 @@ static BlockIO executeQueryImpl(
                 String formatted1 = format_ast(out_ast);
 
                 /// The query can become more verbose after formatting, so:
-                size_t size_t_max = -1;
-                size_t new_max_query_size = 0;
-                if (max_query_size == 0)
-                    new_max_query_size = 0;
-                else if (max_query_size > (size_t_max - 1000) / 2)
-                    new_max_query_size = size_t_max;
-                else
-                    new_max_query_size = 1000 + 2 * max_query_size;
+                size_t new_max_query_size = max_query_size > 0 ? (1000 + 2 * max_query_size) : 0;
 
                 ASTPtr ast2;
                 try
@@ -1507,7 +1500,6 @@ static BlockIO executeQueryImpl(
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
         }
 
-
         bool quota_checked = false;
 
         if (async_insert)
@@ -1517,10 +1509,20 @@ static BlockIO executeQueryImpl(
             if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
 
-            if (settings[Setting::insert_quorum].valueOr(0) > 0)
+            /// Let's agree on terminology and say that a mini-INSERT is an asynchronous INSERT
+            /// which typically contains not a lot of data inside and a big-INSERT in an INSERT
+            /// which was formed by concatenating several mini-INSERTs together.
+            /// In case when the client had to retry some mini-INSERTs then they will be properly deduplicated
+            /// by the source tables. This functionality is controlled by a setting `async_insert_deduplicate`.
+            /// But then they will be glued together into a block and pushed through a chain of Materialized Views if any.
+            /// The process of forming such blocks is not deterministic so each time we retry mini-INSERTs the resulting
+            /// block may be concatenated differently.
+            /// That's why deduplication in dependent Materialized Views doesn't make sense in presence of async INSERTs.
+            if (settings[Setting::throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert]
+                && settings[Setting::deduplicate_blocks_in_dependent_materialized_views])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Insert quorum cannot be used together with async inserts. " \
-                    "Please disable either `insert_quorum` or `async_insert` setting.");
+                        "Deduplication in dependent materialized view cannot work together with async inserts. "\
+                        "Please disable either `deduplicate_blocks_in_dependent_materialized_views` or `async_insert` setting.");
 
             quota = context->getQuota();
             if (quota)
@@ -1566,13 +1568,6 @@ static BlockIO executeQueryImpl(
                 insert_query->tail = std::move(result.insert_data_buffer);
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously because it has too much data");
             }
-        }
-
-        if (!async_insert && async_insert_enabled)
-        {
-            /// Invoke HTTP 100-Continue callback if it was not invoked yet
-            if (http_continue_callback && !internal)
-                http_continue_callback();
         }
 
         QueryResultCachePtr query_result_cache = context->getQueryResultCache();

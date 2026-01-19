@@ -351,7 +351,7 @@ void ZooKeeper::flushWriteBuffer()
 void ZooKeeper::cancelWriteBuffer() noexcept
 {
     if (compressed_out)
-        compressed_out->cancel();
+         compressed_out->cancel();
     if (out)
         out->cancel();
 }
@@ -590,6 +590,7 @@ void ZooKeeper::connect(
                     throw;
                 }
 
+                connected = true;
                 if (use_compression)
                 {
                     compressed_in.emplace(*in);
@@ -597,8 +598,6 @@ void ZooKeeper::connect(
                 }
 
                 original_index.store(node.original_index);
-
-                connected = true;
                 break;
             }
             catch (...)
@@ -1891,9 +1890,6 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
 
     auto maybe_zk_log = getZooKeeperLog();
     if (!maybe_zk_log)
-        return;
-
-    if (elapsed_microseconds < maybe_zk_log->getDurationMicrosecondsThreshold())
         return;
 
     ZooKeeperLogElement::Type log_type = ZooKeeperLogElement::UNKNOWN;

@@ -31,6 +31,7 @@ friend class DiskObjectStorageReservation;
 public:
     DiskObjectStorage(
         const String & name_,
+        const String & object_key_prefix_,
         MetadataStoragePtr metadata_storage_,
         ObjectStoragePtr object_storage_,
         const Poco::Util::AbstractConfiguration & config,
@@ -207,6 +208,11 @@ public:
     /// DiskObjectStorage(CachedObjectStorage(CachedObjectStorage(S3ObjectStorage)))
     String getStructure() const { return fmt::format("DiskObjectStorage-{}({})", getName(), object_storage->getName()); }
 
+    std::string getObjectsKeyPrefix() const
+    {
+        return object_key_prefix;
+    }
+
     /// Add a cache layer.
     /// Example: DiskObjectStorage(S3ObjectStorage) -> DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
     /// There can be any number of cache layers:
@@ -239,6 +245,7 @@ private:
     String getReadResourceNameNoLock() const;
     String getWriteResourceNameNoLock() const;
 
+    const String object_key_prefix;
     LoggerPtr log;
 
     MetadataStoragePtr metadata_storage;

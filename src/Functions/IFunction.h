@@ -155,7 +155,6 @@ public:
     virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
 #if USE_EMBEDDED_COMPILER
-    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     virtual bool isCompilable() const { return false; }
 
@@ -423,16 +422,6 @@ protected:
       */
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
 
-    /** If useDefaultImplementationForVariant() is true, then special FunctionBaseVariantAdaptor will be used
-     *  if function arguments has Variant column. This adaptor will build and execute this function for all
-     *  internal types inside Variant column separately and construct result based on results for these types.
-     *  The result will be Variant with the union of all variant types from arguments.
-     *
-     *  We cannot use default implementation for Variant if function doesn't use default implementation for NULLs,
-     *  because Variant column can contain NULLs and we should know how to process them.
-      */
-    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
-
 private:
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
@@ -504,8 +493,6 @@ public:
     virtual bool useDefaultImplementationForDynamic() const { return useDefaultImplementationForNulls(); }
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
-    virtual bool useDefaultImplementationForVariant() const { return useDefaultImplementationForNulls(); }
-
     /** True if function can be called on default arguments (include Nullable's) and won't throw.
       * Counterexample: modulo(0, 0)
       */
@@ -554,7 +541,6 @@ public:
 
 
 #if USE_EMBEDDED_COMPILER
-    virtual ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & /*types*/) const { return {}; }
 
     bool isCompilable(const DataTypes & arguments, const DataTypePtr & result_type) const;
 

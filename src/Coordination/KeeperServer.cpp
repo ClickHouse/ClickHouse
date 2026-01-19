@@ -587,7 +587,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
 
-    state_manager->loadLogStore(state_machine->last_commit_index(), coordination_settings[CoordinationSetting::reserved_log_items]);
+    state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings[CoordinationSetting::reserved_log_items]);
 
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
@@ -655,6 +655,11 @@ void KeeperServer::shutdown()
     state_machine->shutdownStorage();
 }
 
+namespace
+{
+
+
+}
 
 void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
 {
@@ -1121,15 +1126,8 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         if (ptr->get_priority() == update->priority)
             return Accepted;
 
-        raft_instance->set_priority_v2(update->id, update->priority);
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/ true);
         return Accepted;
-    }
-    if (const auto * transfer_leader = std::get_if<TransferLeadership>(&action))
-    {
-        if (raft_instance->request_leadership(transfer_leader->target_server_id))
-            return Accepted;
-        else
-            return Declined;
     }
     std::unreachable();
 }
@@ -1203,7 +1201,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
     }
     else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {
-        raft_instance->set_priority_v2(update->id, update->priority);
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
         return;
     }
 
@@ -1307,11 +1305,6 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
-}
-
-int64_t KeeperServer::getLeaderID() const
-{
-    return raft_instance->get_leader();
 }
 
 void KeeperServer::yieldLeadership()

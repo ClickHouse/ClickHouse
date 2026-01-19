@@ -3,7 +3,6 @@ import logging
 import os
 import subprocess
 import sys
-import traceback
 from pathlib import Path
 
 from ci.jobs.scripts.docker_image import DockerImage
@@ -64,28 +63,11 @@ def run_fuzz_job(check_name: str):
     info = Info()
     is_sanitized = "san" in info.job_name
 
-    changed_files_path = workspace_path / "ci-changed-files.txt"
-    with open(changed_files_path, "w") as f:
-        changed_files = info.get_changed_files()
-        if changed_files is None:
-            if info.is_local_run:
-                logging.warning(
-                    "No changed files available for local run - fuzzing will not be guided by changed test cases"
-                )
-            changed_files = []
-        else:
-            logging.info("Found %d changed files to guide fuzzing", len(changed_files))
-        f.write("\n".join(changed_files))
+    with open(workspace_path / "ci-changed-files.txt", "w") as f:
+        f.write("\n".join(info.get_changed_files()))
 
     Shell.check(command=run_command, verbose=True)
-
-    # Fix file ownership after running docker as root
-    logging.info("Fixing file ownership after running docker as root")
-    uid = os.getuid()
-    gid = os.getgid()
-    chown_cmd = f"docker run --rm --user root --volume {cwd}:{cwd} --workdir={cwd} {docker_image} sh -c 'find {temp_dir} -user root -exec chown {uid}:{gid} {{}} +'"
-    logging.info("Run ownership fix command: %s", chown_cmd)
-    Shell.check(chown_cmd, verbose=True)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_dir}", shell=True)
 
     fuzzer_log = workspace_path / "fuzzer.log"
     dmesg_log = workspace_path / "dmesg.log"
@@ -116,11 +98,14 @@ def run_fuzz_job(check_name: str):
             server_exit_code = int(server_exit_code)
             fuzzer_exit_code = int(fuzzer_exit_code)
     except Exception:
-        error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
-        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
+        result.set_status(Result.Status.ERROR)
+        result.set_info("Unknown error in fuzzer runner script")
+        result.complete_job()
+        sys.exit(1)
 
     # parse runner script exit status
     status = Result.Status.FAILED
+    result_name = ""
     info = []
     is_failed = True
     if server_died:
@@ -190,7 +175,7 @@ def run_fuzz_job(check_name: str):
                 workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log
             ),
         )
-        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
+        parsed_name, parsed_info = fuzzer_log_parser.parse_failure()
 
         if parsed_name:
             results.append(
@@ -198,7 +183,6 @@ def run_fuzz_job(check_name: str):
                     name=parsed_name,
                     info=parsed_info,
                     status=Result.StatusExtended.FAIL,
-                    files=files,
                 )
             )
 

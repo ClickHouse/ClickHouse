@@ -1,4 +1,4 @@
-set enable_qbit_type=1;
+set allow_experimental_qbit_type=1;
 
 drop table if exists test;
 create table test (qbit QBit(Float64, 3)) engine=MergeTree order by tuple();

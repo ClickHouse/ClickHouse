@@ -28,7 +28,6 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
-
 namespace zkutil
 {
     class ZooKeeper;
@@ -222,7 +221,7 @@ public:
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
     UInt128 getPartBlockIDHash() const;
-    String getNewPartBlockID() const;
+    String getNewPartBlockID(std::string_view token) const;
 
     /// Returns true if it's a zero level part.
     bool isZeroLevel() const { return info.min_block == info.max_block; }
@@ -364,9 +363,9 @@ public:
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
-        static void appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage);
+        static void appendFiles(const MergeTreeData & data, Strings & files);
         /// For Store
-        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
+        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_);
         /// For Load
         static String getFileColumnName(const String & column_name, const Checksums & checksums_);
     };

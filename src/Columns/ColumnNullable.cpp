@@ -770,7 +770,7 @@ void ColumnNullable::prepareForSquashing(const Columns & source_columns, size_t 
 void ColumnNullable::shrinkToFit()
 {
     getNestedColumn().shrinkToFit();
-    getNullMapColumn().shrinkToFit();
+    getNullMapData().shrink_to_fit();
 }
 
 void ColumnNullable::ensureOwnership()

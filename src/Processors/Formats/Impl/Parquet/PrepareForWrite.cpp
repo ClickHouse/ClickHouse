@@ -532,9 +532,6 @@ void prepareColumnTuple(
     const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
     size_t num_elements = type_tuple->getElements().size();
 
-    /// We artificially disallow empty tuples because they're not widely supported.
-    /// But they're supported in clickhouse; if we remove this check, nothing breaks, and clickhouse
-    /// can write and read (only with input_format_parquet_use_native_reader_v3 = 1) such columns.
     if (num_elements == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parquet doesn't support empty tuples");
 

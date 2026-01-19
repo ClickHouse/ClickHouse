@@ -1325,13 +1325,7 @@ void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions
         r.total_byte_size += c.meta_data.total_uncompressed_size;
         r.total_compressed_size += c.meta_data.total_compressed_size;
     }
-
-    if (r.columns.empty())
-    {
-        /// All columns are empty tuples, there are no pages.
-        r.__set_file_offset(file.offset);
-    }
-    else
+    chassert(!r.columns.empty());
     {
         auto & m = r.columns[0].meta_data;
         r.__set_file_offset(m.__isset.dictionary_page_offset ? m.dictionary_page_offset : m.data_page_offset);

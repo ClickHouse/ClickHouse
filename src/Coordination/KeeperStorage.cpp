@@ -2293,7 +2293,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
             add_parent_update_delta();
         }
 
-        return new_deltas;
+        return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
 
     ToDeleteTreeCollector<Storage> collector(storage, zxid, session_id, zk_request.remove_nodes_limit);
@@ -3855,7 +3855,7 @@ void KeeperStorage<Container>::rollbackRequest(int64_t rollback_zxid, bool allow
     }
 
     // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state
-    // we block memory tracking so we can avoid terminating if we're rolling back because of memory limit
+    // we block memory tracking so we can avoid terminating if we're rollbacking because of memory limit
     LockMemoryExceptionInThread blocker{VariableContext::Global};
     try
     {
@@ -4018,13 +4018,11 @@ void KeeperStorageBase::clearDeadWatches(int64_t session_id)
                 erase_session_from_map(watches, watch_path);
                 break;
             case WatchType::PERSISTENT_WATCH:
-                erase_session_from_map(persistent_watches, watch_path);
-                break;
+                [[fallthrough]];
             case WatchType::PERSISTENT_LIST_WATCH:
-                erase_session_from_map(persistent_list_watches, watch_path);
-                break;
+                [[fallthrough]];
             case WatchType::PERSISTENT_RECURSIVE_WATCH:
-                erase_session_from_map(persistent_recursive_watches, watch_path);
+                ++watch_it;
                 break;
         }
     }

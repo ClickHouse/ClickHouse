@@ -107,7 +107,6 @@ public:
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
         WAIT_FAILPOINT,
-        NOTIFY_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
         STOP_PULLING_REPLICATION_LOG,
         START_PULLING_REPLICATION_LOG,
@@ -181,14 +180,6 @@ public:
     String schema_cache_format;
 
     String fail_point_name;
-
-    enum class FailPointAction
-    {
-        UNSPECIFIED,
-        PAUSE,
-        RESUME
-    };
-    FailPointAction fail_point_action = FailPointAction::UNSPECIFIED;
 
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
