@@ -1,5 +1,6 @@
 import os
 import pathlib
+import time
 
 import pytest
 from keeper.framework.core.cluster import ClusterBuilder
@@ -8,6 +9,13 @@ from keeper.framework.core.util import env_int, wait_until
 from keeper.framework.io.probes import count_leaders
 
 pytest_plugins = ["keeper.pytest_plugins.scenario_loader"]
+
+
+def pytest_configure(config):
+    os.environ.setdefault(
+        "KEEPER_METRICS_FILE",
+        f"/tmp/keeper_metrics_{int(time.time())}_{os.getpid()}.jsonl",
+    )
 
 
 def pytest_addoption(parser):
@@ -19,7 +27,7 @@ def pytest_addoption(parser):
     )
     pa("--commit-sha", action="store", default=os.environ.get("COMMIT_SHA", "local"))
     # Sink URL is resolved via CI ClickHouse helper; no explicit option needed
-    pa("--duration", type=int, default=int(env_int("KEEPER_DURATION", 120)))
+    pa("--duration", type=int, default=None)
     pa(
         "--total-shards",
         type=int,

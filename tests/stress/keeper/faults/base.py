@@ -21,6 +21,7 @@ from keeper.framework.core.util import (
     wait_until,
 )
 from keeper.framework.io.probes import count_leaders, four, mntr, ready, wchs_total
+from keeper.gates.base import apply_gate
 
 
 def _get_duration(step, default=None):
@@ -529,6 +530,24 @@ def _step_expect_ready(step, nodes, leader, ctx):
         time.sleep(0.5)
 
 
+def _step_gate(step, nodes, leader, ctx):
+    """Run a gate check inline as a step (checkpoint)."""
+    try:
+        g = step.get("gate")
+        if isinstance(g, dict):
+            gate = dict(g)
+        else:
+            gate = dict(step or {})
+            gate.pop("kind", None)
+            gate.pop("gate", None)
+    except Exception:
+        gate = {}
+    if not gate:
+        return
+    summary = (ctx or {}).get("bench_summary") or {}
+    return apply_gate(gate, nodes, leader, ctx, summary)
+
+
 # Step dispatcher mapping
 _STEP_HANDLERS = {
     "parallel": _step_parallel,
@@ -541,6 +560,8 @@ _STEP_HANDLERS = {
     "reconfig": _step_reconfig,
     "sql": _step_sql,
     "expect_ready": _step_expect_ready,
+    "gate": _step_gate,
+    "checkpoint": _step_gate,
 }
 
 

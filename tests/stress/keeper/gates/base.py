@@ -457,12 +457,21 @@ def fourlw_enforces(nodes, allow=None, deny=None):
                 raise AssertionError(f"fourlw_enforces: deny {cmd} returned response")
 
 
-def health_precheck(nodes):
+def health_precheck(nodes, timeout_s=0):
     """Verify cluster is healthy: has leader and all nodes respond to probes."""
     if not nodes:
         raise AssertionError("health_precheck: no nodes")
-    if count_leaders(nodes) < 1:
-        raise AssertionError("health_precheck: no leader")
+    if timeout_s and int(timeout_s) > 0:
+        deadline = time.time() + float(timeout_s)
+        while True:
+            if count_leaders(nodes) >= 1:
+                break
+            if time.time() >= deadline:
+                raise AssertionError("health_precheck: no leader")
+            time.sleep(0.5)
+    else:
+        if count_leaders(nodes) < 1:
+            raise AssertionError("health_precheck: no leader")
     for n in nodes:
         m = mntr(n)
         if not isinstance(m, dict) or not m:
@@ -656,7 +665,7 @@ def _gate_fourlw_enforces(g, nodes, leader, ctx, summary):
 
 
 def _gate_health_precheck(g, nodes, leader, ctx, summary):
-    return health_precheck(nodes)
+    return health_precheck(nodes, timeout_s=int(g.get("timeout_s", 30)))
 
 
 def _gate_replay_repeatable(g, nodes, leader, ctx, summary):

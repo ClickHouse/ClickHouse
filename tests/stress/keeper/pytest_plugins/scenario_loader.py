@@ -60,6 +60,64 @@ def _cap_duration(obj, cap_s):
             _cap_duration(it, cap_i)
 
 
+def _scale_duration_s(obj, base_s, target_s):
+    if base_s is None or target_s is None:
+        return
+    try:
+        base_i = int(base_s)
+        target_i = int(target_s)
+    except (ValueError, TypeError):
+        return
+    if base_i <= 0 or target_i <= 0:
+        return
+    if isinstance(obj, dict):
+        if "duration_s" in obj:
+            try:
+                cur = int(obj.get("duration_s") or 0)
+                if cur > 0 and cur >= base_i:
+                    obj["duration_s"] = target_i
+            except (ValueError, TypeError):
+                pass
+        for v in obj.values():
+            _scale_duration_s(v, base_i, target_i)
+    elif isinstance(obj, list):
+        for it in obj:
+            _scale_duration_s(it, base_i, target_i)
+
+
+def _parallelize_long_steps(step_list, base_s, dur_s):
+    if not isinstance(step_list, list) or len(step_list) <= 1:
+        return
+    try:
+        base_i = int(base_s)
+        dur_i = int(dur_s)
+    except (ValueError, TypeError):
+        return
+    if base_i <= 0 or dur_i <= 0:
+        return
+
+    long_steps = []
+    for st in step_list:
+        if not isinstance(st, dict):
+            return
+        kind = str(st.get("kind") or "").lower()
+        if kind in ("parallel", "sequence"):
+            return
+        if "duration_s" not in st:
+            return
+        try:
+            cur = int(st.get("duration_s") or 0)
+        except (ValueError, TypeError):
+            return
+        if not (cur > 0 and cur >= base_i):
+            return
+        long_steps.append(st)
+
+    if len(long_steps) <= 1:
+        return
+    step_list[:] = [{"kind": "parallel", "steps": long_steps}]
+
+
 def _effective_duration(s, defaults, cli_duration=None):
     if cli_duration is not None:
         return cli_duration
@@ -124,13 +182,30 @@ def normalize_scenario_durations(s, defaults=None, cli_duration=None):
     if not isinstance(s, dict):
         return s
     out = copy.deepcopy(s)
+    base_dur = _effective_duration(out, defaults or {}, cli_duration=None)
     eff_dur = _effective_duration(out, defaults or {}, cli_duration=cli_duration)
     if eff_dur is None:
         return out
+    try:
+        out["_duration_s"] = int(eff_dur)
+    except (ValueError, TypeError):
+        pass
     if isinstance(out.get("workload"), dict):
         wl = dict(out.get("workload") or {})
         wl["duration"] = int(eff_dur)
         out["workload"] = wl
+    if (
+        cli_duration is not None
+        and base_dur is not None
+        and int(base_dur) > 0
+        and int(eff_dur) > 0
+        and int(eff_dur) != int(base_dur)
+    ):
+        for k in ("pre", "faults", "post", "gates"):
+            if isinstance(out.get(k), list):
+                _scale_duration_s(out.get(k), base_dur, eff_dur)
+        if isinstance(out.get("faults"), list):
+            _parallelize_long_steps(out.get("faults"), base_dur, eff_dur)
     if isinstance(out.get("faults"), list):
         _cap_duration(out.get("faults"), eff_dur)
     return out
@@ -239,13 +314,21 @@ def _getopt(cfg, name, env_name=None, default=""):
 def pytest_generate_tests(metafunc):
     if "scenario" not in metafunc.fixturenames:
         return
+    cli_duration = None
     try:
-        cli_duration = int(
-            _getopt(metafunc.config, "--duration", "KEEPER_DURATION", "") or 0
-        )
-        if cli_duration <= 0:
-            cli_duration = None
-    except (ValueError, TypeError):
+        opt_dur = metafunc.config.getoption("--duration")
+        if opt_dur not in (None, ""):
+            cli_duration = int(opt_dur)
+    except Exception:
+        cli_duration = None
+    if cli_duration is None:
+        env_dur = os.environ.get("KEEPER_DURATION", "")
+        if str(env_dur or "").strip():
+            try:
+                cli_duration = int(env_dur)
+            except (ValueError, TypeError):
+                cli_duration = None
+    if cli_duration is not None and cli_duration <= 0:
         cli_duration = None
     # accept alt env names; robust to missing CLI options
     total = int(
