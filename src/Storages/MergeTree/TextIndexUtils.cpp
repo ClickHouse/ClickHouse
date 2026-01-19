@@ -315,7 +315,7 @@ PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, Postin
     size_t part_index = segments[source_num].part_index;
 
     for (auto & offset : offsets)
-        offset = (*merged_part_offsets)[part_index, offset];
+        offset = static_cast<UInt32>((*merged_part_offsets)[part_index, offset]);
 
     return std::make_shared<PostingList>(offsets.size(), offsets.data());
 }

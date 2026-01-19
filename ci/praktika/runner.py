@@ -476,6 +476,11 @@ class Runner:
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
+        if result.is_error() and result.get_on_error_hook():
+            print(f"--- Run on_error_hook [{result.get_on_error_hook()}]")
+            # Add hook timeout once it's needed
+            Shell.check(result.get_on_error_hook(), verbose=True)
+
         result.update_duration()
         result.set_files([Settings.RUN_LOG])
 
@@ -654,7 +659,17 @@ class Runner:
         # Always run report generation at the end to finalize workflow status with latest job result
         if workflow.enable_report:
             print(f"Run html report hook")
-            HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            if status_updated:
+                print(f"Update GH commit status [{result.name}]: [{status_updated}]")
+                _GH_Auth(workflow)
+                GH.post_commit_status(
+                    name=workflow.name,
+                    status=GH.convert_to_gh_status(status_updated),
+                    description="",
+                    url=Info().get_report_url(latest=False),
+                )
+
             workflow_result = Result.from_fs(workflow.name)
             if is_final_job and ci_db:
                 # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data

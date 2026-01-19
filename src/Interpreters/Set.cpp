@@ -305,7 +305,7 @@ ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_
     size_t vec_res_size = original_data.size();
 
     // Prepare the precision null map
-    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, 0);
+    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, static_cast<UInt8>(0));
     NullMap & precision_null_map = precision_null_map_column->getData();
 
     // Determine which rows should be null based on precision loss
