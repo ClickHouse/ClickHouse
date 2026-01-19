@@ -691,7 +691,7 @@ UInt32 getMaskBitsNumber(T positive_mask, T negative_mask, T & negative_bit)
 
         if (negative_bit)
         {
-            negative_bit = T(1) << num_bits;
+            negative_bit = static_cast<T>(T(1) << num_bits);
             ++num_bits;
         }
     }
@@ -723,10 +723,10 @@ void pdep(T * buf, T positive_mask, T negative_mask, T positive, T negative, T n
         if (current & negative_bit)
         {
             current &= ~negative_bit;
-            buf[i] = negative | bitExpand64(current, negative_mask);
+            buf[i] = static_cast<T>(negative | bitExpand64(current, negative_mask));
         }
         else
-            buf[i] = positive | bitExpand64(current, positive_mask);
+            buf[i] = static_cast<T>(positive | bitExpand64(current, positive_mask));
     }
 }
 
