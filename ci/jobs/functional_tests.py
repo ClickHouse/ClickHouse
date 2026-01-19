@@ -230,7 +230,7 @@ def main():
     if is_llvm_coverage:
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
         runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long"
-        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%1m.profraw"
+        os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
 
     rerun_count = 1
     if args.count:
@@ -443,8 +443,8 @@ def main():
         step_name = "Start ClickHouse Server"
         print(step_name)
 
-        if is_llvm_coverage:
-            os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%1m.profraw"
+        # if is_llvm_coverage:
+            # os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-server-%1m.profraw"
 
         def start():
             res = CH.start_minio(test_type="stateless") and CH.start_azurite()
@@ -574,8 +574,8 @@ def main():
                 )
             )
         elif failed_tests:
-            if is_llvm_coverage:
-                os.environ["LLVM_PROFILE_FILE"] = f"ft-rerun-{batch_num}-%2m.profraw"
+            # if is_llvm_coverage:
+                # os.environ["LLVM_PROFILE_FILE"] = f"ft-rerun-{batch_num}-%2m.profraw"
             ft_res_processor = FTResultsProcessor(wd=temp_dir)
             run_tests(
                 batch_num=0,

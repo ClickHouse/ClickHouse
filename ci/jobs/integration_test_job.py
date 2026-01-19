@@ -491,11 +491,11 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if 0 < len(failed_test_cases) < 10 and not (
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
-        if is_llvm_coverage:
-            test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun-%3m.profraw"
-            print(
-                f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
-            )
+        # if is_llvm_coverage:
+        #     test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-rerun-%3m.profraw"
+        #     print(
+        #         f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
+        #     )
         test_result_retries = Result.from_pytest_run(
             command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
