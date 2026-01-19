@@ -97,7 +97,7 @@ namespace
 
 }
 
-    std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
+std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
 {
     WriteBufferFromOwnString wb;
     wb << "bucket " << bucket << ", ";
