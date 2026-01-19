@@ -1,5 +1,7 @@
 #include <Processors/IAccumulatingTransform.h>
 
+#include <Processors/Port.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -7,7 +9,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IAccumulatingTransform::IAccumulatingTransform(Block input_header, Block output_header)
+IAccumulatingTransform::IAccumulatingTransform(SharedHeader input_header, SharedHeader output_header)
     : IProcessor({std::move(input_header)}, {std::move(output_header)})
     , input(inputs.front())
     , output(outputs.front())

@@ -1,0 +1,83 @@
+-- { echoOn }
+
+explain query tree dump_ast = 1
+SELECT
+  `metric.names`
+from hourly ARRAY JOIN metric;
+QUERY id: 0
+  PROJECTION COLUMNS
+    metric.names String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: tupleElement, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: __array_join_exp_1, result_type: Tuple(names String, values Int64), source_id: 5
+            CONSTANT id: 6, constant_value: \'names\', constant_value_type: String
+  JOIN TREE
+    ARRAY_JOIN id: 5, is_left: 0
+      TABLE EXPRESSION
+        TABLE id: 7, alias: __table2, table_name: default.hourly
+      JOIN EXPRESSIONS
+        LIST id: 8, nodes: 1
+          COLUMN id: 9, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: Tuple(names String, values Int64), source_id: 5
+            EXPRESSION
+              FUNCTION id: 10, function_name: nested, function_type: ordinary, result_type: Array(Tuple(names String, values Int64))
+                ARGUMENTS
+                  LIST id: 11, nodes: 3
+                    CONSTANT id: 12, constant_value: Array_[\'names\', \'values\'], constant_value_type: Array(String)
+                    COLUMN id: 13, column_name: metric.names, result_type: Array(String), source_id: 7
+                    COLUMN id: 14, column_name: metric.values, result_type: Array(Int64), source_id: 7
+
+SELECT tupleElement(__array_join_exp_1, \'names\') AS `metric.names`
+FROM default.hourly AS __table2
+ARRAY JOIN nested(_CAST([\'names\', \'values\'], \'Array(String)\'), __table2.`metric.names`, __table2.`metric.values`) AS __array_join_exp_1
+explain query tree dump_ast = 1
+SELECT
+  metric.names
+from hourly ARRAY JOIN metric;
+QUERY id: 0
+  PROJECTION COLUMNS
+    metric.names String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: tupleElement, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 2
+            COLUMN id: 4, column_name: __array_join_exp_1, result_type: Tuple(names String, values Int64), source_id: 5
+            CONSTANT id: 6, constant_value: \'names\', constant_value_type: String
+  JOIN TREE
+    ARRAY_JOIN id: 5, is_left: 0
+      TABLE EXPRESSION
+        TABLE id: 7, alias: __table2, table_name: default.hourly
+      JOIN EXPRESSIONS
+        LIST id: 8, nodes: 1
+          COLUMN id: 9, alias: __array_join_exp_1, column_name: __array_join_exp_1, result_type: Tuple(names String, values Int64), source_id: 5
+            EXPRESSION
+              FUNCTION id: 10, function_name: nested, function_type: ordinary, result_type: Array(Tuple(names String, values Int64))
+                ARGUMENTS
+                  LIST id: 11, nodes: 3
+                    CONSTANT id: 12, constant_value: Array_[\'names\', \'values\'], constant_value_type: Array(String)
+                    COLUMN id: 13, column_name: metric.names, result_type: Array(String), source_id: 7
+                    COLUMN id: 14, column_name: metric.values, result_type: Array(Int64), source_id: 7
+
+SELECT tupleElement(__array_join_exp_1, \'names\') AS `metric.names`
+FROM default.hourly AS __table2
+ARRAY JOIN nested(_CAST([\'names\', \'values\'], \'Array(String)\'), __table2.`metric.names`, __table2.`metric.values`) AS __array_join_exp_1
+-- { echoOn }
+
+SELECT nested(['click', 'house'], x.b.first, x.b.second) AS n, toTypeName(n) FROM tab;
+[([1,2,3],['b1','b2','b3']),([4,5,6],['b4','b5','b6'])]	Array(Tuple(\n    click Array(UInt32),\n    house Array(String)))
+SELECT nested([['click', 'house']], x.b.first, x.b.second) AS n, toTypeName(n) FROM tab;
+[[(1,'b1'),(2,'b2'),(3,'b3')],[(4,'b4'),(5,'b5'),(6,'b6')]]	Array(Array(Tuple(\n    click UInt32,\n    house String)))
+SELECT nested([['click'], ['house']], x.b.first, x.b.second) AS n, toTypeName(n) FROM tab; -- {serverError BAD_ARGUMENTS}
+set analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested = 0;
+select x from tab;
+[('a1'),('a2')]
+select y, y.b.first, y.b.second from tab array join x as y; -- { serverError UNKNOWN_IDENTIFIER }
+set analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested = 1;
+select x from tab;
+[('a1',[1,2,3],['b1','b2','b3']),('a2',[4,5,6],['b4','b5','b6'])]
+select y, y.b.first, y.b.second from tab array join x as y;
+('a1',[1,2,3],['b1','b2','b3'])	[1,2,3]	['b1','b2','b3']
+('a2',[4,5,6],['b4','b5','b6'])	[4,5,6]	['b4','b5','b6']

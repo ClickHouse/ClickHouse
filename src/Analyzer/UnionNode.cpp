@@ -1,7 +1,7 @@
 #include <Analyzer/UnionNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -18,6 +18,7 @@
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/getLeastSupertype.h>
 
@@ -25,6 +26,7 @@
 
 #include <Interpreters/Context.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 
@@ -35,6 +37,12 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
@@ -48,6 +56,27 @@ UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode {} must be normalized", toString(union_mode));
 
     children[queries_child_index] = std::make_shared<ListNode>();
+    children[correlated_columns_list_index] = std::make_shared<ListNode>();
+}
+
+bool UnionNode::isResolved() const
+{
+    for (const auto & query_node : getQueries().getNodes())
+    {
+        bool is_resolved = false;
+
+        if (auto * query_node_typed = query_node->as<QueryNode>())
+            is_resolved = query_node_typed->isResolved();
+        else if (auto * union_node_typed = query_node->as<UnionNode>())
+            is_resolved = union_node_typed->isResolved();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query tree node type in UNION node");
+
+        if (!is_resolved)
+            return false;
+    }
+
+    return true;
 }
 
 NamesAndTypes UnionNode::computeProjectionColumns() const
@@ -87,42 +116,47 @@ NamesAndTypes UnionNode::computeProjectionColumns() const
         for (size_t projection_index = 0; projection_index < projections_size; ++projection_index)
             projection_column_types[projection_index] = projections[projection_index][column_index].type;
 
-        auto result_type = getLeastSupertype(projection_column_types);
+        auto result_type = getContext()->getSettingsRef()[Setting::use_variant_as_common_type]
+            ? getLeastSupertypeOrVariant(projection_column_types)
+            : getLeastSupertype(projection_column_types);
         result_columns.emplace_back(projections.front()[column_index].name, std::move(result_type));
     }
 
     return result_columns;
 }
 
-void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns)
+void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
 {
     if (recursive_cte_table)
         return;
 
-    auto projection_columns = computeProjectionColumns();
-    size_t projection_columns_size = projection_columns.size();
-    std::unordered_set<size_t> used_projection_column_indexes;
-
-    for (size_t i = 0; i < projection_columns_size; ++i)
-    {
-        const auto & projection_column = projection_columns[i];
-        if (used_projection_columns.contains(projection_column.name))
-            used_projection_column_indexes.insert(i);
-    }
-
-    auto & query_nodes = getQueries().getNodes();
-    for (auto & query_node : query_nodes)
-    {
-        if (auto * query_node_typed = query_node->as<QueryNode>())
-            query_node_typed->removeUnusedProjectionColumns(used_projection_column_indexes);
-        else if (auto * union_node_typed = query_node->as<UnionNode>())
-            union_node_typed->removeUnusedProjectionColumns(used_projection_column_indexes);
-    }
-}
-
-void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
-{
-    if (recursive_cte_table)
+    /// We can't remove unused projections in the case of EXCEPT and INTERSECT
+    /// because it can lead to incorrect query results. Example:
+    ///
+    /// SELECT count()
+    /// FROM
+    /// (
+    ///     SELECT
+    ///         1 AS a,
+    ///         2 AS b
+    ///     INTERSECT ALL
+    ///     SELECT
+    ///         1,
+    ///         1
+    /// )
+    ///
+    /// Will be transformed into the following query with output 1 instead of 0:
+    ///
+    /// SELECT count()
+    /// FROM
+    /// (
+    ///     SELECT
+    ///         1 AS a, -- we must keep at least 1 column
+    ///     INTERSECT ALL
+    ///     SELECT
+    ///         1
+    /// );
+    if (union_mode > SelectUnionMode::UNION_DISTINCT)
         return;
 
     auto & query_nodes = getQueries().getNodes();
@@ -133,6 +167,17 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
         else if (auto * union_node_typed = query_node->as<UnionNode>())
             union_node_typed->removeUnusedProjectionColumns(used_projection_columns_indexes);
     }
+}
+
+void UnionNode::addCorrelatedColumn(const QueryTreeNodePtr & correlated_column)
+{
+    auto & correlated_columns = getCorrelatedColumns().getNodes();
+    for (const auto & column : correlated_columns)
+    {
+        if (column->isEqual(*correlated_column))
+            return;
+    }
+    correlated_columns.push_back(correlated_column);
 }
 
 void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -158,6 +203,12 @@ void UnionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         buffer << ", cte_name: " << cte_name;
 
     buffer << ", union_mode: " << toString(union_mode);
+
+    if (isCorrelated())
+    {
+        buffer << ", is_correlated: 1\n" << std::string(indent + 2, ' ') << "CORRELATED COLUMNS\n";
+        getCorrelatedColumns().dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 
     buffer << '\n' << std::string(indent + 2, ' ') << "QUERIES\n";
     getQueriesNode()->dumpTreeImpl(buffer, format_state, indent + 4);
@@ -218,7 +269,7 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
 
     ASTPtr result_query = std::move(select_with_union_query);
-    bool set_subquery_cte_name = true;
+    bool set_subquery_cte_name = options.set_subquery_cte_name;
 
     if (recursive_cte_table)
     {

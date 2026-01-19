@@ -4,21 +4,15 @@
 
 #if USE_SIMDJSON
 #    include <base/types.h>
-#    include <Common/Exception.h>
 #    include <base/defines.h>
 #    include <simdjson.h>
-#    include "ElementTypes.h"
+#    include <Common/JSONParsers/ElementTypes.h>
 #    include <Common/PODArray_fwd.h>
 #    include <Common/PODArray.h>
 #    include <charconv>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_ALLOCATE_MEMORY;
-}
 
 /// Format elements of basic types into string.
 /// The original implementation is mini_formatter in simdjson.h. But it is not public API, so we
@@ -124,7 +118,7 @@ public:
 
         // At least for long strings, the following should be fast. We could
         // do better by integrating the checks and the insertion.
-        buffer.insert(unescaped.data(), unescaped.data() + i);
+        buffer.insert(unescaped.data(), unescaped.data() + i); /// NOLINT(bugprone-suspicious-stringview-data-usage)
         // We caught a control character if we enter this loop (slow).
         // Note that we are do not restart from the beginning, but rather we continue
         // from the point where we encountered something that requires escaping.
@@ -382,6 +376,16 @@ struct SimdJSONParser
             return true;
         }
 
+        bool findCaseInsensitive(std::string_view key, Element & result) const
+        {
+            auto x = object.at_key_case_insensitive(key);
+            if (x.error())
+                return false;
+
+            result = x.value_unsafe();
+            return true;
+        }
+
         /// Optional: Provides access to an object's element by index.
         KeyValuePair operator[](size_t index) const
         {
@@ -409,11 +413,7 @@ struct SimdJSONParser
     }
 
     /// Optional: Allocates memory to parse JSON documents faster.
-    void reserve(size_t max_size)
-    {
-        if (parser.allocate(max_size) != simdjson::error_code::SUCCESS)
-            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Couldn't allocate {} bytes when parsing JSON", max_size);
-    }
+    void reserve(size_t max_size);
 
 private:
     simdjson::dom::parser parser;

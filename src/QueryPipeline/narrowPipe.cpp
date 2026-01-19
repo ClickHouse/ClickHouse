@@ -1,9 +1,10 @@
 #include <QueryPipeline/narrowPipe.h>
 
 #include <random>
-#include <Common/thread_local_rng.h>
 #include <Processors/ConcatProcessor.h>
+#include <Processors/Port.h>
 #include <QueryPipeline/Pipe.h>
+#include <Common/thread_local_rng.h>
 
 
 namespace DB
@@ -44,7 +45,7 @@ void narrowPipe(Pipe & pipe, size_t width)
 
         for (size_t i = 0; i < width; ++i)
         {
-           auto concat = std::make_shared<ConcatProcessor>(partitions[i].at(0)->getHeader(),
+           auto concat = std::make_shared<ConcatProcessor>(partitions[i].at(0)->getSharedHeader(),
                                                            partitions[i].size());
            size_t next_port = 0;
            for (auto & port : concat->getInputs())

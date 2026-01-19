@@ -122,11 +122,11 @@ struct NodeString : public NodeBase<NodeString<MaxEventsSize>, MaxEventsSize>
 
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
-        StringRef string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+        auto string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
 
-        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size, alignof(Node)));
-        node->size = string.size;
-        memcpy(node->data(), string.data, string.size);
+        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size(), alignof(Node)));
+        node->size = string.size();
+        memcpy(node->data(), string.data(), string.size());
 
         return node;
     }
@@ -179,7 +179,7 @@ class SequenceNextNodeImpl final
     using Self = SequenceNextNodeImpl<T, Node>;
 
     using Data = SequenceNextNodeGeneralData<Node>;
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
     static constexpr size_t base_cond_column_idx = 2;
@@ -206,7 +206,7 @@ public:
         , seq_direction(seq_direction_)
         , min_required_args(min_required_args_)
         , data_type(this->argument_types[0])
-        , events_size(arguments.size() - min_required_args)
+        , events_size(static_cast<UInt8>(arguments.size() - min_required_args))
         , max_elems(max_elems_)
     {
     }
@@ -429,7 +429,7 @@ public:
         {
             ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
             value[event_idx]->insertInto(to_concrete.getNestedColumn());
-            to_concrete.getNullMapData().push_back(0);
+            to_concrete.getNullMapData().push_back(false);
         }
         else
         {

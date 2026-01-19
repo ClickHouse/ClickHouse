@@ -3,7 +3,7 @@
 SELECT base58Encode('Hold my beer...');
 
 SELECT base58Encode('Hold my beer...', 'Second arg'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-SELECT base58Decode('Hold my beer...'); -- { serverError BAD_ARGUMENTS }
+SELECT base58Decode('Hold my beer...'); -- { serverError INCORRECT_DATA }
 
 SELECT base58Decode(encoded) FROM (SELECT base58Encode(val) as encoded FROM (SELECT arrayJoin(['', 'f', 'fo', 'foo', 'foob', 'fooba', 'foobar', 'Hello world!']) val));
 SELECT tryBase58Decode(encoded) FROM (SELECT base58Encode(val) as encoded FROM (SELECT arrayJoin(['', 'f', 'fo', 'foo', 'foob', 'fooba', 'foobar', 'Hello world!']) val));

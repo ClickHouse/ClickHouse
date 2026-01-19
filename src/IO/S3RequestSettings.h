@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <IO/HTTPRequestThrottler.h>
 
 namespace Poco::Util
 {
@@ -16,7 +17,7 @@ struct ProxyConfigurationResolver;
 struct S3RequestSettingsImpl;
 struct Settings;
 
-/// List of available types supported in MaterializedMySQLSettings object
+/// List of available types supported in the Settings object
 #define S3REQUEST_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, UInt64) \
@@ -67,9 +68,11 @@ struct S3RequestSettings
     void updateIfChanged(const S3RequestSettings & settings);
     void validateUploadSettings();
 
-    ThrottlerPtr get_request_throttler;
-    ThrottlerPtr put_request_throttler;
+    HTTPRequestThrottler request_throttler;
     std::shared_ptr<ProxyConfigurationResolver> proxy_resolver;
+
+    void serialize(WriteBuffer & out, ContextPtr context) const;
+    static S3RequestSettings deserialize(ReadBuffer & in, ContextPtr context);
 
 private:
     void finishInit(const DB::Settings & settings, bool validate_settings);

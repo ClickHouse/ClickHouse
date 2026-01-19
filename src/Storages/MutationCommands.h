@@ -5,14 +5,16 @@
 #include <memory>
 #include <unordered_map>
 
-#include <Parsers/ASTAlterQuery.h>
-#include <Storages/IStorage_fwd.h>
-#include <DataTypes/IDataType.h>
 #include <Core/Names.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
 
+class ASTAlterCommand;
 class Context;
 class WriteBuffer;
 class ReadBuffer;
@@ -37,10 +39,12 @@ struct MutationCommand
         DROP_PROJECTION,
         DROP_STATISTICS,
         MATERIALIZE_TTL,
+        REWRITE_PARTS,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
         APPLY_DELETED_MASK,
-        ALTER_WITHOUT_MUTATION, /// pure metadata command, currently unusned
+        APPLY_PATCHES,
+        ALTER_WITHOUT_MUTATION, /// pure metadata command
     };
 
     Type type = EMPTY;
@@ -70,23 +74,37 @@ struct MutationCommand
     /// Column rename_to
     String rename_to = {};
 
+    /// A version of mutation to which command corresponds.
+    std::optional<UInt64> mutation_version = {};
+
+    /// True if column is read by mutation command to apply patch.
+    /// Required to distinguish read command used for MODIFY COLUMN.
+    bool read_for_patch = false;
+
     /// If parse_alter_commands, than consider more Alter commands as mutation commands
-    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false);
+    static std::optional<MutationCommand> parse(ASTAlterCommand * command, bool parse_alter_commands = false, bool with_pure_metadata_commands = false);
 
     /// This command shouldn't stick with other commands
     bool isBarrierCommand() const;
+    bool isPureMetadataCommand() const;
+    bool isEmptyCommand() const;
+    bool isDropOrRename() const;
+    bool affectsAllColumns() const;
 };
 
-/// Multiple mutation commands, possible from different ALTER queries
+/// Multiple mutation commands, possibly from different ALTER queries
 class MutationCommands : public std::vector<MutationCommand>
 {
 public:
     std::shared_ptr<ASTExpressionList> ast(bool with_pure_metadata_commands = false) const;
 
     void writeText(WriteBuffer & out, bool with_pure_metadata_commands) const;
-    void readText(ReadBuffer & in);
-    std::string toString() const;
+    void readText(ReadBuffer & in, bool with_pure_metadata_commands);
+    std::string toString(bool with_pure_metadata_commands) const;
     bool hasNonEmptyMutationCommands() const;
+
+    bool hasAnyUpdateCommand() const;
+    bool hasOnlyUpdateCommands() const;
 
     /// These set of commands contain barrier command and shouldn't
     /// stick with other commands. Commands from one set have already been validated
@@ -96,5 +114,15 @@ public:
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
+
+/// A pair of Actions DAG that is required to execute one step
+/// of mutation and the name of filter column if it's a filtering step.
+struct MutationActions
+{
+    ActionsDAG dag;
+    String filter_column_name;
+    bool project_input;
+    std::optional<UInt64> mutation_version;
+};
 
 }

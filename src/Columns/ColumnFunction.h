@@ -1,9 +1,8 @@
 #pragma once
 
-#include <Core/Field.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Field.h>
 #include <Common/WeakHash.h>
 
 
@@ -44,11 +43,12 @@ public:
     ColumnPtr cut(size_t start, size_t length) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
-    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex num_columns,
+    std::vector<MutableColumnPtr> scatter(size_t num_columns,
                                           const IColumn::Selector & selector) const override;
 
     void getExtremes(Field &, Field &) const override {}
@@ -60,17 +60,13 @@ public:
     void appendArguments(const ColumnsWithTypeAndName & columns);
     ColumnWithTypeAndName reduce() const;
 
-    Field operator[](size_t) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
-    }
+    Field operator[](size_t n) const override;
 
-    void get(size_t, Field &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
-    }
+    void get(size_t n, Field & res) const override;
 
-    StringRef getDataAt(size_t) const override
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+
+    std::string_view getDataAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
     }
@@ -111,17 +107,17 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert into {}", getName());
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override
+    std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot serialize from {}", getName());
     }
 
-    const char * deserializeAndInsertFromArena(const char *) override
+    void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize to {}", getName());
     }
 
-    const char * skipSerializedInArena(const char*) const override
+    void skipSerializedInArena(ReadBuffer &) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
     }
@@ -203,6 +199,9 @@ public:
 
     /// Create copy of this column, but with recursively_convert_result_to_full_column_if_low_cardinality = true
     ColumnPtr recursivelyConvertResultToFullColumnIfLowCardinality() const;
+
+    const FunctionBasePtr & getFunction() const { return function; }
+    const ColumnsWithTypeAndName & getCapturedColumns() const { return captured_columns; }
 
 private:
     size_t elements_size;

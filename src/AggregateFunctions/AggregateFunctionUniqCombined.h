@@ -96,8 +96,8 @@ public:
     {
         if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
         {
-            StringRef value = columns[0]->getDataAt(row_num);
-            this->data(place).set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
+            auto value = columns[0]->getDataAt(row_num);
+            this->data(place).set.insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()));
         }
         else
         {
@@ -111,7 +111,7 @@ public:
                 /// Initially UInt128 was introduced only for UUID, and then the other big-integer types were added.
                 hash = static_cast<HashValueType>(sipHash64(value));
             }
-            else if constexpr (std::is_floating_point_v<T>)
+            else if constexpr (is_floating_point<T>)
             {
                 hash = static_cast<HashValueType>(intHash64(bit_cast<UInt64>(value)));
             }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
@@ -8,6 +8,7 @@
 #include <atomic>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
+#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -32,9 +33,11 @@ public:
 
     ~StorageRabbitMQ() override;
 
-    std::string getName() const override { return "RabbitMQ"; }
+    std::string getName() const override { return RabbitMQ::TABLE_ENGINE_NAME; }
 
-    bool noPushingToViews() const override { return true; }
+    bool isMessageQueue() const override { return true; }
+
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -79,6 +82,9 @@ public:
 
     void incrementReader();
     void decrementReader();
+
+    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
 
 private:
     ContextMutablePtr rabbitmq_context;
@@ -130,9 +136,9 @@ private:
 
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
-    BackgroundSchedulePool::TaskHolder streaming_task;
-    BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder init_task;
+    BackgroundSchedulePoolTaskHolder streaming_task;
+    BackgroundSchedulePoolTaskHolder looping_task;
+    BackgroundSchedulePoolTaskHolder init_task;
 
     uint64_t milliseconds_to_wait;
 
@@ -181,7 +187,7 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
+    void deactivateTask(BackgroundSchedulePoolTaskHolder & task, bool wait, bool stop_loop);
 
     void initRabbitMQ();
     void cleanupRabbitMQ() const;
@@ -201,7 +207,7 @@ private:
         std::uniform_int_distribution<int> distribution('a', 'z');
         String random_str(32, ' ');
         for (auto & c : random_str)
-            c = distribution(thread_local_rng);
+            c = static_cast<char>(distribution(thread_local_rng));
         return random_str;
     }
 };

@@ -7,6 +7,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -31,6 +32,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -42,10 +46,24 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsString cluster_for_parallel_replicas;
 }
 
 namespace
 {
+
+ASTPtr createIdentifierFromColumnName(const String & column_name)
+{
+    Tokens tokens(column_name.data(), column_name.data() + column_name.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    ASTPtr res;
+    Expected expected;
+    ParserCompoundIdentifier().parse(pos, res, expected);
+    if (!res || getIdentifierName(res) != column_name)
+        return std::make_shared<ASTIdentifier>(column_name);
+    return res;
+}
 
 ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_names)
 {
@@ -57,8 +75,8 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_name
         result_query = subquery->children[0];
     else
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Expected ASTSelectWithUnionQuery or ASTSelectQuery. Actual {}",
-            query->formatForErrorMessage());
+            "Expected ASTSelectWithUnionQuery, ASTSelectQuery or ASTSubquery. Actual {} ({})",
+            query->formatForErrorMessage(), query->getID());
 
     if (column_names.empty())
         return result_query;
@@ -83,7 +101,7 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_name
     projection_expression_list_ast->children.reserve(column_names.size());
 
     for (const auto & column_name : column_names)
-        projection_expression_list_ast->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+        projection_expression_list_ast->children.push_back(createIdentifierFromColumnName(column_name));
 
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_expression_list_ast));
 
@@ -104,6 +122,8 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             Block{{DataTypeUInt32().createColumnConst(1, *select_query_options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
 
     return result_context;
+}
+
 }
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
@@ -130,7 +150,7 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
-QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
+static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
     const StoragePtr & storage)
@@ -143,6 +163,7 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
+        || select_query_options.is_create_view
         || context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         query_tree_pass_manager.runOnlyResolve(query_tree);
     else
@@ -154,18 +175,42 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     return query_tree;
 }
 
-}
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
-    const ASTPtr & query_,
-    const ContextPtr & context_,
-    const SelectQueryOptions & select_query_options_,
-    const Names & column_names)
+    const ASTPtr & query_, const ContextPtr & context_, const SelectQueryOptions & select_query_options_, const Names & column_names)
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options)
+    , query_plan_with_parallel_replicas_builder(
+          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
+          {
+              if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
+              {
+                  LOG_TRACE(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
+                  return QueryPlanPtr{};
+              }
+              if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
+              {
+                  LOG_DEBUG(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
+                  return QueryPlanPtr{};
+              }
+              /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
+              if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                  return QueryPlanPtr{};
+              ctx->setSetting("enable_parallel_replicas", true);
+              InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, column_names);
+              auto plan = std::move(interpreter).extractQueryPlan();
+              // TODO(nickitat): split optimization into two phases. First will do the minimum necessary to apply automatic parallel replicas,
+              // second will do the rest of optimizations, but only if the plan with parallel replicas was chosen.
+              plan.optimize(QueryPlanOptimizationSettings(ctx));
+              return std::make_unique<QueryPlan>(std::move(plan));
+          })
 {
 }
 
@@ -180,22 +225,76 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options)
+    , query_plan_with_parallel_replicas_builder(
+          [ast = query_->clone(),
+           ctx = Context::createCopy(context_),
+           storage = storage_,
+           select_options = select_query_options_,
+           column_names]()
+          {
+              if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
+              {
+                  LOG_TRACE(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
+                  return QueryPlanPtr{};
+              }
+              if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
+              {
+                  LOG_DEBUG(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
+                  return QueryPlanPtr{};
+              }
+              /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
+              if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                  return QueryPlanPtr{};
+              ctx->setSetting("enable_parallel_replicas", true);
+              InterpreterSelectQueryAnalyzer interpreter(ast, ctx, storage, select_options, column_names);
+              auto plan = std::move(interpreter).extractQueryPlan();
+              plan.optimize(QueryPlanOptimizationSettings(ctx));
+              return std::make_unique<QueryPlan>(std::move(plan));
+          })
 {
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
-    const QueryTreeNodePtr & query_tree_,
-    const ContextPtr & context_,
-    const SelectQueryOptions & select_query_options_)
+    const QueryTreeNodePtr & query_tree_, const ContextPtr & context_, const SelectQueryOptions & select_query_options_)
     : query(query_tree_->toAST())
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
+    , query_plan_with_parallel_replicas_builder(
+          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
+          {
+              if (!ctx->getSettingsRef()[Setting::parallel_replicas_local_plan])
+              {
+                  LOG_TRACE(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
+                  return QueryPlanPtr{};
+              }
+              if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
+              {
+                  LOG_DEBUG(
+                      getLogger("InterpreterSelectQueryAnalyzer"),
+                      "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
+                  return QueryPlanPtr{};
+              }
+              /// If the query is executed by remote*/cluster* function, the following attempt to build a plan with parallel replicas may result in exceptions
+              if (ctx->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                  return QueryPlanPtr{};
+              ctx->setSetting("enable_parallel_replicas", true);
+              InterpreterSelectQueryAnalyzer interpreter(tree, ctx, select_options);
+              auto plan = std::move(interpreter).extractQueryPlan();
+              plan.optimize(QueryPlanOptimizationSettings(ctx));
+              return std::make_unique<QueryPlan>(std::move(plan));
+          })
 {
 }
 
-Block InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
+SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
@@ -206,7 +305,7 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
     return interpreter.getSampleBlock();
 }
 
-Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query_tree,
+std::pair<SharedHeader, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
@@ -214,13 +313,26 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & qu
     select_query_options_copy.only_analyze = true;
     InterpreterSelectQueryAnalyzer interpreter(query_tree, context, select_query_options_copy);
 
-    return interpreter.getSampleBlock();
+    return interpreter.getSampleBlockAndPlannerContext();
 }
 
-Block InterpreterSelectQueryAnalyzer::getSampleBlock()
+SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query_tree,
+    const ContextPtr & context,
+    const SelectQueryOptions & select_query_options)
+{
+    return getSampleBlockAndPlannerContext(query_tree, context, select_query_options).first;
+}
+
+SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock()
 {
     planner.buildQueryPlanIfNeeded();
     return planner.getQueryPlan().getCurrentHeader();
+}
+
+std::pair<SharedHeader, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext()
+{
+    planner.buildQueryPlanIfNeeded();
+    return {planner.getQueryPlan().getCurrentHeader(), planner.getPlannerContext()};
 }
 
 BlockIO InterpreterSelectQueryAnalyzer::execute()
@@ -253,8 +365,10 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
 
-    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
-    auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
+    QueryPlanOptimizationSettings optimization_settings(context);
+    optimization_settings.query_plan_with_parallel_replicas_builder = query_plan_with_parallel_replicas_builder;
+
+    BuildQueryPipelineSettings build_pipeline_settings(context);
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 

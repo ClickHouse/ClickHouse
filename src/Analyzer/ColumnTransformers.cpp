@@ -1,6 +1,7 @@
 #include <Analyzer/ColumnTransformers.h>
 
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 #include <Common/re2.h>
 
 #include <IO/WriteBuffer.h>

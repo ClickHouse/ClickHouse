@@ -1,48 +1,75 @@
 ---
-slug: /en/sql-reference/statements/select/with
-sidebar_label: WITH
+description: 'Documentation for WITH Clause'
+sidebar_label: 'WITH'
+slug: /sql-reference/statements/select/with
+title: 'WITH Clause'
+doc_type: 'reference'
 ---
 
 # WITH Clause
 
-ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)) and substitutes the code defined in the `WITH` clause in all places of use for the rest of `SELECT` query. Named subqueries can be included to the current and child query context in places where table objects are allowed. Recursion is prevented by hiding the current level CTEs from the WITH expression.
+ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), Common Scalar Expressions and Recursive Queries.
+
+## Common Table Expressions {#common-table-expressions}
+
+Common Table Expressions represent named subqueries.
+They can be referenced by name anywhere in a `SELECT` query where a table expression is allowed.
+Named subqueries can be referenced by name in the scope of the current query or in the scopes of child subqueries.
+
+Every reference to a Common Table Expression in `SELECT` queries is always replaced by the subquery from it's definition.
+Recursion is prevented by hiding the current CTE from the identifier resolution process.
 
 Please note that CTEs do not guarantee the same results in all places they are called because the query will be re-executed for each use case.
 
-An example of such behavior is below
-``` sql
-with cte_numbers as
+### Syntax {#common-table-expressions-syntax}
+
+```sql
+WITH <identifier> AS <subquery expression>
+```
+
+### Example {#common-table-expressions-example}
+
+An example of when a subquery is re-executed:
+```sql
+WITH cte_numbers AS
 (
-    select
+    SELECT
         num
-    from generateRandom('num UInt64', NULL)
-    limit 1000000
+    FROM generateRandom('num UInt64', NULL)
+    LIMIT 1000000
 )
-select
+SELECT
     count()
-from cte_numbers
-where num in (select num from cte_numbers)
+FROM cte_numbers
+WHERE num IN (SELECT num FROM cte_numbers)
 ```
 If CTEs were to pass exactly the results and not just a piece of code, you would always see `1000000`
 
 However, due to the fact that we are referring `cte_numbers` twice, random numbers are generated each time and, accordingly, we see different random results, `280501, 392454, 261636, 196227` and so on...
 
-## Syntax
+## Common Scalar Expressions {#common-scalar-expressions}
 
-``` sql
+ClickHouse allows you to declare aliases to arbitrary scalar expressions in the `WITH` clause.
+Common scalar expressions can be referenced in any place in the query.
+
+:::note
+If a common scalar expression references something other than a constant literal, the expression may lead to the presence of [free variables](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables).
+ClickHouse resolves any identifier in the closest scope possible, meaning that free variables can reference unexpected entities in case of name clashes or may lead to a correlated subquery.
+It is recommended to define CSE as a [lambda function](/sql-reference/functions/overview#arrow-operator-and-lambda) (possible only with the [analyzer](/operations/analyzer) enabled) binding all the used identifiers to achieve a more predictable behavior of expression identifiers resolution.
+:::
+
+### Syntax {#common-scalar-expressions-syntax}
+
+```sql
 WITH <expression> AS <identifier>
 ```
-or
-``` sql
-WITH <identifier> AS <subquery expression>
-```
 
-## Examples
+### Examples {#common-scalar-expressions-examples}
 
-**Example 1:** Using constant expression as “variable”
+**Example 1:** Using constant expression as "variable"
 
-``` sql
-WITH '2019-08-01 15:23:00' as ts_upper_bound
+```sql
+WITH '2019-08-01 15:23:00' AS ts_upper_bound
 SELECT *
 FROM hits
 WHERE
@@ -50,10 +77,55 @@ WHERE
     EventTime <= ts_upper_bound;
 ```
 
-**Example 2:** Evicting a sum(bytes) expression result from the SELECT clause column list
+**Example 2:** Using higher-order functions to bound the identifiers
 
-``` sql
-WITH sum(bytes) as s
+```sql
+WITH
+    '.txt' as extension,
+    (id, extension) -> concat(lower(id), extension) AS gen_name
+SELECT gen_name('test', '.sql') as file_name;
+```
+
+```response
+   ┌─file_name─┐
+1. │ test.sql  │
+   └───────────┘
+```
+
+**Example 3:** Using higher-order functions with free variables
+
+The following example queries show that unbound identifiers resolve into an entity in the closest scope.
+Here, `extension` is not bound in the `gen_name` lambda function body.
+Although `extension` is defined to `'.txt'` as a common scalar expression in the scope of `generated_names` definition and usage, it is resolved into a column of the table `extension_list`, because it is available in the `generated_names` subquery.
+
+```sql
+CREATE TABLE extension_list
+(
+    extension String
+)
+ORDER BY extension
+AS SELECT '.sql';
+
+WITH
+    '.txt' as extension,
+    generated_names as (
+        WITH
+            (id) -> concat(lower(id), extension) AS gen_name
+        SELECT gen_name('test') as file_name FROM extension_list
+    )
+SELECT file_name FROM generated_names;
+```
+
+```response
+   ┌─file_name─┐
+1. │ test.sql  │
+   └───────────┘
+```
+
+**Example 4:** Evicting a sum(bytes) expression result from the SELECT clause column list
+
+```sql
+WITH sum(bytes) AS s
 SELECT
     formatReadableSize(s),
     table
@@ -62,9 +134,9 @@ GROUP BY table
 ORDER BY s;
 ```
 
-**Example 3:** Using results of a scalar subquery
+**Example 5:** Using results of a scalar subquery
 
-``` sql
+```sql
 /* this example would return TOP 10 of most huge tables */
 WITH
     (
@@ -81,16 +153,16 @@ ORDER BY table_disk_usage DESC
 LIMIT 10;
 ```
 
-**Example 4:** Reusing expression in a subquery
+**Example 6:** Reusing expression in a subquery
 
-``` sql
+```sql
 WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
 SELECT * FROM test1;
 ```
 
-## Recursive Queries
+## Recursive Queries {#recursive-queries}
 
-The optional RECURSIVE modifier allows for a WITH query to refer to its own output. Example:
+The optional `RECURSIVE` modifier allows for a WITH query to refer to its own output. Example:
 
 **Example:** Sum integers from 1 through 100
 
@@ -103,11 +175,16 @@ UNION ALL
 SELECT sum(number) FROM test_table;
 ```
 
-``` text
+```text
 ┌─sum(number)─┐
 │        5050 │
 └─────────────┘
 ```
+
+:::note
+Recursive CTEs rely on the [new query analyzer](/operations/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`(UNKNOWN_TABLE)`** or **`(UNSUPPORTED_METHOD)`** exception, it suggests that the new analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the setting **`allow_experimental_analyzer`** or update the **`compatibility`** setting to a more recent version.
+Starting from version `24.8` the new analyzer has been fully promoted to production, and the setting `allow_experimental_analyzer` has been renamed to `enable_analyzer`.
+:::
 
 The general form of a recursive `WITH` query is always a non-recursive term, then `UNION ALL`, then a recursive term, where only the recursive term can contain a reference to the query's own output. Recursive CTE query is executed as follows:
 
@@ -159,7 +236,7 @@ SELECT * FROM search_tree;
 └────┴───────────┴───────────┘
 ```
 
-### Search order
+### Search order {#search-order}
 
 To create a depth-first order, we compute for each result row an array of rows that we have already visited:
 
@@ -211,7 +288,7 @@ SELECT * FROM search_tree ORDER BY depth;
 └────┴──────┴───────────┴─────────┴───────┘
 ```
 
-### Cycle detection
+### Cycle detection {#cycle-detection}
 
 First let's create graph table:
 
@@ -291,7 +368,7 @@ SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
 └──────┴────┴────────┴──────────┴───────────────────────────┘
 ```
 
-### Infinite queries
+### Infinite queries {#infinite-queries}
 
 It is also possible to use infinite recursive CTE queries if `LIMIT` is used in outer query:
 

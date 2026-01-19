@@ -1,128 +1,241 @@
 import dataclasses
 import json
-import urllib.parse
+import os
 from pathlib import Path
 from typing import List
 
-from praktika._environment import _Environment
-from praktika.gh import GH
-from praktika.parser import WorkflowConfigParser
-from praktika.result import Result, ResultInfo
-from praktika.runtime import RunConfig
-from praktika.s3 import S3
-from praktika.settings import Settings
-from praktika.utils import Shell, Utils
+from ._environment import _Environment
+from .gh import GH
+from .info import Info
+from .parser import WorkflowConfigParser
+from .result import Result, ResultInfo, _ResultS3
+from .runtime import RunConfig
+from .s3 import S3
+from .settings import Settings
+from .usage import ComputeUsage, StorageUsage
+from .utils import Shell, Utils
 
 
 @dataclasses.dataclass
 class GitCommit:
-    date: str
-    message: str
     sha: str
+    message: str = ""
+    # date: str
 
     @staticmethod
-    def from_json(json_data: str) -> List["GitCommit"]:
+    def from_json(file) -> List["GitCommit"]:
         commits = []
+        json_data = None
         try:
-            data = json.loads(json_data)
-
+            with open(file, "r", encoding="utf-8") as f:
+                json_data = json.load(f)
             commits = [
                 GitCommit(
-                    message=commit["messageHeadline"],
-                    sha=commit["oid"],
-                    date=commit["committedDate"],
+                    message=commit["message"],
+                    sha=commit["sha"],
+                    # date=commit["committedDate"],
                 )
-                for commit in data.get("commits", [])
+                for commit in json_data
             ]
         except Exception as e:
             print(
-                f"ERROR: Failed to deserialize commit's data: [{json_data}], ex: [{e}]"
+                f"ERROR: Failed to deserialize commit's data [{json_data}], ex: [{e}]"
             )
 
         return commits
 
+    @classmethod
+    def update_s3_data(cls):
+        env = _Environment.get()
+        sha = env.SHA
+        if not sha:
+            print("WARNING: Failed to retrieve commit sha")
+            return
+        commits = cls.pull_from_s3()
+        for commit in commits:
+            if sha == commit.sha:
+                print(
+                    f"INFO: Sha already present in commits data [{sha}] - skip data update"
+                )
+                return
+        commits.append(GitCommit(sha=sha, message=env.COMMIT_MESSAGE))
+        commits = commits[
+            -20:
+        ]  # limit maximum number of commits from the past to show in the report
+        cls.push_to_s3(commits)
+        return
+
+    @classmethod
+    def dump(cls, commits):
+        commits_ = []
+        for commit in commits:
+            commits_.append(dataclasses.asdict(commit))
+        with open(cls.file_name(), "w", encoding="utf8") as f:
+            json.dump(commits_, f)
+
+    @classmethod
+    def get_s3_path(cls):
+        env = _Environment.get()
+        if env.PR_NUMBER:
+            s3suffix = f"PRs/{env.PR_NUMBER}"
+        else:
+            assert env.BRANCH
+            s3suffix = f"REFs/{env.BRANCH}"
+        return f"{Settings.HTML_S3_PATH}/{s3suffix}"
+
+    @classmethod
+    def pull_from_s3(cls):
+        local_path = Path(cls.file_name())
+        file_name = local_path.name
+        s3_path = f"{cls.get_s3_path()}/{file_name}"
+        if not S3.copy_file_from_s3(
+            s3_path=s3_path, local_path=local_path, no_strict=True
+        ):
+            print(f"WARNING: failed to cp file [{s3_path}] from s3")
+            return []
+        return cls.from_json(local_path)
+
+    @classmethod
+    def push_to_s3(cls, commits):
+        print(f"INFO: push commits data to s3, commits num [{len(commits)}]")
+        cls.dump(commits)
+        local_path = Path(cls.file_name())
+        file_name = local_path.name
+        s3_path = f"{cls.get_s3_path()}/{file_name}"
+        if not S3.copy_file_to_s3(
+            s3_path=s3_path, local_path=local_path, text=True, no_strict=True
+        ):
+            print(f"WARNING: failed to cp file [{local_path}] to s3")
+
+    @classmethod
+    def file_name(cls):
+        return f"{Settings.TEMP_DIR}/commits.json"
+
+    # def _get_pr_commits(pr_number):
+    #     res = []
+    #     if not pr_number:
+    #         return res
+    #     output = Shell.get_output(f"gh pr view {pr_number}  --json commits")
+    #     if output:
+    #         res = GitCommit.from_json(output)
+    #     return res
+
 
 class HtmlRunnerHooks:
     @classmethod
-    def configure(cls, _workflow):
-
-        def _get_pr_commits(pr_number):
-            res = []
-            if not pr_number:
-                return res
-            output = Shell.get_output(f"gh pr view {pr_number}  --json commits")
-            if output:
-                res = GitCommit.from_json(output)
-            return res
-
+    def push_pending_ci_report(cls, _workflow):
         # generate pending Results for all jobs in the workflow
-        if _workflow.enable_cache:
-            skip_jobs = RunConfig.from_fs(_workflow.name).cache_success
-        else:
-            skip_jobs = []
-
         env = _Environment.get()
         results = []
         for job in _workflow.jobs:
-            if job.name not in skip_jobs:
-                result = Result.generate_pending(job.name)
+            if job.name == Settings.CI_CONFIG_JOB_NAME:
+                # fetch running status with start_time for current job
+                result = Result.from_fs(job.name)
             else:
-                result = Result.generate_skipped(job.name)
+                result = Result.create_new(job.name, Result.Status.PENDING)
             results.append(result)
-        summary_result = Result.generate_pending(_workflow.name, results=results)
-        summary_result.aux_links.append(env.CHANGE_URL)
-        summary_result.aux_links.append(env.RUN_URL)
+        summary_result = Result.create_new(
+            _workflow.name, Result.Status.RUNNING, results=results
+        )
         summary_result.start_time = Utils.timestamp()
-        page_url = "/".join(
-            ["https:/", Settings.HTML_S3_PATH, str(Path(Settings.HTML_PAGE_FILE).name)]
+        summary_result.links.append(env.CHANGE_URL)
+        summary_result.links.append(env.RUN_URL)
+        report_url_latest_sha = Info().get_report_url(latest=True)
+        report_url_current_sha = Info().get_report_url(latest=False)
+        info = Info()
+        summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
+            "git_branch", info.git_branch
+        ).add_ext_key_value("report_url", report_url_current_sha).add_ext_key_value(
+            "commit_sha", env.SHA
+        ).add_ext_key_value(
+            "commit_message", env.COMMIT_MESSAGE
+        ).add_ext_key_value(
+            "repo_name", env.REPOSITORY
+        ).add_ext_key_value(
+            "pr_number", env.PR_NUMBER
+        ).add_ext_key_value(
+            "run_url", env.RUN_URL
+        ).add_ext_key_value(
+            "change_url", env.CHANGE_URL
+        ).add_ext_key_value(
+            "workflow_name", env.WORKFLOW_NAME
+        ).add_ext_key_value(
+            "base_branch", env.BASE_BRANCH
         )
-        for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
-            page_url = page_url.replace(bucket, endpoint)
-        # TODO: add support for non-PRs (use branch?)
-        page_url += f"?PR={env.PR_NUMBER}&sha=latest&name_0={urllib.parse.quote(env.WORKFLOW_NAME, safe='')}"
-        summary_result.html_link = page_url
 
-        # clean the previous latest results in PR if any
-        if env.PR_NUMBER:
-            S3.clean_latest_result()
-        S3.copy_result_to_s3(
-            summary_result,
-            unlock=False,
+        summary_result.dump()
+        assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
+        print(f"CI Status page url [{report_url_current_sha}]")
+
+        if Settings.USE_CUSTOM_GH_AUTH:
+            from .gh_auth import GHAuth
+
+            pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+            app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+            GHAuth.auth(app_id=app_id, app_key=pem)
+
+        body = f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]"
+        res2 = not bool(env.PR_NUMBER) or GH.post_updateable_comment(
+            comment_tags_and_bodies={"report": body, "summary": ""},
         )
-
-        print(f"CI Status page url [{page_url}]")
-
         res1 = GH.post_commit_status(
             name=_workflow.name,
             status=Result.Status.PENDING,
             description="",
-            url=page_url,
-        )
-        res2 = GH.post_pr_comment(
-            comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
-            or_update_comment_with_substring=f"Workflow [",
+            url=report_url_current_sha,
         )
         if not (res1 or res2):
             Utils.raise_with_error(
                 "Failed to set both GH commit status and PR comment with Workflow Status, cannot proceed"
             )
+        GitCommit.update_s3_data()
 
-        if env.PR_NUMBER:
-            commits = _get_pr_commits(env.PR_NUMBER)
-            # TODO: upload commits data to s3 to visualise it on a report page
-            print(commits)
+    @classmethod
+    def configure(cls, _workflow):
+        # generate pending Results for all jobs in the workflow
+        if _workflow.enable_cache:
+            workflow_config = RunConfig.from_fs(_workflow.name)
+            skipped_jobs = workflow_config.cache_success
+            filtered_job_and_reason = workflow_config.filtered_jobs
+            job_cache_records = workflow_config.cache_jobs
+            results = []
+            info = Info()
+            for skipped_job in skipped_jobs:
+                if skipped_job not in filtered_job_and_reason:
+                    cache_record = job_cache_records[skipped_job]
+                    report_link = info.get_specific_report_url(
+                        pr_number=cache_record.pr_number,
+                        branch=cache_record.branch,
+                        sha=cache_record.sha,
+                        job_name=skipped_job,
+                        workflow_name=cache_record.workflow,
+                    )
+                    result = Result.create_new(
+                        skipped_job,
+                        Result.Status.SKIPPED,
+                        [report_link],
+                        "reused from cache",
+                    )
+                else:
+                    result = Result.create_new(
+                        skipped_job,
+                        Result.Status.SKIPPED,
+                        info=filtered_job_and_reason[skipped_job],
+                    )
+                results.append(result)
+            if results:
+                assert (
+                    _ResultS3.update_workflow_results(
+                        _workflow.name, new_sub_results=results
+                    )
+                    is None
+                ), "Workflow status supposed to remain 'running'"
 
     @classmethod
     def pre_run(cls, _workflow, _job):
         result = Result.from_fs(_job.name)
-        S3.copy_result_from_s3(
-            Result.file_name_static(_workflow.name),
-        )
-        workflow_result = Result.from_fs(_workflow.name)
-        workflow_result.update_sub_result(result)
-        S3.copy_result_to_s3(
-            workflow_result,
-            unlock=True,
+        _ResultS3.update_workflow_results(
+            workflow_name=_workflow.name, new_sub_results=result
         )
 
     @classmethod
@@ -132,14 +245,21 @@ class HtmlRunnerHooks:
     @classmethod
     def post_run(cls, _workflow, _job, info_errors):
         result = Result.from_fs(_job.name)
-        env = _Environment.get()
-        S3.copy_result_from_s3(
-            Result.file_name_static(_workflow.name),
-            lock=True,
-        )
-        workflow_result = Result.from_fs(_workflow.name)
-        print(f"Workflow info [{workflow_result.info}], info_errors [{info_errors}]")
+        _ResultS3.upload_result_files_to_s3(result).dump()
+        storage_usage = None
+        if StorageUsage.exist():
+            StorageUsage.add_uploaded(
+                result.file_name()
+            )  # add Result file beforehand to upload actual storage usage data
+            print("Storage usage data found - add to Result")
+            storage_usage = StorageUsage.from_fs()
+            result.ext["storage_usage"] = storage_usage
+        _ResultS3.copy_result_to_s3(result)
 
+        env = _Environment.get()
+
+        new_sub_results = [result]
+        new_result_info = ""
         env_info = env.REPORT_INFO
         if env_info:
             print(
@@ -151,48 +271,53 @@ class HtmlRunnerHooks:
             info_str = f"{_job.name}:\n"
             info_str += "\n".join(info_errors)
             print("Update workflow results with new info")
-            workflow_result.set_info(info_str)
+            new_result_info = info_str
 
-        old_status = workflow_result.status
-
-        S3.upload_result_files_to_s3(result)
-        workflow_result.update_sub_result(result)
-
-        skipped_job_results = []
-        if not result.is_ok():
+        if not result.is_ok() and not result.do_not_block_pipeline_on_failure():
             print(
-                "Current job failed - find dependee jobs in the workflow and set their statuses to skipped"
+                "Current job failed - find dependee jobs in the workflow and set their statuses to dropped"
             )
             workflow_config_parsed = WorkflowConfigParser(_workflow).parse()
-            for dependee_job in workflow_config_parsed.workflow_yaml_config.jobs:
-                if _job.name in dependee_job.needs:
-                    if _workflow.get_job(dependee_job.name).run_unless_cancelled:
-                        continue
-                    print(
-                        f"NOTE: Set job [{dependee_job.name}] status to [{Result.Status.SKIPPED}] due to current failure"
-                    )
-                    skipped_job_results.append(
-                        Result(
-                            name=dependee_job.name,
-                            status=Result.Status.SKIPPED,
-                            info=ResultInfo.SKIPPED_DUE_TO_PREVIOUS_FAILURE
-                            + f" [{_job.name}]",
-                        )
-                    )
-        for skipped_job_result in skipped_job_results:
-            workflow_result.update_sub_result(skipped_job_result)
 
-        S3.copy_result_to_s3(
-            workflow_result,
-            unlock=True,
+            dependees = set()
+
+            def add_dependees(job_name):
+                for dependee_job in workflow_config_parsed.workflow_yaml_config.jobs:
+                    if dependee_job.run_unless_cancelled:
+                        continue
+                    if (
+                        job_name in dependee_job.needs
+                        and dependee_job.name not in dependees
+                    ):
+                        dependees.add(dependee_job.name)
+                        add_dependees(dependee_job.name)
+
+            add_dependees(_job.name)
+
+            for dependee in dependees:
+                print(
+                    f"NOTE: Set job [{dependee}] status to [{Result.Status.DROPPED}] due to current failure"
+                )
+                new_sub_results.append(
+                    Result(
+                        name=dependee,
+                        status=Result.Status.DROPPED,
+                        info=ResultInfo.DROPPED_DUE_TO_PREVIOUS_FAILURE
+                        + f" [{_job.name}]",
+                        start_time=Utils.timestamp(),
+                        duration=0,
+                    )
+                )
+
+        updated_status = _ResultS3.update_workflow_results(
+            new_info=new_result_info,
+            new_sub_results=new_sub_results,
+            workflow_name=_workflow.name,
+            storage_usage=storage_usage,
+            compute_usage=ComputeUsage().set_usage(
+                runner_str="_".join(_job.runs_on),
+                duration=result.duration,
+                job_name=_job.name,
+            ),
         )
-        if workflow_result.status != old_status:
-            print(
-                f"Update GH commit status [{result.name}]: [{old_status} -> {workflow_result.status}], link [{workflow_result.html_link}]"
-            )
-            GH.post_commit_status(
-                name=workflow_result.name,
-                status=GH.convert_to_gh_status(workflow_result.status),
-                description="",
-                url=workflow_result.html_link,
-            )
+        return updated_status

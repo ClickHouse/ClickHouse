@@ -23,7 +23,6 @@
 #include "Poco/Net/NetSSL.h"
 #include "Poco/Net/Session.h"
 #include "Poco/Net/Utility.h"
-#include "Poco/Net/X509Certificate.h"
 
 
 namespace Poco
@@ -129,7 +128,7 @@ namespace Net
         /// Return true iff the session uses SSL or TLS,
         /// or false otherwise.
 
-        X509Certificate serverCertificate();
+        X509 * serverCertificate();
         /// Returns the server's certificate.
         ///
         /// The certificate is available after the first request has been sent.

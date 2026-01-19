@@ -11,6 +11,7 @@
 #include <Parsers/ParserDropNamedCollectionQuery.h>
 #include <Parsers/ParserAlterNamedCollectionQuery.h>
 #include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserParallelWithQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQuery.h>
@@ -19,25 +20,28 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ParserUseQuery.h>
-#include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/ParserTransactionControl.h>
 #include <Parsers/ParserDeleteQuery.h>
+#include <Parsers/ParserUpdateQuery.h>
 #include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserCopyQuery.h>
 
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
 #include <Parsers/Access/ParserCreateRowPolicyQuery.h>
+#include <Parsers/Access/ParserCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ParserCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ParserDropAccessEntityQuery.h>
 #include <Parsers/Access/ParserGrantQuery.h>
+#include <Parsers/Access/ParserCheckGrantQuery.h>
 #include <Parsers/Access/ParserMoveAccessEntityQuery.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
+#include <Parsers/Access/ParserExecuteAsQuery.h>
 
 
 namespace DB
 {
-
 
 bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -52,6 +56,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateRoleQuery create_role_p;
     ParserCreateQuotaQuery create_quota_p;
     ParserCreateRowPolicyQuery create_row_policy_p;
+    ParserCreateMaskingPolicy create_masking_policy_p;
     ParserCreateSettingsProfileQuery create_settings_profile_p;
     ParserCreateFunctionQuery create_function_p;
     ParserDropFunctionQuery drop_function_p;
@@ -67,15 +72,12 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDropAccessEntityQuery drop_access_entity_p;
     ParserMoveAccessEntityQuery move_access_entity_p;
     ParserGrantQuery grant_p;
+    ParserCheckGrantQuery check_grant_p;
     ParserSetRoleQuery set_role_p;
-    ParserExternalDDLQuery external_ddl_p;
     ParserTransactionControl transaction_control_p;
     ParserDeleteQuery delete_p;
-
-    /// SELECT queries are already attempted to parse by ParserQueryWithOutput,
-    /// but here we also try "implicit SELECT" after all other options.
-    /// It allows to use ClickHouse as a calculator, to process queries like `1 + 2` without the SELECT keyword.
-    ParserSelectQuery implicit_select_p(true);
+    ParserUpdateQuery update_p;
+    ParserCopyQuery copy_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -87,6 +89,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_role_p.parse(pos, node, expected)
         || create_quota_p.parse(pos, node, expected)
         || create_row_policy_p.parse(pos, node, expected)
+        || create_masking_policy_p.parse(pos, node, expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || create_function_p.parse(pos, node, expected)
         || drop_function_p.parse(pos, node, expected)
@@ -102,10 +105,36 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || drop_access_entity_p.parse(pos, node, expected)
         || move_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
-        || external_ddl_p.parse(pos, node, expected)
+        || check_grant_p.parse(pos, node, expected)
         || transaction_control_p.parse(pos, node, expected)
         || delete_p.parse(pos, node, expected)
-        || (implicit_select && implicit_select_p.parse(pos, node, expected));
+        || update_p.parse(pos, node, expected)
+        || copy_p.parse(pos, node, expected);
+
+    if (!res && allow_execute_as)
+    {
+        ParserQuery subquery_p{end, allow_settings_after_format_in_insert, implicit_select};
+        subquery_p.allow_execute_as = false;
+        ParserExecuteAsQuery execute_as_p{subquery_p};
+        res = execute_as_p.parse(pos, node, expected);
+    }
+
+    if (res && allow_in_parallel_with)
+    {
+        ParserQuery subquery_p{end, allow_settings_after_format_in_insert, implicit_select};
+        subquery_p.allow_in_parallel_with = false;
+        ParserParallelWithQuery in_parallel_with_query_p(subquery_p, node);
+        in_parallel_with_query_p.parse(pos, node, expected);
+    }
+
+    if (!res && implicit_select)
+    {
+        /// SELECT queries are already attempted to parse by ParserQueryWithOutput,
+        /// but here we also try "implicit SELECT" after all other options.
+        /// It allows to use ClickHouse as a calculator, to process queries like `1 + 2` without the SELECT keyword.
+        ParserSelectQuery implicit_select_p(true);
+        res = implicit_select_p.parse(pos, node, expected);
+    }
 
     return res;
 }

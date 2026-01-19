@@ -1,5 +1,5 @@
-#include <Poco/String.h>
 #include <Core/Names.h>
+#include <Core/Settings.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
@@ -10,12 +10,17 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
-#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
-#include <IO/WriteHelpers.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsUInt64 max_ast_depth;
+extern const SettingsUInt64 max_expanded_ast_elements;
+extern const SettingsBool prefer_column_name_to_alias;
+}
 
 namespace ErrorCodes
 {
@@ -25,6 +30,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+
+QueryNormalizer::ExtractedSettings::ExtractedSettings(const Settings & settings)
+    : max_ast_depth(settings[Setting::max_ast_depth])
+    , max_expanded_ast_elements(settings[Setting::max_expanded_ast_elements])
+    , prefer_column_name_to_alias(settings[Setting::prefer_column_name_to_alias])
+{
+}
 
 class CheckASTDepth
 {
@@ -80,15 +92,15 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
     if (data.settings.prefer_column_name_to_alias)
     {
-        if (data.source_columns_set.find(node.name()) != data.source_columns_set.end())
+        if (data.source_columns_set.contains(node.name()))
             return;
     }
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
-    auto it_alias = data.aliases.find(node.name());
     if (!data.allow_self_aliases && current_alias == node.name())
         throw Exception(ErrorCodes::CYCLIC_ALIASES, "Self referencing of {} to {}. Cyclic alias",
                         backQuote(current_alias), backQuote(node.name()));
+    auto it_alias = data.aliases.find(node.name());
 
     if (it_alias != data.aliases.end() && current_alias != node.name())
     {
@@ -161,7 +173,13 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
     {
         auto & join = node.table_join->as<ASTTableJoin &>();
         if (join.on_expression)
+        {
+            ASTPtr original_on_expression = join.on_expression;
             visit(join.on_expression, data);
+            if (join.on_expression != original_on_expression)
+                join.children = { join.on_expression };
+        }
+
     }
 }
 

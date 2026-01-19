@@ -10,7 +10,7 @@ INSERT INTO t_arr VALUES ([1]) ([]) ([1, 2, 3]) ([1, 2]);
 SYSTEM DROP MARK CACHE;
 SELECT a.size0 FROM t_arr;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT a.size0 FROM %t_arr%'))
@@ -18,7 +18,7 @@ WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT a.size0 FROM %
 
 SELECT '====tuple====';
 DROP TABLE IF EXISTS t_tup;
-CREATE TABLE t_tup (t Tuple(s String, u UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+CREATE TABLE t_tup (t Tuple(s String, u UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
 INSERT INTO t_tup VALUES (('foo', 1)) (('bar', 2)) (('baz', 42));
 
 SYSTEM DROP MARK CACHE;
@@ -27,7 +27,7 @@ SELECT t.s FROM t_tup;
 SYSTEM DROP MARK CACHE;
 SELECT t.u FROM t_tup;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT t._ FROM %t_tup%'))
@@ -41,7 +41,7 @@ INSERT INTO t_nul VALUES (1) (NULL) (2) (NULL);
 SYSTEM DROP MARK CACHE;
 SELECT n.null FROM t_nul;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT n.null FROM %t_nul%'))
@@ -49,7 +49,7 @@ WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT n.null FROM %t
 
 SELECT '====map====';
 DROP TABLE IF EXISTS t_map;
-CREATE TABLE t_map (m Map(String, UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
+CREATE TABLE t_map (m Map(String, UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
 INSERT INTO t_map VALUES (map('a', 1, 'b', 2)) (map('a', 3, 'c', 4)), (map('b', 5, 'c', 6));
 
 --- will read 4 files: keys.bin, keys.mrk2, size0.bin, size0.mrk2
@@ -59,7 +59,7 @@ SELECT m.keys FROM t_map;
 SYSTEM DROP MARK CACHE;
 SELECT m.values FROM t_map;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT m.% FROM %t_map%'))

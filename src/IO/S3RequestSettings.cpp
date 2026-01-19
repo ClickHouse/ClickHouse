@@ -4,13 +4,26 @@
 #include <IO/S3Common.h>
 #include <IO/S3Defines.h>
 #include <IO/S3RequestSettings.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/Throttler.h>
 #include <Common/formatReadable.h>
+#include <Common/ProfileEvents.h>
 
 #include <Poco/String.h>
 #include <Poco/Util/AbstractConfiguration.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event S3GetRequestThrottlerCount;
+    extern const Event S3GetRequestThrottlerBlocked;
+    extern const Event S3GetRequestThrottlerSleepMicroseconds;
+    extern const Event S3PutRequestThrottlerCount;
+    extern const Event S3PutRequestThrottlerBlocked;
+    extern const Event S3PutRequestThrottlerSleepMicroseconds;
+}
 
 namespace DB
 {
@@ -36,8 +49,25 @@ namespace ErrorCodes
     DECLARE(Bool, allow_native_copy, S3::DEFAULT_ALLOW_NATIVE_COPY, "", 0) \
     DECLARE(Bool, check_objects_after_upload, S3::DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD, "", 0) \
     DECLARE(Bool, throw_on_zero_files_match, false, "", 0) \
+    DECLARE(Bool, allow_multipart_copy, true, "", 0) \
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
-    DECLARE(String, storage_class_name, "", "", 0)
+    DECLARE(String, storage_class_name, "", "", 0) \
+    DECLARE(UInt64, http_max_fields, 1000000, "", 0) \
+    DECLARE(UInt64, http_max_field_name_size, 128 * 1024, "", 0) \
+    DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0) \
+    DECLARE(UInt64, min_bytes_for_seek, S3::DEFAULT_MIN_BYTES_FOR_SEEK, "", 0) \
+    DECLARE(UInt64, objects_chunk_size_to_delete, S3::DEFAULT_OBJECTS_CHUNK_SIZE_TO_DELETE, "", 0) \
+    DECLARE(Bool, read_only, false, "", 0) \
+    DECLARE(UInt64, max_get_rps, 0, "", 0) \
+    DECLARE(UInt64, max_get_burst, 0, "", 0) \
+    DECLARE(UInt64, max_put_rps, 0, "", 0) \
+    DECLARE(UInt64, max_put_burst, 0, "", 0) \
+    DECLARE(UInt64, max_redirects, S3::DEFAULT_MAX_REDIRECTS, "", 0) \
+    DECLARE(UInt64, retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, "", 0) \
+    DECLARE(UInt64, retry_initial_delay_ms, S3::DEFAULT_RETRY_INITIAL_DELAY_MS, "", 0) \
+    DECLARE(UInt64, retry_max_delay_ms, S3::DEFAULT_RETRY_MAX_DELAY_MS, "", 0) \
+    DECLARE(Bool, slow_all_threads_after_network_error, true, "", 0) \
+    DECLARE(Bool, enable_request_logging, false, "", 0)
 
 #define PART_UPLOAD_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, strict_upload_part_size, 0, "", 0) \
@@ -61,11 +91,11 @@ struct S3RequestSettingsImpl : public BaseSettings<S3RequestSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) S3RequestSettings##TYPE NAME = &S3RequestSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) S3RequestSettings##TYPE NAME = &S3RequestSettingsImpl ::NAME;
 
 namespace S3RequestSetting
 {
-REQUEST_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+REQUEST_SETTINGS_LIST(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -100,16 +130,14 @@ S3RequestSettings::S3RequestSettings() : impl(std::make_unique<S3RequestSettings
 }
 
 S3RequestSettings::S3RequestSettings(const S3RequestSettings & settings)
-    : get_request_throttler(settings.get_request_throttler)
-    , put_request_throttler(settings.put_request_throttler)
+    : request_throttler(settings.request_throttler)
     , proxy_resolver(settings.proxy_resolver)
     , impl(std::make_unique<S3RequestSettingsImpl>(*settings.impl))
 {
 }
 
 S3RequestSettings::S3RequestSettings(S3RequestSettings && settings) noexcept
-    : get_request_throttler(std::move(settings.get_request_throttler))
-    , put_request_throttler(std::move(settings.put_request_throttler))
+    : request_throttler(std::move(settings.request_throttler))
     , proxy_resolver(std::move(settings.proxy_resolver))
     , impl(std::make_unique<S3RequestSettingsImpl>(std::move(*settings.impl)))
 {
@@ -167,8 +195,7 @@ S3REQUEST_SETTINGS_SUPPORTED_TYPES(S3RequestSettings, IMPLEMENT_SETTING_SUBSCRIP
 
 S3RequestSettings & S3RequestSettings::operator=(S3RequestSettings && settings) noexcept
 {
-    get_request_throttler = std::move(settings.get_request_throttler);
-    put_request_throttler = std::move(settings.put_request_throttler);
+    request_throttler = std::move(settings.request_throttler);
     proxy_resolver = std::move(settings.proxy_resolver);
     *impl = std::move(*settings.impl);
 
@@ -202,73 +229,43 @@ void S3RequestSettings::updateIfChanged(const S3RequestSettings & settings)
 
 void S3RequestSettings::validateUploadSettings()
 {
-    static constexpr size_t min_upload_part_size_limit = 5 * 1024 * 1024;
-    if (impl->strict_upload_part_size && impl->strict_upload_part_size < min_upload_part_size_limit)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting strict_upload_part_size has invalid value {} which is less than the s3 API limit {}",
-            ReadableSize(impl->strict_upload_part_size), ReadableSize(min_upload_part_size_limit));
-
-    if (impl->min_upload_part_size < min_upload_part_size_limit)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting min_upload_part_size has invalid value {} which is less than the s3 API limit {}",
-            ReadableSize(impl->min_upload_part_size), ReadableSize(min_upload_part_size_limit));
-
-    static constexpr size_t max_upload_part_size_limit = 5ull * 1024 * 1024 * 1024;
-    if (impl->max_upload_part_size > max_upload_part_size_limit)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_upload_part_size has invalid value {} which is greater than the s3 API limit {}",
-            ReadableSize(impl->max_upload_part_size), ReadableSize(max_upload_part_size_limit));
-
-    if (impl->max_single_part_upload_size > max_upload_part_size_limit)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_single_part_upload_size has invalid value {} which is grater than the s3 API limit {}",
-            ReadableSize(impl->max_single_part_upload_size), ReadableSize(max_upload_part_size_limit));
-
-    if (impl->max_single_operation_copy_size > max_upload_part_size_limit)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_single_operation_copy_size has invalid value {} which is grater than the s3 API limit {}",
-            ReadableSize(impl->max_single_operation_copy_size), ReadableSize(max_upload_part_size_limit));
-
-    if (impl->max_upload_part_size < impl->min_upload_part_size)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size {}",
-            ReadableSize(impl->max_upload_part_size), ReadableSize(impl->min_upload_part_size));
-
-    if (!impl->upload_part_size_multiply_factor)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_part_size_multiply_factor cannot be zero");
-
-    if (!impl->upload_part_size_multiply_parts_count_threshold)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
-
     if (!impl->max_part_number)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
             "Setting max_part_number cannot be zero");
 
-    static constexpr size_t max_part_number_limit = 10000;
-    if (impl->max_part_number > max_part_number_limit)
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting max_part_number has invalid value {} which is grater than the s3 API limit {}",
-            ReadableSize(impl->max_part_number), ReadableSize(max_part_number_limit));
+    if (!impl->strict_upload_part_size)
+    {
+        if (!impl->min_upload_part_size)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting min_upload_part_size ({}) cannot be zero",
+                ReadableSize(impl->min_upload_part_size));
 
-    size_t maybe_overflow;
-    if (common::mulOverflow(impl->max_upload_part_size.value, impl->upload_part_size_multiply_factor.value, maybe_overflow))
-        throw Exception(
-                        ErrorCodes::INVALID_SETTING_VALUE,
-                        "Setting upload_part_size_multiply_factor is too big ({}). "
-                        "Multiplication to max_upload_part_size ({}) will cause integer overflow",
-                        ReadableSize(impl->max_part_number), ReadableSize(max_part_number_limit));
+        if (impl->max_upload_part_size < impl->min_upload_part_size)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size ({})",
+                ReadableSize(impl->max_upload_part_size), ReadableSize(impl->min_upload_part_size));
+
+        if (!impl->upload_part_size_multiply_factor)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting upload_part_size_multiply_factor cannot be zero");
+
+        if (!impl->upload_part_size_multiply_parts_count_threshold)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
+
+        size_t maybe_overflow;
+        if (common::mulOverflow(impl->max_upload_part_size.value, impl->upload_part_size_multiply_factor.value, maybe_overflow))
+            throw Exception(
+                            ErrorCodes::INVALID_SETTING_VALUE,
+                            "Setting upload_part_size_multiply_factor is too big ({}). "
+                            "Multiplication to max_upload_part_size ({}) will cause integer overflow",
+                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size));
+    }
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
     if (!impl->storage_class_name.value.empty() && !storage_class_names.contains(impl->storage_class_name))
@@ -291,20 +288,44 @@ void S3RequestSettings::finishInit(const DB::Settings & settings, bool validate_
     /// to avoid losing token bucket state on every config reload,
     /// which could lead to exceeding limit for short time.
     /// But it is good enough unless very high `burst` values are used.
-    if (UInt64 max_get_rps = impl->isChanged("max_get_rps") ? impl->get("max_get_rps").safeGet<UInt64>() : settings[Setting::s3_max_get_rps])
+    if (UInt64 max_get_rps = (*this)[S3RequestSetting::max_get_rps].changed
+        ? (*this)[S3RequestSetting::max_get_rps].value
+        : settings[Setting::s3_max_get_rps])
     {
-        size_t default_max_get_burst
-            = settings[Setting::s3_max_get_burst] ? settings[Setting::s3_max_get_burst] : (Throttler::default_burst_seconds * max_get_rps);
+        size_t default_max_get_burst = settings[Setting::s3_max_get_burst]
+            ? settings[Setting::s3_max_get_burst]
+            : (Throttler::default_burst_seconds * max_get_rps);
 
-        size_t max_get_burst = impl->isChanged("max_get_burst") ? impl->get("max_get_burst").safeGet<UInt64>() : default_max_get_burst;
-        get_request_throttler = std::make_shared<Throttler>(max_get_rps, max_get_burst);
+        size_t max_get_burst = (*this)[S3RequestSetting::max_get_burst].changed
+            ? (*this)[S3RequestSetting::max_get_burst].value
+            : default_max_get_burst;
+
+        request_throttler.get_throttler = std::make_shared<Throttler>(
+            max_get_rps,
+            max_get_burst,
+            ProfileEvents::S3GetRequestThrottlerCount,
+            ProfileEvents::S3GetRequestThrottlerSleepMicroseconds);
+        request_throttler.get_blocked = ProfileEvents::S3GetRequestThrottlerBlocked;
     }
-    if (UInt64 max_put_rps = impl->isChanged("max_put_rps") ? impl->get("max_put_rps").safeGet<UInt64>() : settings[Setting::s3_max_put_rps])
+
+    if (UInt64 max_put_rps = (*this)[S3RequestSetting::max_put_rps].changed
+        ? (*this)[S3RequestSetting::max_put_rps].value
+        : settings[Setting::s3_max_put_rps])
     {
-        size_t default_max_put_burst
-            = settings[Setting::s3_max_put_burst] ? settings[Setting::s3_max_put_burst] : (Throttler::default_burst_seconds * max_put_rps);
-        size_t max_put_burst = impl->isChanged("max_put_burst") ? impl->get("max_put_burst").safeGet<UInt64>() : default_max_put_burst;
-        put_request_throttler = std::make_shared<Throttler>(max_put_rps, max_put_burst);
+        size_t default_max_put_burst = settings[Setting::s3_max_put_burst]
+            ? settings[Setting::s3_max_put_burst]
+            : (Throttler::default_burst_seconds * max_put_rps);
+
+        size_t max_put_burst = (*this)[S3RequestSetting::max_put_burst].changed
+            ? (*this)[S3RequestSetting::max_put_burst].value
+            : default_max_put_burst;
+
+        request_throttler.put_throttler = std::make_shared<Throttler>(
+            max_put_rps,
+            max_put_burst,
+            ProfileEvents::S3PutRequestThrottlerCount,
+            ProfileEvents::S3PutRequestThrottlerSleepMicroseconds);
+        request_throttler.put_blocked = ProfileEvents::S3PutRequestThrottlerBlocked;
     }
 }
 
@@ -312,6 +333,21 @@ void S3RequestSettings::normalizeSettings()
 {
     if (!impl->storage_class_name.value.empty() && impl->storage_class_name.changed)
         impl->storage_class_name = Poco::toUpperInPlace(impl->storage_class_name.value);
+}
+
+void S3RequestSettings::serialize(WriteBuffer & out, ContextPtr) const
+{
+    impl->writeChangedBinary(out);
+}
+
+S3RequestSettings S3RequestSettings::deserialize(ReadBuffer & in, ContextPtr context)
+{
+    S3RequestSettings result;
+    result.impl = std::make_unique<S3RequestSettingsImpl>();
+    result.impl->readBinary(in);
+    result.finishInit(context->getSettingsRef(), false);
+    /// TODO Proxy Configuration
+    return result;
 }
 
 }

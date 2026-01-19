@@ -6,6 +6,7 @@
 #include <Core/SettingsFields.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
+#include <Columns/IColumn_fwd.h>
 
 namespace boost
 {
@@ -35,6 +36,7 @@ struct MutableColumnsAndConstraints;
 
 /// List of available types supported in MergeTreeSettings object
 #define MERGETREE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, AlterColumnSecondaryIndexMode) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CleanDeletedRows) \
     M(CLASS_NAME, DeduplicateMergeProjectionMode) \
@@ -44,9 +46,19 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MaxThreads) \
     M(CLASS_NAME, MergeSelectorAlgorithm) \
     M(CLASS_NAME, Milliseconds) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
-    M(CLASS_NAME, UInt64)
+    M(CLASS_NAME, UInt32) \
+    M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, UInt64Auto) \
+    M(CLASS_NAME, MergeTreeSerializationInfoVersion) \
+    M(CLASS_NAME, MergeTreeStringSerializationVersion) \
+    M(CLASS_NAME, MergeTreeNullableSerializationVersion) \
+    M(CLASS_NAME, MergeTreeObjectSerializationVersion) \
+    M(CLASS_NAME, MergeTreeObjectSharedDataSerializationVersion) \
+    M(CLASS_NAME, MergeTreeDynamicSerializationVersion) \
+    M(CLASS_NAME, SearchOrphanedPartsDisks)
 
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_TRAIT)
 
@@ -77,9 +89,10 @@ struct MergeTreeSettings
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
-    void sanityCheck(size_t background_pool_tasks) const;
+    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
+    void dumpToSystemCompletionsColumns(MutableColumns & columns) const;
 
     void addToProgramOptionsIfNotPresent(boost::program_options::options_description & main_options, bool allow_repeated_settings);
 
@@ -91,6 +104,9 @@ struct MergeTreeSettings
     static bool isReadonlySetting(const String & name);
     static void checkCanSet(std::string_view name, const Field & value);
     static bool isPartFormatSetting(const String & name);
+
+    /// Cloud only
+    static bool isSMTReadonlySetting(const String & name);
 
 private:
     std::unique_ptr<MergeTreeSettingsImpl> impl;

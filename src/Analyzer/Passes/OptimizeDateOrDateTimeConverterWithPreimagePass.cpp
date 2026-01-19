@@ -1,5 +1,6 @@
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
 
+#include <Functions/FieldInterval.h>
 #include <Functions/FunctionFactory.h>
 
 #include <Analyzer/ColumnNode.h>
@@ -136,7 +137,7 @@ public:
 
 private:
     QueryTreeNodePtr generateOptimizedDateFilter(
-        const String & comparator, const QueryTreeNodePtr & column_node, const std::pair<Field, Field> & range) const
+        const String & comparator, const QueryTreeNodePtr & column_node, const FieldInterval & range) const
     {
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 

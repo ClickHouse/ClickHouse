@@ -17,7 +17,7 @@ node_options = dict(
         "configs/config.d/zookeeper_session_timeout.xml",
         "configs/config.d/storage_configuration.xml",
     ],
-    tmpfs=["/external:size=200M", "/internal:size=1M"],
+    tmpfs=["/test_rename_column_external:size=200M", "/test_rename_column_internal:size=1M"],
 )
 
 cluster = ClickHouseCluster(__file__)
@@ -151,7 +151,7 @@ def insert(
                 query.append("SET max_insert_block_size = 256")
             if with_time_column:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}, time) SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time FROM numbers_mt({chunk})".format(
+                    "INSERT INTO {table_name} ({col0}, {col1}, time) SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time FROM numbers_mt({chunk}) ORDER BY ALL".format(
                         table_name=table_name,
                         chunk=chunk,
                         col0=col_names[0],
@@ -160,7 +160,7 @@ def insert(
                 )
             elif slow:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk}) SETTINGS function_sleep_max_microseconds_per_block = 0".format(
+                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk}) ORDER BY ALL SETTINGS function_sleep_max_microseconds_per_block = 0".format(
                         table_name=table_name,
                         chunk=chunk,
                         col0=col_names[0],
@@ -169,7 +169,7 @@ def insert(
                 )
             else:
                 query.append(
-                    "INSERT INTO {table_name} ({col0},{col1}) SELECT number + {offset} AS {col0}, number + 1 + {offset} AS {col1} FROM numbers_mt({chunk})".format(
+                    "INSERT INTO {table_name} ({col0},{col1}) SELECT number + {offset} AS {col0}, number + 1 + {offset} AS {col1} FROM numbers_mt({chunk}) ORDER BY ALL".format(
                         table_name=table_name,
                         chunk=chunk,
                         col0=col_names[0],
@@ -293,6 +293,9 @@ def alter_move(node, table_name, iterations=1, ignore_exception=False):
 
 
 def test_rename_parallel_same_node(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_parallel_same_node"
     drop_table(nodes, table_name)
     try:
@@ -331,6 +334,9 @@ def test_rename_parallel_same_node(started_cluster):
 
 
 def test_rename_parallel(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_parallel"
     drop_table(nodes, table_name)
     try:
@@ -370,6 +376,9 @@ def test_rename_parallel(started_cluster):
 
 def test_rename_with_parallel_select(started_cluster):
     table_name = "test_rename_with_parallel_select"
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     drop_table(nodes, table_name)
     try:
         create_table(nodes, table_name)
@@ -420,6 +429,9 @@ def test_rename_with_parallel_select(started_cluster):
 
 
 def test_rename_with_parallel_insert(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_with_parallel_insert"
     drop_table(nodes, table_name)
     try:
@@ -473,6 +485,9 @@ def test_rename_with_parallel_insert(started_cluster):
 
 
 def test_rename_with_parallel_merges(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_with_parallel_merges"
     drop_table(nodes, table_name)
     try:
@@ -536,6 +551,9 @@ def test_rename_with_parallel_merges(started_cluster):
 
 
 def test_rename_with_parallel_slow_insert(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_with_parallel_slow_insert"
     drop_table(nodes, table_name)
     try:
@@ -574,6 +592,9 @@ def test_rename_with_parallel_slow_insert(started_cluster):
 
 
 def test_rename_with_parallel_ttl_move(started_cluster):
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     table_name = "test_rename_with_parallel_ttl_move"
     try:
         create_table(
@@ -645,6 +666,9 @@ def test_rename_with_parallel_ttl_move(started_cluster):
 
 def test_rename_with_parallel_ttl_delete(started_cluster):
     table_name = "test_rename_with_parallel_ttl_delete"
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
     try:
         create_table(nodes, table_name, with_time_column=True, with_ttl_delete=True)
         rename_column(node1, table_name, "time", "time2", 1, False)

@@ -1,15 +1,15 @@
 #pragma once
 
 #include <IO/Progress.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <Common/Stopwatch.h>
 #include <Common/EventRateMeter.h>
 
 #include <iostream>
 #include <mutex>
+#include <unistd.h>
 #include <unordered_map>
-#include <unordered_set>
 
 namespace DB
 {
@@ -47,8 +47,8 @@ public:
     }
 
     /// Write progress bar.
-    void writeProgress(WriteBufferFromFileDescriptor & message);
-    void clearProgressOutput(WriteBufferFromFileDescriptor & message);
+    void writeProgress(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
+    void clearProgressOutput(WriteBufferFromFileDescriptor & message, std::unique_lock<std::mutex> & message_lock);
 
     /// Write summary.
     void writeFinalProgress();
@@ -67,7 +67,7 @@ public:
     /// In some cases there is a need to update progress value, when there is no access to progress_inidcation object.
     /// In this case it is added via context.
     /// `write_progress_on_update` is needed to write progress for loading files data via pipe in non-interactive mode.
-    void setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message);
+    void setFileProgressCallback(ContextMutablePtr context, WriteBufferFromFileDescriptor & message, std::mutex & message_mutex);
 
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return getElapsedNanoseconds() / 1e9; }

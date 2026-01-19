@@ -52,8 +52,6 @@ public:
 
     void createDirectories(const String & path) override;
 
-    void clearDirectory(const String & path) override;
-
     void moveDirectory(const String & from_path, const String & to_path) override;
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
@@ -63,6 +61,10 @@ public:
     void moveFile(const String & from_path, const String & to_path) override;
 
     void replaceFile(const String & from_path, const String & to_path) override;
+
+    void renameExchange(const std::string & old_path, const std::string & new_path) override;
+
+    bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path) override;
 
     void copyDirectoryContent(
         const String & from_dir,
@@ -77,8 +79,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -87,11 +88,13 @@ public:
         const WriteSettings & settings) override;
 
     Strings getBlobPath(const String & path) const override;
+    bool areBlobPathsRandom() const override { return false; }
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
+    void removeDirectoryIfExists(const String & path) override;
     void removeRecursive(const String & path) override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
@@ -103,6 +106,20 @@ public:
     void setReadOnly(const String & path) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
+
+    bool isSymlinkSupported() const override { return true; }
+
+    bool isSymlink(const String & path) const override;
+
+    bool isSymlinkNoThrow(const String & path) const override;
+
+    void createDirectorySymlink(const String & target, const String & link) override;
+
+    String readSymlink(const fs::path & path) const override;
+
+    bool equivalent(const String & p1, const String & p2) const override;
+
+    bool equivalentNoThrow(const String & p1, const String & p2) const override;
 
     void truncateFile(const String & path, size_t size) override;
 
@@ -120,7 +137,7 @@ public:
     bool isBroken() const override { return broken; }
     bool isReadOnly() const override { return readonly; }
 
-    void startupImpl(ContextPtr context) override;
+    void startupImpl() override;
 
     void shutdown() override;
 
@@ -135,6 +152,8 @@ public:
 
     bool supportsChmod() const override { return true; }
     void chmod(const String & path, mode_t mode) override;
+
+    ObjectStoragePtr getObjectStorage() override;
 
 protected:
     void checkAccessImpl(const String & path) override;

@@ -1,11 +1,10 @@
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <IO/ReadHelpers.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Common/logger_useful.h>
 #include <base/find_symbols.h>
 #include <Poco/String.h>
-#include "config.h"
-#include <IO/ReadHelpers.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -44,7 +43,7 @@ namespace ErrorCodes
 Strings HudiMetadata::getDataFilesImpl() const
 {
     auto log = getLogger("HudiMetadata");
-    const auto keys = listFiles(*object_storage, *configuration, "", Poco::toLower(configuration->format));
+    const auto keys = listFiles(*object_storage, table_path, "", Poco::toLower(format));
 
     using Partition = std::string;
     using FileID = std::string;
@@ -86,21 +85,29 @@ Strings HudiMetadata::getDataFilesImpl() const
     return result;
 }
 
-HudiMetadata::HudiMetadata(
-    ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
-    ContextPtr context_)
+HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationPtr configuration_, ContextPtr context_)
     : WithContext(context_)
     , object_storage(object_storage_)
-    , configuration(configuration_)
+    , table_path(configuration_->getPathForRead().path)
+    , format(configuration_->format)
 {
 }
 
-Strings HudiMetadata::getDataFiles() const
+Strings HudiMetadata::getDataFiles(const ActionsDAG *) const
 {
     if (data_files.empty())
         data_files = getDataFilesImpl();
     return data_files;
+}
+
+ObjectIterator HudiMetadata::iterate(
+    const ActionsDAG * filter_dag,
+    FileProgressCallback callback,
+    size_t /* list_batch_size */,
+    StorageMetadataPtr /* storage_metadata_snapshot*/,
+    ContextPtr /* context  */) const
+{
+    return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
 }
 
 }

@@ -1,94 +1,163 @@
-from typing import List
+from praktika import Workflow
 
-from praktika import Artifact, Job, Workflow
-from praktika.settings import Settings
+from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames
+from ci.defs.job_configs import JobConfigs
+from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
+from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
 
-from ci.settings.definitions import (
-    BASE_BRANCH,
-    DOCKERS,
-    SECRETS,
-    JobNames,
-    RunnerLabels,
-)
+ALL_FUNCTIONAL_TESTS = [job.name for job in JobConfigs.functional_tests_jobs]
 
+FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
+    job.name
+    for job in JobConfigs.functional_tests_jobs
+    if any(
+        substr in job.name
+        for substr in (
+            "_debug, parallel",
+            "_binary, parallel",
+            "_asan, distributed plan, parallel",
+        )
+    )
+]
 
-class ArtifactNames:
-    ch_debug_binary = "clickhouse_debug_binary"
+STYLE_AND_FAST_TESTS = [
+    JobNames.STYLE_CHECK,
+    JobNames.FAST_TEST,
+    *[j.name for j in JobConfigs.tidy_build_arm_jobs],
+]
 
+REGULAR_BUILD_NAMES = [job.name for job in JobConfigs.build_jobs]
 
-style_check_job = Job.Config(
-    name=JobNames.STYLE_CHECK,
-    runs_on=[RunnerLabels.CI_SERVICES],
-    command="python3 ./ci/jobs/check_style.py",
-    run_in_docker="clickhouse/style-test",
-)
-
-fast_test_job = Job.Config(
-    name=JobNames.FAST_TEST,
-    runs_on=[RunnerLabels.BUILDER],
-    command="python3 ./ci/jobs/fast_test.py",
-    run_in_docker="clickhouse/fasttest",
-    digest_config=Job.CacheDigestConfig(
-        include_paths=[
-            "./ci/jobs/fast_test.py",
-            "./tests/queries/0_stateless/",
-            "./src",
-        ],
-    ),
-)
-
-job_build_amd_debug = Job.Config(
-    name=JobNames.BUILD_AMD_DEBUG,
-    runs_on=[RunnerLabels.BUILDER],
-    command="python3 ./ci/jobs/build_clickhouse.py amd_debug",
-    run_in_docker="clickhouse/fasttest",
-    digest_config=Job.CacheDigestConfig(
-        include_paths=[
-            "./src",
-            "./contrib/",
-            "./CMakeLists.txt",
-            "./PreLoad.cmake",
-            "./cmake",
-            "./base",
-            "./programs",
-            "./docker/packager/packager",
-            "./rust",
-            "./tests/ci/version_helper.py",
-        ],
-    ),
-    provides=[ArtifactNames.ch_debug_binary],
-)
+PLAIN_FUNCTIONAL_TEST_JOB = [
+    j for j in JobConfigs.functional_tests_jobs if "amd_debug, parallel" in j.name
+][0]
 
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        style_check_job,
-        fast_test_job,
-        job_build_amd_debug,
+        JobConfigs.style_check,
+        JobConfigs.docs_job,
+        JobConfigs.fast_test,
+        *JobConfigs.tidy_build_arm_jobs,
+        *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
+        *[
+            job.set_dependency(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.extra_validation_build_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.release_build_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.special_build_jobs
+        ],
+        # TODO: stabilize new jobs and remove set_allow_merge_on_failure
+        JobConfigs.lightweight_functional_tests_job,
+        JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
+        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
+        *JobConfigs.stateless_tests_flaky_pr_jobs,
+        *JobConfigs.integration_test_asan_flaky_pr_jobs,
+        JobConfigs.bugfix_validation_ft_pr_job,
+        JobConfigs.bugfix_validation_it_job,
+        *[
+            j.set_dependency(
+                FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+                if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+                else []
+            )
+            for j in JobConfigs.functional_tests_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.integration_test_jobs_required[:]
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.integration_test_jobs_non_required
+        ],
+        *JobConfigs.unittest_jobs,
+        JobConfigs.docker_server.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
+        JobConfigs.docker_keeper.set_dependency(
+            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+        ),
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.install_check_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.compatibility_test_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.stress_test_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.upgrade_test_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.ast_fuzzer_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.buzz_fuzzer_jobs
+        ],
+        *[
+            job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.performance_comparison_with_master_head_jobs
+        ],
     ],
     artifacts=[
-        Artifact.Config(
-            name=ArtifactNames.ch_debug_binary,
-            type=Artifact.Type.S3,
-            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
-        )
+        *ArtifactConfigs.unittests_binaries,
+        *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.clickhouse_debians,
+        *ArtifactConfigs.clickhouse_rpms,
+        *ArtifactConfigs.clickhouse_tgzs,
+        ArtifactConfigs.fuzzers,
+        ArtifactConfigs.fuzzers_corpus,
     ],
     dockers=DOCKERS,
+    enable_dockers_manifest_merge=True,
     secrets=SECRETS,
+    enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
+    enable_cidb=True,
     enable_merge_ready_status=True,
+    enable_gh_summary_comment=True,
+    enable_commit_status_on_failure=False,
+    enable_open_issues_check=True,
+    enable_slack_feed=True,
+    pre_hooks=[
+        can_be_trusted,
+        "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",
+    ],
+    workflow_filter_hooks=[should_skip_job],
+    post_hooks=[
+        "python3 ./ci/jobs/scripts/workflow_hooks/pr_body_check.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/new_tests_check.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
+    ],
+    job_aliases={
+        "integration": JobConfigs.integration_test_jobs_non_required[
+            0
+        ].name,  # plain integration test job, no old analyzer, no dist plan
+        "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
+    },
 )
 
 WORKFLOWS = [
     workflow,
-]  # type: List[Workflow.Config]
-
-
-if __name__ == "__main__":
-    # local job test inside praktika environment
-    from praktika.runner import Runner
-
-    Runner().run(workflow, fast_test_job, docker="fasttest", dummy_env=True)
+]

@@ -1,17 +1,30 @@
 #include <Processors/Formats/Impl/MySQLDumpRowInputFormat.h>
+
+#include <Common/assert_cast.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <IO/ReadHelpers.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Interpreters/MySQL/InterpretersMySQLDDLQuery.h>
-#include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/MySQL/ASTCreateQuery.h>
 #include <Parsers/MySQL/ASTCreateDefines.h>
+#include <Parsers/MySQL/ASTDeclareColumn.h>
+#include <Parsers/MySQL/ASTDeclareOption.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTDataType.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Storages/IStorage.h>
+
 #include <boost/algorithm/string.hpp>
 #include <base/find_symbols.h>
+
 
 namespace DB
 {
@@ -20,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int EMPTY_DATA_PASSED;
+    extern const int UNKNOWN_TYPE;
 }
 
 namespace
@@ -32,13 +46,13 @@ namespace
     };
 }
 
-MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_)
     , table_name(format_settings_.mysql_dump.table_name)
-    , types(header_.getDataTypes())
+    , types(header_->getDataTypes())
     , format_settings(format_settings_)
 {
-    column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
+    column_indexes_by_names = getNamesToIndexesMap(getPort().getHeader());
 }
 
 
@@ -159,6 +173,80 @@ static bool skipUntilRowStartedWithOneOfKeywords(const std::unordered_set<String
             skipQuery(in);
         }
     }
+}
+
+static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_definition)
+{
+    NamesAndTypesList columns_name_and_type;
+    for (const auto & declare_column_ast : columns_definition->children)
+    {
+        const auto & declare_column = declare_column_ast->as<MySQLParser::ASTDeclareColumn>();
+
+        if (!declare_column || !declare_column->data_type)
+            throw Exception(ErrorCodes::UNKNOWN_TYPE, "Missing type in definition of column.");
+
+        bool is_nullable = true;
+        bool is_unsigned = false;
+        if (declare_column->column_options)
+        {
+            if (const auto * options = declare_column->column_options->as<MySQLParser::ASTDeclareOptions>())
+            {
+                if (options->changes.contains("is_null"))
+                    is_nullable = options->changes.at("is_null")->as<ASTLiteral>()->value.safeGet<UInt64>();
+
+                if (options->changes.contains("is_unsigned"))
+                    is_unsigned = options->changes.at("is_unsigned")->as<ASTLiteral>()->value.safeGet<UInt64>();
+            }
+        }
+
+        ASTPtr data_type = declare_column->data_type;
+        auto * data_type_node = data_type->as<ASTDataType>();
+
+        if (data_type_node)
+        {
+            String type_name_upper = Poco::toUpper(data_type_node->name);
+
+            if (is_unsigned)
+            {
+                /// For example(in MySQL): CREATE TABLE test(column_name INT NOT NULL ... UNSIGNED)
+                if (type_name_upper.contains("INT") && !endsWith(type_name_upper, "SIGNED")
+                    && !endsWith(type_name_upper, "UNSIGNED"))
+                    data_type_node->name = type_name_upper + " UNSIGNED";
+            }
+
+            if (type_name_upper == "SET")
+                data_type_node->arguments.reset();
+
+            /// Transforms MySQL ENUM's list of strings to ClickHouse string-integer pairs
+            /// For example ENUM('a', 'b', 'c') -> ENUM('a'=1, 'b'=2, 'c'=3)
+            /// Elements on a position further than 32767 are assigned negative values, starting with -32768.
+            /// Note: Enum would be transformed to Enum8 if number of elements is less then 128, otherwise it would be transformed to Enum16.
+            if (type_name_upper.contains("ENUM"))
+            {
+                UInt16 i = 0;
+                for (ASTPtr & child : data_type_node->arguments->children)
+                {
+                    auto new_child = std::make_shared<ASTFunction>();
+                    new_child->name = "equals";
+                    auto * literal = child->as<ASTLiteral>();
+
+                    new_child->arguments = std::make_shared<ASTExpressionList>();
+                    new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(literal->value.safeGet<String>()));
+                    new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(Int16(++i)));
+                    child = new_child;
+                }
+            }
+
+            if (type_name_upper == "DATE")
+                data_type_node->name = "Date32";
+        }
+        if (is_nullable)
+            data_type = makeASTDataType("Nullable", data_type);
+
+        columns_name_and_type.emplace_back(declare_column->name, DataTypeFactory::instance().get(data_type));
+    }
+
+    return columns_name_and_type;
 }
 
 void readUnquotedColumnName(String & name, ReadBuffer & in)
@@ -287,7 +375,7 @@ static bool tryToExtractStructureFromCreateQuery(ReadBuffer & in, NamesAndTypesL
     if (!create_defines)
         return false;
 
-    structure = MySQLInterpreter::getColumnsList(create_defines->columns);
+    structure = getColumnsList(create_defines->columns);
     return true;
 }
 
@@ -476,7 +564,7 @@ void registerInputFormatMySQLDump(FormatFactory & factory)
         const RowInputFormatParams & params,
         const FormatSettings & settings)
     {
-        return std::make_shared<MySQLDumpRowInputFormat>(buf, header, params, settings);
+        return std::make_shared<MySQLDumpRowInputFormat>(buf, std::make_shared<const Block>(header), params, settings);
     });
 }
 

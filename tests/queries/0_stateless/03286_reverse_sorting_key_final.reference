@@ -1,0 +1,13 @@
+1
+1
+(Expression)
+ExpressionTransform × 2
+  (ReadFromMergeTree)
+  MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
+(Expression)
+ExpressionTransform
+  (ReadFromMergeTree)
+  ExpressionTransform
+    ReplacingSorted 2 → 1
+      ExpressionTransform × 2
+        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1

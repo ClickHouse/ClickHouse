@@ -1,10 +1,10 @@
-#include <iostream>
 #include <memory>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/PreparedSets.h>
 #include <Common/tests/gtest_global_context.h>
 #include <gtest/gtest.h>
 

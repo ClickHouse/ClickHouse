@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
-
-import json
 import logging
-import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Union
+from typing import Any
 
 import requests
-
-from ci_config import CI
 
 try:
     # A work around for scripts using this downloading module without required deps
@@ -122,21 +117,6 @@ def get_gh_api(
     raise APIException(f"Unable to request data from GH API: {url}") from exc
 
 
-def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
-    for root, _, files in os.walk(reports_path):
-        for file in files:
-            if file.endswith(f"_{build_name}.json"):
-                logger.info("Found build report json %s for %s", file, build_name)
-                with open(
-                    os.path.join(root, file), "r", encoding="utf-8"
-                ) as file_handler:
-                    build_report = json.load(file_handler)
-                    return build_report["build_urls"]  # type: ignore
-
-    logger.info("A build report is not found for %s", build_name)
-    return []
-
-
 def download_build_with_progress(url: str, path: Path) -> None:
     logger.info("Downloading from %s to temp path %s", url, path)
     for i in range(DOWNLOAD_RETRIES_COUNT):
@@ -188,92 +168,3 @@ def download_build_with_progress(url: str, path: Path) -> None:
     if sys.stdout.isatty():
         sys.stdout.write("\n")
     logger.info("Downloading finished")
-
-
-def download_builds(
-    result_path: Path, build_urls: List[str], filter_fn: Callable[[str], bool]
-) -> None:
-    for url in build_urls:
-        if filter_fn(url):
-            fname = os.path.basename(url.replace("%2B", "+").replace("%20", " "))
-            logger.info("Will download %s to %s", fname, result_path)
-            download_build_with_progress(url, result_path / fname)
-
-
-def download_builds_filter(
-    check_name: str,
-    reports_path: Union[Path, str],
-    result_path: Path,
-    filter_fn: Callable[[str], bool] = lambda _: True,
-) -> None:
-    build_name = CI.get_required_build_name(check_name)
-    urls = read_build_urls(build_name, reports_path)
-    logger.info("The build report for %s contains the next URLs: %s", build_name, urls)
-
-    if not urls:
-        raise DownloadException("No build URLs found")
-
-    download_builds(result_path, urls, filter_fn)
-
-
-def download_all_deb_packages(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name, reports_path, result_path, lambda x: x.endswith("deb")
-    )
-
-
-def download_unit_tests(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name, reports_path, result_path, lambda x: x.endswith("unit_tests_dbms")
-    )
-
-
-def download_clickhouse_binary(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name, reports_path, result_path, lambda x: x.endswith("clickhouse")
-    )
-
-
-def get_clickhouse_binary_url(
-    check_name: str, reports_path: Union[Path, str]
-) -> Optional[str]:
-    build_name = CI.get_required_build_name(check_name)
-    urls = read_build_urls(build_name, reports_path)
-    logger.info("The build report for %s contains the next URLs: %s", build_name, urls)
-    for url in urls:
-        check_url = url
-        if "?" in check_url:
-            check_url = check_url.split("?")[0]
-
-        if check_url.endswith("clickhouse"):
-            return url
-
-    return None
-
-
-def download_performance_build(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name,
-        reports_path,
-        result_path,
-        lambda x: x.endswith("performance.tar.zst"),
-    )
-
-
-def download_fuzzers(
-    check_name: str, reports_path: Union[Path, str], result_path: Path
-) -> None:
-    download_builds_filter(
-        check_name,
-        reports_path,
-        result_path,
-        lambda x: x.endswith(("_fuzzer", ".dict", ".options", "_seed_corpus.zip")),
-    )

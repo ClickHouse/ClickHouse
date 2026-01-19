@@ -2,8 +2,10 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
@@ -17,10 +19,9 @@
 #include <IO/WriteHelpers.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
-#include "StringHelpers.h"
+#include <expected>
 
-/// TODO: Remove after we lifted the libc++ from 15 to 16 (where std::expected is supported).
-#include <tl/expected.hpp>
+#include <Functions/StringHelpers.h>
 
 namespace DB
 {
@@ -28,16 +29,17 @@ namespace Setting
 {
     extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
     extern const SettingsBool parsedatetime_parse_without_leading_zeros;
+    extern const SettingsBool parsedatetime_e_requires_space_padding;
 }
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int CANNOT_PARSE_DATETIME;
+    extern const int ILLEGAL_COLUMN;
     extern const int NOT_ENOUGH_SPACE;
+    extern const int NOT_IMPLEMENTED;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace
@@ -57,8 +59,11 @@ namespace
         Null
     };
 
-    constexpr Int32 minYear = 1970;
-    constexpr Int32 maxYear = 2106;
+    enum class ReturnType: uint8_t
+    {
+        DateTime,
+        DateTime64
+    };
 
     const std::unordered_map<String, std::pair<String, Int32>> dayOfWeekMap{
         {"mon", {"day", 1}},
@@ -98,15 +103,55 @@ namespace
     constexpr Int32 cumulativeDays[] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
 
     /// key: year, value: cumulative days from epoch(1970-01-01) to the first day of current year(exclusive).
-    constexpr Int32 cumulativeYearDays[]
-        = {0,     365,   730,   1096,  1461,  1826,  2191,  2557,  2922,  3287,  3652,  4018,  4383,  4748,  5113,  5479,  5844,  6209,
-           6574,  6940,  7305,  7670,  8035,  8401,  8766,  9131,  9496,  9862,  10227, 10592, 10957, 11323, 11688, 12053, 12418, 12784,
-           13149, 13514, 13879, 14245, 14610, 14975, 15340, 15706, 16071, 16436, 16801, 17167, 17532, 17897, 18262, 18628, 18993, 19358,
-           19723, 20089, 20454, 20819, 21184, 21550, 21915, 22280, 22645, 23011, 23376, 23741, 24106, 24472, 24837, 25202, 25567, 25933,
-           26298, 26663, 27028, 27394, 27759, 28124, 28489, 28855, 29220, 29585, 29950, 30316, 30681, 31046, 31411, 31777, 32142, 32507,
-           32872, 33238, 33603, 33968, 34333, 34699, 35064, 35429, 35794, 36160, 36525, 36890, 37255, 37621, 37986, 38351, 38716, 39082,
-           39447, 39812, 40177, 40543, 40908, 41273, 41638, 42004, 42369, 42734, 43099, 43465, 43830, 44195, 44560, 44926, 45291, 45656,
-           46021, 46387, 46752, 47117, 47482, 47847, 48212, 48577, 48942, 49308, 49673};
+    constexpr Int32 cumulativeYearDaysFrom1970[] =
+    {
+        0, 365, 730, 1096, 1461, 1826, 2191, 2557, 2922, 3287,
+        3652, 4018, 4383, 4748, 5113, 5479, 5844, 6209, 6574, 6940,
+        7305, 7670, 8035, 8401, 8766, 9131, 9496, 9862, 10227, 10592,
+        10957, 11323, 11688, 12053, 12418, 12784, 13149, 13514, 13879, 14245,
+        14610, 14975, 15340, 15706, 16071, 16436, 16801, 17167, 17532, 17897,
+        18262, 18628, 18993, 19358, 19723, 20089, 20454, 20819, 21184, 21550,
+        21915, 22280, 22645, 23011, 23376, 23741, 24106, 24472, 24837, 25202,
+        25567, 25933, 26298, 26663, 27028, 27394, 27759, 28124, 28489, 28855,
+        29220, 29585, 29950, 30316, 30681, 31046, 31411, 31777, 32142, 32507,
+        32872, 33238, 33603, 33968, 34333, 34699, 35064, 35429, 35794, 36160,
+        36525, 36890, 37255, 37621, 37986, 38351, 38716, 39082, 39447, 39812,
+        40177, 40543, 40908, 41273, 41638, 42004, 42369, 42734, 43099, 43465,
+        43830, 44195, 44560, 44926, 45291, 45656, 46021, 46387, 46752, 47117,
+        47482, 47847, 48212, 48577, 48942, 49308, 49673, 50038, 50403, 50769,
+        51134, 51499, 51864, 52230, 52595, 52960, 53325, 53691, 54056, 54421,
+        54786, 55152, 55517, 55882, 56247, 56613, 56978, 57343, 57708, 58074,
+        58439, 58804, 59169, 59535, 59900, 60265, 60630, 60996, 61361, 61726,
+        62091, 62457, 62822, 63187, 63552, 63918, 64283, 64648, 65013, 65379,
+        65744, 66109, 66474, 66840, 67205, 67570, 67935, 68301, 68666, 69031,
+        69396, 69762, 70127, 70492, 70857, 71223, 71588, 71953, 72318, 72684,
+        73049, 73414, 73779, 74145, 74510, 74875, 75240, 75606, 75971, 76336,
+        76701, 77067, 77432, 77797, 78162, 78528, 78893, 79258, 79623, 79989,
+        80354, 80719, 81084, 81450, 81815, 82180, 82545, 82911, 83276, 83641,
+        84006, 84371, 84736, 85101, 85466, 85832, 86197, 86562, 86927, 87293,
+        87658, 88023, 88388, 88754, 89119, 89484, 89849, 90215, 90580, 90945,
+        91310, 91676, 92041, 92406, 92771, 93137, 93502, 93867, 94232, 94598,
+        94963, 95328, 95693, 96059, 96424, 96789, 97154, 97520, 97885, 98250,
+        98615, 98981, 99346, 99711, 100076, 100442, 100807, 101172, 101537, 101903,
+        102268, 102633, 102998, 103364, 103729, 104094, 104459, 104825, 105190, 105555,
+        105920, 106286, 106651, 107016, 107381, 107747, 108112, 108477, 108842, 109208,
+        109573, 109938, 110303, 110669, 111034, 111399, 111764, 112130, 112495, 112860,
+        113225, 113591, 113956, 114321, 114686, 115052, 115417, 115782, 116147, 116513,
+        116878, 117243, 117608, 117974, 118339, 118704, 119069, 119435, 119800, 120165
+    };
+
+    /// key: year, value: cumulative days from the epoch (1970-01-01) to the first day of the current year (exclusive), counting backwards from 1970 to 1969, and so on. For example, the value -365 corresponds to the year 1969, indicating that there are 365 days from 1970-01-01 to 1969-01-01.
+    constexpr Int32 cumulativeYearDaysBefore1970[] =
+    {
+        0, -365, -731, -1096, -1461, -1826, -2192, -2557, -2922, -3287,
+        -3653, -4018, -4383, -4748, -5114, -5479, -5844, -6209, -6575, -6940,
+        -7305, -7670, -8036, -8401, -8766, -9131, -9497, -9862, -10227, -10592,
+        -10958, -11323, -11688, -12053, -12419, -12784, -13149, -13514, -13880, -14245,
+        -14610, -14975, -15341, -15706, -16071, -16436, -16802, -17167, -17532, -17897,
+        -18263, -18628, -18993, -19358, -19724, -20089, -20454, -20819, -21185, -21550,
+        -21915, -22280, -22646, -23011, -23376, -23741, -24107, -24472, -24837, -25202,
+        -25567
+    };
 
     struct ErrorCodeAndMessage
     {
@@ -124,44 +169,46 @@ namespace
         {}
     };
 
-    /// TODO replace tl::expected by std::expected once libc++ was raised from 15 to 16
-    using VoidOrError  = tl::expected<void,  ErrorCodeAndMessage>;
-    using PosOrError   = tl::expected<Pos,   ErrorCodeAndMessage>;
-    using Int32OrError = tl::expected<Int32, ErrorCodeAndMessage>;
-    using Int64OrError = tl::expected<Int64, ErrorCodeAndMessage>;
+    using VoidOrError  = std::expected<void,  ErrorCodeAndMessage>;
+    using PosOrError   = std::expected<Pos,   ErrorCodeAndMessage>;
+    using Int32OrError = std::expected<Int32, ErrorCodeAndMessage>;
+    using Int64OrError = std::expected<Int64, ErrorCodeAndMessage>;
 
 
 /// Returns an error based on the error handling mode.
 /// As an optimization, for error_handling = Zero/Null, we only care that
 /// an error happened but not which one specifically. This removes the need
 /// to copy the error string.
-#define RETURN_ERROR(error_code, ...)                                        \
-{                                                                            \
-    if constexpr (error_handling == ErrorHandling::Exception)                \
-        return tl::unexpected(ErrorCodeAndMessage(error_code, __VA_ARGS__)); \
-    else                                                                     \
-        return tl::unexpected(ErrorCodeAndMessage(error_code));              \
+#define RETURN_ERROR(error_code, ...)                                         \
+{                                                                             \
+    if constexpr (error_handling == ErrorHandling::Exception)                 \
+        return std::unexpected(ErrorCodeAndMessage(error_code, __VA_ARGS__)); \
+    else                                                                      \
+        return std::unexpected(ErrorCodeAndMessage(error_code));              \
 }
 
 /// Run a function and return an error if the call failed.
 #define RETURN_ERROR_IF_FAILED(function_call)             \
 {                                                         \
     if (auto result = function_call; !result.has_value()) \
-        return tl::unexpected(result.error());            \
+        return std::unexpected(result.error());           \
 }
 
 /// Run a function and either assign the result (if successful) or return an error.
 #define ASSIGN_RESULT_OR_RETURN_ERROR(res, function_call) \
 {                                                         \
     if (auto result = function_call; !result.has_value()) \
-        return tl::unexpected(result.error());            \
+        return std::unexpected(result.error());           \
     else                                                  \
         (res) = *result;                                  \
 }
 
-    template <ErrorHandling error_handling>
-    struct DateTime
+    template <ErrorHandling error_handling, ReturnType return_type>
+    struct ParsedValue
     {
+        static constexpr Int32 min_year = return_type == ReturnType::DateTime64 ? 1900 : 1970;
+        static constexpr Int32 max_year = return_type == ReturnType::DateTime64 ? 2299 : 2106;
+
         /// If both week_date_format and week_date_format is false, date is composed of year, month and day
         Int32 year = 1970; /// year, range [1970, 2106]
         Int32 month = 1; /// month of year, range [1, 12]
@@ -186,13 +233,16 @@ namespace
         Int32 minute = 0; /// range [0, 59]
         Int32 second = 0; /// range [0, 59]
         Int32 microsecond = 0; /// range [0, 999999]
+        UInt32 scale = 0; /// scale of the result DateTime64. Always 6 for ParseSytax == MySQL, [0, 6] for ParseSyntax == Joda.
 
         bool is_am = true; /// If is_hour_of_half_day = true and is_am = false (i.e. pm) then add 12 hours to the result DateTime
         bool hour_starts_at_1 = false; /// Whether the hour is clockhour
         bool is_hour_of_half_day = false; /// Whether the hour is of half day
 
-        bool has_time_zone_offset = false; /// If true, time zone offset is explicitly specified.
+        bool has_time_zone_offset = false; /// If true, timezone offset is explicitly specified.
         Int64 time_zone_offset = 0; /// Offset in seconds between current timezone to UTC.
+
+        static bool yearIsInValidRange(Int32 y) { return y >= min_year && y <= max_year; }
 
         void reset()
         {
@@ -214,6 +264,7 @@ namespace
             minute = 0;
             second = 0;
             microsecond = 0;
+            scale = 0;
 
             is_am = true;
             hour_starts_at_1 = false;
@@ -248,8 +299,8 @@ namespace
         [[nodiscard]]
         VoidOrError setYear(Int32 year_, bool is_year_of_era_ = false, bool is_week_year = false)
         {
-            if (year_ < minYear || year_ > maxYear)
-                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, minYear, maxYear)
+            if (!yearIsInValidRange(year_))
+                RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Value {} for year must be in the range [{}, {}]", year_, min_year, max_year)
 
             year = year_;
             has_year = true;
@@ -449,6 +500,18 @@ namespace
             return {};
         }
 
+        void setScale(UInt32 scale_, ParseSyntax parse_syntax_)
+        {
+            /// Because the scale argument for parseDateTime*() is constant, always throw an exception (don't allow continuing to the
+            /// next row like in other set* functions)
+            if (parse_syntax_ == ParseSyntax::MySQL && scale_ != 6)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be 6)", scale);
+            else if (parse_syntax_ == ParseSyntax::Joda && scale_ > 6)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Precision {} is invalid (must be [0, 6])", scale);
+
+            scale = scale_;
+        }
+
         /// For debug
         [[maybe_unused]] String toString() const
         {
@@ -477,7 +540,7 @@ namespace
         {
             /// The range of month[1, 12] and day[1, 31] already checked before
             bool leap = isLeapYear(year_);
-            return (year_ >= minYear && year_ <= maxYear) && ((leap && day_ <= leapDays[month_]) || (!leap && day_ <= normalDays[month_]));
+            return (yearIsInValidRange(year_)) && ((leap && day_ <= leapDays[month_]) || (!leap && day_ <= normalDays[month_]));
         }
 
         [[nodiscard]]
@@ -485,7 +548,7 @@ namespace
         {
             /// The range of day_of_year[1, 366] already checked before
             bool leap = isLeapYear(year_);
-            return (year_ >= minYear && year_ <= maxYear) && (day_of_year_ <= 365 + (leap ? 1 : 0));
+            return (yearIsInValidRange(year_)) && (day_of_year_ <= 365 + (leap ? 1 : 0));
         }
 
         [[nodiscard]]
@@ -506,7 +569,7 @@ namespace
         static Int32OrError daysSinceEpochFromWeekDate(int32_t week_year_, int32_t week_of_year_, int32_t day_of_week_)
         {
             /// The range of week_of_year[1, 53], day_of_week[1, 7] already checked before
-            if (week_year_ < minYear || week_year_ > maxYear)
+            if (!yearIsInValidRange(week_year_))
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid week year {}", week_year_)
 
             Int32 days_since_epoch_of_jan_fourth;
@@ -532,8 +595,11 @@ namespace
         {
             if (!isDateValid(year_, month_, day_))
                 RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Invalid date, out of range (year: {} month: {} day_of_month: {})", year_, month_, day_)
-
-            Int32 res = cumulativeYearDays[year_ - 1970];
+            Int32 res = 0;
+            if (year_ >= 1970)
+                res = cumulativeYearDaysFrom1970[year_ - 1970];
+            else
+                res = cumulativeYearDaysBefore1970[1970 - year_];
             res += isLeapYear(year_) ? cumulativeLeapDays[month_ - 1] : cumulativeDays[month_ - 1];
             res += day_ - 1;
             return res;
@@ -561,22 +627,23 @@ namespace
                 time_zone_offset = time_zone.timezoneOffset(seconds_since_epoch);
 
             /// Time zone is specified in format string.
-            if (seconds_since_epoch >= time_zone_offset)
-                seconds_since_epoch -= time_zone_offset;
-            else
-                RETURN_ERROR(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
+            seconds_since_epoch -= time_zone_offset;
+            if constexpr (return_type == ReturnType::DateTime)
+                if (seconds_since_epoch < 0)
+                    RETURN_ERROR(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Seconds since epoch is negative")
 
             return seconds_since_epoch;
         }
     };
 
     /// _FUNC_(str[, format, timezone])
-    template <typename Name, ParseSyntax parse_syntax, ErrorHandling error_handling, bool parseDateTime64 = false>
+    template <typename Name, ParseSyntax parse_syntax, ReturnType return_type, ErrorHandling error_handling>
     class FunctionParseDateTimeImpl : public IFunction
     {
     public:
         const bool mysql_M_is_month_name;
         const bool mysql_parse_ckl_without_leading_zeros;
+        const bool mysql_e_requires_space_padding;
 
         static constexpr auto name = Name::name;
         static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionParseDateTimeImpl>(context); }
@@ -584,14 +651,14 @@ namespace
         explicit FunctionParseDateTimeImpl(ContextPtr context)
             : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
             , mysql_parse_ckl_without_leading_zeros(context->getSettingsRef()[Setting::parsedatetime_parse_without_leading_zeros])
+            , mysql_e_requires_space_padding(context->getSettingsRef()[Setting::parsedatetime_e_requires_space_padding])
         {
         }
 
         String getName() const override { return name; }
 
         bool useDefaultImplementationForConstants() const override { return true; }
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
         ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
@@ -601,101 +668,114 @@ namespace
             FunctionArgumentDescriptors mandatory_args{
                 {"time", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
             };
-
             FunctionArgumentDescriptors optional_args{
-                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+                {"format", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
                 {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
             };
-
             validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
             String time_zone_name = getTimeZone(arguments).getTimeZone();
-            DataTypePtr date_type = nullptr;
-            if constexpr (parseDateTime64)
+            DataTypePtr data_type;
+            if constexpr (return_type == ReturnType::DateTime)
             {
-                String format = getFormat(arguments);
-                std::vector<Instruction> instructions = parseFormat(format);
-                UInt32 scale = 0;
-                if (!instructions.empty())
-                {
-                    for (const auto & ins : instructions)
-                    {
-                        if (scale > 0)
-                            break;
-                        const String fragment = ins.getFragment();
-                        for (char ch : fragment)
-                        {
-                            if (ch != 'S')
-                            {
-                                scale = 0;
-                                break;
-                            }
-                            else
-                                scale++;
-                        }
-                    }
-                }
-                date_type = std::make_shared<DataTypeDateTime64>(scale, time_zone_name);
+                data_type = std::make_shared<DataTypeDateTime>(time_zone_name);
             }
             else
-                date_type = std::make_shared<DataTypeDateTime>(time_zone_name);
+            {
+                if constexpr (parse_syntax == ParseSyntax::MySQL)
+                {
+                    data_type = std::make_shared<DataTypeDateTime64>(6, time_zone_name);
+                }
+                else
+                {
+                    /// The precision of the return type is the number of 'S' placeholders.
+                    String format = getFormat(arguments);
+                    std::vector<Instruction> instructions = parseFormat(format);
+                    size_t s_count = 0;
+                    for (const auto & instruction : instructions)
+                    {
+                        const String & fragment = instruction.getFragment();
+                        for (char c : fragment)
+                        {
+                            if (c == 'S')
+                                ++s_count;
+                            else
+                                break;
+                        }
+                        if (s_count > 0)
+                            break;
+                    }
+                    data_type = std::make_shared<DataTypeDateTime64>(s_count, time_zone_name);
+                }
+            }
+
             if (error_handling == ErrorHandling::Null)
-                return std::make_shared<DataTypeNullable>(date_type);
-            return date_type;
+                return std::make_shared<DataTypeNullable>(data_type);
+            return data_type;
         }
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
         {
-            ColumnUInt8::MutablePtr col_null_map;
+            DataTypePtr result_type_without_nullable;
             if constexpr (error_handling == ErrorHandling::Null)
-                col_null_map = ColumnUInt8::create(input_rows_count, 0);
-            if constexpr (parseDateTime64)
+                result_type_without_nullable = removeNullable(result_type); /// Remove Nullable wrapper. It will be added back later.
+            else
+                result_type_without_nullable = result_type;
+
+            if constexpr (return_type == ReturnType::DateTime)
             {
-                const DataTypeDateTime64 * datatime64_type = checkAndGetDataType<DataTypeDateTime64>(removeNullable(result_type).get());
-                auto col_res = ColumnDateTime64::create(input_rows_count, datatime64_type->getScale());
-                PaddedPODArray<DataTypeDateTime64::FieldType> & res_data = col_res->getData();
-                executeImpl2<DataTypeDateTime64::FieldType>(arguments, result_type, input_rows_count, res_data, col_null_map);
-                if constexpr (error_handling == ErrorHandling::Null)
-                    return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
-                else
-                    return col_res;
+                MutableColumnPtr col_res = ColumnDateTime::create(input_rows_count);
+                ColumnDateTime * col_datetime = assert_cast<ColumnDateTime *>(col_res.get());
+                return executeImpl2<DataTypeDateTime::FieldType>(arguments, result_type, input_rows_count, col_res, col_datetime->getData());
             }
             else
             {
-                auto col_res = ColumnDateTime::create(input_rows_count);
-                PaddedPODArray<DataTypeDateTime::FieldType> & res_data = col_res->getData();
-                executeImpl2<DataTypeDateTime::FieldType>(arguments, result_type, input_rows_count, res_data, col_null_map);
-                if constexpr (error_handling == ErrorHandling::Null)
-                    return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
-                else
-                    return col_res;
+                const auto * result_type_without_nullable_cast = checkAndGetDataType<DataTypeDateTime64>(result_type_without_nullable.get());
+                MutableColumnPtr col_res = ColumnDateTime64::create(input_rows_count, result_type_without_nullable_cast->getScale());
+                ColumnDateTime64 * col_datetime64 = assert_cast<ColumnDateTime64 *>(col_res.get());
+                return executeImpl2<DataTypeDateTime64::FieldType>(arguments, result_type, input_rows_count, col_res, col_datetime64->getData());
             }
         }
 
         template<typename T>
-        void executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
-            PaddedPODArray<T> & res_data, ColumnUInt8::MutablePtr & col_null_map) const
+        ColumnPtr executeImpl2(
+            const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count,
+            MutableColumnPtr & col_res, PaddedPODArray<T> & res_data) const
         {
             const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
             if (!col_str)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of first ('str') argument of function {}. Must be string.",
-                    arguments[0].column->getName(),
+                    "Illegal type in 1st ('time') argument of function {}. Must be String.",
                     getName());
 
-            String format = getFormat(arguments);
-            const auto & time_zone = getTimeZone(arguments);
-            std::vector<Instruction> instructions = parseFormat(format);
+            Int64 multiplier = 0;
+            UInt32 scale = 0;
+            if constexpr (return_type == ReturnType::DateTime64)
+            {
+                const DataTypeDateTime64 * result_type_without_nullable_cast = checkAndGetDataType<DataTypeDateTime64>(removeNullable(result_type).get());
+                scale = result_type_without_nullable_cast->getScale();
+                multiplier = DecimalUtils::scaleMultiplier<DateTime64>(scale);
+            }
 
-            /// Make datetime fit in a cache line.
-            alignas(64) DateTime<error_handling> datetime;
+            ColumnUInt8::MutablePtr col_null_map;
+            if constexpr (error_handling == ErrorHandling::Null)
+                col_null_map = ColumnUInt8::create(input_rows_count, false);
+
+            const String format = getFormat(arguments);
+            const std::vector<Instruction> instructions = parseFormat(format);
+            const auto & time_zone = getTimeZone(arguments);
+
+            alignas(64) ParsedValue<error_handling, return_type> datetime; /// Make datetime fit in a cache line.
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 datetime.reset();
-                StringRef str_ref = col_str->getDataAt(i);
-                Pos cur = str_ref.data;
-                Pos end = str_ref.data + str_ref.size;
+                if constexpr (return_type == ReturnType::DateTime64)
+                    datetime.setScale(scale, parse_syntax);
+
+                std::string_view str_ref = col_str->getDataAt(i);
+                Pos cur = str_ref.data();
+                Pos end = str_ref.data() + str_ref.size();
                 bool error = false;
 
                 for (const auto & instruction : instructions)
@@ -732,14 +812,13 @@ namespace
                     continue;
 
                 Int64OrError result = 0;
-
                 /// Ensure all input was consumed
-                if (!parseDateTime64 && cur < end)
+                if (cur < end)
                 {
-                    result = tl::unexpected(ErrorCodeAndMessage(
+                    result = std::unexpected(ErrorCodeAndMessage(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Invalid format input {} is malformed at {}",
-                        str_ref.toView(),
+                        str_ref,
                         std::string_view(cur, end - cur)));
                 }
 
@@ -747,14 +826,10 @@ namespace
                 {
                     if (result = datetime.buildDateTime(time_zone); result.has_value())
                     {
-                        if constexpr (parseDateTime64)
-                        {
-                            const DataTypeDateTime64 * datatime64_type = checkAndGetDataType<DataTypeDateTime64>(removeNullable(result_type).get());
-                            Int64 multiplier = DecimalUtils::scaleMultiplier<DateTime64>(datatime64_type->getScale());
-                            res_data[i] = static_cast<Int64>(*result) * multiplier + datetime.microsecond;
-                        }
-                        else
+                        if constexpr (return_type == ReturnType::DateTime)
                             res_data[i] = static_cast<UInt32>(*result);
+                        else
+                            res_data[i] = static_cast<Int64>(*result) * multiplier + datetime.microsecond;
                     }
                 }
 
@@ -777,8 +852,11 @@ namespace
                     }
                 }
             }
-            }
-
+            if constexpr (error_handling == ErrorHandling::Null)
+                return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
+            else
+                return std::move(col_res);
+        }
 
     private:
         class Instruction
@@ -792,8 +870,8 @@ namespace
 
             using Func = std::conditional_t<
                 parse_syntax == ParseSyntax::MySQL,
-                PosOrError (*)(Pos, Pos, const String &, DateTime<error_handling> &),
-                std::function<PosOrError(Pos, Pos, const String &, DateTime<error_handling> &)>>;
+                PosOrError (*)(Pos, Pos, const String &, ParsedValue<error_handling, return_type> &),
+                std::function<PosOrError(Pos, Pos, const String &, ParsedValue<error_handling, return_type> &)>>;
             const Func func{};
             const String func_name;
             const String literal; /// Only used when current instruction parses literal
@@ -808,7 +886,7 @@ namespace
             explicit Instruction(const String & literal_) : literal(literal_), fragment("LITERAL") { }
             explicit Instruction(String && literal_) : literal(std::move(literal_)), fragment("LITERAL") { }
 
-            String getFragment() const { return fragment; }
+            const String & getFragment() const { return fragment; }
 
             /// For debug
             [[maybe_unused]] String toString() const
@@ -819,10 +897,10 @@ namespace
             }
 
             [[nodiscard]]
-            PosOrError perform(Pos cur, Pos end, DateTime<error_handling> & date) const
+            PosOrError perform(Pos cur, Pos end, ParsedValue<error_handling, return_type> & parsed_value) const
             {
                 if (func)
-                    return func(cur, end, fragment, date);
+                    return func(cur, end, fragment, parsed_value);
 
                 /// literal:
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, literal.size(), "insufficient space to parse literal", fragment))
@@ -875,6 +953,28 @@ namespace
                     RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 4, "readNumber4 requires size >= 4", fragment))
 
                 res = (*cur - '0');
+                ++cur;
+                res = res * 10 + (*cur - '0');
+                ++cur;
+                res = res * 10 + (*cur - '0');
+                ++cur;
+                res = res * 10 + (*cur - '0');
+                ++cur;
+                return cur;
+            }
+
+            template<typename T, NeedCheckSpace need_check_space>
+            [[nodiscard]]
+            static PosOrError readNumber6(Pos cur, Pos end, [[maybe_unused]] const String & fragment, T & res)
+            {
+                if constexpr (need_check_space == NeedCheckSpace::Yes)
+                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "readNumber6 requires size >= 6", fragment))
+
+                res = (*cur - '0');
+                ++cur;
+                res = res * 10 + (*cur - '0');
+                ++cur;
+                res = res * 10 + (*cur - '0');
                 ++cur;
                 res = res * 10 + (*cur - '0');
                 ++cur;
@@ -938,7 +1038,7 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfWeekTextShort(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlDayOfWeekTextShort(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlDayOfWeekTextShort requires size >= 3", fragment))
 
@@ -952,13 +1052,13 @@ namespace
                         fragment,
                         std::string_view(cur, end - cur),
                         text)
-                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(it->second.second))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfWeek(it->second.second))
                 cur += 3;
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMonthOfYearTextShort(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlMonthOfYearTextShort(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlMonthOfYearTextShort requires size >= 3", fragment))
 
@@ -973,13 +1073,13 @@ namespace
                         std::string_view(cur, end - cur),
                         text)
 
-                RETURN_ERROR_IF_FAILED(date.setMonth(it->second.second))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMonth(it->second.second))
                 cur += 3;
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlMonthOfYearTextLong(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "mysqlMonthOfYearTextLong requires size >= 3", fragment))
                 String text1(cur, 3);
@@ -1005,71 +1105,71 @@ namespace
                         text1 + text2)
                 cur += expected_remaining_size;
 
-                RETURN_ERROR_IF_FAILED(date.setMonth(it->second.second))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMonth(it->second.second))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMonth(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlMonth(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, month)))
-                RETURN_ERROR_IF_FAILED(date.setMonth(month))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMonthWithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlMonthWithoutLeadingZero(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, month))
-                RETURN_ERROR_IF_FAILED(date.setMonth(month))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlCentury(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlCentury(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 century;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, century)))
-                RETURN_ERROR_IF_FAILED(date.setCentury(century))
+                RETURN_ERROR_IF_FAILED(parsed_value.setCentury(century))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlDayOfMonth(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 day_of_month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_month)))
-                RETURN_ERROR_IF_FAILED(date.setDayOfMonth(day_of_month))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlAmericanDate(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlAmericanDate(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlAmericanDate requires size >= 8", fragment))
 
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, month)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
-                RETURN_ERROR_IF_FAILED(date.setMonth(month))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
 
                 Int32 day;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '/', fragment)))
-                RETURN_ERROR_IF_FAILED(date.setDayOfMonth(day))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day))
 
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, year)))
-                RETURN_ERROR_IF_FAILED(date.setYear(year + 2000))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear(year + 2000))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfMonthSpacePadded(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlDayOfMonthMandatorySpacePadding(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
-                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlDayOfMonthSpacePadded requires size >= 2", fragment))
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlDayOfMonthMandatorySpacePadding requires size >= 2", fragment))
 
                 Int32 day_of_month = *cur == ' ' ? 0 : (*cur - '0');
                 ++cur;
@@ -1077,12 +1177,27 @@ namespace
                 day_of_month = 10 * day_of_month + (*cur - '0');
                 ++cur;
 
-                RETURN_ERROR_IF_FAILED(date.setDayOfMonth(day_of_month))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlISO8601Date(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlDayOfMonthOptionalSpacePadding(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
+            {
+                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "mysqlDayOfMonthOptionalSpacePadding requires size >= 1", fragment))
+
+                while (cur < end && *cur == ' ')
+                    ++cur;
+
+                Int32 day_of_month = 0;
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, day_of_month))
+
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
+                return cur;
+            }
+
+            [[nodiscard]]
+            static PosOrError mysqlISO8601Date(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 10, "mysqlISO8601Date requires size >= 10", fragment))
 
@@ -1095,59 +1210,59 @@ namespace
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, '-', fragment)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, day)))
 
-                RETURN_ERROR_IF_FAILED(date.setYear(year))
-                RETURN_ERROR_IF_FAILED(date.setMonth(month))
-                RETURN_ERROR_IF_FAILED(date.setDayOfMonth(day))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlISO8601Year2(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlISO8601Year2(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year2;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
-                RETURN_ERROR_IF_FAILED(date.setYear2(year2))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear2(year2))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlISO8601Year4(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlISO8601Year4(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
-                RETURN_ERROR_IF_FAILED(date.setYear(year))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfYear(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlDayOfYear(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 day_of_year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber3<Int32, NeedCheckSpace::Yes>(cur, end, fragment, day_of_year)))
-                RETURN_ERROR_IF_FAILED(date.setDayOfYear(day_of_year))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfYear(day_of_year))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfWeek(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlDayOfWeek(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "mysqlDayOfWeek requires size >= 1", fragment))
-                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(*cur - '0'))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfWeek(*cur - '0'))
                 ++cur;
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlISO8601Week(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlISO8601Week(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 week;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, week)))
-                RETURN_ERROR_IF_FAILED(date.setWeek(week))
+                RETURN_ERROR_IF_FAILED(parsed_value.setWeek(week))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfWeek0To6(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlDayOfWeek0To6(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 1, "mysqlDayOfWeek0To6 requires size >= 1", fragment))
 
@@ -1155,13 +1270,13 @@ namespace
                 if (day_of_week == 0)
                     day_of_week = 7;
 
-                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(day_of_week))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfWeek(day_of_week))
                 ++cur;
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlDayOfWeekTextLong(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "mysqlDayOfWeekTextLong requires size >= 6", fragment))
                 String text1(cur, 3);
@@ -1189,30 +1304,30 @@ namespace
                         text1 + text2)
                 cur += expected_remaining_size;
 
-                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(it->second.second))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfWeek(it->second.second))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlYear2(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlYear2(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year2;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year2)))
-                RETURN_ERROR_IF_FAILED(date.setYear2(year2))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear2(year2))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlYear4(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlYear4(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber4<Int32, NeedCheckSpace::Yes>(cur, end, fragment, year)))
-                RETURN_ERROR_IF_FAILED(date.setYear(year))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlTimezoneOffset(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlTimezoneOffset(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 5, "mysqlTimezoneOffset requires size >= 5", fragment))
 
@@ -1236,87 +1351,102 @@ namespace
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
 
-                date.has_time_zone_offset = true;
-                date.time_zone_offset = sign * (hour * 3600 + minute * 60);
+                parsed_value.has_time_zone_offset = true;
+                parsed_value.time_zone_offset = sign * (hour * 3600 + minute * 60);
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMinute(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlMinute(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, minute)))
-                RETURN_ERROR_IF_FAILED(date.setMinute(minute))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMinute(minute))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlAMPM(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlAMPM(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "mysqlAMPM requires size >= 2", fragment))
 
                 String text(cur, 2);
                 boost::to_lower(text);
-                RETURN_ERROR_IF_FAILED(date.setAMPM(text))
+                RETURN_ERROR_IF_FAILED(parsed_value.setAMPM(text))
                 cur += 2;
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHHMM12(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlHHMM12(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlHHMM12 requires size >= 8", fragment))
 
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                RETURN_ERROR_IF_FAILED(date.setHour(hour, true, true))
+                RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, true, true))
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ' ', fragment)))
-                RETURN_ERROR_IF_FAILED(date.setMinute(minute))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMinute(minute))
 
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, mysqlAMPM(cur, end, fragment, date))
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, mysqlAMPM(cur, end, fragment, parsed_value))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHHMM24(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlHHMM24(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 5, "mysqlHHMM24 requires size >= 5", fragment))
 
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, hour)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
-                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, false))
+                RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, false, false))
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
-                RETURN_ERROR_IF_FAILED(date.setMinute(minute))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMinute(minute))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlSecond(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlSecond(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 second;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, second)))
-                RETURN_ERROR_IF_FAILED(date.setSecond(second))
+                RETURN_ERROR_IF_FAILED(parsed_value.setSecond(second))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlMicrosecond(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & /*date*/)
+            static PosOrError mysqlMicrosecond(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
-                RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment))
+                if constexpr (return_type == ReturnType::DateTime)
+                {
+                    RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 6, "mysqlMicrosecond requires size >= 6", fragment))
 
-                for (size_t i = 0; i < 6; ++i)
-                    ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertNumber<NeedCheckSpace::No>(cur, end, fragment)))
-
+                    for (size_t i = 0; i < 6; ++i)
+                        ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertNumber<NeedCheckSpace::No>(cur, end, fragment)))
+                }
+                else
+                {
+                    if (parsed_value.scale != 6)
+                        RETURN_ERROR(
+                            ErrorCodes::CANNOT_PARSE_DATETIME,
+                            "Unable to parse fragment {} from {} because the datetime scale {} is not 6",
+                            fragment,
+                            std::string_view(cur, end - cur),
+                            std::to_string(parsed_value.scale))
+                    Int32 microsecond = 0;
+                    ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber6<Int32, NeedCheckSpace::Yes>(cur, end, fragment, microsecond)))
+                    RETURN_ERROR_IF_FAILED(parsed_value.setMicrosecond(microsecond))
+                }
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlISO8601Time(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlISO8601Time(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 8, "mysqlISO8601Time requires size >= 8", fragment))
 
@@ -1328,45 +1458,45 @@ namespace
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, minute)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (assertChar<NeedCheckSpace::No>(cur, end, ':', fragment)))
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::No>(cur, end, fragment, second)))
-                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, false))
-                RETURN_ERROR_IF_FAILED(date.setMinute(minute))
-                RETURN_ERROR_IF_FAILED(date.setSecond(second))
+                RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, false, false))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMinute(minute))
+                RETURN_ERROR_IF_FAILED(parsed_value.setSecond(second))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHour12(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlHour12(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
-                RETURN_ERROR_IF_FAILED(date.setHour(hour, true, true))
+                RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, true, true))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHour12WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlHour12WithoutLeadingZero(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
-                RETURN_ERROR_IF_FAILED(date.setHour(hour, true, true))
+                RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, true, true))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHour24(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlHour24(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumber2<Int32, NeedCheckSpace::Yes>(cur, end, fragment, hour)))
-                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, false))
+                RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, false, false))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError mysqlHour24WithoutLeadingZero(Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError mysqlHour24WithoutLeadingZero(Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, 1, 2, fragment, hour)))
-                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, false))
+                RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, false, false))
                 return cur;
             }
 
@@ -1471,64 +1601,66 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaEra(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaEra(int, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "jodaEra requires size >= 2", fragment))
 
                 String era(cur, 2);
                 boost::to_lower(era);
-                RETURN_ERROR_IF_FAILED(date.setEra(era))
+                RETURN_ERROR_IF_FAILED(parsed_value.setEra(era))
                 cur += 2;
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaCenturyOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaCenturyOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 century;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, century)))
-                RETURN_ERROR_IF_FAILED(date.setCentury(century))
+                RETURN_ERROR_IF_FAILED(parsed_value.setCentury(century))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaYearOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaYearOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year_of_era;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era)))
-                RETURN_ERROR_IF_FAILED(date.setYear(year_of_era, true))
+                size_t max_digits = repetitions > 2 ? std::max<size_t>(repetitions, 4) : repetitions;
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, true, repetitions, max_digits, fragment, year_of_era)))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear(year_of_era, true))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 week_year;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year)))
-                RETURN_ERROR_IF_FAILED(date.setYear(week_year, false, true))
+                size_t max_digits = repetitions > 2 ? std::max<size_t>(repetitions, 4) : repetitions;
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, max_digits, fragment, week_year)))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear(week_year, false, true))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaWeekOfWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaWeekOfWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 week;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, week)))
-                RETURN_ERROR_IF_FAILED(date.setWeek(week))
+                RETURN_ERROR_IF_FAILED(parsed_value.setWeek(week))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaDayOfWeek1Based(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaDayOfWeek1Based(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 day_of_week;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, repetitions, fragment, day_of_week)))
-                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(day_of_week))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfWeek(day_of_week))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaDayOfWeekText(size_t /*min_represent_digits*/, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "jodaDayOfWeekText requires size >= 3", fragment))
 
@@ -1543,7 +1675,7 @@ namespace
                         std::string_view(cur, end - cur),
                         text1)
                 cur += 3;
-                RETURN_ERROR_IF_FAILED(date.setDayOfWeek(it->second.second))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfWeek(it->second.second))
 
                 size_t expected_remaining_size = it->second.first.size();
                 if (cur + expected_remaining_size <= end)
@@ -1560,34 +1692,35 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year)))
-                RETURN_ERROR_IF_FAILED(date.setYear(year))
+                size_t max_digits = repetitions > 2 ? std::max<size_t>(repetitions, 4) : repetitions;
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, max_digits, fragment, year)))
+                RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaDayOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaDayOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 day_of_year;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 3uz), fragment, day_of_year)))
-                RETURN_ERROR_IF_FAILED(date.setDayOfYear(day_of_year))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfYear(day_of_year))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaMonthOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaMonthOfYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, 2, fragment, month)))
-                RETURN_ERROR_IF_FAILED(date.setMonth(month))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMonth(month))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaMonthOfYearText(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaMonthOfYearText(int, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 3, "jodaMonthOfYearText requires size >= 3", fragment))
                 String text1(cur, 3);
@@ -1601,7 +1734,7 @@ namespace
                         std::string_view(cur, end - cur),
                         text1)
                 cur += 3;
-                RETURN_ERROR_IF_FAILED(date.setMonth(it->second.second))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMonth(it->second.second))
 
                 size_t expected_remaining_size = it->second.first.size();
                 if (cur + expected_remaining_size <= end)
@@ -1618,117 +1751,113 @@ namespace
             }
 
             [[nodiscard]]
-            static PosOrError jodaDayOfMonth(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaDayOfMonth(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 day_of_month;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(
                     cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, day_of_month)))
-                RETURN_ERROR_IF_FAILED(date.setDayOfMonth(day_of_month))
+                RETURN_ERROR_IF_FAILED(parsed_value.setDayOfMonth(day_of_month))
 
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaHalfDayOfDay(int, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaHalfDayOfDay(int, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 2, "jodaHalfDayOfDay requires size >= 2", fragment))
 
                 String text(cur, 2);
                 boost::to_lower(text);
-                RETURN_ERROR_IF_FAILED(date.setAMPM(text))
+                RETURN_ERROR_IF_FAILED(parsed_value.setAMPM(text))
                 cur += 2;
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                RETURN_ERROR_IF_FAILED(date.setHour(hour, true, false))
+                RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, true, false))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaClockHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaClockHourOfHalfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                RETURN_ERROR_IF_FAILED(date.setHour(hour, true, true))
+                RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, true, true))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, false))
+                RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, false, false))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaClockHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaClockHourOfDay(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
-                RETURN_ERROR_IF_FAILED(date.setHour(hour, false, true))
+                RETURN_ERROR_IF_FAILED(parsed_value.setHour(hour, false, true))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaMinuteOfHour(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaMinuteOfHour(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute)))
-                RETURN_ERROR_IF_FAILED(date.setMinute(minute))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMinute(minute))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaSecondOfMinute(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaSecondOfMinute(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 second;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, second)))
-                RETURN_ERROR_IF_FAILED(date.setSecond(second))
+                RETURN_ERROR_IF_FAILED(parsed_value.setSecond(second))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaMicroSecondOfSecond(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaMicrosecondOfSecond(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 microsecond;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, microsecond)))
-                RETURN_ERROR_IF_FAILED(date.setMicrosecond(microsecond))
+                RETURN_ERROR_IF_FAILED(parsed_value.setMicrosecond(microsecond))
                 return cur;
             }
 
             [[nodiscard]]
-            static PosOrError jodaTimezoneId(size_t, Pos cur, Pos end, const String &, DateTime<error_handling> & date)
+            static PosOrError jodaTimezone(size_t, Pos cur, Pos end, const String &, ParsedValue<error_handling, return_type> & parsed_value)
             {
-                String dateTimeZone;
-                while (cur <= end)
-                {
-                    dateTimeZone += *cur;
-                    ++cur;
-                }
-                const DateLUTImpl & date_time_zone = DateLUT::instance(dateTimeZone);
-                const auto result = date.buildDateTime(date_time_zone);
+                std::string_view read_time_zone{cur, end};
+                const DateLUTImpl & date_time_zone = DateLUT::instance(read_time_zone);
+                const auto result = parsed_value.buildDateTime(date_time_zone);
                 if (result.has_value())
                 {
-                    const auto timezoneOffset = date_time_zone.timezoneOffset(*result);
-                    date.has_time_zone_offset = true;
-                    date.time_zone_offset = timezoneOffset;
-                    return cur;
+                    const DateLUTImpl::Time timezone_offset = date_time_zone.timezoneOffset(*result);
+                    parsed_value.has_time_zone_offset = true;
+                    parsed_value.time_zone_offset = timezone_offset;
+                    return end;
                 }
                 else
-                    RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Unable to build date time from timezone {}", dateTimeZone)
+                    RETURN_ERROR(ErrorCodes::CANNOT_PARSE_DATETIME, "Unable to parse date time from timezone {}", read_time_zone)
             }
 
             [[nodiscard]]
-            static PosOrError jodaTimezoneOffset(size_t repetitions, Pos cur, Pos end, const String & fragment, DateTime<error_handling> & date)
+            static PosOrError jodaTimezoneOffset(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 RETURN_ERROR_IF_FAILED(checkSpace(cur, end, 5, "jodaTimezoneOffset requires size >= 5", fragment))
+
                 Int32 sign;
                 if (*cur == '-')
                     sign = -1;
@@ -1737,7 +1866,7 @@ namespace
                 else
                     RETURN_ERROR(
                         ErrorCodes::CANNOT_PARSE_DATETIME,
-                        "Unable to parse fragment {} from {} because of unknown sign time zone offset: {}",
+                        "Unable to parse fragment {} from {} because of unknown sign in time zone offset: {}",
                         fragment,
                         std::string_view(cur, end - cur),
                         std::string_view(cur, 1))
@@ -1745,10 +1874,24 @@ namespace
 
                 Int32 hour;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, hour)))
+                if (hour < 0 || hour > 23)
+                    RETURN_ERROR(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because the hour of datetime not in range [0, 23]: {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        std::string_view(cur, 1))
                 Int32 minute;
                 ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, false, repetitions, std::max(repetitions, 2uz), fragment, minute)))
-                date.has_time_zone_offset = true;
-                date.time_zone_offset = sign * (hour * 3600 + minute * 60);
+                if (minute < 0 || minute > 59)
+                    RETURN_ERROR(
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        "Unable to parse fragment {} from {} because the minute of datetime not in range [0, 59]: {}",
+                        fragment,
+                        std::string_view(cur, end - cur),
+                        std::string_view(cur, 1))
+                parsed_value.has_time_zone_offset = true;
+                parsed_value.time_zone_offset = sign * (hour * 3600 + minute * 60);
                 return cur;
             }
         };
@@ -1825,9 +1968,12 @@ namespace
                             instructions.emplace_back(ACTION_ARGS(Instruction::mysqlAmericanDate));
                             break;
 
-                        // Day of month, space-padded ( 1-31)  23
+                        // Day of month
                         case 'e':
-                            instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthSpacePadded));
+                            if (mysql_e_requires_space_padding)
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthMandatorySpacePadding)); /// ' 1' - '31'
+                            else
+                                instructions.emplace_back(ACTION_ARGS(Instruction::mysqlDayOfMonthOptionalSpacePadding));  /// '1' (or ' 1') - '31'
                             break;
 
                         // Fractional seconds
@@ -2133,10 +2279,10 @@ namespace
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaSecondOfMinute, repetitions));
                             break;
                         case 'S':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaMicroSecondOfSecond, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaMicrosecondOfSecond, repetitions));
                             break;
                         case 'z':
-                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaTimezoneId, repetitions));
+                            instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaTimezone, repetitions));
                             break;
                         case 'Z':
                             instructions.emplace_back(ACTION_ARGS_WITH_BIND(Instruction::jodaTimezoneOffset, repetitions));
@@ -2161,21 +2307,22 @@ namespace
             if (arguments.size() == 1)
             {
                 if constexpr (parse_syntax == ParseSyntax::MySQL)
-                    return "%Y-%m-%d %H:%i:%s";
+                {
+                    if constexpr (return_type == ReturnType::DateTime)
+                        return "%Y-%m-%d %H:%i:%s";
+                    else
+                        return "%Y-%m-%d %H:%i:%s.%f";
+                }
                 else
                     return "yyyy-MM-dd HH:mm:ss";
             }
             else
             {
-                if (!arguments[1].column || !isColumnConst(*arguments[1].column))
-                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument at index {} for function {} must be constant", 1, getName());
-
                 const auto * col_format = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
                 if (!col_format)
                     throw Exception(
                         ErrorCodes::ILLEGAL_COLUMN,
-                        "Illegal column {} of second ('format') argument of function {}. Must be constant string.",
-                        arguments[1].column->getName(),
+                        "Illegal type in 'format' argument of function {}. Must be constant String.",
                         getName());
                 return col_format->getValue<String>();
             }
@@ -2190,8 +2337,7 @@ namespace
             if (!col)
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of third ('timezone') argument of function {}. Must be constant String.",
-                    arguments[2].column->getName(),
+                    "Illegal type in 'timezone' argument of function {}. Must be constant String.",
                     getName());
 
             String time_zone = col->getValue<String>();
@@ -2229,6 +2375,21 @@ namespace
         static constexpr auto name = "parseDateTimeInJodaSyntaxOrNull";
     };
 
+    struct NameParseDateTime64
+    {
+        static constexpr auto name = "parseDateTime64";
+    };
+
+    struct NameParseDateTime64OrZero
+    {
+        static constexpr auto name = "parseDateTime64OrZero";
+    };
+
+    struct NameParseDateTime64OrNull
+    {
+        static constexpr auto name = "parseDateTime64OrNull";
+    };
+
     struct NameParseDateTime64InJodaSyntax
     {
         static constexpr auto name = "parseDateTime64InJodaSyntax";
@@ -2244,31 +2405,389 @@ namespace
         static constexpr auto name = "parseDateTime64InJodaSyntaxOrNull";
     };
 
-    using FunctionParseDateTime = FunctionParseDateTimeImpl<NameParseDateTime, ParseSyntax::MySQL, ErrorHandling::Exception>;
-    using FunctionParseDateTimeOrZero = FunctionParseDateTimeImpl<NameParseDateTimeOrZero, ParseSyntax::MySQL, ErrorHandling::Zero>;
-    using FunctionParseDateTimeOrNull = FunctionParseDateTimeImpl<NameParseDateTimeOrNull, ParseSyntax::MySQL, ErrorHandling::Null>;
-    using FunctionParseDateTimeInJodaSyntax = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntax, ParseSyntax::Joda, ErrorHandling::Exception>;
-    using FunctionParseDateTimeInJodaSyntaxOrZero = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrZero, ParseSyntax::Joda, ErrorHandling::Zero>;
-    using FunctionParseDateTimeInJodaSyntaxOrNull = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrNull, ParseSyntax::Joda, ErrorHandling::Null>;
-    using FunctionParseDateTime64InJodaSyntax = FunctionParseDateTimeImpl<NameParseDateTime64InJodaSyntax, ParseSyntax::Joda, ErrorHandling::Exception, true>;
-    using FunctionParseDateTime64InJodaSyntaxOrZero = FunctionParseDateTimeImpl<NameParseDateTime64InJodaSyntaxOrZero, ParseSyntax::Joda, ErrorHandling::Zero, true>;
-    using FunctionParseDateTime64InJodaSyntaxOrNull = FunctionParseDateTimeImpl<NameParseDateTime64InJodaSyntaxOrNull, ParseSyntax::Joda, ErrorHandling::Null, true>;
+    using FunctionParseDateTime = FunctionParseDateTimeImpl<NameParseDateTime, ParseSyntax::MySQL, ReturnType::DateTime, ErrorHandling::Exception>;
+    using FunctionParseDateTimeOrZero = FunctionParseDateTimeImpl<NameParseDateTimeOrZero, ParseSyntax::MySQL, ReturnType::DateTime, ErrorHandling::Zero>;
+    using FunctionParseDateTimeOrNull = FunctionParseDateTimeImpl<NameParseDateTimeOrNull, ParseSyntax::MySQL, ReturnType::DateTime, ErrorHandling::Null>;
+    using FunctionParseDateTime64 = FunctionParseDateTimeImpl<NameParseDateTime64, ParseSyntax::MySQL, ReturnType::DateTime64, ErrorHandling::Exception>;
+    using FunctionParseDateTime64OrZero = FunctionParseDateTimeImpl<NameParseDateTime64OrZero, ParseSyntax::MySQL, ReturnType::DateTime64, ErrorHandling::Zero>;
+    using FunctionParseDateTime64OrNull = FunctionParseDateTimeImpl<NameParseDateTime64OrNull, ParseSyntax::MySQL, ReturnType::DateTime64, ErrorHandling::Null>;
+    using FunctionParseDateTimeInJodaSyntax = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntax, ParseSyntax::Joda, ReturnType::DateTime, ErrorHandling::Exception>;
+    using FunctionParseDateTimeInJodaSyntaxOrZero = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrZero, ParseSyntax::Joda, ReturnType::DateTime, ErrorHandling::Zero>;
+    using FunctionParseDateTimeInJodaSyntaxOrNull = FunctionParseDateTimeImpl<NameParseDateTimeInJodaSyntaxOrNull, ParseSyntax::Joda, ReturnType::DateTime, ErrorHandling::Null>;
+    using FunctionParseDateTime64InJodaSyntax = FunctionParseDateTimeImpl<NameParseDateTime64InJodaSyntax, ParseSyntax::Joda, ReturnType::DateTime64, ErrorHandling::Exception>;
+    using FunctionParseDateTime64InJodaSyntaxOrZero = FunctionParseDateTimeImpl<NameParseDateTime64InJodaSyntaxOrZero, ParseSyntax::Joda, ReturnType::DateTime64, ErrorHandling::Zero>;
+    using FunctionParseDateTime64InJodaSyntaxOrNull = FunctionParseDateTimeImpl<NameParseDateTime64InJodaSyntaxOrNull, ParseSyntax::Joda, ReturnType::DateTime64, ErrorHandling::Null>;
 }
 
 REGISTER_FUNCTION(ParseDateTime)
 {
-    factory.registerFunction<FunctionParseDateTime>();
-    factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name, FunctionFactory::Case::Insensitive);
-    factory.registerFunction<FunctionParseDateTimeOrZero>();
-    factory.registerFunction<FunctionParseDateTimeOrNull>();
-    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::Case::Insensitive);
+    /// parseDateTime documentation
+    FunctionDocumentation::Description parseDateTime_description = R"(
+Parses a date and time string according to a MySQL date format string.
 
-    factory.registerFunction<FunctionParseDateTimeInJodaSyntax>();
-    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>();
-    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrNull>();
-    factory.registerFunction<FunctionParseDateTime64InJodaSyntax>();
-    factory.registerFunction<FunctionParseDateTime64InJodaSyntaxOrZero>();
-    factory.registerFunction<FunctionParseDateTime64InJodaSyntaxOrNull>();
+This function is the inverse of [`formatDateTime`](/sql-reference/functions/date-time-functions).
+It parses a String argument using a format String. Returns a DateTime type.
+    )";
+    FunctionDocumentation::Syntax parseDateTime_syntax = "parseDateTime(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime_returned_value = {"Returns a DateTime parsed from the input string according to the MySQL style format string.", {"DateTime"}};
+    FunctionDocumentation::Examples parseDateTime_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
+        )",
+        R"(
+┌─parseDateTime('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
+│                                       2025-01-04 23:00:00 │
+└───────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTime_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime_documentation = {parseDateTime_description, parseDateTime_syntax, parseDateTime_arguments, {}, parseDateTime_returned_value, parseDateTime_examples, parseDateTime_introduced_in, parseDateTime_category};
+
+    /// parseDateTimeOrZero documentation
+    FunctionDocumentation::Description parseDateTimeOrZero_description = R"(
+Same as [`parseDateTime`](#parseDateTime) but returns zero date when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTimeOrZero_syntax = "parseDateTimeOrZero(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTimeOrZero_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTimeOrZero_returned_value = {"Returns DateTime parsed from input string, or zero DateTime if parsing fails.", {"DateTime"}};
+    FunctionDocumentation::Examples parseDateTimeOrZero_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
+        )",
+        R"(
+┌─parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
+│                                             2025-01-04 23:00:00 │
+└─────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTimeOrZero_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTimeOrZero_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTimeOrZero_documentation = {parseDateTimeOrZero_description, parseDateTimeOrZero_syntax, parseDateTimeOrZero_arguments, {}, parseDateTimeOrZero_returned_value, parseDateTimeOrZero_examples, parseDateTimeOrZero_introduced_in, parseDateTimeOrZero_category};
+
+    /// parseDateTimeOrNull documentation
+    FunctionDocumentation::Description parseDateTimeOrNull_description = R"(
+Same as [`parseDateTime`](#parseDateTime) but returns `NULL` when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTimeOrNull_syntax = "parseDateTimeOrNull(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTimeOrNull_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTimeOrNull_returned_value = {"Returns DateTime parsed from input string, or NULL if parsing fails.", {"Nullable(DateTime)"}};
+    FunctionDocumentation::Examples parseDateTimeOrNull_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
+        )",
+        R"(
+┌─parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
+│                                            2025-01-04 23:00:00  │
+└─────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTimeOrNull_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTimeOrNull_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTimeOrNull_documentation = {parseDateTimeOrNull_description, parseDateTimeOrNull_syntax, parseDateTimeOrNull_arguments, {}, parseDateTimeOrNull_returned_value, parseDateTimeOrNull_examples, parseDateTimeOrNull_introduced_in, parseDateTimeOrNull_category};
+
+    /// parseDateTime64 documentation
+    FunctionDocumentation::Description parseDateTime64_description = R"(
+Parses a date and time string with sub-second precision according to a MySQL date format string.
+
+This function is the inverse of [`formatDateTime`](/sql-reference/functions/date-time-functions) for DateTime64.
+It parses a String argument using a format String. Returns a DateTime64 type which can represent dates from 1900 to 2299 with sub-second precision.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64_syntax = "parseDateTime64(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64_returned_value = {"Returns a DateTime64 parsed from the input string according to the MySQL style format string.", {"DateTime64"}};
+    FunctionDocumentation::Examples parseDateTime64_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
+        )",
+        R"(
+┌─parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
+│                                       2025-01-04 23:00:00.123       │
+└─────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64_introduced_in = {24, 11};
+    FunctionDocumentation::Category parseDateTime64_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64_documentation = {parseDateTime64_description, parseDateTime64_syntax, parseDateTime64_arguments, {}, parseDateTime64_returned_value, parseDateTime64_examples, parseDateTime64_introduced_in, parseDateTime64_category};
+
+    /// parseDateTime64OrZero documentation
+    FunctionDocumentation::Description parseDateTime64OrZero_description = R"(
+Same as [`parseDateTime64`](#parseDateTime64) but returns zero date when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64OrZero_syntax = "parseDateTime64OrZero(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64OrZero_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64OrZero_returned_value = {"Returns DateTime64 parsed from input string, or zero DateTime64 if parsing fails.", {"DateTime64"}};
+    FunctionDocumentation::Examples parseDateTime64OrZero_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
+        )",
+        R"(
+┌─parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
+│                                             2025-01-04 23:00:00.123       │
+└───────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64OrZero_introduced_in = {24, 11};
+    FunctionDocumentation::Category parseDateTime64OrZero_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64OrZero_documentation = {parseDateTime64OrZero_description, parseDateTime64OrZero_syntax, parseDateTime64OrZero_arguments, {}, parseDateTime64OrZero_returned_value, parseDateTime64OrZero_examples, parseDateTime64OrZero_introduced_in, parseDateTime64OrZero_category};
+
+    /// parseDateTime64OrNull documentation
+    FunctionDocumentation::Description parseDateTime64OrNull_description = R"(
+Same as [`parseDateTime64`](#parseDateTime64) but returns `NULL` when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64OrNull_syntax = "parseDateTime64OrNull(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64OrNull_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64OrNull_returned_value = {"Returns DateTime64 parsed from input string, or NULL if parsing fails.", {"Nullable(DateTime64)"}};
+    FunctionDocumentation::Examples parseDateTime64OrNull_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
+        )",
+        R"(
+┌─parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
+│                                            2025-01-04 23:00:00.123        │
+└───────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64OrNull_introduced_in = {24, 11};
+    FunctionDocumentation::Category parseDateTime64OrNull_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64OrNull_documentation = {parseDateTime64OrNull_description, parseDateTime64OrNull_syntax, parseDateTime64OrNull_arguments, {}, parseDateTime64OrNull_returned_value, parseDateTime64OrNull_examples, parseDateTime64OrNull_introduced_in, parseDateTime64OrNull_category};
+
+    /// parseDateTimeInJodaSyntax documentation
+    FunctionDocumentation::Description parseDateTimeInJodaSyntax_description = R"(
+Parses a date and time string according to a Joda date format string.
+
+This function is the inverse of [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax).
+It parses a String argument using a Joda-style format String. Returns a DateTime type.
+
+Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) for the format patterns.
+    )";
+    FunctionDocumentation::Syntax parseDateTimeInJodaSyntax_syntax = "parseDateTimeInJodaSyntax(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTimeInJodaSyntax_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTimeInJodaSyntax_returned_value = {"Returns a DateTime parsed from the input string according to the Joda style format string.", {"DateTime"}};
+    FunctionDocumentation::Examples parseDateTimeInJodaSyntax_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
+        )",
+        R"(
+┌─parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
+│                                                      2025-01-04 23:00:00 │
+└──────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTimeInJodaSyntax_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTimeInJodaSyntax_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTimeInJodaSyntax_documentation = {parseDateTimeInJodaSyntax_description, parseDateTimeInJodaSyntax_syntax, parseDateTimeInJodaSyntax_arguments, {}, parseDateTimeInJodaSyntax_returned_value, parseDateTimeInJodaSyntax_examples, parseDateTimeInJodaSyntax_introduced_in, parseDateTimeInJodaSyntax_category};
+
+    /// parseDateTimeInJodaSyntaxOrZero documentation
+    FunctionDocumentation::Description parseDateTimeInJodaSyntaxOrZero_description = R"(
+Same as [`parseDateTimeInJodaSyntax`](#parseDateTimeInJodaSyntax) but returns zero date when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTimeInJodaSyntaxOrZero_syntax = "parseDateTimeInJodaSyntaxOrZero(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTimeInJodaSyntaxOrZero_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTimeInJodaSyntaxOrZero_returned_value = {"Returns DateTime parsed from input string, or zero DateTime if parsing fails.", {"DateTime"}};
+    FunctionDocumentation::Examples parseDateTimeInJodaSyntaxOrZero_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
+        )",
+        R"(
+┌─parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
+│                                                          2025-01-04 23:00:00   │
+└────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTimeInJodaSyntaxOrZero_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTimeInJodaSyntaxOrZero_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTimeInJodaSyntaxOrZero_documentation = {parseDateTimeInJodaSyntaxOrZero_description, parseDateTimeInJodaSyntaxOrZero_syntax, parseDateTimeInJodaSyntaxOrZero_arguments, {}, parseDateTimeInJodaSyntaxOrZero_returned_value, parseDateTimeInJodaSyntaxOrZero_examples, parseDateTimeInJodaSyntaxOrZero_introduced_in, parseDateTimeInJodaSyntaxOrZero_category};
+
+    /// parseDateTimeInJodaSyntaxOrNull documentation
+    FunctionDocumentation::Description parseDateTimeInJodaSyntaxOrNull_description = R"(
+Same as [`parseDateTimeInJodaSyntax`](#parseDateTimeInJodaSyntax) but returns `NULL` when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTimeInJodaSyntaxOrNull_syntax = "parseDateTimeInJodaSyntaxOrNull(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTimeInJodaSyntaxOrNull_arguments = {
+        {"time_string", "String to be parsed into DateTime.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTimeInJodaSyntaxOrNull_returned_value = {"Returns DateTime parsed from input string, or NULL if parsing fails.", {"Nullable(DateTime)"}};
+    FunctionDocumentation::Examples parseDateTimeInJodaSyntaxOrNull_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
+        )",
+        R"(
+┌─parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
+│                                                         2025-01-04 23:00:00    │
+└────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTimeInJodaSyntaxOrNull_introduced_in = {23, 3};
+    FunctionDocumentation::Category parseDateTimeInJodaSyntaxOrNull_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTimeInJodaSyntaxOrNull_documentation = {parseDateTimeInJodaSyntaxOrNull_description, parseDateTimeInJodaSyntaxOrNull_syntax, parseDateTimeInJodaSyntaxOrNull_arguments, {}, parseDateTimeInJodaSyntaxOrNull_returned_value, parseDateTimeInJodaSyntaxOrNull_examples, parseDateTimeInJodaSyntaxOrNull_introduced_in, parseDateTimeInJodaSyntaxOrNull_category};
+
+    /// parseDateTime64InJodaSyntax documentation
+    FunctionDocumentation::Description parseDateTime64InJodaSyntax_description = R"(
+Parses a date and time string with sub-second precision according to a Joda date format string.
+
+This function is the inverse of [`formatDateTimeInJodaSyntax`](/sql-reference/functions/date-time-functions#formatDateTimeInJodaSyntax) for DateTime64.
+It parses a String argument using a Joda-style format String. Returns a DateTime64 type which can represent dates from 1900 to 2299 with sub-second precision.
+
+Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) for the format patterns.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64InJodaSyntax_syntax = "parseDateTime64InJodaSyntax(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64InJodaSyntax_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64InJodaSyntax_returned_value = {"Returns a DateTime64 parsed from the input string according to the Joda style format string.", {"DateTime64"}};
+    FunctionDocumentation::Examples parseDateTime64InJodaSyntax_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')
+        )",
+        R"(
+┌─parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
+│                                                          2025-01-04 23:00:00.123   │
+└────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64InJodaSyntax_introduced_in = {24, 10};
+    FunctionDocumentation::Category parseDateTime64InJodaSyntax_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64InJodaSyntax_documentation = {parseDateTime64InJodaSyntax_description, parseDateTime64InJodaSyntax_syntax, parseDateTime64InJodaSyntax_arguments, {}, parseDateTime64InJodaSyntax_returned_value, parseDateTime64InJodaSyntax_examples, parseDateTime64InJodaSyntax_introduced_in, parseDateTime64InJodaSyntax_category};
+
+    /// parseDateTime64InJodaSyntaxOrZero documentation
+    FunctionDocumentation::Description parseDateTime64InJodaSyntaxOrZero_description = R"(
+Same as [`parseDateTime64InJodaSyntax`](#parseDateTime64InJodaSyntax) but returns zero date when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64InJodaSyntaxOrZero_syntax = "parseDateTime64InJodaSyntaxOrZero(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64InJodaSyntaxOrZero_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64InJodaSyntaxOrZero_returned_value = {"Returns DateTime64 parsed from input string, or zero DateTime64 if parsing fails.", {"DateTime64"}};
+    FunctionDocumentation::Examples parseDateTime64InJodaSyntaxOrZero_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')
+        )",
+        R"(
+┌─parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
+│                                                              2025-01-04 23:00:00.123     │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64InJodaSyntaxOrZero_introduced_in = {24, 10};
+    FunctionDocumentation::Category parseDateTime64InJodaSyntaxOrZero_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64InJodaSyntaxOrZero_documentation = {parseDateTime64InJodaSyntaxOrZero_description, parseDateTime64InJodaSyntaxOrZero_syntax, parseDateTime64InJodaSyntaxOrZero_arguments, {}, parseDateTime64InJodaSyntaxOrZero_returned_value, parseDateTime64InJodaSyntaxOrZero_examples, parseDateTime64InJodaSyntaxOrZero_introduced_in, parseDateTime64InJodaSyntaxOrZero_category};
+
+    /// parseDateTime64InJodaSyntaxOrNull documentation
+    FunctionDocumentation::Description parseDateTime64InJodaSyntaxOrNull_description = R"(
+Same as [`parseDateTime64InJodaSyntax`](#parseDateTime64InJodaSyntax) but returns `NULL` when it encounters an unparsable date format.
+    )";
+    FunctionDocumentation::Syntax parseDateTime64InJodaSyntaxOrNull_syntax = "parseDateTime64InJodaSyntaxOrNull(time_string, format[, timezone])";
+    FunctionDocumentation::Arguments parseDateTime64InJodaSyntaxOrNull_arguments = {
+        {"time_string", "String to be parsed into DateTime64.", {"String"}},
+        {"format", "Format string in Joda syntax specifying how to parse time_string.", {"String"}},
+        {"timezone", "Optional. Timezone.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue parseDateTime64InJodaSyntaxOrNull_returned_value = {"Returns DateTime64 parsed from input string, or NULL if parsing fails.", {"Nullable(DateTime64)"}};
+    FunctionDocumentation::Examples parseDateTime64InJodaSyntaxOrNull_examples = {
+    {
+        "Usage example",
+        R"(
+SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')
+        )",
+        R"(
+┌─parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
+│                                                             2025-01-04 23:00:00.123      │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn parseDateTime64InJodaSyntaxOrNull_introduced_in = {24, 10};
+    FunctionDocumentation::Category parseDateTime64InJodaSyntaxOrNull_category = FunctionDocumentation::Category::TypeConversion;
+    FunctionDocumentation parseDateTime64InJodaSyntaxOrNull_documentation = {parseDateTime64InJodaSyntaxOrNull_description, parseDateTime64InJodaSyntaxOrNull_syntax, parseDateTime64InJodaSyntaxOrNull_arguments, {}, parseDateTime64InJodaSyntaxOrNull_returned_value, parseDateTime64InJodaSyntaxOrNull_examples, parseDateTime64InJodaSyntaxOrNull_introduced_in, parseDateTime64InJodaSyntaxOrNull_category};
+
+    factory.registerFunction<FunctionParseDateTime>(parseDateTime_documentation);
+    factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionParseDateTimeOrZero>(parseDateTimeOrZero_documentation);
+    factory.registerFunction<FunctionParseDateTimeOrNull>(parseDateTimeOrNull_documentation);
+    factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntax>(parseDateTimeInJodaSyntax_documentation);
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>(parseDateTimeInJodaSyntaxOrZero_documentation);
+    factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrNull>(parseDateTimeInJodaSyntaxOrNull_documentation);
+
+    factory.registerFunction<FunctionParseDateTime64InJodaSyntax>(parseDateTime64InJodaSyntax_documentation);
+    factory.registerFunction<FunctionParseDateTime64InJodaSyntaxOrZero>(parseDateTime64InJodaSyntaxOrZero_documentation);
+    factory.registerFunction<FunctionParseDateTime64InJodaSyntaxOrNull>(parseDateTime64InJodaSyntaxOrNull_documentation);
+    factory.registerFunction<FunctionParseDateTime64>(parseDateTime64_documentation);
+    factory.registerFunction<FunctionParseDateTime64OrZero>(parseDateTime64OrZero_documentation);
+    factory.registerFunction<FunctionParseDateTime64OrNull>(parseDateTime64OrNull_documentation);
 }
 
 

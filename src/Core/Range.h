@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Core/Field.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Core/Field.h>
 
 /** Range between fields, used for index analysis
   * (various arithmetic on intervals of various forms).
@@ -27,9 +26,7 @@ struct FieldRef : public Field
     FieldRef(T && value) : Field(std::forward<T>(value)) {} /// NOLINT
 
     /// Create as reference to field in block.
-    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
-        : Field((*(*columns_)[column_idx_].column)[row_idx_]),
-          columns(columns_), row_idx(row_idx_), column_idx(column_idx_) {}
+    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_);
 
     bool isExplicit() const { return columns == nullptr; }
 
@@ -38,11 +35,10 @@ struct FieldRef : public Field
     size_t column_idx = 0;
 };
 
-/** Range with open or closed ends; possibly unbounded.
- */
+/// Range with open or closed ends; possibly unbounded.
 struct Range;
-/** A serious of range who can overlap or non-overlap.
- */
+
+/// A series of ranges which may overlap.
 using Ranges = std::vector<Range>;
 
 /** Range with open or closed ends; possibly unbounded.

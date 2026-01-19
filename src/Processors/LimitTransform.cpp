@@ -1,5 +1,9 @@
 #include <Processors/LimitTransform.h>
 
+#include <Columns/IColumn.h>
+#include <Processors/Port.h>
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace DB
 {
@@ -10,13 +14,21 @@ namespace ErrorCodes
 }
 
 LimitTransform::LimitTransform(
-    const Block & header_, UInt64 limit_, UInt64 offset_, size_t num_streams,
-    bool always_read_till_end_, bool with_ties_,
-    SortDescription description_)
+    SharedHeader header_,
+    UInt64 limit_,
+    UInt64 offset_,
+    size_t num_streams,
+    bool always_read_till_end_,
+    bool with_ties_,
+    SortDescription description_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
-    , limit(limit_), offset(offset_)
+    , limit(limit_)
+    , offset(offset_)
     , always_read_till_end(always_read_till_end_)
-    , with_ties(with_ties_), description(std::move(description_))
+    , with_ties(with_ties_)
+    , description(std::move(description_))
+    , updater(std::move(updater_))
 {
     if (num_streams != 1 && with_ties)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use LimitTransform with multiple ports and ties");
@@ -38,7 +50,7 @@ LimitTransform::LimitTransform(
     }
 
     for (const auto & desc : description)
-        sort_column_positions.push_back(header_.getPositionByName(desc.column_name));
+        sort_column_positions.push_back(header_->getPositionByName(desc.column_name));
 }
 
 Chunk LimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) const
@@ -238,6 +250,8 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     if (!always_read_till_end && !limit_is_unreachable && rows_read >= offset + limit && !may_need_more_data_for_ties)
         input.close();
 
+    if (updater)
+        updater->recordOutputChunk(data.current_chunk, output.getHeader());
     output.push(std::move(data.current_chunk));
 
     return Status::PortFull;
@@ -317,8 +331,9 @@ void LimitTransform::splitChunk(PortsData & data)
             length = offset + limit - (rows_read - num_rows) - start;
     }
 
-    /// check if other rows in current block equals to last one in limit
-    if (with_ties && length)
+    /// Check if other rows in current block equals to last one in limit
+    /// when rows read >= offset + limit.
+    if (with_ties && offset + limit <= rows_read && length)
     {
         UInt64 current_row_num = start + length;
         previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, current_row_num - 1);

@@ -1,5 +1,6 @@
-#include "StorageSystemBuildOptions.h"
+#include <Storages/System/StorageSystemBuildOptions.h>
 
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
@@ -32,23 +32,6 @@ class MergeTreeData;
 
 class BackgroundJobsAssignee : public WithContext
 {
-private:
-    MergeTreeData & data;
-
-    /// Settings for execution control of background scheduling task
-    BackgroundTaskSchedulingSettings sleep_settings;
-    /// Useful for random backoff timeouts generation
-    pcg64 rng;
-
-    /// How many times execution of background job failed or we have
-    /// no new jobs.
-    size_t no_work_done_count = 0;
-
-    /// Scheduling task which assign jobs in background pool
-    BackgroundSchedulePool::TaskHolder holder;
-    /// Mutex for thread safety
-    std::mutex holder_mutex;
-
 public:
     /// In case of ReplicatedMergeTree the first assignee will be responsible for
     /// polling the replication queue and schedule operations according to the LogEntry type
@@ -81,11 +64,28 @@ public:
         ContextPtr global_context_);
 
 private:
+    MergeTreeData & data;
+
+    /// Useful for random backoff timeouts generation
+    pcg64 rng;
+
+    /// How many times execution of background job failed or we have
+    /// no new jobs.
+    size_t no_work_done_count = 0;
+
+    /// Scheduling task which assign jobs in background pool
+    BackgroundSchedulePoolTaskHolder holder;
+    /// Mutex for thread safety
+    std::mutex holder_mutex;
+
+    /// Settings for execution control of background scheduling task
+    BackgroundTaskSchedulingSettings sleep_settings;
+
     static String toString(Type type);
 
     /// Function that executes in background scheduling pool
     void threadFunc();
+
+    BackgroundTaskSchedulingSettings getSettings() const;
 };
-
-
 }

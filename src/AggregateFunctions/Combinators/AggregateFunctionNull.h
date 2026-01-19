@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
@@ -9,6 +8,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+#include <absl/container/inlined_vector.h>
+
+#include <array>
 
 #include "config.h"
 
@@ -201,7 +204,7 @@ public:
                     nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
                 else
                     nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(0);
+                to_concrete.getNullMapData().push_back(false);
             }
             else
             {
@@ -358,6 +361,18 @@ public:
     {
     }
 
+    using IAggregateFunction::argument_types;
+    using IAggregateFunction::parameters;
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    {
+        auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
+        /// Create new aggregate function for merging final states if the nested function has a different implementation
+        if (nested_function_for_merging_final.get() != this->nested_function.get())
+            return std::make_shared<AggregateFunctionNullUnary<result_is_nullable, serialize_flag>>(
+                nested_function_for_merging_final, argument_types, parameters);
+        return IAggregateFunction::getAggregateFunctionForMergingFinal();
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
@@ -387,6 +402,66 @@ public:
         if constexpr (result_is_nullable)
             if (!memoryIsByte(null_map, row_begin, row_end, 1))
                 this->setFlag(place);
+    }
+
+    void addManyDefaults(
+        AggregateDataPtr __restrict /*place*/,
+        const IColumn ** /*columns*/,
+        size_t /*length*/,
+        Arena * /*arena*/) const override
+    {
+    }
+
+    void addBatchSparseSinglePlace(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto & offsets = column_sparse.getOffsetsData();
+        const auto & values = column_sparse.getValuesColumn();
+        const auto * nested_column = &assert_cast<const ColumnNullable &>(values).getNestedColumn();
+
+        auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
+        auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
+
+        if (from >= to)
+            return;
+
+        this->setFlag(place);
+        this->nested_function->addBatchSinglePlace(from, to, this->nestedPlace(place), &nested_column, arena, -1);
+    }
+
+    void addBatchSparse(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const override
+    {
+        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
+        const auto & offsets = column_sparse.getOffsetsData();
+        const auto & values = column_sparse.getValuesColumn();
+        const auto * nested_column = &assert_cast<const ColumnNullable &>(values).getNestedColumn();
+
+        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
+        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
+
+        for (size_t i = from; i < to; ++i)
+        {
+            size_t offset = offsets[i];
+            if (places[offset])
+            {
+                this->nested_function->add(
+                    this->nestedPlace(places[offset] + place_offset),
+                    &nested_column, i + 1, arena);
+
+                this->setFlag(places[offset] + place_offset);
+            }
+        }
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -453,10 +528,22 @@ public:
             is_nullable[i] = arguments[i]->isNullable();
     }
 
+    using IAggregateFunction::argument_types;
+    using IAggregateFunction::parameters;
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    {
+        auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
+        /// Create new aggregate function for merging final states if the nested function has a different implementation
+        if (nested_function_for_merging_final.get() != this->nested_function.get())
+            return std::make_shared<AggregateFunctionNullVariadic<result_is_nullable, serialize_flag>>(
+                nested_function_for_merging_final, argument_types, parameters);
+        return IAggregateFunction::getAggregateFunctionForMergingFinal();
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         /// This container stores the columns we really pass to the nested function.
-        const IColumn * nested_columns[number_of_arguments];
+        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
 
         for (size_t i = 0; i < number_of_arguments; ++i)
         {
@@ -476,7 +563,7 @@ public:
         }
 
         this->setFlag(place);
-        this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
+        this->nested_function->add(this->nestedPlace(place), nested_columns.data(), row_num, arena);
     }
 
     void addBatchSinglePlace(
@@ -489,7 +576,7 @@ public:
     {
         /// We are going to merge all the flags into a single one to be able to call the nested batching functions
         std::vector<const UInt8 *> nullable_filters;
-        const IColumn * nested_columns[number_of_arguments];
+        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
 
         std::unique_ptr<UInt8[]> final_flags;
         const UInt8 * final_flags_ptr = nullptr;
@@ -575,7 +662,7 @@ public:
 
         this->setFlag(place);
         this->nested_function->addBatchSinglePlaceNotNull(
-            row_begin, row_end, this->nestedPlace(place), nested_columns, final_flags_ptr, arena, -1);
+            row_begin, row_end, this->nestedPlace(place), nested_columns.data(), final_flags_ptr, arena, -1);
     }
 
 

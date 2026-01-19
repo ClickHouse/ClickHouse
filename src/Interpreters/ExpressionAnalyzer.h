@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
-#include <Interpreters/ActionsVisitor.h>
+#include <Core/ColumnNumbers.h>
+#include <Interpreters/ActionsMatcher.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ArrayJoin.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
-#include <Interpreters/JoinUtils.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -38,12 +38,27 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
+class Set;
+using SetPtr = std::shared_ptr<Set>;
+
+class QueryPlan;
+
+struct TemporaryTableHolder;
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
+
+namespace ExpressionActionsChainSteps
+{
+struct Step;
+}
+
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
+    ExpressionAnalyzerData();
     ~ExpressionAnalyzerData();
 
     PreparedSetsPtr prepared_sets;
@@ -126,7 +141,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    PreparedSetsPtr getPreparedSets() { return prepared_sets; }
+    PreparedSetsPtr & getPreparedSets() { return prepared_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
@@ -258,7 +273,7 @@ struct ExpressionAnalysisResult
     NameSet columns_to_remove_after_prewhere;
 
     PrewhereInfoPtr prewhere_info;
-    FilterDAGInfoPtr filter_info;
+    FilterDAGInfoPtr row_policy_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
     /// Actions by every element of ORDER BY
@@ -273,12 +288,12 @@ struct ExpressionAnalysisResult
         bool first_stage,
         bool second_stage,
         bool only_types,
-        const FilterDAGInfoPtr & filter_info,
+        const FilterDAGInfoPtr & row_policy_info,
         const FilterDAGInfoPtr & additional_filter, /// for setting additional_filters
         const Block & source_header);
 
     /// Filter for row-level security.
-    bool hasFilter() const { return filter_info.get(); }
+    bool hasRowPolicyFilter() const { return row_policy_info.get(); }
 
     bool hasJoin() const { return join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }
@@ -396,11 +411,12 @@ private:
     ActionsAndProjectInputsFlagPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
+    void validateGroupByKeyType(const DataTypePtr & key_type) const;
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
-    void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
+    void appendSelectSkipWindowExpressions(ExpressionActionsChainSteps::Step & step, ASTPtr const & node);
 
     void appendGroupByModifiers(ActionsDAG & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 
@@ -408,6 +424,7 @@ private:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     ///  appendSelect
     ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
+    void validateOrderByKeyType(const DataTypePtr & key_type) const;
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };

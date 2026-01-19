@@ -1,4 +1,4 @@
-#include "AvroRowOutputFormat.h"
+#include <Processors/Formats/Impl/AvroRowOutputFormat.h>
 #if USE_AVRO
 
 #include <Core/Field.h>
@@ -29,6 +29,8 @@
 #include <Columns/ColumnMap.h>
 
 #include <Common/re2.h>
+
+#include <Processors/Port.h>
 
 #include <DataFile.hh>
 #include <Encoder.hh>
@@ -67,30 +69,15 @@ private:
     const RE2 string_to_string_regexp;
 };
 
-
-class OutputStreamWriteBufferAdapter : public avro::OutputStream
+bool OutputStreamWriteBufferAdapter::next(uint8_t ** data, size_t * len)
 {
-public:
-    explicit OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
+    out.nextIfAtEnd();
+    *data = reinterpret_cast<uint8_t *>(out.position());
+    *len = out.available();
+    out.position() += out.available();
 
-    bool next(uint8_t ** data, size_t * len) override
-    {
-        out.nextIfAtEnd();
-        *data = reinterpret_cast<uint8_t *>(out.position());
-        *len = out.available();
-        out.position() += out.available();
-
-        return true;
-    }
-
-    void backup(size_t len) override { out.position() -= len; }
-
-    uint64_t byteCount() const override { return out.count(); }
-    void flush() override { }
-
-private:
-    WriteBuffer & out;
-};
+    return true;
+}
 
 namespace
 {
@@ -263,13 +250,13 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
                     avro::StringSchema(),
                     [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
-                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
+                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
                         encoder.encodeString(std::string(s));
                     }};
             else
                 return {avro::BytesSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
                     {
-                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num).toView();
+                        const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
                         encoder.encodeBytes(reinterpret_cast<const uint8_t *>(s.data()), s.size());
                     }
                 };
@@ -279,7 +266,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             auto schema = avro::FixedSchema(static_cast<int>(size), "fixed_" + toString(type_name_increment));
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                const std::string_view & s = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num).toView();
+                const std::string_view & s = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num);
                 encoder.encodeFixed(reinterpret_cast<const uint8_t *>(s.data()), s.size());
             }};
         }
@@ -288,7 +275,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             auto schema = avro::FixedSchema(sizeof(IPv6), "ipv6_" + toString(type_name_increment));
             return {schema, [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {
-                const std::string_view & s = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num).toView();
+                const std::string_view & s = assert_cast<const ColumnIPv6 &>(column).getDataAt(row_num);
                 encoder.encodeFixed(reinterpret_cast<const uint8_t *>(s.data()), s.size());
             }};
         }
@@ -574,10 +561,10 @@ static avro::Codec getCodec(const std::string & codec_name)
 }
 
 AvroRowOutputFormat::AvroRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : IRowOutputFormat(header_, out_)
     , settings(settings_)
-    , serializer(header_.getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings), settings)
+    , serializer(header_->getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings), settings)
 {
 }
 
@@ -629,11 +616,14 @@ void registerOutputFormatAvro(FormatFactory & factory)
     factory.registerOutputFormat("Avro", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<AvroRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<AvroRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
     factory.markFormatHasNoAppendSupport("Avro");
+    factory.markOutputFormatNotTTYFriendly("Avro");
+    factory.setContentType("Avro", "application/octet-stream");
 }
 
 }

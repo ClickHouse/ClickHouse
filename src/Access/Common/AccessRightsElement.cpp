@@ -1,14 +1,23 @@
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/Common/AccessType.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
-
-#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INVALID_GRANT;
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
     void formatOptions(bool grant_option, bool is_partial_revoke, String & result)
@@ -133,18 +142,54 @@ void AccessRightsElement::formatColumnNames(WriteBuffer & buffer) const
     buffer << ")";
 }
 
-void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) const
+void AccessRightsElement::formatFilter(WriteBuffer & buffer) const
 {
-    buffer << (hilite ? IAST::hilite_keyword : "") << "ON " << (hilite ? IAST::hilite_none : "");
+    buffer << "(" << backQuoteIfNeed(filter) << ")";
+}
+
+void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
+{
+    auto is_enabled_user_name_access_type = true;
+    auto is_enabled_read_write_grants = true;
+    if (const auto context = Context::getGlobalContextInstance())
+    {
+        const auto & access_control = context->getAccessControl();
+        is_enabled_user_name_access_type = access_control.isEnabledUserNameAccessType();
+        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
+    }
+
+    buffer << "ON ";
     if (isGlobalWithParameter())
     {
-        if (anyParameter())
-            buffer << "*";
+        /// Special check for backward compatibility.
+        /// If `enable_user_name_access_type` is set to false, we will dump `GRANT CREATE USER ON *` as `GRANT CREATE USER ON *.*`.
+        /// This will allow us to run old replicas in the same cluster.
+        if (access_flags.getParameterType() == AccessFlags::USER_NAME
+            && !is_enabled_user_name_access_type)
+        {
+            if (!anyParameter())
+                LOG_WARNING(getLogger("AccessRightsElement"),
+                    "Converting {} to *.* because the setting `enable_user_name_access_type` is `false`. "
+                    "Consider turning this setting on, if your cluster contains no replicas older than 25.1",
+                    parameter);
+
+            buffer << "*.*";
+        }
         else
         {
-            buffer << backQuoteIfNeed(parameter);
-            if (wildcard)
+            if (anyParameter())
                 buffer << "*";
+            else
+            {
+                buffer << backQuoteIfNeed(parameter);
+                if (wildcard)
+                    buffer << "*";
+                else
+                {
+                    if (hasFilter() && is_enabled_read_write_grants)
+                        formatFilter(buffer);
+                }
+            }
         }
     }
     else if (anyDatabase())
@@ -159,7 +204,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
         if (columns.empty() && wildcard)
             buffer << "*";
     }
-    else
+    else if (!database.empty())
     {
         buffer << backQuoteIfNeed(database);
 
@@ -167,6 +212,10 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer, bool hilite) cons
             buffer << "*";
 
         buffer << ".*";
+    }
+    else
+    {
+        buffer << "*";
     }
 }
 
@@ -211,24 +260,148 @@ AccessRightsElement::AccessRightsElement(
 {
 }
 
-void AccessRightsElement::eraseNonGrantable()
+AccessFlags AccessRightsElement::getGrantableFlags() const
 {
     if (isGlobalWithParameter() && !anyParameter())
-        access_flags &= AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnGlobalWithParameterLevel();
     else if (!anyColumn())
-        access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnColumnLevel();
     else if (!anyTable())
-        access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnTableLevel();
     else if (!anyDatabase())
-        access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnDatabaseLevel();
     else
-        access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
+        return access_flags & AccessFlags::allFlagsGrantableOnGlobalLevel();
+}
+
+void AccessRightsElement::throwIfNotGrantable() const
+{
+    if (empty())
+        return;
+    auto grantable_flags = getGrantableFlags();
+    if (grantable_flags)
+    {
+        if (!anyColumn() && (anyTable() || anyDatabase()))
+        {
+            // Specifying specific columns with a wildcard for a database/table is grammatically valid, but not logically valid
+            throw Exception(ErrorCodes::INVALID_GRANT, "{} on wildcards cannot be granted on the column level", access_flags.toString());
+        }
+        return;
+    }
+
+    if (!anyColumn())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the column level", access_flags.toString());
+    if (!anyTable())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the table level", access_flags.toString());
+    if (!anyDatabase())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the database level", access_flags.toString());
+    if (!anyParameter())
+        throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted on the global with parameter level", access_flags.toString());
+
+    throw Exception(ErrorCodes::INVALID_GRANT, "{} cannot be granted", access_flags.toString());
+}
+
+void AccessRightsElement::eraseNotGrantable()
+{
+    access_flags = getGrantableFlags();
 }
 
 void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
 {
     if (isEmptyDatabase())
         database = current_database;
+}
+
+void AccessRightsElement::replaceDeprecated()
+{
+    if (!access_flags)
+        return;
+
+    if (access_flags.toAccessTypes().size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceDeprecated() was called on an access element with multiple access flags: {}", access_flags.toString());
+
+    switch (const auto current_access_type = access_flags.toAccessTypes()[0])
+    {
+        case AccessType::FILE:
+        case AccessType::URL:
+        case AccessType::REMOTE:
+        case AccessType::MONGO:
+        case AccessType::REDIS:
+        case AccessType::MYSQL:
+        case AccessType::POSTGRES:
+        case AccessType::SQLITE:
+        case AccessType::ODBC:
+        case AccessType::JDBC:
+        case AccessType::HDFS:
+        case AccessType::S3:
+        case AccessType::HIVE:
+        case AccessType::AZURE:
+        case AccessType::KAFKA:
+        case AccessType::NATS:
+        case AccessType::RABBITMQ:
+            if (!anyDatabase())
+                /// This will leave statements like `REVOKE S3 ON system.*` untouched
+                /// These statements will be deleted afterwards with `eraseNotGrantable()`
+                break;
+            access_flags = AccessType::READ | AccessType::WRITE;
+            parameter = DB::toString(current_access_type);
+            break;
+        case AccessType::SOURCES:
+            access_flags = AccessType::READ | AccessType::WRITE;
+            break;
+        default:
+            break;
+    }
+}
+
+void AccessRightsElement::makeBackwardCompatible()
+{
+    static const std::unordered_map<std::string, AccessType> string_to_accessType = {
+        {"FILE", AccessType::FILE},
+        {"URL", AccessType::URL},
+        {"REMOTE", AccessType::REMOTE},
+        {"MONGO", AccessType::MONGO},
+        {"REDIS", AccessType::REDIS},
+        {"MYSQL", AccessType::MYSQL},
+        {"POSTGRES", AccessType::POSTGRES},
+        {"SQLITE", AccessType::SQLITE},
+        {"ODBC", AccessType::ODBC},
+        {"JDBC", AccessType::JDBC},
+        {"HDFS", AccessType::HDFS},
+        {"S3", AccessType::S3},
+        {"HIVE", AccessType::HIVE},
+        {"AZURE", AccessType::AZURE},
+        {"KAFKA", AccessType::KAFKA},
+        {"NATS", AccessType::NATS},
+        {"RABBITMQ", AccessType::RABBITMQ},
+    };
+
+    auto is_enabled_read_write_grants = false;
+    if (const auto context = Context::getGlobalContextInstance())
+    {
+        const auto & access_control = context->getAccessControl();
+        is_enabled_read_write_grants = access_control.isEnabledReadWriteGrants();
+    }
+
+    if (!is_enabled_read_write_grants)
+    {
+        if (access_flags == AccessType::READ || access_flags == AccessType::WRITE || access_flags == (AccessType::READ | AccessType::WRITE))
+        {
+            if (anyParameter())
+            {
+                access_flags = AccessType::SOURCES;
+            }
+            else
+            {
+                auto it = string_to_accessType.find(parameter);
+                if (it != string_to_accessType.end())
+                {
+                    access_flags = it->second;
+                    parameter.clear();
+                }
+            }
+        }
+    }
 }
 
 String AccessRightsElement::toString() const { return toStringImpl(*this, true); }
@@ -251,13 +424,25 @@ bool AccessRightsElements::sameOptions() const
     return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameOptions(front()); });
 }
 
-void AccessRightsElements::eraseNonGrantable()
+void AccessRightsElements::throwIfNotGrantable() const
+{
+    for (const auto & element : *this)
+        element.throwIfNotGrantable();
+}
+
+void AccessRightsElements::eraseNotGrantable()
 {
     std::erase_if(*this, [](AccessRightsElement & element)
     {
-        element.eraseNonGrantable();
+        element.eraseNotGrantable();
         return element.empty();
     });
+}
+
+void AccessRightsElements::replaceDeprecated()
+{
+    for (auto & element : *this)
+        element.replaceDeprecated();
 }
 
 void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
@@ -268,5 +453,48 @@ void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 
 String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
+
+void AccessRightsElements::formatElementsWithoutOptions(WriteBuffer & buffer) const
+{
+    bool no_output = true;
+    for (size_t i = 0; i != size(); ++i)
+    {
+        auto element = (*this)[i];
+        element.makeBackwardCompatible();
+
+        auto keywords = element.access_flags.toKeywords();
+        if (keywords.empty() || (!element.anyColumn() && element.columns.empty()))
+            continue;
+
+        for (const auto & keyword : keywords)
+        {
+            if (!std::exchange(no_output, false))
+                buffer << ", ";
+
+            buffer << keyword;
+            if (!element.anyColumn())
+                element.formatColumnNames(buffer);
+        }
+
+        bool next_element_on_same_db_and_table = false;
+        if (i != size() - 1)
+        {
+            const auto & next_element = (*this)[i + 1];
+            if (element.sameDatabaseAndTableAndParameter(next_element))
+            {
+                next_element_on_same_db_and_table = true;
+            }
+        }
+
+        if (!next_element_on_same_db_and_table)
+        {
+            buffer << " ";
+            element.formatONClause(buffer);
+        }
+    }
+
+    if (no_output)
+        buffer << "USAGE ON " << "*.*";
+}
 
 }

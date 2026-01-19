@@ -4,13 +4,15 @@
 #include <Coordination/Defines.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/isLocalAddress.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Disks/DiskLocal.h>
 #include <Common/logger_useful.h>
-#include "Coordination/CoordinationSettings.h"
+#include <Coordination/CoordinationSettings.h>
 
 namespace DB
 {
@@ -19,19 +21,22 @@ namespace CoordinationSetting
 {
     extern const CoordinationSettingsBool async_replication;
     extern const CoordinationSettingsUInt64 commit_logs_cache_size_threshold;
+    extern const CoordinationSettingsUInt64 commit_logs_cache_entry_count_threshold;
     extern const CoordinationSettingsBool compress_logs;
     extern const CoordinationSettingsBool force_sync;
     extern const CoordinationSettingsUInt64 latest_logs_cache_size_threshold;
+    extern const CoordinationSettingsUInt64 latest_logs_cache_entry_count_threshold;
     extern const CoordinationSettingsUInt64 log_file_overallocate_size;
     extern const CoordinationSettingsUInt64 max_flush_batch_size;
     extern const CoordinationSettingsUInt64 max_log_file_size;
-    extern const CoordinationSettingsUInt64 rotate_log_storage_interval;
+    extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
 }
 
 namespace ErrorCodes
 {
     extern const int RAFT_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -79,9 +84,47 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
     return ports;
 }
 
+
+std::optional<AuthenticationData> getClientPasswordAuthentication(const Poco::Util::AbstractConfiguration & config)
+{
+    static const std::unordered_map<std::string, AuthenticationType> AUTH_TYPE_MAP
+    {
+        {"client_password", AuthenticationType::PLAINTEXT_PASSWORD},
+        {"keeper_server.client_password", AuthenticationType::PLAINTEXT_PASSWORD},
+        {"client_password_sha256_hex", AuthenticationType::SHA256_PASSWORD},
+        {"keeper_server.client_password_sha256_hex", AuthenticationType::SHA256_PASSWORD},
+        {"client_password_double_sha1_hex", AuthenticationType::DOUBLE_SHA1_PASSWORD},
+        {"keeper_server.client_password_double_sha1_hex", AuthenticationType::DOUBLE_SHA1_PASSWORD},
+    };
+
+    std::optional<AuthenticationData> data;
+    for (const auto & [config_password_name, auth_type] : AUTH_TYPE_MAP)
+    {
+        if (config.has(config_password_name))
+        {
+            if (data.has_value())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one authentication type is allowed in config");
+
+            data.emplace(AuthenticationData(auth_type));
+            if (config_password_name.ends_with("client_password"))
+            {
+                auto password = config.getString(config_password_name);
+                if (password.length() > Coordination::PASSWORD_LENGTH)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Password cannot be longer than {} characters, specified {}", Coordination::PASSWORD_LENGTH, password.size());
+
+                data->setPassword(password, true);
+            }
+            else
+                data->setPasswordHashHex(config.getString(config_password_name), true);
+        }
+    }
+
+    return data;
 }
 
-/// this function quite long because contains a lot of sanity checks in config:
+}
+
+/// this function is quite long because it contains a lot of sanity checks in config:
 /// 1. No duplicate endpoints
 /// 2. No "localhost" or "127.0.0.1" or another local addresses mixed with normal addresses
 /// 3. Raft internal port is not equal to any other port for client
@@ -227,9 +270,12 @@ KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfigur
         }
     }
 
+    result.auth_data = getClientPasswordAuthentication(config);
+
     return result;
 }
 
+/// Constructor for tests
 KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, KeeperContextPtr keeper_context_)
     : my_server_id(server_id_)
     , secure(false)
@@ -267,7 +313,9 @@ KeeperStateManager::KeeperStateManager(
               .max_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_log_file_size],
               .overallocate_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::log_file_overallocate_size],
               .latest_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::latest_logs_cache_size_threshold],
-              .commit_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::commit_logs_cache_size_threshold]
+              .latest_logs_cache_entry_count_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::latest_logs_cache_entry_count_threshold],
+              .commit_logs_cache_size_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::commit_logs_cache_size_threshold],
+              .commit_logs_cache_entry_count_threshold = keeper_context_->getCoordinationSettings()[CoordinationSetting::commit_logs_cache_entry_count_threshold],
           },
           FlushSettings
           {
@@ -301,6 +349,12 @@ ClusterConfigPtr KeeperStateManager::getLatestConfigFromLogStore() const
     if (entry_with_change)
         return ClusterConfig::deserialize(entry_with_change->get_buf());
     return nullptr;
+}
+
+std::optional<AuthenticationData> KeeperStateManager::getAuthenticationData() const
+{
+    std::lock_guard lock(configuration_wrapper_mutex);
+    return configuration_wrapper.auth_data;
 }
 
 void KeeperStateManager::flushAndShutDownLogStore()
@@ -485,7 +539,8 @@ ClusterUpdateActions KeeperStateManager::getRaftConfigurationDiff(
 {
     auto new_configuration_wrapper = parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]);
 
-    std::unordered_map<int, KeeperServerConfigPtr> new_ids, old_ids;
+    std::unordered_map<int, KeeperServerConfigPtr> new_ids;
+    std::unordered_map<int, KeeperServerConfigPtr> old_ids;
     for (const auto & new_server : new_configuration_wrapper.cluster_config->get_servers())
         new_ids[new_server->get_id()] = new_server;
 

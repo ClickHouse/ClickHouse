@@ -1,7 +1,14 @@
 ---
-slug: /en/operations/system-tables/replication_queue
+description: 'System table containing information about tasks from replication queues
+  stored in ClickHouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree`
+  family.'
+keywords: ['system table', 'replication_queue']
+slug: /operations/system-tables/replication_queue
+title: 'system.replication_queue'
+doc_type: 'reference'
 ---
-# replication_queue
+
+# system.replication_queue
 
 Contains information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree` family.
 
@@ -19,15 +26,15 @@ Columns:
 
 - `type` ([String](../../sql-reference/data-types/string.md)) — Type of the task in the queue, one of:
 
-    - `GET_PART` — Get the part from another replica.
-    - `ATTACH_PART` — Attach the part, possibly from our own replica (if found in the `detached` folder). You may think of it as a `GET_PART` with some optimizations as they're nearly identical.
-    - `MERGE_PARTS` — Merge the parts.
-    - `DROP_RANGE` — Delete the parts in the specified partition in the specified number range.
-    - `CLEAR_COLUMN` — NOTE: Deprecated. Drop specific column from specified partition.
-    - `CLEAR_INDEX` — NOTE: Deprecated. Drop specific index from specified partition.
-    - `REPLACE_RANGE` — Drop a certain range of parts and replace them with new ones.
-    - `MUTATE_PART` — Apply one or several mutations to the part.
-    - `ALTER_METADATA` — Apply alter modification according to global /metadata and /columns paths.
+  - `GET_PART` — Get the part from another replica.
+  - `ATTACH_PART` — Attach the part, possibly from our own replica (if found in the `detached` folder). You may think of it as a `GET_PART` with some optimizations as they're nearly identical.
+  - `MERGE_PARTS` — Merge the parts.
+  - `DROP_RANGE` — Delete the parts in the specified partition in the specified number range.
+  - `CLEAR_COLUMN` — NOTE: Deprecated. Drop specific column from specified partition.
+  - `CLEAR_INDEX` — NOTE: Deprecated. Drop specific index from specified partition.
+  - `REPLACE_RANGE` — Drop a certain range of parts and replace them with new ones.
+  - `MUTATE_PART` — Apply one or several mutations to the part.
+  - `ALTER_METADATA` — Apply alter modification according to global /metadata and /columns paths.
 
 - `create_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Date and time when the task was submitted for execution.
 
@@ -59,11 +66,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.replication_queue LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 database:               merge
@@ -89,4 +96,4 @@ last_postpone_time:     1970-01-01 03:00:00
 
 **See Also**
 
-- [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system.md#query-language-system-replicated)
+- [Managing ReplicatedMergeTree Tables](/sql-reference/statements/system#managing-replicatedmergetree-tables)

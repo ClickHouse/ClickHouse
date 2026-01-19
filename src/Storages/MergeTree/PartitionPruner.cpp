@@ -4,9 +4,9 @@
 namespace DB
 {
 
-PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, const ActionsDAG * filter_actions_dag, ContextPtr context, bool strict)
+PartitionPruner::PartitionPruner(const StorageMetadataPtr & metadata, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context, bool strict)
     : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
-    , partition_condition(filter_actions_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */)
+    , partition_condition(filter_dag, context, partition_key.column_names, partition_key.expression, true /* single_point */)
     , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
 {
 }
@@ -16,7 +16,7 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
     if (part.isEmpty())
         return true;
 
-    const auto & partition_id = part.info.partition_id;
+    const auto & partition_id = part.info.getPartitionId();
     bool is_valid = false;
 
     if (auto it = partition_filter_map.find(partition_id); it != partition_filter_map.end())
@@ -40,9 +40,8 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
 
         if (!is_valid)
         {
-            WriteBufferFromOwnString buf;
-            part.partition.serializeText(part.storage, buf, FormatSettings{});
-            LOG_TRACE(getLogger("PartitionPruner"), "Partition {} gets pruned", buf.str());
+            auto partition_str = part.partition.serializeToString(part.getMetadataSnapshot());
+            LOG_TRACE(getLogger("PartitionPruner"), "Partition {} gets pruned", partition_str);
         }
     }
 

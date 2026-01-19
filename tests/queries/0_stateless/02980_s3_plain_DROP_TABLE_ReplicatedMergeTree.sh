@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings
+# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-shared-merge-tree, no-encrypted-storage
 # Tag no-fasttest: requires S3
 # Tag no-random-settings, no-random-merge-tree-settings: to avoid creating extra files like serialization.json, this test too exocit anyway
+# Tag no-shared-merge-tree: use database ordinary
+
+# Creation of a database with Ordinary engine emits a warning.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 
 # Creation of a database with Ordinary engine emits a warning.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
@@ -10,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-config="${BASH_SOURCE[0]/.sh/.yml}"
+config="$CUR_DIR/02980_s3_plain_DROP_TABLE_ReplicatedMergeTree.yml"
 
 # only in Atomic ATTACH from s3_plain works
 new_database="ordinary_$CLICKHOUSE_DATABASE"
@@ -22,8 +26,8 @@ $CLICKHOUSE_CLIENT -m -q "
     drop table if exists data_read;
     drop table if exists data_write;
 
-    create table data_write (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'write') order by key;
-    create table data_read (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'read') order by key;
+    create table data_write (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'write') order by key settings write_marks_for_substreams_in_compact_parts=1, auto_statistics_types = '';
+    create table data_read (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'read') order by key settings write_marks_for_substreams_in_compact_parts=1, auto_statistics_types = '';
 
     insert into data_write values (1);
     system sync replica data_read;
@@ -38,6 +42,7 @@ $CLICKHOUSE_CLIENT -m -q "
     attach table data_read (key Int) engine=ReplicatedMergeTree('/tables/{database}/data', 'read') order by key
     settings
         max_suspicious_broken_parts=0,
+        write_marks_for_substreams_in_compact_parts=1,
         disk=disk(type=s3_plain,
             endpoint='http://localhost:11111/test/s3_plain/backups/$CLICKHOUSE_DATABASE',
             access_key_id='test',

@@ -1,0 +1,13 @@
+catA	brandX	UTC+1	[1,2]	[1,3]	[('FR','Paris'),('DE','Berlin')]
+catB	brandZ	UTC+9	[5,3]	[4,5]	[('JP','Tokyo')]
+catX	brandX	UTC-6	[]	[1,3]	[('US','Chicago')]
+[1,2]
+Composite value expressions
+[1,2]
+catA	[('FR','Paris'),('DE','Berlin')]
+catB	[('JP','Tokyo')]
+catX	[('US','Chicago')]
+Caching disabled
+catA	brandX	UTC+1	[1,2]	[1,3]	[('FR','Paris'),('DE','Berlin')]
+catB	brandZ	UTC+9	[5,3]	[4,5]	[('JP','Tokyo')]
+catX	brandX	UTC-6	[]	[1,3]	[('US','Chicago')]

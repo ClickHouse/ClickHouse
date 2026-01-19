@@ -1,18 +1,19 @@
-#include "PostgreSQLDictionarySource.h"
+#include <Dictionaries/PostgreSQLDictionarySource.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/QualifiedTableName.h>
 #include <Core/Settings.h>
-#include "DictionarySourceFactory.h"
+#include <Dictionaries/DictionarySourceFactory.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include "registerDictionaries.h"
+#include <Dictionaries/registerDictionaries.h>
 
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Sources/PostgreSQLSource.h>
-#include "readInvalidateQuery.h"
+#include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Common/logger_useful.h>
@@ -37,7 +38,7 @@ namespace ErrorCodes
 }
 
 static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
-    "host", "port", "user", "password", "db", "database", "table", "schema",
+    "host", "port", "user", "password", "db", "database", "table", "schema", "background_reconnect",
     "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority"};
 
 #if USE_LIBPQXX
@@ -63,7 +64,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     postgres::PoolWithFailoverPtr pool_,
-    const Block & sample_block_)
+    SharedHeader sample_block_)
     : dict_struct(dict_struct_)
     , configuration(configuration_)
     , pool(std::move(pool_))
@@ -90,31 +91,39 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadAll()
+BlockIO PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    return loadBase(load_all_query);
+    BlockIO io;
+    io.pipeline = loadBase(load_all_query);
+    return io;
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadUpdatedAll()
+BlockIO PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
-    return loadBase(load_update_query);
+    BlockIO io;
+    io.pipeline = loadBase(load_update_query);
+    return io;
 }
 
-QueryPipeline PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return loadBase(query);
+    BlockIO io;
+    io.pipeline = loadBase(query);
+    return io;
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return loadBase(query);
+    BlockIO io;
+    io.pipeline = loadBase(query);
+    return io;
 }
 
 
@@ -142,7 +151,9 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(QueryPipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, invalidate_sample_block, 1)));
+
+    QueryPipeline pipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, std::make_shared<const Block>(std::move(invalidate_sample_block)), 1));
+    return readInvalidateQuery(pipeline);
 }
 
 
@@ -202,7 +213,8 @@ static void validateConfigKeys(
 
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                 const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -217,6 +229,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
         std::optional<PostgreSQLDictionarySource::Configuration> dictionary_configuration;
         postgres::PoolWithFailover::ReplicasConfigurationByPriority replicas_by_priority;
 
+        bool bg_reconnect = false;
+
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, context) : nullptr;
         if (named_collection)
         {
@@ -224,7 +238,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
             StoragePostgreSQL::Configuration common_configuration;
             common_configuration.host = named_collection->getOrDefault<String>("host", "");
-            common_configuration.port = named_collection->getOrDefault<UInt64>("port", 0);
+            common_configuration.port = static_cast<UInt16>(named_collection->getOrDefault<UInt64>("port", 0));
             common_configuration.username = named_collection->getOrDefault<String>("user", "");
             common_configuration.password = named_collection->getOrDefault<String>("password", "");
             common_configuration.database = named_collection->getAnyOrDefault<String>({"database", "db"}, "");
@@ -242,6 +256,8 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
             });
 
+            bg_reconnect = named_collection->getOrDefault<bool>("background_reconnect", false);
+
             replicas_by_priority[0].emplace_back(common_configuration);
         }
         else
@@ -250,7 +266,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
             StoragePostgreSQL::Configuration common_configuration;
             common_configuration.host = config.getString(settings_config_prefix + ".host", "");
-            common_configuration.port = config.getUInt(settings_config_prefix + ".port", 0);
+            common_configuration.port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", 0));
             common_configuration.username = config.getString(settings_config_prefix + ".user", "");
             common_configuration.password = config.getString(settings_config_prefix + ".password", "");
             common_configuration.database = config.getString(fmt::format("{}.database", settings_config_prefix), config.getString(fmt::format("{}.db", settings_config_prefix), ""));
@@ -269,6 +285,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                 .update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1)
             });
 
+            bg_reconnect = config.getBool(fmt::format("{}.background_reconnect", settings_config_prefix), false);
 
             if (config.has(settings_config_prefix + ".replica"))
             {
@@ -284,7 +301,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
                         size_t priority = config.getInt(replica_name + ".priority", 0);
                         replica_configuration.host = config.getString(replica_name + ".host", common_configuration.host);
-                        replica_configuration.port = config.getUInt(replica_name + ".port", common_configuration.port);
+                        replica_configuration.port = static_cast<UInt16>(config.getUInt(replica_name + ".port", common_configuration.port));
                         replica_configuration.username = config.getString(replica_name + ".user", common_configuration.username);
                         replica_configuration.password = config.getString(replica_name + ".password", common_configuration.password);
 
@@ -319,10 +336,11 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             settings[Setting::postgresql_connection_pool_wait_timeout],
             settings[Setting::postgresql_connection_pool_retries],
             settings[Setting::postgresql_connection_pool_auto_close_connection],
-            settings[Setting::postgresql_connection_attempt_timeout]);
+            settings[Setting::postgresql_connection_attempt_timeout],
+            bg_reconnect);
 
 
-        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration.value(), pool, sample_block);
+        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration.value(), pool, std::make_shared<const Block>(sample_block));
 #else
         (void)dict_struct;
         (void)config;

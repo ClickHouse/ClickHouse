@@ -1,11 +1,14 @@
 #pragma once
 
-#include "ClientInfo.h"
+#include <Core/Types_fwd.h>
+#include <base/types.h>
 
 #include <list>
-#include <map>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
+
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {

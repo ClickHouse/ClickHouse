@@ -5,69 +5,12 @@ if (NOT ENABLE_ROCKSDB OR NO_SSE3_OR_HIGHER) # assumes SSE4.2 and PCLMUL
   return()
 endif()
 
-# ClickHouse cannot be compiled without snappy, lz4, zlib, zstd
-option(WITH_SNAPPY "build with SNAPPY" ON)
-option(WITH_LZ4 "build with lz4" ON)
-option(WITH_ZLIB "build with zlib" ON)
-option(WITH_ZSTD "build with zstd" ON)
-
-if (ENABLE_JEMALLOC AND OS_LINUX) # gives compile errors with jemalloc enabled for rocksdb on non-Linux
-  add_definitions(-DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE)
-  list (APPEND THIRDPARTY_LIBS ch_contrib::jemalloc)
-endif ()
-
-if (ENABLE_LIBURING)
-  add_definitions(-DROCKSDB_IOURING_PRESENT)
-  list (APPEND THIRDPARTY_LIBS ch_contrib::liburing)
-endif ()
-
-if (WITH_SNAPPY)
-  add_definitions(-DSNAPPY)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::snappy)
-endif()
-
-if (WITH_ZLIB)
-  add_definitions(-DZLIB)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::zlib)
-endif()
-
-if (WITH_LZ4)
-  add_definitions(-DLZ4)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::lz4)
-endif()
-
-if (WITH_ZSTD)
-  add_definitions(-DZSTD)
-  list(APPEND THIRDPARTY_LIBS ch_contrib::zstd)
-endif()
-
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|AARCH64")
   set (HAS_ARMV8_CRC 1)
   # the original build descriptions set specific flags for ARM. These flags are already subsumed by ClickHouse's general
   # ARM flags, see cmake/cpu_features.cmake
   # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
   # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+crc+crypto -Wno-unused-function")
-endif()
-
-if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-  add_definitions(-DOS_MACOSX)
-elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
-  add_definitions(-DOS_LINUX)
-elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
-  add_definitions(-DOS_FREEBSD)
-elseif(CMAKE_SYSTEM_NAME MATCHES "Android")
-  add_definitions(-DOS_ANDROID)
-endif()
-
-add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX)
-
-if ((OS_LINUX OR OS_FREEBSD) AND NOT USE_MUSL)
-  add_definitions(-DROCKSDB_PTHREAD_ADAPTIVE_MUTEX)
-endif()
-
-if (OS_LINUX)
-  add_definitions(-DROCKSDB_SCHED_GETCPU_PRESENT)
-  add_definitions(-DROCKSDB_AUXV_GETAUXVAL_PRESENT)
 endif()
 
 set(ROCKSDB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb")
@@ -130,7 +73,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_files.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_follower.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_open.cc
-    ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_debug.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_experimental.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_readonly.cc
     ${ROCKSDB_SOURCE_DIR}/db/db_impl/db_impl_secondary.cc
@@ -139,7 +81,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/db/dbformat.cc
     ${ROCKSDB_SOURCE_DIR}/db/error_handler.cc
     ${ROCKSDB_SOURCE_DIR}/db/event_helpers.cc
-    ${ROCKSDB_SOURCE_DIR}/db/experimental.cc
     ${ROCKSDB_SOURCE_DIR}/db/external_sst_file_ingestion_job.cc
     ${ROCKSDB_SOURCE_DIR}/db/file_indexer.cc
     ${ROCKSDB_SOURCE_DIR}/db/flush_job.cc
@@ -227,7 +168,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_impl.cc
     ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_updater.cc
     ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util.cc
-    ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util_debug.cc
+    ${ROCKSDB_SOURCE_DIR}/monitoring/thread_status_util_debug.cc # Only needed on debug mode
     ${ROCKSDB_SOURCE_DIR}/options/cf_options.cc
     ${ROCKSDB_SOURCE_DIR}/options/configurable.cc
     ${ROCKSDB_SOURCE_DIR}/options/customizable.cc
@@ -249,8 +190,8 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/table/block_based/block_cache.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/block_prefetcher.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/block_prefix_index.cc
-    ${ROCKSDB_SOURCE_DIR}/table/block_based/data_block_hash_index.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/data_block_footer.cc
+    ${ROCKSDB_SOURCE_DIR}/table/block_based/data_block_hash_index.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/filter_block_reader_common.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/filter_policy.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/flush_block_policy.cc
@@ -265,6 +206,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/table/block_based/reader_common.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_based/uncompression_dict_reader.cc
     ${ROCKSDB_SOURCE_DIR}/table/block_fetcher.cc
+    ${ROCKSDB_SOURCE_DIR}/table/compaction_merging_iterator.cc
     ${ROCKSDB_SOURCE_DIR}/table/cuckoo/cuckoo_table_builder.cc
     ${ROCKSDB_SOURCE_DIR}/table/cuckoo/cuckoo_table_factory.cc
     ${ROCKSDB_SOURCE_DIR}/table/cuckoo/cuckoo_table_reader.cc
@@ -272,7 +214,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/table/get_context.cc
     ${ROCKSDB_SOURCE_DIR}/table/iterator.cc
     ${ROCKSDB_SOURCE_DIR}/table/merging_iterator.cc
-    ${ROCKSDB_SOURCE_DIR}/table/compaction_merging_iterator.cc
     ${ROCKSDB_SOURCE_DIR}/table/meta_blocks.cc
     ${ROCKSDB_SOURCE_DIR}/table/persistent_cache_helper.cc
     ${ROCKSDB_SOURCE_DIR}/table/plain/plain_table_bloom.cc
@@ -288,17 +229,9 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/table/table_properties.cc
     ${ROCKSDB_SOURCE_DIR}/table/two_level_iterator.cc
     ${ROCKSDB_SOURCE_DIR}/table/unique_id.cc
-    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point.cc
-    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/test_util/testutil.cc
-    ${ROCKSDB_SOURCE_DIR}/test_util/transaction_test_util.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/block_cache_analyzer/block_cache_trace_analyzer.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/dump/db_dump_tool.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/io_tracer_parser_tool.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/ldb_cmd.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/ldb_tool.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/sst_dump_tool.cc
-    ${ROCKSDB_SOURCE_DIR}/tools/trace_analyzer_tool.cc
+    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point.cc # Only needed on debug mode
+    ${ROCKSDB_SOURCE_DIR}/test_util/sync_point_impl.cc # Only needed on debug mode
+    ${ROCKSDB_SOURCE_DIR}/test_util/transaction_test_util.cc # Only needed on debug mode
     ${ROCKSDB_SOURCE_DIR}/trace_replay/block_cache_tracer.cc
     ${ROCKSDB_SOURCE_DIR}/trace_replay/io_tracer.cc
     ${ROCKSDB_SOURCE_DIR}/trace_replay/trace_record_handler.cc
@@ -333,17 +266,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/util/xxhash.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/agg_merge/agg_merge.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/backup/backup_engine.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_compaction_filter.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_db.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_db_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_db_impl_filesnapshot.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_dump_tool.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/blob_db/blob_file.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/cache_dump_load.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/cache_dump_load_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/cassandra/cassandra_compaction_filter.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/cassandra/format.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/cassandra/merge_operator.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/checkpoint/checkpoint_impl.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/compaction_filters.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/compaction_filters/remove_emptyvalue_compactionfilter.cc
@@ -351,11 +273,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/debug.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/env_mirror.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/env_timed.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/fault_injection_env.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/fault_injection_fs.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/fault_injection_secondary_cache.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/leveldb_options/leveldb_options.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/memory/memory_util.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/bytesxor.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/max.cc
@@ -365,8 +283,6 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/string_append/stringappend2.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/merge_operators/uint64add.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/object_registry.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/option_change_migration/option_change_migration.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/options/options_util.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/block_cache_tier.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/block_cache_tier_file.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/persistent_cache/block_cache_tier_metadata.cc
@@ -378,7 +294,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/table_properties_collectors/compact_on_deletion_collector.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/trace/file_trace_reader_writer.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/trace/replayer_impl.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/lock_manager.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/lock_manager.cc # Unused but dead code elimination is hard for some linkers
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/point/point_lock_tracker.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/point/point_lock_manager.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/range_tree_lock_manager.cc
@@ -398,8 +314,8 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/types_util.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/ttl/db_ttl_impl.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/wal_filter.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index.cc
-    ${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index_internal.cc
+    ${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index.cc # Unused but dead code elimination is hard for some linkers
+    ${ROCKSDB_SOURCE_DIR}/utilities/write_batch_with_index/write_batch_with_index_internal.cc # Unused but dead code elimination is hard for some linkers
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/concurrent_tree.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/keyrange.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/locktree/lock_request.cc
@@ -412,7 +328,7 @@ set(SOURCES
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/standalone_port.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/util/dbt.cc
     ${ROCKSDB_SOURCE_DIR}/utilities/transactions/lock/range/range_tree/lib/util/memarena.cc
-    build_version.cc) # generated by hand
+    build_version.cc) # generated by hand (Mostly from contrib/rocksdb/TARGETS)
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
   list(APPEND SOURCES
@@ -433,11 +349,69 @@ list(APPEND SOURCES
 
 add_library(_rocksdb ${SOURCES})
 add_library(ch_contrib::rocksdb ALIAS _rocksdb)
-target_link_libraries(_rocksdb PRIVATE ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
-
-# Not in the native build system but useful anyways:
-# Make all functions in xxHash.h inline. Beneficial for performance: https://github.com/Cyan4973/xxHash/tree/v0.8.2#build-modifiers
-target_compile_definitions (_rocksdb PRIVATE XXH_INLINE_ALL)
 
 # SYSTEM is required to overcome some issues
 target_include_directories(_rocksdb SYSTEM BEFORE INTERFACE "${ROCKSDB_SOURCE_DIR}/include")
+
+# Not in the native build system but useful anyways:
+# Make all functions in xxHash.h inline. Beneficial for performance: https://github.com/Cyan4973/xxHash/tree/v0.8.2#build-modifiers
+target_compile_definitions(_rocksdb PRIVATE XXH_INLINE_ALL)
+
+# ClickHouse cannot be compiled without snappy, lz4, zlib, zstd
+option(WITH_SNAPPY "build with SNAPPY" ON)
+option(WITH_LZ4 "build with lz4" ON)
+option(WITH_ZLIB "build with zlib" ON)
+option(WITH_ZSTD "build with zstd" ON)
+
+if (ENABLE_JEMALLOC AND OS_LINUX) # gives compile errors with jemalloc enabled for rocksdb on non-Linux
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE)
+  list (APPEND THIRDPARTY_LIBS ch_contrib::jemalloc)
+endif ()
+
+if (ENABLE_LIBURING)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_IOURING_PRESENT)
+  list (APPEND THIRDPARTY_LIBS ch_contrib::liburing)
+endif ()
+
+if (WITH_SNAPPY)
+  target_compile_definitions(_rocksdb PRIVATE -DSNAPPY)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::snappy)
+endif()
+
+if (WITH_ZLIB)
+  target_compile_definitions(_rocksdb PRIVATE -DZLIB)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::zlib)
+endif()
+
+if (WITH_LZ4)
+  target_compile_definitions(_rocksdb PRIVATE -DLZ4)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::lz4)
+endif()
+
+if (WITH_ZSTD)
+  target_compile_definitions(_rocksdb PRIVATE -DZSTD)
+  list(APPEND THIRDPARTY_LIBS ch_contrib::zstd)
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_MACOSX)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Linux")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_LINUX)
+elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_FREEBSD)
+elseif(CMAKE_SYSTEM_NAME MATCHES "Android")
+  target_compile_definitions(_rocksdb PRIVATE -DOS_ANDROID)
+endif()
+
+target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX)
+
+if ((OS_LINUX OR OS_FREEBSD) AND NOT USE_MUSL)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_PTHREAD_ADAPTIVE_MUTEX)
+endif()
+
+if (OS_LINUX)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_SCHED_GETCPU_PRESENT)
+  target_compile_definitions(_rocksdb PRIVATE -DROCKSDB_AUXV_GETAUXVAL_PRESENT)
+endif()
+
+target_link_libraries(_rocksdb PRIVATE ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})

@@ -14,7 +14,7 @@ $CLICKHOUSE_CLIENT --query_id="test_03231_1_$CLICKHOUSE_TEST_UNIQUE_NAME" --quer
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
 "
 
 for _ in {1..5}; do
@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT --query_id="test_03231_2_$CLICKHOUSE_TEST_UNIQUE_NAME" --quer
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
 "
 
 for _ in {1..5}; do
@@ -54,7 +54,7 @@ $CLICKHOUSE_CLIENT --query_id="test_03231_3_$CLICKHOUSE_TEST_UNIQUE_NAME" --quer
 "
 
 $CLICKHOUSE_CLIENT --query "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
 "
 
 for _ in {1..5}; do

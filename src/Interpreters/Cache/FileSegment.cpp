@@ -1,9 +1,11 @@
-#include "FileSegment.h"
+#include <Interpreters/Cache/FileSegment.h>
 
 #include <filesystem>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileCacheUtils.h>
+#include <base/EnumReflection.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
 #include <Common/CurrentThread.h>
@@ -12,8 +14,6 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-
-#include <magic_enum.hpp>
 
 namespace fs = std::filesystem;
 
@@ -28,6 +28,7 @@ namespace ProfileEvents
     extern const Event FileSegmentFailToIncreasePriority;
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
+    extern const Event FilesystemCacheBackgroundDownloadQueuePush;
 }
 
 namespace CurrentMetrics
@@ -84,7 +85,6 @@ FileSegment::FileSegment(
             break;
         }
         /// DOWNLOADED is used either on initial cache metadata load into memory on server startup
-        /// or on shrinkFileSegmentToDownloadedSize() -- when file segment object is updated.
         case (State::DOWNLOADED):
         {
             reserved_size = downloaded_size = size_;
@@ -171,10 +171,11 @@ void FileSegment::setQueueIterator(Priority::IteratorPtr iterator)
     queue_iterator = iterator;
 }
 
-void FileSegment::resetQueueIterator()
+void FileSegment::markDelayedRemovalAndResetQueueIterator()
 {
     auto lk = lock();
-    queue_iterator.reset();
+    on_delayed_removal = true;
+    queue_iterator = {};
 }
 
 size_t FileSegment::getCurrentWriteOffset() const
@@ -191,6 +192,12 @@ bool FileSegment::isDownloaded() const
 {
     auto lk = lock();
     return download_state == State::DOWNLOADED;
+}
+
+time_t FileSegment::getFinishedDownloadTime() const
+{
+    auto lk = lock();
+    return download_finished_time;
 }
 
 String FileSegment::getCallerId()
@@ -358,11 +365,14 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
                 "Expected DOWNLOADING state, got {}", stateToString(download_state));
 
         const size_t first_non_downloaded_offset = getCurrentWriteOffset();
+
         if (offset_in_file != first_non_downloaded_offset)
+        {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to write {} bytes to offset: {}, but current write offset is {}",
                 size, offset_in_file, first_non_downloaded_offset);
+        }
 
         const size_t current_downloaded_size = getDownloadedSize();
         chassert(reserved_size >= current_downloaded_size);
@@ -373,14 +383,19 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
                 ErrorCodes::LOGICAL_ERROR,
                 "Not enough space is reserved. Available: {}, expected: {}", free_reserved_size, size);
 
-        if (!is_unbound && current_downloaded_size == range().size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
+        if (!is_unbound)
+        {
+            if (current_downloaded_size == range().size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is already fully downloaded");
 
-        if (!cache_writer && current_downloaded_size > 0)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cache writer was finalized (downloaded size: {}, state: {})",
-                current_downloaded_size, stateToString(download_state));
+            if (current_downloaded_size + size > range().size())
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Cannot download beyond file segment boundaries: {}. Write offset: {}, size: {}, downloaded size: {}",
+                    range().size(), first_non_downloaded_offset, size, current_downloaded_size);
+            }
+        }
     }
 
     try
@@ -392,7 +407,12 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 #endif
 
         if (!cache_writer)
-            cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0);
+        {
+            int flags = -1;
+            if (downloaded_size > 0)
+                flags = O_WRONLY | O_APPEND | O_CLOEXEC;
+            cache_writer = std::make_unique<WriteBufferFromFile>(getPath(), /* buf_size */0, flags);
+        }
 
         /// Size is equal to offset as offset for write buffer points to data end.
         cache_writer->set(from, /* size */size, /* offset */size);
@@ -414,20 +434,24 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
 
-        if (downloaded_size == 0 && fs::exists(file_segment_path))
+        if (fs::exists(file_segment_path))
         {
-            fs::remove(file_segment_path);
-        }
-        else if (is_no_space_left_error)
-        {
-            const auto file_size = fs::file_size(file_segment_path);
+            if (downloaded_size == 0)
+            {
+                fs::remove(file_segment_path);
+            }
+            else if (is_no_space_left_error)
+            {
+                const auto file_size = fs::file_size(file_segment_path);
 
-            chassert(downloaded_size <= file_size);
-            chassert(reserved_size >= file_size);
-            chassert(file_size <= range().size());
+                LOG_TRACE(log, "Failed to write to file: no space left on device "
+                          "(file size: {}, downloaded size: {}, reserved size: {})",
+                          file_size, downloaded_size.load(), reserved_size.load());
 
-            if (downloaded_size != file_size)
-                downloaded_size = file_size;
+                chassert(downloaded_size <= file_size && file_size <= reserved_size);
+                if (downloaded_size != file_size)
+                    downloaded_size = file_size;
+            }
         }
 
         throw;
@@ -511,7 +535,7 @@ bool FileSegment::reserve(
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
 
-    size_t expected_downloaded_size;
+    size_t current_downloaded_size;
 
     bool is_file_segment_size_exceeded;
     {
@@ -520,18 +544,18 @@ bool FileSegment::reserve(
         assertNotDetachedUnlocked(lk);
         assertIsDownloaderUnlocked("reserve", lk);
 
-        expected_downloaded_size = getDownloadedSize();
+        current_downloaded_size = getDownloadedSize();
 
-        is_file_segment_size_exceeded = expected_downloaded_size + size_to_reserve > range().size();
+        is_file_segment_size_exceeded = current_downloaded_size + size_to_reserve > range().size();
         if (is_file_segment_size_exceeded && !is_unbound)
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
-                size_to_reserve, range().toString(), downloaded_size);
+                size_to_reserve, range().toString(), downloaded_size.load());
         }
 
-        chassert(reserved_size >= expected_downloaded_size);
+        chassert(reserved_size >= current_downloaded_size);
     }
 
     /**
@@ -540,7 +564,7 @@ bool FileSegment::reserve(
      * and the caller is going to continue;
      */
 
-    size_t already_reserved_size = reserved_size - expected_downloaded_size;
+    size_t already_reserved_size = reserved_size - current_downloaded_size;
 
     if (already_reserved_size >= size_to_reserve)
         return true;
@@ -551,14 +575,15 @@ bool FileSegment::reserve(
     /// Currently it is used only for temporary files through cache.
     if (is_unbound && is_file_segment_size_exceeded)
         /// Note: segment_range.right is inclusive.
-        segment_range.right = range().left + expected_downloaded_size + size_to_reserve - 1;
+        segment_range.right = range().left + current_downloaded_size + size_to_reserve - 1;
 
     /// if reserve_stat is not passed then use dummy stat and discard the result.
     FileCacheReserveStat dummy_stat;
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
 
-    bool reserved = cache->tryReserve(*this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds, failure_reason);
+    bool reserved = cache->tryReserve(
+        *this, size_to_reserve, *reserve_stat, getKeyMetadata()->user, lock_wait_timeout_milliseconds, failure_reason);
 
     if (!reserved)
         setDownloadFailedUnlocked(lock());
@@ -572,13 +597,15 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
         return;
 
     download_state = State::DOWNLOADED;
+    download_finished_time = timeInSeconds(std::chrono::system_clock::now());
 
     if (cache_writer)
     {
         cache_writer->finalize();
         cache_writer.reset();
-        remote_file_reader.reset();
     }
+
+    remote_file_reader.reset();
 
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
@@ -600,7 +627,7 @@ void FileSegment::setDownloadFailedUnlocked(const FileSegmentGuard::Lock & lock)
 
     if (cache_writer)
     {
-        cache_writer->finalize();
+        cache_writer->cancel();
         cache_writer.reset();
     }
 
@@ -627,23 +654,117 @@ void FileSegment::completePartAndResetDownloader()
     LOG_TEST(log, "Complete batch. ({})", getInfoForLogUnlocked(lk));
 }
 
-void FileSegment::complete()
+void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key, const FileSegmentGuard::Lock & lock, bool force_shrink_to_downloaded_size)
 {
+    chassert(downloaded_size);
+    chassert(fs::file_size(getPath()) > 0);
+
+    if (downloaded_size == range().size())
+    {
+        /// Nothing to resize;
+        return;
+    }
+
+    if (!locked_key.isLastOwnerOfFileSegment(offset()))
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Shrinking of file segment can be done only by the last holder: {}",
+            getInfoForLog());
+    }
+
+    size_t result_size = downloaded_size;
+    if (!force_shrink_to_downloaded_size)
+    {
+        size_t aligned_downloaded_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
+        result_size = std::min(aligned_downloaded_size, range().size());
+    }
+
+    chassert(result_size <= range().size());
+    chassert(result_size >= downloaded_size);
+
+    if (result_size == range().size())
+    {
+        /// Nothing to resize;
+        return;
+    }
+
+    LOG_TEST(log, "Shrinking file segment {} -> {} (downloaded size: {})",
+             range().size(), result_size, downloaded_size.load());
+
+    if (downloaded_size == result_size)
+        setDownloadState(State::DOWNLOADED, lock);
+    else
+        setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
+
+    segment_range.right = segment_range.left + result_size - 1;
+
+    if (reserved_size > result_size)
+    {
+        queue_iterator->decrementSize(reserved_size - result_size);
+        reserved_size = result_size;
+    }
+}
+
+size_t FileSegment::getSizeForBackgroundDownload() const
+{
+    auto lk = lock();
+    return getSizeForBackgroundDownloadUnlocked(lk);
+}
+
+size_t FileSegment::getSizeForBackgroundDownloadUnlocked(const FileSegmentGuard::Lock &) const
+{
+    if (!background_download_enabled
+        || !downloaded_size
+        || !remote_file_reader)
+    {
+        return 0;
+    }
+
+    chassert(downloaded_size <= range().size());
+
+    const size_t background_download_max_file_segment_size = cache->getBackgroundDownloadMaxFileSegmentSize();
+    size_t desired_size;
+    if (downloaded_size >= background_download_max_file_segment_size)
+        desired_size = FileCacheUtils::roundUpToMultiple(downloaded_size, cache->getBoundaryAlignment());
+    else
+        desired_size = FileCacheUtils::roundUpToMultiple(background_download_max_file_segment_size, cache->getBoundaryAlignment());
+
+    desired_size = std::min(desired_size, range().size());
+    chassert(desired_size >= downloaded_size);
+
+    return desired_size - downloaded_size;
+}
+
+void FileSegment::complete(FileSegmentPtr && file_segment, bool allow_background_download, bool force_shrink_to_downloaded_size)
+{
+    if (!file_segment)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File segment is nullptr");
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentCompleteMicroseconds);
 
-    if (isCompleted())
+    if (file_segment->isCompleted())
         return;
 
-    auto locked_key = lockKeyMetadata(false);
+    auto locked_key = file_segment->lockKeyMetadata(false);
     if (!locked_key)
     {
         /// If we failed to lock a key, it must be in detached state.
-        if (isDetached())
+        if (file_segment->isDetached())
             return;
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot complete file segment: {}", getInfoForLog());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot complete file segment: {}", file_segment->getInfoForLog());
     }
 
+    SCOPE_EXIT_SAFE(
+        file_segment.reset();
+    );
+
+    file_segment->complete(locked_key, allow_background_download, force_shrink_to_downloaded_size);
+}
+
+void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_background_download, bool force_shrink_to_downloaded_size)
+{
     auto segment_lock = lock();
 
     if (isCompleted(false))
@@ -659,8 +780,8 @@ void FileSegment::complete()
     });
 
     LOG_TEST(
-        log, "Complete based on current state (is_last_holder: {}, {})",
-        is_last_holder, getInfoForLogUnlocked(segment_lock));
+        log, "Complete based on current state (is_last_holder: {}, force shrink: {}, {})",
+        is_last_holder, force_shrink_to_downloaded_size, getInfoForLogUnlocked(segment_lock));
 
     if (is_downloader)
     {
@@ -700,19 +821,34 @@ void FileSegment::complete()
         case State::PARTIALLY_DOWNLOADED:
         {
             chassert(current_downloaded_size > 0);
+            chassert(fs::exists(getPath()));
+            chassert(fs::file_size(getPath()) > 0);
 
             if (is_last_holder)
             {
                 bool added_to_download_queue = false;
-                if (background_download_enabled && remote_file_reader)
+                size_t background_download_size = allow_background_download ? getSizeForBackgroundDownloadUnlocked(segment_lock) : 0;
+                if (background_download_size)
                 {
+                    ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundDownloadQueuePush);
                     added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
                 }
 
                 if (!added_to_download_queue)
                 {
-                    locked_key->shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
-                    setDetachedState(segment_lock); /// See comment below.
+                    /// Reset the writer to reduce memory usage,
+                    /// because we do not know when download will be continued next time.
+                    if (cache_writer)
+                    {
+                        cache_writer->finalize();
+                        cache_writer.reset();
+                    }
+
+                    /// Reset the reader so request is not kept alive and with that
+                    /// preventing other operations on the same objects
+                    remote_file_reader.reset();
+
+                    shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock, force_shrink_to_downloaded_size);
                 }
             }
             break;
@@ -731,22 +867,17 @@ void FileSegment::complete()
                 {
                     LOG_TEST(log, "Resize file segment {} to downloaded: {}", range().toString(), current_downloaded_size);
 
-                    /**
-                    * Only last holder of current file segment can resize the file segment,
-                    * because there is an invariant that file segments returned to users
-                    * in FileSegmentsHolder represent a contiguous range, so we can resize
-                    * it only when nobody needs it.
-                    */
+                    /// Reset the writer to reduce memory usage,
+                    /// because we do not know when download will be continued next time.
+                    if (cache_writer)
+                    {
+                        cache_writer->finalize();
+                        cache_writer.reset();
+                    }
 
-                    /// Resize this file segment by creating a copy file segment with DOWNLOADED state,
-                    /// but current file segment should remain PARRTIALLY_DOWNLOADED_NO_CONTINUATION and with detached state,
-                    /// because otherwise an invariant that getOrSet() returns a contiguous range of file segments will be broken
-                    /// (this will be crucial for other file segment holder, not for current one).
-                    locked_key->shrinkFileSegmentToDownloadedSize(offset(), segment_lock);
+                    remote_file_reader.reset();
 
-                    /// We mark current file segment with state DETACHED, even though the data is still in cache
-                    /// (but a separate file segment) because is_last_holder is satisfied, so it does not matter.
-                    setDetachedState(segment_lock);
+                    shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock, force_shrink_to_downloaded_size);
                 }
             }
             break;
@@ -756,6 +887,9 @@ void FileSegment::complete()
     }
 
     LOG_TEST(log, "Completed file segment: {}", getInfoForLogUnlocked(segment_lock));
+
+    if (download_state != State::DETACHED)
+        chassert(assertCorrectnessUnlocked(segment_lock));
 }
 
 String FileSegment::getInfoForLog() const
@@ -776,7 +910,8 @@ String FileSegment::getInfoForLogUnlocked(const FileSegmentGuard::Lock &) const
     info << "current write offset: " << getCurrentWriteOffset() << ", ";
     info << "caller id: " << getCallerId() << ", ";
     info << "kind: " << toString(segment_kind) << ", ";
-    info << "unbound: " << is_unbound;
+    info << "unbound: " << is_unbound << ", ";
+    info << "background download: " << background_download_enabled;
 
     return info.str();
 }
@@ -820,7 +955,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
         const auto & entry = it->getEntry();
         if (download_state != State::DOWNLOADING && entry->size != reserved_size)
-            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size, reserved_size));
+            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size.load(), reserved_size.load()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -841,29 +976,74 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
         }
     }
 
-    if (download_state == State::DOWNLOADED)
+    switch (download_state.load())
     {
-        chassert(downloader_id.empty());
-        chassert(downloaded_size == reserved_size);
-        chassert(downloaded_size == range().size());
-        chassert(downloaded_size > 0);
-        chassert(std::filesystem::file_size(getPath()) > 0);
-        check_iterator(queue_iterator);
-    }
-    else
-    {
-        if (download_state == State::DOWNLOADING)
-        {
-            chassert(!downloader_id.empty());
-        }
-        else if (download_state == State::PARTIALLY_DOWNLOADED
-                 || download_state == State::EMPTY)
+        case State::EMPTY:
         {
             chassert(downloader_id.empty());
+            chassert(!fs::exists(getPath()));
+            chassert(!queue_iterator);
+            break;
         }
+        case State::DOWNLOADED:
+        {
+            chassert(downloader_id.empty());
 
-        chassert(reserved_size >= downloaded_size);
-        check_iterator(queue_iterator);
+            chassert(downloaded_size == reserved_size);
+            chassert(downloaded_size == range().size());
+            chassert(downloaded_size > 0);
+
+            chassert(!remote_file_reader);
+            chassert(!cache_writer);
+
+            auto file_size = fs::file_size(getPath());
+            UNUSED(file_size);
+
+            chassert(file_size == range().size());
+            chassert(downloaded_size == range().size());
+
+            chassert(queue_iterator || on_delayed_removal);
+            check_iterator(queue_iterator);
+            break;
+        }
+        case State::DOWNLOADING:
+        {
+            chassert(!downloader_id.empty());
+            if (downloaded_size)
+            {
+                chassert(queue_iterator);
+                chassert(fs::file_size(getPath()) > 0);
+            }
+            break;
+        }
+        case State::PARTIALLY_DOWNLOADED:
+        {
+            chassert(downloader_id.empty());
+
+            chassert(reserved_size >= downloaded_size);
+            chassert(downloaded_size > 0);
+
+            auto file_size = fs::file_size(getPath());
+            UNUSED(file_size);
+
+            chassert(file_size > 0);
+            chassert(file_size <= range().size());
+            chassert(downloaded_size <= range().size());
+
+            chassert(queue_iterator);
+            check_iterator(queue_iterator);
+            break;
+        }
+        case State::PARTIALLY_DOWNLOADED_NO_CONTINUATION:
+        {
+            chassert(reserved_size >= downloaded_size);
+            check_iterator(queue_iterator);
+            break;
+        }
+        case State::DETACHED:
+        {
+            break;
+        }
     }
 
     return true;
@@ -901,6 +1081,7 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
         .state = file_segment->download_state,
         .size = file_segment->range().size(),
         .downloaded_size = file_segment->downloaded_size,
+        .download_finished_time = file_segment->download_finished_time,
         .cache_hits = file_segment->hits_count,
         .references = static_cast<uint64_t>(file_segment.use_count()),
         .is_unbound = file_segment->is_unbound,
@@ -940,15 +1121,10 @@ void FileSegment::setDetachedState(const FileSegmentGuard::Lock & lock)
     setDownloadState(State::DETACHED, lock);
     key_metadata.reset();
     queue_iterator = nullptr;
-    try
-    {
-        cache_writer.reset();
-        remote_file_reader.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    if (cache_writer)
+        cache_writer->cancel();
+    cache_writer.reset();
+    remote_file_reader.reset();
 }
 
 void FileSegment::detach(const FileSegmentGuard::Lock & lock, const LockedKey &)
@@ -975,9 +1151,27 @@ void FileSegment::increasePriority()
     if (it)
     {
         if (auto cache_lock = cache->tryLockCache())
-            hits_count = it->increasePriority(cache_lock);
+            it->increasePriority(cache_lock);
         else
             ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
+
+        /// Used only for system.filesystem_cache.
+        ++hits_count;
+    }
+}
+
+FileSegment::~FileSegment()
+{
+    try
+    {
+        /// Can be non-finalized in case it was push to background download
+        /// but not executed before server shutdown.
+        if (cache_writer)
+            cache_writer->finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
     }
 }
 
@@ -991,7 +1185,12 @@ FileSegmentsHolder::FileSegmentsHolder(FileSegments && file_segments_)
 FileSegmentPtr FileSegmentsHolder::getSingleFileSegment() const
 {
     if (file_segments.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single file segment, got: {} in holder {}", file_segments.size(), toString());
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected single file segment, got: {} in holder {}",
+            file_segments.size(), toString());
+    }
     return file_segments.front();
 }
 
@@ -1001,7 +1200,23 @@ void FileSegmentsHolder::reset()
 
     ProfileEvents::increment(ProfileEvents::FilesystemCacheUnusedHoldFileSegments, file_segments.size());
     for (auto file_segment_it = file_segments.begin(); file_segment_it != file_segments.end();)
-        file_segment_it = completeAndPopFrontImpl();
+    {
+        try
+        {
+            /// One might think it would have been more correct to do `false` here,
+            /// not to allow background download for file segments that we actually did not start reading.
+            /// But actually we would only do that, if those file segments were already read partially by some other thread/query
+            /// but they were not put to the download queue, because current thread was holding them in Holder.
+            /// So as a culprit, we need to allow to happen what would have happened if we did not exist.
+            file_segment_it = completeAndPopFrontImpl(/*allow_background_download=*/true, /*force_shrink_to_downloaded_size=*/false);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            chassert(false);
+            continue;
+        }
+    }
     file_segments.clear();
 }
 
@@ -1010,11 +1225,12 @@ FileSegmentsHolder::~FileSegmentsHolder()
     reset();
 }
 
-FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl()
+FileSegments::iterator FileSegmentsHolder::completeAndPopFrontImpl(bool allow_background_download, bool force_shrink_to_downloaded_size)
 {
-    front().complete();
+    auto file_segment_it = file_segments.begin();
+    FileSegment::complete(std::move(*file_segment_it), allow_background_download, force_shrink_to_downloaded_size);
     CurrentMetrics::sub(CurrentMetrics::FilesystemCacheHoldFileSegments);
-    return file_segments.erase(file_segments.begin());
+    return file_segments.erase(file_segment_it);
 }
 
 FileSegment & FileSegmentsHolder::add(FileSegmentPtr && file_segment)

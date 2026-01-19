@@ -126,7 +126,7 @@ inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
         /// Original jeaii code
         //      *reinterpret_cast<pair *>(b) = digits.fd[n];
         //      return n < 10 ? b + 1 : b + 2;
-        return n < 10 ? outOneDigit(b, n) : outTwoDigits(b, n);
+        return n < 10 ? outOneDigit(b, static_cast<uint8_t>(n)) : outTwoDigits(b, static_cast<uint8_t>(n));
     }
     if (n < UInt32(1e6))
     {
@@ -421,13 +421,13 @@ ALWAYS_INLINE inline char * writeSIntText(T x, char * pos)
         if constexpr (std::is_same_v<T, Int128>)
         {
             const char * res = "-170141183460469231731687303715884105728";
-            memcpy(pos, res, strlen(res));
+            memcpy(pos, res, strlen(res)); /// NOLINT(bugprone-not-null-terminated-result)
             return pos + strlen(res);
         }
         else if constexpr (std::is_same_v<T, Int256>)
         {
             const char * res = "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
-            memcpy(pos, res, strlen(res));
+            memcpy(pos, res, strlen(res)); /// NOLINT(bugprone-not-null-terminated-result)
             return pos + strlen(res);
         }
     }

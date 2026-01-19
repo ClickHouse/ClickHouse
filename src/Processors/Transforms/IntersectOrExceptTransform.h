@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Interpreters/SetVariants.h>
 #include <Core/ColumnNumbers.h>
@@ -9,12 +10,14 @@
 namespace DB
 {
 
+class Block;
+
 class IntersectOrExceptTransform : public IProcessor
 {
 using Operator = ASTSelectIntersectExceptQuery::Operator;
 
 public:
-    IntersectOrExceptTransform(const Block & header_, Operator operator_);
+    IntersectOrExceptTransform(SharedHeader header_, Operator operator_);
 
     String getName() const override { return "IntersectOrExcept"; }
 

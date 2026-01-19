@@ -1,4 +1,4 @@
-#include "HTTPDictionarySource.h"
+#include <Dictionaries/HTTPDictionarySource.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/ServerSettings.h>
 #include <Formats/formatBlock.h>
@@ -11,18 +11,17 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/logger_useful.h>
-#include "DictionarySourceFactory.h"
-#include "DictionarySourceHelpers.h"
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionarySourceFactory.h>
+#include <Dictionaries/DictionarySourceHelpers.h>
+#include <Dictionaries/DictionaryStructure.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include "registerDictionaries.h"
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static const UInt64 max_block_size = 8192;
@@ -87,7 +86,7 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
     }
 }
 
-QueryPipeline HTTPDictionarySource::loadAll()
+BlockIO HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll {}", toString());
 
@@ -100,11 +99,12 @@ QueryPipeline HTTPDictionarySource::loadAll()
                    .withHeaders(configuration.header_entries)
                    .withDelayInit(false)
                    .create(credentials);
-
-    return createWrappedBuffer(std::move(buf));
+    BlockIO io;
+    io.pipeline = createWrappedBuffer(std::move(buf));
+    return io;
 }
 
-QueryPipeline HTTPDictionarySource::loadUpdatedAll()
+BlockIO HTTPDictionarySource::loadUpdatedAll()
 {
     Poco::URI uri(configuration.url);
     getUpdateFieldAndDate(uri);
@@ -118,10 +118,12 @@ QueryPipeline HTTPDictionarySource::loadUpdatedAll()
                    .withDelayInit(false)
                    .create(credentials);
 
-    return createWrappedBuffer(std::move(buf));
+    BlockIO io;
+    io.pipeline = createWrappedBuffer(std::move(buf));
+    return io;
 }
 
-QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     LOG_TRACE(log, "loadIds {} size = {}", toString(), ids.size());
 
@@ -147,10 +149,12 @@ QueryPipeline HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
                    .withDelayInit(false)
                    .create(credentials);
 
-    return createWrappedBuffer(std::move(buf));
+    BlockIO io;
+    io.pipeline = createWrappedBuffer(std::move(buf));
+    return io;
 }
 
-QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     LOG_TRACE(log, "loadKeys {} size = {}", toString(), requested_rows.size());
 
@@ -176,7 +180,9 @@ QueryPipeline HTTPDictionarySource::loadKeys(const Columns & key_columns, const 
                    .withDelayInit(false)
                    .create(credentials);
 
-    return createWrappedBuffer(std::move(buf));
+    BlockIO io;
+    io.pipeline = createWrappedBuffer(std::move(buf));
+    return io;
 }
 
 bool HTTPDictionarySource::isModified() const
@@ -207,7 +213,8 @@ std::string HTTPDictionarySource::toString() const
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const String & /*name*/,
+                                   const DictionaryStructure & dict_struct,
                                    const Poco::Util::AbstractConfiguration & config,
                                    const std::string & config_prefix,
                                    Block & sample_block,
@@ -215,7 +222,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
                                    const std::string & /* default_database */,
                                    bool created_from_ddl) -> DictionarySourcePtr {
         if (dict_struct.has_expressions)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `http` does not support attribute expressions");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `http` does not support attribute expressions");
 
         auto settings_config_prefix = config_prefix + ".http";
         Poco::Net::HTTPBasicCredentials credentials;
@@ -281,22 +288,24 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         else if (!endpoint.empty() && !endpoint.starts_with('/'))
             url.push_back('/');
 
+
+        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+
+        auto uri = url + endpoint;
+        if (created_from_ddl)
+        {
+            context->getRemoteHostFilter().checkURL(Poco::URI(uri));
+            context->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
+        }
+
         auto configuration = HTTPDictionarySource::Configuration
         {
-            .url = url + endpoint,
+            .url = uri,
             .format = format,
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .header_entries = std::move(header_entries)
         };
-
-        auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
-
-        if (created_from_ddl)
-        {
-            context->getRemoteHostFilter().checkURL(Poco::URI(configuration.url));
-            context->getHTTPHeaderFilter().checkHeaders(configuration.header_entries);
-        }
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context);
     };

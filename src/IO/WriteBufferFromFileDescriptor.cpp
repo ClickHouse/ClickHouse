@@ -21,8 +21,6 @@ namespace ProfileEvents
     extern const Event DiskWriteElapsedMicroseconds;
     extern const Event FileSync;
     extern const Event FileSyncElapsedMicroseconds;
-    extern const Event LocalWriteThrottlerBytes;
-    extern const Event LocalWriteThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -77,7 +75,7 @@ void WriteBufferFromFileDescriptor::nextImpl()
         {
             bytes_written += res;
             if (throttler)
-                throttler->add(res, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
+                throttler->throttle(res);
         }
     }
 
@@ -113,30 +111,16 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 {
 }
 
-
-WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
-{
-    try
-    {
-        if (!canceled)
-            finalize();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
 void WriteBufferFromFileDescriptor::finalizeImpl()
 {
     if (fd < 0)
     {
-        assert(!offset() && "attempt to write after close");
+        chassert(!offset(), "attempt to write after close");
         return;
     }
 
     use_adaptive_buffer_size = false;
-    next();
+    WriteBufferFromFileBase::finalizeImpl();
 }
 
 void WriteBufferFromFileDescriptor::sync()

@@ -1,5 +1,8 @@
 #include <Analyzer/TableFunctionNode.h>
 
+#include <Common/assert_cast.h>
+#include <Common/SipHash.h>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -78,7 +81,7 @@ void TableFunctionNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "SETTINGS";
         for (const auto & change : settings_changes)
-            buffer << fmt::format(" {}={}", change.name, toString(change.value));
+            buffer << fmt::format(" {}={}", change.name, fieldToString(change.value));
     }
 }
 

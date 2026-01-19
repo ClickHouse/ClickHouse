@@ -8,6 +8,8 @@ if (NOT ENABLE_VECTORSCAN)
     return()
 endif()
 
+set (CMAKE_CXX_STANDARD 17)
+
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/vectorscan")
 
 # Gobble up all c/cpp files in vectorscan/src/, omit *dump*.c/cpp files as we don't use the dump feature (see x86/config.h)
@@ -273,7 +275,7 @@ add_library (_vectorscan ${SRCS})
 
 # library has too much debug information
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_vectorscan PRIVATE -g0)
+    target_compile_options (_vectorscan PRIVATE -g1)
 endif()
 
 target_include_directories (_vectorscan SYSTEM PUBLIC "${LIBRARY_DIR}/src")

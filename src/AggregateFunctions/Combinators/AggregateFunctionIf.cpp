@@ -1,6 +1,8 @@
-#include "AggregateFunctionCombinatorFactory.h"
-#include "AggregateFunctionIf.h"
-#include "AggregateFunctionNull.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionIf.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
+
+#include <absl/container/inlined_vector.h>
 
 namespace DB
 {
@@ -119,6 +121,20 @@ public:
         {
             this->setFlag(place);
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
+        }
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * arena) const override
+    {
+        if (filter_is_only_null)
+            return;
+
+        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
+        const IColumn * nested_column = &column->getNestedColumn();
+        if (!column->isNullAt(0) && singleFilter(columns, 0))
+        {
+            this->setFlag(place);
+            this->nested_function->addManyDefaults(this->nestedPlace(place), &nested_column, length, arena);
         }
     }
 
@@ -269,7 +285,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         /// This container stores the columns we really pass to the nested function.
-        const IColumn * nested_columns[number_of_arguments];
+        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
 
         for (size_t i = 0; i < number_of_arguments; ++i)
         {
@@ -288,10 +304,10 @@ public:
                 nested_columns[i] = columns[i];
         }
 
-        if (singleFilter(nested_columns, row_num, number_of_arguments))
+        if (singleFilter(nested_columns.data(), row_num, number_of_arguments))
         {
             this->setFlag(place);
-            this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
+            this->nested_function->add(this->nestedPlace(place), nested_columns.data(), row_num, arena);
         }
     }
 
@@ -313,7 +329,7 @@ public:
 
             for (size_t i = row_begin; i < row_end; i++)
             {
-                final_null_flags[i] = filter_null_map[i] || !filter_values[i];
+                final_null_flags[i] = (!!filter_null_map[i]) | !filter_values[i];
             }
         }
         else
@@ -324,7 +340,7 @@ public:
                 final_null_flags[i] = !filter_values[i];
         }
 
-        const IColumn * nested_columns[number_of_arguments];
+        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
         for (size_t arg = 0; arg < number_of_arguments; arg++)
         {
             if (is_nullable[arg])
@@ -335,9 +351,7 @@ public:
                     const ColumnUInt8 & nullmap_column = nullable_col.getNullMapColumn();
                     const UInt8 * col_null_map = nullmap_column.getData().data();
                     for (size_t r = row_begin; r < row_end; r++)
-                    {
-                        final_null_flags[r] |= col_null_map[r];
-                    }
+                        final_null_flags[r] |= !!col_null_map[r];
                 }
                 nested_columns[arg] = &nullable_col.getNestedColumn();
             }
@@ -345,21 +359,12 @@ public:
                 nested_columns[arg] = columns[arg];
         }
 
-        bool at_least_one = false;
-        for (size_t i = row_begin; i < row_end; i++)
-        {
-            if (!final_null_flags[i])
-            {
-                at_least_one = true;
-                break;
-            }
-        }
-
+        bool at_least_one = !memoryIsByte(final_null_flags.get(), row_begin, row_end, 1);
         if (at_least_one)
         {
             this->setFlag(place);
             this->nested_function->addBatchSinglePlaceNotNull(
-                row_begin, row_end, this->nestedPlace(place), nested_columns, final_null_flags.get(), arena, -1);
+                row_begin, row_end, this->nestedPlace(place), nested_columns.data(), final_null_flags.get(), arena, -1);
         }
     }
 

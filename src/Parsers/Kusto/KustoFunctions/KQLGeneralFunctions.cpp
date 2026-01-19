@@ -16,7 +16,8 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/ParserSetQuery.h>
 #include <boost/lexical_cast.hpp>
-#include <format>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -38,24 +39,24 @@ bool Bin::convertImpl(String & out, IParser::Pos & pos)
     //remove sapce between minus and number
     round_to.erase(std::remove_if(round_to.begin(), round_to.end(), isspace), round_to.end());
 
-    auto t = std::format("toFloat64({})", value);
+    auto t = fmt::format("toFloat64({})", value);
 
     bin_size = std::stod(round_to);
 
     if (origal_expr == "datetime" || origal_expr == "date")
     {
-        out = std::format("toDateTime64(toInt64({0}/{1}) * {1}, 9, 'UTC')", t, bin_size);
+        out = fmt::format("toDateTime64(toInt64({0}/{1}) * {1}, 9, 'UTC')", t, bin_size);
     }
     else if (origal_expr == "timespan" || origal_expr == "time" || ParserKQLDateTypeTimespan().parseConstKQLTimespan(origal_expr))
     {
-        String bin_value = std::format("toInt64({0}/{1}) * {1}", t, bin_size);
-        out = std::format(
+        String bin_value = fmt::format("toInt64({0}/{1}) * {1}", t, bin_size);
+        out = fmt::format(
             "concat(toString(toInt32((({}) as x) / 3600)),':', toString(toInt32(x % 3600 / 60)),':',toString(toInt32(x % 3600 % 60)))",
             bin_value);
     }
     else
     {
-        out = std::format("toInt64({0} / {1}) * {1}", t, bin_size);
+        out = fmt::format("toInt64({0} / {1}) * {1}", t, bin_size);
     }
     return true;
 }
@@ -77,25 +78,25 @@ bool BinAt::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     String fixed_point_str = getConvertedArgument(fn_name, pos);
 
-    auto t1 = std::format("toFloat64({})", fixed_point_str);
-    auto t2 = std::format("toFloat64({})", expression_str);
+    auto t1 = fmt::format("toFloat64({})", fixed_point_str);
+    auto t2 = fmt::format("toFloat64({})", expression_str);
     int dir = t2 >= t1 ? 0 : -1;
     bin_size = std::stod(bin_size_str);
 
     if (origal_expr == "datetime" || origal_expr == "date")
     {
-        out = std::format("toDateTime64({} + toInt64(({} - {}) / {} + {}) * {}, 9, 'UTC')", t1, t2, t1, bin_size, dir, bin_size);
+        out = fmt::format("toDateTime64({} + toInt64(({} - {}) / {} + {}) * {}, 9, 'UTC')", t1, t2, t1, bin_size, dir, bin_size);
     }
     else if (origal_expr == "timespan" || origal_expr == "time" || ParserKQLDateTypeTimespan().parseConstKQLTimespan(origal_expr))
     {
-        String bin_value = std::format("{} + toInt64(({} - {}) / {} + {}) * {}", t1, t2, t1, bin_size, dir, bin_size);
-        out = std::format(
+        String bin_value = fmt::format("{} + toInt64(({} - {}) / {} + {}) * {}", t1, t2, t1, bin_size, dir, bin_size);
+        out = fmt::format(
             "concat(toString(toInt32((({}) as x) / 3600)),':', toString(toInt32(x % 3600 / 60)), ':', toString(toInt32(x % 3600 % 60)))",
             bin_value);
     }
     else
     {
-        out = std::format("{} + toInt64(({} - {}) / {} + {}) * {}", t1, t2, t1, bin_size, dir, bin_size);
+        out = fmt::format("{} + toInt64(({} - {}) / {} + {}) * {}", t1, t2, t1, bin_size, dir, bin_size);
     }
     return true;
 }

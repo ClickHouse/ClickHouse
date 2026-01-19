@@ -6,8 +6,6 @@
 #include <Common/HashTable/TwoLevelHashTable.h>
 
 #include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
 
@@ -21,7 +19,7 @@ namespace ErrorCodes
 
 /** NOTE HashSet could only be used for memmoveable (position independent) types.
   * Example: std::string is not position independent in libstdc++ with C++11 ABI or in libc++.
-  * Also, key must be of type, that zero bytes is compared equals to zero key.
+  * Also, key must be of a type, such as that zero bytes is compared equals to zero key.
   */
 
 
@@ -31,7 +29,7 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = HashTableGrowerWithPrecalculation<>,
     typename Allocator = HashTableAllocator>
-class HashSetTable : public HashTable<Key, TCell, Hash, Grower, Allocator>
+class HashSetTable final : public HashTable<Key, TCell, Hash, Grower, Allocator>
 {
 public:
     using Self = HashSetTable;
@@ -44,6 +42,20 @@ public:
 
     void merge(const Self & rhs)
     {
+        if (rhs.empty())
+            return;
+
+        if (Base::empty())
+        {
+            *this = rhs;
+            return;
+        }
+
+        /// We know 100% we will need to resize so let's do it preemtively and add enough to hold all elements even in the case
+        /// there are no duplicates (might use more memory than needed in case of many duplicates between the 2 tables).
+        if (rhs.grower.bufSize() > Base::grower.bufSize())
+            Base::resize(rhs.size() + Base::size());
+
         if (!this->hasZero() && rhs.hasZero())
         {
             this->setHasZero();
@@ -52,7 +64,7 @@ public:
 
         for (size_t i = 0; i < rhs.grower.bufSize(); ++i)
             if (!rhs.buf[i].isZero(*this))
-                this->insert(rhs.buf[i].getValue());
+                this->insert(rhs.buf[i]);
     }
 };
 
@@ -63,7 +75,7 @@ template <
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator>
-class TwoLevelHashSetTable
+class TwoLevelHashSetTable final
     : public TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>
 {
 public:
@@ -71,6 +83,22 @@ public:
     using Base = TwoLevelHashTable<Key, TCell, Hash, Grower, Allocator, HashSetTable<Key, TCell, Hash, Grower, Allocator>>;
 
     using Base::Base;
+
+    template <typename... Args>
+    void merge(const HashSetTable<Key, Args...> & rhs)
+    {
+        for (auto it = rhs.begin(), end = rhs.end(); it != end; ++it)
+            this->insert(*it);
+    }
+
+    void merge(const Self & rhs)
+    {
+        if (rhs.empty())
+            return;
+
+        for (size_t i = 0; i < Base::NUM_BUCKETS; ++i)
+            this->impls[i].merge(rhs.impls[i]);
+    }
 
     /// Writes its content in a way that it will be correctly read by HashSetTable.
     /// Used by uniqExact to preserve backward compatibility.
@@ -145,6 +173,13 @@ template <
     typename Grower = HashTableGrowerWithPrecalculation<>,
     typename Allocator = HashTableAllocator>
 using HashSetWithSavedHash = HashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator>;
+
+template <
+    typename Key,
+    typename Hash = DefaultHash<Key>,
+    typename Grower = TwoLevelHashTableGrower<>,
+    typename Allocator = HashTableAllocator>
+using TwoLevelHashSetWithSavedHash = TwoLevelHashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator>;
 
 template <typename Key, typename Hash, size_t initial_size_degree>
 using HashSetWithSavedHashWithStackMemory = HashSetWithSavedHash<

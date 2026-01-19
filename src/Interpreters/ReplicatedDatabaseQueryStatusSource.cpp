@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -22,7 +23,7 @@ extern const int LOGICAL_ERROR;
 ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
     const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait)
     : DistributedQueryStatusSource(
-          zk_node_path, zk_replicas_path, getSampleBlock(), context_, hosts_to_wait, "ReplicatedDatabaseQueryStatusSource")
+          zk_node_path, zk_replicas_path, std::make_shared<const Block>(getSampleBlock()), context_, hosts_to_wait, "ReplicatedDatabaseQueryStatusSource")
 {
 }
 
@@ -54,9 +55,9 @@ Chunk ReplicatedDatabaseQueryStatusSource::generateChunkWithUnfinishedHosts() co
         columns[num++]->insert(shard);
         columns[num++]->insert(replica);
         if (active_hosts_set.contains(host_id))
-            columns[num++]->insert(IN_PROGRESS);
+            columns[num++]->insert(QueryStatus::IN_PROGRESS);
         else
-            columns[num++]->insert(QUEUED);
+            columns[num++]->insert(QueryStatus::QUEUED);
 
         columns[num++]->insert(unfinished_hosts.size());
         columns[num++]->insert(current_active_hosts.size());
@@ -142,29 +143,19 @@ void ReplicatedDatabaseQueryStatusSource::fillHostStatus(const String & host_id,
     auto [shard, replica] = DatabaseReplicated::parseFullReplicaName(host_id);
     columns[num++]->insert(shard);
     columns[num++]->insert(replica);
-    columns[num++]->insert(OK);
+    columns[num++]->insert(QueryStatus::OK);
     columns[num++]->insert(waiting_hosts.size() - num_hosts_finished);
     columns[num++]->insert(current_active_hosts.size());
 }
 
 Block ReplicatedDatabaseQueryStatusSource::getSampleBlock()
 {
-    auto get_status_enum = []()
-    {
-        return std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
-            {"OK", static_cast<Int8>(OK)},
-            {"IN_PROGRESS", static_cast<Int8>(IN_PROGRESS)},
-            {"QUEUED", static_cast<Int8>(QUEUED)},
-        });
-    };
-
     return Block{
         {std::make_shared<DataTypeString>(), "shard"},
         {std::make_shared<DataTypeString>(), "replica"},
-        {get_status_enum(), "status"},
+        {getStatusEnum(), "status"},
         {std::make_shared<DataTypeUInt64>(), "num_hosts_remaining"},
         {std::make_shared<DataTypeUInt64>(), "num_hosts_active"},
     };
 }
-
 }

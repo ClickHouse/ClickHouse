@@ -1,34 +1,30 @@
-#include "CHJIT.h"
+#include <Interpreters/JIT/CHJIT.h>
 
 #if USE_EMBEDDED_COMPILER
 
 #include <sys/mman.h>
-
 #include <boost/noncopyable.hpp>
 
-#include <llvm/Analysis/TargetTransformInfo.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/DataLayout.h>
-#include <llvm/IR/DerivedTypes.h>
-#include <llvm/IR/Function.h>
+#include <llvm/Analysis/CGSCCPassManager.h>
+#include <llvm/Analysis/LoopAnalysisManager.h>
+#include <llvm/Passes/PassBuilder.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Mangler.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
-#include <llvm/ExecutionEngine/JITEventListener.h>
-#include <llvm/MC/SubtargetFeature.h>
+#include <llvm/TargetParser/SubtargetFeature.h>
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/Support/DynamicLibrary.h>
-#include <llvm/Support/Host.h>
+#include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
-#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -41,6 +37,32 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MPROTECT;
 }
+
+
+/// These functions will be provided to the linker of JIT code,
+/// so it can call them to work with big integers on platforms without native support.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wbit-int-extension"
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+
+using BitInt128 = signed _BitInt(128);
+using BitUInt128 = unsigned _BitInt(128);
+
+/// NOLINTBEGIN
+extern "C" BitInt128 __divti3(BitInt128, BitInt128);
+extern "C" BitInt128 __modti3(BitInt128, BitInt128);
+
+extern "C" BitInt128 __fixsfti(float);
+extern "C" BitInt128 __fixdfti(double);
+
+extern "C" float __floattisf(BitInt128);
+extern "C" float __floatuntisf(BitUInt128);
+extern "C" double __floattidf(BitInt128);
+extern "C" double __floatuntidf(BitUInt128);
+/// NOLINTEND
+
+#pragma clang diagnostic pop
+
 
 /** Simple module to object file compiler.
   * Result object cannot be used as machine code directly, it should be passed to linker.
@@ -250,7 +272,7 @@ class AssemblyPrinter
 {
 public:
     explicit AssemblyPrinter(llvm::TargetMachine &target_machine_)
-    : target_machine(target_machine_)
+        : target_machine(target_machine_)
     {
     }
 
@@ -258,7 +280,7 @@ public:
     {
         llvm::legacy::PassManager pass_manager;
         target_machine.Options.MCOptions.AsmVerbose = true;
-        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::AssemblyFile))
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
 
         pass_manager.run(module);
@@ -275,7 +297,6 @@ private:
 class JITModuleMemoryManager : public llvm::RTDyldMemoryManager
 {
 public:
-
     uint8_t * allocateCodeSection(uintptr_t size, unsigned alignment, unsigned, llvm::StringRef) override
     {
         return reinterpret_cast<uint8_t *>(ex_page_arena.allocate(size, alignment));
@@ -361,7 +382,7 @@ private:
 
 CHJIT::CHJIT()
     : machine(getTargetMachine())
-    , layout(machine->createDataLayout())
+, layout(machine->createDataLayout())
     , compiler(std::make_unique<JITCompiler>(*machine))
     , symbol_resolver(std::make_unique<JITSymbolResolver>())
 {
@@ -370,6 +391,18 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memset", reinterpret_cast<void *>(&memset));
     symbol_resolver->registerSymbol("memcpy", reinterpret_cast<void *>(&memcpy));
     symbol_resolver->registerSymbol("memcmp", reinterpret_cast<void *>(&memcmp));
+
+    symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));
+    symbol_resolver->registerSymbol("__divti3", reinterpret_cast<void *>(&__divti3));
+    symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&__modti3));
+
+    symbol_resolver->registerSymbol("__fixsfti", reinterpret_cast<void *>(&__fixsfti));
+    symbol_resolver->registerSymbol("__fixdfti", reinterpret_cast<void *>(&__fixdfti));
+
+    symbol_resolver->registerSymbol("__floattisf", reinterpret_cast<void *>(&__floattisf));
+    symbol_resolver->registerSymbol("__floatuntisf", reinterpret_cast<void *>(&__floatuntisf));
+    symbol_resolver->registerSymbol("__floattidf", reinterpret_cast<void *>(&__floattidf));
+    symbol_resolver->registerSymbol("__floatuntidf", reinterpret_cast<void *>(&__floatuntidf));
 }
 
 CHJIT::~CHJIT() = default;
@@ -390,7 +423,7 @@ std::unique_ptr<llvm::Module> CHJIT::createModuleForCompilation()
 {
     std::unique_ptr<llvm::Module> module = std::make_unique<llvm::Module>("jit" + std::to_string(current_module_key), context);
     module->setDataLayout(layout);
-    module->setTargetTriple(machine->getTargetTriple().getTriple());
+    module->setTargetTriple(machine->getTargetTriple());
 
     return module;
 }
@@ -483,29 +516,27 @@ std::string CHJIT::getMangledName(const std::string & name_to_mangle) const
 
 void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
 {
-    llvm::PassManagerBuilder pass_manager_builder;
-    llvm::legacy::PassManager mpm;
-    llvm::legacy::FunctionPassManager fpm(&module);
-    pass_manager_builder.OptLevel = 3;
-    pass_manager_builder.SLPVectorize = true;
-    pass_manager_builder.LoopVectorize = true;
-    pass_manager_builder.RerollLoops = true;
-    pass_manager_builder.VerifyInput = true;
-    pass_manager_builder.VerifyOutput = true;
-    machine->adjustPassManager(pass_manager_builder);
+    llvm::LoopAnalysisManager lam;
+    llvm::FunctionAnalysisManager fam;
+    llvm::CGSCCAnalysisManager cgam;
+    llvm::ModuleAnalysisManager mam;
 
-    fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
-    mpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
+    auto target_analysis = machine->getTargetIRAnalysis();
+    fam.registerPass([&] { return target_analysis; });
 
-    pass_manager_builder.populateFunctionPassManager(fpm);
-    pass_manager_builder.populateModulePassManager(mpm);
+    llvm::PipelineTuningOptions pto;
+    pto.SLPVectorization = true;
 
-    fpm.doInitialization();
-    for (auto & function : module)
-        fpm.run(function);
-    fpm.doFinalization();
+    llvm::PassBuilder pb(nullptr, pto);
 
-    mpm.run(module);
+    pb.registerModuleAnalyses(mam);
+    pb.registerCGSCCAnalyses(cgam);
+    pb.registerFunctionAnalyses(fam);
+    pb.registerLoopAnalyses(lam);
+    pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    mpm.run(module, mam);
 }
 
 std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
@@ -526,10 +557,8 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
         throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple, error);
 
     llvm::SubtargetFeatures features;
-    llvm::StringMap<bool> feature_map;
-    if (llvm::sys::getHostCPUFeatures(feature_map))
-        for (auto & f : feature_map)
-            features.AddFeature(f.first(), f.second);
+    for (const auto & f : llvm::sys::getHostCPUFeatures())
+        features.AddFeature(f.first(), f.second);
 
     llvm::TargetOptions options;
 
@@ -538,9 +567,9 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
         cpu,
         features.getString(),
         options,
-        llvm::None,
-        llvm::None,
-        llvm::CodeGenOpt::Aggressive,
+        std::nullopt,
+        std::nullopt,
+        llvm::CodeGenOptLevel::Aggressive,
         jit);
 
     if (!target_machine)

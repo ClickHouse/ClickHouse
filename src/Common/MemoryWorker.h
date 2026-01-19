@@ -3,6 +3,9 @@
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
+#include <Common/PageCache.h>
+
+#include <filesystem>
 
 namespace DB
 {
@@ -18,6 +21,9 @@ struct ICgroupsReader
 #if defined(OS_LINUX)
     static std::shared_ptr<ICgroupsReader>
     createCgroupsReader(ICgroupsReader::CgroupsVersion version, const std::filesystem::path & cgroup_path);
+
+    /// Return <path, version>
+    static std::pair<std::string, CgroupsVersion> getCgroupsPath();
 #endif
 
     virtual ~ICgroupsReader() = default;
@@ -35,7 +41,12 @@ struct ICgroupsReader
 class MemoryWorker
 {
 public:
-    explicit MemoryWorker(uint64_t period_ms_);
+    MemoryWorker(
+        uint64_t period_ms_,
+        double purge_dirty_pages_threshold_ratio_,
+        bool correct_tracker_,
+        bool use_cgroup,
+        std::shared_ptr<PageCache> page_cache_);
 
     enum class MemoryUsageSource : uint8_t
     {
@@ -63,19 +74,26 @@ private:
     LoggerPtr log;
 
     uint64_t period_ms;
+    bool correct_tracker = false;
+
+    double purge_dirty_pages_threshold_ratio;
+    uint64_t page_size = 0;
 
     MemoryUsageSource source{MemoryUsageSource::None};
 
     std::shared_ptr<ICgroupsReader> cgroups_reader;
 
+    std::shared_ptr<PageCache> page_cache;
+
 #if USE_JEMALLOC
-    JemallocMibCache<uint64_t> epoch_mib{"epoch"};
-    JemallocMibCache<size_t> resident_mib{"stats.resident"};
-    JemallocMibCache<size_t> allocated_mib{"stats.allocated"};
+    Jemalloc::MibCache<uint64_t> epoch_mib{"epoch"};
+    Jemalloc::MibCache<size_t> resident_mib{"stats.resident"};
+    Jemalloc::MibCache<size_t> pagesize_mib{"arenas.page"};
 
 #define STRINGIFY_HELPER(x) #x
 #define STRINGIFY(x) STRINGIFY_HELPER(x)
-    JemallocMibCache<size_t> purge_mib{"arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge"};
+    Jemalloc::MibCache<size_t> pdirty_mib{"stats.arenas." STRINGIFY(MALLCTL_ARENAS_ALL) ".pdirty"};
+    Jemalloc::MibCache<size_t> purge_mib{"arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge"};
 #undef STRINGIFY
 #undef STRINGIFY_HELPER
 #endif

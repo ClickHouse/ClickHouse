@@ -1,6 +1,8 @@
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -42,6 +44,11 @@ MutableColumnPtr DataTypeNullable::createColumn() const
     return ColumnNullable::create(nested_data_type->createColumn(), ColumnUInt8::create());
 }
 
+MutableColumnPtr DataTypeNullable::createUninitializedColumnWithSize(size_t size) const
+{
+    return ColumnNullable::create(nested_data_type->createUninitializedColumnWithSize(size), ColumnUInt8::create(size));
+}
+
 Field DataTypeNullable::getDefault() const
 {
     return Null();
@@ -56,6 +63,11 @@ size_t DataTypeNullable::getSizeOfValueInMemory() const
 bool DataTypeNullable::equals(const IDataType & rhs) const
 {
     return rhs.isNullable() && nested_data_type->equals(*static_cast<const DataTypeNullable &>(rhs).nested_data_type);
+}
+
+void DataTypeNullable::updateHashImpl(SipHash & hash) const
+{
+    nested_data_type->updateHash(hash);
 }
 
 ColumnPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) const
@@ -76,7 +88,7 @@ ColumnPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) 
         column->insert(field);
 
     auto null_mask = ColumnUInt8::create();
-    null_mask->getData().push_back(is_null ? 1 : 0);
+    null_mask->getData().push_back(is_null ? static_cast<UInt8>(1) : static_cast<UInt8>(0));
 
     auto res = ColumnNullable::create(std::move(column), std::move(null_mask));
     return ColumnConst::create(std::move(res), size);
@@ -93,6 +105,27 @@ void DataTypeNullable::forEachChild(const ChildCallback & callback) const
     nested_data_type->forEachChild(callback);
 }
 
+
+std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubcolumnData(std::string_view subcolumn_name, const DB::IDataType::SubstreamData & data, bool throw_if_null) const
+{
+    auto nested_type = assert_cast<const DataTypeNullable &>(*data.type).nested_data_type;
+    ISerialization::SubstreamData nested_data(nested_type->getDefaultSerialization());
+    nested_data.type = nested_type;
+    nested_data.column = data.column ? assert_cast<const ColumnNullable &>(*data.column).getNestedColumnPtr() : nullptr;
+
+    auto nested_subcolumn_data = DB::IDataType::getSubcolumnData(subcolumn_name, nested_data, throw_if_null);
+    if (!nested_subcolumn_data)
+        return nullptr;
+
+    auto creator = NullableSubcolumnCreator(data.column ? assert_cast<const ColumnNullable &>(*data.column).getNullMapColumnPtr() : nullptr);
+    auto res = std::make_unique<ISerialization::SubstreamData>();
+    res->serialization = creator.create(nested_subcolumn_data->serialization, nested_subcolumn_data->type);
+    res->type = creator.create(nested_subcolumn_data->type);
+    if (data.column)
+        res->column = creator.create(nested_subcolumn_data->column);
+
+    return res;
+}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {

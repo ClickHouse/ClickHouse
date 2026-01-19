@@ -1,22 +1,25 @@
 #pragma once
 
-#include <Parsers/Access/ASTUserNameWithHost.h>
-#include <Parsers/ASTCreateQuery.h>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
+#include <Storages/ColumnSize.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IndicesDescription.h>
-#include <Storages/ProjectionsDescription.h>
 #include <Storages/KeyDescription.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/TTLDescription.h>
-#include <Storages/MaterializedView/RefreshSchedule.h>
 
 #include <Common/MultiVersion.h>
 
 namespace DB
 {
+
+class ClientInfo;
+class ASTSQLSecurity;
 
 /// Common metadata for all storages. Contains all possible parts of CREATE
 /// query from all storages, but only some subset used.
@@ -26,6 +29,8 @@ struct StorageInMemoryMetadata
     /// defaults, comments, etc. All table engines have columns.
     ColumnsDescription columns;
     /// Table indices. Currently supported for MergeTree only.
+    bool add_minmax_index_for_numeric_columns = false;
+    bool add_minmax_index_for_string_columns = false;
     IndicesDescription secondary_indices;
     /// Table constraints. Currently supported for MergeTree only.
     ConstraintsDescription constraints;
@@ -48,7 +53,7 @@ struct StorageInMemoryMetadata
     TTLTableDescription table_ttl;
     /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
     ASTPtr settings_changes;
-    /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
+    /// SELECT QUERY. Supported for MaterializedView and View.
     SelectQueryDescription select;
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;
@@ -66,6 +71,9 @@ struct StorageInMemoryMetadata
     /// Version of metadata. Managed properly by ReplicatedMergeTree only
     /// (zero-initialization is important)
     int32_t metadata_version = 0;
+
+    ///  Current state of a datalake table.
+    std::optional<DataLakeTableStateSnapshot> datalake_table_state;
 
     StorageInMemoryMetadata() = default;
 
@@ -117,12 +125,14 @@ struct StorageInMemoryMetadata
 
     /// Sets SQL security for the storage.
     void setSQLSecurity(const ASTSQLSecurity & sql_security);
+
+    void setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_);
     UUID getDefinerID(ContextPtr context) const;
 
     /// Returns a copy of the context with the correct user from SQL security options.
     /// If the SQL security wasn't set, this is equivalent to `Context::createCopy(context)`.
     /// The context from this function must be used every time whenever views execute any read/write operations or subqueries.
-    ContextMutablePtr getSQLSecurityOverriddenContext(ContextPtr context) const;
+    ContextMutablePtr getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info = nullptr) const;
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;
@@ -187,6 +197,9 @@ struct StorageInMemoryMetadata
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;
 
+    /// Block with ordinary + materialized columns + subcolumns.
+    Block getSampleBlockWithSubcolumns() const;
+
     /// Block with ordinary + ephemeral.
     Block getSampleBlockInsertable() const;
 
@@ -222,6 +235,9 @@ struct StorageInMemoryMetadata
     /// Returns columns names in sorting key specified by user in ORDER BY
     /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
     Names getSortingKeyColumns() const;
+    /// Returns reverse indicators of columns in sorting key specified by user in ORDER BY
+    /// expression. For example: ('a' DESC, 'x * y', 'toStartOfMonth(date)' DESC) -> {1, 0, 1}.
+    std::vector<bool> getSortingKeyReverseFlags() const;
 
     /// Returns column names that need to be read for FINAL to work.
     Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }
@@ -254,6 +270,7 @@ struct StorageInMemoryMetadata
 
     /// Storage settings
     ASTPtr getSettingsChanges() const;
+    Field getSettingChange(const String & setting_name) const;
     bool hasSettingsChanges() const { return settings_changes != nullptr; }
 
     /// Select query for *View storages.
@@ -273,6 +290,18 @@ struct StorageInMemoryMetadata
     /// contains only the columns of the table, and all the columns are different.
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
+
+    /// Returns a IStorage::ColumnSizeByName with made up numbers.
+    /// Used for making PREWHERE work for Parquet input format.
+    /// TODO [parquet]: Propagate real sizes from file metadata instead. We should probably put file
+    ///                 metadata into SchemaCache, similar to row count.
+    std::unordered_map<std::string, ColumnSize> getFakeColumnSizes() const;
+
+    /// Elements of `columns` that have `default_desc.expression == nullptr`.
+    NameSet getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const;
+
+    void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
+    void dropImplicitIndicesForColumn(const String & column_name);
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

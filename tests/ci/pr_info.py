@@ -9,7 +9,6 @@ from urllib.parse import quote
 from unidiff import PatchSet  # type: ignore
 
 from build_download_helper import get_gh_api
-from ci_config import Labels
 from env_helper import (
     GITHUB_EVENT_PATH,
     GITHUB_REPOSITORY,
@@ -19,8 +18,36 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token
 from github_helper import GitHub
+from synchronizer_utils import SYNC_PR_PREFIX
 
 NeedsDataType = Dict[str, Dict[str, Union[str, Dict[str, str]]]]
+
+
+class Labels:
+    PR_BUGFIX = "pr-bugfix"
+    PR_CRITICAL_BUGFIX = "pr-critical-bugfix"
+    CAN_BE_TESTED = "can be tested"
+    DO_NOT_TEST = "do not test"
+    MUST_BACKPORT = "pr-must-backport"
+    MUST_BACKPORT_SYNCED = "pr-must-backport-synced"
+    JEPSEN_TEST = "jepsen-test"
+    SKIP_MERGEABLE_CHECK = "skip mergeable check"
+    PR_BACKPORT = "pr-backport"
+    PR_BACKPORTS_CREATED = "pr-backports-created"
+    PR_BACKPORTS_CREATED_CLOUD = "pr-backports-created-cloud"
+    PR_CHERRYPICK = "pr-cherrypick"
+    PR_CI = "pr-ci"
+    PR_FEATURE = "pr-feature"
+    PR_PERFORMANCE = "pr-performance"
+    PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
+    PR_SYNC_UPSTREAM = "pr-sync-upstream"
+    RELEASE = "release"
+    RELEASE_LTS = "release-lts"
+    SUBMODULE_CHANGED = "submodule changed"
+
+    # automatic backport for critical bug fixes
+    AUTO_BACKPORT = {"pr-critical-bugfix"}
+
 
 DIFF_IN_DOCUMENTATION_EXT = [
     ".html",
@@ -39,6 +66,13 @@ DIFF_IN_DOCUMENTATION_EXT = [
     ".py",
     ".sh",
     ".json",
+]
+DOCS_ONLY_FILES = ["docker/docs", "aspell-dict.txt"]
+
+DOCS_FILES = DOCS_ONLY_FILES + [
+    "Settings.cpp",
+    "FormatFactorySettings.h",
+    "tests/ci/docs_check.py",
 ]
 RETRY_SLEEP = 0
 
@@ -124,7 +158,7 @@ class PRInfo:
         self.merged_pr = 0
         self.labels = set()
 
-        repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
+        self.repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
         self.task_url = GITHUB_RUN_URL
         self.repo_full_name = GITHUB_REPOSITORY
 
@@ -132,6 +166,13 @@ class PRInfo:
         ref = github_event.get("ref", "refs/heads/master")
         if ref and ref.startswith("refs/heads/"):
             ref = ref[11:]
+        # Default values
+        self.base_ref = ""  # type: str
+        self.base_name = ""  # type: str
+        self.head_ref = ""  # type: str
+        self.head_name = ""  # type: str
+        self.number = 0  # type: int
+        self.updated_at = github_event.get("repository", {}).get("updated_at", None)
 
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
@@ -146,7 +187,7 @@ class PRInfo:
 
         if "pull_request" in github_event:  # pull request and other similar events
             self.event_type = EventType.PULL_REQUEST
-            self.number = github_event["pull_request"]["number"]  # type: int
+            self.number = github_event["pull_request"]["number"]
             if pr_event_from_api:
                 try:
                     response = get_gh_api(
@@ -168,25 +209,19 @@ class PRInfo:
             else:
                 self.sha = github_event["pull_request"]["head"]["sha"]
 
-            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
-            self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
-
             # master or backport/xx.x/xxxxx - where the PR will be merged
-            self.base_ref = github_event["pull_request"]["base"]["ref"]  # type: str
+            self.base_ref = github_event["pull_request"]["base"]["ref"]
             # ClickHouse/ClickHouse
-            self.base_name = github_event["pull_request"]["base"]["repo"][
-                "full_name"
-            ]  # type: str
+            self.base_name = github_event["pull_request"]["base"]["repo"]["full_name"]
             # any_branch-name - the name of working branch name
-            self.head_ref = github_event["pull_request"]["head"]["ref"]  # type: str
+            self.head_ref = github_event["pull_request"]["head"]["ref"]
             # UserName/ClickHouse or ClickHouse/ClickHouse
-            self.head_name = github_event["pull_request"]["head"]["repo"][
-                "full_name"
-            ]  # type: str
+            self.head_name = github_event["pull_request"]["head"]["repo"]["full_name"]
             self.body = github_event["pull_request"]["body"]
             self.labels = {
                 label["name"] for label in github_event["pull_request"]["labels"]
             }
+            self.updated_at = github_event["pull_request"]["updated_at"]
 
             self.user_login = github_event["pull_request"]["user"]["login"]  # type: str
             self.user_orgs = set()  # type: Set[str]
@@ -223,7 +258,6 @@ class PRInfo:
                 .replace("{base}", base_sha)
                 .replace("{head}", self.sha)
             )
-            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
         elif "commits" in github_event:
             self.event_type = EventType.PUSH
@@ -237,7 +271,6 @@ class PRInfo:
                     logging.error("Failed to convert %s to integer", merged_pr)
             self.sha = github_event["after"]
             pull_request = get_pr_for_commit(self.sha, github_event["ref"])
-            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
 
             if pull_request is None or pull_request["state"] == "closed":
                 # it's merged PR to master
@@ -245,7 +278,6 @@ class PRInfo:
                 if pull_request:
                     self.merged_pr = pull_request["number"]
                 self.labels = set()
-                self.pr_html_url = f"{repo_prefix}/commits/{ref}"
                 self.base_ref = ref
                 self.base_name = self.repo_full_name
                 self.head_ref = ref
@@ -311,8 +343,6 @@ class PRInfo:
                 "GITHUB_SHA", "0000000000000000000000000000000000000000"
             )
             self.number = 0
-            self.commit_html_url = f"{repo_prefix}/commit/{self.sha}"
-            self.pr_html_url = f"{repo_prefix}/commits/{ref}"
             self.base_ref = ref
             self.base_name = self.repo_full_name
             self.head_ref = ref
@@ -320,6 +350,23 @@ class PRInfo:
 
         if need_changed_files:
             self.fetch_changed_files()
+
+    @property
+    def pr_html_url(self) -> str:
+        if getattr(self, "_pr_html_url", None) is not None:
+            return self._pr_html_url
+
+        if self.number != 0:
+            return f"{self.repo_prefix}/pull/{self.number}"
+        return f"{self.repo_prefix}/commits/{self.base_ref}"
+
+    @pr_html_url.setter
+    def pr_html_url(self, url: str) -> None:
+        self._pr_html_url = url
+
+    @property
+    def commit_html_url(self) -> str:
+        return f"{self.repo_prefix}/commit/{self.sha}"
 
     @property
     def is_master(self) -> bool:
@@ -406,11 +453,8 @@ class PRInfo:
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
             path_in_docs = f.startswith("docs/")
-            if (
-                (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
-                or "docker/docs" in f
-                or "Settings.cpp" in f
-                or "FormatFactorySettings.h" in f
+            if (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs) or any(
+                docs_path in f for docs_path in DOCS_FILES
             ):
                 return True
         return False
@@ -418,7 +462,6 @@ class PRInfo:
     def has_changes_in_documentation_only(self) -> bool:
         """
         checks if changes are docs related without other changes
-        FIXME: avoid hardcoding filenames here
         """
         if not self.changed_files_requested:
             self.fetch_changed_files()
@@ -432,10 +475,7 @@ class PRInfo:
             path_in_docs = f.startswith("docs/")
             if not (
                 (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs)
-                or "docker/docs" in f
-                or "docs_check.py" in f
-                or "aspell-dict.txt" in f
-                or ext == ".md"
+                or any(docs_path in f for docs_path in DOCS_ONLY_FILES)
             ):
                 return False
         return True
@@ -454,7 +494,7 @@ class PRInfo:
 
     def get_latest_sync_commit(self):
         gh = GitHub(get_best_robot_token(), per_page=100)
-        assert self.head_ref.startswith("sync-upstream/pr/")
+        assert self.head_ref.startswith(SYNC_PR_PREFIX)
         assert self.repo_full_name != GITHUB_UPSTREAM_REPOSITORY
         upstream_repo = gh.get_repo(GITHUB_UPSTREAM_REPOSITORY)
         upstream_pr_number = int(self.head_ref.split("/pr/", maxsplit=1)[1])

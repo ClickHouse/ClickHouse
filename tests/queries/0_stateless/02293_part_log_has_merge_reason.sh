@@ -41,8 +41,9 @@ function get_parts_count() {
 
 function wait_table_parts_are_merged_into_one_part() {
     table_name=$1
+    local TIMELIMIT=$((SECONDS+60)) # 60 second timeout
 
-    while true
+    while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         count=$(get_parts_count $table_name)
         if [[ count -gt 1 ]]
@@ -54,12 +55,9 @@ function wait_table_parts_are_merged_into_one_part() {
     done
 }
 
-export -f get_parts_count
-export -f wait_table_parts_are_merged_into_one_part
+wait_table_parts_are_merged_into_one_part t_part_log_has_merge_type_table
 
-timeout 60 bash -c 'wait_table_parts_are_merged_into_one_part t_part_log_has_merge_type_table'
-
-${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS'
+${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS part_log'
 
 ${CLICKHOUSE_CLIENT} -q '
   SELECT

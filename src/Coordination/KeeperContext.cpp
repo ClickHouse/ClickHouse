@@ -13,7 +13,7 @@
 #include <Poco/Util/JSONConfiguration.h>
 #include <Coordination/KeeperConstants.h>
 #include <Server/CloudPlacementInfo.h>
-#include <Coordination/KeeperFeatureFlags.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
 
@@ -45,8 +45,20 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
     , coordination_settings(std::move(coordination_settings_))
 {
     /// enable by default some feature flags
-    feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
-    feature_flags.enableFeatureFlag(KeeperFeatureFlag::MULTI_READ);
+    static constexpr std::array enabled_by_default_feature_flags
+    {
+        KeeperFeatureFlag::FILTERED_LIST,
+        KeeperFeatureFlag::MULTI_READ,
+        KeeperFeatureFlag::CHECK_NOT_EXISTS,
+        KeeperFeatureFlag::CREATE_IF_NOT_EXISTS,
+        KeeperFeatureFlag::REMOVE_RECURSIVE,
+        KeeperFeatureFlag::MULTI_WATCHES,
+        KeeperFeatureFlag::PERSISTENT_WATCHES,
+    };
+
+    for (const auto feature_flag : enabled_by_default_feature_flags)
+        feature_flags.enableFeatureFlag(feature_flag);
+
     system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
 
     /// for older clients, the default is equivalent to WITH_MULTI_READ version
@@ -155,6 +167,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     updateKeeperMemorySoftLimit(config);
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
+    digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
     initializeFeatureFlags(config);
@@ -173,6 +186,8 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 
     if (config.has("keeper_server.precommit_sleep_probability_for_testing"))
         precommit_sleep_probability_for_testing = config.getDouble("keeper_server.precommit_sleep_probability_for_testing");
+
+    block_acl = config.getBool("keeper_server.cleanup_old_and_ignore_new_acl", false);
 }
 
 namespace
@@ -208,7 +223,12 @@ void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & co
 {
     disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance(), diskValidator);
 
-    rocksdb_storage = getRocksDBPathFromConfig(config);
+    #if USE_ROCKSDB
+    if (config.getBool("keeper_server.coordination_settings.experimental_use_rocksdb", false))
+    {
+        rocksdb_storage = getRocksDBPathFromConfig(config);
+    }
+    #endif
 
     log_storage = getLogsPathFromConfig(config);
 
@@ -259,6 +279,11 @@ bool KeeperContext::ignoreSystemPathOnStartup() const
 bool KeeperContext::digestEnabled() const
 {
     return digest_enabled;
+}
+
+bool KeeperContext::digestEnabledOnCommit() const
+{
+    return digest_enabled_on_commit;
 }
 
 void KeeperContext::setDigestEnabled(bool digest_enabled_)
@@ -417,7 +442,7 @@ KeeperContext::Storage KeeperContext::getLogsPathFromConfig(const Poco::Util::Ab
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalLogDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
+        disk->startup(false);
         return disk;
     };
 
@@ -444,7 +469,7 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalSnapshotDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
+        disk->startup(false);
         return disk;
     };
 
@@ -471,7 +496,7 @@ KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::A
             fs::create_directories(path);
 
         auto disk = std::make_shared<DiskLocal>("LocalStateFileDisk", path);
-        disk->startup(Context::getGlobalContextInstance(), false);
+        disk->startup(false);
         return disk;
     };
 
@@ -514,7 +539,13 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
                 feature_flags.disableFeatureFlag(feature_flag.value());
         }
 
+        if (feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ))
+            feature_flags.enableFeatureFlag(KeeperFeatureFlag::FILTERED_LIST);
+        else
+            system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::ZOOKEEPER_COMPATIBLE));
+
         system_nodes_with_data[keeper_api_feature_flags_path] = feature_flags.getFeatureFlags();
+
     }
 
     feature_flags.logFlags(getLogger("KeeperContext"));
@@ -569,6 +600,73 @@ const CoordinationSettings & KeeperContext::getCoordinationSettings() const
     return *coordination_settings;
 }
 
+int64_t KeeperContext::getPrecommitSleepMillisecondsForTesting() const
+{
+    return precommit_sleep_ms_for_testing;
+}
+
+double KeeperContext::getPrecommitSleepProbabilityForTesting() const
+{
+    chassert(precommit_sleep_probability_for_testing >= 0 && precommit_sleep_probability_for_testing <= 1);
+    return precommit_sleep_probability_for_testing;
+}
+
+bool KeeperContext::shouldBlockACL() const
+{
+    return block_acl;
+}
+
+void KeeperContext::setBlockACL(bool block_acl_)
+{
+    block_acl = block_acl_;
+}
+
+bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
+{
+    switch (operation)
+    {
+        case Coordination::OpNum::FilteredList:
+            return feature_flags.isEnabled(KeeperFeatureFlag::FILTERED_LIST);
+        case Coordination::OpNum::MultiRead:
+            return feature_flags.isEnabled(KeeperFeatureFlag::MULTI_READ);
+        case Coordination::OpNum::CreateIfNotExists:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
+        case Coordination::OpNum::CheckNotExists:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS);
+        case Coordination::OpNum::RemoveRecursive:
+            return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
+        case Coordination::OpNum::CheckStat:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
+        case Coordination::OpNum::Create2:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_STATS);
+        case Coordination::OpNum::SetWatch:
+        case Coordination::OpNum::SetWatch2:
+        case Coordination::OpNum::AddWatch:
+        case Coordination::OpNum::CheckWatch:
+        case Coordination::OpNum::RemoveWatch:
+            return feature_flags.isEnabled(KeeperFeatureFlag::PERSISTENT_WATCHES);
+        case Coordination::OpNum::Close:
+        case Coordination::OpNum::Error:
+        case Coordination::OpNum::Create:
+        case Coordination::OpNum::Remove:
+        case Coordination::OpNum::Exists:
+        case Coordination::OpNum::Get:
+        case Coordination::OpNum::Set:
+        case Coordination::OpNum::GetACL:
+        case Coordination::OpNum::SetACL:
+        case Coordination::OpNum::SimpleList:
+        case Coordination::OpNum::Sync:
+        case Coordination::OpNum::Heartbeat:
+        case Coordination::OpNum::List:
+        case Coordination::OpNum::Check:
+        case Coordination::OpNum::Multi:
+        case Coordination::OpNum::Reconfig:
+        case Coordination::OpNum::Auth:
+        case Coordination::OpNum::SessionID:
+            return true;
+    }
+}
+
 uint64_t KeeperContext::lastCommittedIndex() const
 {
     return last_committed_log_idx.load(std::memory_order_relaxed);
@@ -599,6 +697,16 @@ bool KeeperContext::waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms
 
     wait_commit_upto_idx.reset();
     return success;
+}
+
+bool KeeperContext::shouldLogRequests() const
+{
+    return log_requests.load(std::memory_order_relaxed);
+}
+
+void KeeperContext::setLogRequests(bool log_requests_)
+{
+    log_requests.store(log_requests_, std::memory_order_relaxed);
 }
 
 }

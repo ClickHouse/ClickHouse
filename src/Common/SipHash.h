@@ -13,24 +13,20 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include <bit>
-#include <string>
-#include <type_traits>
 #include <Core/Defines.h>
 #include <base/extended_types.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <base/hex.h>
-#include <Common/Exception.h>
-#include <Common/transformEndianness.h>
+
+#include <array>
+#include <bit>
+#include <string>
 
 #include <city.h>
 
-
-namespace DB::ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+#include <Common/transformEndianness.h>
+#include <type_traits>
 
 #define SIPROUND                                                  \
     do                                                            \
@@ -149,6 +145,7 @@ public:
 
         /// Pad the remainder, which is missing up to an 8-byte word.
         current_word = 0;
+        /// NOLINTBEGIN(clang-analyzer-security.ArrayBound)
         switch (end - data) /// NOLINT(bugprone-switch-missing-default-case)
         {
             case 7: current_bytes[CURRENT_BYTES_IDX(6)] = data[6]; [[fallthrough]];
@@ -160,6 +157,7 @@ public:
             case 1: current_bytes[CURRENT_BYTES_IDX(0)] = data[0]; [[fallthrough]];
             case 0: break;
         }
+        /// NOLINTEND(clang-analyzer-security.ArrayBound)
     }
 
     template <typename Transform = void, typename T>
@@ -176,7 +174,9 @@ public:
             update(reinterpret_cast<const char *>(&transformed_x), sizeof(transformed_x)); /// NOLINT
         }
         else
+        {
             update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+        }
     }
 
     ALWAYS_INLINE void update(const std::string & x) { update(x.data(), x.length()); }
@@ -205,32 +205,11 @@ public:
         return res;
     }
 
-    UInt128 get128Reference()
-    {
-        if (!is_reference_128)
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR, "Can't call get128Reference when is_reference_128 is not set");
-        finalize();
-        const auto lo = v0 ^ v1 ^ v2 ^ v3;
-        v1 ^= 0xdd;
-        SIPROUND;
-        SIPROUND;
-        SIPROUND;
-        SIPROUND;
-        const auto hi = v0 ^ v1 ^ v2 ^ v3;
-
-        UInt128 res = hi;
-        res <<= 64;
-        res |= lo;
-        return res;
-    }
+    UInt128 get128Reference();
 };
 
 
 #undef ROTL
-#undef SIPROUND
-
-#include <cstddef>
 
 inline std::array<char, 16> getSipHash128AsArray(SipHash & sip_hash)
 {
@@ -243,6 +222,23 @@ inline CityHash_v1_0_2::uint128 getSipHash128AsPair(SipHash & sip_hash)
 {
     CityHash_v1_0_2::uint128 result;
     sip_hash.get128(result.low64, result.high64);
+    return result;
+}
+
+inline String getSipHash128AsHexString(SipHash & sip_hash)
+{
+    String result;
+
+    const auto hash_data = getSipHash128AsArray(sip_hash);
+    const auto hash_size = hash_data.size();
+    result.resize(hash_size * 2);
+    for (size_t i = 0; i < hash_size; ++i)
+    {
+        if constexpr (std::endian::native == std::endian::big)
+            writeHexByteLowercase(hash_data[hash_size - 1 - i], &result[2 * i]);
+        else
+            writeHexByteLowercase(hash_data[i], &result[2 * i]);
+    }
     return result;
 }
 

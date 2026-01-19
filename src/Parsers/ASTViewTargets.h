@@ -49,6 +49,9 @@ struct ViewTarget
     /// Table engine of the target table, if it's inner.
     /// That engine can be seen for example after "ENGINE" in a statement like CREATE MATERIALIZED VIEW ... ENGINE ...
     std::shared_ptr<ASTStorage> inner_engine;
+
+    /// Table's AST with query parameters
+    ASTPtr table_ast;
 };
 
 /// Converts ViewTarget::Kind to a string.
@@ -69,6 +72,12 @@ class ASTViewTargets : public IAST
 {
 public:
     std::vector<ViewTarget> targets;
+
+    /// Manipulates AST of the target table which has query parameters in its definition
+    void setTableASTWithQueryParams(ViewTarget::Kind kind, const ASTPtr & table_);
+    bool hasTableASTWithQueryParams(ViewTarget::Kind kind) const;
+    ASTPtr getTableASTWithQueryParams(ViewTarget::Kind kind);
+    void resetTableASTWithQueryParams(ViewTarget::Kind kind);
 
     /// Sets the StorageID of the target table, if it's not inner.
     /// That storage ID can be seen for example after "TO" in a statement like CREATE MATERIALIZED VIEW ... TO ...
@@ -106,11 +115,9 @@ public:
 
     ASTPtr clone() const override;
 
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-
     /// Formats information only about a specific target table.
-    void formatTarget(ViewTarget::Kind kind, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const;
-    static void formatTarget(const ViewTarget & target, const FormatSettings & s, FormatState & state, FormatStateStacked frame);
+    void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const;
+    static void formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame);
 
     /// Helper functions for class ParserViewTargets. Returns a prefix keyword matching a specified target kind.
     static std::optional<Keyword> getKeywordForTableID(ViewTarget::Kind kind);
@@ -118,6 +125,7 @@ public:
     static std::optional<Keyword> getKeywordForInnerStorage(ViewTarget::Kind kind);
 
 protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
     void forEachPointerToChild(std::function<void(void**)> f) override;
 };
 

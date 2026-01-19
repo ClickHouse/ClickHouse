@@ -33,9 +33,11 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool formatdatetime_format_without_leading_zeros;
+    extern const SettingsBool formatdatetime_f_prints_scale_number_of_digits;
     extern const SettingsBool formatdatetime_f_prints_single_zero;
+    extern const SettingsBool formatdatetime_format_without_leading_zeros;
     extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
+    extern const SettingsBool formatdatetime_e_with_space_padding;
 }
 
 namespace ErrorCodes
@@ -193,7 +195,10 @@ private:
         template <typename T>
         static size_t writeNumber2(char * p, T v)
         {
-            memcpy(p, &digits100[v * 2], 2);
+            static_assert(std::is_integral_v<T>);
+            assert(v >= 0 && v <= 99);
+
+            memcpy(p, &digits100[v * 2], 2);  /// NOLINT(clang-analyzer-security.ArrayBound)
             return 2;
         }
 
@@ -266,7 +271,7 @@ private:
             }
             if (digits_written < digits)
             {
-                dest[pos] = '0' + n;
+                dest[pos] = static_cast<char>('0' + n);
                 ++pos;
             }
 
@@ -296,12 +301,25 @@ private:
             return writeNumber2(dest, ToDayOfMonthImpl::execute(source, timezone));
         }
 
-        size_t mysqlAmericanDate(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlAmericanDate(char * dest, Time source, const DateLUTImpl & timezone)
         {
             writeNumber2(dest, ToMonthImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToDayOfMonthImpl::execute(source, timezone));
             writeNumber2(dest + 6, ToYearImpl::execute(source, timezone) % 100);
             return 8;
+        }
+
+        size_t mysqlAmericanDateWithoutSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlAmericanDate(dest, source, timezone);
+        }
+
+        size_t mysqlAmericanDateWithSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlAmericanDate(dest, source, timezone);
+            dest[2] = '/';
+            dest[5] = '/';
+            return total_bytes;
         }
 
         size_t mysqlDayOfMonthSpacePadded(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -314,12 +332,47 @@ private:
             return 2;
         }
 
-        size_t mysqlISO8601Date(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlISO8601Date(char * dest, Time source, const DateLUTImpl & timezone)
         {
             writeNumber4(dest, ToYearImpl::execute(source, timezone));
             writeNumber2(dest + 5, ToMonthImpl::execute(source, timezone));
             writeNumber2(dest + 8, ToDayOfMonthImpl::execute(source, timezone));
             return 10;
+        }
+
+        size_t mysqlISO8601DateWithoutSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlISO8601Date(dest, source, timezone);
+        }
+
+        size_t mysqlDayOfMonthWithSpacePadding(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto day = ToDayOfMonthImpl::execute(source, timezone);
+            if (day < 10)
+                dest[1] = '0' + day;
+            else
+                writeNumber2(dest, day);
+            return 2;
+        }
+
+        size_t mysqlDayOfMonthWithoutSpacePadding(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            auto day = ToDayOfMonthImpl::execute(source, timezone);
+            if (day < 10)
+            {
+                dest[0] = '0' + day;
+                return 1;
+            }
+            writeNumber2(dest, day);
+            return 2;
+        }
+
+        size_t mysqlISO8601DateWithSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlISO8601Date(dest, source, timezone);
+            dest[4] = '-';
+            dest[7] = '-';
+            return total_bytes;
         }
 
         size_t mysqlDayOfYear(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -473,14 +526,26 @@ private:
             return AMPM(dest, source, fractional_second, scale, timezone);
         }
 
-        size_t mysqlHHMM24(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlHHMM24(char * dest, Time source, const DateLUTImpl & timezone)
         {
             writeNumber2(dest, ToHourImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToMinuteImpl::execute(source, timezone));
             return 5;
         }
 
-        size_t mysqlHHMM12(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        size_t mysqlHHMM24WithoutSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlHHMM24(dest, source, timezone);
+        }
+
+        size_t mysqlHHMM24WithSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlHHMM24(dest, source, timezone);
+            dest[2] = ':';
+            return total_bytes;
+        }
+
+        size_t mysqlHHMM12(char * dest, Time source, const DateLUTImpl & timezone)
         {
             auto hour = ToHourImpl::execute(source, timezone);
             writeNumber2(dest, hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour));
@@ -490,44 +555,96 @@ private:
             return 8;
         }
 
+        size_t mysqlHHMM12WithoutSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            return mysqlHHMM12(dest, source, timezone);
+        }
+
+        size_t mysqlHHMM12WithSeparator(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
+        {
+            size_t total_bytes = mysqlHHMM12(dest, source, timezone);
+            dest[2] = ':';
+            dest[5] = ' ';
+            dest[7] = 'M';
+            return total_bytes;
+        }
+
         size_t mysqlSecond(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
         {
             return writeNumber2(dest, ToSecondImpl::execute(source, timezone));
         }
 
+        /// Always prints six digits (as specified by MySQL documentation)
         size_t mysqlFractionalSecond(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
+        {
+            /// Truncate to buffer size == 6 if more than 6 digits are passed in.
+            while (scale > 6)
+            {
+                --scale;
+                fractional_second /= 10;
+            }
+
+            size_t writes = 0;
+            for (UInt32 i = scale; i > 0; --i)
+            {
+                dest[i - 1] = '0' + (fractional_second % 10);
+                fractional_second /= 10;
+                ++writes;
+            }
+
+            for (size_t i = writes; i < 6; ++i)
+                dest[i] = '0';
+
+            return 6;
+        }
+
+        /// Prints the number of digits that were specified by the scale of the DateTime64. Legacy.
+        size_t mysqlFractionalSecondScaleNumDigits(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
             if (scale == 0)
                 scale = 6;
 
-            for (Int64 i = scale, value = fractional_second; i > 0; --i)
+            for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += value % 10;
-                value /= 10;
+                dest[i - 1] += fractional_second % 10;
+                fractional_second /= 10;
             }
             return scale;
         }
 
-        /// Same as mysqlFractionalSecond but prints a single zero if the value has no fractional seconds
+        /// Same as mysqlFractionalSecondScaleNumDigits but prints a single zero if the value has no fractional seconds. Legacy.
         size_t mysqlFractionalSecondSingleZero(char * dest, Time /*source*/, UInt64 fractional_second, UInt32 scale, const DateLUTImpl & /*timezone*/)
         {
             if (scale == 0)
                 scale = 1;
 
-            for (Int64 i = scale, value = fractional_second; i > 0; --i)
+            for (UInt32 i = scale; i > 0; --i)
             {
-                dest[i - 1] += value % 10;
-                value /= 10;
+                dest[i - 1] += fractional_second % 10;
+                fractional_second /= 10;
             }
             return scale;
         }
 
-        size_t mysqlISO8601Time(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        size_t mysqlISO8601Time(char * dest, Time source, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber2(dest, ToHourImpl::execute(source, timezone));
             writeNumber2(dest + 3, ToMinuteImpl::execute(source, timezone));
             writeNumber2(dest + 6, ToSecondImpl::execute(source, timezone));
             return 8;
+        }
+
+        size_t mysqlISO8601TimeWithoutSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        {
+            return mysqlISO8601Time(dest, source, timezone);
+        }
+
+        size_t mysqlISO8601TimeWithSeparators(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone) // NOLINT
+        {
+            size_t total_bytes = mysqlISO8601Time(dest, source, timezone);
+            dest[2] = ':';
+            dest[5] = ':';
+            return total_bytes;
         }
 
         size_t mysqlTimezoneOffset(char * dest, Time source, UInt64, UInt32, const DateLUTImpl & timezone)
@@ -537,6 +654,10 @@ private:
             {
                 *dest = '-';
                 offset = -offset;
+            }
+            else
+            {
+                *dest = '+';
             }
 
             writeNumber2(dest + 1, offset / 3600);
@@ -730,11 +851,12 @@ private:
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'%' must not be the last character in the format string, use '%%' instead");
     }
 
-    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros)
+    static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros, bool mysql_e_with_space_padding)
     {
         static constexpr std::array variable_width_formatter = {'W'};
         static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
         static constexpr std::array variable_width_formatter_leading_zeros = {'c', 'l', 'k'};
+        static constexpr std::array variable_width_formatter_e_with_space_padding = {'e'};
 
         for (size_t i = 0; i < format.size(); ++i)
         {
@@ -757,6 +879,13 @@ private:
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }
+                    if (!mysql_e_with_space_padding)
+                    {
+                        if (std::any_of(
+                                variable_width_formatter_e_with_space_padding.begin(), variable_width_formatter_e_with_space_padding.end(),
+                                [&](char c){ return c == format[i + 1]; }))
+                            return false;
+                    }
                     else
                     {
                         if (std::any_of(
@@ -776,7 +905,9 @@ private:
 
     const bool mysql_M_is_month_name;
     const bool mysql_f_prints_single_zero;
+    const bool mysql_f_prints_scale_number_of_digits;
     const bool mysql_format_ckl_without_leading_zeros;
+    const bool mysql_e_with_space_padding;
 
 public:
     static constexpr auto name = Name::name;
@@ -786,7 +917,9 @@ public:
     explicit FunctionFormatDateTimeImpl(ContextPtr context)
         : mysql_M_is_month_name(context->getSettingsRef()[Setting::formatdatetime_parsedatetime_m_is_month_name])
         , mysql_f_prints_single_zero(context->getSettingsRef()[Setting::formatdatetime_f_prints_single_zero])
+        , mysql_f_prints_scale_number_of_digits(context->getSettingsRef()[Setting::formatdatetime_f_prints_scale_number_of_digits])
         , mysql_format_ckl_without_leading_zeros(context->getSettingsRef()[Setting::formatdatetime_format_without_leading_zeros])
+        , mysql_e_with_space_padding(context->getSettingsRef()[Setting::formatdatetime_e_with_space_padding])
     {
     }
 
@@ -940,7 +1073,9 @@ public:
         ///   column rows are NOT populated with the template and left uninitialized. We run the normal instructions for formatters AND
         ///   instructions that copy literal characters before/between/after formatters. As a result, each byte of each result row is
         ///   written which is obviously slow.
-        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL) ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name, mysql_format_ckl_without_leading_zeros) : false;
+        bool mysql_with_only_fixed_length_formatters = (format_syntax == FormatSyntax::MySQL)
+            ? containsOnlyFixedWidthMySQLFormatters(format, mysql_M_is_month_name, mysql_format_ckl_without_leading_zeros, mysql_e_with_space_padding)
+            : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
         std::vector<Instruction<T>> instructions;
@@ -963,7 +1098,7 @@ public:
         auto col_res = ColumnString::create();
         auto & res_data = col_res->getChars();
         auto & res_offsets = col_res->getOffsets();
-        res_data.resize(input_rows_count * (out_template_size + 1));
+        res_data.resize(input_rows_count * out_template_size);
         res_offsets.resize(input_rows_count);
 
         if constexpr (format_syntax == FormatSyntax::MySQL)
@@ -978,8 +1113,8 @@ public:
 
                     if (pos < end)
                     {
-                        memcpy(pos, out_template.data(), out_template_size + 1); /// With zero terminator. mystring[mystring.size()] = '\0' is guaranteed since C++11.
-                        pos += out_template_size + 1;
+                        memcpy(pos, out_template.data(), out_template_size);
+                        pos += out_template_size;
                     }
 
                     /// Copy exponentially growing ranges.
@@ -1001,8 +1136,8 @@ public:
         {
             if (!const_time_zone_column && arguments.size() > 2)
             {
-                if (!arguments[2].column.get()->getDataAt(i).toString().empty())
-                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
+                if (!arguments[2].column.get()->getDataAt(i).empty())
+                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
                 else
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
             }
@@ -1026,8 +1161,6 @@ public:
                 for (auto & instruction : instructions)
                     instruction.perform(pos, static_cast<T>(vec[i]), 0, 0, *time_zone);
             }
-            *pos++ = '\0';
-
             res_offsets[i] = pos - begin;
         }
 
@@ -1091,11 +1224,11 @@ public:
         };
 
         Pos pos = format.data();
-        Pos const end = format.data() + format.size();
+        const Pos end = format.data() + format.size();
 
         while (true)
         {
-            Pos const percent_pos = find_first_symbols<'%'>(pos, end);
+            const Pos percent_pos = find_first_symbols<'%'>(pos, end);
 
             if (percent_pos < end)
             {
@@ -1176,19 +1309,33 @@ public:
                     case 'D':
                     {
                         Instruction<T> instruction;
-                        instruction.setMysqlFunc(&Instruction<T>::mysqlAmericanDate);
+                        instruction.setMysqlFunc(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlAmericanDateWithoutSeparators /// assumes that `/` is already there
+                                                    : &Instruction<T>::mysqlAmericanDateWithSeparators);
                         instructions.push_back(std::move(instruction));
                         out_template += "00/00/00";
                         break;
                     }
 
-                    // Day of month, space-padded ( 1-31)  23
+                    // Day of month
                     case 'e':
                     {
-                        Instruction<T> instruction;
-                        instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthSpacePadded);
-                        instructions.push_back(std::move(std::move(instruction)));
-                        out_template += " 0";
+                        if (mysql_e_with_space_padding)
+                        {
+                            /// Space-padded ( 1-31)
+                            Instruction<T> instruction;
+                            instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthWithSpacePadding);
+                            instructions.push_back(std::move(std::move(instruction)));
+                            out_template += " 0";
+                        }
+                        else
+                        {
+                            /// Not space-padded (1-31)
+                            Instruction<T> instruction;
+                            instruction.setMysqlFunc(&Instruction<T>::mysqlDayOfMonthWithoutSpacePadding);
+                            instructions.push_back(std::move(std::move(instruction)));
+                            out_template += "00";
+                        }
                         break;
                     }
 
@@ -1216,9 +1363,10 @@ public:
                     // Fractional seconds
                     case 'f':
                     {
-                        /// If the time data type has no fractional part, we print (default) '000000' or (deprecated) '0' as fractional part.
                         if (mysql_f_prints_single_zero)
                         {
+                            /// If the time data type has no fractional part, print '0' as fractional part.
+                            /// Legacy behavior.
                             Instruction<T> instruction;
                             instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecondSingleZero);
                             instructions.push_back(std::move(instruction));
@@ -1226,10 +1374,24 @@ public:
                         }
                         else
                         {
-                            Instruction<T> instruction;
-                            instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
-                            instructions.push_back(std::move(instruction));
-                            out_template += String(scale == 0 ? 6 : scale, '0');
+                            /// If the time data type has no fractional part, print '000000' as fractional part.
+                            if (mysql_f_prints_scale_number_of_digits)
+                            {
+                                /// Print as many digits as specified by scale. Legacy behavior.
+                                Instruction<T> instruction;
+                                instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecondScaleNumDigits);
+                                instructions.push_back(std::move(instruction));
+                                out_template += String(scale == 0 ? 6 : scale, '0');
+                            }
+                            else
+                            {
+                                /// Unconditionally print six digits (independent of scale).
+                                /// This is what MySQL does, may it live long and prosper.
+                                Instruction<T> instruction;
+                                instruction.setMysqlFunc(&Instruction<T>::mysqlFractionalSecond);
+                                instructions.push_back(std::move(instruction));
+                                out_template += String(6, '0');
+                            }
                         }
                         break;
                     }
@@ -1238,7 +1400,9 @@ public:
                     case 'F':
                     {
                         Instruction<T> instruction;
-                        instruction.setMysqlFunc(&Instruction<T>::mysqlISO8601Date);
+                        instruction.setMysqlFunc(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlISO8601DateWithoutSeparators /// assumes that `-` is already there
+                                                    : &Instruction<T>::mysqlISO8601DateWithSeparators);
                         instructions.push_back(std::move(instruction));
                         out_template += "0000-00-00";
                         break;
@@ -1379,7 +1543,10 @@ public:
                     case 'r':
                     {
                         static constexpr std::string_view val = "12:00 AM";
-                        add_time_instruction(&Instruction<T>::mysqlHHMM12, val);
+                        add_time_instruction(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlHHMM12WithoutSeparator /// assumes that `:`, ` ` and `M` are already there
+                                                    : &Instruction<T>::mysqlHHMM12WithSeparator,
+                                             val);
                         out_template += val;
                         break;
                     }
@@ -1388,7 +1555,10 @@ public:
                     case 'R':
                     {
                         static constexpr std::string_view val = "00:00";
-                        add_time_instruction(&Instruction<T>::mysqlHHMM24, val);
+                        add_time_instruction(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlHHMM24WithoutSeparator /// assumes that ':' is already there
+                                                    : &Instruction<T>::mysqlHHMM24WithSeparator,
+                                                    val);
                         out_template += val;
                         break;
                     }
@@ -1415,7 +1585,10 @@ public:
                     case 'T':
                     {
                         static constexpr std::string_view val = "00:00:00";
-                        add_time_instruction(&Instruction<T>::mysqlISO8601Time, val);
+                        add_time_instruction(mysql_with_only_fixed_length_formatters
+                                                    ? &Instruction<T>::mysqlISO8601TimeWithoutSeparators /// assumes that `:` is already there
+                                                    : &Instruction<T>::mysqlISO8601TimeWithSeparators,
+                                                    val);
                         out_template += val;
                         break;
                     }
@@ -1836,13 +2009,265 @@ using FunctionFromUnixTimestampInJodaSyntax = FunctionFormatDateTimeImpl<NameFro
 
 REGISTER_FUNCTION(FormatDateTime)
 {
-    factory.registerFunction<FunctionFormatDateTime>();
+    FunctionDocumentation::Description description_formatDateTime = R"(
+Formats a date or date with time according to the given format string. `format` is a constant expression, so you cannot have multiple formats for a single result column.
+
+`formatDateTime` uses MySQL datetime format style, refer to the [mysql docs](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
+
+The opposite operation of this function is [`parseDateTime`](/sql-reference/functions/type-conversion-functions#parseDateTime).
+
+Using replacement fields, you can define a pattern for the resulting string.
+The example column in the table below shows formatting result for `2018-01-02 22:33:44`.
+
+**Replacement fields:**
+
+| Placeholder | Description | Example |
+|-------------|-------------|---------|
+| %a | abbreviated weekday name (Mon-Sun) | Mon |
+| %b | abbreviated month name (Jan-Dec) | Jan |
+| %c | month as an integer number (01-12) | 01 |
+| %C | year divided by 100 and truncated to integer (00-99) | 20 |
+| %d | day of the month, zero-padded (01-31) | 02 |
+| %D | Short MM/DD/YY date, equivalent to %m/%d/%y | 01/02/18 |
+| %e | day of the month, space-padded (1-31) | 2 |
+| %f | fractional second | 123456 |
+| %F | short YYYY-MM-DD date, equivalent to %Y-%m-%d | 2018-01-02 |
+| %g | two-digit year format, aligned to ISO 8601 | 18 |
+| %G | four-digit year format for ISO week number | 2018 |
+| %h | hour in 12h format (01-12) | 09 |
+| %H | hour in 24h format (00-23) | 22 |
+| %i | minute (00-59) | 33 |
+| %I | hour in 12h format (01-12) | 10 |
+| %j | day of the year (001-366) | 002 |
+| %k | hour in 24h format (00-23) | 14 |
+| %l | hour in 12h format (01-12) | 09 |
+| %m | month as an integer number (01-12) | 01 |
+| %M | full month name (January-December) | January |
+| %n | new-line character | |
+| %p | AM or PM designation | PM |
+| %Q | Quarter (1-4) | 1 |
+| %r | 12-hour HH:MM AM/PM time, equivalent to %h:%i %p | 10:30 PM |
+| %R | 24-hour HH:MM time, equivalent to %H:%i | 22:33 |
+| %s | second (00-59) | 44 |
+| %S | second (00-59) | 44 |
+| %t | horizontal-tab character | |
+| %T | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S | 22:33:44 |
+| %u | ISO 8601 weekday as number with Monday as 1 (1-7) | 2 |
+| %V | ISO 8601 week number (01-53) | 01 |
+| %w | weekday as a integer number with Sunday as 0 (0-6) | 2 |
+| %W | full weekday name (Monday-Sunday) | Monday |
+| %y | Year, last two digits (00-99) | 18 |
+| %Y | Year | 2018 |
+| %z | Time offset from UTC as +HHMM or -HHMM | -0500 |
+| %% | a % sign | % |
+
+- In ClickHouse versions earlier than v23.4, `%f` prints a single zero (0) if the formatted value is a Date, Date32 or DateTime (which have no fractional seconds) or a DateTime64 with a precision of 0.
+- In ClickHouse versions earlier than v25.1, `%f` prints as many digits as specified by the scale of the DateTime64 instead of fixed 6 digits.
+- In ClickHouse versions earlier than v23.4, `%M` prints the minute (00-59) instead of the full month name (January-December).
+    )";
+    FunctionDocumentation::Syntax syntax_formatDateTime = R"(
+formatDateTime(datetime, format[, timezone])
+    )";
+    FunctionDocumentation::Arguments arguments_formatDateTime =
+    {
+        {"datetime", "A date or date time to format.", {"Date", "Date32", "DateTime", "DateTime64"}},
+        {"format", "Format string with replacement fields.", {"String"}},
+        {"timezone", "Optional. Timezone name for the formatted time.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_formatDateTime = {"Returns time and date values according to the determined format.", {"String"}};
+    FunctionDocumentation::Examples examples_formatDateTime =
+    {
+        {"Format date with year placeholder", R"(
+SELECT formatDateTime(toDate('2010-01-04'), '%g')
+        )",
+        R"(
+┌─formatDateTime(toDate('2010-01-04'), '%g')─┐
+│ 10                                         │
+└────────────────────────────────────────────┘
+        )"},
+        {"Format DateTime64 with fractional seconds", R"(
+SELECT formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')
+        )",
+        R"(
+┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
+│ 1234560                                                             │
+└─────────────────────────────────────────────────────────────────────┘
+        )"},
+        {"Format with timezone", R"(
+SELECT
+    now() AS ts,
+    time_zone,
+    formatDateTime(ts, '%T', time_zone) AS str_tz_time
+FROM system.time_zones
+WHERE time_zone LIKE 'Europe%'
+LIMIT 10
+        )",
+        R"(
+┌──────────────────ts─┬─time_zone─────────┬─str_tz_time─┐
+│ 2023-09-08 19:13:40 │ Europe/Amsterdam  │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Andorra    │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Astrakhan  │ 23:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Athens     │ 22:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Belfast    │ 20:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Belgrade   │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Berlin     │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Bratislava │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Brussels   │ 21:13:40    │
+│ 2023-09-08 19:13:40 │ Europe/Bucharest  │ 22:13:40    │
+└─────────────────────┴───────────────────┴─────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_formatDateTime = {1, 1};
+    FunctionDocumentation::Category category_formatDateTime = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_formatDateTime = {description_formatDateTime, syntax_formatDateTime, arguments_formatDateTime, {}, returned_value_formatDateTime, examples_formatDateTime, introduced_in_formatDateTime, category_formatDateTime};
+
+    factory.registerFunction<FunctionFormatDateTime>(documentation_formatDateTime);
     factory.registerAlias("DATE_FORMAT", FunctionFormatDateTime::name, FunctionFactory::Case::Insensitive);
 
-    factory.registerFunction<FunctionFromUnixTimestamp>();
+    FunctionDocumentation::Description description_fromUnixTimestamp = R"(
+This function converts a Unix timestamp to a calendar date and a time of a day.
+
+It can be called in two ways:
+
+- When given a single argument of type [`Integer`](../data-types/int-uint.md), it returns a value of type [`DateTime`](../data-types/datetime.md), i.e. behaves like [`toDateTime`](../../sql-reference/functions/type-conversion-functions.md#toDateTime).
+- When given two or three arguments where the first argument is a value of type [`Integer`](../data-types/int-uint.md), [`Date`](../data-types/date.md), [`Date32`](../data-types/date32.md), [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [`String`](../data-types/string.md), i.e. it behaves like [`formatDateTime`](#formatDateTime).
+  In this case, [MySQL's datetime format style](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format) is used.
+    )";
+    FunctionDocumentation::Syntax syntax_fromUnixTimestamp = R"(
+fromUnixTimestamp(timestamp)
+fromUnixTimestamp(timestamp[, format[, timezone]])
+    )";
+    FunctionDocumentation::Arguments arguments_fromUnixTimestamp =
+    {
+        {"timestamp", "Unix timestamp or date/date with time value.", {"(U)Int*", "Date", "Date32", "DateTime", "DateTime64"}},
+        {"format", "Optional. Constant format string for output formatting.", {"String"}},
+        {"timezone", "Optional. Constant time zone string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_fromUnixTimestamp = {"Returns `DateTime` of the timestamp when called with one argument, or a String  when called with two or three arguments.", {"DateTime", "String"}};
+    FunctionDocumentation::Examples examples_fromUnixTimestamp =
+    {
+        {"Convert Unix timestamp to DateTime", R"(
+SELECT fromUnixTimestamp(423543535)
+        )",
+        R"(
+┌─fromUnixTimestamp(423543535)─┐
+│          1983-06-04 10:58:55 │
+└──────────────────────────────┘
+        )"},
+        {"Convert Unix timestamp with format", R"(
+SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
+        )",
+        R"(
+┌─DateTime────────────┐
+│ 2009-02-11 14:42:23 │
+└─────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_fromUnixTimestamp = {20, 8};
+    FunctionDocumentation::Category category_fromUnixTimestamp = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_fromUnixTimestamp =
+    {description_fromUnixTimestamp, syntax_fromUnixTimestamp, arguments_fromUnixTimestamp, {}, returned_value_fromUnixTimestamp, examples_fromUnixTimestamp, introduced_in_fromUnixTimestamp, category_fromUnixTimestamp};
+
+    factory.registerFunction<FunctionFromUnixTimestamp>(documentation_fromUnixTimestamp);
     factory.registerAlias("FROM_UNIXTIME", FunctionFromUnixTimestamp::name, FunctionFactory::Case::Insensitive);
 
-    factory.registerFunction<FunctionFormatDateTimeInJodaSyntax>();
-    factory.registerFunction<FunctionFromUnixTimestampInJodaSyntax>();
+    FunctionDocumentation::Description description_formatDateTimeInJodaSyntax = R"(
+Similar to `formatDateTime`, except that it formats datetime in Joda style instead of MySQL style. Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
+
+The opposite operation of this function is [`parseDateTimeInJodaSyntax`](/sql-reference/functions/type-conversion-functions#parseDateTimeInJodaSyntax).
+
+Using replacement fields, you can define a pattern for the resulting string.
+
+**Replacement fields:**
+
+| Placeholder | Description | Presentation | Examples |
+|-------------|-------------|-------------|----------|
+| G | era | text | AD |
+| C | century of era (>=0) | number | 20 |
+| Y | year of era (>=0) | year | 1996 |
+| x | weekyear (not supported yet) | year | 1996 |
+| w | week of weekyear (not supported yet) | number | 27 |
+| e | day of week | number | 2 |
+| E | day of week | text | Tuesday; Tue |
+| y | year | year | 1996 |
+| D | day of year | number | 189 |
+| M | month of year | month | July; Jul; 07 |
+| d | day of month | number | 10 |
+| a | halfday of day | text | PM |
+| K | hour of halfday (0~11) | number | 0 |
+| h | clockhour of halfday (1~12) | number | 12 |
+| H | hour of day (0~23) | number | 0 |
+| k | clockhour of day (1~24) | number | 24 |
+| m | minute of hour | number | 30 |
+| s | second of minute | number | 55 |
+| S | fraction of second | number | 978 |
+| z | time zone | text | Eastern Standard Time; EST |
+| Z | time zone offset | zone | -0800; -0812 |
+| ' | escape for text | delimiter | |
+| '' | single quote | literal | ' |
+    )";
+    FunctionDocumentation::Syntax syntax_formatDateTimeInJodaSyntax = R"(
+formatDateTimeInJodaSyntax(datetime, format[, timezone])
+    )";
+    FunctionDocumentation::Arguments arguments_formatDateTimeInJodaSyntax =
+    {
+        {"datetime", "A date or date time to format.", {"DateTime", "Date", "Date32", "DateTime64"}},
+        {"format", "Format string with Joda-style replacement fields.", {"String"}},
+        {"timezone", "Optional. Timezone name for the formatted time.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_formatDateTimeInJodaSyntax = {"Returns time and date values according to the determined format.", {"String"}};
+    FunctionDocumentation::Examples examples_formatDateTimeInJodaSyntax =
+    {
+        {"Format datetime using Joda syntax", R"(
+SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')
+        )",
+        R"(
+┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
+│ 2010-01-04 12:34:56                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_formatDateTimeInJodaSyntax = {20, 1};
+    FunctionDocumentation::Category category_formatDateTimeInJodaSyntax = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_formatDateTimeInJodaSyntax = {description_formatDateTimeInJodaSyntax, syntax_formatDateTimeInJodaSyntax, arguments_formatDateTimeInJodaSyntax, {}, returned_value_formatDateTimeInJodaSyntax, examples_formatDateTimeInJodaSyntax, introduced_in_formatDateTimeInJodaSyntax, category_formatDateTimeInJodaSyntax};
+
+    factory.registerFunction<FunctionFormatDateTimeInJodaSyntax>(documentation_formatDateTimeInJodaSyntax);
+
+    FunctionDocumentation::Description description_fromUnixTimestampInJodaSyntax = R"(
+This function converts a Unix timestamp to a calendar date and a time of a day.
+
+It can be called in two ways:
+
+When given a single argument of type [`Integer`](../data-types/int-uint.md), it returns a value of type [`DateTime`](../data-types/datetime.md), i.e. behaves like [`toDateTime`](../../sql-reference/functions/type-conversion-functions.md#toDateTime).
+
+When given two or three arguments where the first argument is a value of type [`Integer`](../data-types/int-uint.md), [`Date`](../data-types/date.md), [`Date32`](../data-types/date32.md), [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [`String`](../data-types/string.md), i.e. it behaves like [`formatDateTimeInJodaSyntax`](#formatDateTimeInJodaSyntax). In this case, [Joda datetime format style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) is used.
+    )";
+    FunctionDocumentation::Syntax syntax_fromUnixTimestampInJodaSyntax = R"(
+fromUnixTimestampInJodaSyntax(timestamp)
+fromUnixTimestampInJodaSyntax(timestamp, format[, timezone])
+    )";
+    FunctionDocumentation::Arguments arguments_fromUnixTimestampInJodaSyntax =
+    {
+        {"timestamp", "Unix timestamp or date/time value.", {"(U)Int*", "Date", "Date32", "DateTime", "DateTime64"}},
+        {"format", "Optional. Constant format string using Joda syntax for output formatting.", {"String"}},
+        {"timezone", "Optional. Constant time zone string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_fromUnixTimestampInJodaSyntax = {"Returns a date with time when called with one argument, or a String when called with two or three arguments.}", {"DateTime", "String"}};
+    FunctionDocumentation::Examples examples_fromUnixTimestampInJodaSyntax =
+    {
+        {"Convert Unix timestamp with Joda format", R"(
+SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') AS DateTime
+        )",
+        R"(
+┌─DateTime────────────┐
+│ 2009-02-11 06:42:23 │
+└─────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_fromUnixTimestampInJodaSyntax = {23, 1};
+    FunctionDocumentation::Category category_fromUnixTimestampInJodaSyntax = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation_fromUnixTimestampInJodaSyntax = {description_fromUnixTimestampInJodaSyntax, syntax_fromUnixTimestampInJodaSyntax, arguments_fromUnixTimestampInJodaSyntax, {}, returned_value_fromUnixTimestampInJodaSyntax, examples_fromUnixTimestampInJodaSyntax, introduced_in_fromUnixTimestampInJodaSyntax, category_fromUnixTimestampInJodaSyntax};
+
+    factory.registerFunction<FunctionFromUnixTimestampInJodaSyntax>(documentation_fromUnixTimestampInJodaSyntax);
 }
 }

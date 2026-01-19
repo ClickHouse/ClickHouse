@@ -1,17 +1,17 @@
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
-#include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
+#include <Core/Field.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
@@ -56,7 +56,7 @@ String getAttributeExpression(const ASTDictionaryAttributeDeclaration * dict_att
     if (const auto * literal = dict_attr->expression->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
         expression_str = convertFieldToString(literal->value);
     else
-        expression_str = queryToString(dict_attr->expression);
+        expression_str = dict_attr->expression->formatWithSecretsOneLine();
 
     return expression_str;
 }
@@ -80,6 +80,14 @@ void buildLifetimeConfiguration(
 {
     if (!lifetime)
         return;
+
+    if (lifetime->min_sec > lifetime->max_sec)
+    {
+        throw DB::Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "{} parameter 'MIN' must be less than or equal to 'MAX'",
+            lifetime->getID(0));
+    }
 
     AutoPtr<Element> lifetime_element(doc->createElement("lifetime"));
     AutoPtr<Element> min_element(doc->createElement("min"));
@@ -136,6 +144,8 @@ void buildLayoutConfiguration(
         }
     }
 
+    const auto is_ssd_cache_layout = layout->layout_type.ends_with("ssd_cache");
+
     for (const auto & param : layout->parameters->children)
     {
         const ASTPair * pair = param->as<ASTPair>();
@@ -156,7 +166,7 @@ void buildLayoutConfiguration(
                 pair->second->formatForErrorMessage());
         }
 
-        const auto value_field = value_literal->value;
+        const Field & value_field = value_literal->value;
 
         if (value_field.getType() != Field::Types::UInt64 && value_field.getType() != Field::Types::Float64 && value_field.getType() != Field::Types::String)
         {
@@ -166,8 +176,19 @@ void buildLayoutConfiguration(
                 value_field.getTypeName());
         }
 
+        if (is_ssd_cache_layout)
+        {
+            if (value_field.getType() == Field::Types::UInt64 && value_field.safeGet<::UInt64>() == 0)
+            {
+                throw DB::Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "{} parameter value should be positive number",
+                    layout->getID(0));
+            }
+        }
+
         AutoPtr<Element> layout_type_parameter_element(doc->createElement(pair->first));
-        AutoPtr<Text> value_to_append(doc->createTextNode(toString(value_field)));
+        AutoPtr<Text> value_to_append(doc->createTextNode(fieldToString(value_field)));
         layout_type_parameter_element->appendChild(value_to_append);
         layout_type_element->appendChild(layout_type_parameter_element);
     }
@@ -275,7 +296,7 @@ void buildSingleAttribute(
     attribute_element->appendChild(name_element);
 
     AutoPtr<Element> type_element(doc->createElement("type"));
-    AutoPtr<Text> type(doc->createTextNode(queryToString(dict_attr->type)));
+    AutoPtr<Text> type(doc->createTextNode(dict_attr->type->formatWithSecretsOneLine()));
     type_element->appendChild(type);
     attribute_element->appendChild(type_element);
 
@@ -360,7 +381,7 @@ void buildPrimaryKeyConfiguration(
 
         auto identifier_name = key_names.front();
 
-        const auto * it = std::find_if(
+        const auto it = std::find_if(
             children.begin(),
             children.end(),
             [&](const ASTPtr & node)
@@ -389,7 +410,7 @@ void buildPrimaryKeyConfiguration(
         AutoPtr<Element> type_element(doc->createElement("type"));
         id_element->appendChild(type_element);
 
-        AutoPtr<Text> type(doc->createTextNode(queryToString(dict_attr->type)));
+        AutoPtr<Text> type(doc->createTextNode(dict_attr->type->formatWithSecretsOneLine()));
         type_element->appendChild(type);
     }
     else
@@ -439,7 +460,7 @@ AttributeNameToConfiguration buildDictionaryAttributesConfiguration(
         if (!dict_attr->type)
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Dictionary attribute must has type");
 
-        AttributeConfiguration attribute_configuration {queryToString(dict_attr->type), getAttributeExpression(dict_attr)};
+        AttributeConfiguration attribute_configuration {dict_attr->type->formatWithSecretsOneLine(), getAttributeExpression(dict_attr)};
         attributes_name_to_configuration.emplace(dict_attr->name, std::move(attribute_configuration));
 
         if (std::find(key_columns.begin(), key_columns.end(), dict_attr->name) == key_columns.end())
@@ -484,8 +505,13 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             /// It's not possible to have a function in a dictionary definition since 22.10,
             /// because query must be normalized on dictionary creation. It's possible only when we load old metadata.
             /// For debug builds allow it only during server startup to avoid crash in BC check in Stress Tests.
-            assert(Context::getGlobalContextInstance()->getApplicationType() != Context::ApplicationType::SERVER
-                   || !Context::getGlobalContextInstance()->isServerCompletelyStarted());
+            if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER &&
+                Context::getGlobalContextInstance()->isServerCompletelyStarted())
+            {
+                throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                    "The dictionary definition contains unsupported elements. "
+                    "Please update the dictionary definition to remove function usage");
+            }
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
             function->prepare({});
@@ -493,7 +519,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             /// We assume that function will not take arguments and will return constant value like tcpPort or hostName
             /// Such functions will return column with size equal to input_rows_count.
             size_t input_rows_count = 1;
-            auto result = function->execute({}, function->getResultType(), input_rows_count);
+            auto result = function->execute({}, function->getResultType(), input_rows_count, /* dry_run = */ false);
 
             Field value;
             result->get(0, value);
@@ -579,7 +605,7 @@ void checkAST(const ASTCreateQuery & query)
 void checkPrimaryKey(const AttributeNameToConfiguration & all_attrs, const Names & key_attrs)
 {
     for (const auto & key_attr : key_attrs)
-        if (all_attrs.find(key_attr) == all_attrs.end())
+        if (!all_attrs.contains(key_attr))
             throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Unknown key attribute '{}'", key_attr);
 }
 
@@ -686,7 +712,7 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
     UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
 
     String host = config->getString("dictionary.source.clickhouse.host", "localhost");
-    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", default_port);
+    UInt16 port = static_cast<UInt16>(config->getUInt("dictionary.source.clickhouse.port", default_port));
     String database = config->getString("dictionary.source.clickhouse.db", "");
     String table = config->getString("dictionary.source.clickhouse.table", "");
 

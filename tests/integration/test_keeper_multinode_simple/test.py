@@ -1,8 +1,4 @@
-import os
-import random
-import string
 import time
-from multiprocessing.dummy import Pool
 
 import pytest
 
@@ -10,6 +6,8 @@ import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
+
+import uuid
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -27,8 +25,6 @@ node3 = cluster.add_instance(
     main_configs=["configs/enable_keeper3.xml", "configs/use_keeper.xml"],
     stay_alive=True,
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -51,11 +47,7 @@ def wait_nodes():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def test_read_write_multinode(started_cluster):
@@ -66,8 +58,9 @@ def test_read_write_multinode(started_cluster):
         node3_zk = get_fake_zk("node3")
 
         # Cleanup
-        if node1_zk.exists("/test_read_write_multinode_node1") != None:
-            node1_zk.delete("/test_read_write_multinode_node1")
+        for i in range(1, 4):
+            if node1_zk.exists(f"/test_read_write_multinode_node{i}") != None:
+                node1_zk.delete(f"/test_read_write_multinode_node{i}")
 
         node1_zk.create("/test_read_write_multinode_node1", b"somedata1")
         node2_zk.create("/test_read_write_multinode_node2", b"somedata2")
@@ -122,6 +115,8 @@ def test_watch_on_follower(started_cluster):
         node1_data = None
 
         def node1_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("node1 data watch called")
             nonlocal node1_data
             node1_data = event
@@ -131,6 +126,8 @@ def test_watch_on_follower(started_cluster):
         node2_data = None
 
         def node2_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("node2 data watch called")
             nonlocal node2_data
             node2_data = event
@@ -140,6 +137,8 @@ def test_watch_on_follower(started_cluster):
         node3_data = None
 
         def node3_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("node3 data watch called")
             nonlocal node3_data
             node3_data = event
@@ -244,18 +243,19 @@ def test_follower_restart(started_cluster):
 
 def test_simple_replicated_table(started_cluster):
     wait_nodes()
+    test_name = f"test_simple_replicated_table_{uuid.uuid4().hex}"
 
     for i, node in enumerate([node1, node2, node3]):
-        node.query("DROP TABLE IF EXISTS t SYNC")
+        node.query(f"DROP TABLE IF EXISTS {test_name} SYNC")
         node.query(
-            f"CREATE TABLE t (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/t', '{i + 1}') ORDER BY tuple()"
+            f"CREATE TABLE {test_name} (value UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/{test_name}', '{i + 1}') ORDER BY tuple()"
         )
 
-    node2.query("INSERT INTO t SELECT number FROM numbers(10)")
+    node2.query(f"INSERT INTO {test_name} SELECT number FROM numbers(10)")
 
-    node1.query("SYSTEM SYNC REPLICA t", timeout=10)
-    node3.query("SYSTEM SYNC REPLICA t", timeout=10)
+    node1.query(f"SYSTEM SYNC REPLICA {test_name}", timeout=10)
+    node3.query(f"SYSTEM SYNC REPLICA {test_name}", timeout=10)
 
-    assert_eq_with_retry(node1, "SELECT COUNT() FROM t", "10")
-    assert_eq_with_retry(node2, "SELECT COUNT() FROM t", "10")
-    assert_eq_with_retry(node3, "SELECT COUNT() FROM t", "10")
+    assert_eq_with_retry(node1, f"SELECT COUNT() FROM {test_name}", "10")
+    assert_eq_with_retry(node2, f"SELECT COUNT() FROM {test_name}", "10")
+    assert_eq_with_retry(node3, f"SELECT COUNT() FROM {test_name}", "10")

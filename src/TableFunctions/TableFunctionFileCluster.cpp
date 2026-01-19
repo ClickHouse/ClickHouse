@@ -3,7 +3,7 @@
 #include <TableFunctions/TableFunctionFileCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 #include <memory>
 
@@ -16,7 +16,7 @@ namespace Setting
 
 StoragePtr TableFunctionFileCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & /*compression_method_*/) const
+    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
 {
     StoragePtr storage;
 
@@ -32,10 +32,9 @@ StoragePtr TableFunctionFileCluster::getStorage(
             columns,
             ConstraintsDescription{},
             String{},
-            context->getSettingsRef()[Setting::rename_files_after_processing],
-            path_to_archive};
+            context->getSettingsRef()[Setting::rename_files_after_processing]};
 
-        storage = std::make_shared<StorageFile>(filename, context->getUserFilesPath(), true, args);
+        storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(filename, context), /* distributed_processing = */ true, args);
     }
     else
     {
@@ -57,10 +56,12 @@ StoragePtr TableFunctionFileCluster::getStorage(
 void registerTableFunctionFileCluster(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFileCluster>(
-        {.documentation = {
-            .description=R"(This table function is used for distributed reading of files in cluster nodes filesystems.)",
-            .examples{{"fileCluster", "SELECT * from fileCluster('my_cluster', 'file{1,2}.csv');", ""}},
-            .categories{"File"}},
+        {
+            .documentation = {
+                .description = R"(This table function is used for distributed reading of files in cluster nodes filesystems.)",
+                .examples{{"fileCluster", "SELECT * from fileCluster('my_cluster', 'file{1,2}.csv');", ""}},
+                .category = FunctionDocumentation::Category::TableFunction
+            },
         .allow_readonly = false});
 }
 

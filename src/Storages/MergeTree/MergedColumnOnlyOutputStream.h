@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/MergeTree/ColumnsSubstreams.h>
 
 namespace DB
 {
@@ -16,22 +17,25 @@ public:
     ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
         const MergeTreeMutableDataPartPtr & data_part,
+        MergeTreeSettingsPtr data_settings,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
-        CompressionCodecPtr default_codec_,
-        const MergeTreeIndices & indices_to_recalc_,
-        const ColumnsStatistics & stats_to_recalc_,
-        WrittenOffsetColumns * offset_columns_ = nullptr,
-        bool save_marks_in_cache = false,
-        const MergeTreeIndexGranularity & index_granularity = {},
-        const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
+        const MergeTreeIndices & indices_to_recalc,
+        const ColumnsStatistics & stats_to_recalc,
+        CompressionCodecPtr default_codec,
+        MergeTreeIndexGranularityPtr index_granularity_ptr,
+        size_t part_uncompressed_bytes,
+        WrittenOffsetColumns * offset_columns = nullptr);
 
     void write(const Block & block) override;
 
     MergeTreeData::DataPart::Checksums
     fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 
+    const Block & getColumnsSample() const { return writer->getColumnsSample(); }
+    const ColumnsSubstreams & getColumnsSubstreams() const { return writer->getColumnsSubstreams(); }
     void finish(bool sync);
+    void cancel() noexcept override;
 };
 
 using MergedColumnOnlyOutputStreamPtr = std::shared_ptr<MergedColumnOnlyOutputStream>;

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <type_traits>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -14,10 +15,9 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/memcmpSmall.h>
+#include <Columns/ColumnTuple.h>
+#include <Common/FieldAccurateComparison.h>
+#include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -42,7 +42,7 @@ struct HasAction
 {
     using ResultType = UInt8;
     static constexpr const bool resume_execution = false;
-    static constexpr void apply(ResultType& current, size_t) noexcept { current = 1; }
+    static constexpr void apply(ResultType & current, size_t) noexcept { current = 1; }
 };
 
 /// The index is returned starting from 1.
@@ -50,7 +50,11 @@ struct IndexOfAction
 {
     using ResultType = UInt64;
     static constexpr const bool resume_execution = false;
-    static constexpr void apply(ResultType& current, size_t j) noexcept { current = j + 1; }
+    static constexpr void apply(ResultType & current, size_t j) noexcept { current = j + 1; }
+};
+
+struct IndexOfAssumeSorted : public IndexOfAction
+{
 };
 
 struct CountEqualAction
@@ -111,13 +115,139 @@ private:
         return 0 == left.compareAt(i, RightArgIsConstant ? 0 : j, right, 1);
     }
 
+    static bool compare(const Array & arr, const Field& rhs, size_t pos, size_t)
+    {
+        return accurateEquals(arr[pos], rhs);
+    }
+
+    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
+    {
+        return left[i] >= right;
+    }
+
+    static constexpr bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) noexcept { return left[i] >= right; }
+
+    static constexpr bool lessOrEqual(const Array& arr, const Field& rhs, size_t pos, size_t) noexcept {
+        return accurateLessOrEqual(rhs, arr[pos]);
+    }
+
 #pragma clang diagnostic pop
+
+public:
+    /** Assuming that the array is sorted, use a binary search */
+    template <typename Data, typename Target>
+    static constexpr ResultType lowerBound(const Data & data, const Target & target, size_t array_size, ArrOffset current_offset)
+    {
+        ResultType current = 0;
+        size_t low = 0;
+        size_t high = array_size;
+        while (high - low > 0)
+        {
+            auto middle = low + ((high - low) >> 1);
+            auto compare_result = lessOrEqual(data, target, current_offset + middle, 0);
+            /// avoid conditional branching
+            high = compare_result ? middle : high;
+            low = compare_result ? low : middle + 1;
+        }
+        if (low < array_size && compare(data, target, current_offset + low, 0))
+        {
+            ConcreteAction::apply(current, low);
+        }
+        return current;
+    }
+
+    template <size_t Case, typename Data, typename Target>
+    static constexpr ResultType linearSearch(
+        const Data & data,
+        const Target & target,
+        size_t array_size,
+        const NullMap * const null_map_data,
+        const NullMap * const null_map_item,
+        size_t row_index,
+        ArrOffset current_offset)
+    {
+        ResultType current = 0;
+        for (size_t j = 0; j < array_size; ++j)
+        {
+            if constexpr (Case == 2) /// Right arg is Nullable
+                if (hasNull(null_map_item, row_index))
+                    continue;
+
+            if constexpr (Case == 3) /// Left arg is an array of Nullables
+                if (hasNull(null_map_data, current_offset + j))
+                    continue;
+
+            if constexpr (Case == 4) /// Both args are nullable
+            {
+                const bool right_is_null = hasNull(null_map_data, current_offset + j);
+                const bool left_is_null = hasNull(null_map_item, row_index);
+
+                if (right_is_null != left_is_null)
+                    continue;
+
+                if (!right_is_null && !compare(data, target, current_offset + j, row_index))
+                    continue;
+            }
+            else if (!compare(data, target, current_offset + j, row_index))
+                continue;
+
+            ConcreteAction::apply(current, j);
+
+            if constexpr (!ConcreteAction::resume_execution)
+                break;
+        }
+        return current;
+    }
+
+    static ResultType linearSearchConst(const Array & arr, const Field & value)
+    {
+        ResultType current = 0;
+        for (size_t i = 0, size = arr.size(); i < size; ++i)
+        {
+            if (!accurateEquals(arr[i], value))
+                continue;
+
+            ConcreteAction::apply(current, i);
+
+            if constexpr (!ConcreteAction::resume_execution)
+                break;
+        }
+        return current;
+    }
+
+private:
+    /** Looking for the target element index in the data (array) */
+    template <size_t Case, typename Data, typename Target>
+    static constexpr ResultType getIndex(
+        const Data & data,
+        const Target & target,
+        size_t array_size,
+        const NullMap * const null_map_data,
+        const NullMap * const null_map_item,
+        size_t row_index,
+        ArrOffset current_offset)
+    {
+        /** Use binary search if the following conditions are met.
+          *   1. The array type is not nullable. (Case = 1)
+          *   2. Target is not a column or an array.
+          */
+        if constexpr (
+            std::is_same_v<ConcreteAction, IndexOfAssumeSorted> && !std::is_same_v<Target, PaddedPODArray<Result>>
+            && !std::is_same_v<Target, IColumn> && Case == 1)
+        {
+            return lowerBound(data, target, array_size, current_offset);
+        }
+        return linearSearch<Case>(data, target, array_size, null_map_data, null_map_item, row_index, current_offset);
+    }
 
     static constexpr bool hasNull(const NullMap * const null_map, size_t i) noexcept { return (*null_map)[i]; }
 
     template <size_t Case, typename Data, typename Target>
     static void process(
-        const Data & data, const ArrOffsets & offsets, const Target & target, ResultArr & result,
+        const Data & data,
+        const ArrOffsets & offsets,
+        const Target & target,
+        ResultArr & result,
         [[maybe_unused]] const NullMap * const null_map_data,
         [[maybe_unused]] const NullMap * const null_map_item)
     {
@@ -129,7 +259,6 @@ private:
         }
 
         const size_t size = offsets.size();
-
         result.resize(size);
 
         ArrOffset current_offset = 0;
@@ -137,39 +266,7 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             const size_t array_size = offsets[i] - current_offset;
-            ResultType current = 0;
-
-            for (size_t j = 0; j < array_size; ++j)
-            {
-                if constexpr (Case == 2) /// Right arg is Nullable
-                     if (hasNull(null_map_item, i))
-                        continue;
-
-                if constexpr (Case == 3) /// Left arg is an array of Nullables
-                    if (hasNull(null_map_data, current_offset + j))
-                        continue;
-
-                if constexpr (Case == 4) /// Both args are nullable
-                {
-                    const bool right_is_null = hasNull(null_map_data, current_offset + j);
-                    const bool left_is_null = hasNull(null_map_item, i);
-
-                    if (right_is_null != left_is_null)
-                        continue;
-
-                    if (!right_is_null && !compare(data, target, current_offset + j, i))
-                        continue;
-                }
-                else if (!compare(data, target, current_offset + j, i))
-                    continue;
-
-                ConcreteAction::apply(current, j);
-
-                if constexpr (!ConcreteAction::resume_execution)
-                    break;
-            }
-
-            result[i] = current;
+            result[i] = getIndex<Case>(data, target, array_size, null_map_data, null_map_item, i, current_offset);
             current_offset = offsets[i];
         }
     }
@@ -261,7 +358,6 @@ private:
         [[maybe_unused]] const NullMap * item_map)
     {
         const size_t size = offsets.size();
-
         result.resize(size);
 
         ArrayOffset current_offset = 0;
@@ -275,7 +371,7 @@ private:
 
             if constexpr (!IsConst) // workaround because ?: ternary operator is not constexpr
             {
-                if (0 != i) value_pos = item_offsets[i - 1];
+                value_pos = item_offsets[i - 1];
                 value_size = item_offsets[i] - value_pos;
             }
 
@@ -283,11 +379,8 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                const ArrayOffset string_pos = current_offset + j == 0
-                    ? 0
-                    : string_offsets[current_offset + j - 1];
-
-                const ArrayOffset string_size = string_offsets[current_offset + j] - string_pos - IsConst * 1;
+                const ArrayOffset string_pos = string_offsets[current_offset + j - 1];
+                const ArrayOffset string_size = string_offsets[current_offset + j] - string_pos;
 
                 if constexpr (IsConst)
                 {
@@ -461,8 +554,7 @@ private:
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
     }
 
-    /**
-      * If one or both arguments passed to this function are nullable,
+    /** If one or both arguments passed to this function are nullable,
       * we create a new column that contains non-nullable arguments:
       *
       * - if the 1st argument is a non-constant array of nullable values,
@@ -479,11 +571,10 @@ private:
     {
         const ColumnPtr & ptr = arguments[0].column;
 
-        /**
-         * The columns here have two general cases, either being Array(T) or Const(Array(T)).
-         * The last type will return nullptr after casting to ColumnArray, so we leave the casting
-         * to execute* functions.
-         */
+        /** The columns here have two general cases, either being Array(T) or Const(Array(T)).
+          * The last type will return nullptr after casting to ColumnArray, so we leave the casting
+          * to execute* functions.
+          */
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(ptr.get());
         const ColumnNullable * nullable = nullptr;
 
@@ -498,12 +589,11 @@ private:
             return executeOnNonNullable(arguments, result_type);
         }
 
-        /**
-             * To correctly process the Nullable values (either #col_array, #arg_column or both) we create a new columns
-             * and operate on it. The columns structure follows:
-             * {0, 1, 2, 3, 4}
-             * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
-             */
+        /** To correctly process the Nullable values (either #col_array, #arg_column or both) we create a new columns
+          * and operate on it. The columns structure follows:
+          * {0, 1, 2, 3, 4}
+          * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
+          */
         ColumnsWithTypeAndName source_columns(4);
 
         if (nullable)
@@ -718,7 +808,7 @@ private:
             if (right->isNullable())
                 right = checkAndGetColumn<ColumnNullable>(*right).getNestedColumnPtr();
 
-            StringRef elem = right->getDataAt(0);
+            std::string_view elem = right->getDataAt(0);
             const auto & left_dict = left_lc->getDictionary();
 
             if (std::optional<UInt64> maybe_index = left_dict.getOrFindValueIndex(elem); maybe_index)
@@ -803,7 +893,7 @@ private:
                     array->getOffsets(),
                     left->getOffsets(),
                     item_const_string->getChars(),
-                    item_const_string->getDataAt(0).size,
+                    item_const_string->getDataAt(0).size(),
                     result->getData(),
                     null_map_data,
                     null_map_item);
@@ -854,16 +944,13 @@ private:
         {
             ResultType current = 0;
             const auto & value = (*item_arg)[0];
-
-            for (size_t i = 0, size = arr.size(); i < size; ++i)
+            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
-                if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
-                    continue;
-
-                ConcreteAction::apply(current, i);
-
-                if constexpr (!ConcreteAction::resume_execution)
-                    break;
+                current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
+            }
+            else
+            {
+                current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
             }
 
             return result_type->createColumnConst(item_arg->size(), current);
@@ -901,7 +988,7 @@ private:
                 {
                     if (null_map && (*null_map)[row])
                         continue;
-                    if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
+                    if (!accurateEquals(arr[i], value))
                         continue;
                 }
 

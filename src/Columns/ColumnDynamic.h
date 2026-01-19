@@ -143,6 +143,8 @@ public:
 
     void get(size_t n, Field & res) const override;
 
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+
     bool isDefaultAt(size_t n) const override
     {
         return variant_column_ptr->isDefaultAt(n);
@@ -153,7 +155,7 @@ public:
         return variant_column_ptr->isNullAt(n);
     }
 
-    StringRef getDataAt(size_t n) const override
+    std::string_view getDataAt(size_t n) const override
     {
         return variant_column_ptr->getDataAt(n);
     }
@@ -191,9 +193,10 @@ public:
         variant_column_ptr->popBack(n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
+    std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -210,6 +213,12 @@ public:
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
         return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types);
+    }
+
+    void filter(const Filter & filt) override
+    {
+        variant_column_ptr->filter(filt);
+        statistics.reset();
     }
 
     void expand(const Filter & mask, bool inverted) override
@@ -232,7 +241,7 @@ public:
         return create(variant_column_ptr->replicate(replicate_offsets), variant_info, max_dynamic_types, global_max_dynamic_types);
     }
 
-    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override
     {
         MutableColumns scattered_variant_columns = variant_column_ptr->scatter(num_columns, selector);
         MutableColumns scattered_columns;
@@ -275,9 +284,14 @@ public:
         return variant_column_ptr->capacity();
     }
 
-    void prepareForSquashing(const Columns & source_columns) override;
+    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
     /// Prepare only variants but not discriminators and offsets.
-    void prepareVariantsForSquashing(const Columns & source_columns);
+    void prepareVariantsForSquashing(const Columns & source_columns, size_t factor);
+
+    void shrinkToFit() override
+    {
+        variant_column_ptr->shrinkToFit();
+    }
 
     void ensureOwnership() override
     {
@@ -304,25 +318,30 @@ public:
         variant_column_ptr->protect();
     }
 
-    ColumnCheckpointPtr getCheckpoint() const override
-    {
-        return variant_column_ptr->getCheckpoint();
-    }
+    ColumnCheckpointPtr getCheckpoint() const override;
 
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
 
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override
     {
         callback(variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     }
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
+
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);
         variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
+        variant_column->forEachMutableSubcolumnRecursively(callback);
+    }
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    {
+        callback(*variant_column);
         variant_column->forEachSubcolumnRecursively(callback);
     }
 
@@ -333,7 +352,7 @@ public:
         return false;
     }
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
@@ -376,12 +395,16 @@ public:
     bool addNewVariant(const DataTypePtr & new_variant) { return addNewVariant(new_variant, new_variant->getName()); }
 
     bool hasDynamicStructure() const override { return true; }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+    bool dynamicStructureEquals(const IColumn & rhs) const override;
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void fixDynamicStructure() override;
 
     const StatisticsPtr & getStatistics() const { return statistics; }
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
+    size_t getGlobalMaxDynamicTypes() const { return global_max_dynamic_types; }
 
     /// Check if we can add new variant types.
     /// Shared variant doesn't count in the limit but always presents,
@@ -400,7 +423,7 @@ public:
         return name;
     }
 
-    static DataTypePtr getSharedVariantDataType();
+    static const DataTypePtr & getSharedVariantDataType();
 
     ColumnVariant::Discriminator getSharedVariantDiscriminator() const
     {
@@ -440,6 +463,7 @@ public:
     const SerializationPtr & getVariantSerialization(const DataTypePtr & variant_type) { return getVariantSerialization(variant_type, variant_type->getName()); }
 
     String getTypeNameAt(size_t row_num) const;
+    DataTypePtr getTypeAt(size_t row_num) const;
     void getAllTypeNamesInto(std::unordered_set<String> & names) const;
 
 private:
@@ -487,6 +511,16 @@ private:
     static const size_t SERIALIZATION_CACHE_MAX_SIZE = 256;
     std::unordered_map<String, SerializationPtr> serialization_cache;
 };
+
+struct DynamicColumnCheckpoint : public ColumnCheckpoint
+{
+    DynamicColumnCheckpoint(size_t size_, std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints_) : ColumnCheckpoint(size_), variants_checkpoints(variants_checkpoints_)
+    {
+    }
+
+    std::unordered_map<String, ColumnCheckpointPtr> variants_checkpoints;
+};
+
 
 void extendVariantColumn(
     IColumn & variant_column,

@@ -6,15 +6,19 @@
 #include <Core/NamesAndTypes.h>
 
 #include <initializer_list>
-#include <list>
-#include <set>
 #include <vector>
-#include <sparsehash/dense_hash_map>
-#include <DataTypes/Serializations/SerializationInfo.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
 
+
+class SipHash;
 
 namespace DB
 {
+
+class ISerialization;
+class SerializationInfoByName;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
+using Serializations = std::vector<SerializationPtr>;
 
 /** Container for set of columns for bunch of rows in memory.
   * This is unit of data processing.
@@ -27,7 +31,7 @@ class Block
 {
 private:
     using Container = ColumnsWithTypeAndName;
-    using IndexByName = std::unordered_map<String, size_t>;
+    using IndexByName = std::unordered_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
     Container data;
     IndexByName index_by_name;
@@ -67,7 +71,11 @@ public:
             const_cast<const Block *>(this)->findByName(name, case_insensitive));
     }
 
+    const ColumnWithTypeAndName * findByName(std::string_view name, bool case_insensitive = false) const;
+
     const ColumnWithTypeAndName * findByName(const std::string & name, bool case_insensitive = false) const;
+    std::optional<ColumnWithTypeAndName> findSubcolumnByName(const std::string & name) const;
+    std::optional<ColumnWithTypeAndName> findColumnOrSubcolumnByName(const std::string & name) const;
 
     ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false)
     {
@@ -76,6 +84,8 @@ public:
     }
 
     const ColumnWithTypeAndName & getByName(const std::string & name, bool case_insensitive = false) const;
+    ColumnWithTypeAndName getSubcolumnByName(const std::string & name) const;
+    ColumnWithTypeAndName getColumnOrSubcolumnByName(const std::string & name) const;
 
     Container::iterator begin() { return data.begin(); }
     Container::iterator end() { return data.end(); }
@@ -86,18 +96,20 @@ public:
 
     bool has(const std::string & name, bool case_insensitive = false) const;
 
-    size_t getPositionByName(const std::string & name) const;
+    size_t getPositionByName(const std::string & name, bool case_insensitive = false) const;
+    std::optional<size_t> findPositionByName(std::string_view name, bool case_insensitive = false) const;
 
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
     NamesAndTypesList getNamesAndTypesList() const;
     NamesAndTypes getNamesAndTypes() const;
     Names getNames() const;
+    NameSet getNameSet() const;
     DataTypes getDataTypes() const;
     Names getDataTypeNames() const;
 
     /// Hash table match `column name -> position in the block`.
-    using NameMap = ::google::dense_hash_map<StringRef, size_t, StringRefHash>;
-    NameMap getNamesToIndexesMap() const;
+
+    const IndexByName & getIndexByName() const { return index_by_name; }
 
     Serializations getSerializations() const;
     Serializations getSerializations(const SerializationInfoByName & hints) const;
@@ -116,8 +128,7 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    explicit operator bool() const { return !!columns(); }
-    bool operator!() const { return !this->operator bool(); } /// NOLINT
+    bool empty() const { return !columns(); }
 
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;
@@ -140,6 +151,9 @@ public:
 
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
+
+    /** Get empty columns with the same types as in block and given serializations. */
+    MutableColumns cloneEmptyColumns(const Serializations & serializations) const;
 
     /** Get columns from block for mutation. Columns in block will be nullptr. */
     MutableColumns mutateColumns();
@@ -179,26 +193,13 @@ private:
     friend class ActionsDAG;
 };
 
-using BlockPtr = std::shared_ptr<Block>;
-using Blocks = std::vector<Block>;
-using BlocksList = std::list<Block>;
-using BlocksPtr = std::shared_ptr<Blocks>;
-
-/// Extends block with extra data in derived classes
-struct ExtraBlock
-{
-    Block block;
-
-    bool empty() const { return !block; }
-};
-
-using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
-
 /// Compare number of columns, data types, column types, column names, and values of constant columns.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);
 
 /// Throw exception when blocks are different.
 void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, std::string_view context_description);
+
+void assertBlocksHaveEqualStructureAllowReplicated(const Block & lhs, const Block & rhs, std::string_view context_description);
 
 /// Actual header is compatible to desired if block have equal structure except constants.
 /// It is allowed when column from actual header is constant, but in desired is not.
@@ -209,12 +210,18 @@ void assertCompatibleHeader(const Block & actual, const Block & desired, std::st
 /// Calculate difference in structure of blocks and write description into output strings. NOTE It doesn't compare values of constant columns.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
 
-void convertToFullIfSparse(Block & block);
+void removeSpecialColumnRepresentations(Block & block);
 
-/// Converts columns-constants to full columns ("materializes" them).
-Block materializeBlock(const Block & block);
-void materializeBlockInplace(Block & block);
+/// Converts columns-constants and special representations (like sparse or replicated) to full columns ("materializes" them).
+Block materializeBlock(const Block & block, bool remove_special_column_representations = true);
+void materializeBlockInplace(Block & block, bool remove_special_column_representations = true);
 
 Block concatenateBlocks(const std::vector<Block> & blocks);
+
+/// If the block has no columns, adds a dummy column with given number of rows.
+/// Without it, things like ExpressionActions can't tell many rows to output.
+/// Name of the new column is randomly generated and returned, so you can remove the column later.
+/// Returns empty string if the block is already not empty.
+String addDummyColumnWithRowCount(Block & block, size_t num_rows);
 
 }

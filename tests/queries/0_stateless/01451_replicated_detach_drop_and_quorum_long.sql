@@ -1,4 +1,6 @@
--- Tags: long, replica, no-replicated-database
+-- Tags: long, replica, no-replicated-database, no-shared-merge-tree, no-async-insert
+-- no-shared-merge-tree: depends on max_replicated_merges_in_queue
+-- no-async-insert: async inserts are not supported with quorum inserts
 
 SET replication_alter_partitions_sync = 2;
 

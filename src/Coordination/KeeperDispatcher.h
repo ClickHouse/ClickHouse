@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Common/ZooKeeper/ZooKeeperCommon.h"
 #include "config.h"
 
 #if USE_NURAFT
@@ -8,7 +7,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Exception.h>
 #include <functional>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Keeper4LWInfo.h>
@@ -16,6 +14,7 @@
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
@@ -26,7 +25,7 @@ using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeep
 class KeeperDispatcher
 {
 private:
-    using RequestsQueue = ConcurrentBoundedQueue<KeeperStorageBase::RequestForSession>;
+    using RequestsQueue = ConcurrentBoundedQueue<KeeperRequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
@@ -95,18 +94,25 @@ private:
 
     /// Add error responses for requests to responses queue.
     /// Clears requests.
-    void addErrorResponses(const KeeperStorageBase::RequestsForSessions & requests_for_sessions, Coordination::Error error);
+    void addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error);
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
     nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
-        RaftAppendResult & result, KeeperStorageBase::RequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
+        RaftAppendResult & result, KeeperRequestsForSessions & requests_for_sessions, bool clear_requests_on_success);
+
+    using ConfigCheckCallback = std::function<bool(KeeperServer * server)>;
+    void executeClusterUpdateActionAndWaitConfigChange(const ClusterUpdateAction & action, ConfigCheckCallback check_callback, size_t max_action_wait_time_ms, int64_t retry_count);
+
+    /// Verify some logical issues in command, like duplicate ids, wrong leadership transfer and etc
+    void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
+    void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
 
 public:
     std::mutex read_request_queue_mutex;
 
     /// queue of read requests that can be processed after a request with specific session ID and XID is committed
-    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperStorageBase::RequestsForSessions>> read_request_queue;
+    std::unordered_map<int64_t, std::unordered_map<Coordination::XID, KeeperRequestsForSessions>> read_request_queue;
 
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
@@ -134,6 +140,9 @@ public:
     void pushClusterUpdates(ClusterUpdateActions && actions);
     bool reconfigEnabled() const;
 
+    /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
+    Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
+
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
 
@@ -141,6 +150,9 @@ public:
 
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
+
+    /// Put local read request to ClickHouse Keeper
+    bool putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
@@ -252,6 +264,8 @@ public:
     }
 
     static void cleanResources();
+
+    std::optional<AuthenticationData> getAuthenticationData() const { return server->getAuthenticationData(); }
 };
 
 }

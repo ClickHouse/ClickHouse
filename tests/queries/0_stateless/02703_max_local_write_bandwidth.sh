@@ -14,11 +14,11 @@ query_id=$(random_str 10)
 # writes 1e6*8 bytes with 1M bandwith it should take (8-1)/1=7 seconds
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "insert into data select * from numbers(1e6) settings max_local_write_bandwidth='1M'"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT
         query_duration_ms >= 7e3,
         ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] > 8e6,
-        ProfileEvents['LocalWriteThrottlerBytes'] > 8e6
+        ProfileEvents['QueryLocalWriteThrottlerBytes'] > 8e6
         /* LocalWriteThrottlerSleepMicroseconds is too unreliable in debug build, but query_duration_ms is enough */
     FROM system.query_log
     WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id' AND type != 'QueryStart'

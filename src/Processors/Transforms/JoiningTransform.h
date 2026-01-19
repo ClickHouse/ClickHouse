@@ -1,7 +1,11 @@
 #pragma once
-#include <Processors/IProcessor.h>
+
+#include <Core/Block.h>
+#include <Core/Block_fwd.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/Chunk.h>
-#include <memory>
+#include <Processors/IProcessor.h>
+#include <Interpreters/IJoin.h>
 
 namespace DB
 {
@@ -13,6 +17,21 @@ class NotJoinedBlocks;
 class IBlocksStream;
 using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 
+/// Count streams and check which is last.
+class FinishCounter
+{
+public:
+    explicit FinishCounter(size_t total_) : total(total_) { }
+
+    bool isLast() { return finished.fetch_add(1) + 1 >= total; }
+
+private:
+    const size_t total;
+    std::atomic_size_t finished{0};
+};
+
+using FinishCounterPtr = std::shared_ptr<FinishCounter>;
+
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
 /// First input is for data from left table.
@@ -21,29 +40,9 @@ using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 class JoiningTransform : public IProcessor
 {
 public:
-
-    /// Count streams and check which is last.
-    /// The last one should process non-joined rows.
-    class FinishCounter
-    {
-    public:
-        explicit FinishCounter(size_t total_) : total(total_) {}
-
-        bool isLast()
-        {
-            return finished.fetch_add(1) + 1 >= total;
-        }
-
-    private:
-        const size_t total;
-        std::atomic<size_t> finished{0};
-    };
-
-    using FinishCounterPtr = std::shared_ptr<FinishCounter>;
-
     JoiningTransform(
-        const Block & input_header,
-        const Block & output_header,
+        SharedHeader input_header,
+        SharedHeader output_header,
         JoinPtr join_,
         size_t max_block_size_,
         bool on_totals_ = false,
@@ -66,9 +65,9 @@ protected:
 
 private:
     Chunk input_chunk;
-    Chunk output_chunk;
+    std::optional<Chunk> output_chunk;
     bool has_input = false;
-    bool has_output = false;
+    bool has_virtual_row = false;
     bool stop_reading = false;
     bool process_non_joined = true;
 
@@ -80,7 +79,7 @@ private:
     bool default_totals;
     bool initialized = false;
 
-    ExtraBlockPtr not_processed;
+    JoinResultPtr join_result;
 
     FinishCounterPtr finish_counter;
     IBlocksStreamPtr non_joined_blocks;
@@ -95,7 +94,7 @@ private:
 class FillingRightJoinSideTransform : public IProcessor
 {
 public:
-    FillingRightJoinSideTransform(Block input_header, JoinPtr join_);
+    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
     String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
@@ -103,14 +102,17 @@ public:
     Status prepare() override;
     void work() override;
 
+    ProcessorMemoryStats getMemoryStats() override;
+    bool spillOnSize(size_t bytes) override;
+
 private:
     JoinPtr join;
+    FinishCounterPtr finish_counter;
     Chunk chunk;
     bool stop_reading = false;
     bool for_totals = false;
     bool set_totals = false;
 };
-
 
 class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>
 {
@@ -118,15 +120,13 @@ public:
 
     DelayedBlocksTask() = default;
     DelayedBlocksTask(const DelayedBlocksTask & other) = default;
-    explicit DelayedBlocksTask(IBlocksStreamPtr delayed_blocks_, JoiningTransform::FinishCounterPtr left_delayed_stream_finish_counter_)
-        : delayed_blocks(std::move(delayed_blocks_))
-        , left_delayed_stream_finish_counter(left_delayed_stream_finish_counter_)
+    explicit DelayedBlocksTask(IBlocksStreamPtr delayed_blocks_, FinishCounterPtr left_delayed_stream_finish_counter_)
+        : delayed_blocks(std::move(delayed_blocks_)), left_delayed_stream_finish_counter(left_delayed_stream_finish_counter_)
     {
     }
 
-    IBlocksStreamPtr delayed_blocks = nullptr;
-    JoiningTransform::FinishCounterPtr left_delayed_stream_finish_counter = nullptr;
-
+    IBlocksStreamPtr delayed_blocks;
+    FinishCounterPtr left_delayed_stream_finish_counter;
 };
 
 using DelayedBlocksTaskPtr = std::shared_ptr<const DelayedBlocksTask>;
@@ -155,7 +155,7 @@ class DelayedJoinedBlocksWorkerTransform : public IProcessor
 public:
     using NonJoinedStreamBuilder = std::function<IBlocksStreamPtr()>;
     explicit DelayedJoinedBlocksWorkerTransform(
-        Block output_header_,
+        SharedHeader output_header_,
         NonJoinedStreamBuilder non_joined_stream_builder_);
 
     String getName() const override { return "DelayedJoinedBlocksWorkerTransform"; }

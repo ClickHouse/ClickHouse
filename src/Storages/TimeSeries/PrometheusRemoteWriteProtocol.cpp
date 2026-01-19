@@ -4,13 +4,12 @@
 #if USE_PROMETHEUS_PROTOBUFS
 
 #include <algorithm>
-
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
+#include <Common/logger_useful.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesColumnsValidator.h>
@@ -20,13 +19,14 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -49,7 +49,7 @@ namespace ErrorCodes
 namespace
 {
     /// Checks that a specified set of labels is sorted and has no duplications, and there is one label named "__name__".
-    void checkLabels(const ::google::protobuf::RepeatedPtrField<::prometheus::Label> & labels)
+    void checkLabels(const google::protobuf::RepeatedPtrField<prometheus::Label> & labels)
     {
         bool metric_name_found = false;
         for (size_t i = 0; i != static_cast<size_t>(labels.size()); ++i)
@@ -106,7 +106,7 @@ namespace
         auto blocks = std::make_shared<Blocks>();
         blocks->push_back(tags_block);
 
-        auto header = tags_block.cloneEmpty();
+        auto header = std::make_shared<const Block>(tags_block.cloneEmpty());
         auto pipe = Pipe(std::make_shared<BlocksSource>(blocks, header));
 
         Block header_with_id;
@@ -121,7 +121,7 @@ namespace
                     context);
 
         auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
-        pipe.addSimpleTransform([&](const Block & stream_header)
+        pipe.addSimpleTransform([&](const SharedHeader & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, adding_missing_defaults_actions);
         });
@@ -129,11 +129,12 @@ namespace
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
             header_with_id.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Position,
+            context);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
-            ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
-        pipe.addSimpleTransform([&](const Block & stream_header)
+            ExpressionActionsSettings(context, CompileExpressions::yes));
+        pipe.addSimpleTransform([&](const SharedHeader & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
         });
@@ -146,7 +147,7 @@ namespace
         Block block_from_executor;
         while (executor.pull(block_from_executor))
         {
-            if (block_from_executor)
+            if (!block_from_executor.empty())
             {
                 MutableColumnPtr id_column_part = block_from_executor.getByName(id_name).column->assumeMutable();
                 if (id_column)
@@ -219,7 +220,8 @@ namespace
         };
 
         /// We're going to prepare two blocks - one for the "data" table, and one for the "tags" table.
-        Block data_block, tags_block;
+        Block data_block;
+        Block tags_block;
 
         auto make_column_for_data_block = [&](const ColumnDescription & column_description) -> IColumn &
         {
@@ -271,7 +273,7 @@ namespace
         const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
-            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
             const auto & tag_name = tuple.at(0).safeGet<String>();
             const auto & column_name = tuple.at(1).safeGet<String>();
             const auto & column_description = get_column_description(column_name);
@@ -520,7 +522,7 @@ namespace
 
         for (auto & [table_kind, block] : blocks.blocks)
         {
-            if (block)
+            if (!block.empty())
             {
                 const auto & target_table_id = time_series_storage.getTargetTableId(table_kind);
 
@@ -538,7 +540,7 @@ namespace
                 ContextMutablePtr insert_context = Context::createCopy(context);
                 insert_context->setCurrentQueryId(context->getCurrentQueryId() + ":" + String{toString(table_kind)});
 
-                LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), queryToString(insert_query));
+                LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), insert_query->formatForLogging());
 
                 InterpreterInsertQuery interpreter(
                     insert_query,

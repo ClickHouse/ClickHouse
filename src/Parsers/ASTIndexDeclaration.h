@@ -12,8 +12,9 @@ class ASTFunction;
 class ASTIndexDeclaration : public IAST
 {
 public:
-    static const auto DEFAULT_INDEX_GRANULARITY = 1uz;
-    static const auto DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY = 100'000'000uz;
+    static constexpr auto DEFAULT_INDEX_GRANULARITY = 1uz;
+    static constexpr auto DEFAULT_TEXT_INDEX_GRANULARITY = 100'000'000uz;
+    static constexpr auto DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY = 100'000'000uz;
 
     ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const String & name_);
 
@@ -25,14 +26,19 @@ public:
     String getID(char) const override { return "Index"; }
 
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 
     ASTPtr getExpression() const;
     std::shared_ptr<ASTFunction> getType() const;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 
 private:
     static constexpr size_t expression_idx = 0;
     static constexpr size_t type_idx = 1;
 };
+
+class ASTFunction;
+UInt64 getSecondaryIndexGranularity(const std::shared_ptr<ASTFunction> & type, const ASTPtr & granularity);
 
 }

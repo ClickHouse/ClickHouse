@@ -1,16 +1,19 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
-#include <Core/NamesAndTypes.h>
+#include <base/types.h>
 
 namespace DB
 {
+
+class NamesAndTypesList;
+class WriteBuffer;
 
 struct StructureToCapnProtoSchema
 {
     static constexpr auto name = "structureToCapnProtoSchema";
 
-    static void writeSchema(WriteBuffer & buf, const String & message_name, const NamesAndTypesList & names_and_types_);
+    static void
+    writeSchema(WriteBuffer & buf, const String & message_name, const NamesAndTypesList & names_and_types_, bool with_envelope = false);
 };
 
 }

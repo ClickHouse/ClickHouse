@@ -2,6 +2,7 @@
 
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 namespace DB
 {
@@ -19,7 +20,7 @@ class DelayedSource : public IProcessor
 public:
     using Creator = std::function<QueryPipelineBuilder()>;
 
-    DelayedSource(const Block & header, Creator processors_creator, bool add_totals_port, bool add_extremes_port);
+    DelayedSource(SharedHeader header, Creator processors_creator, bool add_totals_port, bool add_extremes_port);
     String getName() const override { return "Delayed"; }
 
     Status prepare() override;
@@ -52,6 +53,6 @@ private:
 };
 
 /// Creates pipe from DelayedSource.
-Pipe createDelayedPipe(const Block & header, DelayedSource::Creator processors_creator, bool add_totals_port, bool add_extremes_port);
+Pipe createDelayedPipe(SharedHeader header, DelayedSource::Creator processors_creator, bool add_totals_port, bool add_extremes_port);
 
 }

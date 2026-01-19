@@ -3,8 +3,8 @@
 #include <boost/program_options.hpp>
 #include <Common/filesystemHelpers.h>
 
+#include <csignal>
 #include <sys/stat.h>
-#include <pwd.h>
 
 #if defined(OS_LINUX)
     #include <syscall.h>
@@ -28,17 +28,23 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/copyData.h>
 #include <IO/Operators.h>
+#include <IO/Ask.h>
 #include <readpassphrase.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 
-#include <incbin.h>
-
 #include "config.h"
 
 /// Embedded configuration files used inside the install program
-INCBIN(resource_config_xml, SOURCE_DIR "/programs/server/config.xml");
-INCBIN(resource_users_xml, SOURCE_DIR "/programs/server/users.xml");
+constexpr unsigned char resource_config_xml[] =
+{
+#embed "../server/config.xml"
+};
+
+constexpr unsigned char resource_users_xml[] =
+{
+#embed "../server/users.xml"
+};
 
 
 /** This tool can be used to install ClickHouse without a deb/rpm/tgz package, having only "clickhouse" binary.
@@ -100,10 +106,14 @@ namespace fs = std::filesystem;
 static auto executeScript(const std::string & command, bool throw_on_error = false)
 {
     auto sh = ShellCommand::execute(command);
+
     WriteBufferFromFileDescriptor wb_stdout(STDOUT_FILENO);
-    WriteBufferFromFileDescriptor wb_stderr(STDERR_FILENO);
     copyData(sh->out, wb_stdout);
+    wb_stdout.finalize();
+
+    WriteBufferFromFileDescriptor wb_stderr(STDERR_FILENO);
     copyData(sh->err, wb_stderr);
+    wb_stderr.finalize();
 
     if (throw_on_error)
     {
@@ -112,23 +122,6 @@ static auto executeScript(const std::string & command, bool throw_on_error = fal
     }
 
     return sh->tryWait();
-}
-
-static bool ask(std::string question)
-{
-    while (true)
-    {
-        std::string answer;
-        std::cout << question;
-        std::getline(std::cin, answer);
-        if (!std::cin.good())
-            return false;
-
-        if (answer.empty() || answer == "n" || answer == "N")
-            return false;
-        if (answer == "y" || answer == "Y")
-            return true;
-    }
 }
 
 static bool filesEqual(std::string path1, std::string path2)
@@ -245,7 +238,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cout << "Install ClickHouse without .deb/.rpm/.tgz packages (having the binary only)\n\n";
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " install [options]", getuid() != 0) << '\n';
@@ -298,7 +291,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         bool old_binary_exists = fs::exists(main_bin_path);
         bool already_installed = false;
 
-        if (options.count("link"))
+        if (options.contains("link"))
         {
             if (old_binary_exists)
             {
@@ -446,6 +439,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "clickhouse-keeper",
             "clickhouse-keeper-converter",
             "clickhouse-disks",
+#if USE_CHDIG
+            "clickhouse-chdig",
+            "chdig",
+#endif
             "ch",
             "chl",
             "chc",
@@ -472,7 +469,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     if (is_symlink)
                         points_to = fs::weakly_canonical(FS::readSymlink(symlink_path));
 
-                    if (is_symlink && (points_to == main_bin_path || (options.count("link") && points_to == binary_self_canonical_path)))
+                    if (is_symlink && (points_to == main_bin_path || (options.contains("link") && points_to == binary_self_canonical_path)))
                     {
                         need_to_create = false;
                     }
@@ -589,7 +586,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(main_config_file))
         {
-            std::string_view main_config_content(reinterpret_cast<const char *>(gresource_config_xmlData), gresource_config_xmlSize);
+            std::string_view main_config_content(reinterpret_cast<const char *>(resource_config_xml), std::size(resource_config_xml));
             if (main_config_content.empty())
             {
                 fmt::print("There is no default config.xml, you have to download it and place to {}.\n", main_config_file.string());
@@ -700,7 +697,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!fs::exists(users_config_file))
         {
-            std::string_view users_config_content(reinterpret_cast<const char *>(gresource_users_xmlData), gresource_users_xmlSize);
+            std::string_view users_config_content(reinterpret_cast<const char *>(resource_users_xml), std::size(resource_users_xml));
             if (users_config_content.empty())
             {
                 fmt::print("There is no default users.xml, you have to download it and place to {}.\n", users_config_file.string());
@@ -807,7 +804,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         const char * debian_frontend_var = getenv("DEBIAN_FRONTEND"); // NOLINT(concurrency-mt-unsafe)
         bool noninteractive = (debian_frontend_var && debian_frontend_var == std::string_view("noninteractive"))
-                              || options.count("noninteractive");
+                              || options.contains("noninteractive");
 
 
         bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
@@ -833,7 +830,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
             char buf[1000] = {};
             std::string password;
-            if (auto * result = readpassphrase("Enter password for the default user: ", buf, sizeof(buf), 0))
+            if (auto * result = readpassphrase("Set up the password for the default user: ", buf, sizeof(buf), 0))
                 password = result;
 
             if (!password.empty())
@@ -1082,51 +1079,27 @@ namespace
         return 0;
     }
 
-    int isRunning(const fs::path & pid_file)
+    int isRunning(const fs::path & pid_file, bool ignore_file_does_not_exist)
     {
         int pid = 0;
 
-        if (fs::exists(pid_file))
+        try
         {
-            try
+            ReadBufferFromFile in(pid_file.string());
+            if (tryReadIntText(pid, in))
             {
-                ReadBufferFromFile in(pid_file.string());
-                if (tryReadIntText(pid, in))
-                {
-                    fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
-                }
-                else
-                {
-                    fmt::print("{} file exists but damaged, ignoring.\n", pid_file.string());
-                    (void)fs::remove(pid_file);
-                }
+                fmt::print("{} file exists and contains pid = {}.\n", pid_file.string(), pid);
             }
-            catch (const Exception & e)
+            else
             {
-                if (e.code() != ErrorCodes::FILE_DOESNT_EXIST)
-                    throw;
-
-                /// If file does not exist (TOCTOU) - it's ok.
+                fmt::print("{} file exists but damaged, ignoring (the file will be removed).\n", pid_file.string());
+                (void)fs::remove(pid_file);
             }
         }
-
-        if (!pid)
+        catch (const Exception & e)
         {
-            auto sh = ShellCommand::execute("pidof clickhouse-server");
-
-            if (tryReadIntText(pid, sh->out))
-            {
-                fmt::print("Found pid = {} in the list of running processes.\n", pid);
-            }
-            else if (!sh->out.eof())
-            {
-                fmt::print("The pidof command returned unusual output.\n");
-            }
-
-            WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
-            copyData(sh->err, std_err);
-
-            sh->tryWait();
+            if (!ignore_file_does_not_exist || e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+                throw;
         }
 
         if (pid)
@@ -1154,7 +1127,7 @@ namespace
 
     bool sendSignalAndWaitForStop(const fs::path & pid_file, int signal, unsigned max_tries, unsigned wait_ms, const char * signal_name)
     {
-        int pid = isRunning(pid_file);
+        int pid = isRunning(pid_file, /*ignore_file_does_not_exist=*/ false);
 
         if (!pid)
             return true;
@@ -1168,7 +1141,7 @@ namespace
         for (; try_num < max_tries; ++try_num)
         {
             fmt::print("Waiting for server to stop\n");
-            if (!isRunning(pid_file))
+            if (!isRunning(pid_file, /*ignore_file_does_not_exist=*/ true))
             {
                 fmt::print("Server stopped\n");
                 break;
@@ -1190,7 +1163,7 @@ namespace
         if (sendSignalAndWaitForStop(pid_file, signal, max_tries, 1000, signal_name))
             return 0;
 
-        int pid = isRunning(pid_file);
+        int pid = isRunning(pid_file, /*ignore_file_does_not_exist=*/ false);
         if (!pid)
             return 0;
 
@@ -1209,10 +1182,10 @@ namespace
         constexpr size_t num_kill_check_tries = 1000;
         constexpr size_t kill_check_delay_ms = 100;
         fmt::print("Will terminate forcefully (pid = {}).\n", pid);
-        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, signal_name))
+        if (sendSignalAndWaitForStop(pid_file, SIGKILL, num_kill_check_tries, kill_check_delay_ms, "kill"))
             return 0;
 
-        if (!isRunning(pid_file))
+        if (!isRunning(pid_file, /*ignore_file_does_not_exist=*/ true))
             return 0;
 
         throw Exception(ErrorCodes::CANNOT_KILL,
@@ -1245,9 +1218,10 @@ int mainEntryClickHouseStart(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " start", getuid() != 0) << '\n';
+            std::cout << desc << "\n";
             return 1;
         }
 
@@ -1286,9 +1260,10 @@ int mainEntryClickHouseStop(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " stop", getuid() != 0) << '\n';
+            std::cout << desc << "\n";
             return 1;
         }
 
@@ -1322,16 +1297,17 @@ int mainEntryClickHouseStatus(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " status", getuid() != 0) << '\n';
+            std::cout << desc << "\n";
             return 1;
         }
 
         fs::path prefix = options["prefix"].as<std::string>();
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
 
-        isRunning(pid_file);
+        isRunning(pid_file, /*ignore_file_does_not_exist=*/ false);
     }
     catch (...)
     {
@@ -1368,9 +1344,10 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
         po::variables_map options;
         po::store(po::parse_command_line(argc, argv, desc), options);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " restart", getuid() != 0) << '\n';
+            std::cout << desc << "\n";
             return 1;
         }
 

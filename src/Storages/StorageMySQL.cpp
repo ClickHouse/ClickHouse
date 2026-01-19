@@ -1,4 +1,6 @@
-#include "StorageMySQL.h"
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/StorageMySQL.h>
 
 #if USE_MYSQL
 
@@ -9,6 +11,7 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -19,6 +22,7 @@
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
+#include <Columns/IColumn.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
@@ -70,7 +74,7 @@ StorageMySQL::StorageMySQL(
     , on_duplicate_clause{on_duplicate_clause_}
     , mysql_settings(std::make_unique<MySQLSettings>(mysql_settings_))
     , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
-    , log(getLogger("StorageMySQL (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageMySQL (" + table_id_.getFullTableName() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -104,19 +108,20 @@ ColumnsDescription StorageMySQL::getTableStructureFromData(
     return columns->second;
 }
 
-Pipe StorageMySQL::read(
-    const Names & column_names_,
+void StorageMySQL::read(
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info_,
+    SelectQueryInfo & query_info,
     ContextPtr context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    storage_snapshot->check(column_names_);
+    storage_snapshot->check(column_names);
     String query = transformQueryForExternalDatabase(
-        query_info_,
-        column_names_,
+        query_info,
+        column_names,
         storage_snapshot->metadata->getColumns().getOrdinary(),
         IdentifierQuotingStyle::BackticksMySQL,
         LiteralEscapingStyle::Regular,
@@ -126,7 +131,7 @@ Pipe StorageMySQL::read(
     LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
-    for (const String & column_name : column_names_)
+    for (const String & column_name : column_names)
     {
         auto column_data = storage_snapshot->metadata->getColumns().getPhysical(column_name);
 
@@ -137,10 +142,13 @@ Pipe StorageMySQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-
     StreamSettings mysql_input_stream_settings(context_->getSettingsRef(),
             (*mysql_settings)[MySQLSetting::connection_auto_close]);
-    return Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query, sample_block, mysql_input_stream_settings));
+    query_plan.addStep(std::make_unique<ReadFromMySQLStep>(
+        sample_block,
+        pool,
+        query,
+        mysql_input_stream_settings));
 }
 
 
@@ -154,7 +162,7 @@ public:
         const std::string & remote_table_name_,
         const mysqlxx::PoolWithFailover::Entry & entry_,
         const size_t & mysql_max_rows_to_insert)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , storage{storage_}
         , metadata_snapshot{metadata_snapshot_}
         , remote_database_name{remote_database_name_}
@@ -275,7 +283,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 {
     StorageMySQL::Configuration configuration;
 
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port", "ssl_ca", "ssl_cert", "ssl_key"};
     auto mysql_settings_names = storage_settings.getAllRegisteredNames();
     for (const auto & name : mysql_settings_names)
         optional_arguments.insert(name);
@@ -306,6 +314,9 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
         configuration.table = named_collection.get<String>("table");
     configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);
     configuration.on_duplicate_clause = named_collection.getOrDefault<String>("on_duplicate_clause", "");
+    configuration.ssl_ca = named_collection.getOrDefault<String>("ssl_ca", "");
+    configuration.ssl_cert = named_collection.getOrDefault<String>("ssl_cert", "");
+    configuration.ssl_key = named_collection.getOrDefault<String>("ssl_key", "");
 
     storage_settings.loadFromNamedCollection(named_collection);
 
@@ -351,6 +362,26 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
     return configuration;
 }
 
+ReadFromMySQLStep::ReadFromMySQLStep(
+    const Block & sample_block_,
+    mysqlxx::PoolWithFailoverPtr pool_,
+    const std::string & query_str_,
+    const StreamSettings & mysql_input_stream_settings_
+)
+    : ISourceStep(std::make_shared<const Block>(sample_block_.cloneEmpty()))
+    , pool(std::move(pool_))
+    , query_str(query_str_)
+    , mysql_input_stream_settings(mysql_input_stream_settings_)
+{
+}
+
+void ReadFromMySQLStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & /*settings*/)
+{
+    auto pipe = Pipe(std::make_shared<MySQLWithFailoverSource>(pool, query_str, *getOutputHeader(), mysql_input_stream_settings));
+
+    pipeline.init(std::move(pipe));
+}
+
 
 void registerStorageMySQL(StorageFactory & factory)
 {
@@ -383,7 +414,8 @@ void registerStorageMySQL(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_schema_inference = true,
-        .source_access_type = AccessType::MYSQL,
+        .source_access_type = AccessTypeObjects::Source::MYSQL,
+        .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     });
 }
 

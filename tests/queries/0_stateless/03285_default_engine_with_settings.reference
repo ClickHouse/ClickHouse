@@ -1,0 +1,2 @@
+CREATE TABLE default.example_table\n(\n    `id` UInt32,\n    `data` String\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS max_part_loading_threads = 8, index_granularity = 8192
+CREATE TABLE default.example_table2\n(\n    `id` UInt32,\n    `data` String\n)\nENGINE = Memory\nSETTINGS max_rows_to_keep = 42

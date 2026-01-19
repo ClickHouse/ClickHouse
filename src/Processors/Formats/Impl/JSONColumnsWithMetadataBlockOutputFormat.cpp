@@ -3,6 +3,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -12,8 +13,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-JSONColumnsWithMetadataBlockOutputFormat::JSONColumnsWithMetadataBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : JSONColumnsBlockOutputFormat(out_, header_, format_settings_, true, 1), types(header_.getDataTypes())
+JSONColumnsWithMetadataBlockOutputFormat::JSONColumnsWithMetadataBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : JSONColumnsBlockOutputFormat(out_, header_, format_settings_, true, 1), types(header_->getDataTypes())
 {
 }
 
@@ -105,12 +106,14 @@ void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
     factory.registerOutputFormat("JSONColumnsWithMetadata", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & format_settings)
+        const FormatSettings & format_settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<JSONColumnsWithMetadataBlockOutputFormat>(buf, sample, format_settings);
+        return std::make_shared<JSONColumnsWithMetadataBlockOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings);
     });
 
     factory.markFormatHasNoAppendSupport("JSONColumnsWithMetadata");
+    factory.setContentType("JSONColumnsWithMetadata", "application/json; charset=UTF-8");
 }
 
 }

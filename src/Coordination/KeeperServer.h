@@ -3,7 +3,6 @@
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
-#include <Coordination/KeeperStorage.h>
 #include <libnuraft/raft_params.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -85,14 +84,14 @@ public:
 
     /// Put local read request and execute in state machine directly and response into
     /// responses queue
-    void putLocalReadRequest(const KeeperStorageBase::RequestForSession & request);
+    void putLocalReadRequest(const KeeperRequestForSession & request);
 
     bool isRecovering() const { return is_recovering; }
     bool reconfigEnabled() const { return enable_reconfiguration; }
 
     /// Put batch of requests into Raft and get result of put. Responses will be set separately into
     /// responses_queue.
-    RaftAppendResult putRequestBatch(const KeeperStorageBase::RequestsForSessions & requests);
+    RaftAppendResult putRequestBatch(const KeeperRequestsForSessions & requests);
 
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
@@ -110,6 +109,8 @@ public:
     bool isLeaderAlive() const;
 
     bool isExceedingMemorySoftLimit() const;
+
+    int64_t getLeaderID() const;
 
     Keeper4LWInfo getPartiallyFilled4LWInfo() const;
 
@@ -137,7 +138,7 @@ public:
     };
 
     ConfigUpdateState applyConfigUpdate(
-        const ClusterUpdateAction& action,
+        const ClusterUpdateAction & action,
         bool last_command_was_leader_change = false);
 
     // TODO (myrrc) these functions should be removed once "reconfig" is stabilized
@@ -154,6 +155,8 @@ public:
     void yieldLeadership();
 
     void recalculateStorageStats();
+
+    std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
 };
 
 }

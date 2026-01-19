@@ -2,7 +2,7 @@ SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t1;
 
-CREATE TABLE t1 (key UInt8) ENGINE = Memory;
+CREATE TABLE t1 (key UInt8) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t1 VALUES (1),(2);
 
 SET join_algorithm = 'full_sorting_merge';

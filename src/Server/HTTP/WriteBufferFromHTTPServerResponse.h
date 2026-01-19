@@ -11,7 +11,6 @@
 #include <Common/Stopwatch.h>
 
 #include <mutex>
-#include <optional>
 
 
 namespace DB
@@ -26,15 +25,17 @@ namespace DB
 class WriteBufferFromHTTPServerResponse final : public HTTPWriteBuffer
 {
 public:
+    static constexpr std::string_view EXCEPTION_MARKER = "__exception__";
+    static constexpr size_t EXCEPTION_TAG_LENGTH = 16;
+    static constexpr size_t MAX_EXCEPTION_SIZE= 16 * 1024; // 16K
+
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
         bool is_http_method_head_,
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
-    ~WriteBufferFromHTTPServerResponse() override;
-
     /// Writes progress in repeating HTTP headers.
-    void onProgress(const Progress & progress);
+    void onProgress(const Progress & progress, ContextPtr context);
 
     /// Turn CORS on or off.
     /// The setting has any effect only if HTTP headers haven't been sent yet.
@@ -58,7 +59,13 @@ public:
         compression_method = compression_method_;
     }
 
-    void setExceptionCode(int exception_code_);
+    bool isChunked() const;
+
+    bool isFixedLength() const;
+
+    void setExceptionCode(int code);
+
+    bool cancelWithException(HTTPServerRequest & request, int exception_code_, const std::string & message, WriteBuffer * compression_buffer) noexcept;
 
 private:
     /// Send at least HTTP headers if no data has been sent yet.
@@ -67,13 +74,15 @@ private:
     /// This method is idempotent.
     void finalizeImpl() override;
 
+    void cancelImpl() noexcept override;
+
     /// Must be called under locked mutex.
     /// This method send headers, if this was not done already,
     ///  but not finish them with \r\n, allowing to send more headers subsequently.
     void startSendHeaders();
 
     /// Used to write the header X-ClickHouse-Progress / X-ClickHouse-Summary
-    void writeHeaderProgressImpl(const char * header_name);
+    void writeHeaderProgressImpl(const char * header_name, Progress::DisplayMode mode);
     /// Used to write the header X-ClickHouse-Progress
     void writeHeaderProgress();
     /// Used to write the header X-ClickHouse-Summary
@@ -91,8 +100,6 @@ private:
     bool is_http_method_head;
     bool add_cors_header = false;
 
-    bool initialized = false;
-
     bool headers_started_sending = false;
     bool headers_finished_sending = false;    /// If true, you could not add any headers.
 
@@ -104,6 +111,8 @@ private:
     CompressionMethod compression_method = CompressionMethod::None;
 
     int exception_code = 0;
+
+    std::string exception_tag;
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };

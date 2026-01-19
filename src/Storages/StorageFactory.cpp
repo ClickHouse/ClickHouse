@@ -1,6 +1,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
@@ -55,8 +56,11 @@ ContextMutablePtr StorageFactory::Arguments::getLocalContext() const
 
 void StorageFactory::registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features)
 {
+    if (features.supports_settings && !features.has_builtin_setting_fn)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "StorageFactory: Storage '{}' supports settings but has_builtin_setting_fn is not provided", name);
     if (!storages.emplace(name, Creator{std::move(creator_fn), features}).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TableFunctionFactory: the table function name '{}' is not unique", name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageFactory: the storage '{}' is not unique", name);
 }
 
 
@@ -67,9 +71,11 @@ StoragePtr StorageFactory::get(
     ContextMutablePtr context,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
-    LoadingStrictnessLevel mode) const
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup) const
 {
-    String name, comment;
+    String name;
+    String comment;
 
     ASTStorage * storage_def = query.storage;
 
@@ -81,13 +87,6 @@ StoragePtr StorageFactory::get(
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Specifying ENGINE is not allowed for a View");
 
         name = "View";
-    }
-    else if (query.is_live_view)
-    {
-        if (query.storage)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Specifying ENGINE is not allowed for a LiveView");
-
-        name = "LiveView";
     }
     else if (query.is_dictionary)
     {
@@ -132,19 +131,16 @@ StoragePtr StorageFactory::get(
             {
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE View is not supported, use CREATE VIEW statement");
             }
+            if (name == "Loop")
+            {
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Direct creation of tables with ENGINE Loop is not supported, use Loop as a table function only");
+            }
             if (name == "MaterializedView")
             {
                 throw Exception(
                     ErrorCodes::INCORRECT_QUERY,
                     "Direct creation of tables with ENGINE MaterializedView "
                     "is not supported, use CREATE MATERIALIZED VIEW statement");
-            }
-            if (name == "LiveView")
-            {
-                throw Exception(
-                    ErrorCodes::INCORRECT_QUERY,
-                    "Direct creation of tables with ENGINE LiveView "
-                    "is not supported, use CREATE LIVE VIEW statement");
             }
             if (name == "WindowView")
             {
@@ -224,7 +220,8 @@ StoragePtr StorageFactory::get(
         .columns = columns,
         .constraints = constraints,
         .mode = mode,
-        .comment = comment};
+        .comment = comment,
+        .is_restore_from_backup = is_restore_from_backup};
 
     assert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
@@ -233,7 +230,7 @@ StoragePtr StorageFactory::get(
     {
         /// Storage creator modified empty arguments list, so we should modify the query
         assert(storage_def && storage_def->engine && !storage_def->engine->arguments);
-        storage_def->engine->arguments = std::make_shared<ASTExpressionList>();
+        storage_def->engine->arguments = std::make_shared<ASTExpressionList>();  /// NOLINT(clang-analyzer-core.NullDereference)
         storage_def->engine->children.push_back(storage_def->engine->arguments);
         storage_def->engine->arguments->children = empty_engine_args;
     }
@@ -251,11 +248,13 @@ StorageFactory & StorageFactory::instance()
 }
 
 
-AccessType StorageFactory::getSourceAccessType(const String & table_engine) const
+std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(const String & table_engine) const
 {
-    auto it = storages.find(table_engine);
+    if (table_engine.empty())
+        return {};
+    const auto it = storages.find(table_engine);
     if (it == storages.end())
-        return AccessType::NONE;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown table engine '{}' when checking for access type", table_engine);
     return it->second.features.source_access_type;
 }
 

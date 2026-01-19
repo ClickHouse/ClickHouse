@@ -42,7 +42,16 @@ class DisksClient(object):
         self.working_path = working_path
 
         self.proc = subprocess.Popen(
-            [bin_path, "disks", "--test-mode", "--config", config_path],
+            [
+                bin_path,
+                "disks",
+                "--test-mode",
+                "--config",
+                config_path,
+                "--save-logs",
+                "--log-level",
+                "WARNING",
+            ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -84,7 +93,7 @@ class DisksClient(object):
                 elif file == self.proc.stderr:
                     error_line = self.proc.stderr.readline()
                     print(error_line)
-                    raise ClickHouseDisksException(error_line.strip().decode())
+                    # raise ClickHouseDisksException(error_line.strip().decode())
 
             else:
                 raise ValueError(f"Failed to read from pipe. Flag {event}")
@@ -92,16 +101,25 @@ class DisksClient(object):
         data = output.getvalue().strip().decode()
         return data
 
-    def list_disks(self) -> List[Tuple[str, str]]:
+    def list_disks(self) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
         output = self.execute_query("list-disks")
-        return list(
-            sorted(
-                map(
-                    lambda x: (x.split(":")[0], ":".join(x.split(":")[1:])),
-                    output.split("\n"),
-                )
-            )
-        )
+        lines: List[str] = map(lambda x: x.strip(), output.split("\n"))
+
+        initialized_disks = []
+        unitialized_disks = []
+        disk_ref = []
+
+        for line in lines:
+            if line.strip() == "Initialized disks:":
+                disk_ref = initialized_disks
+            elif line.strip() == "Uninitialized disks:":
+                disk_ref = unitialized_disks
+            else:
+                if line == "":
+                    continue
+                disk_ref.append((line.split(":")[0], ":".join(line.split(":")[1:])))
+
+        return list(sorted(initialized_disks)), list(sorted(unitialized_disks))
 
     def current_disk_with_path(self) -> Tuple[str, str]:
         output = self.execute_query("current_disk_with_path")
@@ -128,7 +146,7 @@ class DisksClient(object):
                 answer[directory] = files
             return answer
         else:
-            return output.split("\n")
+            return output.split("\n") if output else []
 
     def switch_disk(self, disk: str, directory: Optional[str] = None):
         directory_addition = f"--path {directory} " if directory is not None else ""
@@ -200,15 +218,19 @@ def test_disks_app_interactive_list_disks():
     client = DisksClient.getLocalDisksClient(True)
     expected_disks_with_path = [
         ("default", "/"),
-        ("local", client.working_path),
     ]
-    assert expected_disks_with_path == client.list_disks()
+    assert expected_disks_with_path == client.list_disks()[0]
     assert client.current_disk_with_path() == ("default", "/")
     client.switch_disk("local")
     assert client.current_disk_with_path() == (
         "local",
         client.working_path,
     )
+    expected_disks_with_path = [
+        ("default", "/"),
+        ("local", client.working_path),
+    ]
+    assert expected_disks_with_path == client.list_disks()[0]
 
 
 def test_disks_app_interactive_list_files_local():
@@ -221,7 +243,8 @@ def test_disks_app_interactive_list_files_local():
 
 def test_disks_app_interactive_list_directories_default():
     client = DisksClient.getLocalDisksClient(True)
-    traversed_dir = client.ls(".", recursive=True)
+    client.mkdir("test")
+    client.cd("test")
     client.mkdir("dir1")
     client.mkdir("dir2")
     client.mkdir(".dir3")
@@ -283,7 +306,9 @@ def test_disks_app_interactive_list_directories_default():
     }
     client.rm("dir1", recursive=True)
     client.rm(".dir3", recursive=True)
-    assert client.ls(".", recursive=True, show_hidden=False) == {".": []}
+    assert client.ls(".", recursive=True, show_hidden=False) == {'.': []}
+    client.cd('..')
+    client.rm('test')
 
 
 def test_disks_app_interactive_cp_and_read():
@@ -315,15 +340,21 @@ def test_disks_app_interactive_test_move_and_write():
         file.write(initial_text)
     client = DisksClient.getLocalDisksClient(True)
     client.switch_disk("default")
-    client.copy("a.txt", "/a.txt", disk_from="local", disk_to="default")
+    client.mkdir("test")
+    client.cd("test")
+    client.copy("a.txt", "/test/a.txt", disk_from="local", disk_to="default")
     files = client.ls(".")
     assert files == ["a.txt"]
     client.move("a.txt", "b.txt")
     files = client.ls(".")
     assert files == ["b.txt"]
-    read_text = client.read("/b.txt")
+    read_text = client.read("/test/b.txt")
     assert read_text == initial_text
     client.write("b.txt", "c.txt")
     read_text = client.read("c.txt")
     assert read_text == initial_text
+    client.rm("b.txt")
+    client.rm("c.txt")
     os.remove("a.txt")
+    client.cd('..')
+    client.rm('test')

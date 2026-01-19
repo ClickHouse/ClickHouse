@@ -2,13 +2,11 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Databases/DatabaseReplicated.h>
 
 namespace DB
 {
@@ -25,7 +23,7 @@ extern const int UNFINISHED;
 DistributedQueryStatusSource::DistributedQueryStatusSource(
     const String & zk_node_path,
     const String & zk_replicas_path,
-    Block block,
+    SharedHeader block,
     ContextPtr context_,
     const Strings & hosts_to_wait,
     const char * logger_name)
@@ -87,8 +85,16 @@ NameSet DistributedQueryStatusSource::getOfflineHosts(const NameSet & hosts_to_w
     NameSet offline;
     auto res = zookeeper->tryGet(paths);
     for (size_t i = 0; i < res.size(); ++i)
+    {
         if (res[i].error == Coordination::Error::ZNONODE)
             offline.insert(hosts_array[i]);
+
+        if (res[i].data.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
+        {
+            LOG_TRACE(log, "Replica {} is not fully synced after recovery, considering it as offline", hosts_array[i]);
+            offline.insert(hosts_array[i]);
+        }
+    }
 
     if (offline.size() == hosts_to_wait.size())
     {
@@ -133,8 +139,7 @@ ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path 
     String status_data;
     bool finished_exists = false;
 
-    auto retries_ctl = ZooKeeperRetriesControl(
-        "executeDDLQueryOnCluster", getLogger("DDLQueryStatusSource"), getRetriesInfo(), context->getProcessListElement());
+    auto retries_ctl = ZooKeeperRetriesControl("executeDDLQueryOnCluster", getLogger("DDLQueryStatusSource"), getRetriesInfo());
     retries_ctl.retryLoop([&]() { finished_exists = context->getZooKeeper()->tryGet(status_path, status_data); });
     if (finished_exists)
         status.tryDeserializeText(status_data);
@@ -142,13 +147,14 @@ ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path 
     return status;
 }
 
-ZooKeeperRetriesInfo DistributedQueryStatusSource::getRetriesInfo()
+ZooKeeperRetriesInfo DistributedQueryStatusSource::getRetriesInfo() const
 {
     const auto & config_ref = Context::getGlobalContextInstance()->getConfigRef();
     return ZooKeeperRetriesInfo(
         config_ref.getInt("distributed_ddl_keeper_max_retries", 5),
         config_ref.getInt("distributed_ddl_keeper_initial_backoff_ms", 100),
-        config_ref.getInt("distributed_ddl_keeper_max_backoff_ms", 5000));
+        config_ref.getInt("distributed_ddl_keeper_max_backoff_ms", 5000),
+        context->getProcessListElement());
 }
 
 std::pair<String, UInt16> DistributedQueryStatusSource::parseHostAndPort(const String & host_id)
@@ -159,6 +165,16 @@ std::pair<String, UInt16> DistributedQueryStatusSource::parseHostAndPort(const S
     host = host_and_port.first;
     port = host_and_port.second;
     return {host, port};
+}
+
+std::shared_ptr<DataTypeEnum8> DistributedQueryStatusSource::getStatusEnum()
+{
+    return std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
+        {"OK", static_cast<Int8>(QueryStatus::OK)},
+        {"IN_PROGRESS", static_cast<Int8>(QueryStatus::IN_PROGRESS)},
+        {"QUEUED", static_cast<Int8>(QueryStatus::QUEUED)},
+        {"UNFINISHED", static_cast<Int8>(QueryStatus::UNFINISHED)},
+    });
 }
 
 Chunk DistributedQueryStatusSource::generate()
@@ -194,8 +210,7 @@ Chunk DistributedQueryStatusSource::generate()
         Strings tmp_active_hosts;
 
         {
-            auto retries_ctl = ZooKeeperRetriesControl(
-                "executeDistributedQueryOnCluster", getLogger(getName()), getRetriesInfo(), context->getProcessListElement());
+            auto retries_ctl = ZooKeeperRetriesControl("executeDistributedQueryOnCluster", getLogger(getName()), getRetriesInfo());
             retries_ctl.retryLoop(
                 [&]()
                 {

@@ -41,6 +41,7 @@ struct HiveSettingsImpl;
     M(CLASS_NAME, SchemaInferenceMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, URI)
 
@@ -60,6 +61,8 @@ struct HiveSettings
 
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
     void loadFromQuery(ASTStorage & storage_def);
+
+    static bool hasBuiltin(std::string_view name);
 
 private:
     std::unique_ptr<HiveSettingsImpl> impl;

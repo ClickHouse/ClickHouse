@@ -1,9 +1,21 @@
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Common/BitHelpers.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
+
+String MarkInCompressedFile::toString() const
+{
+    return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ")";
+}
+
+String MarkInCompressedFile::toStringWithRows(size_t rows_num) const
+{
+    return "(" + DB::toString(offset_in_compressed_file) + "," + DB::toString(offset_in_decompressed_block) + ","
+        + DB::toString(rows_num) + ")";
+}
 
 // Write a range of bits in a bit-packed array.
 // The array must be overallocated by one element.
@@ -23,7 +35,7 @@ UInt64 readBits(const UInt64 * src, size_t bit_offset, size_t num_bits)
     UInt64 value = src[bit_offset / 64] >> mod;
     if (mod)
         value |= src[bit_offset / 64 + 1] << (64 - mod);
-    return value & maskLowBits<UInt64>(num_bits);
+    return value & maskLowBits<UInt64>(static_cast<unsigned char>(num_bits));
 }
 
 MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
@@ -56,14 +68,15 @@ MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
                 = std::min(block.trailing_zero_bits_in_y, static_cast<UInt8>(getTrailingZeroBits(mark.offset_in_decompressed_block)));
         }
 
-        block.bits_for_x = sizeof(size_t) * 8 - getLeadingZeroBits(max_x - block.min_x);
-        block.bits_for_y = sizeof(size_t) * 8 - getLeadingZeroBits((max_y - block.min_y) >> block.trailing_zero_bits_in_y);
+        block.bits_for_x = static_cast<UInt8>(sizeof(size_t) * 8 - getLeadingZeroBits(max_x - block.min_x));
+        block.bits_for_y
+            = static_cast<UInt8>(sizeof(size_t) * 8 - getLeadingZeroBits((max_y - block.min_y) >> block.trailing_zero_bits_in_y));
         packed_bits += num_marks_in_this_block * (block.bits_for_x + block.bits_for_y);
     }
 
     // Overallocate by +1 element to let the bit packing/unpacking do less bounds checking.
     size_t packed_length = (packed_bits + 63) / 64 + 1;
-    packed.reserve(packed_length);
+    packed.reserve_exact(packed_length);
     packed.resize_fill(packed_length);
 
     // Second pass: write out the packed marks.
@@ -97,7 +110,7 @@ std::tuple<const MarksInCompressedFile::BlockInfo *, size_t> MarksInCompressedFi
 
 size_t MarksInCompressedFile::approximateMemoryUsage() const
 {
-    return sizeof(*this) + blocks.size() * sizeof(blocks[0]) + packed.size() * sizeof(packed[0]);
+    return sizeof(*this) + blocks.allocated_bytes() + packed.allocated_bytes();
 }
 
 }

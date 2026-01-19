@@ -27,13 +27,18 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
-#include <Common/SipHash.h>
-#include <Common/randomSeed.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/SipHash.h>
+#include <Common/intExp10.h>
+#include <Common/randomSeed.h>
 
 #include <Functions/FunctionFactory.h>
+
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -69,25 +74,25 @@ void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_
     {
         /// The loop can be further optimized.
         UInt64 number = rng();
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        unalignedStoreLittleEndian<UInt64>(data, number);
-#else
-        unalignedStore<UInt64>(data, number);
-#endif
+        if constexpr (std::endian::native == std::endian::big)
+            unalignedStoreLittleEndian<UInt64>(data, number);
+        else
+            unalignedStore<UInt64>(data, number);
         data += sizeof(UInt64); /// We assume that data has at least 7-byte padding (see PaddedPODArray)
     }
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    if (flip_bytes)
+    if constexpr (std::endian::native == std::endian::big)
     {
-        data = end - size;
-        while (data < end)
+        if (flip_bytes)
         {
-            char * rev_end = data + size_of_type;
-            std::reverse(data, rev_end);
-            data += size_of_type;
+            data = end - size;
+            while (data < end)
+            {
+                char * rev_end = data + size_of_type;
+                std::reverse(data, rev_end);
+                data += size_of_type;
+            }
         }
     }
-#endif
 }
 
 
@@ -105,7 +110,7 @@ size_t estimateValueSize(
     {
         case TypeIndex::String:
         {
-            return max_string_length + sizeof(size_t) + 1;
+            return max_string_length + sizeof(UInt64);
         }
 
         /// The logic in this function should reflect the logic of fillColumnWithRandomData.
@@ -153,7 +158,7 @@ size_t estimateValueSize(
 }
 
 ColumnPtr fillColumnWithRandomData(
-    const DataTypePtr type,
+    DataTypePtr type,
     UInt64 limit,
     UInt64 max_array_length,
     UInt64 max_string_length,
@@ -178,7 +183,7 @@ ColumnPtr fillColumnWithRandomData(
             {
                 size_t length = rng() % (max_string_length + 1);    /// Slow
 
-                IColumn::Offset next_offset = offset + length + 1;
+                IColumn::Offset next_offset = offset + length;
                 data_to.resize(next_offset);
                 offsets_to[row_num] = next_offset;
 
@@ -187,10 +192,10 @@ ColumnPtr fillColumnWithRandomData(
                 {
                     UInt64 rand = rng();
 
-                    UInt16 rand1 = rand;
-                    UInt16 rand2 = rand >> 16;
-                    UInt16 rand3 = rand >> 32;
-                    UInt16 rand4 = rand >> 48;
+                    UInt16 rand1 = static_cast<UInt16>(rand);
+                    UInt16 rand2 = static_cast<UInt16>(rand >> 16);
+                    UInt16 rand3 = static_cast<UInt16>(rand >> 32);
+                    UInt16 rand4 = static_cast<UInt16>(rand >> 48);
 
                     /// Printable characters are from range [32; 126].
                     /// https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
@@ -201,10 +206,7 @@ ColumnPtr fillColumnWithRandomData(
                     data_to_ptr[pos + 3] = 32 + ((rand4 * 95) >> 16);
 
                     /// NOTE gcc failed to vectorize this code (aliasing of char?)
-                    /// TODO Implement SIMD optimizations from Danila Kutenin.
                 }
-
-                data_to[offset + length] = 0;
 
                 offset = next_offset;
             }
@@ -219,7 +221,7 @@ ColumnPtr fillColumnWithRandomData(
             auto & data = column->getData();
             data.resize(limit);
 
-            UInt8 size = values.size();
+            UInt8 size = static_cast<UInt8>(values.size());
             UInt8 off;
             for (UInt64 i = 0; i < limit; ++i)
             {
@@ -237,11 +239,11 @@ ColumnPtr fillColumnWithRandomData(
             auto & data = column->getData();
             data.resize(limit);
 
-            UInt16 size = values.size();
+            UInt16 size = static_cast<UInt16>(values.size());
             UInt8 off;
             for (UInt64 i = 0; i < limit; ++i)
             {
-                off = static_cast<UInt16>(rng()) % size;
+                off = static_cast<UInt8>(static_cast<UInt16>(rng()) % size);
                 data[i] = values[off].second;
             }
 
@@ -554,7 +556,7 @@ public:
         Block block_header_,
         ContextPtr context_,
         GenerateRandomStatePtr state_)
-        : ISource(Nested::flattenNested(prepareBlockToFill(block_header_)))
+        : ISource(std::make_shared<const Block>(Nested::flattenNested(prepareBlockToFill(block_header_))))
         , block_size(block_size_)
         , max_array_length(max_array_length_)
         , max_string_length(max_string_length_)
@@ -659,16 +661,21 @@ void registerStorageGenerateRandom(StorageFactory & factory)
 
         if (!engine_args.empty())
         {
-            const auto & ast_literal = engine_args[0]->as<const ASTLiteral &>();
-            if (!ast_literal.value.isNull())
-                random_seed = checkAndGetLiteralArgument<UInt64>(ast_literal, "random_seed");
+            engine_args[0] = evaluateConstantExpressionAsLiteral(engine_args[0], args.getLocalContext());
+            random_seed = checkAndGetLiteralArgument<UInt64>(engine_args[0], "random_seed");
         }
 
         if (engine_args.size() >= 2)
-            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[1], "max_string_length");
+        {
+            engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
+            max_string_length = checkAndGetLiteralArgument<UInt64>(engine_args[0], "max_string_length");
+        }
 
         if (engine_args.size() == 3)
+        {
+            engine_args[2] = evaluateConstantExpressionAsLiteral(engine_args[2], args.getLocalContext());
             max_array_length = checkAndGetLiteralArgument<UInt64>(engine_args[2], "max_array_length");
+        }
 
         return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, max_array_length, max_string_length, random_seed);
     });
@@ -703,7 +710,6 @@ Pipe StorageGenerateRandom::read(
         size_t estimated_block_size_bytes = 0;
         if (common::mulOverflow(max_block_size, estimated_row_size_bytes, estimated_block_size_bytes))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large estimated block size in GenerateRandom table: its estimation leads to 64bit overflow");
-        chassert(estimated_block_size_bytes != 0);
 
         if (estimated_block_size_bytes > preferred_block_size_bytes)
         {

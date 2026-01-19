@@ -51,14 +51,14 @@ enum class ExtractAllGroupsResultKind : uint8_t
 template <typename Impl>
 class FunctionExtractAllGroups : public IFunction
 {
-    ContextPtr context;
+    const UInt64 regexp_max_matches_per_row;
 
 public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    explicit FunctionExtractAllGroups(ContextPtr context_)
-        : context(context_)
+    explicit FunctionExtractAllGroups(ContextPtr context)
+        : regexp_max_matches_per_row(context->getSettingsRef()[Setting::regexp_max_matches_per_row].value)
     {}
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionExtractAllGroups>(context); }
@@ -129,14 +129,14 @@ public:
             root_offsets_data.resize(input_rows_count);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                std::string_view current_row = column_haystack->getDataAt(i).toView();
+                std::string_view current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
                 const auto * pos = current_row.data();
                 const auto * end = pos + current_row.size();
                 while (pos < end
                     && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, regexp->UNANCHORED,
+                        0, end - pos, RE2::UNANCHORED,
                         matched_groups.data(), static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.
@@ -158,9 +158,6 @@ public:
         }
         else
         {
-            /// Additional limit to fail fast on supposedly incorrect usage.
-            const auto max_matches_per_row = context->getSettingsRef()[Setting::regexp_max_matches_per_row];
-
             PODArray<std::string_view, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.
             PODArray<size_t, 0> number_of_matches_per_row;
@@ -176,11 +173,11 @@ public:
                 const auto & current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
-                const auto * pos = current_row.data;
-                const auto * end = pos + current_row.size;
+                const auto * pos = current_row.data();
+                const auto * end = pos + current_row.size();
                 while (pos < end
                     && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, regexp->UNANCHORED, matched_groups.data(),
+                        0, end - pos, RE2::UNANCHORED, matched_groups.data(),
                         static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.
@@ -188,10 +185,11 @@ public:
                         all_matches.push_back(matched_groups[group]);
 
                     ++matches_per_row;
-                    if (matches_per_row > max_matches_per_row)
+                    /// Additional limit to fail fast on supposedly incorrect usage.
+                    if (matches_per_row > regexp_max_matches_per_row)
                         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                                 "Too many matches per row (> {}) in the result of function {}",
-                                max_matches_per_row, getName());
+                                regexp_max_matches_per_row, getName());
 
                     pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
                 }
@@ -244,7 +242,7 @@ public:
                     for (size_t i = row_offset + group_id; i < next_row_offset && i < all_matches.size(); i += groups_count)
                     {
                         const auto & match = all_matches[i];
-                        data_col->insertData(match.begin(), match.length());
+                        data_col->insertData(match.data(), match.length());
                     }
                     nested_offsets_col->insertValue(data_col->size());
                 }

@@ -3,10 +3,13 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFactory.h>
 
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
+
+#include <Core/Field.h>
 
 #include <Interpreters/Context.h>
 
@@ -14,15 +17,13 @@
 
 using namespace DB;
 
-
 ContextMutablePtr context;
-
 extern "C" int LLVMFuzzerInitialize(int *, char ***)
 {
     if (context)
         return true;
 
-    SharedContextHolder shared_context = Context::createShared();
+    static SharedContextHolder shared_context = Context::createShared();
     context = Context::createGlobal(shared_context.get());
     context->makeGlobalContext();
 
@@ -67,7 +68,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         DataTypePtr type = DataTypeFactory::instance().get(data_type);
 
         FormatSettings settings;
-        settings.binary.max_binary_string_size = 100;
+        settings.binary.max_binary_array_size = 100;
         settings.binary.max_binary_string_size = 100;
 
         Field field;

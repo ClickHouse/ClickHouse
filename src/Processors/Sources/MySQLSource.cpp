@@ -3,12 +3,10 @@
 #if USE_MYSQL
 #include <vector>
 
-#include <Core/MySQL/MySQLReplication.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/IDataType.h>
@@ -17,13 +15,13 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <boost/algorithm/string.hpp>
+
+#include <fmt/ranges.h>
 
 
 namespace DB
@@ -32,7 +30,7 @@ namespace Setting
 {
     extern const SettingsUInt64 external_storage_max_read_bytes;
     extern const SettingsUInt64 external_storage_max_read_rows;
-    extern const SettingsUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
 }
 
 namespace ErrorCodes
@@ -60,13 +58,13 @@ MySQLSource::Connection::Connection(
 {
 }
 
-/// Used in MaterializedMySQL and in doInvalidateQuery for dictionary source.
+/// Used in MySQL tables and in doInvalidateQuery for dictionary source.
 MySQLSource::MySQLSource(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
     const Block & sample_block,
     const StreamSettings & settings_)
-    : ISource(sample_block.cloneEmpty())
+    : ISource(std::make_shared<const Block>(sample_block.cloneEmpty()))
     , log(getLogger("MySQLSource"))
     , connection{std::make_unique<Connection>(entry, query_str)}
     , settings{std::make_unique<StreamSettings>(settings_)}
@@ -77,7 +75,7 @@ MySQLSource::MySQLSource(
 
 /// For descendant MySQLWithFailoverSource
 MySQLSource::MySQLSource(const Block &sample_block_, const StreamSettings & settings_)
-    : ISource(sample_block_.cloneEmpty())
+    : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , log(getLogger("MySQLSource"))
     , settings(std::make_unique<StreamSettings>(settings_))
 {
@@ -118,6 +116,10 @@ void MySQLWithFailoverSource::onStart()
                 throw;
             }
         }
+        catch (mysqlxx::ConnectionFailed & ecl)  /// Replica is probably down - try next.
+        {
+            LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, settings->default_num_tries_on_connection_loss, ecl.displayText());
+        }
         catch (const mysqlxx::BadQuery & e)
         {
             LOG_ERROR(log, "Error processing query '{}': {}", query_str, e.displayText());
@@ -149,11 +151,11 @@ namespace
         switch (type)
         {
             case ValueType::vtUInt8:
-                assert_cast<ColumnUInt8 &>(column).insertValue(value.getUInt());
+                assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(value.getUInt()));
                 read_bytes_size += 1;
                 break;
             case ValueType::vtUInt16:
-                assert_cast<ColumnUInt16 &>(column).insertValue(value.getUInt());
+                assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(value.getUInt()));
                 read_bytes_size += 2;
                 break;
             case ValueType::vtUInt32:
@@ -166,8 +168,15 @@ namespace
                 {
                     size_t n = value.size();
                     UInt64 val = 0UL;
-                    ReadBufferFromMemory payload(const_cast<char *>(value.data()), n);
-                    MySQLReplication::readBigEndianStrict(payload, reinterpret_cast<char *>(&val), n);
+                    char * to = reinterpret_cast<char *>(&val);
+                    memcpy(to, const_cast<char *>(value.data()), n);
+
+                    if constexpr (std::endian::native == std::endian::little)
+                    {
+                        char * start = to;
+                        char * end = to + n;
+                        std::reverse(start, end);
+                    }
                     assert_cast<ColumnUInt64 &>(column).insertValue(val);
                     read_bytes_size += n;
                 }
@@ -179,11 +188,11 @@ namespace
                 break;
             }
             case ValueType::vtInt8:
-                assert_cast<ColumnInt8 &>(column).insertValue(value.getInt());
+                assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(value.getInt()));
                 read_bytes_size += 1;
                 break;
             case ValueType::vtInt16:
-                assert_cast<ColumnInt16 &>(column).insertValue(value.getInt());
+                assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(value.getInt()));
                 read_bytes_size += 2;
                 break;
             case ValueType::vtInt32:
@@ -226,11 +235,11 @@ namespace
                 read_bytes_size += 8;
                 break;
             case ValueType::vtEnum8:
-                assert_cast<ColumnInt8 &>(column).insertValue(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>());
+                assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(assert_cast<const DataTypeEnum<Int8> &>(data_type).castToValue(value.data()).safeGet<Int8>()));
                 read_bytes_size += assert_cast<ColumnInt8 &>(column).byteSize();
                 break;
             case ValueType::vtEnum16:
-                assert_cast<ColumnInt16 &>(column).insertValue(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>());
+                assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(assert_cast<const DataTypeEnum<Int16> &>(data_type).castToValue(value.data()).safeGet<Int16>()));
                 read_bytes_size += assert_cast<ColumnInt16 &>(column).byteSize();
                 break;
             case ValueType::vtString:
@@ -293,7 +302,8 @@ namespace
                 if (point_type != 1)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only Point data type is supported");
 
-                Float64 x, y;
+                Float64 x;
+                Float64 y;
                 if (endian == 1)
                 {
                     readBinaryLittleEndian(x, payload);

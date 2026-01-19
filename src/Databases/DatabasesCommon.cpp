@@ -11,27 +11,33 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/IStorage.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
-#include <Storages/StorageDictionary.h>
-#include <Storages/StorageFactory.h>
 #include <Storages/TTLDescription.h>
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 
 namespace DB
 {
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
+extern const SettingsBool fsync_metadata;
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
 }
 namespace ErrorCodes
 {
@@ -41,13 +47,16 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int BAD_ARGUMENTS;
+    extern const int THERE_IS_NO_QUERY;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 namespace
 {
 void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
 {
     /// First validate that the query can be parsed
-    const auto serialized_query = serializeAST(query);
+    const auto serialized_query = query.formatWithSecretsOneLine();
     ParserCreateQuery parser;
     ASTPtr new_query_raw = parseQuery(
         parser,
@@ -55,8 +64,8 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
         serialized_query.data() + serialized_query.size(),
         "after altering table ",
         0,
-        context->getSettingsRef()[Setting::max_parser_backtracks],
-        context->getSettingsRef()[Setting::max_parser_depth]);
+        context->getSettingsRef()[Setting::max_parser_depth],
+        context->getSettingsRef()[Setting::max_parser_backtracks]);
     const auto & new_query = new_query_raw->as<const ASTCreateQuery &>();
     /// If there are no columns, then there is nothing much we can do
     if (!new_query.columns_list || !new_query.columns_list->columns)
@@ -67,6 +76,9 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     /// SECONDARY_CREATE should check most of the important things.
     const auto columns_desc
         = InterpreterCreateQuery::getColumnsDescription(*columns.columns, context, LoadingStrictnessLevel::SECONDARY_CREATE, false);
+
+    if (columns_desc.getInsertable().empty())
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     /// Default expressions are only validated in level CREATE, so let's check them now
     DefaultExpressionsInfo default_expr_info{std::make_shared<ASTExpressionList>()};
@@ -92,7 +104,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (columns.indices)
     {
         for (const auto & child : columns.indices->children)
-            IndexDescription::getIndexFromAST(child, columns_desc, context);
+            IndexDescription::getIndexFromAST(child, columns_desc, /* is_implicitly_created */ false, context);
     }
     if (columns.constraints)
     {
@@ -122,7 +134,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
 }
 }
 
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context)
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, const bool validate_new_create_query)
 {
     auto & ast_create_query = query->as<ASTCreateQuery &>();
 
@@ -199,6 +211,12 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
         }
+        else if (metadata.settings_changes)
+        {
+            auto & settings_changes = metadata.settings_changes->as<ASTSetQuery &>().changes;
+            if (!settings_changes.empty())
+                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+        }
     }
 
     if (metadata.comment.empty())
@@ -206,7 +224,8 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     else
         ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(metadata.comment));
 
-    validateCreateQuery(ast_create_query, context);
+    if (validate_new_create_query)
+        validateCreateQuery(ast_create_query, context);
 }
 
 
@@ -292,20 +311,80 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     if (!query.isView())
         query.select = nullptr;
 
-    query.format = nullptr;
+    query.format_ast = nullptr;
     query.out_file = nullptr;
 }
 
+String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)
+{
+    auto read_buf = disk->readFile(file_path, getReadSettingsForMetadata());
+    String content;
+    readStringUntilEOF(content, *read_buf);
+
+    return content;
+}
+
+void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, std::string_view content, bool fsync_metadata)
+{
+    auto out = disk->writeFile(file_path, content.size(), WriteMode::Rewrite, getWriteSettingsForMetadata());
+    writeString(content, *out);
+
+    out->next();
+    if (fsync_metadata)
+        out->sync();
+    out->finalize();
+    out.reset();
+}
+
+void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context [[maybe_unused]])
+{
+    if (!command.comment)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
+
+    std::lock_guard lock{mutex};
+
+    const String old_comment = comment;
+    comment = command.comment.value();
+
+    try
+    {
+#if CLICKHOUSE_CLOUD
+        bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName());
+        if (managed_by_shared_catalog && !SharedDatabaseCatalog::isInitialQuery(query_context))
+            return;
+#endif
+        const ASTPtr create_query = getCreateDatabaseQueryImpl();
+        if (!create_query)
+            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+#if CLICKHOUSE_CLOUD
+        if (managed_by_shared_catalog)
+        {
+
+            auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
+            query_context->setVersionToWaitSharedCatalog(version_to_wait);
+            return;
+        }
+#endif
+        DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
+    }
+    catch (...)
+    {
+        comment = old_comment;
+        throw;
+    }
+}
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger(logger))
+    : DatabaseWithAltersOnDiskBase(name_)
+    , WithContext(context_->getGlobalContext())
+    , log(getLogger(logger))
 {
 }
 
 bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
     std::lock_guard lock(mutex);
-    return tables.find(table_name) != tables.end();
+    return tables.contains(table_name);
 }
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const
@@ -382,7 +461,8 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     if (!table_storage->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
     {
         LOG_TEST(log, "Counting detached table {} to database {}", table_name, database_name);
-        CurrentMetrics::sub(getAttachedCounterForStorage(table_storage));
+        for (auto metric : getAttachedCountersForStorage(table_storage))
+            CurrentMetrics::sub(metric);
     }
 
     auto table_id = table_storage->getStorageID();
@@ -430,7 +510,8 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
     if (!table->isSystemStorage() && !DatabaseCatalog::isPredefinedDatabase(database_name))
     {
         LOG_TEST(log, "Counting attached table {} to database {}", table_name, database_name);
-        CurrentMetrics::add(getAttachedCounterForStorage(table));
+        for (auto metric : getAttachedCountersForStorage(table))
+            CurrentMetrics::add(metric);
     }
 }
 
@@ -516,7 +597,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseWithOwnTablesBase::getTablesF
             create->setTable(it->name());
         }
 
-        storage->adjustCreateQueryForBackup(create_table_query);
+        storage->applyMetadataChangesToCreateQueryForBackup(create_table_query);
         res.emplace_back(create_table_query, storage);
     }
 

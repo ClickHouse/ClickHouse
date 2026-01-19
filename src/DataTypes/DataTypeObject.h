@@ -3,7 +3,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Core/Field.h>
-#include <Columns/ColumnObjectDeprecated.h>
 #include <Common/re2.h>
 
 
@@ -18,17 +17,18 @@ public:
         JSON = 0,
     };
 
-    /// Don't change these constants, it can break backward compatibility.
-    static constexpr size_t DEFAULT_MAX_SEPARATELY_STORED_PATHS = 1024;
-    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
-    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
+    static constexpr size_t MAX_TYPED_PATHS = 1000;
+    static constexpr size_t MAX_DYNAMIC_PATHS_LIMIT = 10000;
+    /// Don't change this constant, it can break backward compatibility.
+    static constexpr size_t DEFAULT_MAX_DYNAMIC_PATHS = 1024;
+    static constexpr const char * SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION = "__special_subcolumn_name_for_distinct_paths_calculation";
 
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
         std::unordered_map<String, DataTypePtr> typed_paths_ = {},
         std::unordered_set<String> paths_to_skip_ = {},
         std::vector<String> path_regexps_to_skip_ = {},
-        size_t max_dynamic_paths_ = DEFAULT_MAX_SEPARATELY_STORED_PATHS,
+        size_t max_dynamic_paths_ = DEFAULT_MAX_DYNAMIC_PATHS,
         size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES);
 
     DataTypeObject(const SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
@@ -42,13 +42,18 @@ public:
     Field getDefault() const override { return Object(); }
 
     bool isParametric() const override { return true; }
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
     bool canBeInsideSparseColumns() const override { return false; }
-    bool isComparable() const override { return false; }
+    bool isComparable() const override { return true; }
+    bool isComparableForEquality() const override { return true; }
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override;
+
+    void updateHashImpl(SipHash & hash) const override;
+
+    void forEachChild(const ChildCallback &) const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }
     std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
@@ -63,7 +68,17 @@ public:
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
 
+    DataTypePtr getTypeOfNestedObjects() const;
+    DataTypePtr getDynamicType() const;
+
+    /// Shared data has type Array(Tuple(String, String)).
+    static const DataTypePtr & getTypeOfSharedData();
+
 private:
+    /// Don't change these constants, it can break backward compatibility.
+    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
+    static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
+
     SchemaFormat schema_format;
     /// Set of paths with types that were specified in type declaration.
     std::unordered_map<String, DataTypePtr> typed_paths;

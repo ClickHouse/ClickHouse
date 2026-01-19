@@ -1,8 +1,10 @@
 ---
-slug: /en/sql-reference/statements/explain
+description: 'Documentation for Explain'
+sidebar_label: 'EXPLAIN'
 sidebar_position: 39
-sidebar_label: EXPLAIN
-title: "EXPLAIN Statement"
+slug: /sql-reference/statements/explain
+title: 'EXPLAIN Statement'
+doc_type: 'reference'
 ---
 
 Shows the execution plan of a statement.
@@ -55,7 +57,7 @@ Union
                   ReadFromStorage (SystemNumbers)
 ```
 
-## EXPLAIN Types
+## EXPLAIN Types {#explain-types}
 
 - `AST` — Abstract syntax tree.
 - `SYNTAX` — Query text after AST-level optimizations.
@@ -63,7 +65,7 @@ Union
 - `PLAN` — Query execution plan.
 - `PIPELINE` — Query execution pipeline.
 
-### EXPLAIN AST
+### EXPLAIN AST {#explain-ast}
 
 Dump query AST. Supports all types of queries, not only `SELECT`.
 
@@ -97,46 +99,66 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-### EXPLAIN SYNTAX
+### EXPLAIN SYNTAX {#explain-syntax}
 
-Returns query after syntax optimizations.
+Shows the Abstract Syntax Tree (AST) of a query after syntax analysis.
 
-Example:
+It's done by parsing the query, constructing query AST and query tree, optionally running query analyzer and optimization passes, and then converting the query tree back to the query AST.
+
+Settings:
+
+- `oneline` – Print the query in one line. Default: `0`.
+- `run_query_tree_passes` – Run query tree passes before dumping the query tree. Default: `0`.
+- `query_tree_passes` – If `run_query_tree_passes` is set, specifies how many passes to run. Without specifying `query_tree_passes` it runs all the passes.
+
+Examples:
 
 ```sql
-EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c;
+EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
+
+Output:
+
+```sql
+SELECT *
+FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
+WHERE (a.number = b.number) AND (b.number = c.number)
+```
+
+With `run_query_tree_passes`:
+
+```sql
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+```
+
+Output:
 
 ```sql
 SELECT
-    `--a.number` AS `a.number`,
-    `--b.number` AS `b.number`,
-    number AS `c.number`
-FROM
-(
-    SELECT
-        number AS `--a.number`,
-        b.number AS `--b.number`
-    FROM system.numbers AS a
-    CROSS JOIN system.numbers AS b
-) AS `--.s`
-CROSS JOIN system.numbers AS c
+    __table1.number AS `a.number`,
+    __table2.number AS `b.number`,
+    __table3.number AS `c.number`
+FROM system.numbers AS __table1
+ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
+ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-### EXPLAIN QUERY TREE
+### EXPLAIN QUERY TREE {#explain-query-tree}
 
 Settings:
 
 - `run_passes` — Run all query tree passes before dumping the query tree. Default: `1`.
 - `dump_passes` — Dump information about used passes before dumping the query tree. Default: `0`.
 - `passes` — Specifies how many passes to run. If set to `-1`, runs all the passes. Default: `-1`.
+- `dump_tree` — Display the query tree. Default: `1`.
+- `dump_ast` — Display the query AST generated from the query tree. Default: `0`.
 
 Example:
 ```sql
 EXPLAIN QUERY TREE SELECT id, value FROM test_table;
 ```
 
-```
+```sql
 QUERY id: 0
   PROJECTION COLUMNS
     id UInt64
@@ -149,7 +171,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-### EXPLAIN PLAN
+### EXPLAIN PLAN {#explain-plan}
 
 Dump query plan steps.
 
@@ -157,9 +179,15 @@ Settings:
 
 - `header` — Prints output header for step. Default: 0.
 - `description` — Prints step description. Default: 1.
-- `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+- `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. Starting from ClickHouse >= v25.9, this statement only shows reasonable output when used with `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
+- `projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 - `actions` — Prints detailed information about step actions. Default: 0.
-- `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
+- `json` — Prints query plan steps as a row in [JSON](/interfaces/formats/JSON) format. Default: 0. It is recommended to use [TabSeparatedRaw (TSVRaw)](/interfaces/formats/TabSeparatedRaw) format to avoid unnecessary escaping.
+- `input_headers` - Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
+- `column_structure` - Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
+- `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Default: 0.
+
+When `json=1` step names will contain an additional suffix with unique step identifier.
 
 Example:
 
@@ -177,7 +205,7 @@ Union
           ReadFromStorage (SystemNumbers)
 ```
 
-:::note    
+:::note
 Step and query cost estimation is not supported.
 :::
 
@@ -194,30 +222,25 @@ EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
   {
     "Plan": {
       "Node Type": "Union",
+      "Node Id": "Union_10",
       "Plans": [
         {
           "Node Type": "Expression",
+          "Node Id": "Expression_13",
           "Plans": [
             {
-              "Node Type": "SettingQuotaAndLimits",
-              "Plans": [
-                {
-                  "Node Type": "ReadFromStorage"
-                }
-              ]
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_0"
             }
           ]
         },
         {
           "Node Type": "Expression",
+          "Node Id": "Expression_16",
           "Plans": [
             {
-              "Node Type": "SettingQuotaAndLimits",
-              "Plans": [
-                {
-                  "Node Type": "ReadFromStorage"
-                }
-              ]
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_4"
             }
           ]
         }
@@ -249,6 +272,7 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
   {
     "Plan": {
       "Node Type": "Expression",
+      "Node Id": "Expression_5",
       "Header": [
         {
           "Name": "1",
@@ -261,22 +285,12 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
       ],
       "Plans": [
         {
-          "Node Type": "SettingQuotaAndLimits",
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0",
           "Header": [
             {
               "Name": "dummy",
               "Type": "UInt8"
-            }
-          ],
-          "Plans": [
-            {
-              "Node Type": "ReadFromStorage",
-              "Header": [
-                {
-                  "Name": "dummy",
-                  "Type": "UInt8"
-                }
-              ]
             }
           ]
         }
@@ -292,8 +306,9 @@ With `indexes` = 1, the `Indexes` key is added. It contains an array of used ind
 - `Keys` — The array of columns used by the index.
 - `Condition` —  The used condition.
 - `Description` — The index description (currently only used for `Skip` indexes).
-- `Parts` — The number of parts before/after the index is applied.
-- `Granules` — The number of granules before/after the index is applied.
+- `Parts` — The number of parts after/before the index is applied.
+- `Granules` — The number of granules after/before the index is applied.
+- `Ranges` — The number of granules ranges after the index is applied.
 
 Example:
 
@@ -304,36 +319,78 @@ Example:
     "Type": "MinMax",
     "Keys": ["y"],
     "Condition": "(y in [1, +inf))",
-    "Parts": 5/4,
-    "Granules": 12/11
+    "Parts": 4/5,
+    "Granules": 11/12
   },
   {
     "Type": "Partition",
     "Keys": ["y", "bitAnd(z, 3)"],
     "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
-    "Parts": 4/3,
-    "Granules": 11/10
+    "Parts": 3/4,
+    "Granules": 10/11
   },
   {
     "Type": "PrimaryKey",
     "Keys": ["x", "y"],
     "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
-    "Parts": 3/2,
-    "Granules": 10/6
+    "Parts": 2/3,
+    "Granules": 6/10,
+    "Search Algorithm": "generic exclusion search"
   },
   {
     "Type": "Skip",
     "Name": "t_minmax",
     "Description": "minmax GRANULARITY 2",
-    "Parts": 2/1,
-    "Granules": 6/2
+    "Parts": 1/2,
+    "Granules": 2/6
   },
   {
     "Type": "Skip",
     "Name": "t_set",
     "Description": "set GRANULARITY 2",
     "": 1/1,
-    "Granules": 2/1
+    "Granules": 1/2
+  }
+]
+```
+
+With `projections` = 1, the `Projections` key is added. It contains an array of analyzed projections. Each projection is described as JSON with following keys:
+
+- `Name` — The projection name.
+- `Condition` —  The used projection primary key condition.
+- `Description` — The description of how the projection is used (e.g. part-level filtering).
+- `Selected Parts` — Number of parts selected by the projection.
+- `Selected Marks` — Number of marks selected.
+- `Selected Ranges` — Number of ranges selected.
+- `Selected Rows` — Number of rows selected.
+- `Filtered Parts` — Number of parts skipped due to part-level filtering.
+
+Example:
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Projections": [
+  {
+    "Name": "region_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(region in ['us_west', 'us_west'])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 3,
+    "Selected Marks": 3,
+    "Selected Ranges": 3,
+    "Selected Rows": 3,
+    "Filtered Parts": 2
+  },
+  {
+    "Name": "user_id_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(user_id in [107, 107])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 1,
+    "Selected Marks": 1,
+    "Selected Ranges": 1,
+    "Selected Rows": 1,
+    "Filtered Parts": 2
   }
 ]
 ```
@@ -351,17 +408,31 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
   {
     "Plan": {
       "Node Type": "Expression",
+      "Node Id": "Expression_5",
       "Expression": {
-        "Inputs": [],
+        "Inputs": [
+          {
+            "Name": "dummy",
+            "Type": "UInt8"
+          }
+        ],
         "Actions": [
           {
-            "Node Type": "Column",
+            "Node Type": "INPUT",
             "Result Type": "UInt8",
-            "Result Type": "Column",
+            "Result Name": "dummy",
+            "Arguments": [0],
+            "Removed Arguments": [0],
+            "Result": 0
+          },
+          {
+            "Node Type": "COLUMN",
+            "Result Type": "UInt8",
+            "Result Name": "1",
             "Column": "Const(UInt8)",
             "Arguments": [],
             "Removed Arguments": [],
-            "Result": 0
+            "Result": 1
           }
         ],
         "Outputs": [
@@ -370,17 +441,12 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
             "Type": "UInt8"
           }
         ],
-        "Positions": [0],
-        "Project Input": true
+        "Positions": [1]
       },
       "Plans": [
         {
-          "Node Type": "SettingQuotaAndLimits",
-          "Plans": [
-            {
-              "Node Type": "ReadFromStorage"
-            }
-          ]
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0"
         }
       ]
     }
@@ -388,13 +454,59 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-### EXPLAIN PIPELINE
+With `distributed` = 1, the output includes not only the local query plan but also the query plans that will be executed on remote nodes. This is useful for analyzing and debugging distributed queries.
+
+Example with distributed table:
+
+```sql
+EXPLAIN distributed=1 SELECT * FROM remote('127.0.0.{1,2}', numbers(2)) WHERE number = 1;
+```
+
+```sql
+Union
+  Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromSystemNumbers
+  Expression ((Project names + (Projection + Change column names to column identifiers)))
+    ReadFromRemote (Read from remote replica)
+      Expression ((Project names + Projection))
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromSystemNumbers
+```
+
+Example with parallel replicas:
+
+```sql
+SET enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'default';
+
+EXPLAIN distributed=1 SELECT sum(number) FROM test_table GROUP BY number % 4;
+```
+
+```sql
+Expression ((Project names + Projection))
+  MergingAggregated
+    Union
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.test_table)
+      ReadFromRemoteParallelReplicas
+        BlocksMarshalling
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (default.test_table)
+```
+
+In both examples, the query plan shows the complete execution flow including local and remote steps.
+
+### EXPLAIN PIPELINE {#explain-pipeline}
 
 Settings:
 
 - `header` — Prints header for each output port. Default: 0.
 - `graph` — Prints a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
 - `compact` — Prints graph in compact mode if `graph` setting is enabled. Default: 1.
+
+When `compact=0` and `graph=1` processor names will contain an additional suffix with unique processor identifier.
 
 Example:
 
@@ -417,9 +529,9 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersRange × 2 0 → 1
 ```
-### EXPLAIN ESTIMATE
+### EXPLAIN ESTIMATE {#explain-estimate}
 
-Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family. 
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family.
 
 **Example**
 
@@ -445,7 +557,7 @@ Result:
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-### EXPLAIN TABLE OVERRIDE
+### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 Shows the result of a table override on a table schema accessed through a table function.
 Also does some validation, throwing an exception if the override would have caused some kind of failure.
@@ -474,6 +586,6 @@ Result:
 └─────────────────────────────────────────────────────────┘
 ```
 
-:::note    
+:::note
 The validation is not complete, so a successful query does not guarantee that the override would not cause issues.
 :::

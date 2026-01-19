@@ -1,3 +1,5 @@
+#include <Analyzer/IdentifierNode.h>
+#include <iostream>
 #include <Analyzer/SortNode.h>
 
 #include <Common/assert_cast.h>
@@ -33,6 +35,10 @@ SortNode::SortNode(QueryTreeNodePtr expression_,
     , collator(std::move(collator_))
     , with_fill(with_fill_)
 {
+    if (expression_)
+        if (auto * identifier = expression_->as<IdentifierNode>())
+            column_name = identifier->getIdentifier().getFullName();
+
     children[sort_expression_child_index] = std::move(expression_);
 }
 
@@ -49,7 +55,10 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 
     buffer << ", with_fill: " << with_fill;
 
-    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION\n";
+    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION";
+    if (!column_name.empty())
+        buffer << " " << column_name;
+    buffer << "\n";
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     if (hasFillFrom())
@@ -68,6 +77,12 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "FILL STEP\n";
         getFillStep()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
+
+    if (hasFillStaleness())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "FILL STALENESS\n";
+        getFillStaleness()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 }
 
@@ -132,6 +147,8 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
         result->setFillTo(getFillTo()->toAST(options));
     if (hasFillStep())
         result->setFillStep(getFillStep()->toAST(options));
+    if (hasFillStaleness())
+        result->setFillStaleness(getFillStaleness()->toAST(options));
 
     return result;
 }

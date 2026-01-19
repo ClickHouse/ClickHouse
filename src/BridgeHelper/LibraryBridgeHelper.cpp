@@ -1,8 +1,10 @@
-#include "LibraryBridgeHelper.h"
+#include <BridgeHelper/LibraryBridgeHelper.h>
 
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Common/ShellCommandsHolder.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -29,7 +31,7 @@ LibraryBridgeHelper::LibraryBridgeHelper(ContextPtr context_)
 
 void LibraryBridgeHelper::startBridge(std::unique_ptr<ShellCommand> cmd) const
 {
-    getContext()->addBridgeCommand(std::move(cmd));
+    ShellCommandsHolder::instance().addCommand(std::move(cmd));
 }
 
 
@@ -37,7 +39,7 @@ Poco::URI LibraryBridgeHelper::createBaseURI() const
 {
     Poco::URI uri;
     uri.setHost(bridge_host);
-    uri.setPort(bridge_port);
+    uri.setPort(static_cast<uint16_t>(bridge_port));
     uri.setScheme("http");
     return uri;
 }

@@ -1,30 +1,37 @@
 #include <Interpreters/QueryLog.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/AsyncReadCounters.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/TransactionVersionMetadata.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
+#include <Common/maskURIPassword.h>
 
 #include <Poco/Net/IPAddress.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <array>
 
@@ -43,13 +50,13 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
             {"ExceptionWhileProcessing",    static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}
         });
 
-    auto query_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
+    auto query_result_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"Unknown",     static_cast<Int8>(QueryCache::Usage::Unknown)},
-            {"None",        static_cast<Int8>(QueryCache::Usage::None)},
-            {"Write",       static_cast<Int8>(QueryCache::Usage::Write)},
-            {"Read",        static_cast<Int8>(QueryCache::Usage::Read)}
+            {"Unknown",     static_cast<Int8>(QueryResultCacheUsage::Unknown)},
+            {"None",        static_cast<Int8>(QueryResultCacheUsage::None)},
+            {"Write",       static_cast<Int8>(QueryResultCacheUsage::Write)},
+            {"Read",        static_cast<Int8>(QueryResultCacheUsage::Read)}
         });
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -66,8 +73,8 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Start time of query execution with microsecond precision."},
         {"query_duration_ms", std::make_shared<DataTypeUInt64>(), "Duration of query execution in milliseconds."},
 
-        {"read_rows", std::make_shared<DataTypeUInt64>(), "Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_rows includes the total number of rows read at all replicas. Each replica sends it’s read_rows value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
-        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_bytes includes the total number of rows read at all replicas. Each replica sends it’s read_bytes value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
+        {"read_rows", std::make_shared<DataTypeUInt64>(), "Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_rows includes the total number of rows read at all replicas. Each replica sends it's read_rows value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
+        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_bytes includes the total number of rows read at all replicas. Each replica sends it's read_bytes value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
         {"written_rows", std::make_shared<DataTypeUInt64>(), "For INSERT queries, the number of written rows. For other queries, the column value is 0."},
         {"written_bytes", std::make_shared<DataTypeUInt64>(), "For INSERT queries, the number of written bytes (uncompressed). For other queries, the column value is 0."},
         {"result_rows", std::make_shared<DataTypeUInt64>(), "Number of rows in a result of the SELECT query, or a number of rows in the INSERT query."},
@@ -77,7 +84,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"current_database", low_cardinality_string, "Name of the current database."},
         {"query", std::make_shared<DataTypeString>(), " Query string."},
         {"formatted_query", std::make_shared<DataTypeString>(), "Formatted query string."},
-        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "Identical hash value without the values of literals for similar queries."},
+        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "A numeric hash value, such as it is identical for queries differ only by values of literals."},
         {"query_kind", low_cardinality_string, "Type of the query."},
         {"databases", array_low_cardinality_string, "Names of the databases present in the query."},
         {"tables", array_low_cardinality_string, "Names of the tables present in the query."},
@@ -100,6 +107,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"initial_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the parent query."},
         {"initial_query_start_time", std::make_shared<DataTypeDateTime>(), "Initial query starting time (for distributed query execution)."},
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Initial query starting time with microseconds precision (for distributed query execution)."},
+        {"authenticated_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
         {"interface", std::make_shared<DataTypeUInt8>(), "Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP."},
         {"is_secure", std::make_shared<DataTypeUInt8>(), "The flag whether a query was executed over a secure interface"},
         {"os_user", low_cardinality_string, "Operating system username who runs clickhouse-client."},
@@ -109,6 +117,8 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"client_version_major", std::make_shared<DataTypeUInt32>(), "Major version of the clickhouse-client or another TCP client."},
         {"client_version_minor", std::make_shared<DataTypeUInt32>(), "Minor version of the clickhouse-client or another TCP client."},
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
+        {"script_query_number", std::make_shared<DataTypeUInt32>(), "The query number in a script with multiple queries for clickhouse-client."},
+        {"script_line_number", std::make_shared<DataTypeUInt32>(), "The line number of the query start in a script with multiple queries for clickhouse-client."},
         {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 — The query was launched from the TCP interface, 1 — GET method was used, 2 — POST method was used."},
         {"http_user_agent", low_cardinality_string, "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
@@ -134,6 +144,8 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"used_functions", array_low_cardinality_string, "Canonical names of functions, which were used during query execution."},
         {"used_storages", array_low_cardinality_string, "Canonical names of storages, which were used during query execution."},
         {"used_table_functions", array_low_cardinality_string, "Canonical names of table functions, which were used during query execution."},
+        {"used_executable_user_defined_functions", array_low_cardinality_string, "Canonical names of executable user defined functions, which were used during query execution."},
+        {"used_sql_user_defined_functions", array_low_cardinality_string, "Canonical names of sql user defined functions, which were used during query execution."},
 
         {"used_row_policies", array_low_cardinality_string, "The list of row policies names that were used during query execution."},
 
@@ -142,9 +154,11 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
-        {"query_cache_usage", std::move(query_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query cache, 'Write' = The query result was written into the query cache, 'Read' = The query result was read from the query cache."},
+        {"query_cache_usage", std::move(query_result_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache."},
 
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
+
+        {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
     };
 }
 
@@ -166,31 +180,34 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(type);
-    columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
-    columns[i++]->insert(event_time);
-    columns[i++]->insert(event_time_microseconds);
-    columns[i++]->insert(query_start_time);
-    columns[i++]->insert(query_start_time_microseconds);
-    columns[i++]->insert(query_duration_ms);
+    const auto & hostname = getFQDNOrHostName();
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
+    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(type);
+    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(event_time).toUnderType()));
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(event_time));
+    typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(event_time_microseconds);
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(query_start_time));
+    typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(query_start_time_microseconds);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(query_duration_ms);
 
-    columns[i++]->insert(read_rows);
-    columns[i++]->insert(read_bytes);
-    columns[i++]->insert(written_rows);
-    columns[i++]->insert(written_bytes);
-    columns[i++]->insert(result_rows);
-    columns[i++]->insert(result_bytes);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(read_rows);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(read_bytes);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(written_rows);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(written_bytes);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(result_rows);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(result_bytes);
 
-    columns[i++]->insert(memory_usage);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(memory_usage);
 
-    columns[i++]->insertData(current_database.data(), current_database.size());
-    columns[i++]->insertData(query.data(), query.size());
-    columns[i++]->insertData(formatted_query.data(), formatted_query.size());
-    columns[i++]->insert(normalized_query_hash);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(current_database.data(), current_database.size());
+    auto encoded_query = query;
+    maskURIPassword(&encoded_query);
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(encoded_query.data(), encoded_query.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(formatted_query.data(), formatted_query.size());
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(normalized_query_hash);
 
     const std::string_view query_kind_str = magic_enum::enum_name(query_kind);
-    columns[i++]->insertData(query_kind_str.data(), query_kind_str.size());
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(query_kind_str.data(), query_kind_str.size());
 
     {
         auto & column_databases = typeid_cast<ColumnArray &>(*columns[i++]);
@@ -202,10 +219,12 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
         auto fill_column = [](const std::set<String> & data, ColumnArray & column)
         {
+            auto & lc_column_data = typeid_cast<ColumnLowCardinality &>(column.getData());
+
             size_t size = 0;
             for (const auto & name : data)
             {
-                column.getData().insertData(name.data(), name.size());
+                lc_column_data.insertData(name.data(), name.size());
                 ++size;
             }
             auto & offsets = column.getOffsets();
@@ -220,25 +239,28 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(query_views, column_views);
     }
 
-    columns[i++]->insert(exception_code);
-    columns[i++]->insertData(exception.data(), exception.size());
-    columns[i++]->insertData(stack_trace.data(), stack_trace.size());
+    typeid_cast<ColumnInt32 &>(*columns[i++]).getData().push_back(exception_code);
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(exception.data(), exception.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(stack_trace.data(), stack_trace.size());
 
     appendClientInfo(client_info, columns, i);
 
-    columns[i++]->insert(ClickHouseRevision::getVersionRevision());
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(ClickHouseRevision::getVersionRevision());
 
-    columns[i++]->insertData(log_comment.data(), log_comment.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(log_comment.data(), log_comment.size());
 
     {
-        Array threads_array;
-        threads_array.reserve(thread_ids.size());
+        auto & column_thread_ids = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_thread_ids_data = typeid_cast<ColumnUInt64 &>(column_thread_ids.getData());
+
         for (const UInt64 thread_id : thread_ids)
-            threads_array.emplace_back(thread_id);
-        columns[i++]->insert(threads_array);
+            column_thread_ids_data.getData().emplace_back(thread_id);
+
+        auto & offsets = column_thread_ids.getOffsets();
+        offsets.push_back(offsets.back() + thread_ids.size());
     }
 
-    columns[i++]->insert(peak_threads_usage);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(peak_threads_usage);
 
     if (profile_counters)
     {
@@ -247,7 +269,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
     else
     {
-        columns[i++]->insertDefault();
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
     if (query_settings)
@@ -257,7 +279,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
     else
     {
-        columns[i++]->insertDefault();
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
     {
@@ -270,16 +292,20 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_executable_user_defined_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
+        auto & column_sql_user_defined_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_row_policies_names = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_used_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_missing_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const auto & data, ColumnArray & column)
         {
+            auto & lc_column_data = typeid_cast<ColumnLowCardinality &>(column.getData());
+
             size_t size = 0;
             for (const auto & value : data)
             {
-                column.getData().insert(value);
+                lc_column_data.insertData(value.data(), value.size());
                 ++size;
             }
             auto & offsets = column.getOffsets();
@@ -295,54 +321,68 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_functions, column_function_factory_objects);
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
+        fill_column(used_executable_user_defined_functions, column_executable_user_defined_function_factory_objects);
+        fill_column(used_sql_user_defined_functions, column_sql_user_defined_function_factory_objects);
         fill_column(used_row_policies, column_row_policies_names);
         fill_column(used_privileges, column_used_privileges);
         fill_column(missing_privileges, column_missing_privileges);
     }
 
-    columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
+    {
+        auto & tid_tuple = typeid_cast<ColumnTuple &>(*columns[i++]);
+        typeid_cast<ColumnUInt64 &>(tid_tuple.getColumn(0)).getData().push_back(tid.start_csn);
+        typeid_cast<ColumnUInt64 &>(tid_tuple.getColumn(1)).getData().push_back(tid.local_tid);
+        typeid_cast<ColumnUUID &>(tid_tuple.getColumn(2)).getData().push_back(tid.host_id);
+    }
 
-    columns[i++]->insert(query_cache_usage);
+    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(uint8_t(query_result_cache_usage));
 
     if (async_read_counters)
         async_read_counters->dumpToMapColumn(columns[i++].get());
     else
-        columns[i++]->insertDefault();
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
+
+    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
 {
-    columns[i++]->insert(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY);
+    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY);
 
-    columns[i++]->insert(client_info.current_user);
-    columns[i++]->insert(client_info.current_query_id);
-    columns[i++]->insertData(IPv6ToBinary(client_info.current_address.host()).data(), 16);
-    columns[i++]->insert(client_info.current_address.port());
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.current_user.data(), client_info.current_user.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.current_query_id.data(), client_info.current_query_id.size());
+    typeid_cast<ColumnIPv6 &>(*columns[i++]).insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
+    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.current_address->port());
 
-    columns[i++]->insert(client_info.initial_user);
-    columns[i++]->insert(client_info.initial_query_id);
-    columns[i++]->insertData(IPv6ToBinary(client_info.initial_address.host()).data(), 16);
-    columns[i++]->insert(client_info.initial_address.port());
-    columns[i++]->insert(client_info.initial_query_start_time);
-    columns[i++]->insert(client_info.initial_query_start_time_microseconds);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.initial_user.data(), client_info.initial_user.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.initial_query_id.data(), client_info.initial_query_id.size());
+    typeid_cast<ColumnIPv6 &>(*columns[i++]).insertData(IPv6ToBinary(client_info.initial_address->host()).data(), 16);
+    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.initial_address->port());
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(client_info.initial_query_start_time));
+    typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(client_info.initial_query_start_time_microseconds);
 
-    columns[i++]->insert(static_cast<UInt64>(client_info.interface));
-    columns[i++]->insert(static_cast<UInt64>(client_info.is_secure));
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.authenticated_user.data(), client_info.authenticated_user.size());
 
-    columns[i++]->insert(client_info.os_user);
-    columns[i++]->insert(client_info.client_hostname);
-    columns[i++]->insert(client_info.client_name);
-    columns[i++]->insert(client_info.client_tcp_protocol_version);
-    columns[i++]->insert(client_info.client_version_major);
-    columns[i++]->insert(client_info.client_version_minor);
-    columns[i++]->insert(client_info.client_version_patch);
+    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.interface));
+    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.is_secure));
 
-    columns[i++]->insert(static_cast<UInt64>(client_info.http_method));
-    columns[i++]->insert(client_info.http_user_agent);
-    columns[i++]->insert(client_info.http_referer);
-    columns[i++]->insert(client_info.forwarded_for);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.os_user.data(), client_info.os_user.size());
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_hostname.data(), client_info.client_hostname.size());
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.client_name.data(), client_info.client_name.size());
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.client_tcp_protocol_version);
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(client_info.client_version_major));
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(client_info.client_version_minor));
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(client_info.client_version_patch));
 
-    columns[i++]->insert(client_info.quota_key);
-    columns[i++]->insert(client_info.distributed_depth);
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.script_query_number);
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.script_line_number);
+
+    typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.http_method));
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(client_info.http_user_agent.data(), client_info.http_user_agent.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.http_referer.data(), client_info.http_referer.size());
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.forwarded_for.data(), client_info.forwarded_for.size());
+
+    typeid_cast<ColumnString &>(*columns[i++]).insertData(client_info.quota_key.data(), client_info.quota_key.size());
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(client_info.distributed_depth);
 }
 }

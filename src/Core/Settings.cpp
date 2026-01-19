@@ -1,15 +1,17 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/BaseSettings.h>
-#include <Core/BaseSettingsFwdMacros.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
-#include <Core/DistributedCacheProtocol.h>
+#include <Core/DistributedCacheDefines.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Core/SettingsObsoleteMacros.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
@@ -22,6 +24,37 @@
 #include <Poco/Util/Application.h>
 
 #include <cstring>
+
+namespace
+{
+#if !CLICKHOUSE_CLOUD
+constexpr UInt64 default_max_size_to_drop = 50000000000lu;
+constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
+constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
+constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
+constexpr UInt64 default_distributed_cache_connect_timeout_ms = 50;
+constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
+constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
+constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
+#else
+constexpr UInt64 default_max_size_to_drop = 0lu;
+constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
+constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = DistributedCache::DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS;
+constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MIN_MS;
+constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MAX_MS;
+constexpr UInt64 default_distributed_cache_connect_timeout_ms = DistributedCache::DEFAULT_CONNECT_TIMEOUTS_MS;
+constexpr UInt64 default_distributed_cache_send_timeout_ms = DistributedCache::DEFAULT_SEND_TIMEOUT_MS;
+constexpr UInt64 default_distributed_cache_receive_timeout_ms = DistributedCache::DEFAULT_RECEIVE_TIMEOUT_MS;
+constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = DistributedCache::DEFAULT_TCP_KEEP_ALIVE_TIMEOUT_MS;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_READ;
+constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_WRITE;
+#endif
+}
 
 namespace DB
 {
@@ -40,20 +73,32 @@ namespace ErrorCodes
   * Note: as an alternative, we could implement settings to be completely dynamic in the form of the map: String -> Field,
   *  but we are not going to do it, because settings are used everywhere as static struct fields.
   *
-  * `flags` can be either 0 or IMPORTANT.
-  * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
+  * `flags` can include a Tier (BETA | EXPERIMENTAL) and an optional bitwise AND with IMPORTANT.
+  * The default (0) means a PRODUCTION ready setting
   *
-  * When adding new or changing existing settings add them to the settings changes history in SettingsChangesHistory.h
+  * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
+  * Tiers:
+  * EXPERIMENTAL: The feature is in active development stage. Mostly for developers or for ClickHouse enthusiasts.
+  * BETA: There are no known bugs problems in the functionality, but the outcome of using it together with other
+  * features/components is unknown and correctness is not guaranteed.
+  * PRODUCTION (Default): The feature is safe to use along with other features from the PRODUCTION tier.
+  *
+  * When adding new or changing existing settings add them to the settings changes history in SettingsChangesHistory.cpp
   * for tracking settings changes in different versions and for special `compatibility` settings to work correctly.
+  *
+  * The settings in this list are used to autogenerate the markdown documentation. You can find the script which
+  * generates the markdown from source here: https://github.com/ClickHouse/clickhouse-docs/blob/main/scripts/settings/autogenerate-settings.sh
+  *
+  * If a setting has an effect only in ClickHouse Cloud, then please include in the description: "Only has an effect in ClickHouse Cloud."
   */
 
 // clang-format off
 #if defined(__CLION_IDE__)
 /// CLion freezes for a minute every time it processes this
-#define COMMON_SETTINGS(DECLARE, ALIAS)
-#define OBSOLETE_SETTINGS(DECLARE, ALIAS)
+#define COMMON_SETTINGS(DECLARE, DECLARE_WITH_ALIAS)
+#define OBSOLETE_SETTINGS(DECLARE, DECLARE_WITH_ALIAS)
 #else
-#define COMMON_SETTINGS(DECLARE, ALIAS) \
+#define COMMON_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
     DECLARE(Dialect, dialect, Dialect::clickhouse, R"(
 Which dialect will be used to parse query
 )", 0)\
@@ -62,11 +107,11 @@ For [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table
 
 The actual size of the block, if the uncompressed data is less than `max_compress_block_size`, is no less than this value and no less than the volume of data for one mark.
 
-Let’s look at an example. Assume that `index_granularity` was set to 8192 during table creation.
+Let's look at an example. Assume that `index_granularity` was set to 8192 during table creation.
 
 We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows, the total will be 32 KB of data. Since min_compress_block_size = 65,536, a compressed block will be formed for every two marks.
 
-We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
+We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won't be decompressed.
 
 :::note
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
@@ -79,39 +124,67 @@ The maximum size of blocks of uncompressed data before compressing for writing t
 This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
 :::
 
-Don’t confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
+Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
 )", 0) \
-    DECLARE(UInt64, max_block_size, DEFAULT_BLOCK_SIZE, R"(
+    DECLARE(NonZeroUInt64, max_block_size, DEFAULT_BLOCK_SIZE, R"(
 In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
 
 The `max_block_size` setting indicates the recommended maximum number of rows to include in a single block when loading data from tables. Blocks the size of `max_block_size` are not always loaded from the table: if ClickHouse determines that less data needs to be retrieved, a smaller block is processed.
 
 The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 )", 0) \
-    DECLARE(UInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
-The size of blocks (in a count of rows) to form for insertion into a table.
-This setting only applies in cases when the server forms the blocks.
-For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
-But when using clickhouse-client, the client parses the data itself, and the ‘max_insert_block_size’ setting on the server does not affect the size of the inserted blocks.
-The setting also does not have a purpose when using INSERT SELECT, since data is inserted using the same blocks that are formed after SELECT.
+    DECLARE_WITH_ALIAS(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
+The maximum size of blocks (in a count of rows) to form for insertion into a table.
 
-The default is slightly more than `max_block_size`. The reason for this is that certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
-)", 0) \
-    DECLARE(UInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
-Sets the minimum number of rows in the block that can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
+This setting controls block formation in format parsing. When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) or Values format from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), it uses this setting to determine when to emit a block.
+Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
+
+A block is emitted when either condition is met:
+- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
+- Max thresholds (OR): Either max_insert_block_size OR max_insert_block_size_bytes is reached
+
+The default is slightly more than max_block_size. The reason for this is that certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
 
 Possible values:
-
 - Positive integer.
-- 0 — Squashing disabled.
+)", 0, max_insert_block_size_rows) \
+DECLARE(UInt64, max_insert_block_size_bytes, 0, R"(
+The maximum size of blocks (in bytes) to form for insertion into a table.
+
+This setting works together with max_insert_block_size_rows and controls block formation in the same context. See max_insert_block_size_rows for detailed information about when and how these settings are applied.
+
+Possible values:
+- Positive integer.
+- 0 — setting does not participate in block formation.
+)", 0) \
+DECLARE(UInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
+The minimum size of blocks (in rows) to form for insertion into a table.
+
+This setting controls block formation in two contexts:
+
+1. Format parsing: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), it uses this setting to determine when to emit a block.
+Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
+2. INSERT operations: During INSERT...SELECT queries and when data flows through materialized views, blocks are squashed based on this setting before writing to storage.
+
+A block in format parsing is emitted when either condition is met:
+- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
+- Max thresholds (OR): Either max_insert_block_size OR max_insert_block_size_bytes is reached
+
+Smaller sized blocks for insert operation are squashed into bigger ones and emitted when one of min_insert_block_size_rows or min_insert_block_size_bytes is met.
+
+Possible values:
+- Positive integer.
+- 0 — setting does not participate in block formation.
 )", 0) \
     DECLARE(UInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256), R"(
-Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
+The minimum size of blocks (in bytes) to form for insertion into a table.
+
+This setting works together with min_insert_block_size_rows and controls block formation in the same contexts (format parsing and INSERT operations). See min_insert_block_size_rows for detailed information about when and how these settings are applied.
 
 Possible values:
 
 - Positive integer.
-- 0 — Squashing disabled.
+- 0 — setting does not participate in block formation.
 )", 0) \
     DECLARE(UInt64, min_insert_block_size_rows_for_materialized_views, 0, R"(
 Sets the minimum number of rows in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
@@ -123,7 +196,7 @@ Possible values:
 
 **See Also**
 
-- [min_insert_block_size_rows](#min-insert-block-size-rows)
+- [min_insert_block_size_rows](#min_insert_block_size_rows)
 )", 0) \
     DECLARE(UInt64, min_insert_block_size_bytes_for_materialized_views, 0, R"(
 Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
@@ -135,7 +208,7 @@ Possible values:
 
 **See also**
 
-- [min_insert_block_size_bytes](#min-insert-block-size-bytes)
+- [min_insert_block_size_bytes](#min_insert_block_size_bytes)
 )", 0) \
     DECLARE(UInt64, min_external_table_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
 Squash blocks passed to external table to specified size in rows, if blocks are not big enough.
@@ -146,6 +219,21 @@ Squash blocks passed to the external table to a specified size in bytes, if bloc
     DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
 Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
 )", 0) \
+    DECLARE(UInt64, max_joined_block_size_bytes, 4_MiB, R"(
+Maximum block size in bytes for JOIN result (if join algorithm supports it). 0 means unlimited.
+)", 0) \
+    DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
+Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
+)", 0) \
+    DECLARE(UInt64, min_joined_block_size_bytes, 512 * 1024, R"(
+Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
+)", 0) \
+    DECLARE(Bool, joined_block_split_single_row, false, R"(
+Allow to chunk hash join result by rows corresponding to single row from left table.
+This may reduce memory usage in case of row with many matches in right table, but may increase CPU usage.
+Note that `max_joined_block_size_rows != 0` is mandatory for this setting to have effect.
+The `max_joined_block_size_bytes` combined with this setting is helpful to avoid excessive memory usage in case of skewed data with some large rows having many matches in right table.
+)", 0) \
     DECLARE(UInt64, max_insert_threads, 0, R"(
 The maximum number of threads to execute the `INSERT SELECT` query.
 
@@ -154,16 +242,19 @@ Possible values:
 - 0 (or 1) — `INSERT SELECT` no parallel execution.
 - Positive integer. Bigger than 1.
 
-Cloud default value: from `2` to `4`, depending on the service size.
+Cloud default value:
+- `1` for nodes with 8 GiB memory
+- `2` for nodes with 16 GiB memory
+- `4` for larger nodes
 
-Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max_threads](#max_threads) setting.
+Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
 Higher values will lead to higher memory usage.
 )", 0) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
-The maximum number of streams (columns) to delay final part flush. Default - auto (1000 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
+The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
 )", 0) \
     DECLARE(MaxThreads, max_final_threads, 0, R"(
-Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
+Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
 
 Possible values:
 
@@ -174,14 +265,20 @@ Possible values:
 The maximum number of threads process indices.
 )", 0) \
     DECLARE(MaxThreads, max_threads, 0, R"(
-The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the ‘max_distributed_connections’ parameter).
+The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the ['max_distributed_connections'](/operations/settings/settings#max_distributed_connections) parameter).
 
 This parameter applies to threads that perform the same stages of the query processing pipeline in parallel.
-For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with WHERE and pre-aggregate for GROUP BY in parallel using at least ‘max_threads’ number of threads, then ‘max_threads’ are used.
+For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with `WHERE` and pre-aggregate for `GROUP BY` in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
 
-For queries that are completed quickly because of a LIMIT, you can set a lower ‘max_threads’. For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
-
+For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'.
+For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
 The smaller the `max_threads` value, the less memory is consumed.
+
+The `max_threads` setting by default matches the number of hardware threads available to ClickHouse.
+Without SMT (e.g. Intel HyperThreading), this corresponds to the number of CPU cores.
+
+For ClickHouse Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 2vCPU/8GiB, 4vCPU/16GiB etc.
+See the settings tab in the Cloud console for a list of all service sizes.
 )", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
@@ -190,12 +287,12 @@ Respect the server's concurrency control (see the `concurrent_threads_soft_limit
 The maximum number of threads to download data (e.g. for URL engine).
 )", 0) \
     DECLARE(MaxThreads, max_parsing_threads, 0, R"(
-The maximum number of threads to parse data in input formats that support parallel parsing. By default, it is determined automatically
+The maximum number of threads to parse data in input formats that support parallel parsing. By default, it is determined automatically.
 )", 0) \
     DECLARE(UInt64, max_download_buffer_size, 10*1024*1024, R"(
 The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
 )", 0) \
-    DECLARE(UInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
+    DECLARE(NonZeroUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
 The maximum size of the buffer to read from the filesystem.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_local_fs, 128*1024, R"(
@@ -227,7 +324,7 @@ Connection timeout if there are no replicas.
 Timeout in milliseconds for receiving Hello packet from replicas during handshake.
 )", 0) \
     DECLARE(Milliseconds, connect_timeout_with_failover_ms, 1000, R"(
-The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the ‘shard’ and ‘replica’ sections are used in the cluster definition.
+The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the 'shard' and 'replica' sections are used in the cluster definition.
 If unsuccessful, several attempts are made to connect to various replicas.
 )", 0) \
     DECLARE(Milliseconds, connect_timeout_with_failover_secure_ms, 1000, R"(
@@ -256,7 +353,7 @@ other connections are cancelled. Queries with `max_parallel_replicas > 1` are su
 
 Enabled by default.
 
-Disabled by default on Cloud.
+Cloud default value: `1`
 )", 0) \
     DECLARE(Bool, allow_changing_replica_until_first_data_packet, false, R"(
 If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
@@ -274,7 +371,7 @@ Possible values:
 - 0 — Infinite timeout.
 )", 0) \
     DECLARE(Milliseconds, replace_running_query_max_wait_ms, 5000, R"(
-The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace-running-query) setting is active.
+The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace_running_query) setting is active.
 
 Possible values:
 
@@ -282,7 +379,7 @@ Possible values:
 - 0 — Throwing an exception that does not allow to run a new query if the server already executes a query with the same `query_id`.
 )", 0) \
     DECLARE(Milliseconds, kafka_max_wait_ms, 5000, R"(
-The wait time in milliseconds for reading messages from [Kafka](../../engines/table-engines/integrations/kafka.md/#kafka) before retry.
+The wait time in milliseconds for reading messages from [Kafka](/engines/table-engines/integrations/kafka) before retry.
 
 Possible values:
 
@@ -342,8 +439,11 @@ Each time this number of parts was uploaded to S3, s3_min_upload_part_size is mu
     DECLARE(UInt64, s3_max_part_number, S3::DEFAULT_MAX_PART_NUMBER, R"(
 Maximum part number number for s3 upload part.
 )", 0) \
+    DECLARE(Bool, s3_allow_multipart_copy, true, R"(
+Allow multipart copy in S3.
+)", 0) \
     DECLARE(UInt64, s3_max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, R"(
-Maximum size for a single copy operation in s3
+Maximum size for single-operation copy in s3. This setting is used only if s3_allow_multipart_copy is true.
 )", 0) \
     DECLARE(UInt64, azure_upload_part_size_multiply_factor, 2, R"(
 Multiply azure_min_upload_part_size by this factor each time azure_multiply_parts_count_threshold parts were uploaded from a single write to Azure blob storage.
@@ -360,7 +460,7 @@ The maximum number of a concurrent loaded parts in multipart upload request. 0 m
     DECLARE(UInt64, s3_max_single_part_upload_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, R"(
 The maximum size of object to upload using singlepart upload to S3.
 )", 0) \
-    DECLARE(UInt64, azure_max_single_part_upload_size, 100*1024*1024, R"(
+    DECLARE(UInt64, azure_max_single_part_upload_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, R"(
 The maximum size of object to upload using singlepart upload to Azure blob storage.
 )", 0)                                                                             \
     DECLARE(UInt64, azure_max_single_part_copy_size, 256*1024*1024, R"(
@@ -378,8 +478,20 @@ The maximum number of retries in case of unexpected errors during Azure blob sto
     DECLARE(UInt64, s3_max_unexpected_write_error_retries, S3::DEFAULT_MAX_UNEXPECTED_WRITE_ERROR_RETRIES, R"(
 The maximum number of retries in case of unexpected errors during S3 write.
 )", 0) \
-    DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
-Max number of S3 redirects hops allowed.
+    DECLARE(UInt64, azure_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
+Max number of azure redirects hops allowed.
+)", 0) \
+    DECLARE(UInt64, azure_max_get_rps, 0, R"(
+Limit on Azure GET request per second rate before throttling. Zero means unlimited.
+)", 0) \
+    DECLARE(UInt64, azure_max_get_burst, 0, R"(
+Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `azure_max_get_rps`
+)", 0) \
+    DECLARE(UInt64, azure_max_put_rps, 0, R"(
+Limit on Azure PUT request per second rate before throttling. Zero means unlimited.
+)", 0) \
+    DECLARE(UInt64, azure_max_put_burst, 0, R"(
+Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `azure_max_put_rps`
 )", 0) \
     DECLARE(UInt64, s3_max_connections, S3::DEFAULT_MAX_CONNECTIONS, R"(
 The maximum number of connections per server.
@@ -403,6 +515,20 @@ Maximum number of files that could be returned in batch by ListObject request
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
 )", 0) \
+    DECLARE(Bool, azure_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
+When set to `true` than for all azure requests first two attempts are made with low send and receive timeouts.
+When set to `false` than all attempts are made with identical timeouts.
+)", 0) \
+    DECLARE(Bool, s3_slow_all_threads_after_network_error, true, R"(
+When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
+after any single s3 request encounters a retryable network error, such as socket timeout.
+When set to `false`, each thread handles S3 request backoff independently of the others.
+)", 0) \
+    DECLARE(Bool, backup_slow_all_threads_after_retryable_s3_error, false, R"(
+When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
+after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
+When set to `false`, each thread handles s3 request backoff independently of the others.
+)", 0) \
     DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
 Maximum number of files that could be returned in batch by ListObject request
 )", 0) \
@@ -410,8 +536,10 @@ Maximum number of files that could be returned in batch by ListObject request
 Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists.
 
 Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
+- 0 — `INSERT` query creates a new file or fail if file exists and s3_create_new_file_on_insert is not set.
 - 1 — `INSERT` query replaces existing content of the file with the new data.
+
+See more details [here](/integrations/s3#inserting-data).
 )", 0) \
     DECLARE(Bool, azure_truncate_on_insert, false, R"(
 Enables or disables truncate before insert in azure engine tables.
@@ -422,10 +550,12 @@ Enables or disables creating a new file on each insert in s3 engine tables. If e
 initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query creates a new file.
+- 0 — `INSERT` query creates a new file or fail if file exists and s3_truncate_on_insert is not set.
+- 1 — `INSERT` query creates a new file on each insert using suffix (from the second one) if s3_truncate_on_insert is not set.
+
+See more details [here](/integrations/s3#inserting-data).
 )", 0) \
-    DECLARE(Bool, s3_skip_empty_files, false, R"(
+    DECLARE(Bool, s3_skip_empty_files, true, R"(
 Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
 
 Possible values:
@@ -437,6 +567,9 @@ Enables or disables creating a new file on each insert in azure engine tables
 )", 0) \
     DECLARE(Bool, s3_check_objects_after_upload, false, R"(
 Check each uploaded object to s3 with head request to be sure that upload was successful
+)", 0) \
+    DECLARE(Bool, azure_check_objects_after_upload, false, R"(
+Check each uploaded object in azure blob storage to be sure that upload was successful
 )", 0) \
     DECLARE(Bool, s3_allow_parallel_part_upload, true, R"(
 Use multiple threads for s3 multipart upload. It may lead to slightly higher memory usage
@@ -491,18 +624,25 @@ Minimal backoff between retries in azure sdk
     DECLARE(UInt64, azure_sdk_retry_max_backoff_ms, 1000, R"(
 Maximal backoff between retries in azure sdk
 )", 0) \
+    DECLARE(UInt64, azure_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
+Idleness timeout for sending and receiving data to/from azure. Fail if a single TCP read or write call blocks for this long.
+)", 0) \
+    DECLARE(UInt64, azure_connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, R"(
+Connection timeout for host from azure disks.
+)", 0) \
     DECLARE(Bool, s3_validate_request_settings, true, R"(
 Enables s3 request settings validation.
-
 Possible values:
 - 1 — validate settings.
 - 0 — do not validate settings.
 )", 0) \
+    DECLARE(Bool, compatibility_s3_presigned_url_query_in_path, false, R"(
+Compatibility: when enabled, folds pre-signed URL query parameters (e.g. X-Amz-*) into the S3 key (legacy behavior),
+so '?' acts as a wildcard in the path. When disabled (default), pre-signed URL query parameters are kept in the URL query
+to avoid interpreting '?' as a wildcard.
+)", 0) \
     DECLARE(Bool, s3_disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, R"(
 Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
-)", 0) \
-    DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(
-Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries
 )", 0) \
     DECLARE(UInt64, s3_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
 Idleness timeout for sending and receiving data to/from S3. Fail if a single TCP read or write call blocks for this long.
@@ -516,8 +656,14 @@ Enable very explicit logging of S3 requests. Makes sense for debug only.
     DECLARE(String, s3queue_default_zookeeper_path, "/clickhouse/s3queue/", R"(
 Default zookeeper path prefix for S3Queue engine
 )", 0) \
+    DECLARE(Bool, s3queue_migrate_old_metadata_to_buckets, false, R"(
+Migrate old metadata structure of S3Queue table to a new one
+)", 0) \
     DECLARE(Bool, s3queue_enable_logging_to_s3queue_log, false, R"(
 Enable writing to system.s3queue_log. The value can be overwritten per table with table settings
+)", 0) \
+    DECLARE(Float, s3queue_keeper_fault_injection_probability, 0.0, R"(
+Keeper fault injection probability for S3Queue.
 )", 0) \
     DECLARE(UInt64, hdfs_replication, 0, R"(
 The actual number of replications can be specified when the hdfs file is created.
@@ -545,6 +691,8 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(Bool, enable_hdfs_pread, true, R"(
+Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -552,28 +700,35 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(ArrowFlightDescriptorType, arrow_flight_request_descriptor_type, ArrowFlightDescriptorType::Path, R"(
+Type of descriptor to use for Arrow Flight requests. 'path' sends the dataset name as a path descriptor. 'command' sends a SQL query as a command descriptor (required for Dremio).
+
+Possible values:
+- 'path' — Use FlightDescriptor::Path (default, works with most Arrow Flight servers)
+- 'command' — Use FlightDescriptor::Command with a SELECT query (required for Dremio)
+)", 0) \
     DECLARE(UInt64, hsts_max_age, 0, R"(
 Expired time for HSTS. 0 means disable HSTS.
 )", 0) \
     DECLARE(Bool, extremes, false, R"(
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
-For more information, see the section “Extreme values”.
+For more information, see the section "Extreme values".
 )", IMPORTANT) \
     DECLARE(Bool, use_uncompressed_cache, false, R"(
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
-Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md/#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
-For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the ‘use_uncompressed_cache’ setting always set to 1.
+For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the 'use_uncompressed_cache' setting always set to 1.
 )", 0) \
     DECLARE(Bool, replace_running_query, false, R"(
-When using the HTTP interface, the ‘query_id’ parameter can be passed. This is any string that serves as the query identifier.
-If a query from the same user with the same ‘query_id’ already exists at this time, the behaviour depends on the ‘replace_running_query’ parameter.
+When using the HTTP interface, the 'query_id' parameter can be passed. This is any string that serves as the query identifier.
+If a query from the same user with the same 'query_id' already exists at this time, the behaviour depends on the 'replace_running_query' parameter.
 
-`0` (default) – Throw an exception (do not allow the query to run if a query with the same ‘query_id’ is already running).
+`0` (default) – Throw an exception (do not allow the query to run if a query with the same 'query_id' is already running).
 
 `1` – Cancel the old query and start running the new one.
 
-Set this parameter to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
+Set this parameter to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn't finished yet, it should be cancelled.
 )", 0) \
     DECLARE(UInt64, max_remote_read_network_bandwidth, 0, R"(
 The maximum speed of data exchange over the network in bytes per second for read.
@@ -588,7 +743,8 @@ The maximum speed of local reads in bytes per second.
 The maximum speed of local writes in bytes per second.
 )", 0) \
     DECLARE(Bool, stream_like_engine_allow_direct_select, false, R"(
-Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams, and NATS engines. In case there are attached materialized views, SELECT query is not allowed even if this setting is enabled.
+Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams, S3Queue, AzureQueue and NATS engines. In case there are attached materialized views, SELECT query is not allowed even if this setting is enabled.
+If there are no attached materialized views, enabling this setting allows to read data. Be aware that usually the read data is removed from the queue. In order to avoid removing read data the related engine settings should be configured properly.
 )", 0) \
     DECLARE(String, stream_like_engine_insert_queue, "", R"(
 When stream-like engine reads from multiple queues, the user will need to select one queue to insert into when writing. Used by Redis Streams and NATS.
@@ -604,42 +760,41 @@ Possible values:
 - 0 — INSERT was as usual, if it will go to read-only replica it will fail
 - 1 — Initiator will skip read-only replicas before sending data to shards.
 )", 0) \
-    DECLARE(Bool, distributed_foreground_insert, false, R"(
-Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table.
+    DECLARE_WITH_ALIAS(Bool, distributed_foreground_insert, false, R"(
+Enables or disables synchronous data insertion into a [Distributed](/engines/table-engines/special/distributed) table.
 
 By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in background mode. When `distributed_foreground_insert=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
 
 Possible values:
 
-- 0 — Data is inserted in background mode.
-- 1 — Data is inserted in synchronous mode.
+- `0` — Data is inserted in background mode.
+- `1` — Data is inserted in synchronous mode.
 
-Cloud default value: `1`.
+Cloud default value: `0`.
 
 **See Also**
 
-- [Distributed Table Engine](../../engines/table-engines/special/distributed.md/#distributed)
-- [Managing Distributed Tables](../../sql-reference/statements/system.md/#query-language-system-distributed)
-)", 0) ALIAS(insert_distributed_sync) \
-    DECLARE(UInt64, distributed_background_insert_timeout, 0, R"(
+- [Distributed Table Engine](/engines/table-engines/special/distributed)
+- [Managing Distributed Tables](/sql-reference/statements/system#managing-distributed-tables)
+)", 0, insert_distributed_sync) \
+    DECLARE_WITH_ALIAS(UInt64, distributed_background_insert_timeout, 0, R"(
 Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled. Zero value means no timeout.
-)", 0) ALIAS(insert_distributed_timeout) \
-    DECLARE(Milliseconds, distributed_background_insert_sleep_time_ms, 100, R"(
+)", 0, insert_distributed_timeout) \
+    DECLARE_WITH_ALIAS(Milliseconds, distributed_background_insert_sleep_time_ms, 100, R"(
 Base interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
 
 Possible values:
 
 - A positive integer number of milliseconds.
-)", 0) ALIAS(distributed_directory_monitor_sleep_time_ms) \
-    DECLARE(Milliseconds, distributed_background_insert_max_sleep_time_ms, 30000, R"(
+)", 0, distributed_directory_monitor_sleep_time_ms) \
+    DECLARE_WITH_ALIAS(Milliseconds, distributed_background_insert_max_sleep_time_ms, 30000, R"(
 Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms) setting.
 
 Possible values:
 
 - A positive integer number of milliseconds.
-)", 0) ALIAS(distributed_directory_monitor_max_sleep_time_ms) \
-    \
-    DECLARE(Bool, distributed_background_insert_batch, false, R"(
+)", 0, distributed_directory_monitor_max_sleep_time_ms) \
+    DECLARE_WITH_ALIAS(Bool, distributed_background_insert_batch, false, R"(
 Enables/disables inserted data sending in batches.
 
 When batch sending is enabled, the [Distributed](../../engines/table-engines/special/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better-utilizing server and network resources.
@@ -648,8 +803,8 @@ Possible values:
 
 - 1 — Enabled.
 - 0 — Disabled.
-)", 0) ALIAS(distributed_directory_monitor_batch_inserts) \
-    DECLARE(Bool, distributed_background_insert_split_batch_on_failure, false, R"(
+)", 0, distributed_directory_monitor_batch_inserts) \
+    DECLARE_WITH_ALIAS(Bool, distributed_background_insert_split_batch_on_failure, false, R"(
 Enables/disables splitting batches on failures.
 
 Sometimes sending particular batch to the remote shard may fail, because of some complex pipeline after (i.e. `MATERIALIZED VIEW` with `GROUP BY`) due to `Memory limit exceeded` or similar errors. In this case, retrying will not help (and this will stuck distributed sends for the table) but sending files from that batch one by one may succeed INSERT.
@@ -668,7 +823,7 @@ This setting also affects broken batches (that may appears because of abnormal s
 :::note
 You should not rely on automatic batch splitting, since this may hurt performance.
 :::
-)", 0) ALIAS(distributed_directory_monitor_split_batch_on_failure) \
+)", 0, distributed_directory_monitor_split_batch_on_failure) \
     \
     DECLARE(Bool, optimize_move_to_prewhere, true, R"(
 Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
@@ -681,7 +836,7 @@ Possible values:
 - 1 — Automatic `PREWHERE` optimization is enabled.
 )", 0) \
     DECLARE(Bool, optimize_move_to_prewhere_if_final, false, R"(
-Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
 
 Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
 
@@ -707,27 +862,27 @@ Move PREWHERE conditions containing primary key columns to the end of AND chain.
 When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
 )", 0) \
     \
-    DECLARE(UInt64, alter_sync, 1, R"(
+    DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
 Allows to set up waiting for actions to be executed on replicas by [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 
-- 0 — Do not wait.
-- 1 — Wait for own execution.
-- 2 — Wait for everyone.
+- `0` — Do not wait.
+- `1` — Wait for own execution.
+- `2` — Wait for everyone.
 
-Cloud default value: `0`.
+Cloud default value: `1`.
 
 :::note
 `alter_sync` is applicable to `Replicated` tables only, it does nothing to alters of not `Replicated` tables.
 :::
-)", 0) ALIAS(replication_alter_partitions_sync) \
+)", 0, replication_alter_partitions_sync) \
     DECLARE(Int64, replication_wait_for_inactive_replica_timeout, 120, R"(
-Specifies how long (in seconds) to wait for inactive replicas to execute [ALTER](../../sql-reference/statements/alter/index.md), [OPTIMIZE](../../sql-reference/statements/optimize.md) or [TRUNCATE](../../sql-reference/statements/truncate.md) queries.
+Specifies how long (in seconds) to wait for inactive replicas to execute [`ALTER`](../../sql-reference/statements/alter/index.md), [`OPTIMIZE`](../../sql-reference/statements/optimize.md) or [`TRUNCATE`](../../sql-reference/statements/truncate.md) queries.
 
 Possible values:
 
-- 0 — Do not wait.
+- `0` — Do not wait.
 - Negative integer — Wait for unlimited time.
 - Positive integer — The number of seconds to wait.
 )", 0) \
@@ -753,7 +908,7 @@ See also:
 
 ### Random (by Default) {#load_balancing-random}
 
-``` sql
+```sql
 load_balancing = random
 ```
 
@@ -762,11 +917,11 @@ Disadvantages: Server proximity is not accounted for; if the replicas have diffe
 
 ### Nearest Hostname {#load_balancing-nearest_hostname}
 
-``` sql
+```sql
 load_balancing = nearest_hostname
 ```
 
-The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
+The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server's hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
 For instance, example01-01-1 and example01-01-2 are different in one position, while example01-01-1 and example01-02-2 differ in two places.
 This method might seem primitive, but it does not require external data about network topology, and it does not compare IP addresses, which would be complicated for our IPv6 addresses.
@@ -776,13 +931,13 @@ We can also assume that when sending a query to the same server, in the absence 
 
 ### Hostname levenshtein distance {#load_balancing-hostname_levenshtein_distance}
 
-``` sql
+```sql
 load_balancing = hostname_levenshtein_distance
 ```
 
 Just like `nearest_hostname`, but it compares hostname in a [levenshtein distance](https://en.wikipedia.org/wiki/Levenshtein_distance) manner. For example:
 
-``` text
+```text
 example-clickhouse-0-0 ample-clickhouse-0-0
 1
 
@@ -795,7 +950,7 @@ example-clickhouse-0-0 example-clickhouse-12-0
 
 ### In Order {#load_balancing-in_order}
 
-``` sql
+```sql
 load_balancing = in_order
 ```
 
@@ -804,11 +959,11 @@ This method is appropriate when you know exactly which replica is preferable.
 
 ### First or Random {#load_balancing-first_or_random}
 
-``` sql
+```sql
 load_balancing = first_or_random
 ```
 
-This algorithm chooses the first replica in the set or a random replica if the first is unavailable. It’s effective in cross-replication topology setups, but useless in other configurations.
+This algorithm chooses the first replica in the set or a random replica if the first is unavailable. It's effective in cross-replication topology setups, but useless in other configurations.
 
 The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, the load is evenly distributed among replicas that are still available.
 
@@ -816,7 +971,7 @@ It's possible to explicitly define what the first replica is by using the settin
 
 ### Round Robin {#load_balancing-round_robin}
 
-``` sql
+```sql
 load_balancing = round_robin
 ```
 
@@ -827,12 +982,12 @@ Which replica to preferably send a query when FIRST_OR_RANDOM load balancing str
 )", 0) \
     \
     DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, R"(
-How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = ‘any’ are present.
-See the section “WITH TOTALS modifier”.
+How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.
+See the section "WITH TOTALS modifier".
 )", IMPORTANT) \
     DECLARE(Float, totals_auto_threshold, 0.5, R"(
 The threshold for `totals_mode = 'auto'`.
-See the section “WITH TOTALS modifier”.
+See the section "WITH TOTALS modifier".
 )", 0) \
     \
     DECLARE(Bool, allow_suspicious_low_cardinality_types, false, R"(
@@ -866,8 +1021,17 @@ In CREATE TABLE statement allows specifying Variant type with similar variant ty
     DECLARE(Bool, allow_suspicious_primary_key, false, R"(
 Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
 )", 0) \
-    DECLARE(Bool, compile_expressions, false, R"(
-Compile some scalar functions and operators to native code. Due to a bug in the LLVM compiler infrastructure, on AArch64 machines, it is known to lead to a nullptr dereference and, consequently, server crash. Do not enable this setting.
+    DECLARE(Bool, allow_suspicious_types_in_group_by, false, R"(
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in GROUP BY keys.
+)", 0) \
+    DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
+Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
+)", 0) \
+    DECLARE(Bool, use_variant_default_implementation_for_comparisons, true, R"(
+Enables or disables default implementation for Variant type in comparison functions.
+)", 0) \
+    DECLARE(Bool, compile_expressions, true, R"(
+Compile some scalar functions and operators to native code.
 )", 0) \
     DECLARE(UInt64, min_count_to_compile_expression, 3, R"(
 Minimum count of executing same expression before it is get compiled.
@@ -914,7 +1078,7 @@ Number of threads to use for merge intermediate aggregation results in memory ef
 Enable memory bound merging strategy for aggregation.
 )", 0) \
     DECLARE(Bool, enable_positional_arguments, true, R"(
-Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements.
+Enables or disables supporting positional arguments for [GROUP BY](/sql-reference/statements/select/group-by), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements.
 
 Possible values:
 
@@ -943,21 +1107,63 @@ Result:
 └─────┴─────┴───────┘
 ```
 )", 0) \
-    DECLARE(Bool, enable_extended_results_for_datetime_functions, false, R"(
-Enables or disables returning results of type:
-- `Date32` with extended range (compared to type `Date`) for functions [toStartOfYear](../../sql-reference/functions/date-time-functions.md#tostartofyear), [toStartOfISOYear](../../sql-reference/functions/date-time-functions.md#tostartofisoyear), [toStartOfQuarter](../../sql-reference/functions/date-time-functions.md#tostartofquarter), [toStartOfMonth](../../sql-reference/functions/date-time-functions.md#tostartofmonth), [toLastDayOfMonth](../../sql-reference/functions/date-time-functions.md#tolastdayofmonth), [toStartOfWeek](../../sql-reference/functions/date-time-functions.md#tostartofweek), [toLastDayOfWeek](../../sql-reference/functions/date-time-functions.md#tolastdayofweek) and [toMonday](../../sql-reference/functions/date-time-functions.md#tomonday).
-- `DateTime64` with extended range (compared to type `DateTime`) for functions [toStartOfDay](../../sql-reference/functions/date-time-functions.md#tostartofday), [toStartOfHour](../../sql-reference/functions/date-time-functions.md#tostartofhour), [toStartOfMinute](../../sql-reference/functions/date-time-functions.md#tostartofminute), [toStartOfFiveMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffiveminutes), [toStartOfTenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoftenminutes), [toStartOfFifteenMinutes](../../sql-reference/functions/date-time-functions.md#tostartoffifteenminutes) and [timeSlot](../../sql-reference/functions/date-time-functions.md#timeslot).
+    DECLARE(Bool, enable_positional_arguments_for_projections, false, R"(
+Enables or disables supporting positional arguments in PROJECTION definitions. See also [enable_positional_arguments](#enable_positional_arguments) setting.
+
+:::note
+This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
+:::
 
 Possible values:
 
-- 0 — Functions return `Date` or `DateTime` for all types of arguments.
-- 1 — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
+- 0 — Positional arguments aren't supported.
+- 1 — Positional arguments are supported: column numbers can use instead of column names.
+)", 0) \
+    DECLARE(Bool, enable_extended_results_for_datetime_functions, false, R"(
+Enables or disables returning results of type `Date32` with extended range (compared to type `Date`)
+or `DateTime64` with extended range (compared to type `DateTime`).
+
+Possible values:
+
+- `0` — Functions return `Date` or `DateTime` for all types of arguments.
+- `1` — Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
+
+The table below shows the behavior of this setting for various date-time functions.
+
+| Function | `enable_extended_results_for_datetime_functions = 0` | `enable_extended_results_for_datetime_functions = 1` |
+|----------|---------------------------------------------------|---------------------------------------------------|
+| `toStartOfYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfISOYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfQuarter` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toLastDayOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toLastDayOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toMonday` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfDay` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfHour` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfFifteenMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfTenMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfFiveMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
+| `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
 )", 0) \
     DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
-Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()
+Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*().
+This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.
+Enabling this setting gives the wrong impression that different values within a column can have different timezones.
+Therefore, please do not enable this setting.
 )", 0) \
+    DECLARE(Bool, use_legacy_to_time, true, R"(
+When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
+Otherwise, uses a new toTime function, that converts different type of data into the Time type.
+The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
+)", 0) \
+    DECLARE_WITH_ALIAS(Bool, enable_time_time64_type, true, R"(
+Allows creation of [Time](../../sql-reference/data-types/time.md) and [Time64](../../sql-reference/data-types/time64.md) data types.
+)", 0, allow_experimental_time_time64_type) \
     DECLARE(Bool, function_locate_has_mysql_compatible_argument_order, true, R"(
-Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md#locate).
+Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md/#locate).
 
 Possible values:
 
@@ -966,18 +1172,18 @@ Possible values:
 )", 0) \
     \
     DECLARE(Bool, group_by_use_nulls, false, R"(
-Changes the way the [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
+Changes the way the [GROUP BY clause](/sql-reference/statements/select/group-by) treats the types of aggregation keys.
 When the `ROLLUP`, `CUBE`, or `GROUPING SETS` specifiers are used, some aggregation keys may not be used to produce some result rows.
 Columns for these keys are filled with either default value or `NULL` in corresponding rows depending on this setting.
 
 Possible values:
 
 - 0 — The default value for the aggregation key type is used to produce missing values.
-- 1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/docs/en/sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](/docs/en/sql-reference/syntax.md) for rows that didn't use it.
+- 1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/sql-reference/data-types/nullable). Columns for corresponding aggregation keys are filled with [NULL](/sql-reference/syntax#null) for rows that didn't use it.
 
 See also:
 
-- [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md)
+- [GROUP BY clause](/sql-reference/statements/select/group-by)
 )", 0) \
     \
     DECLARE(Bool, skip_unavailable_shards, false, R"(
@@ -985,15 +1191,15 @@ Enables or disables silently skipping of unavailable shards.
 
 Shard is considered unavailable if all its replicas are unavailable. A replica is unavailable in the following cases:
 
-- ClickHouse can’t connect to replica for any reason.
+- ClickHouse can't connect to replica for any reason.
 
     When connecting to a replica, ClickHouse performs several attempts. If all these attempts fail, the replica is considered unavailable.
 
-- Replica can’t be resolved through DNS.
+- Replica can't be resolved through DNS.
 
-    If replica’s hostname can’t be resolved through DNS, it can indicate the following situations:
+    If replica's hostname can't be resolved through DNS, it can indicate the following situations:
 
-    - Replica’s host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+    - Replica's host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
 
     - Configuration error. ClickHouse configuration file contains a wrong hostname.
 
@@ -1008,16 +1214,18 @@ Possible values:
     If a shard is unavailable, ClickHouse throws an exception.
 )", 0) \
     \
-    DECLARE(UInt64, parallel_distributed_insert_select, 0, R"(
+    DECLARE(UInt64, parallel_distributed_insert_select, 2, R"(
 Enables parallel distributed `INSERT ... SELECT` query.
 
 If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
 
 Possible values:
 
-- 0 — Disabled.
-- 1 — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
-- 2 — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
+- `0` — Disabled.
+- `1` — `SELECT` will be executed on each shard from the underlying table of the distributed engine.
+- `2` — `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
+
+Setting `enable_parallel_replicas = 1` is needed when using this setting.
 )", 0) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
 Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
@@ -1065,11 +1273,11 @@ This will allow to avoid:
 - Processing rows behind the limit on the initiator.
 
 Starting from 21.9 version you cannot get inaccurate results anymore, since `distributed_push_down_limit` changes query execution only if at least one of the conditions met:
-- [distributed_group_by_no_merge](#distributed-group-by-no-merge) > 0.
+- [distributed_group_by_no_merge](#distributed_group_by_no_merge) > 0.
 - Query **does not have** `GROUP BY`/`DISTINCT`/`LIMIT BY`, but it has `ORDER BY`/`LIMIT`.
 - Query **has** `GROUP BY`/`DISTINCT`/`LIMIT BY` with `ORDER BY`/`LIMIT` and:
-    - [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled.
-    - [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) is enabled.
+    - [optimize_skip_unused_shards](#optimize_skip_unused_shards) is enabled.
+    - [optimize_distributed_group_by_sharding_key](#optimize_distributed_group_by_sharding_key) is enabled.
 
 Possible values:
 
@@ -1078,9 +1286,9 @@ Possible values:
 
 See also:
 
-- [distributed_group_by_no_merge](#distributed-group-by-no-merge)
-- [optimize_skip_unused_shards](#optimize-skip-unused-shards)
-- [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key)
+- [distributed_group_by_no_merge](#distributed_group_by_no_merge)
+- [optimize_skip_unused_shards](#optimize_skip_unused_shards)
+- [optimize_distributed_group_by_sharding_key](#optimize_distributed_group_by_sharding_key)
 )", 0) \
     DECLARE(Bool, optimize_distributed_group_by_sharding_key, true, R"(
 Optimize `GROUP BY sharding_key` queries, by avoiding costly aggregation on the initiator server (which will reduce memory usage for the query on the initiator server).
@@ -1107,9 +1315,9 @@ Possible values:
 
 See also:
 
-- [distributed_group_by_no_merge](#distributed-group-by-no-merge)
-- [distributed_push_down_limit](#distributed-push-down-limit)
-- [optimize_skip_unused_shards](#optimize-skip-unused-shards)
+- [distributed_group_by_no_merge](#distributed_group_by_no_merge)
+- [distributed_push_down_limit](#distributed_push_down_limit)
+- [optimize_skip_unused_shards](#optimize_skip_unused_shards)
 
 :::note
 Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
@@ -1121,7 +1329,11 @@ Limit for number of sharding key values, turns off `optimize_skip_unused_shards`
 Too many values may require significant amount for processing, while the benefit is doubtful, since if you have huge number of values in `IN (...)`, then most likely the query will be sent to all shards anyway.
 )", 0) \
     DECLARE(Bool, optimize_skip_unused_shards, false, R"(
-Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise a query yields incorrect result).
+Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE`, and activates related optimizations for distributed queries (e.g. aggregation by sharding key).
+
+:::note
+Assumes that the data is distributed by sharding key, otherwise a query yields incorrect result.
+:::
 
 Possible values:
 
@@ -1145,7 +1357,7 @@ Possible values:
 - 1 — Allowed.
 )", 0) \
     DECLARE(UInt64, force_optimize_skip_unused_shards, 0, R"(
-Enables or disables query execution if [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled, an exception will be thrown.
+Enables or disables query execution if [optimize_skip_unused_shards](#optimize_skip_unused_shards) is enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled, an exception will be thrown.
 
 Possible values:
 
@@ -1154,7 +1366,7 @@ Possible values:
 - 2 — Enabled. Query execution is disabled regardless of whether a sharding key is defined for the table.
 )", 0) \
     DECLARE(UInt64, optimize_skip_unused_shards_nesting, 0, R"(
-Controls [`optimize_skip_unused_shards`](#optimize-skip-unused-shards) (hence still requires [`optimize_skip_unused_shards`](#optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
+Controls [`optimize_skip_unused_shards`](#optimize_skip_unused_shards) (hence still requires [`optimize_skip_unused_shards`](#optimize_skip_unused_shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
 
 Possible values:
 
@@ -1163,7 +1375,7 @@ Possible values:
 - 2 — Enables `optimize_skip_unused_shards` up to the second level.
 )", 0) \
     DECLARE(UInt64, force_optimize_skip_unused_shards_nesting, 0, R"(
-Controls [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards) (hence still requires [`force_optimize_skip_unused_shards`](#force-optimize-skip-unused-shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
+Controls [`force_optimize_skip_unused_shards`](#force_optimize_skip_unused_shards) (hence still requires [`force_optimize_skip_unused_shards`](#force_optimize_skip_unused_shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
 
 Possible values:
 
@@ -1172,42 +1384,23 @@ Possible values:
 - 2 — Enables `force_optimize_skip_unused_shards` up to the second level.
 )", 0) \
     \
-    DECLARE(Bool, input_format_parallel_parsing, true, R"(
-Enables or disables order-preserving parallel parsing of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-)", 0) \
-    DECLARE(UInt64, min_chunk_bytes_for_parallel_parsing, (10 * 1024 * 1024), R"(
+    DECLARE(NonZeroUInt64, min_chunk_bytes_for_parallel_parsing, (10 * 1024 * 1024), R"(
 - Type: unsigned int
 - Default value: 1 MiB
 
 The minimum chunk size in bytes, which each thread will parse in parallel.
 )", 0) \
-    DECLARE(Bool, output_format_parallel_formatting, true, R"(
-Enables or disables parallel formatting of data formats. Supported only for [TSV](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [CSV](../../interfaces/formats.md/#csv) and [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) formats.
-
-Possible values:
-
-- 1 — Enabled.
-- 0 — Disabled.
-)", 0) \
-    DECLARE(UInt64, output_format_compression_level, 3, R"(
-Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
-
-Possible values: from `1` to `22`
-)", 0) \
-    DECLARE(UInt64, output_format_compression_zstd_window_log, 0, R"(
-Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
-
-Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
+    DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, true, R"(
+Allows to output columns with special serialization kinds like Sparse and Replicated without converting them to full column representation.
+It helps to avoid unnecessary data copy during formatting.
 )", 0) \
     DECLARE(Bool, enable_parsing_to_custom_serialization, true, R"(
 If true then data can be parsed directly to columns with custom serialization (e.g. Sparse) according to hints for serialization got from the table.
 )", 0) \
     \
+    DECLARE(Bool, merge_tree_use_v1_object_and_dynamic_serialization, false, R"(
+When enabled, V1 serialization version of JSON and Dynamic types will be used in MergeTree instead of V2. Changing this setting takes affect only after server restart.
+)", 0) \
     DECLARE(UInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192), R"(
 If the number of rows to be read from a file of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
 
@@ -1246,7 +1439,7 @@ Possible values:
     DECLARE(UInt64, merge_tree_max_rows_to_use_cache, (128 * 8192), R"(
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md/#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -1255,11 +1448,17 @@ Possible values:
     DECLARE(UInt64, merge_tree_max_bytes_to_use_cache, (192 * 10 * 1024 * 1024), R"(
 If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md/#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
 - Any positive integer.
+)", 0) \
+DECLARE(Bool, merge_tree_use_deserialization_prefixes_cache, true, R"(
+Enables caching of columns metadata from the file prefixes during reading from remote disks in MergeTree.
+)", 0) \
+DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
+Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
 )", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
 Merge parts only in one partition in select final
@@ -1270,12 +1469,32 @@ Split parts ranges into intersecting and non intersecting during FINAL optimizat
     DECLARE(Bool, split_intersecting_parts_ranges_into_layers_final, true, R"(
 Split intersecting parts ranges into layers during FINAL optimization
 )", 0) \
+    DECLARE(Bool, apply_row_policy_after_final, false, R"(
+When enabled, row policies and PREWHERE are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
+When disabled, row policies are applied before FINAL, which can cause different results when the policy
+filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
+
+If the row policy expression depends only on columns in ORDER BY, it will still be applied before FINAL as an optimization,
+since such filtering cannot affect the deduplication result.
+
+Possible values:
+
+- 0 — Row policy and PREWHERE are applied before FINAL (default).
+- 1 — Row policy and PREWHERE are applied after FINAL.
+)", 0) \
+    DECLARE(Bool, apply_prewhere_after_final, false, R"(
+When enabled, PREWHERE conditions are applied after FINAL processing for ReplacingMergeTree and similar engines.
+This can be useful when PREWHERE references columns that may have different values across duplicate rows,
+and you want FINAL to select the winning row before filtering. When disabled, PREWHERE is applied during reading.
+Note: If apply_row_level_security_after_final is enabled and row policy uses non-sorting-key columns, PREWHERE will also
+be deferred to maintain correct execution order (row policy must be applied before PREWHERE).
+)", 0) \
     \
     DECLARE(UInt64, mysql_max_rows_to_insert, 65536, R"(
 The maximum number of rows in MySQL batch insertion of the MySQL storage engine
 )", 0) \
     DECLARE(Bool, mysql_map_string_to_text_in_show_columns, true, R"(
-When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md/#show_columns).
 
 Has an effect only when the connection is made through the MySQL wire protocol.
 
@@ -1283,7 +1502,7 @@ Has an effect only when the connection is made through the MySQL wire protocol.
 - 1 - Use `TEXT`.
 )", 0) \
     DECLARE(Bool, mysql_map_fixed_string_to_text_in_show_columns, true, R"(
-When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md#show_columns).
+When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md/#show_columns).
 
 Has an effect only when the connection is made through the MySQL wire protocol.
 
@@ -1321,11 +1540,19 @@ Validate checksums on reading. It is enabled by default and should be always ena
 )", 0) \
     \
     DECLARE(Bool, force_index_by_date, false, R"(
-Disables query execution if the index can’t be used by date.
+Disables query execution if the index can't be used by date.
 
 Works with tables in the MergeTree family.
 
 If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+)", 0) \
+    DECLARE(Bool, use_primary_key, true, R"(
+Use the primary key to prune granules during query execution for MergeTree tables.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
 )", 0) \
     DECLARE(Bool, force_primary_key, false, R"(
 Disables query execution if indexing by the primary key is not possible.
@@ -1342,21 +1569,111 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_skip_indexes_if_final, false, R"(
+    DECLARE(Bool, use_skip_indexes_if_final, true, R"(
 Controls whether skipping indexes are used when executing a query with the FINAL modifier.
 
-By default, this setting is disabled because skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results. When enabled, skipping indexes are applied even with the FINAL modifier, potentially improving performance but with the risk of missing recent updates.
+Skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results from a query with the FINAL modifier. When this setting is enabled, skipping indexes are applied even with the FINAL modifier, potentially improving performance but with the risk of missing recent updates. This setting should be enabled in sync with the setting use_skip_indexes_if_final_exact_mode (default is enabled).
 
 Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_skip_indexes_if_final_exact_mode, true, R"(
+Controls whether granules returned by a skipping index are expanded in newer parts to return correct results when executing a query with the FINAL modifier.
+
+Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that have overlap with the ranges returned by the skip index. This setting should be disabled only if approximate results based on looking up the skip index are okay for an application.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_skip_indexes_on_data_read, false, R"(
+Enable using data skipping indexes during data reading.
+
+When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_skip_indexes_for_disjunctions, true, R"(
+Evaluate WHERE filters with mixed AND and OR conditions using skip indexes. Example: WHERE A = 5 AND (B = 5 OR C = 5).
+If disabled, skip indexes are still used to evaluate WHERE conditions but they must only contain AND-ed clauses.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_skip_indexes_for_top_k, false, R"(
+Enable using data skipping indexes for TopK filtering.
+
+When enabled, if a minmax skip index exists on the column in `ORDER BY <column> LIMIT n` query, optimizer will attempt to use the minmax index to skip granules that are not relevant for the final result . This can reduce query latency.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_top_k_dynamic_filtering, false, R"(
+Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
+
+When enabled, the query executor will try to skip granules and rows that will not be part of the final `top N` rows in the resultset. This optimization is dynamic in nature and latency improvements depends on data distribution and presence of other predicates in the query.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
+)", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
-If true skip indexes are calculated on inserts, otherwise skip indexes will be calculated only during merges
+If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index).
+
+See also [exclude_materialize_skip_indexes_on_insert](#exclude_materialize_skip_indexes_on_insert).
+)", 0) \
+    DECLARE(String, exclude_materialize_skip_indexes_on_insert, "", R"(
+Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by an explicit
+[MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query.
+
+Has no effect if [materialize_skip_indexes_on_insert](#materialize_skip_indexes_on_insert) is false.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    a UInt64,
+    b UInt64,
+    INDEX idx_a a TYPE minmax,
+    INDEX idx_b b TYPE set(3)
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+SET exclude_materialize_skip_indexes_on_insert='idx_a'; -- idx_a will be not be updated upon insert
+--SET exclude_materialize_skip_indexes_on_insert='idx_a, idx_b'; -- neither index would be updated on insert
+
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- only idx_b is updated
+
+-- since it is a session setting it can be set on a per-query level
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='idx_b';
+
+ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly materialize the index
+
+SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
+```
+)", 0) \
+    DECLARE(Bool, text_index_use_bloom_filter, true, R"(
+For testing purposes, enables or disables usage of bloom filter in text index.
+)", 0) \
+    DECLARE(Bool, per_part_index_stats, false, R"(
+        Logs index statistics per part
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_insert, true, R"(
-If true statistics are calculated on inserts, otherwise statistics will be calculated only during merges
+If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
 )", 0) \
     DECLARE(String, ignore_data_skipping_indices, "", R"(
 Ignores the skipping indexes specified if used by the query.
@@ -1469,7 +1786,9 @@ SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_
 SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
 ```
 )", 0) \
-    \
+    DECLARE(Bool, secondary_indices_enable_bulk_filtering, true, R"(
+Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
+)", 0) \
     DECLARE(Float, max_streams_to_max_threads_ratio, 1, R"(
 Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
 )", 0) \
@@ -1478,12 +1797,14 @@ Ask more streams when reading from Merge table. Streams will be spread across ta
 )", 0) \
     \
     DECLARE(String, network_compression_method, "LZ4", R"(
-Sets the method of data compression that is used for communication between servers and between server and [clickhouse-client](../../interfaces/cli.md).
+The codec for compressing the client/server and server/server communication.
 
 Possible values:
 
-- `LZ4` — sets LZ4 compression method.
-- `ZSTD` — sets ZSTD compression method.
+- `NONE` — no compression.
+- `LZ4` — use the LZ4 codec.
+- `LZ4HC` — use the LZ4HC codec.
+- `ZSTD` — use the ZSTD codec.
 
 **See Also**
 
@@ -1505,28 +1826,14 @@ Allows you to select the max window log of ZSTD (it will not be used for MergeTr
     DECLARE(UInt64, priority, 0, R"(
 Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities.
 )", 0) \
-    DECLARE(Int64, os_thread_priority, 0, R"(
-Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
-
-:::note
-To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments do not allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
-:::
-
-Possible values:
-
-- You can set values in the range `[-20, 19]`.
-
-Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long-running non-interactive queries because it allows them to quickly give up resources in favour of short interactive queries when they arrive.
-)", 0) \
-    \
     DECLARE(Bool, log_queries, true, R"(
 Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query-log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query_log) server configuration parameter.
 
 Example:
 
-``` text
+```text
 log_queries=1
 ```
 )", 0) \
@@ -1549,12 +1856,12 @@ Possible values:
 
 Can be used to limit which entities will go to `query_log`, say you are interested only in errors, then you can use `EXCEPTION_WHILE_PROCESSING`:
 
-``` text
+```text
 log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 )", 0) \
     DECLARE(Milliseconds, log_queries_min_query_duration_ms, 0, R"(
-If enabled (non-zero), queries faster than the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/en/slow-query-log.html)), and this basically means that you will not find them in the following tables:
+If enabled (non-zero), queries faster than the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/slow-query-log.html)), and this basically means that you will not find them in the following tables:
 
 - `system.query_log`
 - `system.query_thread_log`
@@ -1586,7 +1893,7 @@ Write time that processor spent during execution/waiting for data to `system.pro
 See also:
 
 - [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md)
-- [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)
+- [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md/#explain-pipeline)
 )", 0) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](../../sql-reference/operators/in.md).
@@ -1602,7 +1909,7 @@ Restrictions:
 
 Possible values:
 
-- `deny` — Default value. Prohibits using these types of subqueries (returns the “Double-distributed in/JOIN subqueries is denied” exception).
+- `deny` — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
 - `local` — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN`/`JOIN.`
 - `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
 - `allow` — Allows the use of these types of subqueries.
@@ -1622,13 +1929,13 @@ Possible values:
 
 **Example**
 
-``` xml
+```xml
 <max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
 ```
 
 **See Also**
 
-- [max_concurrent_queries](/docs/en/operations/server-configuration-parameters/settings.md/#max_concurrent_queries)
+- [max_concurrent_queries](/operations/server-configuration-parameters/settings#max_concurrent_queries)
 )", 0) \
     DECLARE(UInt64, max_concurrent_queries_for_user, 0, R"(
 The maximum number of simultaneously processed queries per user.
@@ -1640,11 +1947,21 @@ Possible values:
 
 **Example**
 
-``` xml
+```xml
 <max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 )", 0) \
-    \
+\
+    DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE, R"(
+Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
+The setting overrids `insert_deduplicate` for `INSERT SELECT` queries.
+That setting has three possible values:
+- disable — Deduplication is disabled for `INSERT SELECT` query.
+- force_enable — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
+- enable_when_possible — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
+- enable_even_for_bad_queries - Deduplication is enabled if `insert_deduplicate` is enable. If select result is not stable, warning is logged, but query is executed with deduplication. This option is for backward compatibility. Consider to use other options instead as it may lead to unexpected results.
+    )", 0) \
+\
     DECLARE(Bool, insert_deduplicate, true, R"(
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
 
@@ -1654,8 +1971,8 @@ Possible values:
 - 1 — Enabled.
 
 By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
-For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
-For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
+For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated_deduplication_window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated_deduplication_window_seconds)).
+For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non_replicated_deduplication_window).
 )", 0) \
     DECLARE(Bool, async_insert_deduplicate, false, R"(
 For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed
@@ -1663,7 +1980,7 @@ For async INSERT queries in the replicated table, specifies that deduplication o
     \
     DECLARE(UInt64Auto, insert_quorum, 0, R"(
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information.
 :::
 
 Enables the quorum writes.
@@ -1700,7 +2017,7 @@ See also:
 )", 0) \
     DECLARE(Bool, insert_quorum_parallel, true, R"(
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information.
 :::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
@@ -1718,7 +2035,7 @@ See also:
 )", 0) \
     DECLARE(UInt64, select_sequential_consistency, 0, R"(
 :::note
-This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
+This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
 :::
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
@@ -1739,6 +2056,17 @@ See also:
 - [insert_quorum](#insert_quorum)
 - [insert_quorum_timeout](#insert_quorum_timeout)
 - [insert_quorum_parallel](#insert_quorum_parallel)
+)", 0) \
+    DECLARE(Bool, update_sequential_consistency, true, R"(
+If true set of parts is updated to the latest version before execution of update.
+)", 0) \
+    DECLARE(UpdateParallelMode, update_parallel_mode, UpdateParallelMode::AUTO, R"(
+Determines the behavior of concurrent update queries.
+
+Possible values:
+- `sync` - run sequentially all `UPDATE` queries.
+- `auto` - run sequentially only `UPDATE` queries with dependencies between columns updated in one query and columns used in expressions of another query.
+- `async` - do not synchronize update queries.
 )", 0) \
     DECLARE(UInt64, table_function_remote_max_addresses, 1000, R"(
 Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
@@ -1771,10 +2099,10 @@ For testing of `exception safety` - throw an exception every time you allocate m
 For testing of `PartsSplitter` - split read ranges into intersecting and non intersecting every time you read from MergeTree with the specified probability.
 )", 0) \
     \
-    DECLARE(Bool, enable_http_compression, false, R"(
+    DECLARE(Bool, enable_http_compression, true, R"(
 Enables or disables data compression in the response to an HTTP request.
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 
@@ -1790,24 +2118,40 @@ Possible values: Numbers from 1 to 9.
     DECLARE(Bool, http_native_compression_disable_checksumming_on_decompress, false, R"(
 Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Map, http_response_headers, "", R"(
+Allows to add or override HTTP headers which the server will return in the response with a successful query result.
+This only affects the HTTP interface.
+
+If the header is already set by default, the provided value will override it.
+If the header was not set by default, it will be added to the list of headers.
+Headers that are set by the server by default and not overridden by this setting, will remain.
+
+The setting allows you to set a header to a constant value. Currently there is no way to set a header to a dynamically calculated value.
+
+Neither names or values can contain ASCII control characters.
+
+If you implement a UI application which allows users to modify settings but at the same time makes decisions based on the returned headers, it is recommended to restrict this setting to readonly.
+
+Example: `SET http_response_headers = '{"Content-Type": "image/png"}'`
+)", 0) \
     \
     DECLARE(String, count_distinct_implementation, "uniqExact", R"(
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](/sql-reference/aggregate-functions/reference/count) construction.
 
 Possible values:
 
-- [uniq](../../sql-reference/aggregate-functions/reference/uniq.md/#agg_function-uniq)
-- [uniqCombined](../../sql-reference/aggregate-functions/reference/uniqcombined.md/#agg_function-uniqcombined)
-- [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniqcombined64.md/#agg_function-uniqcombined64)
-- [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniqhll12.md/#agg_function-uniqhll12)
-- [uniqExact](../../sql-reference/aggregate-functions/reference/uniqexact.md/#agg_function-uniqexact)
+- [uniq](/sql-reference/aggregate-functions/reference/uniq)
+- [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined)
+- [uniqCombined64](/sql-reference/aggregate-functions/reference/uniqcombined64)
+- [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
+- [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
 )", 0) \
     \
     DECLARE(Bool, add_http_cors_header, false, R"(
@@ -1822,10 +2166,21 @@ Max number of HTTP GET redirects hops allowed. Ensures additional security measu
 Use client timezone for interpreting DateTime string values, instead of adopting server timezone.
 )", 0) \
     \
+    DECLARE(Bool, send_profile_events, true, R"(
+Enables or disables sending of [ProfileEvents](/native-protocol/server.md#profile-events) packets to the client.
+
+This can be disabled to reduce network traffic for clients that do not require profile events.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    \
     DECLARE(Bool, send_progress_in_http_headers, false, R"(
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+For more information, read the [HTTP interface description](/interfaces/http).
 
 Possible values:
 
@@ -1839,7 +2194,7 @@ Do not send HTTP headers X-ClickHouse-Progress more frequently than at each spec
     DECLARE(Bool, http_wait_end_of_query, false, R"(
 Enable HTTP response buffering on the server-side.
 )", 0) \
-    DECLARE(Bool, http_write_exception_in_output_format, true, R"(
+    DECLARE(Bool, http_write_exception_in_output_format, false, R"(
 Write exception in output format to produce valid output. Works with JSON and XML formats.
 )", 0) \
     DECLARE(UInt64, http_response_buffer_size, 0, R"(
@@ -1858,14 +2213,14 @@ Sets the type of [JOIN](../../sql-reference/statements/select/join.md) behaviour
 Possible values:
 
 - 0 — The empty cells are filled with the default value of the corresponding field type.
-- 1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable), and empty cells are filled with [NULL](../../sql-reference/syntax.md).
+- 1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](/sql-reference/data-types/nullable), and empty cells are filled with [NULL](/sql-reference/syntax).
 )", IMPORTANT) \
     \
     DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, R"(
 The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.
 )", 0) \
     DECLARE(JoinStrictness, join_default_strictness, JoinStrictness::All, R"(
-Sets default strictness for [JOIN clauses](../../sql-reference/statements/select/join.md/#select-join).
+Sets default strictness for [JOIN clauses](/sql-reference/statements/select/join).
 
 Possible values:
 
@@ -1898,11 +2253,34 @@ Possible values:
 
 See also:
 
-- [JOIN strictness](../../sql-reference/statements/select/join.md/#join-settings)
+- [JOIN strictness](/sql-reference/statements/select/join#settings)
 )", IMPORTANT) \
     DECLARE(Bool, single_join_prefer_left_table, true, R"(
 For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
+    \
+DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
+    Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
+    - 'auto': Let the planner decide which table to use as the build table.
+    - 'false': Never swap tables (the right table is the build table).
+    - 'true': Always swap tables (the left table is the build table).
+)", 0) \
+DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
+    Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
+    Value is the maximum number of tables to optimize.
+)", 0) \
+    \
+    DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
+Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
+ )", 0) \
+    \
+    DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
+Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
+)", 0) \
+    \
+    DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(
+Maximum length of step description in EXPLAIN PLAN.
+)", 0) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
 This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
@@ -1974,7 +2352,7 @@ Minimum free disk space ratio to perform an insert.
 )", 0) \
     \
     DECLARE(Bool, final, false, R"(
-Automatically applies [FINAL](../../sql-reference/statements/select/from.md#final-modifier) modifier to all tables in a query, to tables where [FINAL](../../sql-reference/statements/select/from.md#final-modifier) is applicable, including joined tables and tables in sub-queries, and
+Automatically applies [FINAL](../../sql-reference/statements/select/from.md/#final-modifier) modifier to all tables in a query, to tables where [FINAL](../../sql-reference/statements/select/from.md/#final-modifier) is applicable, including joined tables and tables in sub-queries, and
 distributed tables.
 
 Possible values:
@@ -2098,9 +2476,9 @@ Skip URLs for globs with HTTP_NOT_FOUND error
 The `http_make_head_request` setting allows the execution of a `HEAD` request while reading data from HTTP to retrieve information about the file to be read, such as its size. Since it's enabled by default, it may be desirable to disable this setting in cases where the server does not support `HEAD` requests.
 )", 0) \
     DECLARE(Bool, optimize_throw_if_noop, false, R"(
-Enables or disables throwing an exception if an [OPTIMIZE](../../sql-reference/statements/optimize.md) query didn’t perform a merge.
+Enables or disables throwing an exception if an [OPTIMIZE](../../sql-reference/statements/optimize.md) query didn't perform a merge.
 
-By default, `OPTIMIZE` returns successfully even if it didn’t do anything. This setting lets you differentiate these situations and get the reason in an exception message.
+By default, `OPTIMIZE` returns successfully even if it didn't do anything. This setting lets you differentiate these situations and get the reason in an exception message.
 
 Possible values:
 
@@ -2131,9 +2509,6 @@ If it is set to true, then a user is allowed to executed distributed DDL queries
     DECLARE(Bool, allow_suspicious_codecs, false, R"(
 If it is set to true, allow to specify meaningless compression codecs.
 )", 0) \
-    DECLARE(Bool, enable_zstd_qat_codec, false, R"(
-If turned on, the ZSTD_QAT codec may be used to compress columns.
-)", 0) \
     DECLARE(UInt64, query_profiler_real_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
 Sets the period for a real clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Real clock timer counts wall-clock time.
 
@@ -2148,11 +2523,9 @@ Possible values:
 
 - 0 for turning off the timer.
 
-**Temporarily disabled in ClickHouse Cloud.**
-
 See also:
 
-- System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
+- System table [trace_log](/operations/system-tables/trace_log)
 )", 0) \
     DECLARE(UInt64, query_profiler_cpu_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
 Sets the period for a CPU clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). This timer counts only CPU time.
@@ -2168,11 +2541,9 @@ Possible values:
 
 - 0 for turning off the timer.
 
-**Temporarily disabled in ClickHouse Cloud.**
-
 See also:
 
-- System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
+- System table [trace_log](/operations/system-tables/trace_log)
 )", 0) \
     DECLARE(Bool, metrics_perf_events_enabled, false, R"(
 If enabled, some of the perf events will be measured throughout queries' execution.
@@ -2192,8 +2563,11 @@ Possible values:
     DECLARE(Bool, opentelemetry_trace_processors, false, R"(
 Collect OpenTelemetry spans for processors.
 )", 0) \
+    DECLARE(Bool, opentelemetry_trace_cpu_scheduling, false, R"(
+Collect OpenTelemetry spans for workload preemptive CPU scheduling.
+)", 0) \
     DECLARE(Bool, prefer_column_name_to_alias, false, R"(
-Enables or disables using the original column names instead of aliases in query expressions and clauses. It especially matters when alias is the same as the column name, see [Expression Aliases](../../sql-reference/syntax.md/#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
+Enables or disables using the original column names instead of aliases in query expressions and clauses. It especially matters when alias is the same as the column name, see [Expression Aliases](/sql-reference/syntax#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
 
 Possible values:
 
@@ -2234,6 +2608,48 @@ Result:
 ```
 )", 0) \
     \
+    DECLARE(Bool, skip_redundant_aliases_in_udf, false, R"(
+Redundant aliases are not used (substituted) in user-defined functions in order to simplify it's usage.
+
+Possible values:
+
+- 1 — The aliases are skipped (substituted) in UDFs.
+- 0 — The aliases are not skipped (substituted) in UDFs.
+
+**Example**
+
+The difference between enabled and disabled:
+
+Query:
+
+```sql
+SET skip_redundant_aliases_in_udf = 0;
+CREATE FUNCTION IF NOT EXISTS test_03274 AS ( x ) -> ((x + 1 as y, y + 2));
+
+EXPLAIN SYNTAX SELECT test_03274(4 + 2);
+```
+
+Result:
+
+```text
+SELECT ((4 + 2) + 1 AS y, y + 2)
+```
+
+Query:
+
+```sql
+SET skip_redundant_aliases_in_udf = 1;
+CREATE FUNCTION IF NOT EXISTS test_03274 AS ( x ) -> ((x + 1 as y, y + 2));
+
+EXPLAIN SYNTAX SELECT test_03274(4 + 2);
+```
+
+Result:
+
+```text
+SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
+```
+)", 0) \
     DECLARE(Bool, prefer_global_in_and_join, false, R"(
 Enables the replacement of `IN`/`JOIN` operators with `GLOBAL IN`/`GLOBAL JOIN`.
 
@@ -2252,7 +2668,7 @@ Another use case of `prefer_global_in_and_join` is accessing tables created by 
 
 **See also:**
 
-- [Distributed subqueries](../../sql-reference/operators/in.md/#select-distributed-subqueries) for more information on how to use `GLOBAL IN`/`GLOBAL JOIN`
+- [Distributed subqueries](/sql-reference/operators/in#distributed-subqueries) for more information on how to use `GLOBAL IN`/`GLOBAL JOIN`
 )", 0) \
     DECLARE(Bool, enable_vertical_final, true, R"(
 If enable, remove duplicated rows during FINAL by marking rows as deleted and filtering them later instead of merging rows
@@ -2267,49 +2683,149 @@ If enable, remove duplicated rows during FINAL by marking rows as deleted and fi
       */ \
     \
     DECLARE(UInt64, max_rows_to_read, 0, R"(
-Limit on read rows from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.
+The maximum number of rows that can be read from a table when running a query.
+The restriction is checked for each processed chunk of data, applied only to the
+deepest table expression and when reading from a remote server, checked only on
+the remote server.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_read, 0, R"(
-Limit on read bytes (after decompression) from the most 'deep' sources. That is, only in the deepest subquery. When reading from a remote server, it is only checked on a remote server.
+The maximum number of bytes (of uncompressed data) that can be read from a table when running a query.
+The restriction is checked for each processed chunk of data, applied only to the
+deepest table expression and when reading from a remote server, checked only on
+the remote server.
 )", 0) \
     DECLARE(OverflowMode, read_overflow_mode, OverflowMode::THROW, R"(
 What to do when the limit is exceeded.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_read_leaf, 0, R"(
-Limit on read rows on the leaf nodes for distributed queries. Limit is applied for local reads only, excluding the final merge stage on the root node. Note, the setting is unstable with prefer_localhost_replica=1.
+The maximum number of rows that can be read from a local table on a leaf node when
+running a distributed query. While distributed queries can issue multiple sub-queries
+to each shard (leaf) - this limit will be checked only on the read stage on the
+leaf nodes and ignored on the merging of results stage on the root node.
+
+For example, a cluster consists of 2 shards and each shard contains a table with
+100 rows. The distributed query which is supposed to read all the data from both
+tables with setting `max_rows_to_read=150` will fail, as in total there will be
+200 rows. A query with `max_rows_to_read_leaf=150` will succeed, since leaf nodes
+will read at max 100 rows.
+
+The restriction is checked for each processed chunk of data.
+
+:::note
+This setting is unstable with `prefer_localhost_replica=1`.
+:::
 )", 0) \
     DECLARE(UInt64, max_bytes_to_read_leaf, 0, R"(
-Limit on read bytes (after decompression) on the leaf nodes for distributed queries. Limit is applied for local reads only, excluding the final merge stage on the root node. Note, the setting is unstable with prefer_localhost_replica=1.
+The maximum number of bytes (of uncompressed data) that can be read from a local
+table on a leaf node when running a distributed query. While distributed queries
+can issue a multiple sub-queries to each shard (leaf) - this limit will
+be checked only on the read stage on the leaf nodes and will be ignored on the
+merging of results stage on the root node.
+
+For example, a cluster consists of 2 shards and each shard contains a table with
+100 bytes of data. A distributed query which is supposed to read all the data
+from both tables with setting `max_bytes_to_read=150` will fail as in total it
+will be 200 bytes. A query with `max_bytes_to_read_leaf=150` will succeed since
+leaf nodes will read 100 bytes at max.
+
+The restriction is checked for each processed chunk of data.
+
+:::note
+This setting is unstable with `prefer_localhost_replica=1`.
+:::
 )", 0) \
     DECLARE(OverflowMode, read_overflow_mode_leaf, OverflowMode::THROW, R"(
-What to do when the leaf limit is exceeded.
+Sets what happens when the volume of data read exceeds one of the leaf limits.
+
+Possible options:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_group_by, 0, R"(
-If aggregation during GROUP BY is generating more than the specified number of rows (unique GROUP BY keys), the behavior will be determined by the 'group_by_overflow_mode' which by default is - throw an exception, but can be also switched to an approximate GROUP BY mode.
+The maximum number of unique keys received from aggregation. This setting lets
+you limit memory consumption when aggregating.
+
+If aggregation during GROUP BY is generating more than the specified number of
+rows (unique GROUP BY keys), the behavior will be determined by the
+'group_by_overflow_mode' which by default is `throw`, but can be also switched
+to an approximate GROUP BY mode.
 )", 0) \
     DECLARE(OverflowModeGroupBy, group_by_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens when the number of unique keys for aggregation exceeds the limit:
+- `throw`: throw an exception
+- `break`: stop executing the query and return the partial result
+- `any`: continue aggregation for the keys that got into the set, but do not add new keys to the set.
+
+Using the 'any' value lets you run an approximation of GROUP BY. The quality of
+this approximation depends on the statistical nature of the data.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
-If memory usage during GROUP BY operation is exceeding this threshold in bytes, activate the 'external aggregation' mode (spill data to disk). Recommended value is half of the available system memory.
+Cloud default value: half the memory amount per replica.
+
+Enables or disables execution of `GROUP BY` clauses in external memory.
+(See [GROUP BY in external memory](/sql-reference/statements/select/group-by#group-by-in-external-memory))
+
+Possible values:
+
+- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](/sql-reference/statements/select/group-by) operation.
+- `0` — `GROUP BY` in external memory disabled.
+
+:::note
+If memory usage during GROUP BY operations is exceeding this threshold in bytes,
+activate the 'external aggregation' mode (spill data to disk).
+
+The recommended value is half of the available system memory.
+:::
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_group_by, 0.5, R"(
+The ratio of available memory that is allowed for `GROUP BY`. Once reached,
+external memory is used for aggregation.
+
+For example, if set to `0.6`, `GROUP BY` will allow using 60% of the available memory
+(to server/user/merges) at the beginning of the execution, after that, it will
+start using external aggregation.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_sort, 0, R"(
-If more than the specified amount of records have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception
+The maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
+If more than the specified amount of records have to be processed for the ORDER BY operation,
+the behavior will be determined by the `sort_overflow_mode` which by default is set to `throw`.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_sort, 0, R"(
-If more than the specified amount of (uncompressed) bytes have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception
+The maximum number of bytes before sorting. If more than the specified amount of
+uncompressed bytes have to be processed for ORDER BY operation, the behavior will
+be determined by the `sort_overflow_mode` which by default is set to `throw`.
 )", 0) \
     DECLARE(OverflowMode, sort_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens if the number of rows received before sorting exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception.
+- `break`: stop executing the query and return the partial result.
 )", 0) \
     DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
 Prefer maximum block bytes for external sort, reduce the memory usage during merging.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
-If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of the available system memory.
+Cloud default value: half the memory amount per replica.
+
+Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
+If memory usage during ORDER BY operation exceeds this threshold in bytes, the 'external sorting' mode (spill data to disk) is activated.
+
+Possible values:
+
+- Maximum volume of RAM (in bytes) that can be used by the single [ORDER BY](../../sql-reference/statements/select/order-by.md) operation.
+  The recommended value is half of available system memory
+- `0` — `ORDER BY` in external memory disabled.
+)", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
+The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.
+
+For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
+
+Note, that `max_bytes_before_external_sort` is still respected, spilling to disk will be done only if the sorting block is bigger then `max_bytes_before_external_sort`.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
 In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
@@ -2319,73 +2835,255 @@ If memory usage after remerge does not reduced by this ratio, remerge will be di
 )", 0) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
-Limit on result size in rows. The query will stop after processing a block of data if the threshold is met, but it will not cut the last block of the result, therefore the result size can be larger than the threshold.
+Cloud default value: `0`.
+
+Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
+No limit is applied when the value is `0`.
+
+The query will stop after processing a block of data if the threshold is met, but
+it will not cut the last block of the result, therefore the result size can be
+larger than the threshold.
 )", 0) \
     DECLARE(UInt64, max_result_bytes, 0, R"(
-Limit on result size in bytes (uncompressed).  The query will stop after processing a block of data if the threshold is met, but it will not cut the last block of the result, therefore the result size can be larger than the threshold. Caveats: the result size in memory is taken into account for this threshold. Even if the result size is small, it can reference larger data structures in memory, representing dictionaries of LowCardinality columns, and Arenas of AggregateFunction columns, so the threshold can be exceeded despite the small result size. The setting is fairly low level and should be used with caution.
+Limits the result size in bytes (uncompressed). The query will stop after processing a block of data if the threshold is met,
+but it will not cut the last block of the result, therefore the result size can be larger than the threshold.
+
+**Caveats**
+
+The result size in memory is taken into account for this threshold.
+Even if the result size is small, it can reference larger data structures in memory,
+representing dictionaries of LowCardinality columns, and Arenas of AggregateFunction columns,
+so the threshold can be exceeded despite the small result size.
+
+:::warning
+The setting is fairly low level and should be used with caution
+:::
 )", 0) \
     DECLARE(OverflowMode, result_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Cloud default value: `throw`
+
+Sets what to do if the volume of the result exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+           source data ran out.
+
+Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the
+block level. This means that amount of returned rows is greater than
+[`max_result_rows`](/operations/settings/settings#max_result_rows), multiple of [`max_block_size`](/operations/settings/settings#max_block_size)
+and depends on [`max_threads`](/operations/settings/settings#max_threads).
+
+**Example**
+
+```sql title="Query"
+SET max_threads = 3, max_block_size = 3333;
+SET max_result_rows = 3334, result_overflow_mode = 'break';
+
+SELECT *
+FROM numbers_mt(100000)
+FORMAT Null;
+```
+
+```text title="Result"
+6666 rows in set. ...
+```
 )", 0) \
     \
     /* TODO: Check also when merging and finalizing aggregate functions. */ \
     DECLARE(Seconds, max_execution_time, 0, R"(
-If query runtime exceeds the specified number of seconds, the behavior will be determined by the 'timeout_overflow_mode', which by default is - throw an exception. Note that the timeout is checked and the query can stop only in designated places during data processing. It currently cannot stop during merging of aggregation states or during query analysis, and the actual run time will be higher than the value of this setting.
+The maximum query execution time in seconds.
+
+The `max_execution_time` parameter can be a bit tricky to understand.
+It operates based on interpolation relative to the current query execution speed
+(this behaviour is controlled by [`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)).
+
+ClickHouse will interrupt a query if the projected execution time exceeds the
+specified `max_execution_time`. By default, the `timeout_before_checking_execution_speed`
+is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse
+will begin estimating the total execution time. If, for example, `max_execution_time`
+is set to 3600 seconds (1 hour), ClickHouse will terminate the query if the estimated
+time exceeds this 3600-second limit. If you set `timeout_before_checking_execution_speed`
+to 0, ClickHouse will use the clock time as the basis for `max_execution_time`.
+
+If query runtime exceeds the specified number of seconds, the behavior will be
+determined by the 'timeout_overflow_mode', which by default is set to `throw`.
+
+:::note
+The timeout is checked and the query can stop only in designated places during data processing.
+It currently cannot stop during merging of aggregation states or during query analysis,
+and the actual run time will be higher than the value of this setting.
+:::
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what to do if the query is run longer than the `max_execution_time` or the
+estimated running time is longer than `max_estimated_execution_time`.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     DECLARE(Seconds, max_execution_time_leaf, 0, R"(
-Similar semantic to max_execution_time but only apply on leaf node for distributed queries, the time out behavior will be determined by 'timeout_overflow_mode_leaf' which by default is - throw an exception
+Similar semantically to [`max_execution_time`](#max_execution_time) but only
+applied on leaf nodes for distributed or remote queries.
+
+For example, if we want to limit the execution time on a leaf node to `10s` but
+have no limit on the initial node, instead of having `max_execution_time` in the
+nested subquery settings:
+
+```sql
+SELECT count()
+FROM cluster(cluster, view(SELECT * FROM t SETTINGS max_execution_time = 10));
+```
+
+We can use `max_execution_time_leaf` as the query settings:
+
+```sql
+SELECT count()
+FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
+```
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode_leaf, OverflowMode::THROW, R"(
-What to do when the leaf limit is exceeded.
+Sets what happens when the query in leaf node run longer than `max_execution_time_leaf`.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, min_execution_speed, 0, R"(
-Minimum number of execution rows per second.
+Minimal execution speed in rows per second. Checked on every data block when
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is lower, an exception is thrown.
 )", 0) \
     DECLARE(UInt64, max_execution_speed, 0, R"(
-Maximum number of execution rows per second.
+The maximum number of execution rows per second. Checked on every data block when
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is high, the execution speed will be reduced.
 )", 0) \
     DECLARE(UInt64, min_execution_speed_bytes, 0, R"(
-Minimum number of execution bytes per second.
+The minimum number of execution bytes per second. Checked on every data block when
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is lower, an exception is thrown.
 )", 0) \
     DECLARE(UInt64, max_execution_speed_bytes, 0, R"(
-Maximum number of execution bytes per second.
+The maximum number of execution bytes per second. Checked on every data block when
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is high, the execution speed will be reduced.
 )", 0) \
     DECLARE(Seconds, timeout_before_checking_execution_speed, 10, R"(
-Check that the speed is not too low after the specified time has elapsed.
+Checks that execution speed is not too slow (no less than `min_execution_speed`),
+after the specified time in seconds has expired.
 )", 0) \
     DECLARE(Seconds, max_estimated_execution_time, 0, R"(
-Maximum query estimate execution time in seconds.
+Maximum query estimate execution time in seconds. Checked on every data block
+when [`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires.
 )", 0) \
     \
     DECLARE(UInt64, max_columns_to_read, 0, R"(
-If a query requires reading more than specified number of columns, exception is thrown. Zero value means unlimited. This setting is useful to prevent too complex queries.
+The maximum number of columns that can be read from a table in a single query.
+If a query requires reading more than the specified number of columns, an exception
+is thrown.
+
+:::tip
+This setting is useful for preventing overly complex queries.
+:::
+
+`0` value means unlimited.
 )", 0) \
     DECLARE(UInt64, max_temporary_columns, 0, R"(
-If a query generates more than the specified number of temporary columns in memory as a result of intermediate calculation, the exception is thrown. Zero value means unlimited. This setting is useful to prevent too complex queries.
+The maximum number of temporary columns that must be kept in RAM simultaneously
+when running a query, including constant columns. If a query generates more than
+the specified number of temporary columns in memory as a result of intermediate
+calculation, then an exception is thrown.
+
+:::tip
+This setting is useful for preventing overly complex queries.
+:::
+
+`0` value means unlimited.
 )", 0) \
     DECLARE(UInt64, max_temporary_non_const_columns, 0, R"(
-Similar to the 'max_temporary_columns' setting but applies only to non-constant columns. This makes sense because constant columns are cheap and it is reasonable to allow more of them.
+Like `max_temporary_columns`, the maximum number of temporary columns that must
+be kept in RAM simultaneously when running a query, but without counting constant
+columns.
+
+:::note
+Constant columns are formed fairly often when running a query, but they require
+approximately zero computing resources.
+:::
 )", 0) \
     \
     DECLARE(UInt64, max_sessions_for_user, 0, R"(
-Maximum number of simultaneous sessions for a user.
+Maximum number of simultaneous sessions per authenticated user to the ClickHouse server.
+
+Example:
+
+```xml
+<profiles>
+    <single_session_profile>
+        <max_sessions_for_user>1</max_sessions_for_user>
+    </single_session_profile>
+    <two_sessions_profile>
+        <max_sessions_for_user>2</max_sessions_for_user>
+    </two_sessions_profile>
+    <unlimited_sessions_profile>
+        <max_sessions_for_user>0</max_sessions_for_user>
+    </unlimited_sessions_profile>
+</profiles>
+<users>
+    <!-- User Alice can connect to a ClickHouse server no more than once at a time. -->
+    <Alice>
+        <profile>single_session_user</profile>
+    </Alice>
+    <!-- User Bob can use 2 simultaneous sessions. -->
+    <Bob>
+        <profile>two_sessions_profile</profile>
+    </Bob>
+    <!-- User Charles can use arbitrarily many of simultaneous sessions. -->
+    <Charles>
+        <profile>unlimited_sessions_profile</profile>
+    </Charles>
+</users>
+```
+
+Possible values:
+- Positive integer
+- `0` - infinite count of simultaneous sessions (default)
 )", 0) \
     \
     DECLARE(UInt64, max_subquery_depth, 100, R"(
-If a query has more than the specified number of nested subqueries, throw an exception. This allows you to have a sanity check to protect the users of your cluster from going insane with their queries.
+If a query has more than the specified number of nested subqueries, throws an
+exception.
+
+:::tip
+This allows you to have a sanity check to protect against the users of your
+cluster from writing overly complex queries.
+:::
 )", 0) \
     DECLARE(UInt64, max_analyze_depth, 5000, R"(
 Maximum number of analyses performed by interpreter.
 )", 0) \
     DECLARE(UInt64, max_ast_depth, 1000, R"(
-Maximum depth of query syntax tree. Checked after parsing.
+The maximum nesting depth of a query syntactic tree. If exceeded, an exception is thrown.
+
+:::note
+At this time, it isn't checked during parsing, but only after parsing the query.
+This means that a syntactic tree that is too deep can be created during parsing,
+but the query will fail.
+:::
 )", 0) \
     DECLARE(UInt64, max_ast_elements, 50000, R"(
-Maximum size of query syntax tree in number of nodes. Checked after parsing.
+The maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
+
+:::note
+At this time, it isn't checked during parsing, but only after parsing the query.
+This means that a syntactic tree that is too deep can be created during parsing,
+but the query will fail.
+:::
 )", 0) \
     DECLARE(UInt64, max_expanded_ast_elements, 500000, R"(
 Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.
@@ -2396,23 +3094,76 @@ Maximum size of query syntax tree in number of nodes after expansion of aliases 
 )", 0) \
     \
     DECLARE(UInt64, max_rows_in_set, 0, R"(
-Maximum size of the set (in number of elements) resulting from the execution of the IN section.
+The maximum number of rows for a data set in the IN clause created from a subquery.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_set, 0, R"(
-Maximum size of the set (in bytes in memory) resulting from the execution of the IN section.
+The maximum number of bytes (of uncompressed data) used by a set in the IN clause
+created from a subquery.
 )", 0) \
     DECLARE(OverflowMode, set_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens when the amount of data exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     \
+    DECLARE(Bool, exact_rows_before_limit, false, R"(
+When enabled, ClickHouse will provide exact value for rows_before_limit_at_least statistic, but with the cost that the data before limit will have to be read completely
+)", 0) \
+    DECLARE(Bool, rows_before_aggregation, false, R"(
+When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
+)", 0) \
     DECLARE(UInt64, max_rows_in_join, 0, R"(
-Maximum size of the hash table for JOIN (in number of rows).
+Limits the number of rows in the hash table that is used when joining tables.
+
+This settings applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
+operations and the [Join](/engines/table-engines/special/join) table engine.
+
+If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use the
+[`join_overflow_mode`](/operations/settings/settings#join_overflow_mode) setting to choose the action.
+
+Possible values:
+
+- Positive integer.
+- `0` — Unlimited number of rows.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, R"(
-Maximum size of the hash table for JOIN (in number of bytes in memory).
+The maximum size in number of bytes of the hash table used when joining tables.
+
+This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
+operations and the [Join table engine](/engines/table-engines/special/join).
+
+If the query contains joins, ClickHouse checks this setting for every intermediate result.
+
+ClickHouse can proceed with different actions when the limit is reached. Use
+the [join_overflow_mode](/operations/settings/settings#join_overflow_mode) settings to choose the action.
+
+Possible values:
+
+- Positive integer.
+- 0 — Memory control is disabled.
 )", 0) \
     DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Defines what action ClickHouse performs when any of the following join limits is reached:
+
+- [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
+- [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
+
+Possible values:
+
+- `THROW` — ClickHouse throws an exception and breaks operation.
+- `BREAK` — ClickHouse breaks operation and does not throw an exception.
+
+Default value: `THROW`.
+
+**See Also**
+
+- [JOIN clause](/sql-reference/statements/select/join)
+- [Join table engine](/engines/table-engines/special/join)
 )", 0) \
     DECLARE(Bool, join_any_take_last_row, false, R"(
 Changes the behaviour of join operations with `ANY` strictness.
@@ -2428,26 +3179,22 @@ Possible values:
 
 See also:
 
-- [JOIN clause](../../sql-reference/statements/select/join.md/#select-join)
+- [JOIN clause](/sql-reference/statements/select/join)
 - [Join table engine](../../engines/table-engines/special/join.md)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, JoinAlgorithm::DEFAULT, R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", R"(
 Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
 Possible values:
 
-- default
-
- This is the equivalent of `hash` or `direct`, if possible (same as `direct,hash`)
-
 - grace_hash
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don’t belong to the current bucket are flushed and reassigned.
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -2455,11 +3202,13 @@ Possible values:
 
  [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
 
+ When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+
 - parallel_hash
 
  A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
 
- When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+ When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
 - partial_merge
 
@@ -2471,9 +3220,12 @@ Possible values:
 
 - direct
 
- This algorithm can be applied when the storage for the right table supports key-value requests.
+ The `direct` (also known as nested loop) algorithm performs a lookup in the right table using rows from the left table as keys.
+ It's supported by special storages such as [Dictionary](/engines/table-engines/special/dictionary), [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md), and [MergeTree](/engines/table-engines/mergetree-family/mergetree) tables.
 
- The `direct` algorithm performs a lookup in the right table using rows from the left table as keys. It's supported only by special storage such as [Dictionary](../../engines/table-engines/special/dictionary.md/#dictionary) or [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md) and only the `LEFT` and `INNER` JOINs.
+ For MergeTree tables, the algorithm pushes join key filters directly to the storage layer. This can be more efficient when the key can use the table's primary key index for lookups, otherwise it performs full scans of the right table for each left table block.
+
+ Supports `INNER` and `LEFT` joins and only single-column equality join keys without other conditions.
 
 - auto
 
@@ -2481,11 +3233,20 @@ Possible values:
 
 - full_sorting_merge
 
- [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting joined tables before joining.
+ [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
 
 - prefer_partial_merge
 
  ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
+
+- default (deprecated)
+
+ Legacy value, please don't use anymore.
+ Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
+
+)", 0) \
+    DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
+Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
 )", 0) \
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
 Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
@@ -2494,7 +3255,7 @@ Minimal count of rows to compress block in CROSS JOIN. Zero value means - disabl
 Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 )", 0) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
-Maximum size of right-side table if limit is required but max_bytes_in_join is not set.
+Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
 )", 0) \
     DECLARE(UInt64, partial_merge_join_left_table_buffer_bytes, 0, R"(
 If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.
@@ -2543,28 +3304,64 @@ Possible values:
 - NONE — No compression is applied.
 )", 0) \
     \
+    DECLARE(NonZeroUInt64, temporary_files_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption.", 0) \
     DECLARE(UInt64, max_rows_to_transfer, 0, R"(
-Maximum size (in rows) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.
+Maximum size (in rows) that can be passed to a remote server or saved in a
+temporary table when the GLOBAL IN/JOIN section is executed.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_transfer, 0, R"(
-Maximum size (in uncompressed bytes) of the transmitted external table obtained when the GLOBAL IN/JOIN section is executed.
+The maximum number of bytes (uncompressed data) that can be passed to a remote
+server or saved in a temporary table when the GLOBAL IN/JOIN section is executed.
 )", 0) \
     DECLARE(OverflowMode, transfer_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens when the amount of data exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_in_distinct, 0, R"(
-Maximum number of elements during execution of DISTINCT.
+The maximum number of different rows when using DISTINCT.
 )", 0) \
     DECLARE(UInt64, max_bytes_in_distinct, 0, R"(
-Maximum total size of the state (in uncompressed bytes) in memory for the execution of DISTINCT.
+The maximum number of bytes of the state (in uncompressed bytes) in memory, which
+is used by a hash table when using DISTINCT.
 )", 0) \
     DECLARE(OverflowMode, distinct_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what happens when the amount of data exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, max_memory_usage, 0, R"(
-Maximum memory usage for processing of single query. Zero means unlimited.
+Cloud default value: depends on the amount of RAM on the replica.
+
+The maximum amount of RAM to use for running a query on a single server.
+A value of `0` means unlimited.
+
+This setting does not consider the volume of available memory or the total volume
+of memory on the machine. The restriction applies to a single query within a
+single server.
+
+You can use `SHOW PROCESSLIST` to see the current memory consumption for each query.
+Peak memory consumption is tracked for each query and written to the log.
+
+Memory usage is not fully tracked for states of the following aggregate functions
+from `String` and `Array` arguments:
+- `min`
+- `max`
+- `any`
+- `anyLast`
+- `argMin`
+- `argMax`
+
+Memory consumption is also restricted by the parameters [`max_memory_usage_for_user`](/operations/settings/settings#max_memory_usage_for_user)
+and [`max_server_memory_usage`](/operations/server-configuration-parameters/settings#max_server_memory_usage).
 )", 0) \
     DECLARE(UInt64, memory_overcommit_ratio_denominator, 1_GiB, R"(
 It represents the soft memory limit when the hard limit is reached on the global level.
@@ -2573,7 +3370,23 @@ Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 )", 0) \
     DECLARE(UInt64, max_memory_usage_for_user, 0, R"(
-Maximum memory usage for processing all concurrently running queries for the user. Zero means unlimited.
+The maximum amount of RAM to use for running a user's queries on a single server. Zero means unlimited.
+
+By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
+
+Also see the description of [`max_memory_usage`](/operations/settings/settings#max_memory_usage).
+
+For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
+
+```sql
+ALTER USER clickhouse_read SETTINGS max_memory_usage_for_user = 1000;
+```
+
+You can verify it worked by logging out of your client, logging back in, then use the `getSetting` function:
+
+```sql
+SELECT getSetting('max_memory_usage_for_user');
+```
 )", 0) \
     DECLARE(UInt64, memory_overcommit_ratio_denominator_for_user, 1_GiB, R"(
 It represents the soft memory limit when the hard limit is reached on the user level.
@@ -2584,8 +3397,11 @@ Read more about [memory overcommit](memory-overcommit.md).
     DECLARE(UInt64, max_untracked_memory, (4 * 1024 * 1024), R"(
 Small allocations and deallocations are grouped in thread local variable and tracked or profiled only when an amount (in absolute value) becomes larger than the specified value. If the value is higher than 'memory_profiler_step' it will be effectively lowered to 'memory_profiler_step'.
 )", 0) \
+    DECLARE(UInt64, max_reverse_dictionary_lookup_cache_size_bytes, (100 * 1024 * 1024), R"(
+Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query. When the limit is reached, entries are evicted using LRU. Set to 0 to disable caching.
+)", 0) \
     DECLARE(UInt64, memory_profiler_step, (4 * 1024 * 1024), R"(
-Sets the step of memory profiler. Whenever query memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stacktrace and will write it into [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log).
+Sets the step of memory profiler. Whenever query memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stacktrace and will write it into [trace_log](/operations/system-tables/trace_log).
 
 Possible values:
 
@@ -2603,12 +3419,20 @@ Collect random allocations of size greater or equal than the specified value wit
 Collect random allocations of size less or equal than the specified value with probability equal to `memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold work as expected.
 )", 0) \
     DECLARE(Bool, trace_profile_events, false, R"(
-Enables or disables collecting stacktraces on each update of profile events along with the name of profile event and the value of increment and sending them into [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log).
+Enables or disables collecting stacktraces on each update of profile events along with the name of profile event and the value of increment and sending them into [trace_log](/operations/system-tables/trace_log).
 
 Possible values:
 
 - 1 — Tracing of profile events enabled.
 - 0 — Tracing of profile events disabled.
+)", 0) \
+    DECLARE(String, trace_profile_events_list, "", R"(
+When the setting `trace_profile_events` is enabled, limit the traced events to the specified list of comma-separated names.
+If the `trace_profile_events_list` is an empty string (by default), trace all profile events.
+
+Example value: 'DiskS3ReadMicroseconds,DiskS3ReadRequestsCount,SelectQueryTimeMicroseconds,ReadBufferFromS3Bytes'
+
+Using this setting allows more precise collection of data for a large number of queries, because otherwise the vast amount of events can overflow the internal system log queue and some portion of them will be dropped.
 )", 0) \
     \
     DECLARE(UInt64, memory_usage_overcommit_max_wait_microseconds, 5'000'000, R"(
@@ -2651,14 +3475,27 @@ Possible values:
 )", 0) \
     \
     DECLARE(UInt64, max_temporary_data_on_disk_size_for_user, 0, R"(
-The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running user queries. Zero means unlimited.
+The maximum amount of data consumed by temporary files on disk in bytes for all
+concurrently running user queries.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
 )", 0)\
     DECLARE(UInt64, max_temporary_data_on_disk_size_for_query, 0, R"(
-The maximum amount of data consumed by temporary files on disk in bytes for all concurrently running queries. Zero means unlimited.
+The maximum amount of data consumed by temporary files on disk in bytes for all
+concurrently running queries.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
 )", 0)\
     \
-    DECLARE(UInt64, backup_restore_keeper_max_retries, 20, R"(
-Max retries for keeper operations during backup or restore
+    DECLARE(UInt64, backup_restore_keeper_max_retries, 1000, R"(
+Max retries for [Zoo]Keeper operations in the middle of a BACKUP or RESTORE operation.
+Should be big enough so the whole operation won't fail because of a temporary [Zoo]Keeper failure.
 )", 0) \
     DECLARE(UInt64, backup_restore_keeper_retry_initial_backoff_ms, 100, R"(
 Initial backoff timeout for [Zoo]Keeper operations during backup or restore
@@ -2666,26 +3503,52 @@ Initial backoff timeout for [Zoo]Keeper operations during backup or restore
     DECLARE(UInt64, backup_restore_keeper_retry_max_backoff_ms, 5000, R"(
 Max backoff timeout for [Zoo]Keeper operations during backup or restore
 )", 0) \
+    DECLARE(UInt64, backup_restore_failure_after_host_disconnected_for_seconds, 3600, R"(
+If a host during a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation doesn't recreate its ephemeral 'alive' node in ZooKeeper for this amount of time then the whole backup or restore is considered as failed.
+This value should be bigger than any reasonable time for a host to reconnect to ZooKeeper after a failure.
+Zero means unlimited.
+)", 0) \
+    DECLARE(UInt64, backup_restore_keeper_max_retries_while_initializing, 20, R"(
+Max retries for [Zoo]Keeper operations during the initialization of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
+)", 0) \
+    DECLARE(UInt64, backup_restore_keeper_max_retries_while_handling_error, 20, R"(
+Max retries for [Zoo]Keeper operations while handling an error of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
+)", 0) \
+    DECLARE(UInt64, backup_restore_finish_timeout_after_error_sec, 180, R"(
+How long the initiator should wait for other host to react to the 'error' node and stop their work on the current BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
+)", 0) \
+    DECLARE(UInt64, backup_restore_keeper_value_max_size, 1048576, R"(
+Maximum size of data of a [Zoo]Keeper's node during backup
+)", 0) \
+    DECLARE(UInt64, backup_restore_batch_size_for_keeper_multi, 1000, R"(
+Maximum size of batch for multi request to [Zoo]Keeper during backup or restore
+)", 0) \
+    DECLARE(UInt64, backup_restore_batch_size_for_keeper_multiread, 10000, R"(
+Maximum size of batch for multiread request to [Zoo]Keeper during backup or restore
+)", 0) \
     DECLARE(Float, backup_restore_keeper_fault_injection_probability, 0.0f, R"(
 Approximate probability of failure for a keeper request during backup or restore. Valid value is in interval [0.0f, 1.0f]
 )", 0) \
     DECLARE(UInt64, backup_restore_keeper_fault_injection_seed, 0, R"(
 0 - random seed, otherwise the setting value
 )", 0) \
-    DECLARE(UInt64, backup_restore_keeper_value_max_size, 1048576, R"(
-Maximum size of data of a [Zoo]Keeper's node during backup
-)", 0) \
-    DECLARE(UInt64, backup_restore_batch_size_for_keeper_multiread, 10000, R"(
-Maximum size of batch for multiread request to [Zoo]Keeper during backup or restore
-)", 0) \
-    DECLARE(UInt64, backup_restore_batch_size_for_keeper_multi, 1000, R"(
-Maximum size of batch for multi request to [Zoo]Keeper during backup or restore
-)", 0) \
     DECLARE(UInt64, backup_restore_s3_retry_attempts, 1000, R"(
 Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore.
 )", 0) \
+    DECLARE(UInt64, backup_restore_s3_retry_initial_backoff_ms, 25, R"(
+    Initial backoff delay in milliseconds before the first retry attempt during backup and restore. Each subsequent retry increases the delay exponentially, up to the maximum specified by `backup_restore_s3_retry_max_backoff_ms`
+)", 0) \
+    DECLARE(UInt64, backup_restore_s3_retry_max_backoff_ms, 5000, R"(
+    Maximum delay in milliseconds between retries during backup and restore operations.
+)", 0) \
+    DECLARE(Float, backup_restore_s3_retry_jitter_factor, .1f, R"(
+    Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy during backup and restore operations. The computed backoff delay is multiplied by a random factor in the range [1.0, 1.0 + jitter], up to the maximum `backup_restore_s3_retry_max_backoff_ms`. Must be in [0.0, 1.0] interval
+)", 0) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
+)", 0) \
+    DECLARE(Bool, restore_replicated_merge_tree_to_shared_merge_tree, false, R"(
+Replace table engine from Replicated*MergeTree -> Shared*MergeTree during RESTORE.
 )", 0) \
     \
     DECLARE(Bool, log_profile_events, true, R"(
@@ -2697,7 +3560,7 @@ Log query settings into the query_log and OpenTelemetry span log.
     DECLARE(Bool, log_query_threads, false, R"(
 Setting up query threads logging.
 
-Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#query_thread_log) server configuration parameter.
+Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log_queries) is true. Queries' threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) server configuration parameter.
 
 Possible values:
 
@@ -2706,18 +3569,18 @@ Possible values:
 
 **Example**
 
-``` text
+```text
 log_query_threads=1
 ```
 )", 0) \
     DECLARE(Bool, log_query_views, true, R"(
 Setting up query views logging.
 
-When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](../../operations/server-configuration-parameters/settings.md/#query_views_log) server configuration parameter.
+When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](/operations/server-configuration-parameters/settings#query_views_log) server configuration parameter.
 
 Example:
 
-``` text
+```text
 log_query_views=1
 ```
 )", 0) \
@@ -2734,7 +3597,7 @@ Possible values:
 
 Query:
 
-``` sql
+```sql
 SET log_comment = 'log_comment test', log_queries = 1;
 SELECT 1;
 SYSTEM FLUSH LOGS;
@@ -2743,7 +3606,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Result:
 
-``` text
+```text
 ┌─type────────┬─query─────┐
 │ QueryStart  │ SELECT 1; │
 │ QueryFinish │ SELECT 1; │
@@ -2753,12 +3616,24 @@ Result:
     DECLARE(Int64, query_metric_log_interval, -1, R"(
 The interval in milliseconds at which the [query_metric_log](../../operations/system-tables/query_metric_log.md) for individual queries is collected.
 
-If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](../../operations/server-configuration-parameters/settings.md#query_metric_log) or default to 1000 if not present.
+If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](/operations/server-configuration-parameters/settings#query_metric_log) or default to 1000 if not present.
 
 To disable the collection of a single query, set `query_metric_log_interval` to 0.
 
 Default value: -1
     )", 0) \
+    DECLARE(Bool, regexp_dict_allow_hyperscan, true, R"(
+Allow regexp_tree dictionary using Hyperscan library.
+)", 0) \
+    DECLARE(Bool, regexp_dict_flag_case_insensitive, false, R"(
+Use case-insensitive matching for a regexp_tree dictionary. Can be overridden in individual expressions with (?i) and (?-i).
+)", 0) \
+    DECLARE(Bool, regexp_dict_flag_dotall, false, R"(
+Allow '.' to match newline characters for a regexp_tree dictionary.
+)", 0) \
+    DECLARE(Bool, dictionary_use_async_executor, false, R"(
+Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
+)", 0) \
     DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
 Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \
@@ -2792,9 +3667,12 @@ Allow push predicate to final subquery.
     DECLARE(Bool, allow_push_predicate_when_subquery_contains_with, true, R"(
 Allows push predicate when subquery contains WITH clause
 )", 0) \
+    DECLARE(Bool, allow_push_predicate_ast_for_distributed_subqueries, true, R"(
+Allows push predicate on AST level for distributed subqueries with enabled anlyzer
+)", 0) \
     \
     DECLARE(UInt64, low_cardinality_max_dictionary_size, 8192, R"(
-Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can’t be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
+Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can't be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
 
 Possible values:
 
@@ -2841,7 +3719,7 @@ Limit on size of multipart/form-data content. This setting cannot be parsed from
 Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when a huge amount of wrong queries are executed. In normal cases, you should not disable this option.
 )", 0) \
     DECLARE(Bool, enable_job_stack_trace, false, R"(
-Output stack trace of a job creator when job results in exception
+Output stack trace of a job creator when job results in exception. Disabled by default to avoid performance overhead.
 )", 0) \
     DECLARE(Bool, allow_ddl, true, R"(
 If it is set to true, then a user is allowed to executed DDL queries.
@@ -2853,7 +3731,7 @@ Enables pushing to attached views concurrently instead of sequentially.
 Allow ARRAY JOIN with multiple arrays that have different sizes. When this settings is enabled, arrays will be resized to the longest one.
 )", 0) \
     DECLARE(Bool, optimize_read_in_order, true, R"(
-Enables [ORDER BY](../../sql-reference/statements/select/order-by.md/#optimize_read_in_order) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for reading data from [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+Enables [ORDER BY](/sql-reference/statements/select/order-by#optimization-of-data-reading) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for reading data from [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
 Possible values:
 
@@ -2862,13 +3740,16 @@ Possible values:
 
 **See Also**
 
-- [ORDER BY Clause](../../sql-reference/statements/select/order-by.md/#optimize_read_in_order)
+- [ORDER BY Clause](/sql-reference/statements/select/order-by#optimization-of-data-reading)
+)", 0) \
+    DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
+Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
 )", 0) \
     DECLARE(Bool, optimize_read_in_window_order, true, R"(
 Enable ORDER BY optimization in window clause for reading data in corresponding order in MergeTree tables.
 )", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
-Enables [GROUP BY](../../sql-reference/statements/select/group-by.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
 Possible values:
 
@@ -2877,7 +3758,7 @@ Possible values:
 
 **See Also**
 
-- [GROUP BY optimization](../../sql-reference/statements/select/group-by.md/#aggregation-in-order)
+- [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
@@ -2889,7 +3770,7 @@ Maximal size of block in bytes accumulated during aggregation in order of primar
 Minimal number of parts to read to run preliminary merge step during multithread reading in order of primary key.
 )", 0) \
     DECLARE(Bool, low_cardinality_allow_in_native_format, true, R"(
-Allows or restricts using the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type with the [Native](../../interfaces/formats.md/#native) format.
+Allows or restricts using the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type with the [Native](/interfaces/formats/Native) format.
 
 If usage of `LowCardinality` is restricted, ClickHouse server converts `LowCardinality`-columns to ordinary ones for `SELECT` queries, and convert ordinary columns to `LowCardinality`-columns for `INSERT` queries.
 
@@ -2903,7 +3784,7 @@ Possible values:
     DECLARE(Bool, cancel_http_readonly_queries_on_client_close, false, R"(
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
-Cloud default value: `1`.
+Cloud default value: `0`.
 )", 0) \
     DECLARE(Bool, external_table_functions_use_nulls, true, R"(
 Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md) table functions use Nullable columns.
@@ -2925,7 +3806,7 @@ If it is set to true, transforming expression to local filter is forbidden for q
 Allow functions that use Hyperscan library. Disable to avoid potentially long compilation times and excessive resource usage.
 )", 0) \
     DECLARE(UInt64, max_hyperscan_regexp_length, 0, R"(
-Defines the maximum length for each regular expression in the [hyperscan multi-match functions](../../sql-reference/functions/string-search-functions.md/#multimatchanyhaystack-pattern1-pattern2-patternn).
+Defines the maximum length for each regular expression in the [hyperscan multi-match functions](/sql-reference/functions/string-search-functions#multiMatchAny).
 
 Possible values:
 
@@ -2962,10 +3843,10 @@ Exception: Regexp length too large.
 
 **See Also**
 
-- [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
+- [max_hyperscan_regexp_total_length](#max_hyperscan_regexp_total_length)
 )", 0) \
     DECLARE(UInt64, max_hyperscan_regexp_total_length, 0, R"(
-Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md/#multimatchanyhaystack-pattern1-pattern2-patternn).
+Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](/sql-reference/functions/string-search-functions#multiMatchAny).
 
 Possible values:
 
@@ -3002,7 +3883,7 @@ Exception: Total regexp lengths too large.
 
 **See Also**
 
-- [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
+- [max_hyperscan_regexp_length](#max_hyperscan_regexp_length)
 )", 0) \
     DECLARE(Bool, reject_expensive_hyperscan_regexps, true, R"(
 Reject patterns which will likely be expensive to evaluate with hyperscan (due to NFA state explosion)
@@ -3021,7 +3902,7 @@ Possible values:
 **See Also**
 
 - [Sampling Query Profiler](../../operations/optimizing-performance/sampling-query-profiler.md)
-- System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
+- System table [trace_log](/operations/system-tables/trace_log)
 )", 0) \
     DECLARE(Bool, splitby_max_substrings_includes_remaining_string, false, R"(
 Controls whether function [splitBy*()](../../sql-reference/functions/splitting-merging-functions.md) with argument `max_substrings` > 0 will include the remaining string in the last element of the result array.
@@ -3036,29 +3917,90 @@ Possible values:
 Allow execute multiIf function columnar
 )", 0) \
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
-Formatter '%f' in function 'formatDateTime()' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
+Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
+)", 0) \
+    DECLARE(Bool, formatdatetime_f_prints_scale_number_of_digits, false, R"(
+Formatter '%f' in function 'formatDateTime' prints only the scale amount of digits for a DateTime64 instead of fixed 6 digits.
 )", 0) \
     DECLARE(Bool, formatdatetime_parsedatetime_m_is_month_name, true, R"(
-Formatter '%M' in functions 'formatDateTime()' and 'parseDateTime()' print/parse the month name instead of minutes.
+Formatter '%M' in functions 'formatDateTime' and 'parseDateTime' print/parse the month name instead of minutes.
 )", 0) \
     DECLARE(Bool, parsedatetime_parse_without_leading_zeros, true, R"(
-Formatters '%c', '%l' and '%k' in function 'parseDateTime()' parse months and hours without leading zeros.
+Formatters '%c', '%l' and '%k' in function 'parseDateTime' parse months and hours without leading zeros.
 )", 0) \
+    DECLARE(Bool, parsedatetime_e_requires_space_padding, false, R"(
+Formatter '%e' in function 'parseDateTime' expects that single-digit days are space-padded, e.g., ' 2' is accepted but '2' raises an error.
+    )", 0) \
     DECLARE(Bool, formatdatetime_format_without_leading_zeros, false, R"(
-Formatters '%c', '%l' and '%k' in function 'formatDateTime()' print months and hours without leading zeros.
+Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hours without leading zeros.
 )", 0) \
-    \
+    DECLARE(Bool, formatdatetime_e_with_space_padding, false, R"(
+Formatter '%e' in function 'formatDateTime' prints single-digit days with a leading space, e.g. ' 2' instead of '2'.
+    )", 0) \
+    DECLARE(Bool, least_greatest_legacy_null_behavior, false, R"(
+If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
+)", 0) \
+    DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
+Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
+)", 0) \
+    DECLARE(GeoToH3ArgumentOrder, geotoh3_argument_order, GeoToH3ArgumentOrder::LAT_LON, R"(
+Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set to 'lat_lon'.
+)", BETA) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
-Limit maximum number of partitions in the single INSERTed block. Zero means unlimited. Throw an exception if the block contains too many partitions. This setting is a safety threshold because using a large number of partitions is a common misconception.
+Limits the maximum number of partitions in a single inserted block
+and an exception is thrown if the block contains too many partitions.
+
+- Positive integer.
+- `0` — Unlimited number of partitions.
+
+**Details**
+
+When inserting data, ClickHouse calculates the number of partitions in the
+inserted block. If the number of partitions is more than
+`max_partitions_per_insert_block`, ClickHouse either logs a warning or throws an
+exception based on `throw_on_max_partitions_per_insert_block`. Exceptions have
+the following text:
+
+> "Too many partitions for a single INSERT block (`partitions_count` partitions, limit is " + toString(max_partitions) + ").
+  The limit is controlled by the 'max_partitions_per_insert_block' setting.
+  A large number of partitions is a common misconception. It will lead to severe
+  negative performance impact, including slow server startup, slow INSERT queries
+  and slow SELECT queries. Recommended total number of partitions for a table is
+  under 1000..10000. Please note, that partitioning is not intended to speed up
+  SELECT queries (ORDER BY key is sufficient to make range queries fast).
+  Partitions are intended for data manipulation (DROP PARTITION, etc)."
+
+:::note
+This setting is a safety threshold because using a large number of partitions is a common misconception.
+:::
 )", 0) \
     DECLARE(Bool, throw_on_max_partitions_per_insert_block, true, R"(
-Used with max_partitions_per_insert_block. If true (default), an exception will be thrown when max_partitions_per_insert_block is reached. If false, details of the insert query reaching this limit with the number of partitions will be logged. This can be useful if you're trying to understand the impact on users when changing max_partitions_per_insert_block.
+Allows you to control the behaviour when `max_partitions_per_insert_block` is reached.
+
+Possible values:
+- `true`  - When an insert block reaches `max_partitions_per_insert_block`, an exception is raised.
+- `false` - Logs a warning when `max_partitions_per_insert_block` is reached.
+
+:::tip
+This can be useful if you're trying to understand the impact on users when changing [`max_partitions_per_insert_block`](/operations/settings/settings#max_partitions_per_insert_block).
+:::
 )", 0) \
     DECLARE(Int64, max_partitions_to_read, -1, R"(
-Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited.
+Limits the maximum number of partitions that can be accessed in a single query.
+
+The setting value specified when the table is created can be overridden via query-level setting.
+
+Possible values:
+
+- Positive integer
+- `-1` - unlimited (default)
+
+:::note
+You can also specify the MergeTree setting [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read) in tables' setting.
+:::
 )", 0) \
-    DECLARE(Bool, check_query_single_value_result, true, R"(
-Defines the level of detail for the [CHECK TABLE](../../sql-reference/statements/check-table.md/#checking-mergetree-tables) query result for `MergeTree` family engines .
+    DECLARE(Bool, check_query_single_value_result, false, R"(
+Defines the level of detail for the [CHECK TABLE](/sql-reference/statements/check-table) query result for `MergeTree` family engines .
 
 Possible values:
 
@@ -3070,22 +4012,22 @@ Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
 )", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
-    DECLARE(UInt64, max_table_size_to_drop, 50000000000lu, R"(
-Restriction on deleting tables in query time. The value 0 means that you can delete all tables without any restrictions.
+    DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
+Restriction on deleting tables in query time. The value `0` means that you can delete all tables without any restrictions.
 
 Cloud default value: 1 TB.
 
 :::note
-This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
+This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/operations/server-configuration-parameters/settings#max_table_size_to_drop)
 :::
 )", 0) \
-    DECLARE(UInt64, max_partition_size_to_drop, 50000000000lu, R"(
-Restriction on dropping partitions in query time. The value 0 means that you can drop partitions without any restrictions.
+    DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
+Restriction on dropping partitions in query time. The value `0` means that you can drop partitions without any restrictions.
 
 Cloud default value: 1 TB.
 
 :::note
-This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
+This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/operations/server-configuration-parameters/settings#max_partition_size_to_drop)
 :::
 )", 0) \
     \
@@ -3104,6 +4046,9 @@ Connection pool push/pop retries number for PostgreSQL table engine and database
 )", 0) \
     DECLARE(Bool, postgresql_connection_pool_auto_close_connection, false, R"(
 Close connection before returning connection to the pool.
+)", 0) \
+    DECLARE(Float, postgresql_fault_injection_probability, 0.0f, R"(
+Approximate probability of failing internal (for replication) PostgreSQL queries. Valid value is in interval [0.0f, 1.0f]
 )", 0) \
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
@@ -3272,7 +4217,7 @@ Possible values:
 
 See also:
 
-- [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
+- [optimize_functions_to_subcolumns](#optimize_functions_to_subcolumns)
 )", 0) \
     DECLARE(Bool, optimize_trivial_approximate_count_query, false, R"(
 Use an approximate value for trivial count optimization of storages that support such estimation, for example, EmbeddedRocksDB.
@@ -3299,30 +4244,44 @@ Enabled by default.
 If it is set to true, it will respect aliases in WHERE/GROUP BY/ORDER BY, that will help with partition pruning/secondary indexes/optimize_aggregation_in_order/optimize_read_in_order/optimize_trivial_count
 )", 0) \
     DECLARE(UInt64, mutations_sync, 0, R"(
-Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN` queries ([mutations](../../sql-reference/statements/alter/index.md#mutations)) synchronously.
+Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN|MATERIALIZE STATISTICS` queries ([mutations](../../sql-reference/statements/alter/index.md/#mutations)) synchronously.
 
 Possible values:
 
-- 0 - Mutations execute asynchronously.
-- 1 - The query waits for all mutations to complete on the current server.
-- 2 - The query waits for all mutations to complete on all replicas (if they exist).
+| Value | Description                                                                                                                                           |
+|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | Mutations execute asynchronously.                                                                                                                     |
+| `1`   | The query waits for all mutations to complete on the current server.                                                                                  |
+| `2`   | The query waits for all mutations to complete on all replicas (if they exist).                                                                        |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 )", 0) \
-    DECLARE(Bool, enable_lightweight_delete, true, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
 Enable lightweight DELETE mutations for mergetree tables.
-)", 0) ALIAS(allow_experimental_lightweight_delete) \
+)", 0, allow_experimental_lightweight_delete) \
+    DECLARE(LightweightDeleteMode, lightweight_delete_mode, LightweightDeleteMode::ALTER_UPDATE, R"(
+A mode of internal update query that is executed as a part of lightweight delete.
+
+Possible values:
+- `alter_update` - run `ALTER UPDATE` query that creates a heavyweight mutation.
+- `lightweight_update` - run lightweight update if possible, run `ALTER UPDATE` otherwise.
+- `lightweight_update_force` - run lightweight update if possible, throw otherwise.
+)", 0) \
     DECLARE(UInt64, lightweight_deletes_sync, 2, R"(
 The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
 
 Possible values:
 
-- 0 - Mutations execute asynchronously.
-- 1 - The query waits for the lightweight deletes to complete on the current server.
-- 2 - The query waits for the lightweight deletes to complete on all replicas (if they exist).
+| Value | Description                                                                                                                                           |
+|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `0`   | Mutations execute asynchronously.                                                                                                                     |
+| `1`   | The query waits for the lightweight deletes to complete on the current server.                                                                        |
+| `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist).                                                              |
+| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
 
 **See Also**
 
-- [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
-- [Mutations](../../sql-reference/statements/alter/index.md#mutations)
+- [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md/#synchronicity-of-alter-queries)
+- [Mutations](../../sql-reference/statements/alter/index.md/#mutations)
 )", 0) \
     DECLARE(Bool, apply_deleted_mask, true, R"(
 Enables filtering out rows deleted with lightweight DELETE. If disabled, a query will be able to read those rows. This is useful for debugging and \"undelete\" scenarios
@@ -3332,6 +4291,9 @@ Rewrite aggregate functions that semantically equals to count() as count().
 )", 0) \
     DECLARE(Bool, optimize_injective_functions_inside_uniq, true, R"(
 Delete injective functions of one argument inside uniq*() functions.
+)", 0) \
+    DECLARE(Bool, count_matches_stop_at_empty_match, false, R"(
+Stop counting once a pattern matches zero-length in the `countMatches` function.
 )", 0) \
     DECLARE(Bool, rewrite_count_distinct_if_with_count_distinct_implementation, false, R"(
 Allows you to rewrite `countDistcintIf` with [count_distinct_implementation](#count_distinct_implementation) setting.
@@ -3429,14 +4391,14 @@ Enables or disables optimization by transforming some functions to reading subco
 
 These functions can be transformed:
 
-- [length](../../sql-reference/functions/array-functions.md/#array_functions-length) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
-- [empty](../../sql-reference/functions/array-functions.md/#function-empty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
-- [notEmpty](../../sql-reference/functions/array-functions.md/#function-notempty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
-- [isNull](../../sql-reference/operators/index.md#operator-is-null) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
-- [isNotNull](../../sql-reference/operators/index.md#is-not-null) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
-- [count](../../sql-reference/aggregate-functions/reference/count.md) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
-- [mapKeys](../../sql-reference/functions/tuple-map-functions.md/#mapkeys) to read the [keys](../../sql-reference/data-types/map.md/#map-subcolumns) subcolumn.
-- [mapValues](../../sql-reference/functions/tuple-map-functions.md/#mapvalues) to read the [values](../../sql-reference/data-types/map.md/#map-subcolumns) subcolumn.
+- [length](/sql-reference/functions/array-functions#length) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
+- [empty](/sql-reference/functions/array-functions#empty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
+- [notEmpty](/sql-reference/functions/array-functions#notEmpty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
+- [isNull](/sql-reference/functions/functions-for-nulls#isNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
+- [isNotNull](/sql-reference/functions/functions-for-nulls#isNotNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
+- [count](/sql-reference/aggregate-functions/reference/count) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
+- [mapKeys](/sql-reference/functions/tuple-map-functions#mapKeys) to read the [keys](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapValues](/sql-reference/functions/tuple-map-functions#mapValues) to read the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
 Possible values:
 
@@ -3444,28 +4406,28 @@ Possible values:
 - 1 — Optimization enabled.
 )", 0) \
     DECLARE(Bool, optimize_using_constraints, false, R"(
-Use [constraints](../../sql-reference/statements/create/table.md#constraints) for query optimization. The default is `false`.
+Use [constraints](../../sql-reference/statements/create/table.md/#constraints) for query optimization. The default is `false`.
 
 Possible values:
 
 - true, false
 )", 0)                                                                                                                                           \
     DECLARE(Bool, optimize_substitute_columns, false, R"(
-Use [constraints](../../sql-reference/statements/create/table.md#constraints) for column substitution. The default is `false`.
+Use [constraints](../../sql-reference/statements/create/table.md/#constraints) for column substitution. The default is `false`.
 
 Possible values:
 
 - true, false
 )", 0)                                                                                                                                         \
     DECLARE(Bool, optimize_append_index, false, R"(
-Use [constraints](../../sql-reference/statements/create/table.md#constraints) in order to append index condition. The default is `false`.
+Use [constraints](../../sql-reference/statements/create/table.md/#constraints) in order to append index condition. The default is `false`.
 
 Possible values:
 
 - true, false
 )", 0) \
     DECLARE(Bool, optimize_time_filter_with_preimage, true, R"(
-Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31')
+Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. `toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31'`)
 )", 0) \
     DECLARE(Bool, normalize_function_names, true, R"(
 Normalize function names to their canonical names
@@ -3481,15 +4443,12 @@ Possible values:
       0 — Disabled.
       1 — Enabled.
 
-Usage
+When enabled, ClickHouse performs deduplication of blocks in materialized views that depend on Replicated\* tables.
+This setting is useful for ensuring that materialized views do not contain duplicate data when the insertion operation is being retried due to a failure.
 
-By default, deduplication is not performed for materialized views but is done upstream, in the source table.
-If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable the insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
-At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with ClickHouse Keeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform a deduplication check by itself,
-ignoring check result for the source table, and will insert rows lost because of the first failure.
-)", 0) \
-    DECLARE(Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, true, R"(
-Throw exception on INSERT query when the setting `deduplicate_blocks_in_dependent_materialized_views` is enabled along with `async_insert`. It guarantees correctness, because these features can't work together.
+**See Also**
+
+- [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
 )", 0) \
     DECLARE(Bool, materialized_views_ignore_errors, false, R"(
 Allows to ignore errors for MATERIALIZED VIEW, and deliver original block to the table regardless of MVs
@@ -3497,8 +4456,11 @@ Allows to ignore errors for MATERIALIZED VIEW, and deliver original block to the
     DECLARE(Bool, ignore_materialized_views_with_dropped_target_table, false, R"(
 Ignore MVs with dropped target table during pushing to views
 )", 0) \
-    DECLARE(Bool, allow_materialized_view_with_bad_select, true, R"(
+    DECLARE(Bool, allow_materialized_view_with_bad_select, false, R"(
 Allow CREATE MATERIALIZED VIEW with SELECT query that references nonexistent tables or columns. It must still be syntactically valid. Doesn't apply to refreshable MVs. Doesn't apply if the MV schema needs to be inferred from the SELECT query (i.e. if the CREATE has no column list and no TO table). Can be used for creating MV before its source table.
+)", 0) \
+    DECLARE(Bool, materialized_views_squash_parallel_inserts, true, R"(Squash inserts to materialized views destination table of a single INSERT query from parallel inserts to reduce amount of generated parts.
+If set to false and `parallel_view_processing` is enabled, INSERT query will generate part in the destination table for each `max_insert_thread`.
 )", 0) \
     DECLARE(Bool, use_compact_format_in_distributed_parts_names, true, R"(
 Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
@@ -3514,7 +4476,7 @@ Possible values:
 :::
 )", 0) \
     DECLARE(Bool, validate_polygons, true, R"(
-Enables or disables throwing an exception in the [pointInPolygon](../../sql-reference/functions/geo/index.md#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
+Enables or disables throwing an exception in the [pointInPolygon](/sql-reference/functions/geo/coordinates#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
 
 Possible values:
 
@@ -3560,13 +4522,10 @@ Possible values:
 Use this setting only for backward compatibility if your use cases depend on old syntax.
 :::
 )", 0) \
-    DECLARE(Seconds, periodic_live_view_refresh, 60, R"(
-Interval after which periodically refreshed live view is forced to refresh.
-)", 0) \
     DECLARE(Bool, transform_null_in, false, R"(
-Enables equality of [NULL](../../sql-reference/syntax.md/#null-literal) values for [IN](../../sql-reference/operators/in.md) operator.
+Enables equality of [NULL](/sql-reference/syntax#null) values for [IN](../../sql-reference/operators/in.md) operator.
 
-By default, `NULL` values can’t be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
+By default, `NULL` values can't be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
 
 Possible values:
 
@@ -3577,7 +4536,7 @@ Possible values:
 
 Consider the `null_in` table:
 
-``` text
+```text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
@@ -3587,13 +4546,13 @@ Consider the `null_in` table:
 
 Query:
 
-``` sql
+```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
 ```
 
 Result:
 
-``` text
+```text
 ┌──idx─┬────i─┐
 │    1 │    1 │
 └──────┴──────┘
@@ -3601,13 +4560,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 ```
 
 Result:
 
-``` text
+```text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
@@ -3616,7 +4575,7 @@ Result:
 
 **See Also**
 
-- [NULL Processing in IN Operators](../../sql-reference/operators/in.md/#in-null-processing)
+- [NULL Processing in IN Operators](/sql-reference/operators/in#null-processing)
 )", 0) \
     DECLARE(Bool, allow_nondeterministic_mutations, false, R"(
 User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
@@ -3625,7 +4584,7 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 
 **Example**
 
-``` xml
+```xml
 <profiles>
     <default>
         <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
@@ -3637,6 +4596,11 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 
 </profiles>
 ```
+)", 0) \
+ DECLARE(Bool, validate_mutation_query, true, R"(
+Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query will cause mutations to get stuck, requiring manual intervention.
+
+Only change this setting if you encounter a backward-incompatible bug.
 )", 0) \
     DECLARE(Seconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
 Defines how many seconds a locking request waits before failing.
@@ -3655,7 +4619,7 @@ Apply TTL for old data, after ALTER MODIFY TTL query
 Choose function implementation for specific target or variant (experimental). If empty enable all of them.
 )", 0) \
     DECLARE(Bool, data_type_default_nullable, false, R"(
-Allows data types without explicit modifiers [NULL or NOT NULL](../../sql-reference/statements/create/table.md/#null-modifiers) in column definition will be [Nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable).
+Allows data types without explicit modifiers [NULL or NOT NULL](/sql-reference/statements/create/table#null-or-not-null-modifiers) in column definition will be [Nullable](/sql-reference/data-types/nullable).
 
 Possible values:
 
@@ -3663,7 +4627,7 @@ Possible values:
 - 0 — The data types in column definitions are set to not `Nullable` by default.
 )", 0) \
     DECLARE(Bool, cast_keep_nullable, false, R"(
-Enables or disables keeping of the `Nullable` data type in [CAST](../../sql-reference/functions/type-conversion-functions.md/#castx-t) operations.
+Enables or disables keeping of the `Nullable` data type in [CAST](/sql-reference/functions/type-conversion-functions#CAST) operations.
 
 When the setting is enabled and the argument of `CAST` function is `Nullable`, the result is also transformed to `Nullable` type. When the setting is disabled, the result always has the destination type exactly.
 
@@ -3706,14 +4670,14 @@ Result:
 
 **See Also**
 
-- [CAST](../../sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) function
+- [CAST](/sql-reference/functions/type-conversion-functions#CAST) function
 )", 0) \
     DECLARE(Bool, cast_ipv4_ipv6_default_on_conversion_error, false, R"(
 CAST operator into IPv4, CAST operator into IPV6 type, toIPv4, toIPv6 functions will return default value instead of throwing exception on conversion error.
 )", 0) \
     DECLARE(Bool, alter_partition_verbose_result, false, R"(
 Enables or disables the display of information about the parts to which the manipulation operations with partitions and parts have been successfully applied.
-Applicable to [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md/#alter_attach-partition) and to [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md/#alter_freeze-partition).
+Applicable to [ATTACH PARTITION|PART](/sql-reference/statements/alter/partition#attach-partitionpart) and to [FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition).
 
 Possible values:
 
@@ -3797,8 +4761,13 @@ Allow to execute alters which affects not only tables metadata, but also data on
     DECLARE(Bool, enable_global_with_statement, true, R"(
 Propagate WITH statements to UNION queries and all subqueries
 )", 0) \
+    DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
+If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
+
+Note that this is a compatibility setting for new analyzer to allow running some invalid queries that old analyzer could execute.
+)", 0) \
     DECLARE(Bool, aggregate_functions_null_for_empty, false, R"(
-Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md/#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
+Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](/sql-reference/aggregate-functions/combinators#-ornull) suffix to them. Enable it for SQL standard compatibility.
 It is implemented via query rewrite (similar to [count_distinct_implementation](#count_distinct_implementation) setting) to get consistent results for distributed queries.
 
 Possible values:
@@ -3827,8 +4796,43 @@ With `aggregate_functions_null_for_empty = 1` the result would be:
 └───────────────┴──────────────┘
 ```
 )", 0) \
+    DECLARE(AggregateFunctionInputFormat, aggregate_function_input_format, "state", R"(
+Format for AggregateFunction input during INSERT operations.
+
+Possible values:
+
+- `state` — Binary string with the serialized state (the default). This is the default behavior where AggregateFunction values are expected as binary data.
+- `value` — The format expects a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them. They will be deserialized using the corresponding IDataType or DataTypeTuple and then aggregated to form the state.
+- `array` — The format expects an Array of values, as described in the `value` option above. All elements of the array will be aggregated to form the state.
+
+**Examples**
+
+For a table with structure:
+```sql
+CREATE TABLE example (
+    user_id UInt64,
+    avg_session_length AggregateFunction(avg, UInt32)
+);
+```
+
+
+With `aggregate_function_input_format = 'value'`:
+```sql
+INSERT INTO example FORMAT CSV
+123,456
+```
+
+
+With `aggregate_function_input_format = 'array'`:
+```sql
+INSERT INTO example FORMAT CSV
+123,"[456,789,101]"
+```
+
+Note: The `value` and `array` formats are slower than the default `state` format as they require creating and aggregating values during insertion.
+)", 0) \
     DECLARE(Bool, optimize_syntax_fuse_functions, false, R"(
-Enables to fuse aggregate functions with identical argument. It rewrites query contains at least two aggregate functions from [sum](../../sql-reference/aggregate-functions/reference/sum.md/#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) or [avg](../../sql-reference/aggregate-functions/reference/avg.md/#agg_function-avg) with identical argument to [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md/#agg_function-sumCount).
+Enables to fuse aggregate functions with identical argument. It rewrites query contains at least two aggregate functions from [sum](/sql-reference/aggregate-functions/reference/sum), [count](/sql-reference/aggregate-functions/reference/count) or [avg](/sql-reference/aggregate-functions/reference/avg) with identical argument to [sumCount](/sql-reference/aggregate-functions/reference/sumcount).
 
 Possible values:
 
@@ -3839,7 +4843,7 @@ Possible values:
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
 SET optimize_syntax_fuse_functions = 1;
 EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
@@ -3847,7 +4851,7 @@ EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 
 Result:
 
-``` text
+```text
 SELECT
     sum(a),
     sumCount(b).1,
@@ -3872,7 +4876,7 @@ If the setting is set to `0`, it is possible to use an arbitrary level of nestin
 
 Query:
 
-``` sql
+```sql
 SET flatten_nested = 1;
 CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
@@ -3881,7 +4885,7 @@ SHOW CREATE TABLE t_nest;
 
 Result:
 
-``` text
+```text
 ┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.t_nest
 (
@@ -3896,7 +4900,7 @@ SETTINGS index_granularity = 8192 │
 
 Query:
 
-``` sql
+```sql
 SET flatten_nested = 0;
 
 CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
@@ -3906,7 +4910,7 @@ SHOW CREATE TABLE t_nest;
 
 Result:
 
-``` text
+```text
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.t_nest
 (
@@ -3919,7 +4923,7 @@ SETTINGS index_granularity = 8192 │
 ```
 )", 0) \
     DECLARE(Bool, asterisk_include_materialized_columns, false, R"(
-Include [MATERIALIZED](../../sql-reference/statements/create/table.md#materialized) columns for wildcard query (`SELECT *`).
+Include [MATERIALIZED](/sql-reference/statements/create/view#materialized-view) columns for wildcard query (`SELECT *`).
 
 Possible values:
 
@@ -3927,7 +4931,7 @@ Possible values:
 - 1 - enabled
 )", 0) \
     DECLARE(Bool, asterisk_include_alias_columns, false, R"(
-Include [ALIAS](../../sql-reference/statements/create/table.md#alias) columns for wildcard query (`SELECT *`).
+Include [ALIAS](../../sql-reference/statements/create/table.md/#alias) columns for wildcard query (`SELECT *`).
 
 Possible values:
 
@@ -3980,7 +4984,7 @@ SELECT * FROM test2;
 
 Result:
 
-``` text
+```text
 ┌─FirstTable─┐
 │          0 │
 │          1 │
@@ -3995,18 +4999,21 @@ Result:
 └─────────────┘
 ```
 
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md/#materialized) and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md) behaviour.
+Note that this setting influences [Materialized view](/sql-reference/statements/create/view#materialized-view) behaviour.
 )", 0) \
-    DECLARE(Bool, optimize_use_projections, true, R"(
+    DECLARE_WITH_ALIAS(Bool, optimize_use_projections, true, R"(
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md/#projections) optimization when processing `SELECT` queries.
 
 Possible values:
 
 - 0 — Projection optimization disabled.
 - 1 — Projection optimization enabled.
-)", 0) ALIAS(allow_experimental_projection_optimization) \
+)", 0, allow_experimental_projection_optimization) \
     DECLARE(Bool, optimize_use_implicit_projections, true, R"(
 Automatically choose implicit projections to perform SELECT query
+)", 0) \
+    DECLARE(Bool, optimize_use_projection_filtering, true, R"(
+Enables using projections to filter part ranges even when projections are not selected to perform SELECT query.
 )", 0) \
     DECLARE(Bool, force_optimize_projection, false, R"(
 Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md/#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
@@ -4031,6 +5038,12 @@ Possible values:
 
 - string: name of preferred projection
 )", 0) \
+    DECLARE(UInt64, max_projection_rows_to_use_projection_index, 1'000'000, R"(
+If the number of rows to read from the projection index is less than or equal to this threshold, ClickHouse will try to apply the projection index during query execution.
+)", 0) \
+    DECLARE(UInt64, min_table_rows_to_use_projection_index, 1'000'000, R"(
+If the estimated number of rows to read from the table is greater than or equal to this threshold, ClickHouse will try to use the projection index during query execution.
+)", 0) \
     DECLARE(Bool, async_socket_for_remote, true, R"(
 Enables asynchronous read from socket while executing remote query.
 
@@ -4042,7 +5055,7 @@ Enables asynchronous connection creation and query sending while executing remot
 Enabled by default.
 )", 0) \
     DECLARE(Bool, insert_null_as_default, true, R"(
-Enables or disables the insertion of [default values](../../sql-reference/statements/create/table.md/#create-default-values) instead of [NULL](../../sql-reference/syntax.md/#null-literal) into columns with not [nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable) data type.
+Enables or disables the insertion of [default values](/sql-reference/statements/create/table#default_values) instead of [NULL](/sql-reference/syntax#null) into columns with not [nullable](/sql-reference/data-types/nullable) data type.
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
 This setting is applicable to [INSERT ... SELECT](../../sql-reference/statements/insert-into.md/#inserting-the-results-of-select) queries. Note that `SELECT` subqueries may be concatenated with `UNION ALL` clause.
@@ -4052,11 +5065,8 @@ Possible values:
 - 0 — Inserting `NULL` into a not nullable column causes an exception.
 - 1 — Default column value is inserted instead of `NULL`.
 )", 0) \
-    DECLARE(Bool, describe_extend_object_types, false, R"(
-Deduce concrete type of columns of type Object in DESCRIBE query
-)", 0) \
     DECLARE(Bool, describe_include_subcolumns, false, R"(
-Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. For example, members of a [Tuple](../../sql-reference/data-types/tuple.md) or subcolumns of a [Map](../../sql-reference/data-types/map.md/#map-subcolumns), [Nullable](../../sql-reference/data-types/nullable.md/#finding-null) or an [Array](../../sql-reference/data-types/array.md/#array-size) data type.
+Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. For example, members of a [Tuple](../../sql-reference/data-types/tuple.md) or subcolumns of a [Map](/sql-reference/data-types/map#reading-subcolumns-of-map), [Nullable](../../sql-reference/data-types/nullable.md/#finding-null) or an [Array](../../sql-reference/data-types/array.md/#array-size) data type.
 
 Possible values:
 
@@ -4074,7 +5084,24 @@ If true, virtual columns of table will be included into result of DESCRIBE query
 If true, include only column names and types into result of DESCRIBE query
 )", 0) \
     DECLARE(Bool, apply_mutations_on_fly, false, R"(
-If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs. Only available in ClickHouse Cloud.
+If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
+)", 0) \
+    DECLARE_WITH_ALIAS(Bool, enable_lightweight_update, true, R"(
+    Allow to use lightweight updates.
+)", BETA, allow_experimental_lightweight_update) \
+    DECLARE(Bool, apply_patch_parts, true, R"(
+If true, patch parts (that represent lightweight updates) are applied on SELECTs.
+)", 0) \
+    DECLARE(NonZeroUInt64, apply_patch_parts_join_cache_buckets, 8, R"(
+The number of buckets in the temporary cache for applying patch parts in Join mode.
+)", 0) \
+    DECLARE(AlterUpdateMode, alter_update_mode, AlterUpdateMode::HEAVY, R"(
+A mode for `ALTER` queries that have the `UPDATE` commands.
+
+Possible values:
+- `heavy` - run regular mutation.
+- `lightweight` - run lightweight update if possible, run regular mutation otherwise.
+- `lightweight_force` - run lightweight update if possible, throw otherwise.
 )", 0) \
     DECLARE(Bool, mutations_execute_nondeterministic_on_initiator, false, R"(
 If true constant nondeterministic functions (e.g. function `now()`) are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. It helps to keep data in sync on replicas while executing mutations with constant nondeterministic functions. Default value: `false`.
@@ -4089,10 +5116,37 @@ The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELE
     DECLARE(Float, create_replicated_merge_tree_fault_injection_probability, 0.0f, R"(
 The probability of a fault injection during table creation after creating metadata in ZooKeeper
 )", 0) \
+    DECLARE(Bool, delta_lake_log_metadata, false, R"(
+Enables logging delta lake metadata files into system table.
+)", 0) \
+    DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
+Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
+Usually this setting can be modified for debugging purposes.
+
+Possible values:
+- none - No metadata log.
+- metadata - Root metadata.json file.
+- manifest_list_metadata - Everything above + metadata from avro manifest list which corresponds to a snapshot.
+- manifest_list_entry - Everything above + avro manifest list entries.
+- manifest_file_metadata - Everything above + metadata from traversed avro manifest files.
+- manifest_file_entry - Everything above + traversed avro manifest files entries.
+)", 0) \
+    \
+    DECLARE(Bool, iceberg_delete_data_on_drop, false, R"(
+Whether to delete all iceberg files on drop or not.
+)", 0) \
+    DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
+If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     \
     DECLARE(Bool, use_query_cache, false, R"(
-If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable-reads-from-query-cache)
-and [enable_writes_to_query_cache](#enable-writes-to-query-cache) control in more detail how the cache is used.
+If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
+and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
 
 Possible values:
 
@@ -4115,7 +5169,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(QueryCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryCacheNondeterministicFunctionHandling::Throw, R"(
+    DECLARE(QueryResultCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryResultCacheNondeterministicFunctionHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 
 Possible values:
@@ -4124,7 +5178,7 @@ Possible values:
 - `'save'` - Cache the query result.
 - `'ignore'` - Don't cache the query result and don't throw an exception.
 )", 0) \
-    DECLARE(QueryCacheSystemTableHandling, query_cache_system_table_handling, QueryCacheSystemTableHandling::Throw, R"(
+    DECLARE(QueryResultCacheSystemTableHandling, query_cache_system_table_handling, QueryResultCacheSystemTableHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries against system tables, i.e. tables in databases `system.*` and `information_schema.*`.
 
 Possible values:
@@ -4170,7 +5224,7 @@ Possible values:
 - 1 - Enabled
 )", 0) \
     DECLARE(Bool, query_cache_squash_partial_results, true, R"(
-Squash partial result blocks to blocks of size [max_block_size](#setting-max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query-cache-compress-entries)).
+Squash partial result blocks to blocks of size [max_block_size](#max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
 
 Possible values:
 
@@ -4204,36 +5258,106 @@ Possible values:
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
-    \
+    DECLARE(Bool, use_query_condition_cache, true, R"(
+Enable the [query condition cache](/operations/query-condition-cache). The cache stores ranges of granules in data parts which do not satisfy the condition in the `WHERE` clause,
+and reuse this information as an ephemeral index for subsequent queries.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Bool, query_condition_cache_store_conditions_as_plaintext, false, R"(
+Stores the filter condition for the [query condition cache](/operations/query-condition-cache) in plaintext.
+If enabled, system.query_condition_cache shows the verbatim filter condition which makes it easier to debug issues with the cache.
+Disabled by default because plaintext filter conditions may expose sensitive information.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
+If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
+This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
+
+This is required for queries where internal consistency of data parts is important. Example:
+
+```sql
+SELECT
+    count()
+FROM events
+WHERE (_part, _part_offset) IN (
+    SELECT _part, _part_offset
+    FROM events
+    WHERE user_id = 42
+)
+```
+
+Without this setting, the outer and inner queries may operate on different data snapshots, leading to incorrect results.
+
+:::note
+Enabling this setting disables the optimization which removes unnecessary data parts from snapshots once the planning stage is complete.
+As a result, long-running queries may hold onto obsolete parts for their entire duration, delaying part cleanup and increasing storage pressure.
+
+This setting currently applies only to tables from the MergeTree family.
+:::
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
+    DECLARE(UInt64, merge_tree_storage_snapshot_sleep_ms, 0, R"(
+Inject artificial delay (in milliseconds) when creating a storage snapshot for MergeTree tables.
+Used for testing and debugging purposes only.
+
+Possible values:
+- 0 - No delay (default)
+- N - Delay in milliseconds
+)", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
+)", 0) \
+    DECLARE(Bool, optimize_empty_string_comparisons, true, R"(
+Convert expressions like col = '' or '' = col into empty(col), and col != '' or '' != col into notEmpty(col),
+only when col is of String or FixedString type.
 )", 0) \
     DECLARE(Bool, optimize_rewrite_aggregate_function_with_if, true, R"(
 Rewrite aggregate functions with if expression as argument when logically equivalent.
 For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
 
 :::note
-Supported only with experimental analyzer (`enable_analyzer = 1`).
+Supported only with the analyzer (`enable_analyzer = 1`).
 :::
 )", 0) \
     DECLARE(Bool, optimize_rewrite_array_exists_to_has, false, R"(
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
+    DECLARE(Bool, optimize_rewrite_like_perfect_affix, true, R"(
+Rewrite LIKE expressions with perfect prefix or suffix (e.g. `col LIKE 'ClickHouse%'`) to startsWith or endsWith functions (e.g. `startsWith(col, 'ClickHouse')`).
+)", 0) \
+DECLARE(Bool, execute_exists_as_scalar_subquery, true, R"(
+Execute non-correlated EXISTS subqueries as scalar subqueries. As for scalar subqueries, the cache is used, and the constant folding applies to the result.
+    )", 0) \
+    DECLARE(Bool, optimize_rewrite_regexp_functions, true, R"(
+Rewrite regular expression related functions into simpler and more efficient forms
+)", 0) \
     DECLARE(UInt64, insert_shard_id, 0, R"(
-If not `0`, specifies the shard of [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table into which the data will be inserted synchronously.
+If not `0`, specifies the shard of [Distributed](/engines/table-engines/special/distributed) table into which the data will be inserted synchronously.
 
 If `insert_shard_id` value is incorrect, the server will throw an exception.
 
 To get the number of shards on `requested_cluster`, you can check server config or use this query:
 
-``` sql
+```sql
 SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
 ```
 
 Possible values:
 
 - 0 — Disabled.
-- Any number from `1` to `shards_num` of corresponding [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table.
+- Any number from `1` to `shards_num` of corresponding [Distributed](/engines/table-engines/special/distributed) table.
 
 **Example**
 
@@ -4248,7 +5372,7 @@ SELECT * FROM x_dist ORDER BY number ASC;
 
 Result:
 
-``` text
+```text
 ┌─number─┐
 │      0 │
 │      0 │
@@ -4267,14 +5391,17 @@ Result:
     DECLARE(Bool, collect_hash_table_stats_during_aggregation, true, R"(
 Enable collecting hash table statistics to optimize memory allocation
 )", 0) \
-    DECLARE(UInt64, max_size_to_preallocate_for_aggregation, 100'000'000, R"(
+    DECLARE(UInt64, max_size_to_preallocate_for_aggregation, 1'000'000'000'000, R"(
 For how many elements it is allowed to preallocate space in all hash tables in total before aggregation
 )", 0) \
     \
     DECLARE(Bool, collect_hash_table_stats_during_joins, true, R"(
 Enable collecting hash table statistics to optimize memory allocation
 )", 0) \
-    DECLARE(UInt64, max_size_to_preallocate_for_joins, 100'000'000, R"(
+    DECLARE(Bool, use_hash_table_stats_for_join_reordering, true, R"(
+Enable using collected hash table statistics for cardinality estimation during join reordering
+)", 0) \
+    DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, R"(
 For how many elements it is allowed to preallocate space in all hash tables in total before join
 )", 0) \
     \
@@ -4283,7 +5410,7 @@ Disable limit on kafka_num_consumers that depends on the number of available CPU
 )", 0) \
     DECLARE(Bool, allow_experimental_kafka_offsets_storage_in_keeper, false, R"(
 Allow experimental feature to store Kafka related offsets in ClickHouse Keeper. When enabled a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
 Enable use of software prefetch in aggregation
 )", 0) \
@@ -4337,10 +5464,10 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
-    DECLARE(Bool, enable_url_encoding, true, R"(
+    DECLARE(Bool, enable_url_encoding, false, R"(
 Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
 
-Enabled by default.
+Disabled by default.
 )", 0) \
     DECLARE(UInt64, database_replicated_initial_query_timeout_sec, 300, R"(
 Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
@@ -4351,7 +5478,7 @@ Possible values:
 - 0 — Unlimited.
 )", 0) \
     DECLARE(Bool, database_replicated_enforce_synchronous_settings, false, R"(
-Enforces synchronous waiting for some queries (see also database_atomic_wait_for_drop_and_detach_synchronously, mutation_sync, alter_sync). Not recommended to enable these settings.
+Enforces synchronous waiting for some queries (see also database_atomic_wait_for_drop_and_detach_synchronously, mutations_sync, alter_sync). Not recommended to enable these settings.
 )", 0) \
     DECLARE(UInt64, max_distributed_depth, 5, R"(
 Limits the maximum depth of recursive queries for [Distributed](../../engines/table-engines/special/distributed.md) tables.
@@ -4378,11 +5505,22 @@ Allow to create only Replicated tables in database with engine Replicated
     DECLARE(Bool, database_replicated_allow_heavy_create, false, R"(
 Allow long-running DDL queries (CREATE AS SELECT and POPULATE) in Replicated database engine. Note that it can block DDL queue for a long time.
 )", 0) \
+    DECLARE(UInt64, database_shared_drop_table_delay_seconds, 8 * 60 * 60, R"(
+The delay in seconds before a dropped table is actually removed from a Shared database. This allows to recover the table within this time using `UNDROP TABLE` statement.
+)", 0) \
     DECLARE(Bool, cloud_mode, false, R"(
 Cloud mode
 )", 0) \
     DECLARE(UInt64, cloud_mode_engine, 1, R"(
-The engine family allowed in Cloud. 0 - allow everything, 1 - rewrite DDLs to use *ReplicatedMergeTree, 2 - rewrite DDLs to use SharedMergeTree. UInt64 to minimize public part
+The engine family allowed in Cloud.
+
+- 0 - allow everything
+- 1 - rewrite DDLs to use *ReplicatedMergeTree
+- 2 - rewrite DDLs to use SharedMergeTree
+- 3 - rewrite DDLs to use SharedMergeTree except when explicitly passed remote disk is specified
+- 4 - same as 3, plus additionally use Alias instead of Distributed (the Alias table will point to the destination table of the Distributed table, so it will use the corresponding local table)
+
+UInt64 to minimize public part
 )", 0) \
     DECLARE(UInt64, cloud_mode_database_engine, 1, R"(
 The database engine allowed in Cloud. 1 - rewrite DDLs to use Replicated database, 2 - rewrite DDLs to use Shared database
@@ -4400,17 +5538,17 @@ Possible values:
 - `null_status_on_timeout_only_active` — similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
 - `throw_only_active` — similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
 
-Cloud default value: `none`.
+Cloud default value: `throw`.
 )", 0) \
     DECLARE(UInt64, distributed_ddl_entry_format_version, 5, R"(
 Compatibility version of distributed DDL (ON CLUSTER) queries
 )", 0) \
     \
     DECLARE(UInt64, external_storage_max_read_rows, 0, R"(
-Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializedMySQL. If equal to 0, this setting is disabled
+Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, and dictionary. If equal to 0, this setting is disabled
 )", 0) \
     DECLARE(UInt64, external_storage_max_read_bytes, 0, R"(
-Limit maximum number of bytes when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, dictionary and MaterializedMySQL. If equal to 0, this setting is disabled
+Limit maximum number of bytes when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, and dictionary. If equal to 0, this setting is disabled
 )", 0)  \
     DECLARE(UInt64, external_storage_connect_timeout_sec, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, R"(
 Connect timeout in seconds. Now supported only for MySQL
@@ -4418,6 +5556,10 @@ Connect timeout in seconds. Now supported only for MySQL
     DECLARE(UInt64, external_storage_rw_timeout_sec, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, R"(
 Read/write timeout in seconds. Now supported only for MySQL
 )", 0)  \
+    \
+    DECLARE(Bool, allow_experimental_correlated_subqueries, true, R"(
+Allow to execute correlated subqueries.
+)", BETA) \
     \
     DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
 Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
@@ -4470,10 +5612,11 @@ Possible values:
 - 0 - Disable all optimizations at the query plan level
 - 1 - Enable optimizations at the query plan level (but individual optimizations may still be disabled via their individual settings)
 )", 0) \
-    DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10000, R"(
+    DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10'000, R"(
 Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
 Useful to avoid long optimization times for complex queries.
-If the actual number of optimizations exceeds this setting, an exception is thrown.
+In the EXPLAIN PLAN query, stop applying optimizations after this limit is reached and return the plan as is.
+For regular query execution if the actual number of optimizations exceeds this setting, an exception is thrown.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -4531,8 +5674,8 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_merge_filters, false, R"(
-Allow to merge filters in the query plan
+    DECLARE(Bool, query_plan_merge_filters, true, R"(
+Allow to merge filters in the query plan.
 )", 0) \
     DECLARE(Bool, query_plan_filter_push_down, true, R"(
 Toggles a query-plan-level optimization which moves filters down in the execution plan.
@@ -4548,14 +5691,23 @@ Possible values:
 - 1 - Enable
 )", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
-Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
+Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
+)", 0) \
+    DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
+Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
+)", 0) \
+    DECLARE(Bool, query_plan_merge_filter_into_join_condition, true, R"(
+Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
+)", 0) \
+    DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
+Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
 Allow to push down filter to PREWHERE expression for supported storages
 )", 0) \
     DECLARE(Bool, query_plan_execute_functions_after_sorting, true, R"(
 Toggles a query-plan-level optimization which moves expressions after sorting steps.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -4568,7 +5720,7 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_reuse_storage_ordering_for_window_functions, true, R"(
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -4581,7 +5733,7 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_lift_up_union, true, R"(
 Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -4594,7 +5746,7 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_read_in_order, true, R"(
 Toggles the read in-order optimization query-plan-level optimization.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -4605,9 +5757,10 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0) \
     DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
 Toggles the aggregation in-order query-plan-level optimization.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -4620,7 +5773,7 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -4633,7 +5786,20 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_remove_redundant_distinct, true, R"(
 Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_try_use_vector_search, true, R"(
+Toggles a query-plan-level optimization which tries to use the vector similarity index.
+Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -4647,8 +5813,41 @@ Possible values:
     DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
 Enable multithreading after evaluating window functions to allow parallel stream processing
 )", 0) \
+    DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
+Use query plan for lazy materialization optimization.
+)", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
+)", 0) \
+    DECLARE(Bool, enable_lazy_columns_replication, true, R"(
+Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
+)", 0) \
+    DECLARE_WITH_ALIAS(Bool, query_plan_use_new_logical_join_step, true, R"(
+Use logical join step in query plan.
+Note: setting `query_plan_use_new_logical_join_step` is deprecated, use `query_plan_use_logical_join_step` instead.
+)", 0, query_plan_use_logical_join_step) \
+    DECLARE(Bool, serialize_query_plan, false, R"(
+Serialize query plan for distributed processing
+)", 0) \
+    DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
+Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
+)", 0) \
+    DECLARE(DecorrelationJoinKind, correlated_subqueries_default_join_kind, DecorrelationJoinKind::RIGHT, R"(
+Controls the kind of joins in the decorrelated query plan. The default value is `right`, which means that decorrelated plan will contain RIGHT JOINs with subquery input on the right side.
+
+Possible values:
+
+- `left` - Decorrelation process will produce LEFT JOINs and input table will appear on the left side.
+- `right` - Decorrelation process will produce RIGHT JOINs and input table will appear on the right side.
+)", 0) \
+    DECLARE(Bool, correlated_subqueries_use_in_memory_buffer, true, R"(
+Use in-memory buffer for correlated subquery input to avoid its repeated evaluation.
+)", 0) \
+    DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
+Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
+)", 0) \
+    \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
-Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](../../sql-reference/functions/string-search-functions.md/#extractallgroups-horizontal) function.
+Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractAllGroupsHorizontal) function.
 
 Possible values:
 
@@ -4656,7 +5855,7 @@ Possible values:
 )", 0) \
     \
     DECLARE(UInt64, limit, 0, R"(
-Sets the maximum number of rows to get from the query result. It adjusts the value set by the [LIMIT](../../sql-reference/statements/select/limit.md/#limit-clause) clause, so that the limit, specified in the query, cannot exceed the limit, set by this setting.
+Sets the maximum number of rows to get from the query result. It adjusts the value set by the [LIMIT](/sql-reference/statements/select/limit) clause, so that the limit, specified in the query, cannot exceed the limit, set by this setting.
 
 Possible values:
 
@@ -4664,7 +5863,7 @@ Possible values:
 - Positive integer.
 )", 0) \
     DECLARE(UInt64, offset, 0, R"(
-Sets the number of rows to skip before starting to return rows from the query. It adjusts the offset set by the [OFFSET](../../sql-reference/statements/select/offset.md/#offset-fetch) clause, so that these two values are summarized.
+Sets the number of rows to skip before starting to return rows from the query. It adjusts the offset set by the [OFFSET](/sql-reference/statements/select/offset) clause, so that these two values are summarized.
 
 Possible values:
 
@@ -4675,21 +5874,21 @@ Possible values:
 
 Input table:
 
-``` sql
+```sql
 CREATE TABLE test (i UInt64) ENGINE = MergeTree() ORDER BY i;
 INSERT INTO test SELECT number FROM numbers(500);
 ```
 
 Query:
 
-``` sql
+```sql
 SET limit = 5;
 SET offset = 7;
 SELECT * FROM test LIMIT 10 OFFSET 100;
 ```
 Result:
 
-``` text
+```text
 ┌───i─┐
 │ 107 │
 │ 108 │
@@ -4699,7 +5898,7 @@ Result:
 )", 0) \
     \
     DECLARE(UInt64, function_range_max_elements_in_block, 500000000, R"(
-Sets the safety threshold for data volume generated by function [range](../../sql-reference/functions/array-functions.md/#range). Defines the maximum number of values generated by function per block of data (sum of array sizes for every row in a block).
+Sets the safety threshold for data volume generated by function [range](/sql-reference/functions/array-functions#range). Defines the maximum number of values generated by function per block of data (sum of array sizes for every row in a block).
 
 Possible values:
 
@@ -4707,8 +5906,8 @@ Possible values:
 
 **See Also**
 
-- [max_block_size](#setting-max_block_size)
-- [min_insert_block_size_rows](#min-insert-block-size-rows)
+- [`max_block_size`](#max_block_size)
+- [`min_insert_block_size_rows`](#min_insert_block_size_rows)
 )", 0) \
     DECLARE(UInt64, function_sleep_max_microseconds_per_block, 3000000, R"(
 Maximum number of microseconds the function `sleep` is allowed to sleep for each block. If a user called it with a larger value, it throws an exception. It is a safety threshold.
@@ -4717,7 +5916,7 @@ Maximum number of microseconds the function `sleep` is allowed to sleep for each
 The version of `visibleWidth` behavior. 0 - only count the number of code points; 1 - correctly count zero-width and combining characters, count full-width characters as two, estimate the tab width, count delete characters.
 )", 0) \
     DECLARE(ShortCircuitFunctionEvaluation, short_circuit_function_evaluation, ShortCircuitFunctionEvaluation::ENABLE, R"(
-Allows calculating the [if](../../sql-reference/functions/conditional-functions.md/#if), [multiIf](../../sql-reference/functions/conditional-functions.md/#multiif), [and](../../sql-reference/functions/logical-functions.md/#logical-and-function), and [or](../../sql-reference/functions/logical-functions.md/#logical-or-function) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
+Allows calculating the [if](../../sql-reference/functions/conditional-functions.md/#if), [multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf), [and](/sql-reference/functions/logical-functions#and), and [or](/sql-reference/functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
 
 Possible values:
 
@@ -4730,7 +5929,10 @@ Possible values:
 Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local).
 )", 0) \
     DECLARE(String, local_filesystem_read_method, "pread_threadpool", R"(
-Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool. The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
+Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool.
+
+The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
+If you read various articles about 'io_uring' on the Internet, don't be blinded by them. It is not a better method of reading files, unless the case of a large amount of small IO requests, which is not the case in ClickHouse. There are no reasons to enable 'io_uring'.
 )", 0) \
     DECLARE(String, remote_filesystem_read_method, "threadpool", R"(
 Method of reading data from remote filesystem, one of: read, threadpool.
@@ -4761,20 +5963,20 @@ Possible values:
     DECLARE(UInt64, remote_read_min_bytes_for_seek, 4 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Min bytes required for remote read (url, s3) to do seek, instead of read with ignore.
 )", 0) \
-    DECLARE(UInt64, merge_tree_min_bytes_per_task_for_remote_reading, 2 * DBMS_DEFAULT_BUFFER_SIZE, R"(
+    DECLARE_WITH_ALIAS(UInt64, merge_tree_min_bytes_per_task_for_remote_reading, 2 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Min bytes to read per task.
-)", 0) ALIAS(filesystem_prefetch_min_bytes_for_single_read_task) \
+)", 0, filesystem_prefetch_min_bytes_for_single_read_task) \
     DECLARE(Bool, merge_tree_use_const_size_tasks_for_remote_reading, true, R"(
 Whether to use constant size tasks for reading from a remote table.
 )", 0) \
     DECLARE(Bool, merge_tree_determine_task_size_by_prewhere_columns, true, R"(
 Whether to use only prewhere columns size to determine reading task size.
 )", 0) \
-    DECLARE(UInt64, merge_tree_min_read_task_size, 8, R"(
+    DECLARE(NonZeroUInt64, merge_tree_min_read_task_size, 8, R"(
 Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 )", 0) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
-Only available in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
+Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
 )", 0) \
     \
     DECLARE(Bool, async_insert, false, R"(
@@ -4790,7 +5992,8 @@ Timeout for waiting for processing asynchronous insertion
 Maximum size in bytes of unparsed data collected per query before being inserted
 )", 0) \
     DECLARE(UInt64, async_insert_max_query_number, 450, R"(
-Maximum number of insert queries before being inserted
+Maximum number of insert queries before being inserted.
+Only takes effect if setting [`async_insert_deduplicate`](#async_insert_deduplicate) is 1.
 )", 0) \
     DECLARE(Milliseconds, async_insert_poll_timeout_ms, 10, R"(
 Timeout for polling data from asynchronous insert queue
@@ -4801,9 +6004,9 @@ If it is set to true, use adaptive busy timeout for asynchronous inserts
     DECLARE(Milliseconds, async_insert_busy_timeout_min_ms, 50, R"(
 If auto-adjusting is enabled through async_insert_use_adaptive_busy_timeout, minimum time to wait before dumping collected data per query since the first data appeared. It also serves as the initial value for the adaptive algorithm
 )", 0) \
-    DECLARE(Milliseconds, async_insert_busy_timeout_max_ms, 200, R"(
+    DECLARE_WITH_ALIAS(Milliseconds, async_insert_busy_timeout_max_ms, 200, R"(
 Maximum time to wait before dumping collected data per query since the first data appeared.
-)", 0) ALIAS(async_insert_busy_timeout_ms) \
+)", 0, async_insert_busy_timeout_ms) \
     DECLARE(Double, async_insert_busy_timeout_increase_rate, 0.2, R"(
 The exponential growth rate at which the adaptive asynchronous insert timeout increases
 )", 0) \
@@ -4817,6 +6020,12 @@ Max wait time when trying to read data for remote disk
     DECLARE(UInt64, remote_fs_read_backoff_max_tries, 5, R"(
 Max attempts to read with backoff
 )", 0) \
+    DECLARE(Bool, cluster_function_process_archive_on_multiple_nodes, true, R"(
+If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
+)", 0) \
+    DECLARE(UInt64, max_streams_for_files_processing_in_cluster_functions, 0, R"(
+If is not zero, limit the number of threads reading data from files in *Cluster table functions.
+)", 0) \
     DECLARE(Bool, enable_filesystem_cache, true, R"(
 Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
 )", 0) \
@@ -4824,7 +6033,8 @@ Use cache for remote filesystem. This setting does not turn on/off cache for dis
 Filesystem cache name to use for stateless table engines or data lakes
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_on_write_operations, false, R"(
-Write into cache on write operations. To actually work this setting requires be added to disk config too
+Enables or disables `write-through` cache. If set to `false`, the `write-through` cache is disabled for write operations. If set to `true`, `write-through` cache is enabled as long as `cache_on_write_operations` is turned on in the server config's cache disk configuration section.
+See ["Using local cache"](/operations/storing-data#using-local-cache) for more details.
 )", 0) \
     DECLARE(Bool, enable_filesystem_cache_log, false, R"(
 Allows to record the filesystem caching log for each query
@@ -4832,9 +6042,9 @@ Allows to record the filesystem caching log for each query
     DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
 Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
 )", 0) \
-    DECLARE(Bool, skip_download_if_exceeds_query_cache, true, R"(
+    DECLARE_WITH_ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, R"(
 Skip download from remote filesystem if exceeds query cache size
-)", 0) \
+)", 0, skip_download_if_exceeds_query_cache) \
     DECLARE(UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), R"(
 Max remote filesystem cache size that can be downloaded by a single query
 )", 0) \
@@ -4847,6 +6057,12 @@ Limit on size of a single batch of file segments that a read buffer can request 
     DECLARE(UInt64, filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, 1000, R"(
 Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
+    DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
+Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
+)", 0) \
+    DECLARE(UInt64, filesystem_cache_boundary_alignment, 0, R"(
+Filesystem cache boundary alignment. This setting is applied only for non-disk read (e.g. for cache of remote table engines / table functions, but not for storage configuration of MergeTree tables). Value 0 means no alignment.
+)", 0) \
     DECLARE(UInt64, temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds, (10 * 60 * 1000), R"(
 Wait time to lock cache for space reservation for temporary data in filesystem cache
 )", 0) \
@@ -4854,11 +6070,26 @@ Wait time to lock cache for space reservation for temporary data in filesystem c
     DECLARE(Bool, use_page_cache_for_disks_without_file_cache, false, R"(
 Use userspace page cache for remote disks that don't have filesystem cache enabled.
 )", 0) \
+    DECLARE(Bool, use_page_cache_with_distributed_cache, false, R"(
+Use userspace page cache when distributed cache is used.
+)", 0) \
     DECLARE(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, R"(
 Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.
 )", 0) \
     DECLARE(Bool, page_cache_inject_eviction, false, R"(
 Userspace page cache will sometimes invalidate some pages at random. Intended for testing.
+)", 0) \
+    DECLARE(UInt64, page_cache_block_size, 1048576, R"(
+Size of file chunks to store in the userspace page cache, in bytes. All reads that go through the cache will be rounded up to a multiple of this size.
+
+This setting can be adjusted on a per-query level basis, but cache entries with different block sizes cannot be reused. Changing this setting effectively invalidates existing entries in the cache.
+
+A higher value, like 1 MiB is good for high-throughput queries, and a lower value, like 64 KiB is good for low-latency point queries.
+)", 0) \
+    DECLARE(UInt64, page_cache_lookahead_blocks, 16, R"(
+On userspace page cache miss, read up to this many consecutive blocks at once from the underlying storage, if they're also not in the cache. Each block is page_cache_block_size bytes.
+
+A higher value is good for high-throughput queries, while low-latency point queries will work better without readahead.
 )", 0) \
     \
     DECLARE(Bool, load_marks_asynchronously, false, R"(
@@ -4883,7 +6114,7 @@ Prefetch step in bytes. Zero means `auto` - approximately the best prefetch step
     DECLARE(UInt64, filesystem_prefetch_step_marks, 0, R"(
 Prefetch step in marks. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
 )", 0) \
-    DECLARE(UInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
+    DECLARE(NonZeroUInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
 Maximum memory usage for prefetches.
 )", 0) \
     DECLARE(UInt64, filesystem_prefetches_limit, 200, R"(
@@ -4912,9 +6143,6 @@ Check that DDL query (such as DROP TABLE or RENAME) will not break dependencies
 )", 0) \
     DECLARE(Bool, check_referential_table_dependencies, false, R"(
 Check that DDL query (such as DROP TABLE or RENAME) will not break referential dependencies
-)", 0) \
-    DECLARE(Bool, use_local_cache_for_remote_storage, true, R"(
-Use local cache for remote storage like HDFS or S3, it's used for remote table engine only
 )", 0) \
     \
     DECLARE(Bool, allow_unrestricted_reads_from_keeper, false, R"(
@@ -4966,7 +6194,8 @@ This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`.
 Disabled by default.
 
 :::note
-In ClickHouse Cloud the compatibility setting must be set by ClickHouse Cloud support.  Please [open a case](https://clickhouse.cloud/support) to have it set.
+In ClickHouse Cloud, the service-level default compatibility setting must be set by ClickHouse Cloud support. Please [open a case](https://clickhouse.cloud/support) to have it set.
+However, the compatibility setting can be overridden at the user, role, profile, query, or session level using standard ClickHouse setting mechanisms such as `SET compatibility = '22.3'` in a session or `SETTINGS compatibility = '22.3'` in a query.
 :::
 )", 0) \
     \
@@ -4976,7 +6205,7 @@ from the specified table.
 
 **Example**
 
-``` sql
+```sql
 INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 SELECT * FROM table_1;
 ```
@@ -5007,7 +6236,7 @@ This setting is not applied to any subquery.
 
 **Example**
 
-``` sql
+```sql
 INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 SElECT * FROM table_1;
 ```
@@ -5066,55 +6295,119 @@ If reading `sample.csv` is successful, file will be renamed to `processed_sample
     \
     /* CLOUD ONLY */ \
     DECLARE(Bool, read_through_distributed_cache, false, R"(
-Only in ClickHouse Cloud. Allow reading from distributed cache
+Only has an effect in ClickHouse Cloud. Allow reading from distributed cache
 )", 0) \
     DECLARE(Bool, write_through_distributed_cache, false, R"(
-Only in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache)
+Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache)
 )", 0) \
     DECLARE(Bool, distributed_cache_throw_on_error, false, R"(
-Only in ClickHouse Cloud. Rethrow exception happened during communication with distributed cache or exception received from distributed cache. Otherwise fallback to skipping distributed cache on error
+Only has an effect in ClickHouse Cloud. Rethrow exception happened during communication with distributed cache or exception received from distributed cache. Otherwise fallback to skipping distributed cache on error
 )", 0) \
     DECLARE(DistributedCacheLogMode, distributed_cache_log_mode, DistributedCacheLogMode::LOG_ON_ERROR, R"(
-Only in ClickHouse Cloud. Mode for writing to system.distributed_cache_log
+Only has an effect in ClickHouse Cloud. Mode for writing to system.distributed_cache_log
 )", 0) \
     DECLARE(Bool, distributed_cache_fetch_metrics_only_from_current_az, true, R"(
-Only in ClickHouse Cloud. Fetch metrics only from current availability zone in system.distributed_cache_metrics, system.distributed_cache_events
+Only has an effect in ClickHouse Cloud. Fetch metrics only from current availability zone in system.distributed_cache_metrics, system.distributed_cache_events
 )", 0) \
-    DECLARE(UInt64, distributed_cache_connect_max_tries, 100, R"(
-Only in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
+    DECLARE(UInt64, distributed_cache_connect_max_tries, default_distributed_cache_connect_max_tries, R"(
+Only has an effect in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
+)", 0) \
+    DECLARE(UInt64, distributed_cache_read_request_max_tries, default_distributed_cache_read_request_max_tries, R"(
+Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache request if unsuccessful
 )", 0) \
     DECLARE(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, R"(
-Only in ClickHouse Cloud. Wait time in milliseconds to receive data for request from distributed cache
+Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive data for request from distributed cache
 )", 0) \
     DECLARE(UInt64, distributed_cache_receive_timeout_milliseconds, 10000, R"(
-Only in ClickHouse Cloud. Wait time in milliseconds to receive any kind of response from distributed cache
+Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive any kind of response from distributed cache
 )", 0) \
     DECLARE(UInt64, distributed_cache_wait_connection_from_pool_milliseconds, 100, R"(
-Only in ClickHouse Cloud. Wait time in milliseconds to receive connection from connection pool if distributed_cache_pool_behaviour_on_limit is wait
+Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive connection from connection pool if distributed_cache_pool_behaviour_on_limit is wait
 )", 0) \
     DECLARE(Bool, distributed_cache_bypass_connection_pool, false, R"(
-Only in ClickHouse Cloud. Allow to bypass distributed cache connection pool
+Only has an effect in ClickHouse Cloud. Allow to bypass distributed cache connection pool
 )", 0) \
-    DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::ALLOCATE_NEW_BYPASSING_POOL, R"(
-Only in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached
+    DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::WAIT, R"(
+Only has an effect in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached
 )", 0) \
-    DECLARE(UInt64, distributed_cache_read_alignment, 0, R"(
-Only in ClickHouse Cloud. A setting for testing purposes, do not change it
+    DECLARE(UInt64, distributed_cache_alignment, 0, R"(
+Only has an effect in ClickHouse Cloud. A setting for testing purposes, do not change it
 )", 0) \
     DECLARE(UInt64, distributed_cache_max_unacked_inflight_packets, DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS, R"(
-Only in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets in a single distributed cache read request
+Only has an effect in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets in a single distributed cache read request
 )", 0) \
     DECLARE(UInt64, distributed_cache_data_packet_ack_window, DistributedCache::ACK_DATA_PACKET_WINDOW, R"(
-Only in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a single distributed cache read request
+Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a single distributed cache read request
+)", 0) \
+    DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
+Only has an effect in ClickHouse Cloud. Discard connection if some data is unread.
+)", 0) \
+    DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
+Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
+)", 0) \
+    DECLARE(UInt64, distributed_cache_credentials_refresh_period_seconds, default_distributed_cache_credentials_refresh_period_seconds, R"(
+Only has an effect in ClickHouse Cloud. A period of credentials refresh.
+)", 0) \
+    DECLARE(Bool, distributed_cache_read_only_from_current_az, true, R"(
+Only has an effect in ClickHouse Cloud. Allow to read only from current availability zone. If disabled, will read from all cache servers in all availability zones.
+)", 0) \
+    DECLARE(UInt64, write_through_distributed_cache_buffer_size, 0, R"(
+Only has an effect in ClickHouse Cloud. Set buffer size for write-through distributed cache. If 0, will use buffer size which would have been used if there was not distributed cache.
+)", 0) \
+    DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
+Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
+)", 0) \
+    DECLARE(UInt64, distributed_cache_connect_backoff_min_ms, default_distributed_cache_connect_backoff_min_ms, R"(
+Only has an effect in ClickHouse Cloud. Minimum backoff milliseconds for distributed cache connection creation.
+)", 0) \
+    DECLARE(UInt64, distributed_cache_connect_backoff_max_ms, default_distributed_cache_connect_backoff_max_ms, R"(
+Only has an effect in ClickHouse Cloud. Maximum backoff milliseconds for distributed cache connection creation.
+)", 0) \
+    DECLARE(Bool, distributed_cache_prefer_bigger_buffer_size, false, R"(
+Only has an effect in ClickHouse Cloud. Same as filesystem_cache_prefer_bigger_buffer_size, but for distributed cache.
+)", 0) \
+    DECLARE(Bool, read_from_distributed_cache_if_exists_otherwise_bypass_cache, false, R"(
+Only has an effect in ClickHouse Cloud. Same as read_from_filesystem_cache_if_exists_otherwise_bypass_cache, but for distributed cache.
+)", 0) \
+    DECLARE(UInt64, distributed_cache_connect_timeout_ms, default_distributed_cache_connect_timeout_ms, R"(
+Only has an effect in ClickHouse Cloud. Connection timeout when connecting to distributed cache server.
+)", 0) \
+    DECLARE(UInt64, distributed_cache_receive_timeout_ms, default_distributed_cache_receive_timeout_ms, R"(
+Only has an effect in ClickHouse Cloud. Timeout for receiving data from distributed cache server, in milliseconds. If no bytes were received in this interval, the exception is thrown.
+)", 0) \
+    DECLARE(UInt64, distributed_cache_send_timeout_ms, default_distributed_cache_send_timeout_ms, R"(
+Only has an effect in ClickHouse Cloud. Timeout for sending data to istributed cache server, in milliseconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown.
+)", 0) \
+    DECLARE(UInt64, distributed_cache_tcp_keep_alive_timeout_ms, default_distributed_cache_tcp_keep_alive_timeout_ms, R"(
+Only has an effect in ClickHouse Cloud. The time in milliseconds the connection to distributed cache server needs to remain idle before TCP starts sending keepalive probes.
+)", 0) \
+    DECLARE(Bool, distributed_cache_use_clients_cache_for_write, default_distributed_cache_use_clients_cache_for_write, R"(
+Only has an effect in ClickHouse Cloud. Use clients cache for write requests.
+)", 0) \
+    DECLARE(Bool, distributed_cache_use_clients_cache_for_read, default_distributed_cache_use_clients_cache_for_read, R"(
+Only has an effect in ClickHouse Cloud. Use clients cache for read requests.
+)", 0) \
+    DECLARE(String, distributed_cache_file_cache_name, "", R"(
+Only has an effect in ClickHouse Cloud. A setting used only for CI tests - filesystem cache name to use on distributed cache.
+)", 0) \
+    DECLARE(Bool, filesystem_cache_allow_background_download, true, R"(
+Allow filesystem cache to enqueue background downloads for data read from remote storage. Disable to keep downloads in the foreground for the current query/session.
+)", 0) \
+    DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
+Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
+)", 0) \
+    DECLARE(Bool, filesystem_cache_enable_background_download_during_fetch, true, R"(
+Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
     \
     DECLARE(Bool, parallelize_output_from_storages, true, R"(
-Parallelize output for reading step from storage. It allows parallelization of  query processing right after reading from storage if possible
+Parallelize output for reading step from storage. It allows parallelization of query processing right after reading from storage if possible
 )", 0) \
     DECLARE(String, insert_deduplication_token, "", R"(
 The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
 For example, by providing a unique value for the setting in each INSERT statement,
 user can avoid the same inserted data being deduplicated.
+
 
 Possible values:
 
@@ -5122,8 +6415,8 @@ Possible values:
 
 `insert_deduplication_token` is used for deduplication _only_ when not empty.
 
-For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated-deduplication-window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated-deduplication-window-seconds)).
-For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non-replicated-deduplication-window).
+For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated_deduplication_window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated_deduplication_window_seconds)).
+For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non_replicated_deduplication_window).
 
 :::note
 `insert_deduplication_token` works on a partition level (the same as `insert_deduplication` checksum). Multiple partitions can have the same `insert_deduplication_token`.
@@ -5160,8 +6453,11 @@ SELECT * FROM test_table
     DECLARE(Bool, count_distinct_optimization, false, R"(
 Rewrite count distinct to subquery of group by
 )", 0) \
+    DECLARE(Bool, optimize_inverse_dictionary_lookup, true, R"(
+Avoid repeated inverse dictionary lookup by doing faster lookups into a precomputed set of possible key values.
+)", 0) \
     DECLARE(Bool, throw_if_no_data_to_insert, true, R"(
-Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/docs/en/interfaces/cli) or using the [gRPC interface](/docs/en/interfaces/grpc).
+Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/interfaces/cli) or using the [gRPC interface](/interfaces/grpc).
 )", 0) \
     DECLARE(Bool, compatibility_ignore_auto_increment_in_create_table, false, R"(
 Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return error. It simplifies migration from MySQL
@@ -5272,7 +6568,7 @@ Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows
 Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.
 )", 0) \
     DECLARE(Bool, use_variant_as_common_type, false, R"(
-Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiif)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
+Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
 
 Example:
 
@@ -5383,7 +6679,7 @@ Result:
 ```
 )", 0) \
     DECLARE(Float, ignore_drop_queries_probability, 0, R"(
-If enabled, server will ignore all DROP table queries with specified probability (for Memory and JOIN engines it will replcase DROP to TRUNCATE). Used for testing purposes
+If enabled, server will ignore all DROP table queries with specified probability (for Memory and JOIN engines it will replace DROP to TRUNCATE). Used for testing purposes
 )", 0) \
     DECLARE(Bool, traverse_shadow_remote_data_paths, false, R"(
 Traverse frozen data (shadow directory) in addition to actual table data when query system.remote_data_paths
@@ -5397,11 +6693,34 @@ Allow to use the function `getClientHTTPHeader` which lets to obtain a value of 
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
 )", 0) \
+    DECLARE(Bool, allow_dynamic_type_in_join_keys, false, R"(
+Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recommended to use Dynamic type in JOIN keys because comparison with other types may lead to unexpected results.
+)", 0) \
+    DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
+Use types inference during String to Variant conversion.
+)", 0) \
+    DECLARE(DateTimeInputFormat, cast_string_to_date_time_mode, "basic", R"(
+Allows choosing a parser of the text representation of date and time during cast from String.
+
+Possible values:
+
+- `'best_effort'` — Enables extended parsing.
+
+    ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parseDateTimeBestEffortUS)
+
+- `'basic'` — Use basic parser.
+
+    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `2019-08-20 10:18:56` or `2019-08-20`.
+
+See also:
+
+- [DateTime data type.](../../sql-reference/data-types/datetime.md)
+- [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
+)", 0) \
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
-)", 0) \
-    DECLARE(Bool, use_json_alias_for_old_object_type, false, R"(
-When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/json.md) type instead of the new [JSON](../../sql-reference/data-types/newjson.md) type.
 )", 0) \
     DECLARE(Bool, allow_create_index_without_type, false, R"(
 Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.
@@ -5441,45 +6760,86 @@ a   Tuple(
 )
 ```
 )", 0) \
-    DECLARE(Bool, create_table_empty_primary_key_by_default, false, R"(
+    DECLARE(Bool, create_table_empty_primary_key_by_default, true, R"(
 Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified
 )", 0) \
     DECLARE(Bool, allow_named_collection_override_by_default, true, R"(
 Allow named collections' fields override by default.
 )", 0) \
     DECLARE(SQLSecurityType, default_normal_view_sql_security, SQLSecurityType::INVOKER, R"(
-Allows to set default `SQL SECURITY` option while creating a normal view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
+Allows to set default `SQL SECURITY` option while creating a normal view. [More about SQL security](../../sql-reference/statements/create/view.md/#sql_security).
 
 The default value is `INVOKER`.
 )", 0) \
     DECLARE(SQLSecurityType, default_materialized_view_sql_security, SQLSecurityType::DEFINER, R"(
-Allows to set a default value for SQL SECURITY option when creating a materialized view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
+Allows to set a default value for SQL SECURITY option when creating a materialized view. [More about SQL security](../../sql-reference/statements/create/view.md/#sql_security).
 
 The default value is `DEFINER`.
 )", 0) \
     DECLARE(String, default_view_definer, "CURRENT_USER", R"(
-Allows to set default `DEFINER` option while creating a view. [More about SQL security](../../sql-reference/statements/create/view.md#sql_security).
+Allows to set default `DEFINER` option while creating a view. [More about SQL security](../../sql-reference/statements/create/view.md/#sql_security).
 
 The default value is `CURRENT_USER`.
 )", 0) \
     DECLARE(UInt64, cache_warmer_threads, 4, R"(
-Only available in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when cache_populated_by_fetch is enabled. Zero to disable.
+Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into the filesystem cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
 )", 0) \
+    DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
+Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
-Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see cache_populated_by_fetch) or this many seconds old. Only for Replicated-/SharedMergeTree.
+Only has an effect in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)) or this many seconds old. Only for Replicated-/SharedMergeTree.
+)", 0) \
+    DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
+Optimizes evaluation of functions that return NULL when any argument is NULL. When the percentage of NULL values in the function's arguments exceeds the short_circuit_function_evaluation_for_nulls_threshold, the system skips evaluating the function row-by-row. Instead, it immediately returns NULL for all rows, avoiding unnecessary computation.
+)", 0) \
+    DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
+Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled.
+When the ratio of rows containing NULL values to the total number of rows exceeds this threshold, these rows containing NULL values will not be evaluated.
 )", 0) \
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
-Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see cache_populated_by_fetch), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for ReplicatedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
+Only has an effect in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
-    DECLARE(Bool, iceberg_engine_ignore_schema_evolution, false, R"(
-Allow to ignore schema evolution in Iceberg table engine and read all data using schema specified by the user on table creation or latest schema parsed from metadata on table creation.
-
-:::note
-Enabling this setting can lead to incorrect result as in case of evolved schema all data files will be read using the same schema.
-:::
+    DECLARE(Int64, iceberg_timestamp_ms, 0, R"(
+Query Iceberg table using the snapshot that was current at a specific timestamp.
 )", 0) \
+    DECLARE(Int64, iceberg_snapshot_id, 0, R"(
+Query Iceberg table using the specific snapshot id.
+)", 0) \
+    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
+Enables showing data lake catalogs in system tables.
+)", 0) \
+    DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
+Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
+)", 0) \
+    DECLARE(Int64, delta_lake_snapshot_version, -1, R"(
+Version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
+)", 0) \
+    DECLARE(Int64, delta_lake_snapshot_start_version, -1, R"(
+Start version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
+)", 0) \
+    DECLARE(Int64, delta_lake_snapshot_end_version, -1, R"(
+End version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
+)", 0) \
+    DECLARE(Bool, delta_lake_throw_on_engine_predicate_error, false, R"(
+Enables throwing an exception if there was an error when analyzing scan predicate in delta-kernel.
+)", 0) \
+    DECLARE(Bool, delta_lake_enable_engine_predicate, true, R"(
+Enables delta-kernel internal data pruning.
+)", 0) \
+    DECLARE(NonZeroUInt64, delta_lake_insert_max_rows_in_data_file, 1000000, R"(
+Defines a rows limit for a single inserted data file in delta lake.
+)", 0) \
+    DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
+Defines a bytes limit for a single inserted data file in delta lake.
+)", 0) \
+    DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
+Enables delta-kernel writes feature.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
+)", 0) \
+    DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
+Use Iceberg partition pruning for Iceberg tables
 )", 0) \
     DECLARE(Bool, allow_deprecated_snowflake_conversion_functions, false, R"(
 Functions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, and `dateTime64ToSnowflake` are deprecated and disabled by default.
@@ -5493,9 +6853,9 @@ Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sortin
     DECLARE(Bool, keeper_map_strict_mode, false, R"(
 Enforce additional checks during operations on KeeperMap. E.g. throw an exception on an insert for already existing key
 )", 0) \
-    DECLARE(UInt64, extract_key_value_pairs_max_pairs_per_row, 1000, R"(
+    DECLARE_WITH_ALIAS(UInt64, extract_key_value_pairs_max_pairs_per_row, 1000, R"(
 Max number of pairs that can be produced by the `extractKeyValuePairs` function. Used as a safeguard against consuming too much memory.
-)", 0) ALIAS(extract_kvp_max_pairs_per_row) \
+)", 0, extract_kvp_max_pairs_per_row) \
     DECLARE(Bool, restore_replace_external_engines_to_null, false, R"(
 For testing purposes. Replaces all external engines to Null to not initiate external connections.
 )", 0) \
@@ -5505,95 +6865,146 @@ For testing purposes. Replaces all external table functions to Null to not initi
     DECLARE(Bool, restore_replace_external_dictionary_source_to_null, false, R"(
 Replace external dictionary sources to Null on restore. Useful for testing purposes
 )", 0) \
-    DECLARE(Bool, create_if_not_exists, false, R"(
-Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
-)", 0) \
-    DECLARE(Bool, enforce_strict_identifier_format, false, R"(
-If enabled, only allow identifiers containing alphanumeric characters and underscores.
-)", 0) \
-    DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
-)", 0) \
-    \
-    /* ###################################### */ \
-    /* ######## EXPERIMENTAL FEATURES ####### */ \
-    /* ###################################### */ \
-    DECLARE(Bool, allow_experimental_materialized_postgresql_table, false, R"(
-Allows to use the MaterializedPostgreSQL table engine. Disabled by default, because this feature is experimental
-)", 0) \
-    DECLARE(Bool, allow_experimental_funnel_functions, false, R"(
-Enable experimental functions for funnel analysis.
-)", 0) \
-    DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
-Enable experimental functions for natural language processing.
-)", 0) \
-    DECLARE(Bool, allow_experimental_hash_functions, false, R"(
-Enable experimental hash functions
-)", 0) \
-    DECLARE(Bool, allow_experimental_object_type, false, R"(
-Allow Object and JSON data types
-)", 0) \
-    DECLARE(Bool, allow_experimental_time_series_table, false, R"(
-Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine.
+        /* Parallel replicas */ \
+    DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
+Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
+)", 0, enable_parallel_replicas) \
+    DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
+Enable automatic switching to execution with parallel replicas based on collected statistics. Requires enabling `parallel_replicas_local_plan` and providing `cluster_for_parallel_replicas`.
+0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 0, R"(
+Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
+)", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
+The maximum number of replicas for each shard when executing a query.
 
 Possible values:
 
-- 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
-- 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
+- Positive integer.
+
+**Additional Info**
+
+This options will produce different results depending on the settings used.
+
+:::note
+This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](/operations/settings/settings#max_parallel_replicas) for more details.
+:::
+
+### Parallel processing using `SAMPLE` key
+
+A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
+
+- The position of the sampling key in the partitioning key does not allow efficient range scans.
+- Adding a sampling key to the table makes filtering by other columns less efficient.
+- The sampling key is an expression that is expensive to calculate.
+- The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
+
+### Parallel processing using [parallel_replicas_custom_key](#parallel_replicas_custom_key)
+
+This setting is useful for any replicated table.
 )", 0) \
-    DECLARE(Bool, allow_experimental_vector_similarity_index, false, R"(
-Allow experimental vector similarity index
+    DECLARE(ParallelReplicasMode, parallel_replicas_mode, ParallelReplicasMode::READ_TASKS, R"(
+Type of filter to use with custom key for parallel replicas. default - use modulo operation on the custom key, range - use range filter on custom key using all possible values for the value type of custom key.
 )", 0) \
-    DECLARE(Bool, allow_experimental_variant_type, false, R"(
-Allows creation of experimental [Variant](../../sql-reference/data-types/variant.md).
+    DECLARE(UInt64, parallel_replicas_count, 0, R"(
+This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the number of parallel replicas participating in query processing.
+)", BETA) \
+    DECLARE(UInt64, parallel_replica_offset, 0, R"(
+This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the index of the replica participating in query processing among parallel replicas.
+)", BETA) \
+    DECLARE(String, parallel_replicas_custom_key, "", R"(
+An arbitrary integer expression that can be used to split work between replicas for a specific table.
+The value can be any integer expression.
+
+Simple expressions using primary keys are preferred.
+
+If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
+Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
+)", BETA) \
+    DECLARE(UInt64, parallel_replicas_custom_key_range_lower, 0, R"(
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[parallel_replicas_custom_key_range_lower, INT_MAX]`.
+
+When used in conjunction with [parallel_replicas_custom_key_range_upper](#parallel_replicas_custom_key_range_upper), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
+)", BETA) \
+    DECLARE(UInt64, parallel_replicas_custom_key_range_upper, 0, R"(
+Allows the filter type `range` to split the work evenly between replicas based on the custom range `[0, parallel_replicas_custom_key_range_upper]`. A value of 0 disables the upper bound, setting it the max value of the custom key expression.
+
+When used in conjunction with [parallel_replicas_custom_key_range_lower](#parallel_replicas_custom_key_range_lower), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
+
+Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing
+)", BETA) \
+    DECLARE(String, cluster_for_parallel_replicas, "", R"(
+Cluster for a shard in which current server is located
 )", 0) \
-    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
-Allow Dynamic data type
+    DECLARE(Bool, parallel_replicas_allow_in_with_subquery, true, R"(
+If true, subquery for IN will be executed on every follower replica.
 )", 0) \
-    DECLARE(Bool, allow_experimental_json_type, false, R"(
-Allow JSON data type
+    DECLARE(Bool, parallel_replicas_for_non_replicated_merge_tree, false, R"(
+If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables
 )", 0) \
-    DECLARE(Bool, allow_experimental_codecs, false, R"(
-If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
+    DECLARE(UInt64, parallel_replicas_min_number_of_rows_per_replica, 0, R"(
+Limit the number of replicas used in a query to (estimated rows to read / min_number_of_rows_per_replica). The max is still limited by 'max_parallel_replicas'
 )", 0) \
-    DECLARE(Bool, allow_experimental_shared_set_join, true, R"(
-Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
+    DECLARE(Bool, parallel_replicas_prefer_local_join, true, R"(
+If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN.
 )", 0) \
-    DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
-SELECT queries with LIMIT bigger than this setting cannot use vector similarity indexes. Helps to prevent memory overflows in vector similarity indexes.
+    DECLARE(UInt64, parallel_replicas_mark_segment_size, 0, R"(
+Parts virtually divided into segments to be distributed between replicas for parallel reading. This setting controls the size of these segments. Not recommended to change until you're absolutely sure in what you're doing. Value should be in range [128; 16384]
 )", 0) \
-    DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
-The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
+    DECLARE(Bool, parallel_replicas_local_plan, true, R"(
+Build local plan for local replica
 )", 0) \
-    DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
-Throw exception if unsupported query is used inside transaction
+    DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
+Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", 0) \
-    DECLARE(TransactionsWaitCSNMode, wait_changes_become_visible_after_commit_mode, TransactionsWaitCSNMode::WAIT_UNKNOWN, R"(
-Wait for committed changes to become actually visible in the latest snapshot
+    DECLARE(Bool, parallel_replicas_support_projection, true, R"(
+Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
 )", 0) \
-    DECLARE(Bool, implicit_transaction, false, R"(
-If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
+    DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
+The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", 0) \
-    DECLARE(UInt64, grace_hash_join_initial_buckets, 1, R"(
-Initial number of grace hash join buckets
+    DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
+Use local pipeline during distributed INSERT SELECT with parallel replicas
 )", 0) \
-    DECLARE(UInt64, grace_hash_join_max_buckets, 1024, R"(
-Limit on the number of grace hash join buckets
+    DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
+The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 )", 0) \
-    DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
-The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
+    DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
+Replace table function engines with their -Cluster alternatives
 )", 0) \
-    DECLARE(UInt64, join_to_sort_maximum_table_rows, 10000, R"(
-The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join.
+    DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
+Allow usage of materialized views with parallel replicas
 )", 0) \
-    DECLARE(Bool, allow_experimental_join_right_table_sorting, false, R"(
-If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
+    DECLARE(Bool, distributed_index_analysis, false, R"(
+Index analysis will be distributed across replicas. Requires cluster_for_parallel_replicas.
+)", EXPERIMENTAL) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
+)", BETA, allow_database_iceberg) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_unity_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
+)", BETA, allow_database_unity_catalog) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_glue_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
+)", BETA, allow_database_glue_catalog) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
+Allow new query analyzer.
+)", IMPORTANT, enable_analyzer) \
+    DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
+Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
 )", 0) \
+    DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
+Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
+    )", 0) \
+    \
     DECLARE(Timezone, session_timezone, "", R"(
 Sets the implicit time zone of the current session or query.
 The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone.
 The setting takes precedence over the globally configured (server-level) implicit time zone.
-A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md#timezone).
+A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md/#timezone).
 
 You can use functions `timeZone()` and `serverTimeZone()` to get the session time zone and server time zone.
 
@@ -5647,182 +7058,504 @@ This happens due to different parsing pipelines:
 
 **See also**
 
-- [timezone](../server-configuration-parameters/settings.md#timezone)
+- [timezone](../server-configuration-parameters/settings.md/#timezone)
+)", BETA) \
+DECLARE(Bool, create_if_not_exists, false, R"(
+Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
 )", 0) \
-    DECLARE(Bool, use_hive_partitioning, false, R"(
-When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
-)", 0)\
+    DECLARE(Bool, enforce_strict_identifier_format, false, R"(
+If enabled, only allow identifiers containing alphanumeric characters and underscores.
+)", 0) \
+    DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
+SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
+)", 0) \
+    DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
+The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
+)", 0) \
+    DECLARE(Bool, vector_search_with_rescoring, false, R"(
+If ClickHouse performs rescoring for queries that use the vector similarity index.
+Without rescoring, the vector similarity index returns the rows containing the best matches directly.
+With rescoring, the rows are extrapolated to granule level and all rows in the granule are checked again.
+In most situations, rescoring helps only marginally with accuracy but it deteriorates performance of vector search queries significantly.
+Note: A query run without rescoring and with parallel replicas enabled may fall back to rescoring.
+)", 0) \
+    DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
+If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering). Possible values:
+- 'auto' - Postfiltering (the exact semantics may change in future).
+- 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
+- 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
+)", 0) \
+    DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
+Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'.
+)", 0, vector_search_postfilter_multiplier) \
+    DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
+If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
+)", 0) \
+    DECLARE(Bool, implicit_select, false, R"(
+Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
+
+In `clickhouse-local` it is enabled by default and can be explicitly disabled.
+)", 0) \
+    DECLARE(Bool, optimize_extract_common_expressions, true, R"(
+Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
+- indices in simple filtering expressions
+- cross to inner join optimization
+)", 0) \
+    DECLARE(Bool, optimize_and_compare_chain, true, R"(
+Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
+)", 0) \
+    DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
+Enable pushing user roles from originator to other nodes while performing a query.
+)", 0) \
+    DECLARE(Bool, use_join_disjunctions_push_down, true, R"(
+Enable pushing OR-connected parts of JOIN conditions down to the corresponding input sides ("partial pushdown").
+This allows storage engines to filter earlier, which can reduce data read.
+The optimization is semantics-preserving and is applied only when each top-level OR branch contributes at least one deterministic
+predicate for the target side.
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
+Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
+)", 0) \
+    DECLARE(String, implicit_table_at_top_level, "", R"(
+If not empty, queries without FROM at the top level will read from this table instead of system.one.
+
+This is used in clickhouse-local for input data processing.
+The setting could be set explicitly by a user but is not intended for this type of usage.
+
+Subqueries are not affected by this setting (neither scalar, FROM, or IN subqueries).
+SELECTs at the top level of UNION, INTERSECT, EXCEPT chains are treated uniformly and affected by this setting, regardless of their grouping in parentheses.
+It is unspecified how this setting affects views and distributed queries.
+
+The setting accepts a table name (then the table is resolved from the current database) or a qualified name in the form of 'database.table'.
+Both database and table names have to be unquoted - only simple identifiers are allowed.
+)", 0) \
+    DECLARE(Bool, allow_general_join_planning, true, R"(
+Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
+)", 0) \
+    DECLARE(ObjectStorageGranularityLevel, cluster_table_function_split_granularity, ObjectStorageGranularityLevel::FILE, R"(
+Controls how data is split into tasks when executing a CLUSTER TABLE FUNCTION.
+
+This setting defines the granularity of work distribution across the cluster:
+- `file` — each task processes an entire file.
+- `bucket` — tasks are created per internal data block within a file (for example, Parquet row groups).
+
+Choosing finer granularity (like `bucket`) can improve parallelism when working with a small number of large files.
+For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
+)", 0) \
+    DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(
+Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
+)", 0) \
+    DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
+When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.
+If there is a larger number of tables, the schema will be inferred from the first specified number of tables.
+)", 0) \
+    DECLARE(Bool, validate_enum_literals_in_operators, false, R"(
+If enabled, validate enum literals in operators like `IN`, `NOT IN`, `==`, `!=` against the enum type and throw an exception if the literal is not a valid enum value.
+)", 0) \
     \
-    DECLARE(Bool, allow_statistics_optimize, false, R"(
-Allows using statistics to optimize queries
-)", 0) ALIAS(allow_statistic_optimize) \
-    DECLARE(Bool, allow_experimental_statistics, false, R"(
-Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md#column-statistics).
-)", 0) ALIAS(allow_experimental_statistic) \
-    \
-    /* Parallel replicas */ \
-    DECLARE(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
-Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
-)", 0) ALIAS(enable_parallel_replicas) \
-    DECLARE(NonZeroUInt64, max_parallel_replicas, 1, R"(
-The maximum number of replicas for each shard when executing a query.
+    DECLARE(UInt64, max_autoincrement_series, 1000, R"(
+The limit on the number of series created by the `generateSerialID` function.
 
-Possible values:
-
-- Positive integer.
-
-**Additional Info**
-
-This options will produce different results depending on the settings used.
-
-:::note
-This setting will produce incorrect results when joins or subqueries are involved, and all tables don't meet certain requirements. See [Distributed Subqueries and max_parallel_replicas](../../sql-reference/operators/in.md/#max_parallel_replica-subqueries) for more details.
-:::
-
-### Parallel processing using `SAMPLE` key
-
-A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
-
-- The position of the sampling key in the partitioning key does not allow efficient range scans.
-- Adding a sampling key to the table makes filtering by other columns less efficient.
-- The sampling key is an expression that is expensive to calculate.
-- The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
-
-### Parallel processing using [parallel_replicas_custom_key](#parallel_replicas_custom_key)
-
-This setting is useful for any replicated table.
+As each series represents a node in Keeper, it is recommended to have no more than a couple of millions of them.
 )", 0) \
-    DECLARE(ParallelReplicasMode, parallel_replicas_mode, ParallelReplicasMode::READ_TASKS, R"(
-Type of filter to use with custom key for parallel replicas. default - use modulo operation on the custom key, range - use range filter on custom key using all possible values for the value type of custom key.
+    DECLARE(Bool, use_hive_partitioning, true, R"(
+When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/sql-reference/table-functions/file#hive-style-partitioning)/[S3](/sql-reference/table-functions/s3#hive-style-partitioning)/[URL](/sql-reference/table-functions/url#hive-style-partitioning)/[HDFS](/sql-reference/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/sql-reference/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
-    DECLARE(UInt64, parallel_replicas_count, 0, R"(
-This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the number of parallel replicas participating in query processing.
+    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
+When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
+The former is used when we know that the right table size is below the threshold.
 )", 0) \
-    DECLARE(UInt64, parallel_replica_offset, 0, R"(
-This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the index of the replica participating in query processing among parallel replicas.
-)", 0) \
-    DECLARE(String, parallel_replicas_custom_key, "", R"(
-An arbitrary integer expression that can be used to split work between replicas for a specific table.
-The value can be any integer expression.
+    DECLARE(Bool, apply_settings_from_server, true, R"(
+Whether the client should accept settings from server.
 
-Simple expressions using primary keys are preferred.
+This only affects operations performed on the client side, in particular parsing the INSERT input data and formatting the query result. Most of query execution happens on the server and is not affected by this setting.
 
-If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
-Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
-)", 0) \
-    DECLARE(UInt64, parallel_replicas_custom_key_range_lower, 0, R"(
-Allows the filter type `range` to split the work evenly between replicas based on the custom range `[parallel_replicas_custom_key_range_lower, INT_MAX]`.
+Normally this setting should be set in user profile (users.xml or queries like `ALTER USER`), not through the client (client command line arguments, `SET` query, or `SETTINGS` section of `SELECT` query). Through the client it can be changed to false, but can't be changed to true (because the server won't send the settings if user profile has `apply_settings_from_server = false`).
 
-When used in conjunction with [parallel_replicas_custom_key_range_upper](#parallel_replicas_custom_key_range_upper), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
-
-Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
-)", 0) \
-    DECLARE(UInt64, parallel_replicas_custom_key_range_upper, 0, R"(
-Allows the filter type `range` to split the work evenly between replicas based on the custom range `[0, parallel_replicas_custom_key_range_upper]`. A value of 0 disables the upper bound, setting it the max value of the custom key expression.
-
-When used in conjunction with [parallel_replicas_custom_key_range_lower](#parallel_replicas_custom_key_range_lower), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
-
-Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing
-)", 0) \
-    DECLARE(String, cluster_for_parallel_replicas, "", R"(
-Cluster for a shard in which current server is located
-)", 0) \
-    DECLARE(Bool, parallel_replicas_allow_in_with_subquery, true, R"(
-If true, subquery for IN will be executed on every follower replica.
-)", 0) \
-    DECLARE(Float, parallel_replicas_single_task_marks_count_multiplier, 2, R"(
-A multiplier which will be added during calculation for minimal number of marks to retrieve from coordinator. This will be applied only for remote replicas.
-)", 0) \
-    DECLARE(Bool, parallel_replicas_for_non_replicated_merge_tree, false, R"(
-If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables
-)", 0) \
-    DECLARE(UInt64, parallel_replicas_min_number_of_rows_per_replica, 0, R"(
-Limit the number of replicas used in a query to (estimated rows to read / min_number_of_rows_per_replica). The max is still limited by 'max_parallel_replicas'
-)", 0) \
-    DECLARE(Bool, parallel_replicas_prefer_local_join, true, R"(
-If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN.
-)", 0) \
-    DECLARE(UInt64, parallel_replicas_mark_segment_size, 0, R"(
-Parts virtually divided into segments to be distributed between replicas for parallel reading. This setting controls the size of these segments. Not recommended to change until you're absolutely sure in what you're doing. Value should be in range [128; 16384]
+Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
 )", 0) \
     DECLARE(Bool, allow_archive_path_syntax, true, R"(
-File/S3 engines/table function will parse paths with '::' as '\\<archive\\> :: \\<file\\>' if archive has correct extension
+File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>` if the archive has correct extension.
 )", 0) \
-    DECLARE(Bool, parallel_replicas_local_plan, false, R"(
-Build local plan for local replica
+    DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
+When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
+)", BETA) \
+    DECLARE(UInt64, iceberg_insert_max_rows_in_data_file, 1000000, R"(
+Max rows of iceberg parquet data file on insert operation.
 )", 0) \
-    \
-    DECLARE(Bool, allow_experimental_inverted_index, false, R"(
-If it is set to true, allow to use experimental inverted index.
+    DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 1_GiB, R"(
+Max bytes of iceberg parquet data file on insert operation.
 )", 0) \
-    DECLARE(Bool, allow_experimental_full_text_index, false, R"(
-If it is set to true, allow to use experimental full-text index.
+    DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
+Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0) \
-    \
-    DECLARE(Bool, allow_experimental_join_condition, false, R"(
-Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y.
+    DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
+    DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
+    DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, R"(
+Allow memory-efficient aggregation (see `distributed_aggregation_memory_efficient`) to produce buckets out of order.
+It may improve performance when aggregation bucket sizes are skewed by letting a replica to send buckets with higher id-s to the initiator while it is still processing some heavy buckets with lower id-s.
+The downside is potentially higher memory usage.
 )", 0) \
-    \
-    DECLARE(Bool, allow_experimental_analyzer, true, R"(
-Allow new query analyzer.
-)", IMPORTANT) ALIAS(enable_analyzer) \
-    DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
-Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
+    DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
+    DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
+Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
+
+### What is a Resize Node
+A `Resize` node is a processor in the query pipeline that adjusts the number of data streams flowing through the pipeline. It can either increase or decrease the number of streams to balance the workload across multiple threads or processors. For example, if a query requires more parallelism, the `Resize` node can split a single stream into multiple streams. Conversely, it can merge multiple streams into fewer streams to consolidate data processing.
+
+The `Resize` node ensures that data is evenly distributed across streams, maintaining the structure of the data blocks. This helps optimize resource utilization and improve query performance.
+
+### Why the Resize Node Needs to Be Split
+During pipeline execution, ExecutingGraph::Node::status_mutex of the centrally-hubbed `Resize` node is heavily contended especially in high-core-count environments, and this contention leads to:
+1. Increased latency for ExecutingGraph::updateNode, directly impacting query performance.
+2. Excessive CPU cycles are wasted in spin-lock contention (native_queued_spin_lock_slowpath), degrading efficiency.
+3. Reduced CPU utilization, limiting parallelism and throughput.
+
+### How the Resize Node Gets Split
+1. The number of output streams is checked to ensure the split could be performed: the output streams of each split processor meet or exceed the `min_outstreams_per_resize_after_split` threshold.
+2. The `Resize` node is divided into smaller `Resize` nodes with equal count of ports, each handling a subset of input and output streams.
+3. Each group is processed independently, reducing the lock contention.
+
+### Splitting Resize Node with Arbitrary Inputs/Outputs
+In some cases, where the inputs/outputs are indivisible by the number of split `Resize` nodes, some inputs are connected to `NullSource`s and some outputs are connected to `NullSink`s. This allows the split to occur without affecting the overall data flow.
+
+### Purpose of the Setting
+The `min_outstreams_per_resize_after_split` setting ensures that the splitting of `Resize` nodes is meaningful and avoids creating too few streams, which could lead to inefficient parallel processing. By enforcing a minimum number of output streams, this setting helps maintain a balance between parallelism and overhead, optimizing query execution in scenarios involving stream splitting and merging.
+
+### Disabling the Setting
+To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0) \
-    \
-    DECLARE(Bool, allow_experimental_live_view, false, R"(
-Allows creation of a deprecated LIVE VIEW.
+    DECLARE(Bool, enable_add_distinct_to_in_subqueries, false, R"(
+Enable `DISTINCT` in `IN` subqueries. This is a trade-off setting: enabling it can greatly reduce the size of temporary tables transferred for distributed IN subqueries and significantly speed up data transfer between shards, by ensuring only unique values are sent.
+However, enabling this setting adds extra merging effort on each node, as deduplication (DISTINCT) must be performed. Use this setting when network transfer is a bottleneck and the additional merging cost is acceptable.
+)", 0) \
+    DECLARE(UInt64, function_date_trunc_return_type_behavior, 0, R"(
+Allows to change the behaviour of the result type of `dateTrunc` function.
 
 Possible values:
 
-- 0 — Working with live views is disabled.
-- 1 — Working with live views is enabled.
+- 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
+- 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
-    DECLARE(Seconds, live_view_heartbeat_interval, 15, R"(
-The heartbeat interval in seconds to indicate live query is alive.
+    DECLARE(Bool, query_plan_remove_unused_columns, true, R"(
+Toggles a query-plan-level optimization which tries to remove unused columns (both input and output columns) from query plan steps.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
 )", 0) \
-    DECLARE(UInt64, max_live_view_insert_blocks_before_refresh, 64, R"(
-Limit maximum number of inserted blocks after which mergeable blocks are dropped and query is re-executed.
+    DECLARE(Bool, jemalloc_enable_profiler, false, R"(
+Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
+Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
+Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.
+See [Allocation Profiling](/operations/allocation-profiling))", 0) \
+    DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
+Collect jemalloc allocation and deallocation samples in trace log.
+    )", 0) \
+    DECLARE_WITH_ALIAS(Int32, os_threads_nice_value_query, 0, R"(
+Linux nice value for query processing threads. Lower values mean higher CPU priority.
+
+Requires CAP_SYS_NICE capability, otherwise no-op.
+
+Possible values: -20 to 19.
+    )", 0, os_thread_priority) \
+    DECLARE(Int32, os_threads_nice_value_materialized_view, 0, R"(
+Linux nice value for materialized view threads. Lower values mean higher CPU priority.
+
+Requires CAP_SYS_NICE capability, otherwise no-op.
+
+Possible values: -20 to 19.
+    )", 0) \
+    DECLARE(Bool, show_processlist_include_internal, 1, R"(
+Show internal auxiliary processes in the `SHOW PROCESSLIST` query output.
+
+Internal processes include dictionary reloads, refreshable materialized view reloads, auxiliary `SELECT`s executed in `SHOW ...` queries, auxiliary `CREATE DATABASE ...` queries executed internally to accommodate broken tables and more.
+    )", 0) \
+    DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
+Use roaring bitmap for iceberg positional deletes.
 )", 0) \
+    DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
+If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
+Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
+If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
+Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
+    )", 0) \
+    DECLARE(Int64, optimize_const_name_size, 256, R"(
+Replace with scalar and use hash as a name for large constants (size is estimated by the name length).
+
+Possible values:
+
+- positive integer - max length of the name,
+- 0 — always,
+- negative integer - never.
+)", 0) \
+    DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
+Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.
+)", 0) \
+    DECLARE(UInt64, s3_path_filter_limit, 1000, R"(
+Maximum number of `_path` values that can be extracted from query filters to use for file iteration
+instead of glob listing. 0 means disabled.
+)", 0) \
+    DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
+Always ignore ON CLUSTER clause for DDL queries with replicated databases.
+)", 0) \
+    DECLARE_WITH_ALIAS(Bool, enable_qbit_type, true, R"(
+Allows creation of [QBit](../../sql-reference/data-types/qbit.md) data type.
+)", BETA, allow_experimental_qbit_type) \
+    DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
+Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
     \
+    /* ####################################################### */ \
+    /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
+    /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
+    /* ####################################################### */ \
+    \
+    DECLARE(Bool, allow_experimental_materialized_postgresql_table, false, R"(
+Allows to use the MaterializedPostgreSQL table engine. Disabled by default, because this feature is experimental
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_funnel_functions, false, R"(
+Enable experimental functions for funnel analysis.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
+Enable experimental functions for natural language processing.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_hash_functions, false, R"(
+Enable experimental hash functions
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_time_series_table, false, R"(
+Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine. Possible values:
+- 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
+- 1 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_codecs, false, R"(
+If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
+)", EXPERIMENTAL) \
+    DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
+Throw exception if unsupported query is used inside transaction
+)", EXPERIMENTAL) \
+    DECLARE(TransactionsWaitCSNMode, wait_changes_become_visible_after_commit_mode, TransactionsWaitCSNMode::WAIT_UNKNOWN, R"(
+Wait for committed changes to become actually visible in the latest snapshot
+)", EXPERIMENTAL) \
+    DECLARE(Bool, implicit_transaction, false, R"(
+If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
+)", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
+Initial number of grace hash join buckets
+)", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
+Limit on the number of grace hash join buckets
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
+The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_to_sort_maximum_table_rows, 10000, R"(
+The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_join_right_table_sorting, false, R"(
+If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
+)", EXPERIMENTAL) \
+    \
+    DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
+Allows using statistics to optimize queries
+)", BETA, allow_statistic_optimize) \
+    DECLARE_WITH_ALIAS(Bool, use_statistics, true, R"( /// preferred over 'allow_statistics_optimize' because of consistency with 'use_primary_key' and 'use_skip_indexes'
+Allows using statistics to optimize queries
+)", BETA, allow_statistic_optimize) \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_statistics, false, R"(
+Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
+)", EXPERIMENTAL, allow_experimental_statistic) \
+    DECLARE(Bool, use_statistics_cache, false, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", EXPERIMENTAL) \
+    \
+    DECLARE_WITH_ALIAS(Bool, enable_full_text_index, false, R"(
+If set to true, allow using the text index.
+)", BETA, allow_experimental_full_text_index) \
+    DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
+Allow to perform full text search filtering using only the inverted text index in query plan.
+)", 0) \
+    DECLARE(Bool, query_plan_text_index_add_hint, true, R"(
+Allow to add hint (additional predicate) for filtering built from the inverted text index in query plan.
+)", 0) \
+    DECLARE(Float, text_index_hint_max_selectivity, 0.2f, R"(
+Maximal selectivity of the filter to use the hint built from the inverted text index.
+)", 0) \
+    DECLARE(Bool, use_text_index_dictionary_cache, false, R"(
+Whether to use a cache of deserialized text index dictionary block.
+Using the text index dictionary block cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
+)", 0) \
+    DECLARE(Bool, use_text_index_header_cache, false, R"(
+Whether to use a cache of deserialized text index header.
+Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
+)", 0) \
+    DECLARE(Bool, use_text_index_postings_cache, false, R"(
+Whether to use a cache of deserialized text index posting lists.
+Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
+)", 0) \
     DECLARE(Bool, allow_experimental_window_view, false, R"(
 Enable WINDOW VIEW. Not mature enough.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Seconds, window_view_clean_interval, 60, R"(
 The clean interval of window view in seconds to free outdated data.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Seconds, window_view_heartbeat_interval, 15, R"(
 The heartbeat interval in seconds to indicate watch query is alive.
-)", 0) \
+)", EXPERIMENTAL) \
     DECLARE(Seconds, wait_for_window_view_fire_signal_timeout, 10, R"(
 Timeout for waiting for window view fire signal in event time processing
-)", 0) \
+)", EXPERIMENTAL) \
     \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
-On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with SYSTEM START VIEWS or SYSTEM START VIEW \\<name\\> afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
-)", 0) \
+On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
+)", EXPERIMENTAL) \
     \
-    DECLARE(Bool, allow_experimental_database_materialized_mysql, false, R"(
-Allow to create database with Engine=MaterializedMySQL(...).
-)", 0) \
     DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
 Allow to create database with Engine=MaterializedPostgreSQL(...).
-)", 0) \
+)", EXPERIMENTAL) \
     \
     /** Experimental feature for moving data between shards. */ \
     DECLARE(Bool, allow_experimental_query_deduplication, false, R"(
 Experimental data deduplication for SELECT queries based on part UUIDs
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
+Enable Kusto Query Language (KQL) - an alternative to SQL.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
+Enable PRQL - an alternative to SQL.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
+Trigger processor to spill data into external storage adpatively. grace join is supported at present.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
+Allow experimental delta-kernel-rs implementation.
+)", BETA) \
+    DECLARE(Bool, allow_experimental_insert_into_iceberg, false, R"(
+Allow to execute `insert` queries into iceberg.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
+Allow to explicitly use 'OPTIMIZE' for iceberg tables.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
+Write full paths (including s3://) into iceberg metadata files.
+)", EXPERIMENTAL) \
+    DECLARE(String, iceberg_metadata_compression_method, "", R"(
+Method to compress `.metadata.json` file.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, make_distributed_plan, false, R"(
+Make distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_plan_execute_locally, false, R"(
+Run all tasks of a distributed query plan locally. Useful for testing and debugging.
+)", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
+Default number of buckets for distributed shuffle-hash-join.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, distributed_plan_default_reader_bucket_count, 8, R"(
+Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
+Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
 )", 0) \
-    DECLARE(Bool, implicit_select, false, R"(
-Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
-)", 0)
+    DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
+Force specified kind of Exchange operators between distributed query stages.
 
+Possible values:
+
+ - '' - do not force any kind of Exchange operators, let the optimizer choose,
+ - 'Persisted' - use temporary files in object storage,
+ - 'Streaming' - stream exchange data over network.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
+Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
+Experimental table engine for integration with YTsaurus.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_ytsaurus_table_function, false, R"(
+Experimental table engine for integration with YTsaurus.
+)", EXPERIMENTAL) \
+DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
+    Experimental dictionary source for integration with YTsaurus.
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
+Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_join_runtime_filters, false, R"(
+Filter left side by set of JOIN keys collected from the right side at runtime.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
+Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
+Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
+Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
+)", EXPERIMENTAL) \
+    DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, R"(
+If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_filter_blocks_to_skip_before_reenabling, 30, R"(
+Number of blocks that are skipped before trying to dynamically re-enable a runtime filter that previously was disabled due to poor filtering ratio.
+)", EXPERIMENTAL) \
+    DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
+If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, rewrite_in_to_join, false, R"(
+Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
+)", EXPERIMENTAL) \
+    \
+    /** Experimental timeSeries* aggregate functions. */ \
+    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
+Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
+)", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
+    \
+    DECLARE(String, promql_database, "", R"(
+Specifies the database name used by the 'promql' dialect. Empty string means the current database.
+)", EXPERIMENTAL) \
+    \
+    DECLARE(String, promql_table, "", R"(
+Specifies the name of a TimeSeries table used by the 'promql' dialect.
+)", EXPERIMENTAL) \
+    \
+    DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
+Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
+)", EXPERIMENTAL, evaluation_time) \
+    DECLARE(Bool, allow_experimental_alias_table_engine, false, R"(
+Allow to create table with the Alias engine.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, use_paimon_partition_pruning, false, R"(
+Use Paimon partition pruning for Paimon table functions
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_object_storage_queue_hive_partitioning, false, R"(
+Allow to use hive partitioning with S3Queue/AzureQueue engines
+    )", EXPERIMENTAL) \
+DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
+Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
+ - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
+ - 'dpsize' - implements DPsize algorithm currently only for Inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
+Multiple algorithms can be specified, e.g. 'dpsize,greedy'.
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
+)", EXPERIMENTAL) \
+    \
+    /* ####################################################### */ \
+    /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
+    /* ####################################################### */ \
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats in Core/FormatFactorySettings.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
-    /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
+    /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
     MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
     MAKE_OBSOLETE(M, UInt64, multiple_joins_rewriter_version, 0) \
@@ -5836,6 +7569,10 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_merge_tree, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_replicated, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_inverted_index, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_vector_similarity_index, true) \
+    MAKE_OBSOLETE(M, Bool, enable_vector_similarity_index, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
@@ -5850,6 +7587,22 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
     MAKE_OBSOLETE(M, Bool, use_mysql_types_in_show_columns, false) \
     MAKE_OBSOLETE(M, Bool, s3queue_allow_experimental_sharded_mode, false) \
     MAKE_OBSOLETE(M, LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW) \
+    MAKE_OBSOLETE(M, Bool, use_local_cache_for_remote_storage, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_join_condition, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_variant_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_dynamic_type, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_json_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_variant_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
+    MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
+    MAKE_OBSOLETE(M, Bool, s3_slow_all_threads_after_retryable_error, false) \
+    MAKE_OBSOLETE(M, Bool, azure_sdk_use_native_client, true) \
+    MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_order_by, false) \
+    MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_comparison_functions, false) \
+    MAKE_OBSOLETE(M, Bool, enable_zstd_qat_codec, false) \
+    MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
+    MAKE_OBSOLETE(M, Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, false) \
+\
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_pool_size, 16) \
@@ -5866,10 +7619,16 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_fetches_network_bandwidth_for_server, 0) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_sends_network_bandwidth_for_server, 0) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_entries_for_hash_table_stats, 10'000) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS) \
     /* ---- */ \
     MAKE_OBSOLETE(M, DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic) \
     MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0) \
     MAKE_OBSOLETE(M, Seconds, temporary_live_view_timeout, 1) \
+    MAKE_OBSOLETE(M, Seconds, periodic_live_view_refresh, 60) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_live_view, false) \
+    MAKE_OBSOLETE(M, Seconds, live_view_heartbeat_interval, 15) \
+    MAKE_OBSOLETE(M, UInt64, max_live_view_insert_blocks_before_refresh, 64) \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_cleanup_timeout_ms, 1000) \
     MAKE_OBSOLETE(M, Bool, optimize_fuse_sum_count_avg, 0) \
     MAKE_OBSOLETE(M, Seconds, drain_timeout, 3) \
@@ -5883,6 +7642,7 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
     MAKE_OBSOLETE(M, Bool, allow_experimental_annoy_index, false) \
     MAKE_OBSOLETE(M, UInt64, max_threads_for_annoy_index_creation, 4) \
     MAKE_OBSOLETE(M, Int64, annoy_index_search_k_nodes, -1) \
+    MAKE_OBSOLETE(M, Int64, max_limit_for_ann_queries, -1) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_usearch_index, false) \
     MAKE_OBSOLETE(M, Bool, optimize_move_functions_out_of_any, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_undrop_table_query, true) \
@@ -5890,17 +7650,26 @@ Allow writing simple SELECT queries without the leading SELECT keyword, which ma
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
-    MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
-
+    MAKE_OBSOLETE(M, Bool, iceberg_engine_ignore_schema_evolution, false) \
+    MAKE_OBSOLETE(M, Float, parallel_replicas_single_task_marks_count_multiplier, 2) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_database_materialized_mysql, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_shared_set_join, true) \
+    MAKE_OBSOLETE(M, UInt64, min_external_sort_block_bytes, 100_MiB) \
+    MAKE_OBSOLETE(M, UInt64, distributed_cache_read_alignment, 0) \
+    MAKE_OBSOLETE(M, Bool, use_json_alias_for_old_object_type, false) \
+    MAKE_OBSOLETE(M, Bool, describe_extend_object_types, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_object_type, false) \
+    MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"})
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
-
 
 #define LIST_OF_SETTINGS(M, ALIAS)     \
     COMMON_SETTINGS(M, ALIAS)          \
     OBSOLETE_SETTINGS(M, ALIAS)        \
     FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
+
+// clang-format on
 
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
@@ -5977,23 +7746,44 @@ void SettingsImpl::loadSettingsFromConfig(const String & path, const Poco::Util:
 
 void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
 {
-    /// Convert ptr and make simple check
-    auto * column_map = column ? &typeid_cast<ColumnMap &>(*column) : nullptr;
-    if (!column_map)
+    if (!column)
         return;
 
-    auto & offsets = column_map->getNestedColumn().getOffsets();
-    auto & tuple_column = column_map->getNestedData();
-    auto & key_column = tuple_column.getColumn(0);
-    auto & value_column = tuple_column.getColumn(1);
+    auto & column_map = typeid_cast<ColumnMap &>(*column);
+    auto & offsets = column_map.getNestedColumn().getOffsets();
+
+    auto & tuple_column = column_map.getNestedData();
+    auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
+    auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
 
     size_t size = 0;
-    for (const auto & setting : all(changed_only ? SKIP_UNCHANGED : SKIP_NONE))
+
+    /// Iterate over standard settings
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t i = 0; i < accessor.size(); i++)
     {
-        auto name = setting.getName();
+        if (changed_only && !accessor.isValueChanged(*this, i))
+            continue;
+
+        const auto & name = accessor.getName(i);
+        auto value = accessor.getValueString(*this, i);
         key_column.insertData(name.data(), name.size());
-        value_column.insert(setting.getValueString());
-        size++;
+        value_column.insertData(value.data(), value.size());
+        ++size;
+    }
+
+    /// Iterate over the custom settings
+    for (const auto & custom : custom_settings_map)
+    {
+        const auto & setting_field = custom.second;
+        if (changed_only && !setting_field.changed)
+            continue;
+
+        const auto & name = custom.first;
+        auto value = setting_field.toString();
+        key_column.insertData(name.data(), name.size());
+        value_column.insertData(value.data(), value.size());
+        ++size;
     }
 
     offsets.push_back(offsets.back() + size);
@@ -6009,7 +7799,7 @@ void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfi
     {
         const auto & name = setting.getName();
         bool should_skip_check = name == "max_table_size_to_drop" || name == "max_partition_size_to_drop";
-        if (config.has(name) && !setting.isObsolete() && !should_skip_check)
+        if (config.has(name) && (setting.getTier() != SettingsTierType::OBSOLETE) && !should_skip_check)
         {
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
@@ -6077,18 +7867,22 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
             if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
                 continue;
 
+            /// Don't mark as changed if the value isn't really changed
+            if (get(final_name) == change.previous_value)
+                continue;
+
             BaseSettings::set(final_name, change.previous_value);
             settings_changed_by_compatibility_setting.insert(final_name);
         }
     }
 }
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     Settings ## TYPE NAME = & SettingsImpl :: NAME;
 
 namespace Setting
 {
-    LIST_OF_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+    LIST_OF_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)  /// NOLINT (misc-use-internal-linkage)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -6109,6 +7903,8 @@ Settings::~Settings() = default;
 
 Settings & Settings::operator=(const Settings & other)
 {
+    if (&other == this)
+        return *this;
     *impl = *other.impl;
     return *this;
 }
@@ -6128,6 +7924,11 @@ bool Settings::has(std::string_view name) const
 bool Settings::isChanged(std::string_view name) const
 {
     return impl->isChanged(name);
+}
+
+SettingsTierType Settings::getTier(std::string_view name) const
+{
+    return impl->getTier(name);
 }
 
 bool Settings::tryGet(std::string_view name, Field & value) const
@@ -6185,7 +7986,7 @@ std::vector<std::string_view> Settings::getChangedAndObsoleteNames() const
     std::vector<std::string_view> setting_names;
     for (const auto & setting : impl->allChanged())
     {
-        if (setting.isObsolete())
+        if (setting.getTier() == SettingsTierType::OBSOLETE)
             setting_names.emplace_back(setting.getName());
     }
     return setting_names;
@@ -6219,9 +8020,11 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
         res_columns[3]->insert(doc);
 
-        Field min, max;
+        Field min;
+        Field max;
+        std::vector<Field> disallowed_values;
         SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        params.constraints.get(*this, setting_name, min, max, writability);
+        params.constraints.get(*this, setting_name, min, max, disallowed_values, writability);
 
         /// These two columns can accept strings only.
         if (!min.isNull())
@@ -6229,12 +8032,18 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         if (!max.isNull())
             max = Settings::valueToStringUtil(setting_name, max);
 
+        Array disallowed_array;
+        for (const auto & value : disallowed_values)
+            disallowed_array.emplace_back(Settings::valueToStringUtil(setting_name, value));
+
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
-        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[7]->insert(setting.getTypeName());
-        res_columns[8]->insert(setting.getDefaultValueString());
-        res_columns[10]->insert(setting.isObsolete());
+        res_columns[6]->insert(disallowed_array);
+        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[8]->insert(setting.getTypeName());
+        res_columns[9]->insert(setting.getDefaultValueString());
+        res_columns[11]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[12]->insert(setting.getTier());
     };
 
     const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
@@ -6244,7 +8053,7 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
         res_columns[0]->insert(setting_name);
 
         fill_data_for_setting(setting_name, setting);
-        res_columns[9]->insert("");
+        res_columns[10]->insert("");
 
         if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
         {
@@ -6252,7 +8061,7 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
             {
                 res_columns[0]->insert(alias);
                 fill_data_for_setting(alias, setting);
-                res_columns[9]->insert(setting_name);
+                res_columns[10]->insert(setting_name);
             }
         }
     }
@@ -6286,6 +8095,11 @@ void Settings::read(ReadBuffer & in, SettingsWriteFormat format)
     impl->read(in, format);
 }
 
+void Settings::writeEmpty(WriteBuffer & out)
+{
+    BaseSettingsHelpers::writeString("", out);
+}
+
 void Settings::addToProgramOptions(boost::program_options::options_description & options)
 {
     addProgramOptions(*impl, options);
@@ -6315,7 +8129,7 @@ void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, cons
     for (const auto & setting : impl->all())
     {
         const auto & name = setting.getName();
-        if (options.count(name))
+        if (options.contains(name))
         {
             if (repeated_settings)
                 config.setString(name, options[name].as<Strings>().back());

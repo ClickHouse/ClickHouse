@@ -1,10 +1,38 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/CommonParsers.h>
+#include <Common/quoteString.h>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
 {
+
+ASTPtr ASTObjectTypedPathArgument::clone() const
+{
+    auto res = std::make_shared<ASTObjectTypedPathArgument>(*this);
+    res->children.clear();
+
+    if (type)
+    {
+        res->type = type->clone();
+        res->children.push_back(res->type);
+    }
+
+    return res;
+}
+
+void ASTObjectTypedPathArgument::formatImpl(
+    WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    /// We must quote path "SKIP" to avoid its confusion with SKIP keyword in Object arguments.
+    if (boost::to_upper_copy(path) == "SKIP")
+        ostr << backQuote(path) << ' ';
+    else
+        ostr << backQuoteIfNeed(path) << ' ';
+
+    type->format(ostr, settings, state, frame);
+}
 
 ASTPtr ASTObjectTypeArgument::clone() const
 {
@@ -35,27 +63,27 @@ ASTPtr ASTObjectTypeArgument::clone() const
     return res;
 }
 
-void ASTObjectTypeArgument::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTObjectTypeArgument::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     if (path_with_type)
     {
-        path_with_type->formatImpl(settings, state, frame);
+        path_with_type->format(ostr, settings, state, frame);
     }
     else if (parameter)
     {
-        parameter->formatImpl(settings, state, frame);
+        parameter->format(ostr, settings, state, frame);
     }
     else if (skip_path)
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        settings.ostr << indent_str << "SKIP" << ' ';
-        skip_path->formatImpl(settings, state, frame);
+        ostr << indent_str << "SKIP" << ' ';
+        skip_path->format(ostr, settings, state, frame);
     }
     else if (skip_path_regexp)
     {
         std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
-        settings.ostr << indent_str << "SKIP REGEXP" << ' ';
-        skip_path_regexp->formatImpl(settings, state, frame);
+        ostr << indent_str << "SKIP REGEXP" << ' ';
+        skip_path_regexp->format(ostr, settings, state, frame);
     }
 }
 

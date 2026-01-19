@@ -1,4 +1,4 @@
-#include "compileFunction.h"
+#include <Interpreters/JIT/compileFunction.h>
 
 #if USE_EMBEDDED_COMPILER
 
@@ -55,11 +55,11 @@ ColumnData getColumnData(const IColumn * column, size_t skip_rows)
 
     if (const auto * nullable = typeid_cast<const ColumnNullable *>(column))
     {
-        result.null_data = nullable->getNullMapColumn().getDataAt(skip_rows).data;
+        result.null_data = nullable->getNullMapColumn().getDataAt(skip_rows).data();
         column = &nullable->getNestedColumn();
     }
     /// skip null key data for one nullable key optimization
-    result.data = column->getDataAt(skip_rows).data;
+    result.data = column->getDataAt(skip_rows).data();
 
     return result;
 }
@@ -70,7 +70,7 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
 
     llvm::IRBuilder<> b(module.getContext());
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
-    auto * data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
+    auto * data_type = llvm::StructType::get(b.getInt8Ty()->getPointerTo(), b.getInt8Ty()->getPointerTo());
     auto * func_type = llvm::FunctionType::get(b.getVoidTy(), { size_type, data_type->getPointerTo() }, /*isVarArg=*/false);
 
     /// Create function in module
@@ -134,9 +134,12 @@ static void compileFunction(llvm::Module & module, const IFunctionBase & functio
         arguments.emplace_back(nullable_value, type);
     }
 
-    /// Compile values for column rows and store compiled value in result column
-
+    /// Compile values for column rows and store compiled value
+    // std::cerr << "before compile:" << std::endl;
+    // module.print(llvm::errs(), nullptr);
     auto * result = function.compile(b, arguments);
+    // std::cerr << "after compile:" << std::endl;
+    // module.print(llvm::errs(), nullptr);
     auto * result_column_element_ptr = b.CreateInBoundsGEP(columns.back().data_element_type, columns.back().data_ptr, counter_phi);
 
     if (columns.back().null_data_ptr)
@@ -198,7 +201,8 @@ static void compileCreateAggregateStatesFunctions(llvm::Module & module, const s
     auto * create_aggregate_states_function = llvm::Function::Create(create_aggregate_states_function_type, llvm::Function::ExternalLinkage, name, module);
 
     auto * arguments = create_aggregate_states_function->args().begin();
-    llvm::Value * aggregate_data_place_arg = arguments++;
+    llvm::Value * aggregate_data_place_arg = arguments;
+    ++arguments;
 
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", create_aggregate_states_function);
     b.SetInsertPoint(entry);
@@ -237,7 +241,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
     else
         places_type = b.getInt8Ty()->getPointerTo();
 
-    auto * column_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
+    auto * column_type = llvm::StructType::get(b.getInt8Ty()->getPointerTo(), b.getInt8Ty()->getPointerTo());
 
     auto * add_into_aggregate_states_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, size_type, column_type->getPointerTo(), places_type }, false);
     auto * add_into_aggregate_states_func = llvm::Function::Create(add_into_aggregate_states_func_declaration, llvm::Function::ExternalLinkage, name, module);
@@ -248,7 +252,7 @@ static void compileAddIntoAggregateStatesFunctions(llvm::Module & module,
     llvm::Value * columns_arg = arguments++;
     llvm::Value * places_arg = arguments++;
 
-    /// Initialize ColumnDataPlaceholder llvm representation of ColumnData
+    /// Initialize ColumnDataPlaceholder LLVM representation of ColumnData
 
     auto * entry = llvm::BasicBlock::Create(b.getContext(), "entry", add_into_aggregate_states_func);
     b.SetInsertPoint(entry);
@@ -422,7 +426,7 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
 
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
 
-    auto * column_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
+    auto * column_type = llvm::StructType::get(b.getInt8Ty()->getPointerTo(), b.getInt8Ty()->getPointerTo());
     auto * aggregate_data_places_type = b.getInt8Ty()->getPointerTo()->getPointerTo();
     auto * insert_aggregates_into_result_func_declaration = llvm::FunctionType::get(b.getVoidTy(), { size_type, size_type, column_type->getPointerTo(), aggregate_data_places_type }, false);
     auto * insert_aggregates_into_result_func = llvm::Function::Create(insert_aggregates_into_result_func_declaration, llvm::Function::ExternalLinkage, name, module);
@@ -555,7 +559,7 @@ static void compileSortDescription(llvm::Module & module,
 
     auto * size_type = b.getIntNTy(sizeof(size_t) * 8);
 
-    auto * column_data_type = llvm::StructType::get(b.getInt8PtrTy(), b.getInt8PtrTy());
+    auto * column_data_type = llvm::StructType::get(b.getInt8Ty()->getPointerTo(), b.getInt8Ty()->getPointerTo());
 
     std::vector<llvm::Type *> function_argument_types = {size_type, size_type, column_data_type->getPointerTo(), column_data_type->getPointerTo()};
     auto * comparator_func_declaration = llvm::FunctionType::get(b.getInt8Ty(), function_argument_types, false);
@@ -681,7 +685,6 @@ CompiledSortDescriptionFunction compileSortDescription(
     CompiledSortDescriptionFunction compiled_sort_descriptor_function
     {
         .comparator_function = comparator_function,
-
         .compiled_module = std::move(compiled_module)
     };
 

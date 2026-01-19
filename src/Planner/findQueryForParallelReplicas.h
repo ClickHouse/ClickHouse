@@ -15,10 +15,10 @@ struct SelectQueryOptions;
 
 /// Find a query which can be executed with parallel replicas up to WithMergableStage.
 /// Returned query will always contain some (>1) subqueries, possibly with joins.
-const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options);
+const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
 /// Find a table from which we should read on follower replica. It's the left-most table within all JOINs and UNIONs.
-const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, SelectQueryOptions & select_query_options);
+const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
 struct JoinTreeQueryPlan;
 

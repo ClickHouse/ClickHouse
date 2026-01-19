@@ -65,7 +65,7 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
     return static_cast<UInt32>(1 + codecs.size() + source_size);
 }
 
-void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
+UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const
 {
     if (source_size < 1 || !source[0])
         throw Exception(decompression_error_code, "Wrong compression methods list");
@@ -113,18 +113,23 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
 
         codec->decompress(compressed_buf.data(), source_size, uncompressed_buf.data());
         uncompressed_buf.swap(compressed_buf);
+        /// The call to decompress will validate uncompressed_size (same readDecompressedBlockSize call as here)
         source_size = uncompressed_size;
     }
 
     memcpy(dest, compressed_buf.data(), decompressed_size);
+    return decompressed_size;
 }
 
 std::vector<uint8_t> CompressionCodecMultiple::getCodecsBytesFromData(const char * source)
 {
     std::vector<uint8_t> result;
     uint8_t compression_methods_size = source[0];
+    result.reserve(compression_methods_size);
+
     for (size_t i = 0; i < compression_methods_size; ++i)
         result.push_back(source[1 + i]);
+
     return result;
 }
 

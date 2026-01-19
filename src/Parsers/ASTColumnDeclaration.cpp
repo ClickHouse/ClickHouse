@@ -1,4 +1,5 @@
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -62,70 +63,96 @@ ASTPtr ASTColumnDeclaration::clone() const
     return res;
 }
 
-void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
 
-    format_settings.writeIdentifier(name, /*ambiguous=*/true);
+    format_settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
 
     if (type)
     {
-        format_settings.ostr << ' ';
-        type->formatImpl(format_settings, state, frame);
+        ostr << ' ';
+        type->format(ostr, format_settings, state, frame);
     }
 
     if (null_modifier)
     {
-        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "")
-                      << (*null_modifier ? "" : "NOT ") << "NULL" << (format_settings.hilite ? hilite_none : "");
+        ostr << ' '
+                      << (*null_modifier ? "" : "NOT ") << "NULL" ;
     }
 
     if (default_expression)
     {
-        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << default_specifier << (format_settings.hilite ? hilite_none : "");
+        ostr << ' '  << default_specifier ;
         if (!ephemeral_default)
         {
-            format_settings.ostr << ' ';
-            default_expression->formatImpl(format_settings, state, frame);
+            ostr << ' ';
+            default_expression->format(ostr, format_settings, state, frame);
         }
     }
 
     if (comment)
     {
-        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COMMENT" << (format_settings.hilite ? hilite_none : "") << ' ';
-        comment->formatImpl(format_settings, state, frame);
+        ostr << ' '  << "COMMENT"  << ' ';
+        comment->format(ostr, format_settings, state, frame);
     }
 
     if (codec)
     {
-        format_settings.ostr << ' ';
-        codec->formatImpl(format_settings, state, frame);
+        ostr << ' ';
+        codec->format(ostr, format_settings, state, frame);
     }
 
     if (statistics_desc)
     {
-        format_settings.ostr << ' ';
-        statistics_desc->formatImpl(format_settings, state, frame);
+        ostr << ' ';
+        statistics_desc->format(ostr, format_settings, state, frame);
     }
 
     if (ttl)
     {
-        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "TTL" << (format_settings.hilite ? hilite_none : "") << ' ';
-        ttl->formatImpl(format_settings, state, frame);
+        ostr << ' '  << "TTL"  << ' ';
+        auto nested_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        ttl->format(ostr, format_settings, state, nested_frame);
     }
 
     if (collation)
     {
-        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COLLATE" << (format_settings.hilite ? hilite_none : "") << ' ';
-        collation->formatImpl(format_settings, state, frame);
+        ostr << ' '  << "COLLATE"  << ' ';
+        collation->format(ostr, format_settings, state, frame);
     }
 
     if (settings)
     {
-        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ' << '(';
-        settings->formatImpl(format_settings, state, frame);
-        format_settings.ostr << ')';
+        ostr << ' '  << "SETTINGS"  << ' ' << '(';
+        settings->format(ostr, format_settings, state, frame);
+        ostr << ')';
     }
 }
 
+void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
+{
+    auto visit_child = [&f](ASTPtr & member)
+    {
+        IAST * new_member_ptr = member.get();
+        f(reinterpret_cast<void **>(&new_member_ptr));
+        if (new_member_ptr != member.get())
+        {
+            if (new_member_ptr)
+                member = new_member_ptr->ptr();
+            else
+                member.reset();
+        }
+    };
+
+    visit_child(default_expression);
+    visit_child(comment);
+    visit_child(codec);
+    visit_child(statistics_desc);
+    visit_child(ttl);
+    visit_child(collation);
+    visit_child(settings);
+}
 }

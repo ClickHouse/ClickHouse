@@ -1,11 +1,16 @@
 ---
-slug: /en/sql-reference/dictionaries
-sidebar_label: Defining Dictionaries
+description: 'Overview of external dictionaries functionality in ClickHouse'
+sidebar_label: 'Defining Dictionaries'
 sidebar_position: 35
+slug: /sql-reference/dictionaries
+title: 'Dictionaries'
+doc_type: 'reference'
 ---
 
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
-import CloudDetails from '@site/docs/en/sql-reference/dictionaries/_snippet_dictionary_in_cloud.md';
+import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
+import CloudDetails from '@site/docs/sql-reference/dictionaries/_snippet_dictionary_in_cloud.md';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # Dictionaries
 
@@ -16,14 +21,13 @@ ClickHouse supports special functions for working with dictionaries that can be 
 ClickHouse supports:
 
 - Dictionaries with a [set of functions](../../sql-reference/functions/ext-dict-functions.md).
-- [Embedded dictionaries](#embedded-dictionaries) with a specific [set of functions](../../sql-reference/functions/ym-dict-functions.md).
-
+- [Embedded dictionaries](#embedded-dictionaries) with a specific [set of functions](../../sql-reference/functions/embedded-dict-functions.md).
 
 :::tip Tutorial
-If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](/docs/en/tutorial.md).
+If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](tutorial.md).
 :::
 
-You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Dictionary Sources](#dictionary-sources)”.
+You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see "[Dictionary Sources](#dictionary-sources)".
 
 ClickHouse:
 
@@ -35,7 +39,7 @@ The configuration of dictionaries can be located in one or more xml-files. The p
 
 Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load) setting.
 
-The [dictionaries](../../operations/system-tables/dictionaries.md#system_tables-dictionaries) system table contains information about dictionaries configured at server. For each dictionary you can find there:
+The [dictionaries](/operations/system-tables/dictionaries) system table contains information about dictionaries configured at server. For each dictionary you can find there:
 
 - Status of the dictionary.
 - Configuration parameters.
@@ -46,12 +50,14 @@ The [dictionaries](../../operations/system-tables/dictionaries.md#system_tables-
 ## Creating a dictionary with a DDL query {#creating-a-dictionary-with-a-ddl-query}
 
 Dictionaries can be created with [DDL queries](../../sql-reference/statements/create/dictionary.md), and this is the recommended method because with DDL created dictionaries:
-- No additional records are added to server configuration files
-- The dictionaries can be worked with as first-class entities, like tables or views
-- Data can be read directly, using familiar SELECT rather than dictionary table functions
-- The dictionaries can be easily renamed
+- No additional records are added to server configuration files.
+- The dictionaries can be worked with as first-class entities, like tables or views.
+- Data can be read directly, using familiar SELECT rather than dictionary table functions. Note that when accessing a dictionary directly via a SELECT statement, cached dictionary will return only cached data, while non-cached dictionary - will return all of the data that it stores. 
+- The dictionaries can be easily renamed.
 
-## Creating a dictionary with a configuration file
+## Creating a dictionary with a configuration file {#creating-a-dictionary-with-a-configuration-file}
+
+<CloudNotSupportedBadge/>
 
 :::note
 Creating a dictionary with a configuration file is not applicable to ClickHouse Cloud. Please use DDL (see above), and create your dictionary as user `default`.
@@ -59,7 +65,7 @@ Creating a dictionary with a configuration file is not applicable to ClickHouse 
 
 The dictionary configuration file has the following format:
 
-``` xml
+```xml
 <clickhouse>
     <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
@@ -77,18 +83,17 @@ The dictionary configuration file has the following format:
 
 You can [configure](#configuring-a-dictionary) any number of dictionaries in the same file.
 
-
 :::note
 You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../sql-reference/functions/other-functions.md) function). This functionality is not related to dictionaries.
 :::
 
-## Configuring a Dictionary
+## Configuring a Dictionary {#configuring-a-dictionary}
 
 <CloudDetails />
 
 If dictionary is configured using xml file, than dictionary configuration has the following structure:
 
-``` xml
+```xml
 <dictionary>
     <name>dict_name</name>
 
@@ -112,7 +117,7 @@ If dictionary is configured using xml file, than dictionary configuration has th
 
 Corresponding [DDL-query](../../sql-reference/statements/create/dictionary.md) has the following structure:
 
-``` sql
+```sql
 CREATE DICTIONARY dict_name
 (
     ... -- attributes
@@ -123,7 +128,7 @@ LAYOUT(...) -- Memory layout configuration
 LIFETIME(...) -- Lifetime of dictionary in memory
 ```
 
-## Storing Dictionaries in Memory
+## Storing Dictionaries in Memory {#storing-dictionaries-in-memory}
 
 There are a variety of ways to store dictionaries in memory.
 
@@ -134,7 +139,7 @@ Caching is not recommended because of potentially poor performance and difficult
 There are several ways to improve dictionary performance:
 
 - Call the function for working with the dictionary after `GROUP BY`.
-- Mark attributes to extract as injective. An attribute is called injective if different attribute values correspond to different keys. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
+- Mark attributes to extract as injective. An attribute is called injective if different keys correspond to different attribute values. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
 
 ClickHouse generates an exception for errors with dictionaries. Examples of errors:
 
@@ -147,7 +152,7 @@ You can view the list of dictionaries and their statuses in the [system.dictiona
 
 The configuration looks like this:
 
-``` xml
+```xml
 <clickhouse>
     <dictionary>
         ...
@@ -163,7 +168,7 @@ The configuration looks like this:
 
 Corresponding [DDL-query](../../sql-reference/statements/create/dictionary.md):
 
-``` sql
+```sql
 CREATE DICTIONARY (...)
 ...
 LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
@@ -199,7 +204,9 @@ Configuration example of a composite key (key has one element with [String](../.
 ...
 ```
 
-## Ways to Store Dictionaries in Memory
+## Ways to Store Dictionaries in Memory {#ways-to-store-dictionaries-in-memory}
+
+Various methods of storing dictionary data in memory are associated with CPU and RAM-usage trade-offs. Decision tree published in [Choosing a Layout](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse#choosing-a-layout) paragraph of dictionary-related [blog post](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) is a good starting point for deciding which layout to use.
 
 - [flat](#flat)
 - [hashed](#hashed)
@@ -218,7 +225,7 @@ Configuration example of a composite key (key has one element with [String](../.
 - [complex_key_direct](#complex_key_direct)
 - [ip_trie](#ip_trie)
 
-### flat
+### flat {#flat}
 
 The dictionary is completely stored in memory in the form of flat arrays. How much memory does the dictionary use? The amount is proportional to the size of the largest key (in space used).
 
@@ -230,7 +237,7 @@ This method provides the best performance among all available methods of storing
 
 Configuration example:
 
-``` xml
+```xml
 <layout>
   <flat>
     <initial_array_size>50000</initial_array_size>
@@ -241,11 +248,11 @@ Configuration example:
 
 or
 
-``` sql
+```sql
 LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
 ```
 
-### hashed
+### hashed {#hashed}
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
 
@@ -255,7 +262,7 @@ All types of sources are supported. When updating, data (from a file or from a t
 
 Configuration example:
 
-``` xml
+```xml
 <layout>
   <hashed />
 </layout>
@@ -263,13 +270,13 @@ Configuration example:
 
 or
 
-``` sql
+```sql
 LAYOUT(HASHED())
 ```
 
 Configuration example:
 
-``` xml
+```xml
 <layout>
   <hashed>
     <!-- If shards greater then 1 (default is `1`) the dictionary will load
@@ -300,11 +307,11 @@ Configuration example:
 
 or
 
-``` sql
+```sql
 LAYOUT(HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
-### sparse_hashed
+### sparse_hashed {#sparse_hashed}
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
 
@@ -312,7 +319,7 @@ The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) 
 
 Configuration example:
 
-``` xml
+```xml
 <layout>
   <sparse_hashed>
     <!-- <shards>1</shards> -->
@@ -324,19 +331,19 @@ Configuration example:
 
 or
 
-``` sql
+```sql
 LAYOUT(SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
 It is also possible to use `shards` for this type of dictionary, and again it is more important for `sparse_hashed` then for `hashed`, since `sparse_hashed` is slower.
 
-### complex_key_hashed
+### complex_key_hashed {#complex_key_hashed}
 
 This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to `hashed`.
 
 Configuration example:
 
-``` xml
+```xml
 <layout>
   <complex_key_hashed>
     <!-- <shards>1</shards> -->
@@ -348,17 +355,17 @@ Configuration example:
 
 or
 
-``` sql
+```sql
 LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
-### complex_key_sparse_hashed
+### complex_key_sparse_hashed {#complex_key_sparse_hashed}
 
 This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to [sparse_hashed](#sparse_hashed).
 
 Configuration example:
 
-``` xml
+```xml
 <layout>
   <complex_key_sparse_hashed>
     <!-- <shards>1</shards> -->
@@ -370,11 +377,11 @@ Configuration example:
 
 or
 
-``` sql
+```sql
 LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
 ```
 
-### hashed_array
+### hashed_array {#hashed_array}
 
 The dictionary is completely stored in memory. Each attribute is stored in an array. The key attribute is stored in the form of a hashed table where value is an index in the attributes array. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
 
@@ -384,7 +391,7 @@ All types of sources are supported. When updating, data (from a file or from a t
 
 Configuration example:
 
-``` xml
+```xml
 <layout>
   <hashed_array>
   </hashed_array>
@@ -393,17 +400,17 @@ Configuration example:
 
 or
 
-``` sql
+```sql
 LAYOUT(HASHED_ARRAY([SHARDS 1]))
 ```
 
-### complex_key_hashed_array
+### complex_key_hashed_array {#complex_key_hashed_array}
 
 This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to [hashed_array](#hashed_array).
 
 Configuration example:
 
-``` xml
+```xml
 <layout>
   <complex_key_hashed_array />
 </layout>
@@ -411,20 +418,19 @@ Configuration example:
 
 or
 
-``` sql
+```sql
 LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
 ```
 
-### range_hashed
+### range_hashed {#range_hashed}
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
-The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) type.
 This storage method works the same way as hashed and allows using date/time (arbitrary numeric type) ranges in addition to the key.
 
 Example: The table contains discounts for each advertiser in the format:
 
-``` text
+```text
 ┌─advertiser_id─┬─discount_start_date─┬─discount_end_date─┬─amount─┐
 │           123 │          2015-01-16 │        2015-01-31 │   0.25 │
 │           123 │          2015-01-01 │        2015-01-15 │   0.15 │
@@ -440,7 +446,7 @@ Values of `range_min` and `range_max` should fit in `Int64` type.
 
 Example:
 
-``` xml
+```xml
 <layout>
     <range_hashed>
         <!-- Strategy for overlapping ranges (min/max). Default: min (return a matching range with the min(range_min -> range_max) value) -->
@@ -464,7 +470,7 @@ Example:
 
 or
 
-``` sql
+```sql
 CREATE DICTIONARY discounts_dict (
     advertiser_id UInt64,
     discount_start_date Date,
@@ -480,12 +486,12 @@ RANGE(MIN discount_start_date MAX discount_end_date)
 
 To work with these dictionaries, you need to pass an additional argument to the `dictGet` function, for which a range is selected:
 
-``` sql
+```sql
 dictGet('dict_name', 'attr_name', id, date)
 ```
 Query example:
 
-``` sql
+```sql
 SELECT dictGet('discounts_dict', 'amount', 1, '2022-10-20'::Date);
 ```
 
@@ -500,7 +506,7 @@ Details of the algorithm:
 
 Configuration example:
 
-``` xml
+```xml
 <clickhouse>
     <dictionary>
         ...
@@ -534,7 +540,7 @@ Configuration example:
 
 or
 
-``` sql
+```sql
 CREATE DICTIONARY somedict(
     Abcdef UInt64,
     StartTimeStamp UInt64,
@@ -647,13 +653,13 @@ select dictGet('discounts_dict', 'amount', 3, toDate('2015-01-01')) res;
 └─────┘
 ```
 
-### complex_key_range_hashed
+### complex_key_range_hashed {#complex_key_range_hashed}
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values (see [range_hashed](#range_hashed)). This type of storage is for use with composite [keys](#dictionary-key-and-fields).
 
 Configuration example:
 
-``` sql
+```sql
 CREATE DICTIONARY range_dictionary
 (
   CountryID UInt64,
@@ -669,7 +675,7 @@ LAYOUT(COMPLEX_KEY_RANGE_HASHED())
 RANGE(MIN StartDate MAX EndDate);
 ```
 
-### cache
+### cache {#cache}
 
 The dictionary is stored in a cache that has a fixed number of cells. These cells contain frequently used elements.
 
@@ -679,7 +685,7 @@ When searching for a dictionary, the cache is searched first. For each block of 
 
 If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
-For cache dictionaries, the expiration [lifetime](#refreshing-dictionary-data-using-lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
+For cache dictionaries, the expiration [lifetime](#refreshing-dictionary-data-using-lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell's value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
 
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the [system.dictionaries](../../operations/system-tables/dictionaries.md) table.
 
@@ -691,7 +697,7 @@ All types of sources are supported.
 
 Example of settings:
 
-``` xml
+```xml
 <layout>
     <cache>
         <!-- The size of the cache, in number of cells. Rounded up to a power of two. -->
@@ -712,7 +718,7 @@ Example of settings:
 
 or
 
-``` sql
+```sql
 LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ```
 
@@ -727,17 +733,17 @@ Set a large enough cache size. You need to experiment to select the number of ce
 Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 :::
 
-### complex_key_cache
+### complex_key_cache {#complex_key_cache}
 
 This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to `cache`.
 
-### ssd_cache
+### ssd_cache {#ssd_cache}
 
 Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionary settings related to update queue can also be applied to SSD cache dictionaries.
 
 The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) type.
 
-``` xml
+```xml
 <layout>
     <ssd_cache>
         <!-- Size of elementary read block in bytes. Recommended to be equal to SSD's page size. -->
@@ -756,16 +762,16 @@ The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) 
 
 or
 
-``` sql
+```sql
 LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
     PATH '/var/lib/clickhouse/user_files/test_dict'))
 ```
 
-### complex_key_ssd_cache
+### complex_key_ssd_cache {#complex_key_ssd_cache}
 
 This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to `ssd_cache`.
 
-### direct
+### direct {#direct}
 
 The dictionary is not stored in memory and directly goes to the source during the processing of a request.
 
@@ -775,7 +781,7 @@ All types of [sources](#dictionary-sources), except local files, are supported.
 
 Configuration example:
 
-``` xml
+```xml
 <layout>
   <direct />
 </layout>
@@ -783,17 +789,19 @@ Configuration example:
 
 or
 
-``` sql
+```sql
 LAYOUT(DIRECT())
 ```
 
-### complex_key_direct
+### complex_key_direct {#complex_key_direct}
 
 This type of storage is for use with composite [keys](#dictionary-key-and-fields). Similar to `direct`.
 
-### ip_trie
+### ip_trie {#ip_trie}
 
-This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
+This dictionary is designed for IP address lookups by network prefix. It stores IP ranges in CIDR notation and allows fast determination of which prefix (e.g. subnet or ASN range) a given IP falls into, making it ideal for IP-based searches like geolocation or network classification.
+
+<iframe width="1024" height="576" src="https://www.youtube.com/embed/4dxMAqltygk?si=rrQrneBReK6lLfza" title="IP based search with the ip_trie dictionary" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 **Example**
 
@@ -801,9 +809,9 @@ Suppose we have a table in ClickHouse that contains our IP prefixes and mappings
 
 ```sql
 CREATE TABLE my_ip_addresses (
-	prefix String,
-	asn UInt32,
-	cca2 String
+    prefix String,
+    asn UInt32,
+    cca2 String
 )
 ENGINE = MergeTree
 PRIMARY KEY prefix;
@@ -811,7 +819,7 @@ PRIMARY KEY prefix;
 
 ```sql
 INSERT INTO my_ip_addresses VALUES
-	('202.79.32.0/20', 17501, 'NP'),
+    ('202.79.32.0/20', 17501, 'NP'),
     ('2620:0:870::/48', 3856, 'US'),
     ('2a02:6b8:1::/48', 13238, 'RU'),
     ('2001:db8::/32', 65536, 'ZZ')
@@ -820,7 +828,7 @@ INSERT INTO my_ip_addresses VALUES
 
 Let's define an `ip_trie` dictionary for this table. The `ip_trie` layout requires a composite key:
 
-``` xml
+```xml
 <structure>
     <key>
         <attribute>
@@ -851,7 +859,7 @@ Let's define an `ip_trie` dictionary for this table. The `ip_trie` layout requir
 
 or
 
-``` sql
+```sql
 CREATE DICTIONARY my_ip_trie_dictionary (
     prefix String,
     asn UInt32,
@@ -867,13 +875,13 @@ The key must have only one `String` type attribute that contains an allowed IP p
 
 The syntax is:
 
-``` sql
+```sql
 dictGetT('dict_name', 'attr_name', ip)
 ```
 
 The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6. For example:
 
-``` sql
+```sql
 SELECT dictGet('my_ip_trie_dictionary', 'cca2', toIPv4('202.79.32.10')) AS result;
 
 ┌─result─┐
@@ -899,7 +907,7 @@ Other types are not supported yet. The function returns the attribute for the pr
 
 Data must completely fit into RAM.
 
-## Refreshing dictionary data using LIFETIME
+## Refreshing dictionary data using LIFETIME {#refreshing-dictionary-data-using-lifetime}
 
 ClickHouse periodically updates dictionaries based on the `LIFETIME` tag (defined in seconds). `LIFETIME` is the update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries.
 
@@ -909,7 +917,7 @@ Example of settings:
 
 <CloudDetails />
 
-``` xml
+```xml
 <dictionary>
     ...
     <lifetime>300</lifetime>
@@ -919,7 +927,7 @@ Example of settings:
 
 or
 
-``` sql
+```sql
 CREATE DICTIONARY (...)
 ...
 LIFETIME(300)
@@ -932,7 +940,7 @@ You can set a time interval for updates, and ClickHouse will choose a uniformly 
 
 Example of settings:
 
-``` xml
+```xml
 <dictionary>
     ...
     <lifetime>
@@ -945,7 +953,7 @@ Example of settings:
 
 or
 
-``` sql
+```sql
 LIFETIME(MIN 300 MAX 360)
 ```
 
@@ -955,7 +963,6 @@ In this case, ClickHouse can reload the dictionary earlier if the dictionary con
 When updating the dictionaries, the ClickHouse server applies different logic depending on the type of [source](#dictionary-sources):
 
 - For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
-- For MySQL source, the time of modification is checked using a `SHOW TABLE STATUS` query (in case of MySQL 8 you need to disable meta-information caching in MySQL by `set global information_schema_stats_expiry=0`).
 - Dictionaries from other sources are updated every time by default.
 
 For other sources (ODBC, PostgreSQL, ClickHouse, etc), you can set up a query that will update the dictionaries only if they really changed, rather than each time. To do this, follow these steps:
@@ -965,7 +972,7 @@ For other sources (ODBC, PostgreSQL, ClickHouse, etc), you can set up a query th
 
 Example of settings:
 
-``` xml
+```xml
 <dictionary>
     ...
     <odbc>
@@ -978,7 +985,7 @@ Example of settings:
 
 or
 
-``` sql
+```sql
 ...
 SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
 ...
@@ -986,12 +993,12 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 
 For `Cache`, `ComplexKeyCache`, `SSDCache`, and `SSDComplexKeyCache` dictionaries both synchronous and asynchronous updates are supported.
 
-It is also possible for `Flat`, `Hashed`, `ComplexKeyHashed` dictionaries to only request data that was changed after the previous update. If `update_field` is specified as part of the dictionary source configuration, value of the previous update time in seconds will be added to the data request. Depends on source type (Executable, HTTP, MySQL, PostgreSQL, ClickHouse, or ODBC) different logic will be applied to `update_field` before request data from an external source.
+It is also possible for `Flat`, `Hashed`, `HashedArray`, `ComplexKeyHashed` dictionaries to only request data that was changed after the previous update. If `update_field` is specified as part of the dictionary source configuration, value of the previous update time in seconds will be added to the data request. Depends on source type (Executable, HTTP, MySQL, PostgreSQL, ClickHouse, or ODBC) different logic will be applied to `update_field` before request data from an external source.
 
 - If the source is HTTP then `update_field` will be added as a query parameter with the last update time as the parameter value.
 - If the source is Executable then `update_field` will be added as an executable script argument with the last update time as the argument value.
 - If the source is ClickHouse, MySQL, PostgreSQL, ODBC there will be an additional part of `WHERE`, where `update_field` is compared as greater or equal with the last update time.
-    - Per default, this `WHERE`-condition is checked at the highest level of the SQL-Query. Alternatively, the condition can be checked in any other `WHERE`-clause within the query using the `{condition}`-keyword. Example:
+  - Per default, this `WHERE`-condition is checked at the highest level of the SQL-Query. Alternatively, the condition can be checked in any other `WHERE`-clause within the query using the `{condition}`-keyword. Example:
     ```sql
     ...
     SOURCE(CLICKHOUSE(...
@@ -1011,7 +1018,7 @@ If `update_field` option is set, additional option `update_lag` can be set. Valu
 
 Example of settings:
 
-``` xml
+```xml
 <dictionary>
     ...
         <clickhouse>
@@ -1025,13 +1032,13 @@ Example of settings:
 
 or
 
-``` sql
+```sql
 ...
 SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
 ...
 ```
 
-## Dictionary Sources
+## Dictionary Sources {#dictionary-sources}
 
 <CloudDetails />
 
@@ -1039,7 +1046,7 @@ A dictionary can be connected to ClickHouse from many different sources.
 
 If the dictionary is configured using an xml-file, the configuration looks like this:
 
-``` xml
+```xml
 <clickhouse>
   <dictionary>
     ...
@@ -1056,7 +1063,7 @@ If the dictionary is configured using an xml-file, the configuration looks like 
 
 In case of [DDL-query](../../sql-reference/statements/create/dictionary.md), the configuration described above will look like:
 
-``` sql
+```sql
 CREATE DICTIONARY dict_name (...)
 ...
 SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
@@ -1068,7 +1075,7 @@ The source is configured in the `source` section.
 For source types [Local file](#local-file), [Executable file](#executable-file), [HTTP(s)](#https), [ClickHouse](#clickhouse)
 optional settings are available:
 
-``` xml
+```xml
 <source>
   <file>
     <path>/opt/dictionaries/os.tsv</path>
@@ -1082,7 +1089,7 @@ optional settings are available:
 
 or
 
-``` sql
+```sql
 SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 SETTINGS(format_csv_allow_single_quotes = 0)
 ```
@@ -1094,19 +1101,20 @@ Types of sources (`source_type`):
 - [Executable Pool](#executable-pool)
 - [HTTP(S)](#https)
 - DBMS
-    - [ODBC](#odbc)
-    - [MySQL](#mysql)
-    - [ClickHouse](#clickhouse)
-    - [MongoDB](#mongodb)
-    - [Redis](#redis)
-    - [Cassandra](#cassandra)
-    - [PostgreSQL](#postgresql)
+  - [ODBC](#odbc)
+  - [MySQL](#mysql)
+  - [ClickHouse](#clickhouse)
+  - [MongoDB](#mongodb)
+  - [Redis](#redis)
+  - [Cassandra](#cassandra)
+  - [PostgreSQL](#postgresql)
+  - [YTsaurus](#ytsaurus)
 
-### Local File
+### Local File {#local-file}
 
 Example of settings:
 
-``` xml
+```xml
 <source>
   <file>
     <path>/opt/dictionaries/os.tsv</path>
@@ -1117,28 +1125,28 @@ Example of settings:
 
 or
 
-``` sql
+```sql
 SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 ```
 
 Setting fields:
 
 - `path` – The absolute path to the file.
-- `format` – The file format. All the formats described in [Formats](../../interfaces/formats.md#formats) are supported.
+- `format` – The file format. All the formats described in [Formats](/sql-reference/formats) are supported.
 
 When a dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in the `user_files` directory to prevent DB users from accessing arbitrary files on the ClickHouse node.
 
 **See Also**
 
-- [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
+- [Dictionary function](/sql-reference/table-functions/dictionary)
 
-### Executable File
+### Executable File {#executable-file}
 
-Working with executable files depends on [how the dictionary is stored in memory](#storing-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
+Working with executable files depends on [how the dictionary is stored in memory](#storing-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
 
 Example of settings:
 
-``` xml
+```xml
 <source>
     <executable>
         <command>cat /opt/dictionaries/os.tsv</command>
@@ -1151,7 +1159,7 @@ Example of settings:
 Setting fields:
 
 - `command` — The absolute path to the executable file, or the file name (if the command's directory is in the `PATH`).
-- `format` — The file format. All the formats described in [Formats](../../interfaces/formats.md#formats) are supported.
+- `format` — The file format. All the formats described in [Formats](/sql-reference/formats) are supported.
 - `command_termination_timeout` — The executable script should contain a main read-write loop. After the dictionary is destroyed, the pipe is closed, and the executable file will have `command_termination_timeout` seconds to shutdown before ClickHouse will send a SIGTERM signal to the child process. `command_termination_timeout` is specified in seconds. Default value is 10. Optional parameter.
 - `command_read_timeout` - Timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
 - `command_write_timeout` - Timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
@@ -1161,7 +1169,7 @@ Setting fields:
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled; otherwise, the DB user would be able to execute arbitrary binaries on the ClickHouse node.
 
-### Executable Pool
+### Executable Pool {#executable-pool}
 
 Executable pool allows loading data from pool of processes. This source does not work with dictionary layouts that need to load all data from source. Executable pool works if the dictionary [is stored](#ways-to-store-dictionaries-in-memory) using `cache`, `complex_key_cache`, `ssd_cache`, `complex_key_ssd_cache`, `direct`, or `complex_key_direct` layouts.
 
@@ -1169,7 +1177,7 @@ Executable pool will spawn a pool of processes with the specified command and ke
 
 Example of settings:
 
-``` xml
+```xml
 <source>
     <executable_pool>
         <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
@@ -1184,7 +1192,7 @@ Example of settings:
 Setting fields:
 
 - `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
-- `format` — The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
+- `format` — The file format. All the formats described in "[Formats](/sql-reference/formats)" are supported.
 - `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions. Default value is `16`.
 - `command_termination_timeout` — executable script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
 - `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10. Optional parameter.
@@ -1196,13 +1204,13 @@ Setting fields:
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
 
-### HTTP(S)
+### HTTP(S) {#https}
 
 Working with an HTTP(S) server depends on [how the dictionary is stored in memory](#storing-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
-``` xml
+```xml
 <source>
     <http>
         <url>http://[::1]/os.tsv</url>
@@ -1223,7 +1231,7 @@ Example of settings:
 
 or
 
-``` sql
+```sql
 SOURCE(HTTP(
     url 'http://[::1]/os.tsv'
     format 'TabSeparated'
@@ -1237,7 +1245,7 @@ In order for ClickHouse to access an HTTPS resource, you must [configure openSSL
 Setting fields:
 
 - `url` – The source URL.
-- `format` – The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
+- `format` – The file format. All the formats described in "[Formats](/sql-reference/formats)" are supported.
 - `credentials` – Basic HTTP authentication. Optional parameter.
 - `user` – Username required for the authentication.
 - `password` – Password required for the authentication.
@@ -1248,15 +1256,15 @@ Setting fields:
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
 
-### DBMS
+### DBMS {#dbms}
 
-#### ODBC
+#### ODBC {#odbc}
 
 You can use this method to connect any database that has an ODBC driver.
 
 Example of settings:
 
-``` xml
+```xml
 <source>
     <odbc>
         <db>DatabaseName</db>
@@ -1270,7 +1278,7 @@ Example of settings:
 
 or
 
-``` sql
+```sql
 SOURCE(ODBC(
     db 'DatabaseName'
     table 'SchemaName.TableName'
@@ -1286,17 +1294,18 @@ Setting fields:
 - `table` – Name of the table and schema if exists.
 - `connection_string` – Connection string.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Refreshing dictionary data using LIFETIME](#refreshing-dictionary-data-using-lifetime).
+- `background_reconnect` – Reconnect to replica in background if connection fails. Optional parameter.
 - `query` – The custom query. Optional parameter.
 
 :::note
 The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
 :::
 
-ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it's necessary to set table name accordingly to table name case in database.
 
 If you have a problems with encodings when using Oracle, see the corresponding [FAQ](/knowledgebase/oracle-odbc) item.
 
-##### Known Vulnerability of the ODBC Dictionary Functionality
+##### Known Vulnerability of the ODBC Dictionary Functionality {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
 :::note
 When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
@@ -1304,9 +1313,9 @@ When connecting to the database through the ODBC driver connection parameter `Se
 
 **Example of insecure use**
 
-Let’s configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
+Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
 
-``` text
+```text
 [gregtest]
 Driver = /usr/lib/psqlodbca.so
 Servername = localhost
@@ -1319,25 +1328,25 @@ PASSWORD = test
 
 If you then make a query such as
 
-``` sql
+```sql
 SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 ```
 
 ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
 
-##### Example of Connecting Postgresql
+##### Example of Connecting Postgresql {#example-of-connecting-postgresql}
 
 Ubuntu OS.
 
 Installing unixODBC and the ODBC driver for PostgreSQL:
 
-``` bash
+```bash
 $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ```
 
 Configuring `/etc/odbc.ini` (or `~/.odbc.ini` if you signed in under a user that runs ClickHouse):
 
-``` text
+```text
     [DEFAULT]
     Driver = myconnection
 
@@ -1358,7 +1367,7 @@ Configuring `/etc/odbc.ini` (or `~/.odbc.ini` if you signed in under a user that
 
 The dictionary configuration in ClickHouse:
 
-``` xml
+```xml
 <clickhouse>
     <dictionary>
         <name>table_name</name>
@@ -1393,7 +1402,7 @@ The dictionary configuration in ClickHouse:
 
 or
 
-``` sql
+```sql
 CREATE DICTIONARY table_name (
     id UInt64,
     some_column UInt64 DEFAULT 0
@@ -1406,13 +1415,13 @@ LIFETIME(MIN 300 MAX 360)
 
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-##### Example of Connecting MS SQL Server
+##### Example of Connecting MS SQL Server {#example-of-connecting-ms-sql-server}
 
 Ubuntu OS.
 
 Installing the ODBC driver for connecting to MS SQL:
 
-``` bash
+```bash
 $ sudo apt-get install tdsodbc freetds-bin sqsh
 ```
 
@@ -1463,7 +1472,7 @@ Remarks:
 
 Configuring the dictionary in ClickHouse:
 
-``` xml
+```xml
 <clickhouse>
     <dictionary>
         <name>test</name>
@@ -1499,7 +1508,7 @@ Configuring the dictionary in ClickHouse:
 
 or
 
-``` sql
+```sql
 CREATE DICTIONARY test (
     k UInt64,
     s String DEFAULT ''
@@ -1510,11 +1519,11 @@ LAYOUT(FLAT())
 LIFETIME(MIN 300 MAX 360)
 ```
 
-#### Mysql
+#### Mysql {#mysql}
 
 Example of settings:
 
-``` xml
+```xml
 <source>
   <mysql>
       <port>3306</port>
@@ -1540,7 +1549,7 @@ Example of settings:
 
 or
 
-``` sql
+```sql
 SOURCE(MYSQL(
     port 3306
     user 'clickhouse'
@@ -1593,7 +1602,7 @@ MySQL can be connected to on a local host via sockets. To do this, set `host` an
 
 Example of settings:
 
-``` xml
+```xml
 <source>
   <mysql>
       <host>localhost</host>
@@ -1605,14 +1614,14 @@ Example of settings:
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
       <fail_on_connection_loss>true</fail_on_connection_loss>
-	  <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
+      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
   </mysql>
 </source>
 ```
 
 or
 
-``` sql
+```sql
 SOURCE(MYSQL(
     host 'localhost'
     socket '/path/to/socket/file.sock'
@@ -1623,15 +1632,15 @@ SOURCE(MYSQL(
     where 'id=10'
     invalidate_query 'SQL_QUERY'
     fail_on_connection_loss 'true'
-	query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
 ))
 ```
 
-#### ClickHouse
+#### ClickHouse {#clickhouse}
 
 Example of settings:
 
-``` xml
+```xml
 <source>
     <clickhouse>
         <host>example01-01-1</host>
@@ -1642,14 +1651,14 @@ Example of settings:
         <table>ids</table>
         <where>id=10</where>
         <secure>1</secure>
-		<query>SELECT id, value_1, value_2 FROM default.ids</query>
+        <query>SELECT id, value_1, value_2 FROM default.ids</query>
     </clickhouse>
 </source>
 ```
 
 or
 
-``` sql
+```sql
 SOURCE(CLICKHOUSE(
     host 'example01-01-1'
     port 9000
@@ -1659,7 +1668,7 @@ SOURCE(CLICKHOUSE(
     table 'ids'
     where 'id=10'
     secure 1
-	query 'SELECT id, value_1, value_2 FROM default.ids'
+    query 'SELECT id, value_1, value_2 FROM default.ids'
 ));
 ```
 
@@ -1680,11 +1689,11 @@ Setting fields:
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-#### MongoDB
+#### MongoDB {#mongodb}
 
 Example of settings:
 
-``` xml
+```xml
 <source>
     <mongodb>
         <host>localhost</host>
@@ -1700,7 +1709,7 @@ Example of settings:
 
 or
 
-``` xml
+```xml
 <source>
     <mongodb>
         <uri>mongodb://localhost:27017/test?ssl=true</uri>
@@ -1711,7 +1720,7 @@ or
 
 or
 
-``` sql
+```sql
 SOURCE(MONGODB(
     host 'localhost'
     port 27017
@@ -1735,7 +1744,7 @@ Setting fields:
 
 or
 
-``` sql
+```sql
 SOURCE(MONGODB(
     uri 'mongodb://localhost:27017/clickhouse'
     collection 'dictionary_source'
@@ -1749,12 +1758,11 @@ Setting fields:
 
 [More information about the engine](../../engines/table-engines/integrations/mongodb.md)
 
-
-#### Redis
+#### Redis {#redis}
 
 Example of settings:
 
-``` xml
+```xml
 <source>
     <redis>
         <host>localhost</host>
@@ -1767,7 +1775,7 @@ Example of settings:
 
 or
 
-``` sql
+```sql
 SOURCE(REDIS(
     host 'localhost'
     port 6379
@@ -1783,11 +1791,11 @@ Setting fields:
 - `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
 - `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
-#### Cassandra
+#### Cassandra {#cassandra}
 
 Example of settings:
 
-``` xml
+```xml
 <source>
     <cassandra>
         <host>localhost</host>
@@ -1825,11 +1833,11 @@ Setting fields:
 The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
 :::
 
-#### PostgreSQL
+#### PostgreSQL {#postgresql}
 
 Example of settings:
 
-``` xml
+```xml
 <source>
   <postgresql>
       <host>postgresql-hostname</hoat>
@@ -1847,7 +1855,7 @@ Example of settings:
 
 or
 
-``` sql
+```sql
 SOURCE(POSTGRESQL(
     port 5432
     host 'postgresql-hostname'
@@ -1870,24 +1878,65 @@ Setting fields:
 - `user` – Name of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 - `password` – Password of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 - `replica` – Section of replica configurations. There can be multiple sections:
-    - `replica/host` – The PostgreSQL host.
-    - `replica/port` – The PostgreSQL port.
-    - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+  - `replica/host` – The PostgreSQL host.
+  - `replica/port` – The PostgreSQL port.
+  - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 - `db` – Name of the database.
 - `table` – Name of the table.
 - `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Refreshing dictionary data using LIFETIME](#refreshing-dictionary-data-using-lifetime).
+- `background_reconnect` – Reconnect to replica in background if connection fails. Optional parameter.
 - `query` – The custom query. Optional parameter.
 
 :::note
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 :::
 
-### Null
+### YTsaurus {#ytsaurus}
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+:::info
+This is an experimental feature that may change in backwards-incompatible ways in future releases.
+Enable usage of the YTsaurus dictionary source
+using setting [`allow_experimental_ytsaurus_dictionary_source`](/operations/settings/settings#allow_experimental_ytsaurus_dictionary_source).
+:::
+
+Example of settings:
+
+```xml
+<source>
+    <ytsaurus>
+        <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+        <cypress_path>//tmp/test</cypress_path>
+        <oauth_token>password</oauth_token>
+        <check_table_schema>1</check_table_schema>
+    </ytsaurus>
+</source>
+```
+
+or
+
+```sql
+SOURCE(YTSAURUS(
+    http_proxy_urls 'http://localhost:8000'
+    cypress_path '//tmp/test'
+    oauth_token 'password'
+))
+```
+
+Setting fields:
+
+- `http_proxy_urls` –  URL to the YTsaurus http proxy.
+- `cypress_path` – Cypress path to the table source.
+- `oauth_token` –  OAuth token.
+
+### Null {#null}
 
 A special source that can be used to create dummy (empty) dictionaries. Such dictionaries can useful for tests or with setups with separated data and query nodes at nodes with Distributed tables.
 
-``` sql
+```sql
 CREATE DICTIONARY null_dict (
     id              UInt64,
     val             UInt8,
@@ -1900,7 +1949,7 @@ LAYOUT(FLAT())
 LIFETIME(0);
 ```
 
-## Dictionary Key and Fields
+## Dictionary Key and Fields {#dictionary-key-and-fields}
 
 <CloudDetails />
 
@@ -1908,7 +1957,7 @@ The `structure` clause describes the dictionary key and fields available for que
 
 XML description:
 
-``` xml
+```xml
 <dictionary>
     <structure>
         <id>
@@ -1932,7 +1981,7 @@ Attributes are described in the elements:
 
 DDL query:
 
-``` sql
+```sql
 CREATE DICTIONARY dict_name (
     Id UInt64,
     -- attributes
@@ -1946,7 +1995,7 @@ Attributes are described in the query body:
 - `PRIMARY KEY` — Key column
 - `AttrName AttrType` — Data column. There can be a multiple number of attributes.
 
-## Key
+## Key {#key}
 
 ClickHouse supports the following types of keys:
 
@@ -1959,13 +2008,13 @@ An xml structure can contain either `<id>` or `<key>`. DDL-query must contain si
 You must not describe key as an attribute.
 :::
 
-### Numeric Key
+### Numeric Key {#numeric-key}
 
 Type: `UInt64`.
 
 Configuration example:
 
-``` xml
+```xml
 <id>
     <name>Id</name>
 </id>
@@ -1977,7 +2026,7 @@ Configuration fields:
 
 For DDL-query:
 
-``` sql
+```sql
 CREATE DICTIONARY (
     Id UInt64,
     ...
@@ -1988,7 +2037,7 @@ PRIMARY KEY Id
 
 - `PRIMARY KEY` – The name of the column with keys.
 
-### Composite Key
+### Composite Key {#composite-key}
 
 The key can be a `tuple` from any types of fields. The [layout](#storing-dictionaries-in-memory) in this case must be `complex_key_hashed` or `complex_key_cache`.
 
@@ -1998,7 +2047,7 @@ A composite key can consist of a single element. This makes it possible to use a
 
 The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](#dictionary-key-and-fields). Example:
 
-``` xml
+```xml
 <structure>
     <key>
         <attribute>
@@ -2016,10 +2065,10 @@ The key structure is set in the element `<key>`. Key fields are specified in the
 
 or
 
-``` sql
+```sql
 CREATE DICTIONARY (
     field1 String,
-    field2 String
+    field2 UInt32
     ...
 )
 PRIMARY KEY field1, field2
@@ -2028,11 +2077,11 @@ PRIMARY KEY field1, field2
 
 For a query to the `dictGet*` function, a tuple is passed as the key. Example: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-## Attributes
+## Attributes {#attributes}
 
 Configuration example:
 
-``` xml
+```xml
 <structure>
     ...
     <attribute>
@@ -2049,7 +2098,7 @@ Configuration example:
 
 or
 
-``` sql
+```sql
 CREATE DICTIONARY somename (
     Name ClickHouseDataType DEFAULT '' EXPRESSION rand64() HIERARCHICAL INJECTIVE IS_OBJECT_ID
 )
@@ -2067,13 +2116,13 @@ Configuration fields:
 | `injective`                                          | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | No       |
 | `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.
 
-## Hierarchical Dictionaries
+## Hierarchical Dictionaries {#hierarchical-dictionaries}
 
 ClickHouse supports hierarchical dictionaries with a [numeric key](#numeric-key).
 
 Look at the following hierarchical structure:
 
-``` text
+```text
 0 (Common parent)
 │
 ├── 1 (Russia)
@@ -2101,11 +2150,11 @@ This table contains a column `parent_region` that contains the key of the neares
 
 ClickHouse supports the hierarchical property for external dictionary attributes. This property allows you to configure the hierarchical dictionary similar to described above.
 
-The [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy) function allows you to get the parent chain of an element.
+The [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictGetHierarchy) function allows you to get the parent chain of an element.
 
 For our example, the structure of dictionary can be the following:
 
-``` xml
+```xml
 <dictionary>
     <structure>
         <id>
@@ -2131,14 +2180,15 @@ For our example, the structure of dictionary can be the following:
 
 ## Polygon dictionaries {#polygon-dictionaries}
 
-Polygon dictionaries allow you to efficiently search for the polygon containing specified points.
-For example: defining a city area by geographical coordinates.
+This dictionary is optimized for point-in-polygon queries, essentially “reverse geocoding” lookups. Given a coordinate (latitude/longitude), it efficiently finds which polygon/region (from a set of many polygons, such as country or region boundaries) contains that point. It’s well-suited for mapping location coordinates to their containing region.
+
+<iframe width="1024" height="576" src="https://www.youtube.com/embed/FyRsriQp46E?si=Kf8CXoPKEpGQlC-Y" title="Polygon Dictionaries in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 Example of a polygon dictionary configuration:
 
 <CloudDetails />
 
-``` xml
+```xml
 <dictionary>
     <structure>
         <key>
@@ -2171,8 +2221,8 @@ Example of a polygon dictionary configuration:
 </dictionary>
 ```
 
-The corresponding [DDL-query](../../sql-reference/statements/create/dictionary.md#create-dictionary-query):
-``` sql
+The corresponding [DDL-query](/sql-reference/statements/create/dictionary):
+```sql
 CREATE DICTIONARY polygon_dict_name (
     key Array(Array(Array(Array(Float64)))),
     name String,
@@ -2213,7 +2263,7 @@ An important difference is that here the keys will be the points for which you w
 
 Example of working with the dictionary defined above:
 
-``` sql
+```sql
 CREATE TABLE points (
     x Float64,
     y Float64
@@ -2230,7 +2280,7 @@ You can read columns from polygon dictionaries via SELECT query, just turn on th
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE polygons_test_table
 (
     key Array(Array(Array(Tuple(Float64, Float64)))),
@@ -2254,7 +2304,7 @@ SELECT * FROM polygons_test_dictionary;
 
 Result:
 
-``` text
+```text
 ┌─key─────────────────────────────┬─name──┐
 │ [[[(3,1),(0,1),(0,-1),(3,-1)]]] │ Value │
 └─────────────────────────────────┴───────┘
@@ -2262,9 +2312,11 @@ Result:
 
 ## Regular Expression Tree Dictionary {#regexp-tree-dictionary}
 
-Regular expression tree dictionaries are a special type of dictionary which represent the mapping from key to attributes using a tree of regular expressions. There are some use cases, e.g. parsing of [user agent](https://en.wikipedia.org/wiki/User_agent) strings, which can be expressed elegantly with regexp tree dictionaries.
+This dictionary lets you map keys to values based on hierarchical regular-expression patterns. It’s optimized for pattern-match lookups (e.g. classifying strings like user agent strings by matching regex patterns) rather than exact key matching.
 
-### Use Regular Expression Tree Dictionary in ClickHouse Open-Source
+<iframe width="1024" height="576" src="https://www.youtube.com/embed/ESlAhUJMoz8?si=sY2OVm-zcuxlDRaX" title="An intro to ClickHouse regex tree dictionaries" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+### Use Regular Expression Tree Dictionary in ClickHouse Open-Source {#use-regular-expression-tree-dictionary-in-clickhouse-open-source}
 
 Regular expression tree dictionaries are defined in ClickHouse open-source using the YAMLRegExpTree source which is provided the path to a YAML file containing the regular expression tree.
 
@@ -2328,9 +2380,9 @@ In this case, we first match the regular expression `\d+/tclwebkit(?:\d+[\.\d]*)
 
 With a powerful YAML configure file, we can use a regexp tree dictionaries as a user agent string parser. We support [uap-core](https://github.com/ua-parser/uap-core) and demonstrate how to use it in the functional test [02504_regexp_dictionary_ua_parser](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/02504_regexp_dictionary_ua_parser.sh)
 
-#### Collecting Attribute Values
+#### Collecting Attribute Values {#collecting-attribute-values}
 
-Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](../../sql-reference/functions/ext-dict-functions.md#dictgetall) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
+Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](../../sql-reference/functions/ext-dict-functions.md#dictGetAll) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
 
 By default, the number of matches returned per key is unbounded. A bound can be passed as an optional fourth argument to `dictGetAll`. The array is populated in _topological order_, meaning that child nodes come before parent nodes, and sibling nodes follow the ordering in the source.
 
@@ -2389,13 +2441,13 @@ Result:
 └────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### Matching Modes
+#### Matching Modes {#matching-modes}
 
 Pattern matching behavior can be modified with certain dictionary settings:
 - `regexp_dict_flag_case_insensitive`: Use case-insensitive matching (defaults to `false`). Can be overridden in individual expressions with `(?i)` and `(?-i)`.
 - `regexp_dict_flag_dotall`: Allow '.' to match newline characters (defaults to `false`).
 
-### Use Regular Expression Tree Dictionary in ClickHouse Cloud
+### Use Regular Expression Tree Dictionary in ClickHouse Cloud {#use-regular-expression-tree-dictionary-in-clickhouse-cloud}
 
 Above used `YAMLRegExpTree` source works in ClickHouse Open Source but not in ClickHouse Cloud. To use regexp tree dictionaries in ClickHouse could, first create a regexp tree dictionary from a YAML file locally in ClickHouse Open Source, then dump this dictionary into a CSV file using the `dictionary` table function and the [INTO OUTFILE](../statements/select/into-outfile.md) clause.
 
@@ -2448,9 +2500,9 @@ clickhouse client \
     FORMAT CSV" < regexp_dict.csv
 ```
 
-You can see how to [Insert Local Files](https://clickhouse.com/docs/en/integrations/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
+You can see how to [Insert Local Files](/integrations/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
 
-``` sql
+```sql
 CREATE DICTIONARY regexp_dict
 (
     regexp String,
@@ -2462,7 +2514,7 @@ LIFETIME(0)
 LAYOUT(regexp_tree);
 ```
 
-## Embedded Dictionaries
+## Embedded Dictionaries {#embedded-dictionaries}
 
 <SelfManaged />
 
@@ -2470,12 +2522,12 @@ ClickHouse contains a built-in feature for working with a geobase.
 
 This allows you to:
 
-- Use a region’s ID to get its name in the desired language.
-- Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
+- Use a region's ID to get its name in the desired language.
+- Use a region's ID to get the ID of a city, area, federal district, country, or continent.
 - Check whether a region is part of another region.
 - Get a chain of parent regions.
 
-All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with web analytics dictionaries”.
+All the functions support "translocality," the ability to simultaneously use different perspectives on region ownership. For more information, see the section "Functions for working with web analytics dictionaries".
 
 The internal dictionaries are disabled in the default package.
 To enable them, uncomment the parameters `path_to_regions_hierarchy_file` and `path_to_regions_names_files` in the server configuration file.
@@ -2498,9 +2550,9 @@ You can also create these files yourself. The file format is as follows:
 `regions_names_*.txt`: TabSeparated (no header), columns:
 
 - region ID (`UInt32`)
-- region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
+- region name (`String`) — Can't contain tabs or line feeds, even escaped ones.
 
-A flat array is used for storing in RAM. For this reason, IDs shouldn’t be more than a million.
+A flat array is used for storing in RAM. For this reason, IDs shouldn't be more than a million.
 
 Dictionaries can be updated without restarting the server. However, the set of available dictionaries is not updated.
 For updates, the file modification times are checked. If a file has changed, the dictionary is updated.
@@ -2509,4 +2561,4 @@ Dictionary updates (other than loading at first use) do not block queries. Durin
 
 We recommend periodically updating the dictionaries with the geobase. During an update, generate new files and write them to a separate location. When everything is ready, rename them to the files used by the server.
 
-There are also functions for working with OS identifiers and search engines, but they shouldn’t be used.
+There are also functions for working with OS identifiers and search engines, but they shouldn't be used.

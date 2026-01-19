@@ -4,11 +4,13 @@
 #include <Storages/StorageConfiguration.h>
 #include <Common/randomSeed.h>
 #include <Common/QueryFuzzer.h>
-
-#include "config.h"
+#include <Processors/ISource.h>
 
 namespace DB
 {
+
+class Pipe;
+class Chunk;
 
 class NamedCollection;
 
@@ -47,10 +49,10 @@ class FuzzQuerySource : public ISource
 {
 public:
     FuzzQuerySource(
-        UInt64 block_size_, Block block_header_, const StorageFuzzQuery::Configuration & config_, ASTPtr query_)
+        UInt64 block_size_, SharedHeader block_header_, const StorageFuzzQuery::Configuration & config_, ASTPtr query_)
         : ISource(block_header_)
         , block_size(block_size_)
-        , block_header(std::move(block_header_))
+        , block_header(block_header_)
         , config(config_)
         , query(query_)
         , fuzzer(config_.random_seed)
@@ -63,8 +65,8 @@ protected:
     Chunk generate() override
     {
         Columns columns;
-        columns.reserve(block_header.columns());
-        for (const auto & col : block_header)
+        columns.reserve(block_header->columns());
+        for (const auto & col : *block_header)
         {
             chassert(col.type->getTypeId() == TypeIndex::String);
             columns.emplace_back(createColumn());
@@ -77,7 +79,7 @@ private:
     ColumnPtr createColumn();
 
     UInt64 block_size;
-    Block block_header;
+    SharedHeader block_header;
 
     StorageFuzzQuery::Configuration config;
     ASTPtr query;

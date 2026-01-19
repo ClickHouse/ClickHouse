@@ -8,7 +8,7 @@
 #include <Interpreters/Cache/UserInfo.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/Throttler_fwd.h>
+#include <Common/IThrottler.h>
 
 namespace DB
 {
@@ -19,9 +19,6 @@ class Context;
 
 struct ReadSettings
 {
-    ReadSettings() = default;
-    explicit ReadSettings(const Context & context);
-
     /// Method to use reading from local filesystem.
     LocalFSReadMethod local_fs_method = LocalFSReadMethod::pread;
     /// Method to use reading from remote filesystem.
@@ -46,8 +43,6 @@ struct ReadSettings
     /// For 'pread_threadpool'/'io_uring' method. Lower value is higher priority.
     Priority priority;
 
-    bool load_marks_asynchronously = true;
-
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
 
@@ -58,14 +53,22 @@ struct ReadSettings
     bool enable_filesystem_cache_log = false;
     size_t filesystem_cache_segments_batch_size = 20;
     size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    bool filesystem_cache_allow_background_download = true;
+    bool filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage = true;
+    bool filesystem_cache_allow_background_download_during_fetch = true;
+    bool filesystem_cache_prefer_bigger_buffer_size = true;
+    std::optional<size_t> filesystem_cache_boundary_alignment;
 
     bool use_page_cache_for_disks_without_file_cache = false;
+    [[maybe_unused]] bool use_page_cache_with_distributed_cache = false;
     bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
     bool page_cache_inject_eviction = false;
+    size_t page_cache_block_size = 1 << 20;
+    size_t page_cache_lookahead_blocks = 16;
     std::shared_ptr<PageCache> page_cache;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
-    bool skip_download_if_exceeds_query_cache = true;
+    bool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = true;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
 
@@ -87,25 +90,13 @@ struct ReadSettings
     bool read_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
     std::optional<FileCacheUserInfo> filecache_user_info;
+    bool enable_hdfs_pread = true;
 
-    ReadSettings adjustBufferSize(size_t file_size) const
-    {
-        ReadSettings res = *this;
-        res.local_fs_buffer_size = std::min(std::max(1ul, file_size), local_fs_buffer_size);
-        res.remote_fs_buffer_size = std::min(std::max(1ul, file_size), remote_fs_buffer_size);
-        res.prefetch_buffer_size = std::min(std::max(1ul, file_size), prefetch_buffer_size);
-        return res;
-    }
-
-    ReadSettings withNestedBuffer() const
-    {
-        ReadSettings res = *this;
-        res.remote_read_buffer_restrict_seek = true;
-        res.remote_read_buffer_use_external_buffer = true;
-        return res;
-    }
+    ReadSettings adjustBufferSize(size_t file_size) const;
+    ReadSettings withNestedBuffer(bool seekable = false) const;
 };
 
 ReadSettings getReadSettings();
 
+ReadSettings getReadSettingsForMetadata();
 }

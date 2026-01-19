@@ -2,21 +2,14 @@
 
 #if USE_EMBEDDED_COMPILER
 
-#include <optional>
 #include <stack>
 
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionsComparison.h>
 #include <DataTypes/Native.h>
-#include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileDAG.h>
@@ -81,12 +74,10 @@ public:
         if (!canBeNativeType(*result_type))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "LLVMExecutableFunction unexpected result type in: {}", result_type->getName());
 
-        auto result_column = result_type->createColumn();
+        auto result_column = result_type->createUninitializedColumnWithSize(input_rows_count);
 
         if (input_rows_count)
         {
-            result_column = result_column->cloneResized(input_rows_count);
-
             std::vector<ColumnData> columns(arguments.size() + 1);
             std::vector<ColumnPtr> columns_backup;
 
@@ -103,7 +94,7 @@ public:
             jit_compiled_function(input_rows_count, columns.data());
 
             #if defined(MEMORY_SANITIZER)
-            /// Memory sanitizer don't know about stores from JIT-ed code.
+            /// Memory sanitizer doesn't know about stores from JIT-ed code.
             /// But maybe we can generate this code with MSan instrumentation?
 
             if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(result_column.get()))
@@ -266,7 +257,7 @@ public:
     {
         const auto & type = function.getArgumentTypes().at(0);
         ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
-        auto col = function.execute(args, function.getResultType(), 1);
+        auto col = function.execute(args, function.getResultType(), 1, /* dry_run = */ false);
         col->get(0, value);
     }
 
@@ -352,12 +343,22 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
     }
 
     if (!canBeNativeType(*function.getResultType()))
-        return false;
-
-    for (const auto & type : function.getArgumentTypes())
     {
+        return false;
+    }
+
+    const auto & argument_types = function.getArgumentTypes();
+    auto skip_arguments = function.getArgumentsThatDontParticipateInCompilation(argument_types);
+    for (size_t i = 0; i < argument_types.size(); ++i)
+    {
+        if (std::find(skip_arguments.begin(), skip_arguments.end(), i) != skip_arguments.end())
+            continue;
+
+        const auto & type = argument_types[i];
         if (!canBeNativeType(*type))
+        {
             return false;
+        }
     }
 
     return function.isCompilable();
@@ -378,6 +379,7 @@ static CompileDAG getCompilableDAG(
     {
         const ActionsDAG::Node * node;
         size_t next_child_to_visit = 0;
+        size_t skip_compile = false;
     };
 
     std::stack<Frame> stack;
@@ -391,7 +393,7 @@ static CompileDAG getCompilableDAG(
         bool is_compilable_constant = isCompilableConstant(*node);
         bool is_compilable_function = isCompilableFunction(*node, lazy_executed_nodes);
 
-        if (!is_compilable_function || is_compilable_constant)
+        if (!is_compilable_function || is_compilable_constant || frame.skip_compile)
         {
             CompileDAG::Node compile_node;
             compile_node.function = node->function_base;
@@ -401,6 +403,12 @@ static CompileDAG getCompilableDAG(
             {
                 compile_node.type = CompileDAG::CompileType::CONSTANT;
                 compile_node.column = node->column;
+            }
+            else if (frame.skip_compile)
+            {
+                compile_node.type = CompileDAG::CompileType::CONSTANT;
+                compile_node.column = node->column;
+                compile_node.skip_compile = true;
             }
             else
             {
@@ -414,17 +422,24 @@ static CompileDAG getCompilableDAG(
             continue;
         }
 
+        const auto & function = *node->function_base;
+        auto skip_arguments = function.getArgumentsThatDontParticipateInCompilation(function.getArgumentTypes());
         while (frame.next_child_to_visit < node->children.size())
         {
             const auto & child = node->children[frame.next_child_to_visit];
-
             if (visited_node_to_compile_dag_position.contains(child))
             {
                 ++frame.next_child_to_visit;
                 continue;
             }
 
-            stack.emplace(Frame{.node = child});
+            bool skip_compile = std::find(skip_arguments.begin(), skip_arguments.end(), frame.next_child_to_visit) != skip_arguments.end();
+            if (skip_compile
+                && (!child->column || !isColumnConst(*child->column)
+                    || dynamic_cast<const ColumnConst *>(child->column.get())->getField().isNull()))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Only constant nodes with non-null value could skip compilation");
+
+            stack.emplace(Frame{.node = child, .skip_compile = skip_compile});
             break;
         }
 
@@ -499,7 +514,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
 
             while (current_frame.next_child_to_visit < current_node->children.size())
             {
-                const auto & child = node.children[current_frame.next_child_to_visit];
+                const auto & child = current_node->children[current_frame.next_child_to_visit];
 
                 if (visited_nodes.contains(child))
                 {

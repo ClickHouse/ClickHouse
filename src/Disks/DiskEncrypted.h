@@ -7,6 +7,7 @@
 #include <Common/MultiVersion.h>
 #include <Disks/FakeDiskTransaction.h>
 #include <Disks/DiskEncryptedTransaction.h>
+#include <Disks/MetadataStorageWithPathWrapper.h>
 
 
 namespace DB
@@ -65,13 +66,6 @@ public:
         delegate->createDirectories(wrapped_path);
     }
 
-    void clearDirectory(const String & path) override
-    {
-        auto tx = createEncryptedTransaction();
-        tx->clearDirectory(path);
-        tx->commit();
-    }
-
     void moveDirectory(const String & from_path, const String & to_path) override
     {
         auto tx = createEncryptedTransaction();
@@ -120,11 +114,18 @@ public:
         const WriteSettings & write_settings,
         const std::function<void()> & cancellation_hook) override;
 
+    void copyFile(
+        const String & from_file_path,
+        IDisk & to_disk,
+        const String & to_file_path,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        const std::function<void()> & cancellation_hook) override;
+
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        std::optional<size_t> file_size) const override;
+        std::optional<size_t> read_hint) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -133,7 +134,7 @@ public:
         const WriteSettings & settings) override
     {
         auto tx = createEncryptedTransaction();
-        auto result = tx->writeFile(path, buf_size, mode, settings);
+        auto result = tx->writeFileWithAutoCommit(path, buf_size, mode, settings);
         return result;
     }
 
@@ -199,11 +200,28 @@ public:
         return delegate->getBlobPath(wrapped_path);
     }
 
+    bool areBlobPathsRandom() const override
+    {
+        return delegate->areBlobPathsRandom();
+    }
+
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override
     {
         auto tx = createEncryptedTransaction();
         tx->writeFileUsingBlobWritingFunction(path, mode, std::move(write_blob_function));
         tx->commit();
+    }
+
+    StoredObjects getStorageObjects(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getStorageObjects(wrapped_path);
+    }
+
+    std::optional<StoredObjects> getStorageObjectsIfExist(const String & path) const override
+    {
+        auto wrapped_path = wrappedPath(path);
+        return delegate->getStorageObjectsIfExist(wrapped_path);
     }
 
     std::unique_ptr<ReadBufferFromFileBase> readEncryptedFile(const String & path, const ReadSettings & settings) const override
@@ -270,6 +288,8 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
+    void refresh(UInt64 not_sooner_than_milliseconds) override { delegate->refresh(not_sooner_than_milliseconds); }
+
     String getUniqueId(const String & path) const override
     {
         auto wrapped_path = wrappedPath(path);
@@ -281,12 +301,6 @@ public:
         return delegate->checkUniqueId(id);
     }
 
-    void onFreeze(const String & path) override
-    {
-        auto wrapped_path = wrappedPath(path);
-        delegate->onFreeze(wrapped_path);
-    }
-
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
     DataSourceDescription getDataSourceDescription() const override
@@ -296,7 +310,17 @@ public:
         return delegate_description;
     }
 
+    bool supportsCache() const override { return delegate->supportsCache(); }
+    NameSet getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
+    const String & getCacheName() const override { return delegate->getCacheName(); }
+
     bool isRemote() const override { return delegate->isRemote(); }
+    bool isBroken() const override { return delegate->isBroken(); }
+    bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
+    bool supportsHardLinks() const override { return delegate->supportsHardLinks(); }
+    bool supportsStat() const override { return delegate->supportsStat(); }
+    bool supportsChmod() const override { return delegate->supportsChmod(); }
+    bool isSymlinkSupported() const override { return delegate->isSymlinkSupported(); }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
@@ -340,7 +364,7 @@ public:
 
     MetadataStoragePtr getMetadataStorage() override
     {
-        return delegate->getMetadataStorage();
+        return std::make_shared<MetadataStorageWithPathWrapper>(delegate->getMetadataStorage(), disk_path);
     }
 
     std::unordered_map<String, String> getSerializedMetadata(const std::vector<String> & paths) const override;
@@ -355,6 +379,9 @@ public:
         auto wrapped_path = wrappedPath(path);
         return delegate->getRefCount(wrapped_path);
     }
+
+    void syncRevision(UInt64 revision) override { delegate->syncRevision(revision); }
+    UInt64 getRevision() const override { return delegate->getRevision(); }
 
 #if USE_AWS_S3
     std::shared_ptr<const S3::Client> getS3StorageClient() const override

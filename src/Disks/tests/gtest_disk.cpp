@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "gtest_disk.h"
+#include <Disks/tests/gtest_disk.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -45,6 +45,7 @@ TEST_F(DiskTest, writeFile)
     {
         std::unique_ptr<DB::WriteBuffer> out = disk->writeFile("test_file");
         writeString("test data", *out);
+        out->finalize();
     }
 
     String data;
@@ -63,6 +64,7 @@ TEST_F(DiskTest, readFile)
     {
         std::unique_ptr<DB::WriteBuffer> out = disk->writeFile("test_file");
         writeString("test data", *out);
+        out->finalize();
     }
 
     auto read_settings = DB::getReadSettings();

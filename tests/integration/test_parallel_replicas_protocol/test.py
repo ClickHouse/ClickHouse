@@ -1,4 +1,5 @@
 import re
+import uuid
 from random import randint
 
 import pytest
@@ -16,15 +17,6 @@ nodes = [
     )
     for num in range(3)
 ]
-
-
-@pytest.fixture(scope="module", autouse=True)
-def start_cluster():
-    try:
-        cluster.start()
-        yield cluster
-    finally:
-        cluster.shutdown()
 
 
 def _create_tables(table_name):
@@ -48,28 +40,78 @@ def _create_tables(table_name):
     nodes[0].query(f"SYSTEM SYNC REPLICA ON CLUSTER 'parallel_replicas' {table_name}")
 
 
+table_name = "t"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def start_cluster():
+    try:
+        cluster.start()
+        _create_tables(table_name)
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
 # now mark_segment_size is part of the protocol and is communicated to the initiator.
 # let's check that the correct value is actually used by the coordinator
-def test_mark_segment_size_communicated_correctly(start_cluster):
-    table_name = "t"
-    _create_tables(table_name)
+@pytest.mark.parametrize("local_plan", [0, 1])
+@pytest.mark.parametrize("index_analysis_only_on_coordinator", [0, 1])
+def test_mark_segment_size_communicated_correctly(
+    start_cluster, local_plan, index_analysis_only_on_coordinator
+):
 
-    for local_plan in [0, 1]:
-        query_id = f"query_id_{randint(0, 1000000)}"
-        nodes[0].query(
-            f"SELECT sum(value) FROM {table_name}",
-            settings={
-                "allow_experimental_parallel_reading_from_replicas": 2,
-                "max_parallel_replicas": 100,
-                "cluster_for_parallel_replicas": "parallel_replicas",
-                "parallel_replicas_mark_segment_size": 0,
-                "parallel_replicas_local_plan": local_plan,
-                "query_id": query_id,
-            },
-        )
+    query_id = f"query_id_{str(uuid.uuid4())}"
+    nodes[0].query(
+        f"SELECT sum(value) FROM {table_name}",
+        settings={
+            "allow_experimental_parallel_reading_from_replicas": 2,
+            "max_parallel_replicas": 100,
+            "cluster_for_parallel_replicas": "parallel_replicas",
+            "parallel_replicas_mark_segment_size": 0,
+            "parallel_replicas_local_plan": local_plan,
+            "query_id": query_id,
+            "parallel_replicas_index_analysis_only_on_coordinator": index_analysis_only_on_coordinator,
+        },
+    )
 
-        nodes[0].query("SYSTEM FLUSH LOGS")
-        log_line = nodes[0].grep_in_log(
-            f"{query_id}.*Reading state is fully initialized"
-        )
-        assert re.search(r"mark_segment_size: (\d+)", log_line).group(1) == "16384"
+    nodes[0].query("SYSTEM FLUSH LOGS")
+    log_line = nodes[0].grep_in_log(f"{query_id}.*Reading state is fully initialized")
+    assert re.search(r"mark_segment_size: (\d+)", log_line).group(1) == "16384"
+
+
+def test_final_on_parallel_replicas(start_cluster):
+    nodes[0].query("DROP TABLE IF EXISTS t0")
+    nodes[0].query(
+        "CREATE TABLE t0 (c0 Int) ENGINE = SummingMergeTree() ORDER BY tuple()",
+        settings={"allow_suspicious_primary_key": 1},
+    )
+    nodes[0].query("INSERT INTO t0 VALUES (1)")
+    nodes[0].query("OPTIMIZE TABLE t0 FINAL")
+    resp = nodes[0].query(
+        "SELECT 1 FROM t0 RIGHT JOIN (SELECT c0 FROM t0) tx ON TRUE GROUP BY c0",
+        settings={
+            "allow_experimental_parallel_reading_from_replicas": 2,
+            "cluster_for_parallel_replicas": "parallel_replicas",
+        },
+    )
+    assert resp == "1\n"
+    nodes[0].query("DROP TABLE t0")
+
+
+def test_insert_cluster_parallel_replicas(start_cluster):
+    nodes[0].query("DROP TABLE IF EXISTS t0 ON CLUSTER 'test_cluster_two_shards'")
+    nodes[0].query(
+        "CREATE TABLE t0 ON CLUSTER 'test_cluster_two_shards' (c0 Int) ENGINE = Log()"
+    )
+    nodes[0].query(
+        "INSERT INTO TABLE FUNCTION cluster('test_cluster_two_shards', 'default', 't0') (c0) SELECT c0 FROM generateRandom('c0 Int', 1) LIMIT 3",
+        settings={
+            "insert_distributed_one_random_shard": 1,
+            "allow_experimental_parallel_reading_from_replicas": 2,
+            "min_insert_block_size_bytes": 1,
+            "optimize_trivial_insert_select": 1,
+            "max_insert_threads": 3,
+        },
+    )
+    nodes[0].query("DROP TABLE t0 ON CLUSTER 'test_cluster_two_shards'")

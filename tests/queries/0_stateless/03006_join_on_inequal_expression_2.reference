@@ -40,6 +40,18 @@ SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.attr != t2.att
 1	10	alpha	1	5	ALPHA
 2	15	beta	0	0	
 3	20	gamma	0	0	
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.attr != t2.attr) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.attr != t2.attr) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.attr != t2.attr) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.attr != t2.attr) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
 --
 SET join_algorithm='hash';
 SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND t1.a > t2.key AND t1.key + t2.a > 1 ORDER BY ALL;
@@ -81,6 +93,22 @@ SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.a > t2.key AND 
 1	10	alpha	1	5	ALPHA
 2	15	beta	2	10	beta
 3	20	gamma	0	0	
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND t1.a > t2.key AND t1.key + t2.a > 1 ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND t1.a > t2.key AND t1.key + t2.a > 1 ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND t1.a > t2.key AND t1.key + t2.a > 1 ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND t1.a > t2.key AND t1.key + t2.a > 1 ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
 --
 SET join_algorithm='hash';
 SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.key < t2.a OR t1.a % 2 = 0) ORDER BY ALL;
@@ -122,6 +150,22 @@ SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.key < t2.a OR 
 1	10	alpha	1	5	ALPHA
 2	15	beta	2	10	beta
 3	20	gamma	0	0	
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.key < t2.a OR t1.a % 2 = 0) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.key < t2.a OR t1.a % 2 = 0) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.key < t2.a OR t1.a % 2 = 0) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.key < t2.a OR t1.a % 2 = 0) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
 -- BETWEEN
 SET join_algorithm='hash';
 SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t2.a BETWEEN 8 AND t1.a) ORDER BY ALL;
@@ -163,6 +207,18 @@ SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t2.a BETWEEN 8 AN
 1	10	alpha	0	0	
 2	15	beta	2	10	beta
 3	20	gamma	0	0	
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t2.a BETWEEN 8 AND t1.a) ORDER BY ALL;
+2	15	beta	2	10	beta
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t2.a BETWEEN 8 AND t1.a) ORDER BY ALL;
+2	15	beta	2	10	beta
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t2.a BETWEEN 8 AND t1.a) ORDER BY ALL;
+2	15	beta	2	10	beta
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t2.a BETWEEN 8 AND t1.a) ORDER BY ALL;
+2	15	beta	2	10	beta
 --
 SET join_algorithm='hash';
 SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.a IN (SELECT a FROM t2 WHERE a = 10)) ORDER BY ALL;
@@ -204,7 +260,19 @@ SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.a IN (SELECT a
 1	10	alpha	1	5	ALPHA
 2	15	beta	0	0	
 3	20	gamma	0	0	
--- Stupid condition
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.a IN (SELECT a FROM t2 WHERE a = 10)) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key = t2.key AND (t1.a IN (SELECT a FROM t2 WHERE a = 10)) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a IN (SELECT a FROM t2 WHERE a = 10)) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a IN (SELECT a FROM t2 WHERE a = 10)) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+-- Arbitraty condition containing combination of columns and functions
 SET join_algorithm='hash';
 SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
 1	10	alpha	1	5	ALPHA
@@ -245,6 +313,22 @@ SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2
 1	10	alpha	1	5	ALPHA
 2	15	beta	2	10	beta
 3	20	gamma	0	0	
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI LEFT JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
+SET join_algorithm='hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.* FROM t1 SEMI RIGHT JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA
+2	15	beta	2	10	beta
 -- Window functions with stupid condition
 SET join_algorithm='hash';
 SELECT t1.*, t2.*, AVG(t1.a) OVER () AS avg_b, SUM(t2.key) OVER () AS sum_c FROM t1 LEFT JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
@@ -286,5 +370,21 @@ SELECT t1.*, t2.*, AVG(t1.a) OVER () AS avg_b, SUM(t2.key) OVER () AS sum_c FROM
 1	10	alpha	1	5	ALPHA	11.25	7
 2	15	beta	2	10	beta	11.25	7
 3	20	gamma	0	0		11.25	7
+SET join_algorithm='hash';
+SELECT t1.*, t2.*, AVG(t1.a) OVER () AS avg_b, SUM(t2.key) OVER () AS sum_c FROM t1 SEMI LEFT JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA	12.5	3
+2	15	beta	2	10	beta	12.5	3
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.*, AVG(t1.a) OVER () AS avg_b, SUM(t2.key) OVER () AS sum_c FROM t1 SEMI LEFT JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA	12.5	3
+2	15	beta	2	10	beta	12.5	3
+SET join_algorithm='hash';
+SELECT t1.*, t2.*, AVG(t1.a) OVER () AS avg_b, SUM(t2.key) OVER () AS sum_c FROM t1 SEMI RIGHT JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA	12.5	3
+2	15	beta	2	10	beta	12.5	3
+SET join_algorithm='grace_hash';
+SELECT t1.*, t2.*, AVG(t1.a) OVER () AS avg_b, SUM(t2.key) OVER () AS sum_c FROM t1 SEMI RIGHT JOIN t2 ON t1.key == t2.key AND (t1.a * length(t2.attr) / length(t1.attr) <> t2.a + t1.key - t2.key) ORDER BY ALL;
+1	10	alpha	1	5	ALPHA	12.5	3
+2	15	beta	2	10	beta	12.5	3
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

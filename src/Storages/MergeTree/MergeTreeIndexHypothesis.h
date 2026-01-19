@@ -23,6 +23,8 @@ public:
 
     bool empty() const override { return is_empty; }
 
+    size_t memoryUsageBytes() const override { return sizeof(*this); }
+
     ~MergeTreeIndexGranuleHypothesis() override = default;
 
     const String & index_name;
@@ -66,10 +68,10 @@ public:
     bool isMergeable() const override { return true; }
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
+        const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const override;

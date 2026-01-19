@@ -1,5 +1,6 @@
+#include <Columns/IColumn.h>
 #include <Processors/OffsetTransform.h>
-
+#include <Processors/Port.h>
 
 namespace DB
 {

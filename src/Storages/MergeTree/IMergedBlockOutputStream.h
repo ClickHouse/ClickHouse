@@ -17,7 +17,7 @@ class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        const MergeTreeSettingsPtr & storage_settings_,
+        MergeTreeSettingsPtr storage_settings_,
         MutableDataPartStoragePtr data_part_storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list,
@@ -28,24 +28,35 @@ public:
     using WrittenOffsetColumns = std::set<std::string>;
 
     virtual void write(const Block & block) = 0;
+    virtual void cancel() noexcept = 0;
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const
+    MergeTreeIndexGranularityPtr getIndexGranularity() const
     {
         return writer->getIndexGranularity();
     }
 
+    MergeTreeWriterSettings getWriterSettings() const
+    {
+        return writer->getWriterSettings();
+    }
+
     PlainMarksByName releaseCachedMarks()
     {
-        return writer->releaseCachedMarks();
+        return writer ? writer->releaseCachedMarks() : PlainMarksByName{};
+    }
+
+    size_t getNumberOfOpenStreams() const
+    {
+        return writer->getNumberOfOpenStreams();
     }
 
 protected:
-
-    /// Remove all columns marked expired in data_part. Also, clears checksums
+    /// Remove all columns in @empty_columns. Also, clears checksums
     /// and columns array. Return set of removed files names.
     NameSet removeEmptyColumnsFromPart(
         const MergeTreeDataPartPtr & data_part,
         NamesAndTypesList & columns,
+        const NameSet & empty_columns,
         SerializationInfoByName & serialization_infos,
         MergeTreeData::DataPart::Checksums & checksums);
 
@@ -58,7 +69,8 @@ protected:
     MergeTreeDataPartWriterPtr writer;
 
     bool reset_columns = false;
-    SerializationInfoByName new_serialization_infos;
+    SerializationInfo::Settings info_settings;
+    SerializationInfoByName new_serialization_infos{{}};
 };
 
 using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;

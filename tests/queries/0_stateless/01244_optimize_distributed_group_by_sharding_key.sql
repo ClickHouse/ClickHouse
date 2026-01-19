@@ -6,6 +6,7 @@ set optimize_distributed_group_by_sharding_key=1;
 
 -- Some queries in this test require sorting after aggregation.
 set max_bytes_before_external_group_by = 0;
+set max_bytes_ratio_before_external_group_by = 0;
 
 drop table if exists dist_01247;
 drop table if exists data_01247;
@@ -78,9 +79,9 @@ select 'LIMIT BY 1';
 select count(), * from dist_01247 group by number order by number limit 1 by number;
 
 select 'GROUP BY (Distributed-over-Distributed)';
-select count(), * from cluster(test_cluster_two_shards, currentDatabase(), dist_01247) group by number;
+select count(), * from cluster(test_cluster_two_shards, currentDatabase(), dist_01247) group by number order by number;
 select 'GROUP BY (Distributed-over-Distributed) distributed_group_by_no_merge';
-select count(), * from cluster(test_cluster_two_shards, currentDatabase(), dist_01247) group by number settings distributed_group_by_no_merge=1;
+select count(), * from cluster(test_cluster_two_shards, currentDatabase(), dist_01247) group by number order by number settings distributed_group_by_no_merge=1;
 
 select 'GROUP BY (extemes)';
 select count(), * from dist_01247 group by number settings extremes=1;

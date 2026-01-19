@@ -21,9 +21,10 @@
 using namespace DB;
 
 template <typename T>
-void checkColumn(
+void checkColumnImpl(
     const WeakHash32::Container & hash,
-    const PaddedPODArray<T> & eq_class)
+    const PaddedPODArray<T> & eq_class,
+    UInt32 scale = 0)
 {
     ASSERT_EQ(hash.size(), eq_class.size());
 
@@ -41,12 +42,34 @@ void checkColumn(
             else
             {
                 if (it->second != hash[i])
-                    std::cout << "Different hashes for the same equivalent class (" << toString(val) << ")\n";
+                {
+                    if constexpr (is_decimal<T>)
+                        std::cout << "Different hashes for the same equivalent class (" << toString(val, scale) << ")\n";
+                    else
+                        std::cout << "Different hashes for the same equivalent class (" << toString(val) << ")\n";
+                }
 
                 ASSERT_EQ(it->second, hash[i]);
             }
         }
     }
+}
+
+template <typename T>
+void checkColumn(
+    const WeakHash32::Container & hash,
+    const PaddedPODArray<T> & eq_class)
+{
+    checkColumnImpl(hash, eq_class);
+}
+
+template <is_decimal T>
+void checkColumn(
+    const WeakHash32::Container & hash,
+    const PaddedPODArray<T> & eq_class,
+    UInt32 scale)
+{
+    checkColumnImpl(hash, eq_class, scale);
 }
 
 TEST(WeakHash32, ColumnVectorU8)
@@ -57,7 +80,7 @@ TEST(WeakHash32, ColumnVectorU8)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (size_t i = 0; i < 265; ++i)
-            data.push_back(i);
+            data.push_back(static_cast<UInt8>(i));
     }
 
     WeakHash32 hash = col->getWeakHash32();
@@ -73,7 +96,7 @@ TEST(WeakHash32, ColumnVectorI8)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int i = -128; i < 128; ++i)
-            data.push_back(i);
+            data.push_back(static_cast<Int8>(i));
     }
 
     WeakHash32 hash = col->getWeakHash32();
@@ -89,7 +112,7 @@ TEST(WeakHash32, ColumnVectorU16)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (size_t i = 0; i < 65536; ++i)
-            data.push_back(i);
+            data.push_back(static_cast<UInt16>(i));
     }
 
     WeakHash32 hash = col->getWeakHash32();
@@ -105,7 +128,7 @@ TEST(WeakHash32, ColumnVectorI16)
     for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int i = -32768; i < 32768; ++i)
-            data.push_back(i);
+            data.push_back(static_cast<Int16>(i));
     }
 
     WeakHash32 hash = col->getWeakHash32();
@@ -230,7 +253,7 @@ TEST(WeakHash32, ColumnDecimal32)
 
     WeakHash32 hash = col->getWeakHash32();
 
-    checkColumn(hash.getData(), col->getData());
+    checkColumn(hash.getData(), col->getData(), col->getScale());
 }
 
 TEST(WeakHash32, ColumnDecimal64)
@@ -246,7 +269,7 @@ TEST(WeakHash32, ColumnDecimal64)
 
     WeakHash32 hash = col->getWeakHash32();
 
-    checkColumn(hash.getData(), col->getData());
+    checkColumn(hash.getData(), col->getData(), col->getScale());
 }
 
 TEST(WeakHash32, ColumnDecimal128)
@@ -262,7 +285,7 @@ TEST(WeakHash32, ColumnDecimal128)
 
     WeakHash32 hash = col->getWeakHash32();
 
-    checkColumn(hash.getData(), col->getData());
+    checkColumn(hash.getData(), col->getData(), col->getScale());
 }
 
 TEST(WeakHash32, ColumnString1)
@@ -531,7 +554,7 @@ TEST(WeakHash32, ColumnConst)
     auto & data = cls->getData();
 
     for (size_t i = 0; i < 256; ++i)
-        data.push_back(0);
+        data.push_back(static_cast<UInt8>(0));
 
     auto col_const = ColumnConst::create(std::move(inner_col), 256);
 
@@ -550,7 +573,7 @@ TEST(WeakHash32, ColumnLowcardinality)
     {
         for (size_t i = 0; i < 65536; ++i)
         {
-            data.push_back(i);
+            data.push_back(static_cast<UInt8>(i));
             col->insert(i);
         }
     }
@@ -573,7 +596,7 @@ TEST(WeakHash32, ColumnNullable)
         for (uint64_t i = 0; i < 65536; ++i)
         {
             data.push_back(i << 32u);
-            mask_data.push_back(i % 7 == 0 ? 1 : 0);
+            mask_data.push_back(static_cast<UInt8>(i % 7 == 0 ? 1 : 0));
             eq.push_back(i % 7 == 0 ? -1 : (i << 32u));
         }
     }

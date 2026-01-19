@@ -4,7 +4,8 @@
 -- Test simple resource and workload hierarchy creation
 create resource 03232_write (write disk 03232_fake_disk);
 create resource 03232_read (read disk 03232_fake_disk);
-create workload all settings max_requests = 100 for 03232_write, max_requests = 200 for 03232_read;
+create resource 03232_invalid_mix (read disk 03232_another_fake_disk, master thread); -- {clientError BAD_ARGUMENTS}
+create workload all settings max_io_requests = 100 for 03232_write, max_io_requests = 200 for 03232_read;
 create workload admin in all settings priority = 0;
 create workload production in all settings priority = 1, weight = 9;
 create workload development in all settings priority = 1, weight = 1;
@@ -19,13 +20,14 @@ create workload invalid in all settings priority = 'invalid_value'; -- {serverEr
 create workload invalid in all settings weight = 0; -- {serverError INVALID_SCHEDULER_NODE}
 create workload invalid in all settings weight = -1; -- {serverError BAD_ARGUMENTS}
 create workload invalid in all settings max_speed = -1; -- {serverError BAD_ARGUMENTS}
-create workload invalid in all settings max_cost = -1; -- {serverError BAD_ARGUMENTS}
-create workload invalid in all settings max_requests = -1; -- {serverError BAD_ARGUMENTS}
-create workload invalid in all settings max_requests = 1.5; -- {serverError BAD_GET}
+create workload invalid in all settings max_bytes_inflight = -1; -- {serverError BAD_ARGUMENTS}
+create workload invalid in all settings unknown_setting = 42; -- {serverError BAD_ARGUMENTS}
+create workload invalid in all settings max_io_requests = -1; -- {serverError BAD_ARGUMENTS}
+create workload invalid in all settings max_io_requests = 1.5; -- {serverError BAD_GET}
 create or replace workload all in production; -- {serverError BAD_ARGUMENTS}
 
 -- Test CREATE OR REPLACE WORKLOAD
-create or replace workload all settings max_requests = 200 for 03232_write, max_requests = 100 for 03232_read;
+create or replace workload all settings max_io_requests = 200 for 03232_write, max_io_requests = 100 for 03232_read, max_concurrent_threads = 16, max_concurrent_threads_ratio_to_cores = 2.5;
 create or replace workload admin in all settings priority = 1;
 create or replace workload admin in all settings priority = 2;
 create or replace workload admin in all settings priority = 0;
@@ -41,16 +43,16 @@ create or replace resource 03232_write (write disk 03232_fake_disk_2);
 create or replace resource 03232_read (read disk 03232_fake_disk_2);
 
 -- Test update settings with CREATE OR REPLACE WORKLOAD
-create or replace workload production in all settings priority = 1, weight = 9, max_requests = 100;
-create or replace workload development in all settings priority = 1, weight = 1, max_requests = 10;
-create or replace workload production in all settings priority = 1, weight = 9, max_cost = 100000;
-create or replace workload development in all settings priority = 1, weight = 1, max_cost = 10000;
+create or replace workload production in all settings priority = 1, weight = 9, max_io_requests = 100;
+create or replace workload development in all settings priority = 1, weight = 1, max_io_requests = 10;
+create or replace workload production in all settings priority = 1, weight = 9, max_bytes_inflight = 100000;
+create or replace workload development in all settings priority = 1, weight = 1, max_bytes_inflight = 10000;
 create or replace workload production in all settings priority = 1, weight = 9, max_speed = 1000000;
 create or replace workload development in all settings priority = 1, weight = 1, max_speed = 100000;
 create or replace workload production in all settings priority = 1, weight = 9, max_speed = 1000000, max_burst = 10000000;
 create or replace workload development in all settings priority = 1, weight = 1, max_speed = 100000, max_burst = 1000000;
-create or replace workload all settings max_cost = 1000000, max_speed = 100000 for 03232_write, max_speed = 200000 for 03232_read;
-create or replace workload all settings max_requests = 100 for 03232_write, max_requests = 200 for 03232_read;
+create or replace workload all settings max_bytes_inflight = 1000000, max_speed = 100000 for 03232_write, max_speed = 200000 for 03232_read;
+create or replace workload all settings max_io_requests = 100 for 03232_write, max_io_requests = 200 for 03232_read;
 create or replace workload production in all settings priority = 1, weight = 9;
 create or replace workload development in all settings priority = 1, weight = 1;
 

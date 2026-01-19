@@ -212,8 +212,9 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
             source = node.ip_address
             destination = kafka_cluster.get_instance_ip(other_node)
             logging.debug(f"partitioning source {source}, destination {destination}")
-            pm._add_rule(
+            pm.add_rule(
                 {
+                    "instance": node,
                     "source": source,
                     "destination": destination,
                     "action": "REJECT",
@@ -240,7 +241,7 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
     expected = ""
 
     assert TSV(result) == TSV(expected)
-    assert instance.contains_in_log("StorageKafka (kafka_no_kdc): Nothing to commit")
+    assert instance.contains_in_log("StorageKafka (test\.kafka_no_kdc): Nothing to commit")
     assert instance.contains_in_log("Ticket expired")
     assert instance.contains_in_log("KerberosInit failure:")
 

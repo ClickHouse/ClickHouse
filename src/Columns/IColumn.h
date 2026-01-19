@@ -1,13 +1,16 @@
 #pragma once
 
+#include <string_view>
+#include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
-#include <base/StringRef.h>
-#include <Common/COW.h>
-#include <Common/Exception.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
 
+#include <IO/WriteBufferFromString.h>
 #include "config.h"
+
+#include <span>
 
 class SipHash;
 class Collator;
@@ -22,18 +25,19 @@ namespace llvm
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_GET_SIZE_OF_FIELD;
-    extern const int NOT_IMPLEMENTED;
-    extern const int BAD_COLLATION;
-}
-
 class Arena;
 class ColumnGathererStream;
 class Field;
 class WeakHash32;
 class ColumnConst;
+class ColumnReplicated;
+class IDataType;
+class Block;
+class ReadBuffer;
+struct ColumnsInfo;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using IColumnPermutation = PaddedPODArray<size_t>;
+using IColumnFilter = PaddedPODArray<UInt8>;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
 /// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
@@ -47,8 +51,6 @@ struct EqualRange
     size_t size() const { return to - from; }
 };
 
-using EqualRanges = std::vector<EqualRange>;
-
 /// A checkpoint that contains size of column and all its subcolumns.
 /// It can be used to rollback column to the previous state, for example
 /// after failed parsing when column may be in inconsistent state.
@@ -59,9 +61,6 @@ struct ColumnCheckpoint
     explicit ColumnCheckpoint(size_t size_) : size(size_) {}
     virtual ~ColumnCheckpoint() = default;
 };
-
-using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
-using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
 
 struct ColumnCheckpointWithNested : public ColumnCheckpoint
 {
@@ -81,6 +80,13 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
     }
 
     ColumnCheckpoints nested;
+};
+
+struct ColumnsWithRowNumbers
+{
+    /// `columns` and `row_numbers` must have same size
+    std::vector<const ColumnsInfo *, AllocatorWithMemoryTracking<const ColumnsInfo *>> columns;
+    std::vector<UInt32, AllocatorWithMemoryTracking<UInt32>> row_numbers;
 };
 
 /// Declares interface to store columns in memory.
@@ -118,9 +124,13 @@ public:
     /// If column is ColumnSparse, transforms it to full column.
     [[nodiscard]] virtual Ptr convertToFullColumnIfSparse() const { return getPtr(); }
 
-    [[nodiscard]] Ptr convertToFullIfNeeded() const
+    /// If column isn't ColumnReplicated, return itself.
+    /// If column is ColumnReplicated, transforms it to full column.
+    [[nodiscard]] virtual Ptr convertToFullColumnIfReplicated() const { return getPtr(); }
+
+    [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
     {
-        return convertToFullColumnIfSparse()->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+        return convertToFullColumnIfConst()->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfLowCardinality();
     }
 
     /// Creates empty column with the same type.
@@ -129,7 +139,7 @@ public:
     /// Creates column with the same type and specified size.
     /// If size is less than current size, then data is cut.
     /// If size is greater, then default values are appended.
-    [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cloneResized() column {}", getName()); }
+    [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const;
 
     /// Returns number of values in column.
     [[nodiscard]] virtual size_t size() const = 0;
@@ -144,55 +154,50 @@ public:
     /// Like the previous one, but avoids extra copying if Field is in a container, for example.
     virtual void get(size_t n, Field & res) const = 0;
 
+    struct Options
+    {
+        Int64 optimize_const_name_size = -1;
+
+        bool notFull(WriteBufferFromOwnString & buf) const
+        {
+            return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
+        }
+    };
+
+    virtual DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const Options & options) const;
+
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
-    [[nodiscard]] virtual StringRef getDataAt(size_t n) const = 0;
+    [[nodiscard]] virtual std::string_view getDataAt(size_t n) const = 0;
 
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
     /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).
-    [[nodiscard]] virtual UInt64 get64(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual UInt64 get64(size_t /*n*/) const;
 
-    /// If column stores native numeric type, it returns n-th element casted to Float64
+    /// If column stores native numeric type, it returns n-th element cast to Float64
     /// Is used in regression methods to cast each features into uniform type
-    [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat64 is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const;
 
-    [[nodiscard]] virtual Float32 getFloat32(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat32 is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual Float32 getFloat32(size_t /*n*/) const;
 
-    /** If column is numeric, return value of n-th element, casted to UInt64.
+    /** If column is numeric, return value of n-th element, cast to UInt64.
       * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.
       */
-    [[nodiscard]] virtual UInt64 getUInt(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getUInt is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual UInt64 getUInt(size_t /*n*/) const;
 
-    [[nodiscard]] virtual Int64 getInt(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getInt is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual Int64 getInt(size_t /*n*/) const;
 
     [[nodiscard]] virtual bool isDefaultAt(size_t n) const = 0;
     [[nodiscard]] virtual bool isNullAt(size_t /*n*/) const { return false; }
 
-    /** If column is numeric, return value of n-th element, casted to bool.
+    /** If column is numeric, return value of n-th element, cast to bool.
       * For NULL values of Nullable column returns false.
       * Otherwise throw an exception.
       */
-    [[nodiscard]] virtual bool getBool(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getBool is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual bool getBool(size_t /*n*/) const;
 
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
@@ -262,6 +267,7 @@ public:
     /// Parameter length could be ignored if column values have fixed size.
     /// All data will be inserted as single element
     virtual void insertData(const char * pos, size_t length) = 0;
+    void insertData(std::string_view sv) { insertData(sv.data(), sv.size()); }
 
     /// Appends "default value".
     /// Is used when there are need to increase column size, but inserting value doesn't make sense.
@@ -271,6 +277,7 @@ public:
     /// Appends "default value" multiple times.
     virtual void insertManyDefaults(size_t length)
     {
+        reserve(size() + length);
         for (size_t i = 0; i < length; ++i)
             insertDefault();
     }
@@ -282,52 +289,61 @@ public:
       */
     virtual void popBack(size_t n) = 0;
 
+    struct SerializationSettings
+    {
+        bool serialize_string_with_zero_byte = false;
+
+        static SerializationSettings createForAggregationState()
+        {
+            /// Same aggregation state can be serialized/deserialized by servers with different versions.
+            /// Add zero byte to the end of the string in aggregation state to keep it compatible with old versions.
+            return SerializationSettings{.serialize_string_with_zero_byte = true};
+        }
+    };
+
     /** Serializes n-th element. Serialized element should be placed continuously inside Arena's memory.
       * Serialized value can be deserialized to reconstruct original object. Is used in aggregation.
       * The method is similar to getDataAt(), but can work when element's value cannot be mapped to existing continuous memory chunk,
       *  For example, to obtain unambiguous representation of Array of strings, strings data should be interleaved with their sizes.
       * Parameter begin should be used with Arena::allocContinue.
       */
-    virtual StringRef serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArena is not supported for {}", getName());
-    }
+    virtual std::string_view serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const SerializationSettings * settings) const;
 
     /// Same as above but serialize into already allocated continuous memory.
     /// Return pointer to the end of the serialization data.
-    virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
-    }
+    virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */, const SerializationSettings * settings) const;
+
+    /// Returns size in bytes required to serialize value into memory using the previous method.
+    /// If size cannot be calculated in advance, return nullopt. In this case serializeValueIntoMemory
+    /// cannot be used and serializeValueIntoArena should be used instead,
+    virtual std::optional<size_t> getSerializedValueSize(size_t n, const SerializationSettings *) const { return byteSizeAt(n); }
+
+    virtual void batchSerializeValueIntoMemory(std::vector<char *> & /* memories */, const SerializationSettings * settings) const;
 
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
-    virtual StringRef
-    serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArenaWithNull is not supported for {}", getName());
-    }
+    virtual std::string_view serializeValueIntoArenaWithNull(
+        size_t /* n */,
+        Arena & /* arena */,
+        char const *& /* begin */,
+        const UInt8 * /* is_null */,
+        const SerializationSettings * settings) const;
 
-    virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryWithNull is not supported for {}", getName());
-    }
+    virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
-    /// Calculate all the sizes of serialized data in column, then added to `sizes`.
-    /// If `is_null` is not nullptr, also take null bit into account.
+    virtual void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* memories */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
+
+    /// Calculate all the sizes of serialized data (as in the methods above) in the column and add to `sizes`.
+    /// If `is_null` is not nullptr, also take null byte into account.
     /// This is currently used to facilitate the allocation of memory for an entire continuous row
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
-    virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectSerializedValueSizes is not supported for {}", getName());
-    }
+    virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
-    /// Returns pointer to the position after the read data.
-    [[nodiscard]] virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
+    /// Note that it needs to deal with user input
+    virtual void deserializeAndInsertFromArena(ReadBuffer & in, const SerializationSettings * settings) = 0;
 
     /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
-    /// Returns a pointer to the position after the deserialized data.
-    [[nodiscard]] virtual const char * skipSerializedInArena(const char *) const = 0;
+    virtual void skipSerializedInArena(ReadBuffer & in) const = 0;
 
     /// Update state of hash function with value of n-th element.
     /// On subsequent calls of this method for sequence of column values of arbitrary types,
@@ -348,8 +364,12 @@ public:
       * if 0, then don't makes reserve(),
       * otherwise (i.e. < 0), makes reserve() using size of source column.
       */
-    using Filter = PaddedPODArray<UInt8>;
+    using Filter = IColumnFilter;
     [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
+
+    /// In-place filter that modifies the current column directly.
+    /// Elements that don't match the filter are removed from the current column.
+    virtual void filter(const Filter & filt) = 0;
 
     /** Expand column by mask inplace. After expanding column will
       * satisfy the following: if we filter it by given mask, we will
@@ -361,7 +381,7 @@ public:
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
-    using Permutation = PaddedPODArray<size_t>;
+    using Permutation = IColumnPermutation;
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
@@ -373,11 +393,11 @@ public:
       * Is used in sorting.
       *
       * If one of element's value is NaN or NULLs, then:
-      * - if nan_direction_hint == -1, NaN and NULLs are considered as least than everything other;
-      * - if nan_direction_hint ==  1, NaN and NULLs are considered as greatest than everything other.
+      * - if nan_direction_hint == -1, NaN and NULLs are considered as less than everything other;
+      * - if nan_direction_hint ==  1, NaN and NULLs are considered as greater than everything other.
       * For example, if nan_direction_hint == -1 is used by descending sorting, NaNs will be at the end.
       *
-      * For non Nullable and non floating point types, nan_direction_hint is ignored.
+      * For non-Nullable and non-floating point types, nan_direction_hint is ignored.
       */
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     [[nodiscard]] virtual int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const = 0;
@@ -393,20 +413,13 @@ public:
 
     [[nodiscard]] virtual bool isComparatorCompilable() const { return false; }
 
-    [[nodiscard]] virtual llvm::Value * compileComparator(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compileComparator is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual llvm::Value * compileComparator(
+        llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const;
 
 #endif
 
     /// Equivalent to compareAt, but collator is used to compare values.
-    [[nodiscard]] virtual int compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const
-    {
-        throw Exception(ErrorCodes::BAD_COLLATION,
-                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-                        "or for Array or Tuple, containing it.");
-    }
+    [[nodiscard]] virtual int compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const;
 
     /// Compare the whole column with single value from rhs column.
     /// If row_indexes is nullptr, it's ignored. Otherwise, it is a set of rows to compare.
@@ -456,21 +469,22 @@ public:
     /** Equivalent to getPermutation and updatePermutation but collator is used to compare values.
       * Supported for String, LowCardinality(String), Nullable(String) and for Array and Tuple, containing them.
       */
-    virtual void getPermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
-                            size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/) const
-    {
-        throw Exception(ErrorCodes::BAD_COLLATION,
-                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-                        "or for Array or Tuple, containing them.");
-    }
+    virtual void getPermutationWithCollation(
+        const Collator & /*collator*/,
+        PermutationSortDirection /*direction*/,
+        PermutationSortStability /*stability*/,
+        size_t /*limit*/,
+        int /*nan_direction_hint*/,
+        Permutation & /*res*/) const;
 
-    virtual void updatePermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
-                            size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/, EqualRanges & /*equal_ranges*/) const
-    {
-        throw Exception(ErrorCodes::BAD_COLLATION,
-                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-                        "or for Array or Tuple, containing them.");
-    }
+    virtual void updatePermutationWithCollation(
+        const Collator & /*collator*/,
+        PermutationSortDirection /*direction*/,
+        PermutationSortStability /*stability*/,
+        size_t /*limit*/,
+        int /*nan_direction_hint*/,
+        Permutation & /*res*/,
+        EqualRanges & /*equal_ranges*/) const;
 
     /// Estimate the cardinality (number of unique values) of the values in 'equal_range' after permutation, formally: |{ column[permutation[r]] : r in equal_range }|.
     virtual size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const;
@@ -487,9 +501,8 @@ public:
       * Selector must contain values from 0 to num_columns - 1.
       * For default implementation, see scatterImpl.
       */
-    using ColumnIndex = UInt64;
-    using Selector = PaddedPODArray<ColumnIndex>;
-    [[nodiscard]] virtual std::vector<MutablePtr> scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
+    using Selector = PaddedPODArray<UInt64>;
+    [[nodiscard]] virtual std::vector<MutablePtr> scatter(size_t num_columns, const Selector & selector) const = 0;
 
     /// Insert data from several other columns according to source mask (used in vertical merge).
     /// For now it is a helper to de-virtualize calls to insert*() functions inside gather loop
@@ -513,12 +526,12 @@ public:
     virtual size_t capacity() const { return size(); }
 
     /// Reserve memory before squashing all specified source columns into this column.
-    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns)
+    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns, size_t factor)
     {
         size_t new_size = size();
         for (const auto & source_column : source_columns)
             new_size += source_column->size();
-        reserve(new_size);
+        reserve(new_size * factor);
     }
 
     /// Requests the removal of unused capacity.
@@ -558,29 +571,26 @@ public:
     /// Shallow: doesn't do recursive calls; don't do call for itself.
 
     using MutableColumnCallback = std::function<void(WrappedPtr &)>;
-    virtual void forEachSubcolumn(MutableColumnCallback) {}
+    virtual void forEachMutableSubcolumn(MutableColumnCallback) {}
 
-    /// Default implementation calls the mutable overload using const_cast.
+    /// Note: If you implement forEachSubcolumn(Recursively), you must also implement forEachMutableSubcolumn(Recursively), and vice versa
     using ColumnCallback = std::function<void(const WrappedPtr &)>;
-    virtual void forEachSubcolumn(ColumnCallback) const;
+    virtual void forEachSubcolumn(ColumnCallback) const {}
 
     /// Similar to forEachSubcolumn but it also do recursive calls.
     /// In recursive calls it's prohibited to replace pointers
     /// to subcolumns, so we use another callback function.
 
     using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback) {}
+    virtual void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback) {}
 
     /// Default implementation calls the mutable overload using const_cast.
     using RecursiveColumnCallback = std::function<void(const IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const;
+    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const {}
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.
-    [[nodiscard]] virtual bool structureEquals(const IColumn &) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method structureEquals is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual bool structureEquals(const IColumn &) const;
 
     /// Returns ratio of values in column, that are equal to default value of column.
     /// Checks only @sample_ratio ratio of rows.
@@ -599,9 +609,44 @@ public:
     /// Used to create full column from sparse.
     [[nodiscard]] virtual Ptr createWithOffsets(const Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const;
 
+    using Version = UInt64;
+    using Versions = PaddedPODArray<Version>;
+
+    struct Patch
+    {
+        struct Source
+        {
+            const IColumn & column;
+            const Versions & versions;
+        };
+
+        std::vector<Source> sources;
+
+        /// Can be omitted in case of one source.
+        const Offsets * src_col_indices = nullptr;
+        const Offsets & src_row_indices;
+        const Offsets & dst_row_indices;
+
+        /// Versions of the values. Value (and dst version) is updated only
+        /// if source version is greater than destination version for the value.
+        Versions & dst_versions;
+    };
+
+    /// Updates value at dst_pos from src[src_pos].
+    /// Implemented only for columns for which isFixedAndContiguous returns true.
+    virtual void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos);
+
+    /// Creates a copy of column with updated values according to patch.
+    virtual Ptr updateFrom(const Patch & patch) const = 0;
+
+    /// Updates values in column inplace according to patch.
+    /// Implementation uses updateAt method.
+    virtual void updateInplaceFrom(const Patch & patch) = 0;
+
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
-    [[nodiscard]] virtual Ptr compress() const
+    /// The flag `force_compression` indicates that compression should be performed even if it's not efficient (if only compression factor < 1).
+    [[nodiscard]] virtual Ptr compress([[maybe_unused]] bool force_compression) const
     {
         /// No compression by default.
         return getPtr();
@@ -613,6 +658,13 @@ public:
     {
         return getPtr();
     }
+
+    /// Fills column values from RowRefList
+    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
+    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
+
+    /// Fills column values from list of blocks and row numbers
+    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -629,15 +681,22 @@ public:
     {
         MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
         ptr.reset(); /// Reset use_count to 1.
-        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
+        res->forEachMutableSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
         return res;
     }
 
     /// Checks if column has dynamic subcolumns.
     virtual bool hasDynamicStructure() const { return false; }
+
+    /// For columns with dynamic subcolumns checks if columns have equal dynamic structure.
+    [[nodiscard]] virtual bool dynamicStructureEquals(const IColumn & rhs) const { return structureEquals(rhs); }
     /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
     /// and creates proper resulting dynamic structure in advance for merge of these source columns.
-    virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
+    virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
+    /// For columns with dynamic subcolumns this method takes the exact dynamic structure from provided column.
+    virtual void takeDynamicStructureFromColumn(const ColumnPtr & /*source_column*/) {}
+    /// For columns with dynamic subcolumns fix current dynamic structure so later inserts into this column won't change it.
+    virtual void fixDynamicStructure() {}
 
     /** Some columns can contain another columns inside.
       * So, we have a tree of columns. But not all combinations are possible.
@@ -679,10 +738,15 @@ public:
     [[nodiscard]] virtual bool isFixedAndContiguous() const { return false; }
 
     /// If isFixedAndContiguous, returns the underlying data array, otherwise throws an exception.
-    [[nodiscard]] virtual std::string_view getRawData() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} is not a contiguous block of memory", getName()); }
+    [[nodiscard]] virtual std::string_view getRawData() const;
 
     /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
-    [[nodiscard]] virtual size_t sizeOfValueIfFixed() const { throw Exception(ErrorCodes::CANNOT_GET_SIZE_OF_FIELD, "Values of column {} are not fixed size.", getName()); }
+    [[nodiscard]] virtual size_t sizeOfValueIfFixed() const;
+
+    /// Appends n elements with unspecified values and returns a span pointing to their memory range.
+    /// Can be used to decompress or deserialize data directly into the column.
+    /// Supported only for simple column types like ColumnVector and ColumnFixedString.
+    [[nodiscard]] virtual std::span<char> insertRawUninitialized(size_t count);
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
     [[nodiscard]] virtual bool isNumeric() const { return false; }
@@ -697,6 +761,8 @@ public:
     [[nodiscard]] virtual bool lowCardinality() const { return false; }
 
     [[nodiscard]] virtual bool isSparse() const { return false; }
+
+    [[nodiscard]] virtual bool isReplicated() const { return false; }
 
     [[nodiscard]] virtual bool isConst() const { return false; }
 
@@ -743,17 +809,10 @@ private:
         /// For Sparse and Const columns, we can compare only internal types. It is considered normal to e.g. insert from normal vector column to a sparse vector column.
         /// This case is specifically handled in ColumnSparse implementation. Similar situation with Const column.
         /// For the rest of column types we can compare the types directly.
-        chassert((isConst() || isSparse()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
+        chassert((isConst() || isSparse() || isReplicated()) ? getDataType() == rhs.getDataType() : typeid(*this) == typeid(rhs));
     }
 #endif
 };
-
-using ColumnPtr = IColumn::Ptr;
-using MutableColumnPtr = IColumn::MutablePtr;
-using Columns = std::vector<ColumnPtr>;
-using MutableColumns = std::vector<MutableColumnPtr>;
-
-using ColumnRawPtrs = std::vector<const IColumn *>;
 
 
 template <typename ... Args>
@@ -812,8 +871,17 @@ bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 template <typename Derived, typename Parent = IColumn>
 class IColumnHelper : public Parent
 {
+private:
+    using Self = IColumnHelper<Derived, Parent>;
+
+    friend Derived;
+    friend class COWHelper<Self, Derived>;
+
+    IColumnHelper() = default;
+    IColumnHelper(const IColumnHelper &) = default;
+
     /// Devirtualize insertFrom.
-    MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const IColumn::Selector & selector) const override;
 
     /// Devirtualize insertFrom and insertRangeFrom.
     void gather(ColumnGathererStream & gatherer) override;
@@ -840,13 +908,30 @@ class IColumnHelper : public Parent
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
 
     /// Devirtualize byteSizeAt.
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+
+    /// Devirtualize insertFrom.
+    ColumnPtr updateFrom(const IColumn::Patch & patch) const override;
+
+    /// Devirtualize updateAt.
+    void updateInplaceFrom(const IColumn::Patch & patch) override;
+
+    /// Fills column values from RowRefList
+    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
+    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
+
+    /// Fills column values from list of columns and row numbers
+    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
-    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;
-    StringRef serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemoryWithNull(std::vector<char *> & memories, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
+
+    std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 };
 
 }

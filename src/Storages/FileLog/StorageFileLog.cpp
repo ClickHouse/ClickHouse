@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -17,6 +18,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromStreamLikeEngine.h>
+#include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/FileLogSource.h>
@@ -37,8 +39,8 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 max_block_size;
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsMilliseconds stream_poll_timeout_ms;
     extern const SettingsBool use_concurrency_control;
 }
@@ -71,6 +73,18 @@ namespace ErrorCodes
 namespace
 {
     const auto MAX_THREAD_WORK_DURATION_MS = 60000;
+
+    ContextMutablePtr configureContext(ContextPtr context)
+    {
+        auto new_context = Context::createCopy(context);
+        /// It does not make sense to use auto detection here, since the format
+        /// will be reset for each message, plus, auto detection takes CPU
+        /// time.
+        new_context->setSetting("input_format_csv_detect_header", false);
+        new_context->setSetting("input_format_tsv_detect_header", false);
+        new_context->setSetting("input_format_custom_detect_header", false);
+        return new_context;
+    }
 }
 
 static constexpr auto TMP_SUFFIX = ".tmp";
@@ -111,10 +125,14 @@ private:
         if (file_log.file_infos.file_names.empty())
         {
             LOG_WARNING(file_log.log, "There is a idle table named {}, no files need to parse.", getName());
-            return Pipe{};
+            Block header;
+            auto column_names_and_types = storage_snapshot->getColumnsByNames(GetColumnsOptions::All, column_names);
+            for (const auto & [name, type] : column_names_and_types)
+                header.insert(ColumnWithTypeAndName(type, name));
+            return Pipe(std::make_unique<NullSource>(std::make_shared<const Block>(header)));
         }
 
-        auto modified_context = Context::createCopy(getContext());
+        auto modified_context = Context::createCopy(file_log.filelog_context);
 
         auto max_streams_number = std::min<UInt64>((*file_log.filelog_settings)[FileLogSetting::max_threads], file_log.file_infos.file_names.size());
 
@@ -157,11 +175,12 @@ StorageFileLog::StorageFileLog(
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , filelog_context(configureContext(getContext()))
     , filelog_settings(std::move(settings))
     , path(path_)
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
-    , log(getLogger("StorageFileLog (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
     , disk(getContext()->getStoragePolicy("default")->getDisks().at(0))
     , milliseconds_to_wait((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds())
 {
@@ -207,7 +226,7 @@ StorageFileLog::StorageFileLog(
         if (path_is_directory)
             directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, getContext());
 
-        auto thread = getContext()->getSchedulePool().createTask(log->name(), [this] { threadFunc(); });
+        auto thread = getContext()->getSchedulePool().createTask(getStorageID(), log->name(), [this] { threadFunc(); });
         task = std::make_shared<TaskContext>(std::move(thread));
     }
     catch (...)
@@ -357,6 +376,7 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
         writeIntText(inode, *out);
         writeChar('\n', *out);
         writeIntText(file_meta.last_writen_position, *out);
+        out->finalize();
     }
     catch (...)
     {
@@ -485,7 +505,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
+            reader.seekg(0, std::ios::end);
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
@@ -496,10 +516,10 @@ void StorageFileLog::openFilesAndSetPos()
             {
                 throw Exception(
                     ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Last saved offsset for File {} is bigger than file size ({} > {})",
+                    "Last saved offsset for File {} is bigger than the file size ({} > {})",
                     file,
                     meta.last_writen_position,
-                    file_end);
+                    std::streamoff{file_end});
             }
             /// update file end at the moment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
@@ -572,7 +592,8 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
     read_settings.local_fs_method = LocalFSReadMethod::pread;
     auto in = disk->readFile(full_path, read_settings);
     FileMeta metadata;
-    UInt64 inode, last_written_pos;
+    UInt64 inode;
+    UInt64 last_written_pos;
 
     if (in->eof()) /// File is empty.
     {
@@ -618,7 +639,7 @@ bool StorageFileLog::checkDependencies(const StorageID & table_id)
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     if (view_ids.empty())
-        return true;
+        return false;
 
     for (const auto & view_id : view_ids)
     {
@@ -629,10 +650,6 @@ bool StorageFileLog::checkDependencies(const StorageID & table_id)
         // If it materialized view, check it's target table
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
-            return false;
-
-        // Check all its dependencies
-        if (!checkDependencies(view_id))
             return false;
     }
 
@@ -757,7 +774,11 @@ bool StorageFileLog::streamToViews()
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    auto new_context = Context::createCopy(getContext());
+    auto new_context = Context::createCopy(filelog_context);
+
+    /// Create a fresh query context from filelog_context, discarding any caches attached to the previous context to
+    /// ensure no stale state is reused.
+    new_context->makeQueryContext();
 
     InterpreterInsertQuery interpreter(
         insert,
@@ -803,7 +824,7 @@ bool StorageFileLog::streamToViews()
     }
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
-    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows, table_id.getNameForLogs(), milliseconds);
+    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows.load(), table_id.getNameForLogs(), milliseconds);
 
     return updateFileInfos();
 }
@@ -871,6 +892,9 @@ void registerStorageFileLog(StorageFactory & factory)
             && !(*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_factor].value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "poll_directory_watch_events_backoff_factor can not be 0");
 
+        if ((*filelog_settings)[FileLogSetting::handle_error_mode].changed && (*filelog_settings)[FileLogSetting::handle_error_mode].value == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEAD_LETTER_QUEUE is not supported by the table engine");
+
         if (args_count != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of StorageFileLog should be 2, path and format name");
 
@@ -897,6 +921,7 @@ void registerStorageFileLog(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
+            .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
         });
 }
 

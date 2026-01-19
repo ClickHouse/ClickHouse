@@ -1,10 +1,11 @@
-#include "NamedCollectionsHelpers.h"
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -38,7 +39,8 @@ namespace
         return identifier->name();
     }
 
-    std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>> getKeyValueFromAST(ASTPtr ast, bool fallback_to_ast_value, ContextPtr context)
+    std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>>
+    getKeyValueFromASTImpl(ASTPtr ast, bool fallback_to_ast_value, ContextPtr context)
     {
         const auto * function = ast->as<ASTFunction>();
         if (!function || function->name != "equals")
@@ -71,16 +73,16 @@ namespace
         auto value = literal_value->as<ASTLiteral>()->value;
         return std::pair{key, Field(value)};
     }
+}
 
-    std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
-    {
-        auto res = getKeyValueFromAST(ast, true, context);
+std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
+{
+    auto res = getKeyValueFromASTImpl(ast, true, context);
 
-        if (!res || !std::holds_alternative<Field>(res->second))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to get key value from ast '{}'", queryToString(ast));
+    if (!res || !std::holds_alternative<Field>(res->second))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to get key value from ast '{}'", ast->formatForErrorMessage());
 
-        return {res->first, std::get<Field>(res->second)};
-    }
+    return {res->first, std::get<Field>(res->second)};
 }
 
 std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context)
@@ -127,9 +129,9 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
 
-    for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
+    for (auto it = std::next(asts.begin()); it != asts.end(); ++it)
     {
-        auto value_override = getKeyValueFromAST(*it, /* fallback_to_ast_value */complex_args != nullptr, context);
+        auto value_override = getKeyValueFromASTImpl(*it, /* fallback_to_ast_value */ complex_args != nullptr, context);
 
         if (!value_override)
         {
@@ -150,7 +152,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, toString(std::get<Field>(value)), {});
+        collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
     }
 
     return collection_copy;

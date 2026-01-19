@@ -3,6 +3,7 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -62,7 +63,7 @@ std::shared_ptr<ASTFunction> ASTIndexDeclaration::getType() const
     return func_ast;
 }
 
-void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     if (auto expr = getExpression())
     {
@@ -70,32 +71,47 @@ void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & sta
         {
             if (expr->as<ASTExpressionList>())
             {
-                s.ostr << "(";
-                expr->formatImpl(s, state, frame);
-                s.ostr << ")";
+                ostr << "(";
+                expr->format(ostr, s, state, frame);
+                ostr << ")";
             }
             else
-                expr->formatImpl(s, state, frame);
+                expr->format(ostr, s, state, frame);
         }
         else
         {
-            s.writeIdentifier(name, /*ambiguous=*/false);
-            s.ostr << " ";
-            expr->formatImpl(s, state, frame);
+            s.writeIdentifier(ostr, name, /*ambiguous=*/false);
+            ostr << " ";
+            expr->format(ostr, s, state, frame);
         }
     }
 
     if (auto type = getType())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
-        type->formatImpl(s, state, frame);
+        ostr << " TYPE ";
+        type->format(ostr, s, state, frame);
     }
 
     if (granularity)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");
-        s.ostr << granularity;
+        ostr << " GRANULARITY ";
+        ostr << granularity;
     }
+}
+
+UInt64 getSecondaryIndexGranularity(const std::shared_ptr<ASTFunction> & type, const ASTPtr & granularity)
+{
+    /// Text index is always built for the whole part and granularity is ignored.
+    if (type && type->name == "text")
+        return ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
+
+    if (granularity)
+        return granularity->as<ASTLiteral &>().value.safeGet<UInt64>();
+
+    if (type && type->name == "vector_similarity")
+        return ASTIndexDeclaration::DEFAULT_VECTOR_SIMILARITY_INDEX_GRANULARITY;
+
+    return ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
 }
 
 }

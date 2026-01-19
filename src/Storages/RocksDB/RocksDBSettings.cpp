@@ -25,11 +25,11 @@ struct RocksDBSettingsImpl : public BaseSettings<RocksDBSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) RocksDBSettings##TYPE NAME = &RocksDBSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) RocksDBSettings##TYPE NAME = &RocksDBSettingsImpl ::NAME;
 
 namespace RocksDBSetting
 {
-LIST_OF_ROCKSDB_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
+LIST_OF_ROCKSDB_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -73,5 +73,10 @@ void RocksDBSettings::loadFromQuery(const ASTStorage & storage_def)
             throw;
         }
     }
+}
+
+bool RocksDBSettings::hasBuiltin(std::string_view name)
+{
+    return RocksDBSettingsImpl::hasBuiltin(name);
 }
 }

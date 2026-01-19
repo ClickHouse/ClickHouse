@@ -1,5 +1,6 @@
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
 
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>

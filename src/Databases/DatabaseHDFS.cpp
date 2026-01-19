@@ -14,6 +14,8 @@
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/Logger.h>
+#include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
@@ -107,7 +109,7 @@ bool DatabaseHDFS::checkUrl(const std::string & url, ContextPtr context_, bool t
 bool DatabaseHDFS::isTableExist(const String & name, ContextPtr context_) const
 {
     std::lock_guard lock(mutex);
-    if (loaded_tables.find(name) != loaded_tables.end())
+    if (loaded_tables.contains(name))
         return true;
 
     return checkUrl(name, context_, false);
@@ -184,19 +186,19 @@ bool DatabaseHDFS::empty() const
     return loaded_tables.empty();
 }
 
-ASTPtr DatabaseHDFS::getCreateDatabaseQuery() const
+ASTPtr DatabaseHDFS::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;
 
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(getDatabaseName()), source);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = HDFS('{}')", backQuoteIfNeed(database_name), source);
     ASTPtr ast
         = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
     }
 
     return ast;

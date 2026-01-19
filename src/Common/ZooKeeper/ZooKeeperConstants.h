@@ -1,8 +1,7 @@
 #pragma once
 
-#include <string>
 #include <cstdint>
-#include <magic_enum.hpp>
+#include <limits>
 
 
 namespace Coordination
@@ -33,20 +32,30 @@ enum class OpNum : int32_t
     List = 12,
     Check = 13,
     Multi = 14,
+    Create2 = 15,
     Reconfig = 16,
+    CheckWatch = 17,
+    RemoveWatch = 18,
     MultiRead = 22,
     Auth = 100,
+    SetWatch = 101,
+    SetWatch2 = 105,
+    AddWatch = 106,
 
     // CH Keeper specific operations
     FilteredList = 500,
     CheckNotExists = 501,
     CreateIfNotExists = 502,
     RemoveRecursive = 503,
+    CheckStat = 504,
 
     SessionID = 997, /// Special internal request
 };
 
 OpNum getOpNum(int32_t raw_op_num);
+
+/// Returns operation type for use in metric labels (e.g., OpNum::Get -> "readonly", OpNum::Set -> "write")
+const char * toOperationTypeMetricLabel(OpNum op_num);
 
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION = 0;
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION = 10;
@@ -68,12 +77,3 @@ static constexpr int32_t DEFAULT_OPERATION_TIMEOUT_MS = 10000;
 static constexpr int32_t DEFAULT_CONNECTION_TIMEOUT_MS = 1000;
 
 }
-
-/// This is used by fmt::format to print OpNum as strings.
-/// All OpNum values should be in range [min, max] to be printed.
-template <>
-struct magic_enum::customize::enum_range<Coordination::OpNum>
-{
-    static constexpr int min = -100;
-    static constexpr int max = 1000;
-};

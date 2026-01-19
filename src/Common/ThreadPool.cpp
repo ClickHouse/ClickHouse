@@ -1,4 +1,6 @@
 #include <Common/ThreadPool.h>
+
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
@@ -101,7 +103,7 @@ public:
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
     /// Call stacks of all jobs' schedulings leading to this one
-    std::vector<StackTrace::FramePointers> frame_pointers;
+    std::vector<FramePointers> frame_pointers;
     bool enable_job_stack_trace = false;
     Stopwatch job_create_time;
 
@@ -139,7 +141,6 @@ public:
     }
 };
 
-static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadPoolImpl(Metric metric_threads_, Metric metric_active_threads_, Metric metric_scheduled_jobs_)
@@ -215,6 +216,20 @@ size_t ThreadPoolImpl<Thread>::getMaxThreads() const
 {
     std::lock_guard lock(mutex);
     return max_threads;
+}
+
+template <typename Thread>
+size_t ThreadPoolImpl<Thread>::getMaxFreeThreads() const
+{
+    std::lock_guard lock(mutex);
+    return max_free_threads;
+}
+
+template <typename Thread>
+size_t ThreadPoolImpl<Thread>::getQueueSize() const
+{
+    std::lock_guard lock(mutex);
+    return queue_size;
 }
 
 template <typename Thread>
@@ -656,6 +671,11 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
 template <typename Thread>
 void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 {
+    // Function __cxa_thread_atexit_impl in libcxxabi/src/cxa_thread_atexit.cpp
+    // calls malloc to initialize thread-local storage destructors.
+    // So we need to defer denying the allocations.
+    DB::Exception::initializeThreadFramePointers();
+
     DENY_ALLOCATIONS_IN_SCOPE;
 
     // wait until the thread will be started
@@ -678,7 +698,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
     while (true)
     {
         /// This is inside the loop to also reset previous thread names set inside the jobs.
-        setThreadName(DEFAULT_THREAD_NAME);
+        setThreadName(DB::ThreadName::DEFAULT_THREAD_POOL);
 
         /// Get a job from the queue.
         std::optional<JobWithPriority> job_data;
@@ -761,13 +781,19 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         /// Set up tracing context for this thread by its parent context.
         DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", job_data->thread_trace_context);
 
+        DB::Exception::enable_job_stack_trace = job_data->enable_job_stack_trace;
+        if (DB::Exception::enable_job_stack_trace)
+            DB::Exception::setThreadFramePointers(std::move(job_data->frame_pointers));
+
         /// Run the job.
         try
         {
-            if (DB::Exception::enable_job_stack_trace)
-                DB::Exception::setThreadFramePointers(std::move(job_data->frame_pointers));
-
             CurrentMetrics::Increment metric_active_pool_threads(parent_pool.metric_active_threads);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+            DB::ThreadStatus * initial_thread = DB::current_thread;
+            DB::ThreadGroupPtr initial_thread_group = DB::CurrentThread::getGroup();
+#endif
 
             if constexpr (!std::is_same_v<Thread, std::thread>)
             {
@@ -785,15 +811,21 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 job_data->job();
             }
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+            DB::ThreadStatus * final_thread = DB::current_thread;
+            DB::ThreadGroupPtr final_thread_group = DB::CurrentThread::getGroup();
+            if (final_thread != initial_thread || final_thread_group != initial_thread_group)
+                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread pool job changed current ThreadStatus pointer ({} -> {}) or ThreadGroup ({} -> {}).", initial_thread ? "non-nullptr" : "nullptr", final_thread ? "non-nullptr" : "nullptr", initial_thread_group ? "master_thread_id " + std::to_string(initial_thread_group->master_thread_id) : "nullptr", final_thread_group ? "master_thread_id " + std::to_string(final_thread_group->master_thread_id) : "nullptr");
+#endif
 
             if (thread_trace_context.root_span.isTraceEnabled())
             {
                 /// Use the thread name as operation name so that the tracing log will be more clear.
                 /// The thread name is usually set in jobs, we can only get the name after the job finishes
-                std::string thread_name = getThreadName();
-                if (!thread_name.empty() && thread_name != DEFAULT_THREAD_NAME)
+                auto thread_name = DB::getThreadName();
+                if (thread_name != DB::ThreadName::UNKNOWN && thread_name != DB::ThreadName::DEFAULT_THREAD_POOL)
                 {
-                    thread_trace_context.root_span.operation_name = thread_name;
+                    thread_trace_context.root_span.operation_name = DB::toString(thread_name);
                 }
                 else
                 {
@@ -811,10 +843,20 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             exception_from_job = std::current_exception();
             thread_trace_context.root_span.addAttribute(exception_from_job);
 
+            /// Log LOGICAL_ERRORs from jobs here to make sure they are captured at least once.
+            /// While this might lead to multiple log messages for the same error,
+            /// it's preferable to potentially missing the error entirely.
+            if (DB::getExceptionErrorCode(exception_from_job) == DB::ErrorCodes::LOGICAL_ERROR)
+            {
+                DB::tryLogException(exception_from_job, __PRETTY_FUNCTION__);
+            }
+
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
             job_data.reset();
         }
+
+        DB::Exception::clearThreadFramePointers();
 
         job_is_done = true;
     }

@@ -2,8 +2,6 @@ set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libarchive")
 
 set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_acl.c"
-    "${LIBRARY_DIR}/libarchive/archive_blake2sp_ref.c"
-    "${LIBRARY_DIR}/libarchive/archive_blake2s_ref.c"
     "${LIBRARY_DIR}/libarchive/archive_check_magic.c"
     "${LIBRARY_DIR}/libarchive/archive_cmdline.c"
     "${LIBRARY_DIR}/libarchive/archive_cryptor.c"
@@ -20,7 +18,6 @@ set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_entry_stat.c"
     "${LIBRARY_DIR}/libarchive/archive_entry_strmode.c"
     "${LIBRARY_DIR}/libarchive/archive_entry_xattr.c"
-    "${LIBRARY_DIR}/libarchive/archive_getdate.c"
     "${LIBRARY_DIR}/libarchive/archive_hmac.c"
     "${LIBRARY_DIR}/libarchive/archive_match.c"
     "${LIBRARY_DIR}/libarchive/archive_options.c"
@@ -37,7 +34,6 @@ set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_read_disk_entry_from_file.c"
     "${LIBRARY_DIR}/libarchive/archive_read_disk_posix.c"
     "${LIBRARY_DIR}/libarchive/archive_read_disk_set_standard_lookup.c"
-    "${LIBRARY_DIR}/libarchive/archive_read_disk_windows.c"
     "${LIBRARY_DIR}/libarchive/archive_read_extract2.c"
     "${LIBRARY_DIR}/libarchive/archive_read_extract.c"
     "${LIBRARY_DIR}/libarchive/archive_read_open_fd.c"
@@ -80,6 +76,7 @@ set(SRCS
     "${LIBRARY_DIR}/libarchive/archive_read_support_format_zip.c"
     "${LIBRARY_DIR}/libarchive/archive_string.c"
     "${LIBRARY_DIR}/libarchive/archive_string_sprintf.c"
+    "${LIBRARY_DIR}/libarchive/archive_time.c"
     "${LIBRARY_DIR}/libarchive/archive_util.c"
     "${LIBRARY_DIR}/libarchive/archive_version_details.c"
     "${LIBRARY_DIR}/libarchive/archive_virtual.c"
@@ -135,10 +132,12 @@ set(SRCS
 )
 
 add_library(_libarchive ${SRCS})
-target_include_directories(_libarchive PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    "${LIBRARY_DIR}/libarchive"
-)
+if (OS_SUNOS)
+    target_include_directories(_libarchive PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/illumos)
+else()
+    target_include_directories(_libarchive PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
+target_include_directories(_libarchive PUBLIC "${LIBRARY_DIR}/libarchive")
 
 target_compile_definitions(_libarchive PUBLIC
     HAVE_CONFIG_H
@@ -147,28 +146,34 @@ target_compile_definitions(_libarchive PUBLIC
 target_compile_options(_libarchive PRIVATE "-Wno-reserved-macro-identifier")
 
 if (TARGET ch_contrib::xz)
-    target_compile_definitions(_libarchive PUBLIC HAVE_LZMA_H=1 HAVE_LIBLZMA=1)
+    target_compile_definitions(_libarchive PRIVATE HAVE_LZMA_H=1 HAVE_LIBLZMA=1)
     target_link_libraries(_libarchive PRIVATE ch_contrib::xz)
 endif()
 
 if (TARGET ch_contrib::zlib)
-    target_compile_definitions(_libarchive PUBLIC HAVE_ZLIB_H=1)
+    target_compile_definitions(_libarchive PRIVATE HAVE_ZLIB_H=1)
     target_link_libraries(_libarchive PRIVATE ch_contrib::zlib)
 endif()
 
 if (TARGET ch_contrib::zstd)
-    target_compile_definitions(_libarchive PUBLIC HAVE_ZSTD_H=1 HAVE_LIBZSTD=1 HAVE_ZSTD_compressStream=1)
+    target_compile_definitions(
+        _libarchive PRIVATE
+        HAVE_ZSTD_H=1
+        HAVE_LIBZSTD=1
+        HAVE_ZSTD_compressStream=1
+        HAVE_ZSTD_minCLevel=1
+    )
     target_link_libraries(_libarchive PRIVATE ch_contrib::zstd)
 endif()
 
 if (TARGET ch_contrib::bzip2)
-    target_compile_definitions(_libarchive PUBLIC HAVE_BZLIB_H=1)
+    target_compile_definitions(_libarchive PRIVATE HAVE_BZLIB_H=1)
     target_link_libraries(_libarchive PRIVATE ch_contrib::bzip2)
 endif()
 
 if (OS_LINUX)
     target_compile_definitions(
-        _libarchive PUBLIC
+        _libarchive PRIVATE
             MAJOR_IN_SYSMACROS=1
             HAVE_LINUX_FS_H=1
             HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC=1

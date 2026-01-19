@@ -5,7 +5,6 @@
 
 #include <bit>
 #include <new>
-#include <variant>
 
 
 using StringKey8 = UInt64;
@@ -19,32 +18,29 @@ struct StringKey24
     bool operator==(const StringKey24 rhs) const { return a == rhs.a && b == rhs.b && c == rhs.c; }
 };
 
-inline StringRef ALWAYS_INLINE toStringView(const StringKey8 & n)
+inline std::string_view ALWAYS_INLINE toStringView(const StringKey8 & n)
 {
     assert(n != 0);
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
-#else
-    return {reinterpret_cast<const char *>(&n), 8ul - (std::countl_zero(n) >> 3)};
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+        return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
+    else
+        return {reinterpret_cast<const char *>(&n), 8ul - (std::countl_zero(n) >> 3)};
 }
-inline StringRef ALWAYS_INLINE toStringView(const StringKey16 & n)
+inline std::string_view ALWAYS_INLINE toStringView(const StringKey16 & n)
 {
     assert(n.items[1] != 0);
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
-#else
-    return {reinterpret_cast<const char *>(&n), 16ul - (std::countl_zero(n.items[1]) >> 3)};
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+        return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
+    else
+        return {reinterpret_cast<const char *>(&n), 16ul - (std::countl_zero(n.items[1]) >> 3)};
 }
-inline StringRef ALWAYS_INLINE toStringView(const StringKey24 & n)
+inline std::string_view ALWAYS_INLINE toStringView(const StringKey24 & n)
 {
     assert(n.c != 0);
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
-#else
-    return {reinterpret_cast<const char *>(&n), 24ul - (std::countl_zero(n.c) >> 3)};
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+        return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
+    else
+        return {reinterpret_cast<const char *>(&n), 24ul - (std::countl_zero(n.c) >> 3)};
 }
 
 struct StringHashTableHash
@@ -129,9 +125,9 @@ struct StringHashTableHash
         return CityHash_v1_0_2::CityHash64(reinterpret_cast<const char *>(&key), 24);
     }
 #endif
-    size_t ALWAYS_INLINE operator()(StringRef key) const
+    size_t ALWAYS_INLINE operator()(std::string_view key) const
     {
-        return StringRefHash()(key);
+        return StringViewHash()(key);
     }
 };
 
@@ -141,7 +137,7 @@ struct StringHashTableEmpty
     using Self = StringHashTableEmpty;
 
     bool has_zero = false;
-    std::aligned_storage_t<sizeof(Cell), alignof(Cell)> zero_value_storage; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
@@ -246,7 +242,7 @@ protected:
     using T2 = typename SubMaps::T2;
     using T3 = typename SubMaps::T3;
 
-    // Long strings are stored as StringRef along with saved hash
+    // Long strings are stored as std::string_view along with saved hash
     using Ts = typename SubMaps::Ts;
     using Self = StringHashTable;
 
@@ -260,7 +256,7 @@ protected:
     Ts ms;
 
 public:
-    using Key = StringRef;
+    using Key = std::string_view;
     using key_type = Key;
     using mapped_type = typename Ts::mapped_type;
     using value_type = typename Ts::value_type;
@@ -279,12 +275,19 @@ public:
     {
     }
 
-    StringHashTable(StringHashTable && rhs) noexcept
-        : m1(std::move(rhs.m1))
-        , m2(std::move(rhs.m2))
-        , m3(std::move(rhs.m3))
-        , ms(std::move(rhs.ms))
+    StringHashTable(StringHashTable && rhs) noexcept { *this = std::move(rhs); }
+
+    StringHashTable & operator=(StringHashTable && rhs) noexcept
     {
+        if (this == &rhs)
+            return *this;
+
+        m0 = std::move(rhs.m0);
+        m1 = std::move(rhs.m1);
+        m2 = std::move(rhs.m2);
+        m3 = std::move(rhs.m3);
+        ms = std::move(rhs.ms);
+        return *this;
     }
 
     ~StringHashTable() = default;
@@ -302,22 +305,22 @@ public:
     static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
     {
         StringHashTableHash hash;
-        const StringRef & x = keyHolderGetKey(key_holder);
-        const size_t sz = x.size;
+        const auto & x = keyHolderGetKey(key_holder);
+        const size_t sz = x.size();
         if (sz == 0)
         {
             keyHolderDiscardKey(key_holder);
             return func(self.m0, VoidKey{}, 0);
         }
 
-        if (x.data[sz - 1] == 0)
+        if (x[sz - 1] == 0)
         {
             // Strings with trailing zeros are not representable as fixed-size
             // string keys. Put them to the generic table.
             return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
         }
 
-        const char * p = x.data;
+        const char * p = x.data();
         // pending bits that needs to be shifted out
         const char s = (-sz & 7) * 8;
         union
@@ -342,7 +345,7 @@ public:
                 }
                 else
                 {
-                    const char * lp = x.data + x.size - 8;
+                    const char * lp = x.data() + x.size() - 8;
                     memcpy(&n[0], lp, 8);
                     if constexpr (std::endian::native == std::endian::little)
                         n[0] >>= s;
@@ -355,7 +358,7 @@ public:
             case 1: // 9..16 bytes
             {
                 memcpy(&n[0], p, 8);
-                const char * lp = x.data + x.size - 8;
+                const char * lp = x.data() + x.size() - 8;
                 memcpy(&n[1], lp, 8);
                 if constexpr (std::endian::native == std::endian::little)
                     n[1] >>= s;
@@ -367,7 +370,7 @@ public:
             case 2: // 17..24 bytes
             {
                 memcpy(&n[0], p, 16);
-                const char * lp = x.data + x.size - 8;
+                const char * lp = x.data() + x.size() - 8;
                 memcpy(&n[2], lp, 8);
                 if constexpr (std::endian::native == std::endian::little)
                     n[2] >>= s;
@@ -488,6 +491,15 @@ public:
     {
         return m0.getBufferSizeInBytes() + m1.getBufferSizeInBytes() + m2.getBufferSizeInBytes() + m3.getBufferSizeInBytes()
             + ms.getBufferSizeInBytes();
+    }
+
+    void clear()
+    {
+        m1.clearHasZero();
+        m1.clear();
+        m2.clear();
+        m3.clear();
+        ms.clear();
     }
 
     void clearAndShrink()

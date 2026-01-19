@@ -1,18 +1,18 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/KeyHolderHelpers.h>
 #include <Interpreters/Context.h>
 #include <Core/ServerSettings.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <IO/Operators_pcg_random.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -26,7 +26,7 @@
 
 #include <type_traits>
 
-#define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE 0xFFFFFF
+constexpr size_t AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE = 0xFFFFFF;
 
 
 namespace DB
@@ -79,7 +79,7 @@ template <typename T>
 struct GroupArraySamplerData
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
@@ -95,7 +95,7 @@ struct GroupArraySamplerData
 
         /// With a large number of values, we will generate random numbers several times slower.
         if (lim <= static_cast<UInt64>(pcg32_fast::max()))
-            return rng() % lim;
+            return rng() % lim;  /// NOLINT(clang-analyzer-core.DivideZero)
         return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32::max()) + 1ULL) + static_cast<UInt64>(rng())) % lim;
     }
 
@@ -120,7 +120,7 @@ template <typename T>
 struct GroupArrayNumericData<T, false>
 {
     /// For easy serialization.
-    static_assert(std::has_unique_object_representations_v<T> || std::is_floating_point_v<T>);
+    static_assert(std::has_unique_object_representations_v<T> || is_floating_point<T>);
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
     using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
@@ -434,11 +434,11 @@ struct GroupArrayNodeString : public GroupArrayNodeBase<GroupArrayNodeString>
     /// Create node from string
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
-        StringRef string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+        auto string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
 
-        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size, alignof(Node)));
-        node->size = string.size;
-        memcpy(node->data(), string.data, string.size);
+        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size(), alignof(Node)));
+        node->size = string.size();
+        memcpy(node->data(), string.data(), string.size());
 
         return node;
     }
@@ -456,15 +456,19 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
         const char * begin = arena->alignedAlloc(sizeof(Node), alignof(Node));
-        StringRef value = column.serializeValueIntoArena(row_num, *arena, begin);
+        auto settings = IColumn::SerializationSettings::createForAggregationState();
+        auto value = column.serializeValueIntoArena(row_num, *arena, begin, &settings);
 
         Node * node = reinterpret_cast<Node *>(const_cast<char *>(begin));
-        node->size = value.size;
+        node->size = value.size();
 
         return node;
     }
 
-    void insertInto(IColumn & column) { std::ignore = column.deserializeAndInsertFromArena(data()); }
+    void insertInto(IColumn & column)
+    {
+        deserializeAndInsert<false>({data(), size}, column);
+    }
 };
 
 template <typename Node, bool has_sampler>
@@ -494,7 +498,7 @@ class GroupArrayGeneralImpl final
 {
     static constexpr bool limit_num_elems = Trait::has_limit;
     using Data = GroupArrayGeneralData<Node, Trait::sampler != Sampler::NONE>;
-    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }
+    static Data & data(AggregateDataPtr __restrict place) { return *reinterpret_cast<Data *>(place); }  /// NOLINT(readability-non-const-parameter)
     static const Data & data(ConstAggregateDataPtr __restrict place) { return *reinterpret_cast<const Data *>(place); }
 
     DataTypePtr & data_type;
@@ -676,17 +680,16 @@ public:
     {
         UInt64 elems;
         readVarUInt(elems, buf);
-
-        if (unlikely(elems == 0))
-            return;
-
         checkArraySize(elems, max_elems);
 
-        auto & value = data(place).value;
+        if (likely(elems > 0))
+        {
+            auto & value = data(place).value;
 
-        value.resize_exact(elems, arena);
-        for (UInt64 i = 0; i < elems; ++i)
-            value[i] = Node::read(buf, arena);
+            value.resize_exact(elems, arena);
+            for (UInt64 i = 0; i < elems; ++i)
+                value[i] = Node::read(buf, arena);
+        }
 
         if constexpr (Trait::last)
             readBinaryLittleEndian(data(place).total_values, buf);
@@ -785,7 +788,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() < 0) ||
+        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() <= 0) ||
             (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
@@ -821,7 +824,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[i].safeGet<Int64>() < 0) ||
+        if ((type == Field::Types::Int64 && parameters[i].safeGet<Int64>() <= 0) ||
                 (type == Field::Types::UInt64 && parameters[i].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
@@ -844,11 +847,177 @@ void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties });
+    /// groupArray
+    FunctionDocumentation::Description description_groupArray = R"(
+Creates an array of argument values.
+Values can be added to the array in any (indeterminate) order.
+
+The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements. For example, `groupArray(1)(x)` is equivalent to `[any(x)]`.
+
+In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY` if the subquery result is small enough.
+
+The `groupArray` function will remove `NULL` values from the result.
+    )";
+    FunctionDocumentation::Syntax syntax_groupArray = R"(
+groupArray(x)
+groupArray(max_size)(x)
+    )";
+    FunctionDocumentation::Parameters parameters_groupArray = {
+        {"max_size", "Optional. Limits the size of the resulting array to `max_size` elements.", {"UInt64"}}
+    };
+    FunctionDocumentation::Arguments arguments_groupArray = {
+        {"x", "Argument values to collect into an array.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_groupArray = {"Returns an array of argument values.", {"Array"}};
+    FunctionDocumentation::Examples examples_groupArray = {
+    {
+        "Basic usage",
+        R"(
+SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
+        )",
+        R"(
+┌─id─┬─groupArray(10)(name)─┐
+│  1 │ ['zhangsan','lisi']  │
+│  2 │ ['wangwu']           │
+└────┴──────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_groupArray = {1, 1};
+    FunctionDocumentation::Category category_groupArray = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_groupArray = {description_groupArray, syntax_groupArray, arguments_groupArray, parameters_groupArray, returned_value_groupArray, examples_groupArray, introduced_in_groupArray, category_groupArray};
+
+    factory.registerFunction("groupArray", { createAggregateFunctionGroupArray<false>, properties, documentation_groupArray });
     factory.registerAlias("array_agg", "groupArray", AggregateFunctionFactory::Case::Insensitive);
+
     factory.registerAliasUnchecked("array_concat_agg", "groupArrayArray", AggregateFunctionFactory::Case::Insensitive);
-    factory.registerFunction("groupArraySample", { createAggregateFunctionGroupArraySample, properties });
-    factory.registerFunction("groupArrayLast", { createAggregateFunctionGroupArray<true>, properties });
+
+    /// groupArraySample
+    FunctionDocumentation::Description description_groupArraySample = R"(
+Creates an array of sample argument values.
+The size of the resulting array is limited to `max_size` elements.
+Argument values are selected and added to the array randomly.
+    )";
+    FunctionDocumentation::Syntax syntax_groupArraySample = R"(
+groupArraySample(max_size[, seed])(x)
+    )";
+    FunctionDocumentation::Arguments arguments_groupArraySample = {
+        {"array_column", "Column containing arrays to be aggregated.", {"Array"}}
+    };
+    FunctionDocumentation::Parameters parameters_groupArraySample = {
+        {"max_size", "Maximum size of the resulting array.", {"UInt64"}},
+        {"seed", "Optional. Seed for the random number generator. Default value: 123456.", {"UInt64"}},
+        {"x", "Argument (column name or expression).", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_groupArraySample = {
+        "Array of randomly selected x arguments.",
+        {"Array(T)"}
+    };
+    FunctionDocumentation::Examples examples_groupArraySample = {
+    {
+         "Usage example",
+         R"(
+CREATE TABLE default.colors (
+    id Int32,
+    color String
+) ENGINE = Memory;
+
+INSERT INTO default.colors VALUES
+(1, 'red'),
+(2, 'blue'),
+(3, 'green'),
+(4, 'white'),
+(5, 'orange');
+
+SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
+         )",
+         R"(
+┌─newcolors──────────────────┐
+│ ['white','blue','green']   │
+└────────────────────────────┘
+         )"
+    },
+    {
+         "Example using a seed",
+         R"(
+-- Query with column name and different seed
+SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
+        )",
+        R"(
+┌─newcolors──────────────────┐
+│ ['red','orange','green']   │
+└────────────────────────────┘
+        )"
+    },
+    {
+         "Using an expression as an argument",
+         R"(
+-- Query with expression as argument
+SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.colors;
+        )",
+        R"(
+┌─newcolors───────────────────────────────────┐
+│ ['light-blue','light-orange','light-green'] │
+└─────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_groupArraySample = {20, 3};
+    FunctionDocumentation::Category category_groupArraySample = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_groupArraySample = {description_groupArraySample, syntax_groupArraySample, arguments_groupArraySample, parameters_groupArraySample, returned_value_groupArraySample, examples_groupArraySample, introduced_in_groupArraySample, category_groupArraySample};
+
+factory.registerFunction("groupArraySample", {createAggregateFunctionGroupArraySample, properties, documentation_groupArraySample});
+
+    /// groupArrayLast
+    FunctionDocumentation::Description description_groupArrayLast = R"(
+Creates an array of the last argument values.
+For example, `groupArrayLast(1)(x)` is equivalent to `[anyLast(x)]`.
+In some cases, you can still rely on the order of execution.
+This applies to cases when SELECT comes from a subquery that uses ORDER BY if the subquery result is small enough.
+    )";
+    FunctionDocumentation::Syntax syntax_groupArrayLast = R"(
+groupArrayLast(max_size)(x)
+    )";
+    FunctionDocumentation::Arguments arguments_groupArrayLast = {
+        {"max_size", "Maximum size of the resulting array.", {"UInt64"}},
+        {"x", "Argument (column name or expression).", {"Any"}}
+    };
+    FunctionDocumentation::Parameters parameters_groupArrayLast = {
+        {"max_size", "Maximum size of the resulting array.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_groupArrayLast = {
+        "Returns an array of the last argument values.",
+        {"Array(T)"}
+    };
+    FunctionDocumentation::Examples examples_groupArrayLast = {
+    {
+        "Usage example",
+        R"(
+SELECT groupArrayLast(2)(number+1) numbers FROM numbers(10);
+        )",
+        R"(
+┌─numbers─┐
+│ [9,10]  │
+└─────────┘
+        )"
+    },
+    {
+        "Comparison with groupArray",
+        R"(
+-- Compare with groupArray (first values)
+SELECT groupArray(2)(number+1) numbers FROM numbers(10);)",
+        R"(
+┌─numbers─┐
+│ [1,2]   │
+└─────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_groupArrayLast = {23, 1};
+    FunctionDocumentation::Category category_groupArrayLast = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_groupArrayLast = {description_groupArrayLast, syntax_groupArrayLast, arguments_groupArrayLast, parameters_groupArrayLast, returned_value_groupArrayLast, examples_groupArrayLast, introduced_in_groupArrayLast, category_groupArrayLast};
+
+    factory.registerFunction("groupArrayLast", {createAggregateFunctionGroupArray<true>, properties, documentation_groupArrayLast});
 }
 
 }

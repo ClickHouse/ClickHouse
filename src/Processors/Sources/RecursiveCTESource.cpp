@@ -8,10 +8,12 @@
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
+#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -36,7 +38,7 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<TableNode *> collectTableNodesWithStorage(const StoragePtr & storage, IQueryTreeNode * root)
+std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::string & temporary_table_name, IQueryTreeNode * root)
 {
     std::vector<TableNode *> result;
 
@@ -49,7 +51,7 @@ std::vector<TableNode *> collectTableNodesWithStorage(const StoragePtr & storage
         nodes_to_process.pop_back();
 
         auto * table_node = subtree_node->as<TableNode>();
-        if (table_node && table_node->getStorageID() == storage->getStorageID())
+        if (table_node && table_node->getTemporaryTableName() == temporary_table_name)
             result.push_back(table_node);
 
         for (auto & child : subtree_node->getChildren())
@@ -67,7 +69,7 @@ std::vector<TableNode *> collectTableNodesWithStorage(const StoragePtr & storage
 class RecursiveCTEChunkGenerator
 {
 public:
-    RecursiveCTEChunkGenerator(Block header_, QueryTreeNodePtr recursive_cte_union_node_)
+    RecursiveCTEChunkGenerator(SharedHeader header_, QueryTreeNodePtr recursive_cte_union_node_)
         : header(std::move(header_))
         , recursive_cte_union_node(std::move(recursive_cte_union_node_))
     {
@@ -75,7 +77,9 @@ public:
         chassert(recursive_cte_union_node_typed.hasRecursiveCTETable());
 
         auto & recursive_cte_table = recursive_cte_union_node_typed.getRecursiveCTETable();
-        recursive_table_nodes = collectTableNodesWithStorage(recursive_cte_table->storage, recursive_cte_union_node.get());
+
+        const auto & cte_name = recursive_cte_union_node_typed.getCTEName();
+        recursive_table_nodes = collectTableNodesWithTemporaryTableName(cte_name, recursive_cte_union_node.get());
         if (recursive_table_nodes.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "UNION query {} is not recursive", recursive_cte_union_node->formatASTForErrorMessage());
 
@@ -171,7 +175,7 @@ private:
                 ErrorCodes::TOO_DEEP_RECURSION,
                 "Maximum recursive CTE evaluation depth ({}) exceeded, during evaluation of {}. Consider raising "
                 "max_recursive_cte_evaluation_depth setting.",
-                recursive_subquery_settings[Setting::max_recursive_cte_evaluation_depth],
+                recursive_subquery_settings[Setting::max_recursive_cte_evaluation_depth].value,
                 recursive_cte_union_node->formatASTForErrorMessage());
 
         auto & query_to_execute = recursive_step > 0 ? recursive_query : non_recursive_query;
@@ -186,17 +190,18 @@ private:
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, select_query_options);
         auto pipeline_builder = interpreter->buildQueryPipeline();
 
-        pipeline_builder.addSimpleTransform([&](const Block & in_header)
+        pipeline_builder.addSimpleTransform([&](const SharedHeader & in_header)
         {
             return std::make_shared<MaterializingTransform>(in_header);
         });
 
         auto convert_to_temporary_tables_header_actions_dag = ActionsDAG::makeConvertingActions(
             pipeline_builder.getHeader().getColumnsWithTypeAndName(),
-            header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            header->getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Position,
+            interpreter->getContext());
         auto convert_to_temporary_tables_header_actions = std::make_shared<ExpressionActions>(std::move(convert_to_temporary_tables_header_actions_dag));
-        pipeline_builder.addSimpleTransform([&](const Block & input_header)
+        pipeline_builder.addSimpleTransform([&](const SharedHeader & input_header)
         {
             return std::make_shared<ExpressionTransform>(input_header, convert_to_temporary_tables_header_actions);
         });
@@ -228,7 +233,7 @@ private:
             table_exclusive_lock);
     }
 
-    Block header;
+    SharedHeader header;
     QueryTreeNodePtr recursive_cte_union_node;
     std::vector<TableNode *> recursive_table_nodes;
 
@@ -250,7 +255,7 @@ private:
     bool finished = false;
 };
 
-RecursiveCTESource::RecursiveCTESource(Block header, QueryTreeNodePtr recursive_cte_union_node_)
+RecursiveCTESource::RecursiveCTESource(SharedHeader header, QueryTreeNodePtr recursive_cte_union_node_)
     : ISource(header)
     , generator(std::make_unique<RecursiveCTEChunkGenerator>(std::move(header), std::move(recursive_cte_union_node_)))
 {}

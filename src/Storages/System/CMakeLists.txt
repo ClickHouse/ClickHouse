@@ -2,8 +2,8 @@
 # You can also regenerate it manually this way:
 # execute_process(COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.sh")
 
-get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
 get_property(TZDATA_VERSION GLOBAL PROPERTY TZDATA_VERSION_PROP)
+get_property(OPENSSL_VERSION GLOBAL PROPERTY OPENSSL_VERSION_PROP)
 
 function(generate_system_build_options)
     include(${ClickHouse_SOURCE_DIR}/src/configure_config.cmake)
@@ -15,6 +15,10 @@ generate_system_build_options()
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")
 add_headers_and_sources(storages_system .)
 list (APPEND storages_system_sources StorageSystemBuildOptions.generated.cpp)
+
+if (NOT TARGET ch_contrib::icu)
+    list(REMOVE_ITEM storages_system_sources StorageSystemUnicode.cpp)
+endif()
 
 add_custom_target(generate-contributors
     ./StorageSystemContributors.sh
@@ -33,7 +37,7 @@ set(GENERATED_LICENSES_SRC "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemLicenses.ge
 
 add_custom_command(
     OUTPUT StorageSystemLicenses.generated.cpp
-    COMMAND ./StorageSystemLicenses.sh > ${GENERATED_LICENSES_SRC}
+    COMMAND ./StorageSystemLicenses.sh "${CMAKE_SOURCE_DIR}" > ${GENERATED_LICENSES_SRC}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 list (APPEND storages_system_sources ${GENERATED_LICENSES_SRC})
@@ -47,7 +51,13 @@ add_library(clickhouse_storages_system ${storages_system_sources})
 target_link_libraries(clickhouse_storages_system PRIVATE
     dbms
     common
+    clickhouse_common_zookeeper_base
     clickhouse_common_zookeeper
     clickhouse_parsers
     Poco::JSON
 )
+
+if (TARGET ch_contrib::icu)
+    target_link_libraries(clickhouse_storages_system PRIVATE ch_contrib::icu)
+    target_compile_definitions(clickhouse_storages_system PRIVATE U_HIDE_DEPRECATED_API)
+endif()

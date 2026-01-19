@@ -11,6 +11,7 @@ namespace DB
 /// SHOW [CURRENT|ENABLED] ROLES
 /// SHOW [SETTINGS] PROFILES
 /// SHOW [ROW] POLICIES [name | ON [database.]table]
+/// SHOW MASKING POLICIES [name | ON [database.]table]
 /// SHOW QUOTAS
 /// SHOW [CURRENT] QUOTA
 class ASTShowAccessEntitiesQuery : public ASTQueryWithOutput
@@ -34,7 +35,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Show; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
 private:
     String getKeyword() const;

@@ -52,8 +52,12 @@ public:
         {
             if (filter_type == "handler")
                 continue;
+            /// URI (path and query string)
             if (filter_type == "url")
                 addFilter(urlFilter(config, prefix + ".url"));
+            /// URL (schema, host:port, path and query string)
+            else if (filter_type == "full_url")
+                addFilter(fullUrlFilter(config, prefix + ".full_url"));
             else if (filter_type == "empty_query_string")
                 addFilter(emptyQueryStringFilter());
             else if (filter_type == "headers")
@@ -85,16 +89,39 @@ public:
         });
     }
 
+    /// Handle GET, HEAD or POST endpoint on specified path
+    void allowGetHeadAndPostRequest()
+    {
+        addFilter([](const auto & request)
+        {
+            return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
+        });
+    }
+
     /// Handle Post request or (Get or Head) with params or OPTIONS requests
     void allowPostAndGetParamsAndOptionsRequest()
     {
         addFilter([](const auto & request)
         {
-            return (request.getURI().find('?') != std::string::npos
+            return (request.getURI().contains('?')
                 && (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD))
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_OPTIONS
                 || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
+        });
+    }
+
+    void allowRESTMethods()
+    {
+        addFilter([](const auto & request)
+        {
+            return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE;
         });
     }
 
@@ -110,19 +137,23 @@ private:
 
 HTTPRequestHandlerFactoryPtr createStaticHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix);
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers);
 
 /// @param server - used in handlers to check IServer::isCancelled()
 /// @param config - not the same as server.config(), since it can be newer

@@ -27,47 +27,45 @@ ASTPtr ASTCreateWorkloadQuery::clone() const
     return res;
 }
 
-void ASTCreateWorkloadQuery::formatImpl(const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTCreateWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    format.ostr << (format.hilite ? hilite_keyword : "") << "CREATE ";
+    ostr << "CREATE ";
 
     if (or_replace)
-        format.ostr << "OR REPLACE ";
+        ostr << "OR REPLACE ";
 
-    format.ostr << "WORKLOAD ";
+    ostr << "WORKLOAD ";
 
     if (if_not_exists)
-        format.ostr << "IF NOT EXISTS ";
+        ostr << "IF NOT EXISTS ";
 
-    format.ostr << (format.hilite ? hilite_none : "");
+    ostr << backQuoteIfNeed(getWorkloadName());
 
-    format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadName()) << (format.hilite ? hilite_none : "");
-
-    formatOnCluster(format);
+    formatOnCluster(ostr, format);
 
     if (hasParent())
     {
-        format.ostr << (format.hilite ? hilite_keyword : "") << " IN " << (format.hilite ? hilite_none : "");
-        format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadParent()) << (format.hilite ? hilite_none : "");
+        ostr << " IN ";
+        ostr << backQuoteIfNeed(getWorkloadParent());
     }
 
     if (!changes.empty())
     {
-        format.ostr << ' ' << (format.hilite ? hilite_keyword : "") << "SETTINGS" << (format.hilite ? hilite_none : "") << ' ';
+        ostr << ' ' << "SETTINGS" << ' ';
 
         bool first = true;
 
         for (const auto & change : changes)
         {
             if (!first)
-                format.ostr << ", ";
+                ostr << ", ";
             else
                 first = false;
-            format.ostr << change.name << " = " << applyVisitor(FieldVisitorToString(), change.value);
+            ostr << change.name << " = " << applyVisitor(FieldVisitorToString(), change.value);
             if (!change.resource.empty())
             {
-                format.ostr << ' ' << (format.hilite ? hilite_keyword : "") << "FOR" << (format.hilite ? hilite_none : "") << ' ';
-                format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(change.resource) << (format.hilite ? hilite_none : "");
+                ostr << ' ' << "FOR" << ' ';
+                ostr << backQuoteIfNeed(change.resource);
             }
         }
     }

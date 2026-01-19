@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <bit>
 #include <utility>
+#include <boost/algorithm/string/replace.hpp>
 
 #include <base/simd.h>
 
@@ -59,7 +60,7 @@ UUID parseUUID(std::span<const UInt8> src)
     const auto size = src.size();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
+    const std::reverse_iterator<UInt8 *> dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
 #else
     auto * dst = reinterpret_cast<UInt8 *>(&uuid);
 #endif
@@ -90,7 +91,7 @@ void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
     if (buf.eof())
         out << " at end of stream.";
     else
-        out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
+        out << " before: " << quote << std::string_view(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
     throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected {}", out.str());
 }
@@ -211,6 +212,20 @@ void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
     }
 }
 
+template <char... chars>
+void skipStringUntilChars(ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<chars...>(buf.position(), buf.buffer().end());
+
+        buf.position() = next_pos;
+
+        if (buf.hasPendingData())
+            return;
+    }
+}
+
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
 {
@@ -245,6 +260,11 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
     readStringUntilWhitespaceInto(s, buf);
 }
 
+void skipStringUntilWhitespace(ReadBuffer & buf)
+{
+    skipStringUntilChars<' '>(buf);
+}
+
 void readStringUntilAmpersand(String & s, ReadBuffer & buf)
 {
     s.clear();
@@ -264,6 +284,13 @@ void readString(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringInto(s, buf);
+}
+
+void readString(String & s, ReadBuffer & buf, size_t n)
+{
+    s.resize(n);
+    if (n)
+        s.resize(buf.read(s.data(), n));
 }
 
 template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
@@ -476,7 +503,7 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
             /// \u0000 - special case
             if (0 == memcmp(hex_code, "0000", 4))
             {
-                s.push_back(0);
+                s.push_back(static_cast<char8_t>(0));
                 return ReturnType(true);
             }
 
@@ -484,12 +511,12 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
 
             if (code_point <= 0x7F)
             {
-                s.push_back(code_point);
+                s.push_back(static_cast<char8_t>(code_point));
             }
             else if (code_point <= 0x07FF)
             {
-                s.push_back(((code_point >> 6) & 0x1F) | 0xC0);
-                s.push_back((code_point & 0x3F) | 0x80);
+                s.push_back(static_cast<char8_t>(((code_point >> 6) & 0x1F) | 0xC0));
+                s.push_back(static_cast<char8_t>((code_point & 0x3F) | 0x80));
             }
             else
             {
@@ -567,10 +594,10 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
                     {
                         UInt32 full_code_point = 0x10000 + (code_point - 0xD800) * 1024 + (second_code_point - 0xDC00);
 
-                        s.push_back(((full_code_point >> 18) & 0x07) | 0xF0);
-                        s.push_back(((full_code_point >> 12) & 0x3F) | 0x80);
-                        s.push_back(((full_code_point >> 6) & 0x3F) | 0x80);
-                        s.push_back((full_code_point & 0x3F) | 0x80);
+                        s.push_back(static_cast<char8_t>(((full_code_point >> 18) & 0x07) | 0xF0));
+                        s.push_back(static_cast<char8_t>(((full_code_point >> 12) & 0x3F) | 0x80));
+                        s.push_back(static_cast<char8_t>(((full_code_point >> 6) & 0x3F) | 0x80));
+                        s.push_back(static_cast<char8_t>((full_code_point & 0x3F) | 0x80));
                     }
                     else
                     {
@@ -591,9 +618,9 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf, bool kee
                 }
                 else
                 {
-                    s.push_back(((code_point >> 12) & 0x0F) | 0xE0);
-                    s.push_back(((code_point >> 6) & 0x3F) | 0x80);
-                    s.push_back((code_point & 0x3F) | 0x80);
+                    s.push_back(static_cast<char8_t>(((code_point >> 12) & 0x0F) | 0xE0));
+                    s.push_back(static_cast<char8_t>(((code_point >> 6) & 0x3F) | 0x80));
+                    s.push_back(static_cast<char8_t>((code_point & 0x3F) | 0x80));
                 }
             }
 
@@ -991,7 +1018,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
                 {
                     __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(next_pos));
                     auto eq = _mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(bytes, rc), _mm_cmpeq_epi8(bytes, nc)), _mm_cmpeq_epi8(bytes, dc));
-                    uint16_t bit_mask = _mm_movemask_epi8(eq);
+                    uint16_t bit_mask = static_cast<uint16_t>(_mm_movemask_epi8(eq));
                     if (bit_mask)
                     {
                         next_pos += std::countr_zero(bit_mask);
@@ -1276,6 +1303,7 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf)
 
 template void readJSONArrayInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONArrayInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readJSONArrayInto<String>(String & s, ReadBuffer & buf);
 
 std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer)
 {
@@ -1364,11 +1392,11 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char *
         return ReturnType(false);
     };
 
-    auto append_digit = [&](auto & x)
+    auto append_digit = [&]<typename T>(T & x)
     {
         if (!buf.eof() && isNumericASCII(*buf.position()))
         {
-            x = x * 10 + (*buf.position() - '0');
+            x = static_cast<T>(x * 10 + (*buf.position() - '0'));
             ++buf.position();
             return true;
         }
@@ -1431,7 +1459,13 @@ template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &, const char *
 
 
 template <typename ReturnType, bool dt64_mode>
-ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
+ReturnType readDateTimeTextFallback(
+    time_t & datetime,
+    ReadBuffer & buf,
+    const DateLUTImpl & date_lut,
+    const char * allowed_date_delimiters,
+    const char * allowed_time_delimiters,
+    bool saturate_on_overflow)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1540,10 +1574,39 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             second = (s[6] - '0') * 10 + (s[7] - '0');
         }
 
-        if (unlikely(year == 0))
-            datetime = 0;
+        if constexpr (throw_exception)
+        {
+            if (unlikely(year == 0))
+                datetime = 0;
+            else
+                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+        }
         else
-            datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
+        {
+            if (saturate_on_overflow)
+            {
+                /// Use saturating version - makeDateTime saturates out-of-range years
+                if (unlikely(year == 0))
+                    datetime = 0;
+                else
+                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+            }
+            else
+            {
+                /// Use non-saturating version - return false for out-of-range values
+                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                if (!datetime_maybe)
+                    return false;
+
+                if constexpr (!dt64_mode)
+                {
+                    if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                        return false;
+                }
+
+                datetime = *datetime_maybe;
+            }
+        }
     }
     else
     {
@@ -1578,21 +1641,134 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     return ReturnType(true);
 }
 
-template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
-template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
-template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
-template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template void readDateTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
+template void readDateTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
+template bool readDateTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
+template bool readDateTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *, bool);
 
+template <typename ReturnType, bool t64_mode>
+ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    /// hhh:mm:ss
+    static constexpr auto time_broken_down_length = 9;
+
+    char s[time_broken_down_length];
+    char * s_pos = s;
+
+    int negative_multiplier = 1;
+
+    if (!buf.eof() && *buf.position() == '-')
+    {
+        negative_multiplier = -1;
+        ++buf.position();
+    }
+
+    /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
+    while (s_pos < s + time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))
+    {
+        *s_pos = *buf.position();
+        ++s_pos;
+        ++buf.position();
+    }
+
+    if (!t64_mode && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
+    {
+        const auto already_read_length = s_pos - s;
+        const size_t remaining_time_size = time_broken_down_length - already_read_length;
+
+        size_t size = buf.read(s_pos, remaining_time_size);
+
+        if constexpr (!throw_exception)
+        {
+            if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[4])
+                || !isNumericASCII(s[5]) || !isNumericASCII(s[7]) || !isNumericASCII(s[8]))
+                return false;
+
+            if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
+                return false;
+        }
+
+        uint64_t hour = 0;
+        UInt8 minute = 0;
+        UInt8 second = 0;
+
+        if (!buf.eof() && (*buf.position() == ' ' || *buf.position() == 'T'))
+        {
+            ++buf.position();
+
+            if (size != time_broken_down_length)
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time {}", std::string_view(s, size));
+                else
+                    return false;
+            }
+
+            if constexpr (!throw_exception)
+            {
+                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[4]) || !isNumericASCII(s[5])
+                    || !isNumericASCII(s[7]) || !isNumericASCII(s[8]))
+                    return false;
+
+                if (!isSymbolIn(s[3], allowed_time_delimiters) || !isSymbolIn(s[6], allowed_time_delimiters))
+                    return false;
+            }
+
+            hour = (s[0] - '0') * 100 + (s[1] - '0') * 10 + (s[2] - '0');
+            minute = (s[4] - '0') * 10 + (s[5] - '0');
+            second = (s[7] - '0') * 10 + (s[8] - '0');
+        }
+
+        time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
+    }
+    else
+    {
+        time = 0;
+        bool too_short = s_pos - s <= 4;
+
+        if (!too_short || t64_mode)
+        {
+            for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+            {
+                if constexpr (!throw_exception)
+                {
+                    if (!isNumericASCII(*digit_pos))
+                        return false;
+                }
+                time = time * 10 + *digit_pos - '0';
+            }
+        }
+        time *= negative_multiplier;
+
+        if (too_short && negative_multiplier != -1)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time");
+            else
+                return false;
+        }
+
+    }
+
+    return ReturnType(true);
+}
+
+template void readTimeTextFallback<void, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template void readTimeTextFallback<void, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readTimeTextFallback<bool, false>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
+template bool readTimeTextFallback<bool, true>(time_t &, ReadBuffer &, const DateLUTImpl &, const char *, const char *);
 
 template <typename ReturnType>
-ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings, size_t current_depth)
+ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings, size_t current_depth)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     if (unlikely(current_depth > settings.max_depth))
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "JSON is too deep for key '{}'", name_of_field.toString());
+            throw Exception(ErrorCodes::TOO_DEEP_RECURSION, "JSON is too deep for key '{}'", name_of_field);
         return ReturnType(false);
     }
 
@@ -1602,7 +1778,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
     if (buf.eof())
     {
         if constexpr (throw_exception)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field);
         return ReturnType(false);
     }
     if (*buf.position() == '"') /// skip double-quoted string
@@ -1622,7 +1798,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
         if (!tryReadFloatText(v, buf))
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field.toString());
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field);
             return ReturnType(false);
         }
     }
@@ -1680,7 +1856,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
             else
             {
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field);
                 return ReturnType(false);
             }
         }
@@ -1704,7 +1880,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
             else
             {
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field);
                 return ReturnType(false);
             }
 
@@ -1713,7 +1889,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
             if (buf.eof() || !(*buf.position() == ':'))
             {
                 if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field.toString());
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected symbol for key '{}'", name_of_field);
                 return ReturnType(false);
             }
             ++buf.position();
@@ -1737,7 +1913,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
         if (buf.eof())
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field.toString());
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected EOF for key '{}'", name_of_field);
             return ReturnType(false);
         }
         ++buf.position();
@@ -1750,7 +1926,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
                 "Cannot read JSON field here: '{}'. Unexpected symbol '{}'{}",
                 String(buf.position(), std::min(buf.available(), size_t(10))),
                 std::string(1, *buf.position()),
-                name_of_field.empty() ? "" : " for key " + name_of_field.toString());
+                name_of_field.empty() ? "" : " for key " + String{name_of_field});
 
         return ReturnType(false);
     }
@@ -1758,12 +1934,12 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, StringRef name_of_field, const Fo
     return ReturnType(true);
 }
 
-void skipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
+void skipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings)
 {
     skipJSONFieldImpl<void>(buf, name_of_field, settings, 0);
 }
 
-bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field, const FormatSettings::JSON & settings)
+bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings)
 {
     return skipJSONFieldImpl<bool>(buf, name_of_field, settings, 0);
 }
@@ -2211,5 +2387,14 @@ void readTSVFieldCRLF(String & s, ReadBuffer & buf)
     readEscapedStringIntoImpl<String, false, true>(s, buf);
 }
 
+String escapeDotInJSONKey(const String & key)
+{
+    return boost::replace_all_copy(key, ".", "%2E");
+}
+
+String unescapeDotInJSONKey(const String & key)
+{
+    return boost::replace_all_copy(key, "%2E", ".");
+}
 
 }

@@ -1,6 +1,5 @@
 #include <Parsers/parseQuery.h>
 
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
@@ -10,7 +9,6 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <base/find_symbols.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -121,7 +119,13 @@ void writeQueryAroundTheError(
     else
     {
         if (num_positions_to_hilite)
-            out << ": " << std::string(positions_to_hilite[0].begin, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - positions_to_hilite[0].begin)) << ". ";
+        {
+            const char * example_begin = positions_to_hilite[0].begin;
+            size_t total_bytes = end - example_begin;
+            size_t show_bytes = UTF8::computeBytesBeforeWidth(
+                reinterpret_cast<const UInt8 *>(example_begin), total_bytes, 0, SHOW_CHARS_ON_SYNTAX_ERROR);
+            out << ": " << std::string(example_begin, show_bytes) << (show_bytes < total_bytes ? "... " : ". ");
+        }
     }
 }
 
@@ -146,7 +150,13 @@ void writeCommonErrorMessage(
     }
     else
     {
-        out << " ('" << std::string(last_token.begin, last_token.end - last_token.begin) << "')";
+        /// Do not print too long tokens.
+        size_t token_size_bytes = last_token.end - last_token.begin;
+        size_t token_preview_size_bytes = UTF8::computeBytesBeforeWidth(
+            reinterpret_cast<const UInt8 *>(last_token.begin), token_size_bytes, 0, SHOW_CHARS_ON_SYNTAX_ERROR);
+
+        out << " (" << std::string(last_token.begin, token_preview_size_bytes)
+            << (token_preview_size_bytes < token_size_bytes ? "..." : "") << ")";
     }
 
     /// If query is multiline.
@@ -189,15 +199,9 @@ std::string getLexicalErrorMessage(
     const std::string & query_description)
 {
     WriteBufferFromOwnString out;
+    out << getErrorTokenDescription(last_token.type) << ": ";
     writeCommonErrorMessage(out, begin, end, last_token, query_description);
     writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
-
-    out << getErrorTokenDescription(last_token.type);
-    if (last_token.size())
-    {
-       out << ": '" << std::string_view{last_token.begin, last_token.size()} << "'";
-    }
-
     return out.str();
 }
 
@@ -344,10 +348,15 @@ ASTPtr tryParseQuery(
         return nullptr;
     }
 
+    IParser::Pos this_query_end_pos = token_iterator;
+    while (!this_query_end_pos->isEnd() && !this_query_end_pos->isError()
+        && this_query_end_pos->type != TokenType::Semicolon)
+        ++this_query_end_pos;
+
     if (!parse_res)
     {
         /// Generic parse error.
-        out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
+        out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
         return nullptr;
     }
@@ -357,7 +366,7 @@ ASTPtr tryParseQuery(
         && token_iterator->type != TokenType::Semicolon)
     {
         expected.add(last_token.begin, "end of query");
-        out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
+        out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
         return nullptr;
     }
@@ -467,7 +476,7 @@ std::pair<const char *, bool> splitMultipartQuery(
 
         ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth, max_parser_backtracks);
 
-        if (ASTInsertQuery * insert = getInsertAST(ast))
+        if (ASTInsertQuery * insert = getInsertAST(ast); insert && insert->data)
         {
             /// Data for INSERT is broken on the new line
             pos = insert->data;

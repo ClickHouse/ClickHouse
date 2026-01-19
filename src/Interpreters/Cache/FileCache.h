@@ -17,8 +17,10 @@
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/UserInfo.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <filesystem>
+#include <random>
+#include <pcg_random.hpp>
 
 
 namespace DB
@@ -113,7 +115,8 @@ public:
         size_t file_size,
         const CreateFileSegmentSettings & settings,
         size_t file_segments_limit,
-        const UserInfo & user);
+        const UserInfo & user,
+        std::optional<size_t> boundary_alignment_ = std::nullopt);
 
     /**
      * Segments in returned list are ordered in ascending order and represent a full contiguous
@@ -138,8 +141,18 @@ public:
         const CreateFileSegmentSettings & settings,
         const UserInfo & user);
 
+    FileSegmentsHolderPtr trySet(
+        const Key & key,
+        size_t offset,
+        size_t size,
+        const CreateFileSegmentSettings & settings,
+        const UserInfo & user);
+
     /// Remove file segment by `key` and `offset`. Throws if file segment does not exist.
     void removeFileSegment(const Key & key, size_t offset, const UserID & user_id);
+
+    /// Remove file segment by `key` and `offset`. Does nothing if file segment does not exist.
+    void removeFileSegmentIfExists(const Key & key, size_t offset, const UserID & user_id);
 
     /// Remove files by `key`. Throws if key does not exist.
     void removeKey(const Key & key, const UserID & user_id);
@@ -156,10 +169,15 @@ public:
     std::vector<String> tryGetCachePaths(const Key & key);
 
     size_t getUsedCacheSize() const;
+    size_t getMaxCacheSize() const;
 
     size_t getFileSegmentsNum() const;
 
     size_t getMaxFileSegmentSize() const { return max_file_segment_size; }
+
+    size_t getBackgroundDownloadMaxFileSegmentSize() const { return background_download_max_file_segment_size.load(); }
+
+    size_t getBoundaryAlignment() const { return boundary_alignment; }
 
     bool tryReserve(
         FileSegment & file_segment,
@@ -173,8 +191,12 @@ public:
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key, const UserID & user_id);
 
-
     IFileCachePriority::PriorityDumpPtr dumpQueue();
+
+    IFileCachePriority::Type getEvictionPolicyType();
+
+    using UsageStat = IFileCachePriority::UsageStat;
+    std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
 
     void deactivateBackgroundOperations();
 
@@ -189,9 +211,14 @@ public:
     using IterateFunc = std::function<void(const FileSegmentInfo &)>;
     void iterate(IterateFunc && func, const UserID & user_id);
 
+    using CacheIteratorPtr = CacheMetadata::IteratorPtr;
+    CacheIteratorPtr getCacheIterator(const UserID & user_id);
+
     void applySettingsIfPossible(const FileCacheSettings & new_settings, FileCacheSettings & actual_settings);
 
     void freeSpaceRatioKeepingThreadFunc();
+
+    const String & getName() const { return name; }
 
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
@@ -199,17 +226,20 @@ private:
     std::atomic<size_t> max_file_segment_size;
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
+    std::atomic<size_t> background_download_max_file_segment_size;
     size_t load_metadata_threads;
     const bool load_metadata_asynchronously;
     std::atomic<bool> stop_loading_metadata = false;
     ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
+    const bool allow_dynamic_cache_resize;
 
-    BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
+    BackgroundSchedulePoolTaskHolder keep_up_free_space_ratio_task;
     const double keep_current_size_to_max_ratio;
     const double keep_current_elements_to_max_ratio;
     const size_t keep_up_free_space_remove_batch;
 
+    String name;
     LoggerPtr log;
 
     std::exception_ptr init_exception;
@@ -220,6 +250,8 @@ private:
     std::atomic<bool> shutdown = false;
     std::atomic<bool> cache_is_being_resized = false;
 
+    std::atomic<size_t> cache_reserve_active_threads = 0;
+
     std::mutex apply_settings_mutex;
 
     CacheMetadata metadata;
@@ -227,24 +259,21 @@ private:
     FileCachePriorityPtr main_priority;
     mutable CachePriorityGuard cache_guard;
 
-    struct HitsCountStash
+    /// Random checks for cache correctness.
+    /// They are heavy, so cannot be done on each cache access.
+    struct CheckCacheProbability
     {
-        HitsCountStash(size_t hits_threashold_, size_t queue_size_);
-        void clear();
+        explicit CheckCacheProbability(double probability, UInt64 seed = 0);
 
-        const size_t hits_threshold;
-        const size_t queue_size;
+        bool doCheck();
 
-        std::unique_ptr<LRUFileCachePriority> queue;
-        using Records = std::unordered_map<KeyAndOffset, Priority::IteratorPtr, FileCacheKeyAndOffsetHash>;
-        Records records;
+    private:
+        pcg64_fast rndgen;
+        std::bernoulli_distribution distribution;
+        std::mutex mutex;
     };
+    CheckCacheProbability check_cache_probability;
 
-    /**
-     * A HitsCountStash allows to cache certain data only after it reached
-     * a certain hit rate, e.g. if hit rate it 5, then data is cached on 6th cache hit.
-     */
-    mutable std::unique_ptr<HitsCountStash> stash;
     /**
      * A QueryLimit allows to control cache write limit per query.
      * E.g. if a query needs n bytes from cache, but it has only k bytes, where 0 <= k <= n
@@ -256,10 +285,11 @@ private:
 
     void assertInitialized() const;
     void assertCacheCorrectness();
+    void assertCacheCorrectnessWithProbability();
 
     void loadMetadata();
     void loadMetadataImpl();
-    void loadMetadataForKeys(const std::filesystem::path & keys_dir);
+    void loadMetadataForKeys(const std::filesystem::path & keys_dir, const UserInfo & user);
 
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit
@@ -294,8 +324,20 @@ private:
         size_t offset,
         size_t size,
         FileSegment::State state,
-        const CreateFileSegmentSettings & create_settings,
-        const CachePriorityGuard::Lock *);
+        const CreateFileSegmentSettings & create_settings);
+
+    struct SizeLimits
+    {
+        size_t max_size;
+        size_t max_elements;
+        double slru_size_ratio;
+    };
+    SizeLimits doDynamicResize(const SizeLimits & current_limits, const SizeLimits & desired_limits);
+    bool doDynamicResizeImpl(
+        const SizeLimits & current_limits,
+        const SizeLimits & desired_limits,
+        SizeLimits & result_limits,
+        CachePriorityGuard::Lock &);
 };
 
 }

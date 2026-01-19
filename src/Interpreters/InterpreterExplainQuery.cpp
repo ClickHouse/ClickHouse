@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -9,18 +10,19 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/FunctionSecretArgumentsFinder.h>
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -33,13 +35,17 @@
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_statistics_optimize;
+    extern const SettingsBool format_display_secrets_in_show_and_select;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
 }
 
 namespace ErrorCodes
@@ -74,10 +80,8 @@ namespace
 
         static void visit(ASTSelectQuery & select, ASTPtr & node, Data & data)
         {
-            /// we need to read statistic when `allow_statistics_optimize` is enabled.
-            bool only_analyze = !data.getContext()->getSettingsRef()[Setting::allow_statistics_optimize];
             InterpreterSelectQuery interpreter(
-                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze(only_analyze).modify());
+                node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
 
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
@@ -89,6 +93,47 @@ namespace
     };
 
     using ExplainAnalyzedSyntaxVisitor = InDepthNodeVisitor<ExplainAnalyzedSyntaxMatcher, true>;
+
+    class TableFunctionSecretsVisitor : public InDepthQueryTreeVisitor<TableFunctionSecretsVisitor>
+    {
+        friend class InDepthQueryTreeVisitor;
+        bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
+        {
+            QueryTreeNodeType type = parent->getNodeType();
+            return type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::JOIN || type == QueryTreeNodeType::TABLE_FUNCTION;
+        }
+
+        void visitImpl(VisitQueryTreeNodeType & query_tree_node)
+        {
+            auto * table_function_node_ptr = query_tree_node->as<TableFunctionNode>();
+            if (!table_function_node_ptr)
+                return;
+
+            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
+            {
+                auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
+
+                for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
+                {
+                    ConstantNode * constant_node = nullptr;
+                    if (secret_arguments.are_named)
+                    {
+                        auto * function_node = argument_nodes[n]->as<FunctionNode>();
+                        if (function_node && function_node->getArguments().getNodes().size() >= 2)
+                            constant_node = function_node->getArguments().getNodes().at(1)->as<ConstantNode>();
+                    }
+
+                    if (!constant_node)
+                    {
+                        constant_node = argument_nodes[n]->as<ConstantNode>();
+                    }
+
+                    if (constant_node)
+                        constant_node->setMaskId();
+                }
+            }
+        }
+    };
 
 }
 
@@ -180,6 +225,9 @@ struct QueryTreeSettings
     bool dump_ast = false;
     Int64 passes = -1;
 
+    /// Only for EXPLAIN SYNTAX
+    bool ast_one_line = false;
+
     constexpr static char name[] = "QUERY TREE";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
@@ -198,10 +246,11 @@ struct QueryTreeSettings
 
 struct QueryPlanSettings
 {
-    QueryPlan::ExplainPlanOptions query_plan_options;
+    ExplainPlanOptions query_plan_options;
 
     /// Apply query plan optimizations.
     bool optimize = true;
+    bool keep_logical_steps = false;
     bool json = false;
 
     constexpr static char name[] = "PLAN";
@@ -212,9 +261,15 @@ struct QueryPlanSettings
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
             {"indexes", query_plan_options.indexes},
+            {"indices", query_plan_options.indexes},
+            {"projections", query_plan_options.projections},
             {"optimize", optimize},
             {"json", json},
             {"sorting", query_plan_options.sorting},
+            {"distributed", query_plan_options.distributed},
+            {"keep_logical_steps", keep_logical_steps},
+            {"input_headers", query_plan_options.input_headers},
+            {"column_structure", query_plan_options.column_structure},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -302,15 +357,21 @@ struct ExplainSettings : public Settings
 struct QuerySyntaxSettings
 {
     bool oneline = false;
+    bool run_query_tree_passes = false;
+    Int64 query_tree_passes = -1;
 
     constexpr static char name[] = "SYNTAX";
 
     std::unordered_map<std::string, std::reference_wrapper<bool>> boolean_settings =
     {
         {"oneline", oneline},
+        {"run_query_tree_passes", run_query_tree_passes}
     };
 
-    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
+    std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings =
+    {
+        {"query_tree_passes", query_tree_passes}
+    };
 };
 
 template <typename Settings>
@@ -352,6 +413,63 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
     return settings;
 }
 
+bool explainQueryTree(
+    ASTPtr explained_query,
+    ContextPtr query_context,
+    const QueryTreeSettings & settings,
+    WriteBuffer & buf)
+{
+    if (explained_query->as<ASTSelectWithUnionQuery>() == nullptr)
+        return false;
+
+    auto query_tree = buildQueryTree(explained_query, query_context);
+    bool need_newline = false;
+
+    if (!query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    {
+        TableFunctionSecretsVisitor visitor;
+        visitor.visit(query_tree);
+    }
+
+    if (settings.run_passes)
+    {
+        auto query_tree_pass_manager = QueryTreePassManager(query_context);
+        addQueryTreePasses(query_tree_pass_manager);
+
+        size_t pass_index = settings.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(settings.passes);
+
+        if (settings.dump_passes)
+        {
+            query_tree_pass_manager.dump(buf, pass_index);
+            need_newline = true;
+        }
+
+        query_tree_pass_manager.run(query_tree, pass_index);
+    }
+
+    if (settings.dump_tree)
+    {
+        if (need_newline)
+            buf << "\n\n";
+
+        query_tree->dumpTree(buf);
+        need_newline = true;
+    }
+
+    if (settings.dump_ast)
+    {
+        if (need_newline)
+            buf << "\n\n";
+
+        IAST::FormatSettings format_settings(settings.ast_one_line);
+        format_settings.show_secrets = query_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
+
+        query_tree->toAST()->format(buf, format_settings);
+    }
+
+    return true;
+}
+
 }
 
 QueryPipeline InterpreterExplainQuery::executeImpl()
@@ -365,8 +483,19 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     bool single_line = false;
     bool insert_buf = true;
 
-    SelectQueryOptions options;
+    ContextPtr query_context = getContext();
+
     options.setExplain();
+    options.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+
+    /// https://github.com/ClickHouse/ClickHouse/issues/88467
+    /// EXPLAIN is to get a good picture of how the query will execute after *static* planning.
+    /// Hence disable any optimizations that stagger the planning or introduce variablility due to caches.
+    auto explain_query_context = Context::createCopy(query_context);
+    explain_query_context->setSetting("use_skip_indexes_on_data_read", false);
+    explain_query_context->setSetting("use_query_condition_cache", false);
+    InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
+    query_context = std::move(explain_query_context);
 
     switch (ast.getKind())
     {
@@ -375,7 +504,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
             if (settings.optimize)
             {
-                ExplainAnalyzedSyntaxVisitor::Data data(getContext());
+                ExplainAnalyzedSyntaxVisitor::Data data(query_context);
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
@@ -389,60 +518,42 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
 
-            ExplainAnalyzedSyntaxVisitor::Data data(getContext());
+            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                bool explain_ok = explainQueryTree(ast.getExplainedQuery(), query_context, QueryTreeSettings{
+                    .run_passes = settings.run_query_tree_passes,
+                    .dump_tree = false,
+                    .dump_passes = false,
+                    .dump_ast = true,
+                    .passes = settings.query_tree_passes,
+                    .ast_one_line = settings.oneline,
+                }, buf);
+
+                if (explain_ok)
+                    break;
+                auto query_context_mutable = Context::createCopy(query_context);
+                query_context_mutable->setSetting("allow_experimental_analyzer", false);
+                query_context = std::move(query_context_mutable);
+            }
+
+            ExplainAnalyzedSyntaxVisitor::Data data(query_context);
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
-            ast.getExplainedQuery()->format(IAST::FormatSettings(buf, settings.oneline));
+            ast.getExplainedQuery()->format(buf, IAST::FormatSettings(settings.oneline));
             break;
         }
         case ASTExplainQuery::QueryTree:
         {
-            if (!getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
-
-            if (ast.getExplainedQuery()->as<ASTSelectWithUnionQuery>() == nullptr)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
+                    "EXPLAIN QUERY TREE is only supported with a new analyzer. SET enable_analyzer = 1.");
 
             auto settings = checkAndGetSettings<QueryTreeSettings>(ast.getSettings());
             if (!settings.dump_tree && !settings.dump_ast)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'dump_tree' or 'dump_ast' must be set for EXPLAIN QUERY TREE query");
 
-            auto query_tree = buildQueryTree(ast.getExplainedQuery(), getContext());
-            bool need_newline = false;
-
-            if (settings.run_passes)
-            {
-                auto query_tree_pass_manager = QueryTreePassManager(getContext());
-                addQueryTreePasses(query_tree_pass_manager);
-
-                size_t pass_index = settings.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(settings.passes);
-
-                if (settings.dump_passes)
-                {
-                    query_tree_pass_manager.dump(buf, pass_index);
-                    need_newline = true;
-                }
-
-                query_tree_pass_manager.run(query_tree, pass_index);
-            }
-
-            if (settings.dump_tree)
-            {
-                if (need_newline)
-                    buf << "\n\n";
-
-                query_tree->dumpTree(buf);
-                need_newline = true;
-            }
-
-            if (settings.dump_ast)
-            {
-                if (need_newline)
-                    buf << "\n\n";
-
-                query_tree->toAST()->format(IAST::FormatSettings(buf, false));
-            }
+            if (!explainQueryTree(ast.getExplainedQuery(), query_context, settings, buf))
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT is supported for EXPLAIN QUERY TREE query");
 
             break;
         }
@@ -456,31 +567,40 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             ContextPtr context;
 
-            if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
-                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
             else
             {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
                 interpreter.buildQueryPlan(plan);
                 context = interpreter.getContext();
             }
 
             if (settings.optimize)
-                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+            {
+                auto optimization_settings = QueryPlanOptimizationSettings(context);
+                optimization_settings.keep_logical_steps = settings.keep_logical_steps;
+                optimization_settings.is_explain = true;
+                optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+                plan.optimize(optimization_settings);
+            }
 
             if (settings.json)
             {
+                if (settings.query_plan_options.distributed)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'distributed' is not supported with option 'json'");
+
                 /// Add extra layers to make plan look more like from postgres.
                 auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
                 plan_map->add("Plan", plan.explainPlan(settings.query_plan_options));
                 auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
                 plan_array->add(std::move(plan_map));
 
-                auto format_settings = getFormatSettings(getContext());
+                auto format_settings = getFormatSettings(query_context);
                 format_settings.json.quote_64bit_integers = false;
 
                 JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
@@ -491,7 +611,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 single_line = true;
             }
             else
-                plan.explainPlan(buf, settings.query_plan_options);
+                plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
             break;
         }
         case ASTExplainQuery::QueryPipeline:
@@ -502,22 +622,23 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 QueryPlan plan;
                 ContextPtr context;
 
-                if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
+                if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
                 {
-                    InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
+                    InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
                     context = interpreter.getContext();
                     plan = std::move(interpreter).extractQueryPlan();
                 }
                 else
                 {
-                    InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
+                    InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
                     interpreter.buildQueryPlan(plan);
                     context = interpreter.getContext();
                 }
 
-                auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings::fromContext(context),
-                    BuildQueryPipelineSettings::fromContext(context));
+                auto optimization_settings = QueryPlanOptimizationSettings(context);
+                optimization_settings.is_explain = true;
+                optimization_settings.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+                auto pipeline = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
                 if (settings.graph)
                 {
@@ -538,15 +659,18 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
             else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
             {
+                auto insert_context = Context::createCopy(getContext());
                 InterpreterInsertQuery insert(
                     ast.getExplainedQuery(),
-                    getContext(),
+                    insert_context,
                     /* allow_materialized */ false,
                     /* no_squash */ false,
                     /* no_destination */ false,
-                    /* async_isnert */ false);
+                    /* async_insert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
+                // we do not need it anymore, it would not be executed
+                io.pipeline.cancel();
             }
             else
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT and INSERT is supported for EXPLAIN PIPELINE query");
@@ -559,17 +683,17 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
-            ContextPtr context = getContext();
+            ContextPtr context = query_context;
 
             if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
-                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
             else
             {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
                 context = interpreter.getContext();
                 interpreter.buildQueryPlan(plan);
             }
@@ -577,9 +701,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).
-            auto builder = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context),
-                BuildQueryPipelineSettings::fromContext(context));
+            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
 
             plan.explainEstimate(res_columns);
             insert_buf = false;
@@ -591,7 +713,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             {
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN TABLE OVERRIDE is not supported for the {}() table function", table_function->name);
             }
-            auto storage = getContext()->getQueryContext()->executeTableFunction(ast.getTableFunction());
+            auto storage = query_context->getQueryContext()->executeTableFunction(ast.getTableFunction());
             auto metadata_snapshot = storage->getInMemoryMetadata();
             TableOverrideAnalyzer::Result override_info;
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
@@ -604,7 +726,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (ast.getSettings())
                 throw Exception(ErrorCodes::UNKNOWN_SETTING, "Settings are not supported for EXPLAIN CURRENT TRANSACTION query.");
 
-            if (auto txn = getContext()->getCurrentTransaction())
+            if (auto txn = query_context->getCurrentTransaction())
             {
                 String dump = txn->dumpDescription();
                 buf.write(dump.data(), dump.size());
@@ -617,6 +739,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             break;
         }
     }
+    buf.finalize();
     if (insert_buf)
     {
         if (single_line)
@@ -625,15 +748,13 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             fillColumn(*res_columns[0], buf.str());
     }
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(sample_block.cloneWithColumns(std::move(res_columns))));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(sample_block.cloneWithColumns(std::move(res_columns)))));
 }
 
 void registerInterpreterExplainQuery(InterpreterFactory & factory)
 {
-    auto create_fn = [] (const InterpreterFactory::Arguments & args)
-    {
-        return std::make_unique<InterpreterExplainQuery>(args.query, args.context);
-    };
+    auto create_fn = [](const InterpreterFactory::Arguments & args)
+    { return std::make_unique<InterpreterExplainQuery>(args.query, args.context, args.options); };
     factory.registerInterpreter("InterpreterExplainQuery", create_fn);
 }
 

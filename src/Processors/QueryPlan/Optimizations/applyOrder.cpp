@@ -5,12 +5,14 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
 #include <Functions/IFunction.h>
+
 
 namespace DB
 {
@@ -38,7 +40,7 @@ struct SortingProperty
 
 SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree*>(parent->step.get()))
+    if (const auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(parent->step.get()))
         return {read_from_merge_tree->getSortDescription(), SortingProperty::SortScope::Stream};
 
     if (const auto * aggregating_step = typeid_cast<AggregatingStep *>(parent->step.get()))
@@ -121,14 +123,20 @@ SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * propertie
         if (optimization_settings.optimize_sorting_by_input_stream_properties
             && !sorting_step->hasPartitions() && sorting_step->getType() == SortingStep::Type::Full)
         {
+            /// Convert Sorting to FinishSorting based on plan's sorting properties.
             auto common_prefix = commonPrefix(properties->sort_description, sorting_step->getSortDescription());
             if (!common_prefix.empty())
                 /// Buffering is useful for reading from MergeTree, and it is applied in optimizeReadInOrder only.
-                sorting_step->convertToFinishSorting(common_prefix, /*use_buffering*/ false);
+                sorting_step->convertToFinishSorting(common_prefix, /*use_buffering*/ false, false);
         }
 
         auto scope = sorting_step->hasPartitions() ? SortingProperty::SortScope::Stream : SortingProperty::SortScope::Global;
         return {sorting_step->getSortDescription(), scope};
+    }
+
+    if (auto * limit_by_step = typeid_cast<LimitByStep *>(parent->step.get()))
+    {
+        limit_by_step->applyOrder(properties->sort_description);
     }
 
     if (auto * transforming = dynamic_cast<ITransformingStep *>(parent->step.get()))

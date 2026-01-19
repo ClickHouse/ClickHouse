@@ -1,4 +1,5 @@
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -7,15 +8,14 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
-#include <Parsers/ASTLiteral.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
-#include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Core/ServerSettings.h>
 
 
 namespace DB
@@ -23,6 +23,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool dictionary_validate_primary_key_type;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool dictionaries_lazy_load;
 }
 
 namespace ErrorCodes
@@ -44,7 +49,7 @@ namespace
 
         for (const auto & column : columns.getOrdinary())
         {
-            if (names_and_types_set.find(column) == names_and_types_set.end())
+            if (!names_and_types_set.contains(column))
             {
                 throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "Not found column {} {} in dictionary {}. There are only columns {}",
                                 column.name, column.type->getName(), backQuote(dictionary_name),
@@ -179,7 +184,18 @@ Pipe StorageDictionary::read(
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
-    local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+
+    /**
+     * For backward compatibility reasons we require either SELECT or dictGet permission to read directly from the dictionary.
+     * If none of these conditions are met - we ask to grant a dictGet.
+     */
+    bool has_dict_get = local_context->getAccess()->isGranted(
+        AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+    bool has_select = local_context->getAccess()->isGranted(
+        AccessType::SELECT, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+    if (!has_dict_get && !has_select)
+        local_context->checkAccess(AccessType::dictGet, dictionary->getDatabaseOrNoDatabaseTag(), dictionary->getDictionaryID().getTableName());
+
     return dictionary->read(column_names, max_block_size, threads);
 }
 
@@ -198,7 +214,7 @@ void StorageDictionary::startup()
 {
     auto global_context = getContext();
 
-    bool lazy_load = global_context->getConfigRef().getBool("dictionaries_lazy_load", true);
+    bool lazy_load = global_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
     if (!lazy_load)
     {
         const auto & external_dictionaries_loader = global_context->getExternalDictionariesLoader();
@@ -333,7 +349,7 @@ void registerStorageDictionary(StorageFactory & factory)
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
-            bool lazy_load = local_context->getConfigRef().getBool("dictionaries_lazy_load", true);
+            bool lazy_load = local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load];
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,

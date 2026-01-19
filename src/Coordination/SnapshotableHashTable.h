@@ -1,25 +1,33 @@
 #pragma once
-#include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaUtils.h>
-
 #include <list>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 template<typename V>
 struct ListNode
 {
-    StringRef key;
+    std::string_view key;
     V value;
 
     struct
     {
-        bool active_in_map : 1;
-        bool free_key : 1;
+        uint64_t active_in_map : 1;
+        uint64_t free_key : 1;
         uint64_t version : 62;
     } node_metadata{false, false, 0};
+
+    ListNode copyFromSnapshotNode()
+    {
+        return {key, value.copyFromSnapshotNode(), node_metadata};
+    }
 
     void setInactiveInMap()
     {
@@ -77,7 +85,7 @@ private:
     using ListElem = ListNode<V>;
     using List = std::list<ListElem>;
     using Mapped = typename List::iterator;
-    using IndexMap = HashMap<StringRef, Mapped>;
+    using IndexMap = HashMap<std::string_view, Mapped>;
 
     List list;
     IndexMap map;
@@ -88,7 +96,7 @@ private:
 
     /// Arena used for keys
     /// we don't use std::string because it uses 24 bytes (because of SSO)
-    /// we want to always allocate the key on heap and use StringRef to it
+    /// we want to always allocate the key on heap and use std::string_view to it
     GlobalArena arena;
 
     /// Collect invalid iterators to avoid traversing the whole list
@@ -145,7 +153,7 @@ private:
         }
     }
 
-    void insertOrReplace(StringRef key, V value, bool owns_key)
+    void insertOrReplace(std::string_view key, V value, bool owns_key)
     {
         size_t hash_value = map.hash(key);
         auto new_value_size = value.sizeInBytes();
@@ -167,7 +175,7 @@ private:
         else
         {
             if (owns_key)
-                arena.free(key.data, key.size);
+                arena.free(key.data(), key.size());
 
             auto list_itr = it->getMapped();
             if (snapshot_mode)
@@ -184,7 +192,7 @@ private:
                 list_itr->value = std::move(value);
             }
         }
-        updateDataSize(INSERT_OR_REPLACE, key.size, new_value_size, old_value_size, !snapshot_mode);
+        updateDataSize(INSERT_OR_REPLACE, key.size(), new_value_size, old_value_size, !snapshot_mode);
     }
 
 public:
@@ -199,14 +207,15 @@ public:
         clear();
     }
 
-    std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, const V & value)
+    std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, V value)
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
 
         if (!it)
         {
-            ListElem elem{copyStringInArena(arena, key), value};
+            auto value_size = value.sizeInBytes();
+            ListElem elem{copyStringInArena(arena, key), std::move(value)};
             elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
@@ -215,17 +224,14 @@ public:
             chassert(inserted);
 
             it->getMapped() = itr;
-            updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), 0);
+            updateDataSize(INSERT_OR_REPLACE, key.size(), value_size, 0);
             return std::make_pair(it, true);
         }
 
         return std::make_pair(it, false);
     }
 
-    void reserve(size_t node_num)
-    {
-        map.reserve(node_num);
-    }
+    void reserve(size_t node_num) { map.reserve(node_num); }
 
     void insertOrReplace(const std::string & key, V value)
     {
@@ -253,7 +259,7 @@ public:
 
     void insertOrReplace(KeyPtr key_data, size_t key_size, V value)
     {
-        StringRef key{key_data.release(), key_size};
+        std::string_view key{key_data.release(), key_size};
         insertOrReplace(key, std::move(value), /*owns_key*/ true);
     }
 
@@ -275,7 +281,7 @@ public:
         else
         {
             map.erase(it->getKey());
-            arena.free(const_cast<char *>(list_itr->key.data), list_itr->key.size);
+            arena.free(const_cast<char *>(list_itr->key.data()), list_itr->key.size());
             list.erase(list_itr);
         }
 
@@ -288,11 +294,12 @@ public:
         return map.find(key) != map.end();
     }
 
-    const_iterator updateValue(StringRef key, ValueUpdater updater)
+    const_iterator updateValue(std::string_view key, ValueUpdater updater)
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
-        chassert(it != map.end());
+        if (it == map.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key);
 
         auto list_itr = it->getMapped();
         uint64_t old_value_size = list_itr->value.sizeInBytes();
@@ -307,7 +314,8 @@ public:
             /// snapshot and we don't need to copy it.
             if (list_itr->getVersion() <= snapshot_up_to_version)
             {
-                auto elem_copy = *(list_itr);
+                auto elem_copy = list_itr->copyFromSnapshotNode();
+                updateDataSize(UPDATE, key.size(), list_itr->value.sizeInBytes(), old_value_size, /*remove_old=*/true);
                 list_itr->setInactiveInMap();
                 snapshot_invalid_iters.push_back(list_itr);
                 updater(elem_copy.value);
@@ -331,11 +339,11 @@ public:
             ret = list_itr;
         }
 
-        updateDataSize(UPDATE, key.size, ret->value.sizeInBytes(), old_value_size, remove_old_size);
+        updateDataSize(UPDATE, key.size(), ret->value.sizeInBytes(), old_value_size, remove_old_size);
         return ret;
     }
 
-    const_iterator find(StringRef key) const
+    const_iterator find(std::string_view key) const
     {
         auto map_it = map.find(key);
         if (map_it != map.end())
@@ -345,10 +353,11 @@ public:
     }
 
 
-    const V & getValue(StringRef key) const
+    const V & getValue(std::string_view key) const
     {
         auto it = map.find(key);
-        chassert(it);
+        if (it == map.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key);
         return it->getMapped()->value;
     }
 
@@ -356,10 +365,11 @@ public:
     {
         for (auto & itr : snapshot_invalid_iters)
         {
-            chassert(!itr->isActiveInMap());
-            updateDataSize(ERASE, itr->key.size, 0, itr->value.sizeInBytes(), /*remove_old=*/true);
+            if (itr->isActiveInMap())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not active in map", itr->key);
+            updateDataSize(ERASE, itr->key.size(), 0, itr->value.sizeInBytes(), /*remove_old=*/true);
             if (itr->getFreeKey())
-                arena.free(const_cast<char *>(itr->key.data), itr->key.size);
+                arena.free(const_cast<char *>(itr->key.data()), itr->key.size());
             list.erase(itr);
         }
         snapshot_invalid_iters.clear();
@@ -370,7 +380,7 @@ public:
         clearOutdatedNodes();
         map.clear();
         for (auto itr = list.begin(); itr != list.end(); ++itr)
-            arena.free(const_cast<char *>(itr->key.data), itr->key.size);
+            arena.free(const_cast<char *>(itr->key.data()), itr->key.size());
         list.clear();
         updateDataSize(CLEAR, 0, 0, 0);
     }
@@ -407,7 +417,7 @@ public:
         approximate_data_size = 0;
         for (auto & node : list)
         {
-            approximate_data_size += node.key.size;
+            approximate_data_size += node.key.size();
             approximate_data_size += node.value.sizeInBytes();
         }
     }

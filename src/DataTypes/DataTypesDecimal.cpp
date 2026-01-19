@@ -2,6 +2,7 @@
 #include <DataTypes/Serializations/SerializationDecimal.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/NaNUtils.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadHelpers.h>
@@ -19,6 +20,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int DECIMAL_OVERFLOW;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -47,7 +49,7 @@ DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 template <is_decimal T>
 T DataTypeDecimal<T>::parseFromString(const String & str) const
 {
-    ReadBufferFromMemory buf(str.data(), str.size());
+    ReadBufferFromMemory buf(str);
     T x;
     UInt32 unread_scale = this->scale;
     readDecimalText(buf, x, this->precision, unread_scale, true);
@@ -229,9 +231,7 @@ requires (IsDataTypeDecimal<FromDataType> && is_arithmetic_v<typename ToDataType
 inline typename ToDataType::FieldType convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale)
 {
     typename ToDataType::FieldType result;
-
     convertFromDecimalImpl<FromDataType, ToDataType, void>(value, scale, result);
-
     return result;
 }
 
@@ -268,9 +268,13 @@ ReturnType convertToDecimalImpl(const typename FromDataType::FieldType & value, 
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    if constexpr (std::is_floating_point_v<FromFieldType>)
+    if constexpr (std::is_same_v<typename FromDataType::FieldType, BFloat16>)
     {
-        if (!std::isfinite(value))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Conversion from BFloat16 to Decimal is not implemented");
+    }
+    else if constexpr (is_floating_point<FromFieldType>)
+    {
+        if (!isFinite(value))
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "{} convert overflow. Cannot convert infinity or NaN to decimal", ToDataType::family_name);

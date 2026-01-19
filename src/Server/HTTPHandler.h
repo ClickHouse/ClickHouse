@@ -12,8 +12,9 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Common/re2.h>
+#include <Access/Credentials.h>
 
-#include "HTTPResponseHeaderWriter.h"
+#include <Server/HTTPResponseHeaderWriter.h>
 
 namespace CurrentMetrics
 {
@@ -26,17 +27,28 @@ namespace DB
 {
 
 class Session;
-class Credentials;
 class IServer;
 struct Settings;
 class WriteBufferFromHTTPServerResponse;
 
 using CompiledRegexPtr = std::shared_ptr<const re2::RE2>;
 
+struct HTTPHandlerConnectionConfig
+{
+    std::optional<AlwaysAllowCredentials> credentials;
+
+    /// TODO:
+    /// String quota;
+    /// String default_database;
+
+    HTTPHandlerConnectionConfig() = default;
+    HTTPHandlerConnectionConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+};
+
 class HTTPHandler : public HTTPRequestHandler
 {
 public:
-    HTTPHandler(IServer & server_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_);
+    HTTPHandler(IServer & server_, const HTTPHandlerConnectionConfig & connection_config_, const std::string & name, const HTTPResponseHeaderSetup & http_response_headers_override_);
     ~HTTPHandler() override;
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
@@ -48,13 +60,16 @@ public:
 
     virtual std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context) = 0;
 
+protected:
+    LoggerPtr log;
+
 private:
     struct Output
     {
         /* Raw data
          * ↓
          * CascadeWriteBuffer out_maybe_delayed_and_compressed (optional)
-         * ↓ (forwards data if an overflow is occur or explicitly via pushDelayedResults)
+         * ↓ (forwards data if an overflow occurs or explicitly via pushDelayedResults)
          * CompressedWriteBuffer out_maybe_compressed (optional)
          * ↓
          * WriteBufferFromHTTPServerResponse out
@@ -73,45 +88,26 @@ private:
         std::shared_ptr<WriteBuffer> out_maybe_compressed;
 
         /// If output should be delayed holds cascade buffer
-        std::unique_ptr<CascadeWriteBuffer> out_delayed_and_compressed_holder;
+        std::shared_ptr<CascadeWriteBuffer> out_delayed_and_compressed_holder;
         /// Points to out_maybe_compressed or to CascadeWriteBuffer.
-        WriteBuffer * out_maybe_delayed_and_compressed = nullptr;
+        std::shared_ptr<WriteBuffer>  out_maybe_delayed_and_compressed;
 
         bool finalized = false;
         bool canceled = false;
 
         bool exception_is_written = false;
-        std::function<void(WriteBuffer &, const String &)> exception_writer;
+        std::function<void(WriteBuffer &, int code, const String &)> exception_writer;
 
         bool hasDelayed() const
         {
-            return out_maybe_delayed_and_compressed != out_maybe_compressed.get();
+            return out_maybe_delayed_and_compressed && out_maybe_delayed_and_compressed != out_maybe_compressed;
         }
 
-        void finalize()
-        {
-            if (finalized)
-                return;
-            finalized = true;
+        void pushDelayedResults() const;
 
-            if (out_compressed_holder)
-                out_compressed_holder->finalize();
-            if (out)
-                out->finalize();
-        }
+        void finalize();
 
-        void cancel()
-        {
-            if (canceled)
-                return;
-            canceled = true;
-
-            if (out_compressed_holder)
-                out_compressed_holder->cancel();
-            if (out)
-                out->cancel();
-        }
-
+        void cancel();
 
         bool isCanceled() const
         {
@@ -125,7 +121,6 @@ private:
     };
 
     IServer & server;
-    LoggerPtr log;
 
     /// It is the name of the server that will be sent in an http-header X-ClickHouse-Server-Display-Name.
     String server_display_name;
@@ -146,16 +141,7 @@ private:
     // The request_credential instance may outlive a single request/response loop.
     // This happens only when the authentication mechanism requires more than a single request/response exchange (e.g., SPNEGO).
     std::unique_ptr<Credentials> request_credentials;
-
-    // Returns true when the user successfully authenticated,
-    //  the session instance will be configured accordingly, and the request_credentials instance will be dropped.
-    // Returns false when the user is not authenticated yet, and the 'Negotiate' response is sent,
-    //  the session and request_credentials instances are preserved.
-    // Throws an exception if authentication failed.
-    bool authenticateUser(
-        HTTPServerRequest & request,
-        HTMLForm & params,
-        HTTPServerResponse & response);
+    HTTPHandlerConnectionConfig connection_config;
 
     /// Also initializes 'used_output'.
     void processQuery(
@@ -166,14 +152,23 @@ private:
         std::optional<CurrentThread::QueryScope> & query_scope,
         const ProfileEvents::Event & write_event);
 
-    void trySendExceptionToClient(
-        const std::string & s,
+    bool trySendExceptionToClient(
         int exception_code,
+        const std::string & message,
         HTTPServerRequest & request,
         HTTPServerResponse & response,
         Output & used_output);
 
+    void releaseOrCloseSession(const String & session_id, bool close_session);
+
     static void pushDelayedResults(Output & used_output);
+
+protected:
+    // @see authenticateUserByHTTP()
+    virtual bool authenticateUser(
+        HTTPServerRequest & request,
+        HTMLForm & params,
+        HTTPServerResponse & response);
 };
 
 class DynamicQueryHandler : public HTTPHandler
@@ -184,6 +179,7 @@ private:
 public:
     explicit DynamicQueryHandler(
         IServer & server_,
+        const HTTPHandlerConnectionConfig & connection_config,
         const std::string & param_name_ = "query",
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
 
@@ -203,6 +199,7 @@ private:
 public:
     PredefinedQueryHandler(
         IServer & server_,
+        const HTTPHandlerConnectionConfig & connection_config,
         const NameSet & receive_params_,
         const std::string & predefined_query_,
         const CompiledRegexPtr & url_regex_,

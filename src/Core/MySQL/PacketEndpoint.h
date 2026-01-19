@@ -3,9 +3,9 @@
 #include <boost/noncopyable.hpp>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
-#include "IMySQLReadPacket.h"
-#include "IMySQLWritePacket.h"
-#include "IO/MySQLPacketPayloadReadBuffer.h"
+#include <Core/MySQL/IMySQLReadPacket.h>
+#include <Core/MySQL/IMySQLWritePacket.h>
+#include <IO/MySQLPacketPayloadReadBuffer.h>
 
 namespace DB
 {
@@ -39,7 +39,7 @@ public:
     void resetSequenceId();
 
     template<class T>
-    void sendPacket(const T & packet, bool flush = false)
+    void sendPacket(const T & packet, bool flush = true)
     {
         static_assert(std::is_base_of<IMySQLWritePacket, T>());
         packet.writePayload(*out, sequence_id);

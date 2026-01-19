@@ -93,6 +93,7 @@ TEST(ColumnVector, Filter)
     testFilter<Int64>();
     testFilter<UInt128>();
     testFilter<Int256>();
+    testFilter<BFloat16>();
     testFilter<Float32>();
     testFilter<Float64>();
     testFilter<UUID>();
@@ -110,7 +111,7 @@ static MutableColumnPtr createIndexColumn(size_t limit, size_t rows)
 
     for (size_t i = 0; i < rows; ++i)
     {
-        T val = rng() % limit;
+        T val = static_cast<T>(rng() % limit);
         values.push_back(val);
     }
 

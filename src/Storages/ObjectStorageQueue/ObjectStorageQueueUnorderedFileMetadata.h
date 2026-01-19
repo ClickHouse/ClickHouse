@@ -16,17 +16,24 @@ public:
         const std::string & path_,
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
+        std::atomic<size_t> & metadata_ref_count_,
+        bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
-    static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing"}; }
+    static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing", "persistent_processing"}; }
 
-    void setProcessedAtStartRequests(
-        Coordination::Requests & requests,
-        const zkutil::ZooKeeperPtr & zk_client) override;
+    /// Return vector of indexes of filtered paths.
+    static void filterOutProcessedAndFailed(
+        std::vector<std::string> & paths,
+        const std::filesystem::path & zk_path_,
+        LoggerPtr log_);
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
-    void setProcessedImpl() override;
+    void prepareProcessedRequestsImpl(Coordination::Requests & requests, LastProcessedFileInfoMapPtr created_nodes) override;
+    SetProcessingResponseIndexes prepareProcessingRequestsImpl(
+        Coordination::Requests & requests,
+        const std::string & processing_id) override;
 };
 
 }

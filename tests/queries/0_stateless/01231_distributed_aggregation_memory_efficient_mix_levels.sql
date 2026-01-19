@@ -20,6 +20,7 @@ create table ma_dist (x UInt64) ENGINE =  Distributed(test_cluster_two_shards_di
 set distributed_aggregation_memory_efficient = 1;
 set group_by_two_level_threshold = 2;
 set max_bytes_before_external_group_by = 16;
+set max_bytes_ratio_before_external_group_by = 0;
 
 select x, count() from ma_dist group by x order by x;
 

@@ -31,41 +31,41 @@ ASTPtr ASTDictionaryAttributeDeclaration::clone() const
     return res;
 }
 
-void ASTDictionaryAttributeDeclaration::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDictionaryAttributeDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
 
-    settings.writeIdentifier(name, /*ambiguous=*/true);
+    settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
 
     if (type)
     {
-        settings.ostr << ' ';
-        type->formatImpl(settings, state, frame);
+        ostr << ' ';
+        type->format(ostr, settings, state, frame);
     }
 
     if (default_value)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "DEFAULT" << (settings.hilite ? hilite_none : "") << ' ';
-        default_value->formatImpl(settings, state, frame);
+        ostr << ' ' << "DEFAULT" << ' ';
+        default_value->format(ostr, settings, state, frame);
     }
 
     if (expression)
     {
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "EXPRESSION" << (settings.hilite ? hilite_none : "") << ' ';
-        expression->formatImpl(settings, state, frame);
+        ostr << ' ' << "EXPRESSION" << ' ';
+        expression->format(ostr, settings, state, frame);
     }
 
     if (hierarchical)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "HIERARCHICAL" << (settings.hilite ? hilite_none : "");
+        ostr << ' ' << "HIERARCHICAL";
 
     if (bidirectional)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "BIDIRECTIONAL" << (settings.hilite ? hilite_none : "");
+        ostr << ' ' << "BIDIRECTIONAL";
 
     if (injective)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "INJECTIVE" << (settings.hilite ? hilite_none : "");
+        ostr << ' ' << "INJECTIVE";
 
     if (is_object_id)
-        settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "IS_OBJECT_ID" << (settings.hilite ? hilite_none : "");
+        ostr << ' ' << "IS_OBJECT_ID";
 }
 
 }
