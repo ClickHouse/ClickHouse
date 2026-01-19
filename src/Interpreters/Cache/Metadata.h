@@ -83,7 +83,7 @@ struct FileSegmentMetadata : private boost::noncopyable
     FileSegmentPtr file_segment;
 
 private:
-    /// If removed=true, then iterator=nullptr.
+    /// If removed=true, then iterator is invalid.
     bool removed = false;
 };
 
