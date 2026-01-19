@@ -1,17 +1,18 @@
 DROP TABLE IF EXISTS t;
 
--- TODO(nickitat): Enforcing wide parts is a temporary workaround, not sure why collection doesn't work otherwise
-CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=8192, min_bytes_for_wide_part=0;
+CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128;
+
+SET local_filesystem_read_prefetch=0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0, local_filesystem_read_method='pread_threadpool', use_uncompressed_cache=0;
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
 -- For runs with the old analyzer
-SET parallel_replicas_only_with_analyzer=0;
+SET enable_analyzer=1;
 
-SET max_threads=2;
+SET max_threads=4, max_block_size=128;
 
-INSERT INTO t SELECT toString(number), number FROM numbers(1e3);
+INSERT INTO t SELECT toString(number), number FROM numbers(1e4);
 
 --set send_logs_level='trace', send_logs_source_regexp = 'optimize';
 SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='03783_autopr_dataflow_cache_reuse_query_0'; -- empty cache, don't apply optimization, collect stats
@@ -19,7 +20,7 @@ SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='037
 SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='03783_autopr_dataflow_cache_reuse_query_1'; -- stats available, don't apply since no benefit
 set send_logs_level='none';
 
-INSERT INTO t SELECT 'ololokekkekkek' || toString(number % 10), number FROM numbers(1e5);
+INSERT INTO t SELECT 'ololokekkekkek' || toString(number % 10), number FROM numbers(5e5);
 
 --set send_logs_level='trace', send_logs_source_regexp = 'optimize';
 SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='03783_autopr_dataflow_cache_reuse_query_2'; -- stats available, but we have to recollect since data grew, don't apply
@@ -27,7 +28,7 @@ SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='037
 SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='03783_autopr_dataflow_cache_reuse_query_3'; -- stats available, apply
 set send_logs_level='none';
 
-INSERT INTO t SELECT 'ololokekkekkek' || toString(number % 10), number FROM numbers(1e5 + 10000);
+INSERT INTO t SELECT 'ololokekkekkek' || toString(number % 10), number FROM numbers(5e5 + 100000);
 
 --set send_logs_level='trace', send_logs_source_regexp = 'optimize';
 SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='03783_autopr_dataflow_cache_reuse_query_4'; -- stats available, but we have to recollect since data grew, don't apply
@@ -37,7 +38,7 @@ set send_logs_level='none';
 
 TRUNCATE TABLE t;
 
-INSERT INTO t SELECT toString(number), number FROM numbers(1e3);
+INSERT INTO t SELECT toString(number), number FROM numbers(1e4);
 
 --set send_logs_level='trace', send_logs_source_regexp = 'optimize';
 SELECT key, SUM(value) FROM t GROUP BY key FORMAT Null SETTINGS log_comment='03783_autopr_dataflow_cache_reuse_query_6'; -- stats available, but we have to recollect since data shrinked, don't apply
