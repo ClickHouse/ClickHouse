@@ -555,9 +555,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const ColumnValueRef & left, const ColumnValueRef & right) const override
     {
-        if constexpr (requires(const IDataType & t, const ColumnValueRef & l, const ColumnValueRef & r) {
-                          FunctionUnaryArithmeticMonotonicity<Name>::get(t, l, r);
-                      })
+        if constexpr (requires(const IDataType & t, const ColumnValueRef & l, const ColumnValueRef & r) { FunctionUnaryArithmeticMonotonicity<Name>::get(t, l, r); })
             return FunctionUnaryArithmeticMonotonicity<Name>::get(type, left, right);
 
         return IFunction::getMonotonicityForRange(type, left, right);
