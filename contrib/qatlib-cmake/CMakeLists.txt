@@ -53,7 +53,7 @@ target_include_directories(_osal PRIVATE
     ${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/include
     ${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/src/linux/user_space/include
     ${OPENSSL_DIR}/include
-    ${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/common/include
+    ${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/linux_x86_64/include
     ${ClickHouse_SOURCE_DIR}/contrib/qatlib-cmake/include)
 
 target_compile_definitions(_osal PRIVATE -DOSAL_ENSURE_ON -DUSE_OPENSSL)
@@ -190,8 +190,7 @@ target_include_directories(_qatlib PRIVATE
 target_link_libraries(_qatlib PRIVATE _qatmgr _osal OpenSSL::SSL ch_contrib::isal)
 target_compile_definitions(_qatlib PRIVATE -DUSER_SPACE -DLAC_BYTE_ORDER=__LITTLE_ENDIAN -DOSAL_ENSURE_ON)
 target_link_options(_qatlib PRIVATE -pie -z relro -z now -z noexecstack)
-# -mcx16: Needed to avoid link failure "undefined symbol: __atomic_compare_exchange_16"
-target_compile_options(_qatlib PRIVATE -mcx16)
+target_compile_options(_qatlib PRIVATE -march=native)
 add_library (ch_contrib::qatlib ALIAS _qatlib)
 
 # _usdm

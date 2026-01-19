@@ -420,7 +420,7 @@ struct CheckRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + sizeof(version); }
+    size_t bytesSize() const override { return path.size() + sizeof(version) + sizeof(stat_to_check); }
 };
 
 struct CheckResponse : virtual Response
@@ -587,8 +587,6 @@ public:
 
     /// Useful to check owner of ephemeral node.
     virtual int64_t getSessionID() const = 0;
-
-    virtual int64_t getLastZXIDSeen() const = 0;
 
     virtual String tryGetAvailabilityZone() { return ""; }
 

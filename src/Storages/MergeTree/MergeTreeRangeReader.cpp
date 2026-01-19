@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/MergeTreeReaderIndex.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnConst.h>
@@ -215,11 +214,11 @@ MergeTreeRangeReader::Stream::Stream(size_t from_mark, size_t to_mark, size_t cu
     size_t marks_count = index_granularity->getMarksCount();
     if (from_mark >= marks_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying create stream to read from mark №{} but total marks count is {}",
-            toString(current_mark), toString(marks_count));
+            toString(from_mark), toString(marks_count));
 
     if (last_mark > marks_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying create stream to read to mark №{} but total marks count is {}",
-            toString(current_mark), toString(marks_count));
+            toString(last_mark), toString(marks_count));
 }
 
 void MergeTreeRangeReader::Stream::checkNotFinished() const
@@ -952,7 +951,7 @@ static size_t getTotalBytesInColumns(const Columns & columns)
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t max_rows, MarkRanges & ranges)
 {
     ReadResult result(log);
-    result.columns.resize(merge_tree_reader->getResultColumnCount());
+    result.columns.resize(merge_tree_reader->getColumns().size());
 
     size_t current_task_last_mark = getLastMark(ranges);
 
@@ -1026,24 +1025,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     result.num_rows = result.numReadRows();
 
     updatePerformanceCounters(result.numReadRows());
-
-    if (merge_tree_reader->producesFilterOnly())
-    {
-        chassert(result.columns.size() == 1);
-
-        /// Use the filter column provided by the index reader, if available.
-        if (result.columns.front() != nullptr)
-        {
-            auto current_filter = FilterWithCachedCount(result.columns.front());
-            result.columns.clear();
-            result.optimize(current_filter, merge_tree_reader->canReadIncompleteGranules());
-        }
-        else
-        {
-            result.columns.clear();
-        }
-    }
-
     result.addNumBytesRead(getTotalBytesInColumns(result.columns));
 
     return result;

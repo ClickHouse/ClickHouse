@@ -91,10 +91,9 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::add
     CurrentMetrics::sub
     CurrentMetrics::get
-    CurrentMetrics::set
-    CurrentMetrics::cas
     CurrentMetrics::getDocumentation
     CurrentMetrics::getName
+    CurrentMetrics::set
     CurrentMetrics::end
     CurrentMetrics::Increment
     CurrentMetrics::Metric
@@ -341,8 +340,7 @@ do
 done
 
 # Currently fmt::format is faster both at compile and runtime
-EXCLUDE_STD_FORMAT='HTTPHandler'
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -vP $EXCLUDE | grep -vP $EXCLUDE_STD_FORMAT | xargs grep -l "std::format" | while read -r file;
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -vP $EXCLUDE | xargs grep -l "std::format" | while read -r file;
 do
     echo "Found the usage of std::format in '${file}'. Please use fmt::format instead"
 done

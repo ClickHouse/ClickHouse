@@ -3,6 +3,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -86,7 +87,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
-    extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
 }
 
 namespace ErrorCodes
@@ -313,6 +313,8 @@ void updateTTL(
         subquery->buildSetInplace(context);
 
     auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
+    /// In some cases block can contain Sparse columns (for example, during direct deserialization into Sparse in input formats).
+    ttl_column = ttl_column->convertToFullColumnIfSparse();
     ColumnPtr where_column;
 
     if (ttl_entry.where_expression_ast)
@@ -656,6 +658,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
 
+    for (auto & column : columns)
+        if (column.type->hasDynamicSubcolumnsDeprecated())
+            column.type = block.getByName(column.name).type;
+
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
 
@@ -853,7 +859,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         true,
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
-        (*data_settings)[MergeTreeSetting::nullable_serialization_version],
     };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
@@ -1011,7 +1016,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         true,
         (*data.getSettings())[MergeTreeSetting::serialization_info_version],
         (*data.getSettings())[MergeTreeSetting::string_serialization_version],
-        (*data.getSettings())[MergeTreeSetting::nullable_serialization_version],
     };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);

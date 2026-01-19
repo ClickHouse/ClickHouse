@@ -18,13 +18,14 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -48,6 +49,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int FILE_DOESNT_EXIST;
+extern const int LOGICAL_ERROR;
 extern const int CANNOT_PARSE_NUMBER;
 }
 
@@ -91,19 +93,25 @@ PaimonSnapshot::PaimonSnapshot(const Poco::JSON::Object::Ptr & json_object)
     }
 }
 
-PaimonTableClient::PaimonTableClient(ObjectStoragePtr object_storage_, const String & table_location_, const DB::ContextPtr & context_)
+PaimonTableClient::PaimonTableClient(
+    ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, const DB::ContextPtr & context_)
     : WithContext(context_)
     , object_storage(object_storage_)
-    , table_location(table_location_)
+    , configuration(configuration_)
+    , table_location(configuration.lock()->getPathForRead().path)
     , log(getLogger("PaimonTableClient"))
 {}
 
 std::pair<Int32, String> PaimonTableClient::getLastestTableSchemaInfo()
 {
+    auto configuration_ptr = configuration.lock();
+    if (configuration_ptr == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired.");
+
     /// list all schema files
     const auto schema_files = listFiles(
         *object_storage,
-        table_location,
+        *configuration_ptr,
         PAIMON_SCHEMA_DIR,
         [](const RelativePathWithMetadata & path_with_metadata)
         {
@@ -142,7 +150,7 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
 {
     const auto [max_schema_version, max_schema_path] = schema_meta_info;
     /// parse schema json
-    RelativePathWithMetadata object_info(max_schema_path);
+    ObjectInfo object_info(max_schema_path);
     auto buf = createReadBuffer(object_info, object_storage, getContext(), log);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
@@ -155,11 +163,13 @@ Poco::JSON::Object::Ptr PaimonTableClient::getTableSchemaJSON(const std::pair<In
 
 std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
 {
+    auto configuration_ptr = configuration.lock();
+    if (configuration_ptr == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired.");
     /// read latest hint
     Int64 snapshot_version;
-    RelativePathWithMetadata relative_path_with_metadata(
-        std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT);
-    auto buf = createReadBuffer(relative_path_with_metadata, object_storage, getContext(), log);
+    ObjectInfo object_info(std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT);
+    auto buf = createReadBuffer(object_info, object_storage, getContext(), log);
     String hint_version_string;
     readStringUntilEOF(hint_version_string, *buf);
     {
@@ -181,7 +191,7 @@ std::pair<Int64, String> PaimonTableClient::getLastestTableSnapshotInfo()
     {
         auto snapshot_files = listFiles(
             *object_storage,
-            table_location,
+            *configuration_ptr,
             PAIMON_SNAPSHOT_DIR,
             [](const RelativePathWithMetadata & path_with_metadata)
             {
@@ -224,7 +234,7 @@ PaimonSnapshot PaimonTableClient::getSnapshot(const std::pair<Int64, String> & s
     const auto [latest_snapshot_version, latest_snapshot_path] = snapshot_meta_info;
 
     /// read snapshot and parse
-    RelativePathWithMetadata snapshot_object(latest_snapshot_path);
+    ObjectInfo snapshot_object(latest_snapshot_path);
     auto snapshot_buf = createReadBuffer(snapshot_object, object_storage, getContext(), log);
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *snapshot_buf);
@@ -238,8 +248,8 @@ std::vector<PaimonManifestFileMeta> PaimonTableClient::getManifestMeta(String ma
 {
     /// read manifest list file
     auto context = getContext();
-    RelativePathWithMetadata relative_path(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
-    auto manifest_list_buf = createReadBuffer(relative_path, object_storage, context, log);
+    StorageObjectStorage::ObjectInfo object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_list_path);
+    auto manifest_list_buf = createReadBuffer(object_info, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_list_deserializer(
         std::move(manifest_list_buf), manifest_list_path, getFormatSettings(getContext()));
 
@@ -261,7 +271,7 @@ PaimonTableClient::getDataManifest(String manifest_path, const PaimonTableSchema
         return {};
 
     auto context = getContext();
-    RelativePathWithMetadata object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
+    StorageObjectStorage::ObjectInfo object_info(std::filesystem::path(table_location) / (PAIMON_MANIFEST_DIR) / manifest_path);
     auto manifest_buf = createReadBuffer(object_info, object_storage, context, log);
     Iceberg::AvroForIcebergDeserializer manifest_deserializer(std::move(manifest_buf), manifest_path, getFormatSettings(getContext()));
 

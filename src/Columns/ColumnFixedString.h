@@ -90,16 +90,16 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t index, const Options &options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t index) const override
     {
-        if (options.notFull(name_buf))
-            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, name_buf);
-        return std::make_shared<DataTypeString>();
+        WriteBufferFromOwnString buf;
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, buf);
+        return {buf.str(), std::make_shared<DataTypeString>()};
     }
 
-    std::string_view getDataAt(size_t index) const override
+    StringRef getDataAt(size_t index) const override
     {
-        return {reinterpret_cast<const char *>(&chars[n * index]), n};
+        return StringRef(&chars[n * index], n);
     }
 
     bool isDefaultAt(size_t index) const override;

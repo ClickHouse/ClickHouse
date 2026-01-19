@@ -9,7 +9,6 @@
 #include <base/hex.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnIndex.h>
@@ -259,7 +258,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
 
     LOG_DEBUG(getLogger("DWARF"), "{} units, reading in {} threads", units_queue.size(), num_threads);
 
-    runner.emplace(getFormatParsingThreadPool().get(), ThreadName::DWARF_DECODER);
+    runner.emplace(getFormatParsingThreadPool().get(), "DWARFDecoder");
     for (size_t i = 0; i < num_threads; ++i)
         runner.value()(
             [this, thread_group = CurrentThread::getGroup()]()
@@ -563,7 +562,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                             if (need[COL_ATTR_STR])
                             {
                                 auto data = unit.filename_table->getDataAt(idx);
-                                col_attr_str->insertData(data.data(), data.size());
+                                col_attr_str->insertData(data.data, data.size);
                             }
                         }
                         else if (need[COL_ATTR_STR])

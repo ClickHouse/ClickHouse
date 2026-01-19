@@ -162,7 +162,7 @@ OwnedRefreshTask RefreshTask::create(
 {
     auto task = std::make_shared<RefreshTask>(view, context, strategy, attach, coordinated, empty, is_restore_from_backup);
 
-    task->refresh_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshTask",
+    task->refresh_task = context->getSchedulePool().createTask("RefreshTask",
         [self = task.get()] { self->refreshTask(); });
 
     task->refresh_task_watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->refresh_task->getWatchCallback()](const Coordination::WatchResponse & response)
@@ -668,8 +668,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     LOG_DEBUG(log, "Refreshing view {}", view_storage_id.getFullTableName());
     execution.progress.reset();
 
-    static constexpr bool internal = true;
-
     ContextMutablePtr refresh_context = view->getContext();
     ProcessList::EntryPtr process_list_entry;
     std::optional<StorageID> table_to_drop;
@@ -707,7 +705,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
             process_list_entry = refresh_context->getProcessList().insert(
-                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
+                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
             refresh_context->setProgressCallback([this](const Progress & prog)
@@ -731,7 +729,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             /// cover the surrounding CREATE, EXCHANGE, and DROP queries.
             query_log_elem = logQueryStart(
                 start_time, refresh_context, query_for_logging, normalized_query_hash, refresh_query, pipeline,
-                &interpreter, /*internal*/ internal, view_storage_id.database_name,
+                &interpreter, /*internal*/ false, view_storage_id.database_name,
                 view_storage_id.table_name, /*async_insert*/ false);
 
             if (!pipeline.completed())
@@ -767,7 +765,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
                 /// `executor` must be destroyed before `pipeline`!
             }
 
-            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal);
+            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/false);
             query_log_elem = std::nullopt;
             query_span = nullptr;
         }
@@ -794,13 +792,13 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
 
         if (query_log_elem.has_value())
         {
-            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ internal, /*log_error*/ !cancelled);
+            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ false, /*log_error*/ !cancelled);
         }
         else
         {
             /// Failed when creating new table or when swapping tables.
             logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context,
-                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal);
+                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds());
         }
 
         if (cancelled)

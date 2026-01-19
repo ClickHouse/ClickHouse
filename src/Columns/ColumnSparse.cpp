@@ -96,9 +96,9 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-DataTypePtr  ColumnSparse::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
 {
-    return values->getValueNameAndTypeImpl(name_buf, getValueIndex(n), options);
+    return values->getValueNameAndType(getValueIndex(n));
 }
 
 bool ColumnSparse::getBool(size_t n) const
@@ -131,7 +131,7 @@ UInt64 ColumnSparse::get64(size_t n) const
     return values->get64(getValueIndex(n));
 }
 
-std::string_view ColumnSparse::getDataAt(size_t n) const
+StringRef ColumnSparse::getDataAt(size_t n) const
 {
     return values->getDataAt(getValueIndex(n));
 }
@@ -159,7 +159,7 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }

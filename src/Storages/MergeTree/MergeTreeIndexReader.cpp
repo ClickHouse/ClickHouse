@@ -147,10 +147,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         MergeTreeIndexDeserializationState state
         {
             .version = version,
-            .condition = condition,
-            .part = *part,
-            .index = *index,
-            .index_mark = mark
+            .condition = condition
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);
@@ -163,17 +160,18 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     ///
     /// The same cannot be done for other skip indexes. Because their GRANULARITY is small (e.g. 1), the sheer number of skip index granules
     /// would create too much lock contention in the cache (this was learned the hard way).
-    if (index->isVectorSimilarityIndex())
+    if (!index->isVectorSimilarityIndex())
     {
-        VectorSimilarityIndexCacheKey key{part->getDataPartStorage().getFullPath(),
-                                          index->getFileName(),
-                                          mark};
-
-        granule = vector_similarity_index_cache->getOrSet(key, load_func);
+        load_func(granule);
     }
     else
     {
-        load_func(granule);
+        UInt128 key = VectorSimilarityIndexCache::hash(
+            part->getDataPartStorage().getFullPath(),
+            index->getFileName(),
+            mark);
+
+        granule = vector_similarity_index_cache->getOrSet(key, load_func);
     }
 }
 

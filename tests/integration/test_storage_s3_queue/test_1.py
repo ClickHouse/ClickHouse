@@ -342,10 +342,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 
 
 def test_max_set_age(started_cluster):
-    # We use an instance without keeper fault injection,
-    # because otherwise we fail to update keeper state in 1.5 * max_age,
-    # so we cannot check max_set_age correctness properly.
-    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    node = started_cluster.instances["instance"]
     table_name = f"max_set_age_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests

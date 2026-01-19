@@ -97,7 +97,13 @@ MergedColumnOnlyOutputStream::fillChecksums(
     auto serialization_infos = new_part->getSerializationInfos();
     serialization_infos.replaceData(new_serialization_infos);
 
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
+    NameSet empty_columns;
+    for (const auto & column : writer->getColumnsSample())
+    {
+        if (new_part->expired_columns.contains(column.name))
+            empty_columns.emplace(column.name);
+    }
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, empty_columns, serialization_infos, checksums);
 
     for (const String & removed_file : removed_files)
     {

@@ -566,8 +566,6 @@ public:
 
     uint64_t getSessionTimeoutMS() const { return args.session_timeout_ms; }
 
-    int64_t getLastZXIDSeen() const { return impl->getLastZXIDSeen(); }
-
     void setServerCompletelyStarted();
 
     std::optional<int8_t> getConnectedHostIdx() const;

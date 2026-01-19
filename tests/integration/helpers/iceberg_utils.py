@@ -155,14 +155,10 @@ def write_iceberg_from_df(
         if partition_by is None:
             df.writeTo(table_name).tableProperty(
                 "format-version", format_version
-            ).tableProperty(
-                "write.parquet.row-group-size-bytes", "104850"  # 1MB
             ).using("iceberg").create()
         else:
             df.writeTo(table_name).tableProperty(
                 "format-version", format_version
-            ).tableProperty(
-                "write.parquet.row-group-size-bytes", "104850"  # 1MB
             ).partitionedBy(partition_by).using("iceberg").create()
     else:
         df.writeTo(table_name).append()
@@ -194,7 +190,6 @@ def get_creation_expression(
     if_not_exists=False,
     compression_method=None,
     format="Parquet",
-    order_by="",
     table_function=False,
     use_version_hint=False,
     run_on_cluster=False,
@@ -212,10 +207,6 @@ def get_creation_expression(
 
     if partition_by:
         partition_by = "PARTITION BY " + partition_by
-
-    if order_by:
-        order_by = "ORDER BY " + order_by
-
     settings_array.append(f"iceberg_format_version = {format_version}")
 
     if compression_method:
@@ -248,9 +239,8 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                     ENGINE=IcebergS3(s3, filename = 'var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
-                    {order_by}
                     {partition_by}
-                    {settings_expression};
+                    {settings_expression}
                     """
                 )
 
@@ -271,7 +261,6 @@ def get_creation_expression(
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                     ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/', format={format})
-                    {order_by}
                     {partition_by}
                     {settings_expression}
                     """
@@ -290,7 +279,6 @@ def get_creation_expression(
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {if_not_exists_prefix} {table_name} {schema}
                 ENGINE=IcebergLocal(local, path = '/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}', format={format})
-                {order_by}
                 {partition_by}
                 {settings_expression}
                 """
@@ -379,17 +367,16 @@ def create_iceberg_table(
     compression_method=None,
     run_on_cluster=False,
     format="Parquet",
-    order_by="",
     **kwargs,
 ):
     if 'output_format_parquet_use_custom_encoder' in kwargs:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster = run_on_cluster, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, run_on_cluster = run_on_cluster, **kwargs),
             settings={"output_format_parquet_use_custom_encoder" : 0, "output_format_parquet_parallel_encoding" : 0}
         )
     else:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, order_by, run_on_cluster=run_on_cluster, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, run_on_cluster=run_on_cluster, **kwargs),
         )
 
 

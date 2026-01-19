@@ -154,24 +154,24 @@ void ExternalTable::initReadBuffer()
 
 ExternalTable::ExternalTable(const boost::program_options::variables_map & external_options)
 {
-    if (external_options.contains("file"))
+    if (external_options.count("file"))
         file = external_options["file"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--file field have not been provided for external table");
 
-    if (external_options.contains("name"))
+    if (external_options.count("name"))
         name = external_options["name"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--name field have not been provided for external table");
 
-    if (external_options.contains("format"))
+    if (external_options.count("format"))
         format = external_options["format"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--format field have not been provided for external table");
 
-    if (external_options.contains("structure"))
+    if (external_options.count("structure"))
         parseStructureFromStructureField(external_options["structure"].as<std::string>());
-    else if (external_options.contains("types"))
+    else if (external_options.count("types"))
         parseStructureFromTypesField(external_options["types"].as<std::string>());
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Neither --structure nor --types have not been provided for external table");

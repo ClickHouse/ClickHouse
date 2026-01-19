@@ -133,14 +133,12 @@ YTsarususDictionarySource::YTsarususDictionarySource(const YTsarususDictionarySo
 
 YTsarususDictionarySource::~YTsarususDictionarySource() = default;
 
-BlockIO YTsarususDictionarySource::loadAll()
+QueryPipeline YTsarususDictionarySource::loadAll()
 {
-    BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings}, sample_block, max_block_size));
-    return io;
+    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings}, sample_block, max_block_size));
 }
 
-BlockIO YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids)
+QueryPipeline YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is required for selective loading");
@@ -149,13 +147,10 @@ BlockIO YTsarususDictionarySource::loadIds(const std::vector<UInt64> & ids)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
 
     auto block = blockForIds(dict_struct, ids);
-
-    BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block)}, sample_block, max_block_size));
-    return io;
+    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block)}, sample_block, max_block_size));
 }
 
-BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+QueryPipeline YTsarususDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     if (!supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
@@ -167,10 +162,7 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const s
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
 
     auto block = blockForKeys(dict_struct, key_columns, requested_rows);
-
-    BlockIO io;
-    io.pipeline = QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block)}, sample_block, max_block_size));
-    return io;
+    return QueryPipeline(YTsaurusSourceFactory::createSource(client, {.cypress_path = configuration->cypress_path, .settings = configuration->settings, .lookup_input_block = std::move(block)}, sample_block, max_block_size));
 }
 
 bool YTsarususDictionarySource::supportsSelectiveLoad() const

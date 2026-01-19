@@ -15,10 +15,12 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_inverted_index", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
     context->setSetting("allow_experimental_codecs", 1);
+    context->setSetting("allow_experimental_live_view", 1);
     context->setSetting("allow_experimental_window_view", 1);
     context->setSetting("allow_experimental_funnel_functions", 1);
     context->setSetting("allow_experimental_nlp_functions", 1);
     context->setSetting("allow_experimental_hash_functions", 1);
+    context->setSetting("allow_experimental_object_type", 1);
     context->setSetting("allow_experimental_vector_similarity_index", 1);
     context->setSetting("allow_experimental_window_functions", 1);
     context->setSetting("allow_experimental_geo_types", 1);
@@ -47,6 +49,8 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_s3queue", 1);
     context->setSetting("allow_experimental_database_iceberg", 1);
     context->setSetting("allow_experimental_database_hms_catalog", 1);
+    context->setSetting("allow_not_comparable_types_in_comparison_functions", 1);
+    context->setSetting("allow_not_comparable_types_in_order_by", 1);
     context->setSetting("allow_experimental_database_unity_catalog", 1);
     context->setSetting("allow_experimental_database_glue_catalog", 1);
     context->setSetting("allow_database_unity_catalog", 1);

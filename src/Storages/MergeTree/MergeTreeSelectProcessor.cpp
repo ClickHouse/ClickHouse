@@ -91,11 +91,9 @@ std::optional<ParallelReadResponse> ParallelReadingExtension::sendReadRequest(
 
 MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
     RangesByIndex read_ranges_,
-    ProjectionRangesByIndex projection_read_ranges_,
     MergeTreeIndexReadResultPoolPtr index_reader_pool_,
     PartRemainingMarks part_remaining_marks_)
     : read_ranges(std::move(read_ranges_))
-    , projection_read_ranges(std::move(projection_read_ranges_))
     , index_reader_pool(std::move(index_reader_pool_))
     , part_remaining_marks(std::move(part_remaining_marks_))
 {
@@ -105,15 +103,12 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
 {
     const auto & part_ranges = read_ranges.at(task.getInfo().part_index_in_query);
-    auto it = projection_read_ranges.find(task.getInfo().part_index_in_query);
-    static RangesInDataParts empty_parts_ranges;
-    const auto & projection_parts_ranges = it != projection_read_ranges.end() ? it->second : empty_parts_ranges;
     auto & remaining_marks = part_remaining_marks.at(task.getInfo().part_index_in_query).value;
-    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(part_ranges, projection_parts_ranges);
+    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(part_ranges);
 
     /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
     /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
-    /// cleanup of any per-part cached resources (e.g., skip index read result or projection index bitmaps).
+    /// cleanup of any per-part cached resources (e.g., skip index read result).
     size_t task_marks = task.getNumMarksToRead();
     bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
 
@@ -229,54 +224,6 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     return prewhere_actions;
 }
 
-ChunkAndProgress
-MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const
-{
-    if (!current_task.getReadersChain().isInitialized())
-        current_task.initializeReadersChain(prewhere_actions, merge_tree_index_build_context, read_steps_performance_counters);
-
-    auto res = task_algorithm.readFromTask(current_task);
-
-    if (res.row_count)
-    {
-        injectLazilyReadColumns(res.row_count, res.block, current_task.getInfo().part_index_in_query, lazily_read_info);
-
-        /// Reorder the columns according to result_header
-        Columns ordered_columns;
-        ordered_columns.reserve(result_header.columns());
-        for (size_t i = 0; i < result_header.columns(); ++i)
-        {
-            auto name = result_header.getByPosition(i).name;
-            ordered_columns.push_back(res.block.getByName(name).column);
-        }
-
-        auto chunk = Chunk(ordered_columns, res.row_count);
-        const auto & data_part = current_task.getInfo().data_part;
-        if (add_part_level)
-            chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
-
-        if (reader_settings.use_query_condition_cache)
-        {
-            String part_name
-                = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name) : data_part->name;
-            chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(
-                data_part->storage.getStorageID().uuid,
-                part_name,
-                data_part->index_granularity->getMarksCount(),
-                data_part->index_granularity->hasFinalMark(),
-                res.read_mark_ranges));
-        }
-
-        return ChunkAndProgress{
-            .chunk = std::move(chunk), .num_read_rows = res.num_read_rows, .num_read_bytes = res.num_read_bytes, .is_finished = false};
-    }
-
-    if (reader_settings.use_query_condition_cache && prewhere_info)
-        current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
-
-    return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
-}
-
 ChunkAndProgress MergeTreeSelectProcessor::read()
 {
     while (!is_cancelled)
@@ -330,7 +277,52 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             throw;
         }
 
-        return readCurrentTask(*task, *algorithm);
+        if (!task->getReadersChain().isInitialized())
+            initializeReadersChain();
+
+        auto res = algorithm->readFromTask(*task);
+
+        if (res.row_count)
+        {
+            injectLazilyReadColumns(res.row_count, res.block, task.get()->getInfo().part_index_in_query, lazily_read_info);
+
+            /// Reorder the columns according to result_header
+            Columns ordered_columns;
+            ordered_columns.reserve(result_header.columns());
+            for (size_t i = 0; i < result_header.columns(); ++i)
+            {
+                auto name = result_header.getByPosition(i).name;
+                ordered_columns.push_back(res.block.getByName(name).column);
+            }
+
+            auto chunk = Chunk(ordered_columns, res.row_count);
+            const auto & data_part = task->getInfo().data_part;
+            if (add_part_level)
+                chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
+
+            if (reader_settings.use_query_condition_cache)
+            {
+                String part_name = data_part->isProjectionPart()
+                    ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+                    : data_part->name;
+                chunk.getChunkInfos().add(
+                    std::make_shared<MarkRangesInfo>(
+                        data_part->storage.getStorageID().uuid, part_name,
+                        data_part->index_granularity->getMarksCount(), data_part->index_granularity->hasFinalMark(),
+                        res.read_mark_ranges));
+            }
+
+            return ChunkAndProgress{
+                .chunk = std::move(chunk),
+                .num_read_rows = res.num_read_rows,
+                .num_read_bytes = res.num_read_bytes,
+                .is_finished = false};
+        }
+
+        if (reader_settings.use_query_condition_cache && prewhere_info)
+            task->addPrewhereUnmatchedMarks(res.read_mark_ranges);
+
+        return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
     }
 
     return {Chunk(), 0, 0, true};
@@ -343,6 +335,11 @@ void MergeTreeSelectProcessor::cancel() noexcept
 
     if (merge_tree_index_build_context)
         merge_tree_index_build_context->index_reader_pool->cancel();
+}
+
+void MergeTreeSelectProcessor::initializeReadersChain()
+{
+    task->initializeReadersChain(prewhere_actions, merge_tree_index_build_context, read_steps_performance_counters);
 }
 
 void MergeTreeSelectProcessor::injectLazilyReadColumns(

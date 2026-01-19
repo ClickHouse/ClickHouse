@@ -9,6 +9,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -34,8 +35,6 @@
 #include <Interpreters/castColumn.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <orc/Vector.hh>
-#include <Common/DateLUTImpl.h>
-#include <Common/setThreadName.h>
 #include <Common/Allocator.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -63,7 +62,7 @@ ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool
     : in(in_), file_size(file_size_), supports_read_at(use_prefetch && in_.supportsReadAt())
 {
     if (supports_read_at)
-        async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::ORC_FILE);
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ORCFile");
 }
 
 UInt64 ORCInputStream::getLength() const
@@ -550,7 +549,7 @@ static void buildORCSearchArgumentImpl(
                 }
             }
 
-            String column_name = getColumnNameFromKeyCondition(key_condition, curr.getKeyColumn());
+            String column_name = getColumnNameFromKeyCondition(key_condition, curr.key_column);
             const auto * orc_type = getORCTypeByName(schema, column_name, format_settings.orc.case_insensitive_column_matching);
             if (!orc_type)
             {

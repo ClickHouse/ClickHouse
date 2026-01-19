@@ -157,6 +157,7 @@ private:
     using DeserializeStates = std::map<String, DeserializeState>;
     DeserializeStates deserialize_states;
 
+    void readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache);
     void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
     bool isFinished();
 };
@@ -192,8 +193,17 @@ Chunk LogSource::generate()
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
+    std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
     Block res;
 
+    /// First, read prefixes for all columns/subcolumns.
+    for (const auto & name_and_type : columns)
+    {
+        auto name_and_type_on_disk = getColumnOnDisk(name_and_type);
+        readPrefix(name_and_type_on_disk, caches[name_and_type_on_disk.getNameInStorage()], deserialize_states_caches[name_and_type_on_disk.getNameInStorage()]);
+    }
+
+    /// Second, read the data of all columns/subcolumns.
     for (const auto & name_type : columns)
     {
         ColumnPtr column;
@@ -232,6 +242,35 @@ Chunk LogSource::generate()
     return Chunk(res.getColumns(), num_rows);
 }
 
+void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache)
+{
+    if (deserialize_states.contains(name_and_type.name))
+        return;
+
+    auto serialization = IDataType::getSerialization(name_and_type);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
+    {
+        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+            return nullptr;
+
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
+
+        const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
+        if (data_file_it == storage.data_files_by_names.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
+        const auto & data_file = *data_file_it->second;
+
+        size_t offset = 0;
+        size_t file_size = file_sizes[data_file.index];
+
+        auto it = streams.try_emplace(data_file_name, storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
+        return &it->second.compressed.value();
+    };
+
+    serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name_and_type.name], &deserialize_state_cache);
+}
 
 void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & column,
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
@@ -240,36 +279,34 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
     const auto & [name, type] = name_and_type;
     auto serialization = IDataType::getSerialization(name_and_type);
 
-    auto create_stream_getter = [&](bool stream_for_prefix)
+    settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        return [&, stream_for_prefix] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
-        {
-            if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
-                return nullptr;
+        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+            return nullptr;
 
-            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
 
-            const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
-            if (data_file_it == storage.data_files_by_names.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
-            const auto & data_file = *data_file_it->second;
+        const auto & data_file_it = storage.data_files_by_names.find(data_file_name);
+        if (data_file_it == storage.data_files_by_names.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No information about file {} in StorageLog", data_file_name);
+        const auto & data_file = *data_file_it->second;
 
-            size_t offset = stream_for_prefix ? 0 : offsets[data_file.index];
-            size_t file_size = file_sizes[data_file.index];
+        size_t offset = offsets[data_file.index];
+        size_t file_size = file_sizes[data_file.index];
 
-            auto it = streams.try_emplace(data_file_name, storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
-            return &it->second.compressed.value();
-        };
+        auto it = streams.try_emplace(data_file_name, storage.disk, data_file.path, offset, file_size, limited_by_file_sizes, read_settings).first;
+        return &it->second.compressed.value();
     };
 
-    if (!deserialize_states.contains(name))
-    {
-        settings.getter = create_stream_getter(true);
-        serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name], nullptr);
-    }
-
-    settings.getter = create_stream_getter(false);
     serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    if (column->getDataType() != name_and_type.type->getColumnType())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected return type when reading column '{}' from {}. Expected {}. Got {}",
+            name_and_type.name,
+            storage.getStorageID().getFullTableName(),
+            name_and_type.type->getColumnType(),
+            column->getDataType());
 }
 
 bool LogSource::isFinished()
@@ -470,7 +507,7 @@ ISerialization::OutputStreamGetter LogSink::createStreamGetter(const NameAndType
 {
     return [&] (const ISerialization::SubstreamPath & path) -> WriteBuffer *
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
         auto it = streams.find(data_file_name);
         if (it == streams.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream was not created when writing data in LogSink");
@@ -518,7 +555,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
         auto it = streams.find(data_file_name);
         if (it == streams.end())
         {
@@ -548,7 +585,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
     {
         serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
         {
-            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
+            String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
             const auto & stream = streams.at(data_file_name);
             if (stream.written)
                 return;
@@ -566,7 +603,7 @@ void LogSink::writeData(const NameAndTypePair & name_and_type, const IColumn & c
 
     serialization->enumerateStreams([&] (const ISerialization::SubstreamPath & path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
+        String data_file_name = ISerialization::getFileNameForStream(name_and_type, path);
         auto & stream = streams.at(data_file_name);
         if (stream.written)
             return;
@@ -696,7 +733,7 @@ void StorageLog::addDataFiles(const NameAndTypePair & column)
 
     ISerialization::StreamCallback stream_callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
-        String data_file_name = ISerialization::getFileNameForStream(column, substream_path, {});
+        String data_file_name = ISerialization::getFileNameForStream(column, substream_path);
         if (!data_files_by_names.contains(data_file_name))
         {
             DataFile & data_file = data_files.emplace_back();
@@ -1002,7 +1039,7 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
     {
         ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
         {
-            String data_file_name = ISerialization::getFileNameForStream(column, substream_path, {});
+            String data_file_name = ISerialization::getFileNameForStream(column, substream_path);
             auto it = data_files_by_names.find(data_file_name);
             if (it != data_files_by_names.end())
             {

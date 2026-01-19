@@ -258,7 +258,7 @@ public:
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
 
         if (filter_dag)
         {
@@ -522,7 +522,7 @@ Chunk StorageURLSource::generate()
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
-        (*pipeline).reset();
+        pipeline->reset();
         reader.reset();
         input_format.reset();
         read_buf.reset();
@@ -713,7 +713,6 @@ void StorageURLSink::finalizeBuffers()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        cancelBuffers();
         releaseBuffers();
         throw;
     }
@@ -933,25 +932,11 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
             auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext());
             StorageURL::getSchemaCache(getContext()).addColumns(key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            for (const auto & options : url_options_to_check)
-            {
-                auto keys = getKeysForSchemaCache(options, *format, format_settings, getContext());
-                StorageURL::getSchemaCache(getContext()).addManyColumns(keys, columns);
-            }
         }
 
         void setFormatName(const String & format_name) override

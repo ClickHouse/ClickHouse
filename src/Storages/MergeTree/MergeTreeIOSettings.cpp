@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -43,7 +44,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 marks_compress_block_size;
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
-    extern const MergeTreeSettingsNonZeroUInt64 adaptive_write_buffer_initial_size;
+    extern const MergeTreeSettingsUInt64 adaptive_write_buffer_initial_size;
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
     extern const MergeTreeSettingsUInt64 min_compress_block_size;
     extern const MergeTreeSettingsNonZeroUInt64 primary_key_compress_block_size;

@@ -52,8 +52,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
-#include <base/Decimal_fwd.h>
-#include <base/types.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <ranges>
 
@@ -79,8 +77,8 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
+    extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsBool allow_experimental_correlated_subqueries;
-    extern const SettingsString implicit_table_at_top_level;
 }
 
 
@@ -636,8 +634,8 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
+    // We support limit in the range [INT64_MIN, UINT64_MAX]
 
-    // We support limit in the range [INT64_MIN, UINT64_MAX] for integral limit or (0, 1) for fractional limit
     // Consider the nonnegative limit case first as they are more common
     {
         Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
@@ -667,25 +665,10 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
         }
     }
 
-    {
-        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeFloat64());
-        if (!converted_value.isNull())
-        {
-            auto value = converted_value.safeGet<Float64>();
-            if (value < 1 && value > 0)
-            {
-                auto result_constant_node = std::make_shared<ConstantNode>(Field(value), std::make_shared<DataTypeFloat64>());
-                result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
-
-                expression_node = std::move(result_constant_node);
-                return;
-            }
-        }
-    }
-
+    // If we are here, then the number is either outside the supported range or float
     throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
-        applyVisitor(FieldVisitorToString(), limit_offset_constant_node->getValue()) , expression_description);
+        "{} numeric constant expression is not representable as UInt64 or Int64",
+        expression_description);
 }
 
 void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
@@ -2267,7 +2250,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         for (size_t i = 0; i < strict_transformer_column_names_size; ++i)
         {
             const auto & column_name = (*strict_transformer_column_names)[i];
-            if (!used_column_names.contains(column_name))
+            if (used_column_names.find(column_name) == used_column_names.end())
                 non_matched_column_names.push_back(column_name);
         }
 
@@ -3225,8 +3208,8 @@ void QueryAnalyzer::validateSortingKeyType(const DataTypePtr & sorting_key_type,
                 "its a JSON path subcolumn) or casting this column to a specific data type. "
                 "Set setting allow_suspicious_types_in_order_by = 1 in order to allow it");
 
-        if (!type.isComparable())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable", type.getName());
+        if (!scope.context->getSettingsRef()[Setting::allow_not_comparable_types_in_order_by] && !type.isComparable())
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable. Set setting allow_not_comparable_types_in_order_by = 1 in order to allow it", type.getName());
     };
 
     check(*sorting_key_type);
@@ -3603,7 +3586,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     {
         const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
-        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals();
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
         if (storage_snapshot->storage.supportsSubcolumns())
         {
             get_column_options.withSubcolumns();
@@ -3646,6 +3629,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             }
         }
 
+        table_expression_data.column_name_to_column_node = std::move(column_name_to_column_node);
         for (auto & [alias_column_to_resolve_name, alias_column_to_resolve] : alias_columns_to_resolve)
         {
             /** Alias column could be potentially resolved during resolve of other ALIAS column.
@@ -3653,10 +3637,10 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
               *
               * During resolve of alias_value_1, alias_value_2 column will be resolved.
               */
-            alias_column_to_resolve = column_name_to_column_node[alias_column_to_resolve_name];
+            alias_column_to_resolve = table_expression_data.column_name_to_column_node[alias_column_to_resolve_name];
 
             IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
-            alias_column_resolve_scope.column_name_to_column_node = std::move(column_name_to_column_node);
+            alias_column_resolve_scope.table_expression_data_for_alias_resolution = &table_expression_data;
             alias_column_resolve_scope.context = scope.context;
 
             /// Initialize aliases in alias column scope
@@ -3670,11 +3654,8 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
             auto & resolved_expression = alias_column_to_resolve->getExpression();
             if (!resolved_expression->getResultType()->equals(*alias_column_to_resolve->getResultType()))
                 resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
-            column_name_to_column_node = std::move(alias_column_resolve_scope.column_name_to_column_node);
-            column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
+            table_expression_data.column_name_to_column_node[alias_column_to_resolve_name] = alias_column_to_resolve;
         }
-
-        table_expression_data.column_name_to_column_node = std::move(column_name_to_column_node);
     }
     else if (query_node || union_node)
     {
@@ -3903,6 +3884,14 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
         if (auto * expression_list = table_function_argument->as<ListNode>())
         {
+            if (expression_list->getNodes().empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Table function {} argument at position {} resolved to an empty expression list (parsed as: {})",
+                    table_function_name,
+                    table_function_argument_index + 1,
+                    table_function_argument->formatASTForErrorMessage());
+
             for (auto & expression_list_node : expression_list->getNodes())
                 result_table_function_arguments.push_back(expression_list_node);
         }
@@ -3920,7 +3909,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     uint64_t use_structure_from_insertion_table_in_table_functions
         = scope_context->getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
-    if (!nested_table_function && !scope.subquery_depth && use_structure_from_insertion_table_in_table_functions && scope_context->hasInsertionTable()
+    if (!nested_table_function && use_structure_from_insertion_table_in_table_functions && scope_context->hasInsertionTable()
         && table_function_ptr->needStructureHint())
     {
         const auto & insertion_table = scope_context->getInsertionTable();

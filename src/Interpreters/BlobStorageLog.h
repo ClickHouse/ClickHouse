@@ -5,7 +5,6 @@
 
 #include <Poco/Message.h>
 
-#include <Common/setThreadName.h>
 #include <Common/SharedMutex.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
@@ -31,7 +30,7 @@ struct BlobStorageLogElement
 
     String query_id;
     UInt64 thread_id = 0;
-    ThreadName thread_name;
+    String thread_name;
 
     String disk_name;
     String bucket;

@@ -4,7 +4,7 @@ sidebar_label: 'Defining Dictionaries'
 sidebar_position: 35
 slug: /sql-reference/dictionaries
 title: 'Dictionaries'
-doc_type: 'reference'
+doc_type: 'Reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
@@ -425,6 +425,7 @@ LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
+The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) type.
 This storage method works the same way as hashed and allows using date/time (arbitrary numeric type) ranges in addition to the key.
 
 Example: The table contains discounts for each advertiser in the format:
@@ -2108,7 +2109,7 @@ This table contains a column `parent_region` that contains the key of the neares
 
 ClickHouse supports the hierarchical property for external dictionary attributes. This property allows you to configure the hierarchical dictionary similar to described above.
 
-The [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictGetHierarchy) function allows you to get the parent chain of an element.
+The [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy) function allows you to get the parent chain of an element.
 
 For our example, the structure of dictionary can be the following:
 
@@ -2340,7 +2341,7 @@ With a powerful YAML configure file, we can use a regexp tree dictionaries as a 
 
 #### Collecting Attribute Values {#collecting-attribute-values}
 
-Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](../../sql-reference/functions/ext-dict-functions.md#dictGetAll) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
+Sometimes it is useful to return values from multiple regular expressions that matched, rather than just the value of a leaf node. In these cases, the specialized [`dictGetAll`](../../sql-reference/functions/ext-dict-functions.md#dictgetall) function can be used. If a node has an attribute value of type `T`, `dictGetAll` will return an `Array(T)` containing zero or more values.
 
 By default, the number of matches returned per key is unbounded. A bound can be passed as an optional fourth argument to `dictGetAll`. The array is populated in _topological order_, meaning that child nodes come before parent nodes, and sibling nodes follow the ordering in the source.
 

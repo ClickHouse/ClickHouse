@@ -328,9 +328,9 @@ void ProgressTable::updateTable(const Block & block)
         if (thread_id != THREAD_GROUP_ID)
             continue;
 
-        std::string name{names.getDataAt(row_num)};
+        auto name = names.getDataAt(row_num).toString();
         auto value = array_values[row_num];
-        std::string host_name{host_names.getDataAt(row_num)};
+        auto host_name = host_names.getDataAt(row_num).toString();
         auto type = static_cast<ProfileEvents::Type>(array_type[row_num]);
 
         /// Got unexpected event name.

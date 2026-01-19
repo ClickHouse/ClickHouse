@@ -102,34 +102,23 @@ def test_yt_dictionary_complex_key(started_cluster, dynamic_table, layout):
 
 
 @pytest.mark.parametrize(
-    "dynamic_table, replicated_table",
+    "dynamic_table",
     [
-        (True, True),
-        (True, False),
-        (False, False),
+        (True),
+        (False),
     ],
 )
-def test_yt_dictionary_cache_id(started_cluster, dynamic_table, replicated_table):
+def test_yt_dictionary_cache_id(started_cluster, dynamic_table):
     yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
     path = "//tmp/table"
 
-    if not replicated_table:
-        yt.create_table(
-            path,
-            '{"id":1,"value":20}{"id":2,"value":40}{"id":3,"value":30}',
-            sorted_columns=("id"),
-            schema={"id": "uint64", "value": "int32"},
-            dynamic=dynamic_table,
-        )
-    else:
-        yt.create_replciated_table(
-            path,
-            yt_uri_helper.ytcluster_name,
-            '{"id":1,"value":20}{"id":2,"value":40}{"id":3,"value":30}',
-            sorted_columns=("id"),
-            schema={"id": "uint64", "value": "int32"},
-        )
-
+    yt.create_table(
+        path,
+        '{"id":1,"value":20}{"id":2,"value":40}{"id":3,"value":30}',
+        sorted_columns=("id"),
+        schema={"id": "uint64", "value": "int32"},
+        dynamic=dynamic_table,
+    )
     instance.query(
         f"CREATE DICTIONARY yt_dict(id UInt64, value Int32) PRIMARY KEY id SOURCE(YTSAURUS(http_proxy_urls '{yt_uri_helper.uri}' cypress_path '{path}' oauth_token '{yt_uri_helper.token}')) LAYOUT(CACHE(SIZE_IN_CELLS 10)) LIFETIME(MIN 0 MAX 1000)"
     )
@@ -148,11 +137,7 @@ def test_yt_dictionary_cache_id(started_cluster, dynamic_table, replicated_table
         )
         instance.query_and_get_error("SELECT dictGet('yt_dict', 'value', 2)") == "40\n"
     instance.query("DROP DICTIONARY yt_dict")
-
-    if not replicated_table:
-        yt.remove_table(path)
-    else:
-        yt.remove_replicated_table(path)
+    yt.remove_table(path)
 
 
 @pytest.mark.parametrize(

@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -298,10 +299,6 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
         if (res_columns[i] == nullptr || isColumnConst(*res_columns[i]))
             continue;
 
-        /// Small hack. Currently sparse serialization is not supported with Arrays.
-        if (res_columns[i]->isSparse())
-            continue;
-
         auto serialization_info = available_column->type->getSerializationInfo(*res_columns[i]);
         auto serialization = available_column->type->getSerialization(serialization_info->getKindStack(), IDataType::getSerialization(*available_column));
         serialization->enumerateStreams([&](const auto & subpath)
@@ -309,7 +306,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, {});
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath);
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
@@ -428,7 +425,7 @@ void fillMissingColumns(
         const auto * array_type = typeid_cast<const DataTypeArray *>(requested_column->type.get());
         if (array_type && !offsets_columns.empty())
         {
-            num_dimensions = array_type->getNumberOfDimensions();
+            num_dimensions = getNumberOfDimensions(*array_type);
             current_offsets.resize(num_dimensions);
 
             SerializationPtr serialization = IDataType::getSerialization(*requested_column);
@@ -445,7 +442,7 @@ void fillMissingColumns(
                 if (level >= num_dimensions)
                     return;
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, {});
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
                     current_offsets[level] = it->second;

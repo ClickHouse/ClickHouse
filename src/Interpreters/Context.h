@@ -19,6 +19,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
@@ -100,9 +101,6 @@ class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
 class VectorSimilarityIndexCache;
-class TextIndexDictionaryBlockCache;
-class TextIndexHeaderCache;
-class TextIndexPostingsCache;
 class ProcessList;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -118,7 +116,6 @@ class QueryMetricLog;
 class QueryThreadLog;
 class QueryViewsLog;
 class PartLog;
-class BackgroundSchedulePoolLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
@@ -127,7 +124,6 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class ZooKeeperConnectionLog;
-class AggregatedZooKeeperLog;
 class IcebergMetadataLog;
 class DeltaMetadataLog;
 class SessionLog;
@@ -172,7 +168,7 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;
 using DiskSelectorPtr = std::shared_ptr<const DiskSelector>;
-using DisksMap = std::map<String, DiskPtr, std::less<>>;
+using DisksMap = std::map<String, DiskPtr>;
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
@@ -262,9 +258,6 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
-class ReverseLookupCache;
-using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
-
 class ContextTimeSeriesTagsCollector;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
@@ -351,9 +344,6 @@ protected:
 
     using FileProgressCallback = std::function<void(const FileProgress & progress)>;
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
-
-    using InteractiveCancelCallback = std::function<bool()>;
-    InteractiveCancelCallback interactive_cancel_callback; /// Callback for usage in interactive sessions with CompletedPipelineExecutor
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
@@ -522,6 +512,7 @@ protected:
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
+    mutable std::mutex table_function_results_mutex;
 
     ContextWeakMutablePtr query_context;
     ContextWeakMutablePtr session_context;  /// Session context or nullptr. Could be equal to this.
@@ -545,10 +536,6 @@ protected:
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
-
-    /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
-    /// This is a per query cache and not shared across queries.
-    mutable ReverseLookupCachePtr reverse_lookup_cache;
 
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
@@ -664,7 +651,6 @@ public:
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
 
-
     ~Context();
 
     String getPath() const;
@@ -772,8 +758,8 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user, assuming they are already authenticated.
-    /// WARNING: This function doesn't check the password!
+    /// Sets the current user assuming that he/she is already authenticated.
+    /// WARNING: This function doesn't check password!
     void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
 
@@ -819,7 +805,6 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
-    void releaseQuerySlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
     String getMutationWorkload() const;
@@ -1181,9 +1166,6 @@ public:
     void setFileProgressCallback(FileProgressCallback && callback) { file_progress_callback = callback; }
     FileProgressCallback getFileProgressCallback() const { return file_progress_callback; }
 
-    void setInteractiveCancelCallback(InteractiveCancelCallback && callback) { interactive_cancel_callback = callback; }
-    InteractiveCancelCallback getInteractiveCancelCallback() const { return interactive_cancel_callback; }
-
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
@@ -1221,8 +1203,6 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getDefaultOrAuxiliaryZooKeeper(const String & name) const;
     /// return Auxiliary Zookeeper map
     std::map<String, zkutil::ZooKeeperPtr> getAuxiliaryZooKeepers() const;
-
-    int64_t getZooKeeperLastZXIDSeen() const;
 
     /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
     /// internal Keeper start (check connection to some other node). Return true
@@ -1295,21 +1275,6 @@ public:
     void updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
     void clearVectorSimilarityIndexCache() const;
-
-    void setTextIndexDictionaryBlockCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<TextIndexDictionaryBlockCache> getTextIndexDictionaryBlockCache() const;
-    void clearTextIndexDictionaryBlockCache() const;
-
-    void setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<TextIndexHeaderCache> getTextIndexHeaderCache() const;
-    void clearTextIndexHeaderCache() const;
-
-    void setTextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
-    void updateTextIndexPostingsCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<TextIndexPostingsCache> getTextIndexPostingsCache() const;
-    void clearTextIndexPostingsCache() const;
 
     void setMMappedFileCache(size_t max_cache_size_in_num_entries);
     void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1437,8 +1402,6 @@ public:
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
     std::shared_ptr<PartLog> getPartLog(const String & part_database) const;
-
-    std::shared_ptr<BackgroundSchedulePoolLog> getBackgroundSchedulePoolLog() const;
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
@@ -1641,8 +1604,6 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
-
-    ReverseLookupCache & getReverseLookupCache() const;
 
     /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
     /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.

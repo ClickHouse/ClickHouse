@@ -4,7 +4,7 @@ description: 'This engine provides a read-only integration with existing Delta L
 sidebar_label: 'DeltaLake'
 sidebar_position: 40
 slug: /engines/table-engines/integrations/deltalake
-title: 'DeltaLake table engine'
+title: 'DeltaLake Table Engine'
 doc_type: 'reference'
 ---
 

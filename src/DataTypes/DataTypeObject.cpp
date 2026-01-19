@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
@@ -23,6 +24,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
+#include <boost/algorithm/string.hpp>
 
 #include "config.h"
 
@@ -39,6 +41,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_object_type;
+    extern const SettingsBool use_json_alias_for_old_object_type;
     extern const SettingsBool allow_simdjson;
 }
 
@@ -122,6 +126,11 @@ bool DataTypeObject::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeObject::doGetDefaultSerialization() const
 {
+    std::unordered_map<String, SerializationPtr> typed_path_serializations;
+    typed_path_serializations.reserve(typed_paths.size());
+    for (const auto & [path, type] : typed_paths)
+        typed_path_serializations[path] = type->getDefaultSerialization();
+
     switch (schema_format)
     {
         case SchemaFormat::JSON:
@@ -131,7 +140,7 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
                 context = Context::getGlobalContextInstance();
             if (context->getSettingsRef()[Setting::allow_simdjson])
                 return std::make_shared<SerializationJSON<SimdJSONParser>>(
-                    typed_paths,
+                    std::move(typed_path_serializations),
                     paths_to_skip,
                     path_regexps_to_skip,
                     getDynamicType(),
@@ -140,14 +149,14 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
 
 #if USE_RAPIDJSON
             return std::make_shared<SerializationJSON<RapidJSONParser>>(
-                typed_paths,
+                std::move(typed_path_serializations),
                 paths_to_skip,
                 path_regexps_to_skip,
                 getDynamicType(),
                 buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization"));
 #else
             return std::make_shared<SerializationJSON<DummyJSONParser>>(
-                typed_paths,
+                std::move(typed_path_serializations),
                 paths_to_skip,
                 path_regexps_to_skip,
                 getDynamicType(),
@@ -194,7 +203,11 @@ String DataTypeObject::doGetName() const
     for (const auto & path : sorted_typed_paths)
     {
         write_separator();
-        out << backQuoteIfNeed(path) << " " << typed_paths.at(path)->getName();
+        /// We must quote path "SKIP" to avoid its confusion with SKIP keyword.
+        if (boost::to_upper_copy(path) == "SKIP")
+            out << backQuote(path) << " " << typed_paths.at(path)->getName();
+        else
+            out << backQuoteIfNeed(path) << " " << typed_paths.at(path)->getName();
     }
 
     std::vector<String> sorted_skip_paths;
@@ -293,7 +306,7 @@ std::optional<String> tryGetSubObjectSubcolumn(std::string_view subcolumn_name)
     if (!subcolumn_name.starts_with("^`"))
         return std::nullopt;
 
-    ReadBufferFromMemory buf(subcolumn_name.substr(1));
+    ReadBufferFromMemory buf(subcolumn_name.data() + 1, subcolumn_name.size() - 1);
     String path;
     /// Try to read back-quoted first path element.
     if (!tryReadBackQuotedString(path, buf))
@@ -367,7 +380,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
                 size_t lower_bound_index = ColumnObject::findPathLowerBoundInSharedData(prefix, *shared_data_paths, start, end);
                 for (; lower_bound_index != end; ++lower_bound_index)
                 {
-                    auto path = shared_data_paths->getDataAt(lower_bound_index);
+                    auto path = shared_data_paths->getDataAt(lower_bound_index).toView();
                     if (!path.starts_with(prefix))
                         break;
 
@@ -481,11 +494,18 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
         }
         else if (object_type_argument->path_with_type)
         {
-            const auto * path_with_type = object_type_argument->path_with_type->as<ASTNameTypePair>();
+            const auto * path_with_type = object_type_argument->path_with_type->as<ASTObjectTypedPathArgument>();
             auto data_type = DataTypeFactory::instance().get(path_with_type->type);
-            if (typed_paths.contains(path_with_type->name))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found duplicated path with type: {}", path_with_type->name);
-            typed_paths.emplace(path_with_type->name, data_type);
+            if (typed_paths.contains(path_with_type->path))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found duplicated path with type: {}", path_with_type->path);
+
+            for (const auto & [path, _] : typed_paths)
+            {
+                if (path.starts_with(path_with_type->path + ".") || path_with_type->path.starts_with(path + "."))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found incompatible typed paths: {} and {}. One of them is a prefix of the other", path, path_with_type->path);
+            }
+
+            typed_paths.emplace(path_with_type->path, data_type);
         }
         else if (object_type_argument->skip_path)
         {
@@ -558,6 +578,18 @@ DataTypePtr DataTypeObject::getDynamicType() const
 
 static DataTypePtr createJSON(const ASTPtr & arguments)
 {
+    auto context = CurrentThread::getQueryContext();
+    if (!context)
+        context = Context::getGlobalContextInstance();
+
+    if (context->getSettingsRef()[Setting::allow_experimental_object_type] && context->getSettingsRef()[Setting::use_json_alias_for_old_object_type])
+    {
+        if (arguments && !arguments->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set settings enable_json_type = 1 and use_json_alias_for_old_object_type = 0");
+
+        return std::make_shared<DataTypeObjectDeprecated>("JSON", false);
+    }
+
     return createObject(arguments, DataTypeObject::SchemaFormat::JSON);
 }
 

@@ -49,7 +49,7 @@ class CI:
         ),
         WorkFlowNames.NIGHTLY: LabelConfig(
             run_jobs=[
-                BuildNames.ARM_FUZZERS,
+                BuildNames.FUZZERS,
                 JobNames.LIBFUZZER_TEST,
             ]
         ),
@@ -66,11 +66,11 @@ class CI:
         ),
         Tags.CI_SET_REQUIRED: LabelConfig(
             run_jobs=REQUIRED_CHECKS
-            + [build for build in BuildNames if build != BuildNames.ARM_FUZZERS]
+            + [build for build in BuildNames if build != BuildNames.FUZZERS]
         ),
         Tags.CI_SET_BUILDS: LabelConfig(
             run_jobs=[JobNames.STYLE_CHECK, JobNames.BUILD_CHECK]
-            + [build for build in BuildNames if build != BuildNames.ARM_FUZZERS]
+            + [build for build in BuildNames if build != BuildNames.FUZZERS]
         ),
         Tags.CI_SET_SYNC: LabelConfig(
             run_jobs=[
@@ -269,9 +269,9 @@ class CI:
                 static_binary_name="loongarch64",
             ),
         ),
-        BuildNames.ARM_FUZZERS: CommonJobConfigs.BUILD.with_properties(
+        BuildNames.FUZZERS: CommonJobConfigs.BUILD.with_properties(
             build_config=BuildConfig(
-                name=BuildNames.ARM_FUZZERS,
+                name=BuildNames.FUZZERS,
                 compiler="clang-19",
                 sanitizer="address",
                 package_type="fuzzers",
@@ -515,7 +515,7 @@ class CI:
             runner_type=Runners.FUNC_TESTER_AARCH64,
         ),
         JobNames.LIBFUZZER_TEST: JobConfig(
-            required_builds=[BuildNames.ARM_FUZZERS],
+            required_builds=[BuildNames.FUZZERS],
             run_by_labels=[Tags.libFuzzer],
             timeout=10800,
             run_command='libfuzzer_test_check.py "$CHECK_NAME"',
@@ -768,7 +768,7 @@ BUILD_NAMES_MAPPING = {
     "Build (riscv64)": BuildNames.BINARY_RISCV64,
     "Build (s390x)": BuildNames.BINARY_S390X,
     "Build (loongarch64)": BuildNames.BINARY_LOONGARCH64,
-    "Build (arm_fuzzers)": BuildNames.ARM_FUZZERS,
+    "Build (fuzzers)": BuildNames.FUZZERS,
 }
 
 if __name__ == "__main__":

@@ -71,12 +71,12 @@ public:
         data->get(0, res);
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
     {
-        return data->getValueNameAndTypeImpl(name_buf, 0, options);
+        return data->getValueNameAndType(0);
     }
 
-    std::string_view getDataAt(size_t) const override
+    StringRef getDataAt(size_t) const override
     {
         return data->getDataAt(0);
     }
@@ -174,8 +174,7 @@ public:
         s -= n;
     }
 
-    std::string_view
-    serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
+    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
         return data->serializeValueIntoArena(0, arena, begin, settings);
     }

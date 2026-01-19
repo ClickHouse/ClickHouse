@@ -77,7 +77,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int NO_ZOOKEEPER;
-    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -451,7 +450,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         {
             worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
             {
-                DB::setThreadName(ThreadName::DDL_WORKER_EXECUTER);
+                setThreadName("DDLWorkerExec");
                 processTask(saved_task, zookeeper, /*internal_query=*/ false);
             });
         }
@@ -514,7 +513,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_scope.emplace(query_context);
 
         NullWriteBuffer nullwb;
-        executeQuery(istr, nullwb, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
+        executeQuery(istr, nullwb, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -1133,7 +1132,7 @@ String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
 bool DDLWorker::initializeMainThread()
 {
     chassert(!initialized);
-    DB::setThreadName(ThreadName::DDL_WORKER);
+    setThreadName("DDLWorker");
     LOG_DEBUG(log, "Initializing DDLWorker thread");
 
     while (!stop_flag)
@@ -1197,7 +1196,7 @@ void DDLWorker::runMainThread()
     };
 
 
-    DB::setThreadName(ThreadName::DDL_WORKER);
+    setThreadName("DDLWorker");
     LOG_DEBUG(log, "Starting DDLWorker thread");
 
     while (!stop_flag)
@@ -1394,8 +1393,10 @@ void DDLWorker::markReplicasActive(bool /*reinitialized*/)
         {
             const auto & cluster = it.second;
             if (!cluster->getHostIDs().empty())
-                throw Exception(
-                    ErrorCodes::INVALID_CONFIG_PARAMETER, "There are clusters with host ids but no local host found for this replica.");
+            {
+                LOG_WARNING(log, "There are clusters with host ids but no local host found for this replica.");
+                break;
+            }
         }
     }
 }
@@ -1428,7 +1429,7 @@ void DDLWorker::cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeper
 
 void DDLWorker::runCleanupThread()
 {
-    DB::setThreadName(ThreadName::DDL_WORKER_CLEANUP);
+    setThreadName("DDLWorkerClnr");
     LOG_DEBUG(log, "Started DDLWorker cleanup thread");
 
     Int64 last_cleanup_time_seconds = 0;

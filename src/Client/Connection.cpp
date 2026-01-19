@@ -1204,7 +1204,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             elem->pipe = elem->creating_pipe_callback();
 
         QueryPipelineBuilder pipeline = std::move(*elem->pipe);
-        elem->pipe = nullptr;
+        elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getSharedHeader(), *this, *elem, std::move(on_cancel));
         pipeline.setSinks([&](const SharedHeader &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
