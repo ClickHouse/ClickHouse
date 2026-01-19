@@ -1216,7 +1216,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
 
     const bool check_nodes_limit = table_metadata.tracked_files_limit > 0;
     const bool check_nodes_ttl = table_metadata.tracked_files_ttl_sec > 0;
-    chassert(check_nodes_limit && check_nodes_ttl);
+    chassert(check_nodes_limit || check_nodes_ttl);
 
     const bool nodes_limit_exceeded = nodes.size() > table_metadata.tracked_files_limit;
     if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
