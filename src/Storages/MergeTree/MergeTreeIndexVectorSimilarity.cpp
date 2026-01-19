@@ -613,7 +613,7 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
                 std::vector<Float32> vec;
                 vec.reserve(end - start);
                 for (size_t i = start; i < end; ++i)
-                    vec.push_back(static_cast<Float32>(data[i].toFloat32()));
+                    vec.push_back(static_cast<Float32>(data[i]));
                 stored_vectors.push_back(std::move(vec));
             }
         }
