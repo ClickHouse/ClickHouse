@@ -232,7 +232,9 @@ class _Environment(MetaClasses.Serializable):
             # TODO: Find a better way to store and pass commit authors data through workflow
             JOB_KV_DATA={
                 "commit_authors": COMMIT_AUTHORS,
-                # parent pr number may be overwritten by user in workflow hooks
+                # Initial parent PR inference:
+                # - Defaults to LINKED_PR_NUMBER, which is the PR merged by a push/merge-queue event
+                # - Can be explicitly overridden later via workflow hooks (see Info.set_parent_pr_number)
                 "parent_pr_number": LINKED_PR_NUMBER,
             },
             WORKFLOW_JOB_DATA=WORKFLOW_JOB_DATA,
