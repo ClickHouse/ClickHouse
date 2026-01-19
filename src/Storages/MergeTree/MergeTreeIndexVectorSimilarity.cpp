@@ -578,7 +578,7 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
 
         if (which.isFloat32())
         {
-            const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(column_array->getData().get());
+            const auto * column_float32 = typeid_cast<const ColumnFloat32 *>(&column_array->getData());
             const auto & data = column_float32->getData();
             for (size_t row = 0; row < rows; ++row)
             {
@@ -589,7 +589,7 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
         }
         else if (which.isFloat64())
         {
-            const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(column_array->getData().get());
+            const auto * column_float64 = typeid_cast<const ColumnFloat64 *>(&column_array->getData());
             const auto & data = column_float64->getData();
             for (size_t row = 0; row < rows; ++row)
             {
@@ -604,7 +604,7 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
         }
         else if (which.isBFloat16())
         {
-            const auto * column_bf16 = typeid_cast<const ColumnBFloat16 *>(column_array->getData().get());
+            const auto * column_bf16 = typeid_cast<const ColumnBFloat16 *>(&column_array->getData());
             const auto & data = column_bf16->getData();
             for (size_t row = 0; row < rows; ++row)
             {
