@@ -302,11 +302,13 @@ protected:
     }
 
 
-    void showTablesQuery(MutableColumns & res_columns, bool need_to_check_access_for_tables)
+    size_t showTablesQuery(MutableColumns & res_columns, bool need_to_check_access_for_tables)
     {
         auto table_details = database->getLightweightTablesIterator(context,
                                 /* filter_by_table_name */ {},
                                 /* skip_not_loaded */ false);
+
+        size_t count = 0;
 
         const auto access = context->getAccess();
         for (auto & table_detail: table_details)
@@ -322,7 +324,11 @@ protected:
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(table_detail.name);
+
+            ++count;
         }
+        ++database_idx;
+        return count;
     }
 
     Chunk generate() override
@@ -487,10 +493,9 @@ protected:
             auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
             if (needed_columns.size() == 1 && needed_columns[0].name == "name")
             {
-                showTablesQuery(res_columns, need_to_check_access_for_tables);
-                done = true;
-                UInt64 num_rows = res_columns.at(0)->size();
-                return Chunk(std::move(res_columns), num_rows);
+                size_t rows_added = showTablesQuery(res_columns, need_to_check_access_for_tables);
+                rows_count += rows_added;
+                continue;
             }
 
             if (!tables_it || !tables_it->isValid())
