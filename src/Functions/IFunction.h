@@ -308,15 +308,15 @@ public:
       */
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const;
 
-  /** Same as getMonotonicityForRange(type, Field, Field), but takes ColumnValueRef to avoid materializing Field in callers.
-    *
-    * This is primarily used during primary key analysis in `KeyCondition.cpp` to check whether the function is monotonic on a given
-    * range. If it is, then we may be able to transform conditions and use the primary key to potentially skip granules, leading to
-    * improved query performance if filter contains such functions.
-    *
-    * The default implementation materializes `left`/`right` into Field and forwards to getMonotonicityForRange(type, Field, Field).
-    * Override this overload if you can compute monotonicity more efficiently without materializing Field values.
-    */
+    /** Same as getMonotonicityForRange(type, Field, Field), but takes ColumnValueRef to avoid materializing Field in callers.
+      *
+      * This is primarily used during primary key analysis in `KeyCondition.cpp` to check whether the function is monotonic on a given
+      * range. If it is, then we may be able to transform conditions and use the primary key to potentially skip granules, leading to
+      * improved query performance if filter contains such functions.
+      *
+      * The default implementation materializes `left`/`right` into Field and forwards to getMonotonicityForRange(type, Field, Field).
+      * Override this overload if you can compute monotonicity more efficiently without materializing Field values.
+      */
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const ColumnValueRef & /*left*/, const ColumnValueRef & /*right*/) const;
 
     /** Get the preimage of a function in the form of a left-closed and right-open interval. Call only if hasInformationAboutPreimage.
