@@ -331,7 +331,7 @@ private:
     static bool checkDatabaseOptions(const DatabasePtr & db, const GetDatabasesOptions & options, const ContextPtr & context_);
 
     void shutdownImpl(std::function<void()> shutdown_system_logs);
-    String getPathForTableMetadata(const StorageID & table_id) const;
+    String getPathForTableMetadata(const DatabasePtr & db, const StorageID & table_id) const;
 
     DatabaseAndTable getTableImpl(const StorageID & table_id, ContextPtr context, const GetDatabasesOptions & options, std::optional<Exception> * exception = nullptr) const;
 

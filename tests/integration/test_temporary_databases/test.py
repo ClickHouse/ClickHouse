@@ -86,7 +86,7 @@ def started_cluster():
         cluster.start()
 
         node1.query("CREATE USER default2")
-        node1.query("GRANT CURRENT GRANTS ON *.* TO default2")
+        node1.query("GRANT CURRENT GRANTS ON *.* TO default2 WITH GRANT OPTION")
 
         yield cluster
     finally:
@@ -356,6 +356,40 @@ def test_undrop_table(request):
     assert_table_filled(session1, db1)
 
     drop_db(session1, db1)
+
+
+@pytest.mark.parametrize("user2", ["default_same_session", "default", "default2"])
+def test_excluded_from_backups(request, user2: str):
+    session1, db1 = get_session_id_with_db_name(request, 1)
+    session2, db2 = get_session_id_with_db_name(request, 2)
+
+    create_db_with_table(session1, db1)
+    query(session1, f"CREATE DATABASE `{db2}`")
+
+    file = f"backups/{escape_test_name(request.node.name)}.zip"
+    if user2 == "default_same_session":
+        user2 = "default"
+        session2 = session1
+
+
+    def assert_(sql: str):
+        msg = f"Temporary database '{db1}' cannot be backed up." if session1 == session2 else f"Database {db1} does not exist"
+        with pytest.raises(Exception, match=msg):
+            query(session2, sql, user=user2)
+
+    assert_(f"BACKUP DATABASE `{db1}` TO File('{file}')")
+    assert_(f"BACKUP DATABASE `{db1}`, DATABASE `{db2}` TO File('{file}')")
+    assert_(f"BACKUP TABLE `{db1}`.table1 TO File('{file}')")
+    assert_(f"BACKUP TABLE `{db1}`.table1, TABLE `{db2}`.table1 TO File('{file}')")
+    assert_(f"BACKUP TABLE `{db2}`.table1, DATABASE `{db1}` TO File('{file}')")
+
+
+    query(session2, f"BACKUP ALL TO File('{file}')", user=user2)
+    drop_db(session1, db1)
+    drop_db(session2, db2, user=user2)
+    query(session2, f"RESTORE ALL FROM File('{file}')", user=user2)
+    assert get_dbs_from_system_table(session2, [db1, db2], True, user=user2) == TSV([[db2]])
+    drop_db(session2, db2, user=user2)
 
 
 def test_session_closed_cleanup(request):

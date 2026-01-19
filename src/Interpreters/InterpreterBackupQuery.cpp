@@ -48,7 +48,7 @@ BlockIO InterpreterBackupQuery::execute()
     const auto & context = getContext();
     auto & backup_query = query_ptr->as<ASTBackupQuery &>();
 
-    /// Remove temporary databases from query: they can't be backed up. todo: test
+    /// Remove temporary databases from query: they can't be backed up.
     for (auto it = backup_query.elements.begin(); it != backup_query.elements.end();)
     {
         if (!it->database_name.empty())

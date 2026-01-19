@@ -62,7 +62,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 database_catalog_unused_dir_cleanup_period_sec;
     extern const ServerSettingsUInt64 database_catalog_unused_dir_hide_timeout_sec;
     extern const ServerSettingsUInt64 database_catalog_unused_dir_rm_timeout_sec;
-    extern const ServerSettingsBool   temporary_databases_cleanup_async;
+    extern const ServerSettingsBool temporary_databases_cleanup_async;
     extern const ServerSettingsUInt64 temporary_databases_cleanup_interval_sec;
 }
 
@@ -604,7 +604,7 @@ bool DatabaseCatalog::checkDatabaseOptions(
 
         // it's ok to check ownership of temporary DB by pointer instead of name, because they are always synchronized.
         // we can't check by name here, because db->getDatabaseName() will cause deadlock in some cases, and database name is not always available to the caller.
-        if (!(context_ && context_->hasSessionContext() && context_->getSessionContext()->hasTemporaryDatabase(db)) && !options.skip_temporary_owner_check)
+        if (!options.skip_temporary_owner_check && !(context_ && context_->hasSessionContext() && context_->getSessionContext()->hasTemporaryDatabase(db)))
             return false;
     }
 
@@ -816,12 +816,12 @@ void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, Context
 
 DatabasePtr DatabaseCatalog::getDatabaseForTemporaryTables() const
 {
-    return getDatabase(TEMPORARY_DATABASE, {});
+    return getDatabase(TEMPORARY_DATABASE, {}, GetDatabasesOptions{.skip_temporary_owner_check = true});
 }
 
 DatabasePtr DatabaseCatalog::getSystemDatabase() const
 {
-    return getDatabase(SYSTEM_DATABASE, {});
+    return getDatabase(SYSTEM_DATABASE, {}, GetDatabasesOptions{.skip_temporary_owner_check = true});
 }
 
 void DatabaseCatalog::addUUIDMapping(const UUID & uuid)
@@ -1194,11 +1194,9 @@ void DatabaseCatalog::enqueueTemporaryDatabaseDrop(DatabasePtr db) noexcept
     drop_temporary_databases_queue.emplace_back(std::move(db));
 }
 
-String DatabaseCatalog::getPathForTableMetadata(const StorageID & table_id) const
+String DatabaseCatalog::getPathForTableMetadata(const DatabasePtr & db, const StorageID & table_id) const
 {
-    auto database = getDatabase(table_id.getDatabaseName(), {}, {.skip_temporary_owner_check = true});
-    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(database.get());
-
+    auto * database_ptr = dynamic_cast<DatabaseOnDisk *>(db.get());
     if (!database_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get metadata path from database {}", table_id.getDatabaseName());
 
@@ -1302,7 +1300,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
 void DatabaseCatalog::undropTable(StorageID table_id, ContextPtr context_)
 {
-    auto db_disk = getDatabase(table_id.database_name, context_)->getDisk();
+    auto db = getDatabase(table_id.database_name, context_);
+    auto db_disk = db->getDisk();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
@@ -1336,7 +1335,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, ContextPtr context_)
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
                 table_id.getNameForLogs());
         latest_metadata_dropped_path = it_dropped_table->metadata_path;
-        String table_metadata_path = getPathForTableMetadata(it_dropped_table->table_id);
+        String table_metadata_path = getPathForTableMetadata(db, it_dropped_table->table_id);
 
         /// a table is successfully marked undropped,
         /// if and only if its metadata file was moved to a database.
