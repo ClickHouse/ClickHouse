@@ -36,7 +36,6 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
     extern const SettingsBool http_write_exception_in_output_format;
-    extern const SettingsBool input_format_parallel_parsing;
     extern const SettingsBool log_queries;
     extern const SettingsUInt64 max_download_buffer_size;
     extern const SettingsSeconds max_execution_time;
@@ -45,13 +44,15 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 min_chunk_bytes_for_parallel_parsing;
-    extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsInt64 zstd_window_log_max;
-    extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
+
+    extern SettingsBool input_format_parallel_parsing;
+    extern SettingsBool output_format_parallel_formatting;
+    extern SettingsUInt64 output_format_compression_level;
 }
 
 namespace ErrorCodes

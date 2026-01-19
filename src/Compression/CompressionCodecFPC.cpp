@@ -96,7 +96,7 @@ UInt8 getFloatByteWidth(const IDataType & column_type)
                 "Codec 'FPC' is not applicable for {} because the data type is not Float*",
                 column_type.getName());
 
-    return column_type.getSizeOfValueInMemory();
+    return static_cast<UInt8>(column_type.getSizeOfValueInMemory());
 }
 
 }
@@ -121,7 +121,7 @@ void registerCodecFPC(CompressionCodecFactory & factory)
             if (!literal || literal->value.getType() != Field::Types::Which::UInt64)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "1st argument of codec 'FPC' must be unsigned integer");
 
-            level = literal->value.safeGet<UInt8>();
+            level = static_cast<UInt8>(literal->value.safeGet<UInt8>());
             if (level < 1 || level > CompressionCodecFPC::MAX_COMPRESSION_LEVEL)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "Codec 'FPC' level must be between {} and {}",
                                 1, static_cast<int>(CompressionCodecFPC::MAX_COMPRESSION_LEVEL));
@@ -274,7 +274,7 @@ public:
             exportChunk(chunk_view);
         }
 
-        return result.data() - result_initial_pointer;
+        return static_cast<UInt32>(result.data() - result_initial_pointer);
     }
 
 private:

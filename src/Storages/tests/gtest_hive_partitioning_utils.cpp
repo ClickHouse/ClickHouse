@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
-#include <Common/tests/gtest_global_context.h>
 #include <Storages/HivePartitioningUtils.h>
-#include <DataTypes/DataTypeString.h>
 
 using namespace DB;
 using namespace DB::HivePartitioningUtils;

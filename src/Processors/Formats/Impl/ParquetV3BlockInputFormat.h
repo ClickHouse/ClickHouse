@@ -50,6 +50,11 @@ private:
     ParquetMetadataCachePtr metadata_cache;
     const std::optional<RelativePathWithMetadata> metadata;
 
+    /// (This mutex is not important. It protects `reader.emplace` in a weird case where onCancel()
+    ///  may be called in parallel with first read(). ReadManager itself is thread safe for that,
+    ///  but initializing vs checking the std::optional would race without this mutex.)
+    std::mutex reader_mutex;
+
     std::optional<Parquet::ReadManager> reader;
     bool reported_count = false; // if need_only_count
 
