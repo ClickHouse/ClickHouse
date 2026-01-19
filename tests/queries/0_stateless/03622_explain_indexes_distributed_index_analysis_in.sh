@@ -35,6 +35,7 @@ function explain_indexes()
     --max_parallel_replicas=2
     --use_query_condition_cache=0
     --parallel_replicas_for_non_replicated_merge_tree=1
+    --parallel_replicas_local_plan=1
   )
 
   local without_pr="$($CLICKHOUSE_CLIENT "${explain_opts[@]}" --allow_experimental_parallel_reading_from_replicas=0 -q "$@" | {
