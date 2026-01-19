@@ -43,8 +43,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"allow_experimental_temporary_databases", false, false, "New experimental setting."},
             {"show_temporary_databases_from_other_sessions_in_system_tables", false, false, "New experimental setting."},
+            {"use_statistics", true, true, "Enable this optimization by default."},
             {"ignore_on_cluster_for_replicated_database", false, false, "Add a new setting to ignore ON CLUSTER clause for DDL queries with a replicated database."},
             {"input_format_binary_max_type_complexity", 1000, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."},
+            {"distributed_index_analysis", false, false, "New experimental setting"},
             {"distributed_cache_file_cache_name", "", "", "New setting."},
             {"trace_profile_events_list", "", "", "New setting"},
             {"correlated_subqueries_use_in_memory_buffer", false, true, "Use in-memory buffer for input of correlated subqueries by default."},

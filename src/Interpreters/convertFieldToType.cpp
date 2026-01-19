@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 
@@ -338,8 +339,21 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 return src;
 
             /// in case if we need to make DateTime64(a) from DateTime64(b), a != b, we need to convert datetime value to the right scale
-            const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff
-                                                       : from_type.getValue().value * scale_multiplier_diff;
+            Int64 value = from_type.getValue().value;
+
+            if (scale_from > scale_to)
+            {
+                value /= scale_multiplier_diff;
+            }
+            else if (scale_from < scale_to)
+            {
+                Int64 result;
+                if (common::mulOverflow(value, scale_multiplier_diff.value, result))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Cannot convert {} to {} as it overflows: {} * {} does not fit in Int64",
+                        src.getTypeName(), type.getName(), value, scale_multiplier_diff.value);
+                value = result;
+            }
+
             return DecimalField<DateTime64>(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1), scale_to);
         }
 

@@ -9,6 +9,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/ClusterProxy/distributedIndexAnalysis.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -59,6 +60,7 @@
 #include <iterator>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <fmt/ranges.h>
 
@@ -170,6 +172,9 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
+    extern const SettingsBool parallel_replicas_support_projection;
+    extern const SettingsBool distributed_index_analysis;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 preferred_max_column_in_block_size_bytes;
     extern const SettingsUInt64 read_in_order_two_level_merge_threshold;
@@ -721,7 +726,9 @@ Pipe ReadFromMergeTree::readInOrder(
             size_t mark_range_begin = part_with_ranges.ranges.front().begin;
 
             ColumnsWithTypeAndName pk_columns;
-            size_t num_columns = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+            /// The index may have fewer columns than the primary key if suffix columns were
+            /// removed by optimizeIndexColumns (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns).
+            size_t num_columns = std::min(virtual_row_conversion->getRequiredColumnsWithTypes().size(), index->size());
             pk_columns.reserve(num_columns);
 
             for (size_t j = 0; j < num_columns; ++j)
@@ -2034,6 +2041,40 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
     }
 }
 
+using PartsRangesMap = std::unordered_map<std::string, const RangesInDataPart *>;
+/// Same as filterPartsByPrimaryKeyAndSkipIndexes(), but accept part names and parts map to transform parts names to parts
+/// Used for distributed index analysis
+static IndexAnalysisPartsRanges filterPartsNamesByPrimaryKeyAndSkipIndexes(MergeTreeDataSelectExecutor::IndexAnalysisContext & filter_context, PartsRangesMap & parts_ranges_map, const std::vector<std::string_view> & parts_to_analyze)
+{
+    /// Resolve part names to RangesInDataParts
+    RangesInDataParts parts_ranges_to_analyze;
+    for (const auto & part : parts_to_analyze)
+        parts_ranges_to_analyze.push_back(*parts_ranges_map.at(std::string(part)));
+
+    ReadFromMergeTree::IndexStats ignore_stats;
+    auto parts_ranges_res = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_to_analyze, ignore_stats);
+
+    std::unordered_set<std::string_view> processed_parts;
+
+    /// Convert RangesInDataParts to IndexAnalysisPartsRanges
+    IndexAnalysisPartsRanges res;
+    for (const auto & part_ranges : parts_ranges_res)
+    {
+        const auto & part_name = part_ranges.data_part->name;
+        res[part_name].insert(res[part_name].end(), part_ranges.ranges.begin(), part_ranges.ranges.end());
+    }
+
+    /// Add empty parts back, to take it into account in "Parts send"
+    for (const auto & part_name : parts_to_analyze)
+    {
+        if (processed_parts.contains(part_name))
+            continue;
+        res.emplace(part_name, MarkRanges{});
+    }
+
+    return res;
+}
+
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     const RangesInDataParts & parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
@@ -2115,70 +2156,163 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     size_t parts_before_pk = 0;
     bool add_index_stat_row_for_pk_expand = false;
 
+    res_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
+        parts,
+        indexes->partition_pruner,
+        indexes->minmax_idx_condition,
+        indexes->part_values,
+        metadata_snapshot,
+        data,
+        context_,
+        max_block_numbers_to_read.get(),
+        log,
+        result.index_stats);
+
+    result.sampling = MergeTreeDataSelectExecutor::getSampling(
+        query_info_,
+        metadata_snapshot->getColumns().getAllPhysical(),
+        res_parts,
+        indexes->key_condition,
+        data,
+        metadata_snapshot,
+        context_,
+        log);
+
+    if (result.sampling.read_nothing)
+        return std::make_shared<AnalysisResult>(std::move(result));
+
+    for (const auto & part : res_parts)
+        total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
+    parts_before_pk = res_parts.size();
+
+
+    /// Check if we have projections, as that can determine whether we fail during reading parts
+    /// or analyze projection candidates to see if we can serve the query more efficiently
+    bool projection_parts_exist = std::any_of(res_parts.begin(), res_parts.end(), [](const auto & part) { return part.data_part->isProjectionPart(); });
+    bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist;
+    bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (has_projections || find_exact_ranges);
+
+    auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
+    if (!allow_query_condition_cache_)
+        reader_settings.use_query_condition_cache = false;
+
+    MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
     {
-        res_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
-            parts,
-            indexes->partition_pruner,
-            indexes->minmax_idx_condition,
-            indexes->part_values,
-            metadata_snapshot,
-            data,
-            context_,
-            max_block_numbers_to_read.get(),
-            log,
-            result.index_stats);
+        .metadata_snapshot = metadata_snapshot,
+        .mutations_snapshot = mutations_snapshot,
+        .query_info = query_info_,
+        .context = context_,
+        .indexes = *indexes,
+        .top_k_filter_info = top_k_filter_info,
+        .reader_settings = reader_settings,
+        .log = log,
+        .num_streams = num_streams,
+        .find_exact_ranges = find_exact_ranges,
+        .is_parallel_reading_from_replicas = is_parallel_reading_from_replicas_,
+        .has_projections = has_projections,
+        .result = result,
+    };
 
-        result.sampling = MergeTreeDataSelectExecutor::getSampling(
-            query_info_,
-            metadata_snapshot->getColumns().getAllPhysical(),
-            res_parts,
-            indexes->key_condition,
-            data,
-            metadata_snapshot,
-            context_,
-            log);
-
-        if (result.sampling.read_nothing)
-            return std::make_shared<AnalysisResult>(std::move(result));
-
-        for (const auto & part : res_parts)
-            total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
-        parts_before_pk = res_parts.size();
-
+    if (context_->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
+        && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
+        /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
+        && !support_projection_optimization)
+    {
+        // Skip index analysis and return parts with all marks
+        // The coordinator will choose ranges to read for workers based on index analysis on its side
+        result.parts_with_ranges = std::move(res_parts);
+    }
+    else
+    {
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
-        auto reader_settings = MergeTreeReaderSettings::createForQuery(context_, *data_settings_, query_info_);
-        if (!allow_query_condition_cache_)
-            reader_settings.use_query_condition_cache = false;
-        result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            res_parts,
-            metadata_snapshot,
-            mutations_snapshot,
-            query_info_,
-            context_,
-            indexes->key_condition,
-            indexes->part_offset_condition,
-            indexes->total_offset_condition,
-            indexes->key_condition_rpn_template,
-            indexes->skip_indexes,
-            top_k_filter_info,
-            reader_settings,
-            log,
-            num_streams,
-            result.index_stats,
-            indexes->use_skip_indexes,
-            indexes->use_skip_indexes_for_disjunctions,
-            find_exact_ranges,
-            query_info_.isFinal(),
-            is_parallel_reading_from_replicas_,
-            result);
+        bool final_second_pass = indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode];
+        /// Note, use_skip_indexes_if_final_exact_mode requires complete PK, so we cannot apply distributed_index_analysis with it
+        bool distributed_index_analysis_enabled = settings[Setting::distributed_index_analysis] && !final_second_pass;
 
-        if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
-            && settings[Setting::use_skip_indexes_if_final_exact_mode])
+        if (!distributed_index_analysis_enabled)
         {
-            result.parts_with_ranges
-                = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
-            add_index_stat_row_for_pk_expand = true;
+            result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, res_parts, result.index_stats);
+
+            if (final_second_pass)
+            {
+                result.parts_with_ranges
+                    = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
+                add_index_stat_row_for_pk_expand = true;
+            }
+        }
+        else
+        {
+            std::unordered_map<std::string, const RangesInDataPart *> parts_ranges_map;
+            for (const auto & part_ranges : res_parts)
+                parts_ranges_map[part_ranges.data_part->name] = &part_ranges;
+
+            LocalIndexAnalysisCallback local_index_analysis_callback = [&filter_context, &parts_ranges_map](const std::vector<std::string_view> & parts_to_analyze) -> IndexAnalysisPartsRanges
+            {
+                return filterPartsNamesByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges_map, parts_to_analyze);
+            };
+
+            DistributedIndexAnalysisPartsRanges distributed_index_analysis = distributedIndexAnalysisOnReplicas(data.getStorageID(), query_info_.filter_actions_dag.get(), primary_key_column_names, res_parts, local_index_analysis_callback, context_);
+            IndexAnalysisPartsRanges analyzed_parts_ranges;
+
+            /// Index stats
+            {
+                std::vector<DistributedIndexStat> distributed_index_stats;
+
+                size_t received_granules = 0;
+                size_t received_parts = 0;
+                for (auto & [replica_address, parts_on_replica] : distributed_index_analysis)
+                {
+                    size_t replica_granules_received = 0;
+                    for (const auto & [_, marks] : parts_on_replica)
+                        replica_granules_received += marks.getNumberOfMarks();
+
+                    size_t replica_granules_send = 0;
+                    for (const auto & [part, _] : parts_on_replica)
+                        replica_granules_send += parts_ranges_map.at(std::string(part))->getMarksCount();
+
+                    size_t num_parts_send = parts_on_replica.size();
+                    std::erase_if(parts_on_replica, [&](const auto & ranges) { return ranges.second.empty(); });
+
+                    distributed_index_stats.emplace_back(DistributedIndexStat{
+                        .address = replica_address,
+                        .num_parts_send = num_parts_send,
+                        .num_parts_received = parts_on_replica.size(),
+                        .num_granules_send = replica_granules_send,
+                        .num_granules_received = replica_granules_received,
+                    });
+
+                    received_granules += replica_granules_received;
+                    received_parts += parts_on_replica.size();
+
+                    analyzed_parts_ranges.insert_range(std::move(parts_on_replica));
+                }
+
+                auto index_description = indexes->key_condition.getDescription();
+                result.index_stats.emplace_back(IndexStat{
+                    .type = IndexType::PrimaryKey,
+                    .condition = index_description.condition,
+                    .used_keys = index_description.used_keys,
+                    .num_parts_after = received_parts,
+                    .num_granules_after = received_granules,
+                    .distributed = std::move(distributed_index_stats),
+                });
+            }
+
+            LOG_DEBUG(log, "Received parts ranges for {} parts via distributed index analysis", analyzed_parts_ranges.size());
+
+            RangesInDataParts result_parts_ranges;
+            for (const auto & [part_name, ranges] : analyzed_parts_ranges)
+            {
+                auto part_range_info = *parts_ranges_map.at(part_name);
+                chassert(part_range_info.ranges.size() == 1);
+                chassert(part_range_info.exact_ranges.empty());
+
+                part_range_info.ranges = ranges;
+                result_parts_ranges.push_back(part_range_info);
+            }
+
+            result.parts_with_ranges = std::move(result_parts_ranges);
         }
 
         std::optional<size_t> condition_hash;
@@ -3411,6 +3545,19 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
             if (!search_algorithm.empty())
                 format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
+
+            if (!stat.distributed.empty())
+            {
+                format_settings.out << prefix << indent << indent << "Distributed:" << '\n';
+                for (const auto & node_stat : stat.distributed)
+                {
+                    format_settings.out << prefix << indent << indent << indent << "Address: " << node_stat.address << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Parts send: " << node_stat.num_parts_send << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Parts received: " << node_stat.num_parts_received << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Granules send: " << node_stat.num_granules_send << '\n';
+                    format_settings.out << prefix << indent << indent << indent << "Granules received: " << node_stat.num_granules_received << '\n';
+                }
+            }
         }
 
         format_settings.out << prefix << indent << "Ranges: " << result.selected_ranges << '\n';
@@ -3470,6 +3617,24 @@ void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
             if (i)
                 index_map->add("Initial Granules", index_stats[i - 1].num_granules_after);
             index_map->add("Selected Granules", stat.num_granules_after);
+
+            if (!stat.distributed.empty())
+            {
+                auto distributed_index_array = std::make_unique<JSONBuilder::JSONArray>();
+
+                for (const auto & node_stat : stat.distributed)
+                {
+                    auto node_stat_map = std::make_unique<JSONBuilder::JSONMap>();
+                    node_stat_map->add("Address", node_stat.address);
+                    node_stat_map->add("Parts send", node_stat.num_parts_send);
+                    node_stat_map->add("Parts received", node_stat.num_parts_received);
+                    node_stat_map->add("Granules send", node_stat.num_granules_send);
+                    node_stat_map->add("Granules received", node_stat.num_granules_received);
+                    distributed_index_array->add(std::move(node_stat_map));
+                }
+
+                index_map->add("Distributed", std::move(distributed_index_array));
+            }
 
             indexes_array->add(std::move(index_map));
         }
