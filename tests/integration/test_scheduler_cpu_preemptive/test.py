@@ -36,6 +36,9 @@ def start_cluster():
 def clear_workloads_and_resources():
     node.query(
         f"""
+        drop workload if exists production2;
+        drop workload if exists development2;
+        drop workload if exists staging;
         drop workload if exists production;
         drop workload if exists development;
         drop workload if exists admin;
