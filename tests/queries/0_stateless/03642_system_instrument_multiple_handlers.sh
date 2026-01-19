@@ -15,12 +15,12 @@ trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT -q "
     SYSTEM INSTRUMENT REMOVE ALL;
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'entry_one';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'entry_two';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'entry_three';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'exit_one';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'exit_two';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'exit_three';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'entry_one';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'entry_two';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'entry_three';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'exit_one';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'exit_two';
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'exit_three';
 "
 
 query_id="${CLICKHOUSE_DATABASE}_log"

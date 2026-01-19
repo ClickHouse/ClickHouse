@@ -172,7 +172,7 @@ REGISTER_FUNCTION(ULIDStringToDateTime)
 {
     /// ULIDStringToDateTime documentation
     FunctionDocumentation::Description description_ULIDStringToDateTime = R"(
-This function extracts the timestamp from a [ULID]((https://github.com/ulid/spec).
+This function extracts the timestamp from a [ULID](https://github.com/ulid/spec).
     )";
     FunctionDocumentation::Syntax syntax_ULIDStringToDateTime = "ULIDStringToDateTime(ulid[, timezone])";
     FunctionDocumentation::Arguments arguments_ULIDStringToDateTime = {

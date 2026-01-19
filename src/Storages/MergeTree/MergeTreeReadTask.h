@@ -68,7 +68,7 @@ struct IndexReadTask
 {
     NamesAndTypesList columns;
     MergeTreeIndexWithCondition index;
-    bool is_final;
+    bool is_final = false;
 };
 
 using IndexReadTasks = std::unordered_map<String, IndexReadTask>;

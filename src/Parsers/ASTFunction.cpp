@@ -55,7 +55,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     if (parameters)
     {
         writeChar('(', ostr);
-        for (auto * it = parameters->children.begin(); it != parameters->children.end(); ++it)
+        for (auto it = parameters->children.begin(); it != parameters->children.end(); ++it)
         {
             if (it != parameters->children.begin())
                 writeCString(", ", ostr);
@@ -68,7 +68,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     writeChar('(', ostr);
     if (arguments)
     {
-        for (auto * it = arguments->children.begin(); it != arguments->children.end(); ++it)
+        for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
         {
             if (it != arguments->children.begin())
                 writeCString(", ", ostr);
@@ -338,6 +338,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                              || (function && function->name == "tuple" && function->arguments && function->arguments->children.size() > 1);
                 bool is_array = (literal && literal->value.getType() == Field::Types::Array)
                              || (function && function->name == "array");
+                bool has_alias = !arguments->children[0]->tryGetAlias().empty();
 
                 /// Do not add parentheses for tuple and array literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`, `-[1]` -> `-([1])`
                 bool literal_need_parens = literal && !is_tuple && !is_array;
@@ -346,13 +347,15 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 /// Also extra parentheses are needed for subqueries and tuple, because NOT can be parsed as a function:
                 /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
                 /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
-                bool inside_parens = (name == "negate" && (literal_need_parens || (function && function->name == "negate")))
-                    || (subquery && name == "not") || (is_tuple && name == "not");
+                /// Note: If the arg to negate/not/- has an alias, we never need the inside parens
+                bool inside_parens = !has_alias
+                    && ((name == "negate" && (literal_need_parens || (function && function->name == "negate")))
+                        || (subquery && name == "not") || (is_tuple && name == "not"));
 
                 /// We DO need parentheses around a single literal
                 /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
                 /// this is equal to SELECT NOT (0 + NOT 0)
-                bool outside_parens = frame.need_parens && !inside_parens;
+                bool outside_parens = frame.need_parens && (!frame.allow_moving_operators_before_parens || !inside_parens);
 
                 /// Do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
                 if (inside_parens)
@@ -446,12 +449,20 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
                 const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
                 const auto * second_arg_literal = arguments->children[1]->as<ASTLiteral>();
+                bool is_literal_tuple_or_array = second_arg_literal
+                    && (second_arg_literal->value.getType() == Field::Types::Tuple
+                        || second_arg_literal->value.getType() == Field::Types::Array);
+
+                /** Conditions for extra parens:
+                 *  1. Is IN operator
+                 *  2. 2nd arg is not subquery, function, or literal tuple or array
+                 *  3. If the 2nd argument has alias, we ignore condition 2 and add extra parens
+                 *
+                 *  Condition 3 is needed to avoid inconsistency in format-parse-format debug check in executeQuery.cpp
+                 */
                 bool extra_parents_around_in_rhs = is_in_operator
-                    && !second_arg_func
-                    && !(second_arg_literal
-                         && (second_arg_literal->value.getType() == Field::Types::Tuple
-                            || second_arg_literal->value.getType() == Field::Types::Array))
-                    && !arguments->children[1]->as<ASTSubquery>();
+                    && ((!arguments->children[1]->as<ASTSubquery>() && !second_arg_func && !is_literal_tuple_or_array)
+                        || !arguments->children[1]->tryGetAlias().empty());
 
                 if (extra_parents_around_in_rhs)
                 {
@@ -473,6 +484,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (frame.need_parens)
                     ostr << '(';
 
+                /// Don't allow moving operators like '-' before parents,
+                /// otherwise (-(42))[3] will be formatted as -(42)[3] that will be parsed as -(42[3]);
+                nested_need_parens.allow_moving_operators_before_parens = false;
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
                 ostr << '[';
                 arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
@@ -526,6 +540,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (frame.need_parens)
                             ostr << '(';
 
+                        /// Don't allow moving operators like '-' before parents,
+                        /// otherwise (-(42)).1 will be formatted as -(42).1 that will be parsed as -((42).1)
+                        nested_need_parens.allow_moving_operators_before_parens = false;
                         arguments->children[0]->format(ostr, settings, state, nested_need_parens);
                         ostr << ".";
                         arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
@@ -614,10 +631,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             written = true;
         }
 
-        if (!written && arguments->children.size() >= 2 && name == "tuple"sv)
+        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && !(frame.need_parens && !alias.empty()))
         {
-            ostr << ((frame.need_parens && !alias.empty()) ? "tuple" : "") << '('
-                         ;
+            ostr << '(';
 
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {

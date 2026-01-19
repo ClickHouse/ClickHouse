@@ -56,6 +56,8 @@ struct MergeTreeReaderSettings
     bool adjust_read_buffer_size = true;
     /// If true, it's allowed to read the whole part without reading marks.
     bool can_read_part_without_marks = false;
+    /// If true, the data stream is compressed.
+    bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
     bool query_condition_cache_store_conditions_as_plaintext = false;
@@ -118,6 +120,7 @@ struct MergeTreeWriterSettings
     MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
     size_t object_shared_data_buckets = 1;
     bool use_adaptive_write_buffer_for_dynamic_subcolumns;
+    size_t min_columns_to_activate_adaptive_write_buffer;
     size_t adaptive_write_buffer_initial_size;
 };
 

@@ -21,6 +21,7 @@ public:
     static constexpr size_t MAX_DYNAMIC_PATHS_LIMIT = 10000;
     /// Don't change this constant, it can break backward compatibility.
     static constexpr size_t DEFAULT_MAX_DYNAMIC_PATHS = 1024;
+    static constexpr const char * SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION = "__special_subcolumn_name_for_distinct_paths_calculation";
 
     explicit DataTypeObject(
         const SchemaFormat & schema_format_,
