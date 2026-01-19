@@ -5,8 +5,6 @@ SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab;
 
--- 
--- (index_granularity_bytes=0) being incompatible with Compact part format.
 CREATE TABLE tab
 (
     i Int32,
