@@ -327,7 +327,8 @@ GROUP BY
     c_address,
     c_comment
 ORDER BY
-    revenue DESC;
+    revenue DESC
+LIMIT 20;
 ]]></query>
 
 <!-- Q11 -->
@@ -555,7 +556,8 @@ GROUP BY
     o_totalprice
 ORDER BY
     o_totalprice DESC,
-    o_orderdate;
+    o_orderdate
+LIMIT 100;
 ]]></query>
 
 <!-- Q19 -->
@@ -678,7 +680,8 @@ GROUP BY
     s_name
 ORDER BY
     numwait DESC,
-    s_name;
+    s_name
+LIMIT 100;
 ]]></query>
 
 <!-- Q22 -->
