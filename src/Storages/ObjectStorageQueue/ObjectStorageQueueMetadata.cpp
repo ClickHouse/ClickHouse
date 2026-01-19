@@ -1173,11 +1173,14 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     if (cleanup_processing_files)
         cleanupPersistentProcessingNodes();
 
-    if (cleanup_processed_files)
-        cleanupTrackedNodes(zookeeper_path / "processed", "processed");
+    if (table_metadata.hasTrackedFilesLimit())
+    {
+        if (cleanup_processed_files)
+            cleanupTrackedNodes(zookeeper_path / "processed", "processed");
 
-    if (cleanup_failed_files)
-        cleanupTrackedNodes(zookeeper_path / "failed", "failed");
+        if (cleanup_failed_files)
+            cleanupTrackedNodes(zookeeper_path / "failed", "failed");
+    }
 
     LOG_TRACE(log, "Node limits check finished");
 }
