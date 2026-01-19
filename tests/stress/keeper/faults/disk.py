@@ -143,7 +143,7 @@ def dm_delay(node, ms=3):
         try:
             sh(
                 node,
-                "pkill -STOP -x clickhouse || pkill -STOP clickhouse-server || true",
+                "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -STOP $PIDS || true",
                 timeout=30,
             )
             sh_root_strict(

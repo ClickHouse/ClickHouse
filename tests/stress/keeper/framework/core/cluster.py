@@ -5,6 +5,7 @@ import shutil
 from keeper.framework.core.settings import (
     CLIENT_PORT,
     ID_BASE,
+    PROM_PORT,
     RAFT_PORT,
 )
 from tests.integration.helpers.cluster import ClickHouseCluster
@@ -65,6 +66,18 @@ def _listen_hosts_xml():
         '<listen_host remove="1">::1</listen_host>'
         "<listen_host>0.0.0.0</listen_host>"
         "<listen_try>1</listen_try>"
+    )
+
+
+def _prometheus_xml():
+    return (
+        "<prometheus>"
+        "<endpoint>/metrics</endpoint>"
+        f"<port>{PROM_PORT}</port>"
+        "<keeper_metrics_only>true</keeper_metrics_only>"
+        "<metrics>true</metrics>"
+        "<asynchronous_metrics>true</asynchronous_metrics>"
+        "</prometheus>"
     )
 
 
@@ -206,9 +219,11 @@ class ClusterBuilder:
             )
             # Ensure server listens on container IPs; do not duplicate tcp_port
             net_block = _listen_hosts_xml()
+            prom_block = _prometheus_xml()
             full_xml = (
                 "<clickhouse>"
                 + keeper_server
+                + prom_block
                 + net_block
                 + "</clickhouse>"
             )

@@ -420,6 +420,34 @@ def _emit_bench_summary(summary, run_id, run_meta_eff, scenario_id, topo, sink_u
         "write_p95_ms": _safe_float(s.get("write_p95_ms")),
         "write_p99_ms": _safe_float(s.get("write_p99_ms")),
     }
+    # Emit full percentile maps (if present) as additional scalar metrics.
+    # We keep the existing *_p50/p95/p99 fields above for backwards compatibility.
+    try:
+        for kind, key in (
+            ("read", "read_percentiles_ms"),
+            ("write", "write_percentiles_ms"),
+        ):
+            pm = s.get(key)
+            if not isinstance(pm, dict) or not pm:
+                continue
+            for p, v in pm.items():
+                try:
+                    fp = float(p)
+                    fv = float(v)
+                except Exception:
+                    continue
+                if fp < 0 or fp > 100:
+                    continue
+                ps = (
+                    f"{fp:.2f}".rstrip("0").rstrip(".")
+                )
+                nm = f"{kind}_p{ps}_ms".replace(".", "_")
+                # Avoid duplicates for the canonical ones already emitted above.
+                if nm in names_vals:
+                    continue
+                names_vals[nm] = fv
+    except Exception:
+        pass
     rows = [
         _make_metric_row(
             run_id,
@@ -1065,6 +1093,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     leader = None
     pre_rows = []
     post_rows = []
+    fail_rows = []
     bench_ran_flag = False
     bench_injected = False
     try:
@@ -1222,15 +1251,33 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
 
         _best_effort(_write_repro)
         # Attempt to snapshot fail state as well
+        try:
+            fail_rows = (
+                _snapshot_and_sink(
+                    nodes,
+                    "fail",
+                    scenario_id,
+                    topo,
+                    run_meta_eff,
+                    sink_url,
+                    run_id,
+                )
+                or []
+            )
+        except Exception:
+            fail_rows = []
+
+        # Best-effort derived metrics even on failure (use fail snapshot as a fallback post).
         _best_effort(
-            _snapshot_and_sink,
-            nodes,
-            "fail",
+            _emit_derived_metrics,
+            pre_rows,
+            (fail_rows or post_rows),
+            run_id,
+            run_meta_eff,
             scenario_id,
             topo,
-            run_meta_eff,
             sink_url,
-            run_id,
+            bench_ran_flag,
         )
         # per-test checks insertion is handled by praktika post-run
 
@@ -1241,6 +1288,27 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         if sampler:
             _best_effort(sampler.stop)
             _best_effort(sampler.flush)
+
+        # If we ran keeper-bench but failed before emitting bench metrics (e.g. another fault step failed),
+        # emit it best-effort from the captured context.
+        if sink_url and not bench_ran_flag:
+            try:
+                bs = (ctx or {}).get("bench_summary") or {}
+                if isinstance(bs, dict) and bs:
+                    bench_ran_flag = bool(
+                        _best_effort(
+                            _emit_bench_summary,
+                            bs,
+                            run_id,
+                            run_meta_eff,
+                            scenario_id,
+                            topo,
+                            sink_url,
+                        )
+                    )
+            except Exception:
+                pass
+
         # Print local metrics summary
         _best_effort(
             _print_local_metrics,
