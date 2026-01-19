@@ -33,9 +33,9 @@ namespace
 }
 
 /// Each bit in `x` is converted to the parity a bit and all bits to its right.
-[[nodiscard]] constexpr unsigned long long bitwiseInclusiveRightParity64(unsigned long long x) noexcept
+[[nodiscard]] constexpr UInt64 bitwiseInclusiveRightParity64(UInt64 x) noexcept
 {
-    using T = unsigned long long;
+    using T = UInt64;
 
 #ifdef __PCLMUL__
     const __m128i x_128 = _mm_set_epi64x(0, x);
@@ -50,9 +50,9 @@ namespace
 #endif
 }
 
-[[nodiscard]] constexpr unsigned long long bitCompress64(unsigned long long x, unsigned long long m) noexcept
+[[nodiscard]] constexpr UInt64 bitCompress64(UInt64 x, UInt64 m) noexcept
 {
-    using T = unsigned long long;
+    using T = UInt64;
     constexpr int N = std::numeric_limits<T>::digits;
 
 #ifdef __BMI2__
@@ -82,9 +82,9 @@ namespace
     return x;
 }
 
-[[nodiscard]] constexpr unsigned long long bitExpand64(unsigned long long x, unsigned long long m) noexcept
+[[nodiscard]] constexpr UInt64 bitExpand64(UInt64 x, UInt64 m) noexcept
 {
-    using T = unsigned long long;
+    using T = UInt64;
     constexpr int N = std::numeric_limits<T>::digits;
     constexpr int log_N = log2Floor(std::bit_ceil<unsigned>(N));
 
