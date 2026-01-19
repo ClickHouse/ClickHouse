@@ -235,6 +235,11 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
 
 void ReadManager::setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff)
 {
+    LOG_DEBUG(getLogger("ParquetReadManager"), "setTasksToSchedule: row_group_idx={}, stage={}, add_tasks={}", row_group_idx, static_cast<Int32>(stage), add_tasks.size());
+    for (const auto & task : add_tasks)
+    {
+        LOG_DEBUG(getLogger("ParquetReadManager"), "setTasksToSchedule: {} {} {} {} {}", task.column_idx, task.row_group_idx, task.cost_estimate_bytes, static_cast<Int32>(task.stage), task.step_idx);
+    }
     chassert(!add_tasks.empty());
     Stage & stage_state = stages.at(size_t(stage));
     auto & tasks = stage_state.row_group_tasks_to_schedule.at(row_group_idx);
@@ -266,6 +271,8 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
             {
                 if (c.offset_index_prefetch && c.offset_index.page_locations.empty())
                 {
+                    LOG_DEBUG(getLogger("ParquetReadManager"), "addTasksToReadColumns: added OffsetIndex: i={} step_idx={} row_group_idx={} row_subgroup_idx={}", i, step_idx, row_group_idx, row_subgroup_idx);
+
                     /// If offset index for this column wasn't read by previous stages, make a task
                     /// to read it before reading data.
                     add_tasks.push_back(Task {
@@ -275,9 +282,14 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                         .row_subgroup_idx = row_subgroup_idx,
                         .column_idx = i});
                 }
+                else
+                {
+                    LOG_DEBUG(getLogger("ParquetReadManager"), "addTasksToReadColumns: not added due locations empty i={} step_idx={} row_group_idx={} row_subgroup_idx={}", i, step_idx, row_group_idx, row_subgroup_idx);
+                }
             }
             else
             {
+                LOG_DEBUG(getLogger("ParquetReadManager"), "addTasksToReadColumns: added ColumnData: i={} step_idx={} row_group_idx={} row_subgroup_idx={}", i, step_idx, row_group_idx, row_subgroup_idx);
                 add_tasks.push_back(Task {
                     .stage = ReadStage::ColumnData,
                     .step_idx = step_idx,

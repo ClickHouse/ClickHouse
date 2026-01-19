@@ -1399,7 +1399,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     }
 
     if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in column subchunk");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in column subchunk {} {}", subchunk.column->size(), row_subgroup.filter.rows_pass);
 
     if (column_info.output_nullable)
     {
