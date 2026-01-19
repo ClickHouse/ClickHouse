@@ -2,13 +2,24 @@
 
 #if USE_JEMALLOC
 
-#include <Core/ServerSettings.h>
+#include <Common/FramePointers.h>
+#include <Common/StringUtils.h>
+#include <Common/getExecutablePath.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/Stopwatch.h>
 #include <Common/TraceSender.h>
 #include <Common/MemoryTracker.h>
 #include <Common/logger_useful.h>
+#include <Core/ServerSettings.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <ranges>
+#include <base/hex.h>
+
+#include <unordered_set>
 
 #define STRINGIFY_HELPER(x) #x
 #define STRINGIFY(x) STRINGIFY_HELPER(x)
@@ -97,6 +108,137 @@ void setBackgroundThreads(bool enabled)
 void setMaxBackgroundThreads(size_t max_threads)
 {
     setValue("max_background_threads", max_threads);
+}
+
+void symbolizeHeapProfile(const std::string & input_filename, const std::string & output_filename)
+{
+    ReadBufferFromFile in(input_filename);
+    WriteBufferFromFile out(output_filename);
+
+    /// Collect all unique addresses from the heap profile
+    std::unordered_set<UInt64> addresses;
+    std::string profile_data;
+    std::string line;
+
+    /// Helper to parse hex address from string_view and advance it
+    auto parse_hex = [](std::string_view & src) -> std::optional<UInt64>
+    {
+        /// Skip "0x" prefix if present
+        if (src.size() >= 2 && src[0] == '0' && (src[1] == 'x' || src[1] == 'X'))
+            src.remove_prefix(2);
+
+        if (src.empty())
+            return std::nullopt;
+
+        UInt64 address = 0;
+        size_t processed = 0;
+
+        /// Parse hex digits
+        for (size_t i = 0; i < src.size() && processed < 16; ++i)
+        {
+            char c = src[i];
+            if (isHexDigit(c))
+            {
+                address = (address << 4) | unhex(c);
+                ++processed;
+            }
+            else
+                break;
+        }
+
+        if (processed == 0)
+            return std::nullopt;
+
+        src.remove_prefix(processed);
+        return address;
+    };
+
+    /// Collect addresses
+    while (!in.eof())
+    {
+        line.clear();
+        readStringUntilNewlineInto(line, in);
+        in.tryIgnore(1); /// skip EOL (if not EOF)
+
+        profile_data += line;
+        profile_data += '\n';
+
+        if (line.empty())
+            continue;
+
+        /// Stack traces start with '@' followed by hex addresses
+        if (line[0] == '@')
+        {
+            std::string_view line_addresses(line.data() + 1, line.size() - 1);
+
+            while (!line_addresses.empty())
+            {
+                trimLeft(line_addresses);
+                if (line_addresses.empty())
+                    break;
+
+                auto address = parse_hex(line_addresses);
+                if (!address.has_value())
+                    break;
+
+                addresses.insert(address.value());
+            }
+        }
+    }
+
+    /// Symbolized profile header
+    writeString("--- symbol\n", out);
+    if (auto binary_path = getExecutablePath(); !binary_path.empty())
+    {
+        writeString("binary=", out);
+        writeString(binary_path, out);
+        writeChar('\n', out);
+    }
+
+    /// Symbolize each unique address
+    for (UInt64 address : addresses)
+    {
+        FramePointers fp;
+        fp[0] = reinterpret_cast<void *>(address);
+
+        /// Note, callback calls inlines first, while jeprof needs the opposite
+        /// Note, cannot use frame.virtual_addr since it is empty for inlines
+        std::vector<std::string> symbols;
+        auto symbolize_callback = [&](const StackTrace::Frame & frame)
+        {
+            if (!frame.virtual_addr)
+            {
+                /// jeprof adds [inline] on it's own, so no need to do this here
+                symbols.push_back(frame.symbol.value_or("??"));
+            }
+            else
+                symbols.push_back(frame.symbol.value_or("??"));
+        };
+        /// Note, @fatal (handling inlines) is slow (few milliseconds vs ~10 seconds)
+        /// We can add SYSTEM JEMALLOC FLUSH FAST (or similar)
+        ///
+        /// TODO: introduce cache (we have multiple caches for this, need some generic approach)
+        StackTrace::forEachFrame(fp, 0, 1, symbolize_callback, /* fatal= */ true);
+
+        /// Need to subtract 1 to apply the same fix as in jeprof::FixCallerAddresses()
+        writePointerHex(reinterpret_cast<const void *>(address - 1), out);
+
+        std::string_view separator(" ");
+        /// Reverse, since forEachFrame() adds inline frames first
+        for (const auto & symbol : std::ranges::reverse_view(symbols))
+        {
+            writeString(separator, out);
+            writeString(symbol, out);
+            separator = std::string_view("--");
+        }
+        writeChar('\n', out);
+    }
+
+    writeString("---\n", out);
+    writeString("--- heap\n", out);
+    writeString(profile_data, out);
+
+    out.finalize();
 }
 
 namespace

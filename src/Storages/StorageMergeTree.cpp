@@ -1227,22 +1227,25 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 .explanation = std::move(check_memory_result.error()),
             });
 
-        UInt64 max_source_parts_size = CompactionStatistics::getMaxSourcePartsSizeForMerge(*this);
+        UInt64 max_source_parts_bytes_for_merge = CompactionStatistics::getMaxSourcePartsBytesForMerge(*this);
+        UInt64 max_result_part_rows = CompactionStatistics::getMaxResultPartRowsCount(*this);
         bool merge_with_ttl_allowed = getTotalMergesWithTTLInMergeList() < (*getSettings())[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool];
 
         /// TTL requirements is much more strict than for regular merge, so
         /// if regular not possible, than merge with ttl is also not possible.
-        if (max_source_parts_size == 0)
+        if (max_source_parts_bytes_for_merge == 0)
+        {
             return std::unexpected(SelectMergeFailure{
                 .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                .explanation = PreformattedMessage::create("Current value of max_source_parts_size is zero"),
+                .explanation = PreformattedMessage::create("Current value of max_source_parts_bytes is zero"),
             });
+        }
 
         auto select_result = merger_mutator.selectPartsToMerge(
             parts_collector,
             merge_predicate,
             MergeSelectorApplier(
-                /*max_merge_sizes=*/{max_source_parts_size},
+                /*merge_constraints=*/{{max_source_parts_bytes_for_merge, max_result_part_rows}},
                 /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                 /*aggressive=*/aggressive,
                 /*range_filter_=*/nullptr
@@ -1408,7 +1411,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     if (current_mutations_by_version.empty())
         return {};
 
-    size_t max_source_part_size = CompactionStatistics::getMaxSourcePartSizeForMutation(*this);
+    size_t max_source_part_size = CompactionStatistics::getMaxSourcePartBytesForMutation(*this);
     if (max_source_part_size == 0)
     {
         LOG_DEBUG(
@@ -2394,23 +2397,21 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
 }
 
 PartitionCommandsResultInfo StorageMergeTree::attachPartition(
-    const ASTPtr & partition, const StorageMetadataPtr & /* metadata_snapshot */,
-    bool attach_part, ContextPtr local_context)
+    const PartitionCommand & command, const StorageMetadataPtr &, ContextPtr local_context)
 {
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
-    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, local_context, renamed_parts);
+    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_name);
+        LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_dir);
         /// We should write version metadata on part creation to distinguish it from parts that were created without transaction.
         auto txn = local_context->getCurrentTransaction();
         TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
         loaded_parts[i]->version.setCreationTID(tid, nullptr);
         loaded_parts[i]->storeVersionMetadata();
 
-        String old_name = renamed_parts.old_and_new_names[i].old_name;
         /// It's important to create it outside of lock scope because
         /// otherwise it can lock parts in destructor and deadlock is possible.
         MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
@@ -2421,15 +2422,14 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
             transaction.commit(lock);
         }
 
-        renamed_parts.old_and_new_names[i].old_name.clear();
-
         results.push_back(PartitionCommandResultInfo{
             .command_type = "ATTACH_PART",
             .partition_id = loaded_parts[i]->info.getPartitionId(),
             .part_name = loaded_parts[i]->name,
-            .old_part_name = old_name,
+            .old_part_name = renamed_parts.old_and_new_names[i].old_dir,
         });
 
+        renamed_parts.old_and_new_names[i].old_dir.clear();
         LOG_INFO(log, "Finished attaching part");
     }
 
@@ -2607,6 +2607,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
     auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
     auto merges_blocker = stopMergesAndWait();
+    auto operation_data_parts_lock_src = lockOperationsWithParts();
+    auto operation_data_parts_lock_dest = dest_table_storage->lockOperationsWithParts();
 
     auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr();
     auto metadata_snapshot = getInMemoryMetadataPtr();
@@ -2673,22 +2675,37 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     /// Move new parts to the destination table. NOTE It doesn't look atomic.
     try
     {
-        {
-            Transaction transaction(*dest_table_storage, local_context->getCurrentTransaction().get());
+        auto txn = local_context->getCurrentTransaction();
+        auto future_parts = initCoverageWithNewEmptyParts(src_parts);
+        auto [new_empty_covering_src_parts, _] = createEmptyDataParts(*this, future_parts, txn);
 
-            auto src_data_parts_lock = lockParts();
+        Transaction dest_transaction(*dest_table_storage, txn.get());
+        std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
+        {
             auto dest_data_parts_lock = dest_table_storage->lockParts();
-            std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
             for (auto & part : dst_parts)
             {
                 block_holders.push_back(dest_table_storage->fillNewPartName(part, dest_data_parts_lock));
-                dest_table_storage->renameTempPartAndReplaceUnlocked(part, transaction, dest_data_parts_lock, /*rename_in_transaction=*/ false);
+                dest_table_storage->renameTempPartAndReplaceUnlocked(part, dest_transaction, dest_data_parts_lock, /*rename_in_transaction=*/true);
             }
-
-            removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), src_parts, true, src_data_parts_lock);
-            transaction.commit(src_data_parts_lock);
         }
+
+        Transaction src_transaction(*this, txn.get());
+        {
+            auto src_data_parts_lock = lockParts();
+
+            for (auto & part : new_empty_covering_src_parts)
+            {
+                renameTempPartAndReplaceUnlocked(part, src_data_parts_lock, src_transaction, /*rename_in_transaction=*/true);
+            }
+        }
+
+        dest_transaction.renameParts();
+        dest_transaction.commit();
+
+        src_transaction.renameParts();
+        src_transaction.commit();
 
         clearOldPartsFromFilesystem();
 

@@ -58,6 +58,7 @@ namespace CoordinationSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
 }
 
 IKeeperStateMachine::IKeeperStateMachine(
@@ -146,15 +147,13 @@ void KeeperStateMachine<Storage>::init()
         }
         catch (...)
         {
-            LOG_FATAL(
-                log,
-                "Failure to load from latest snapshot with index {}: {}",
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Failure to load from latest snapshot with index {}: {}. Manual intervention is necessary for recovery. Problematic "
+                "snapshot can be removed but it will lead to data loss",
                 latest_log_index,
-                getCurrentExceptionMessage(true, true, false));
-            LOG_FATAL(
-                log, "Manual intervention is necessary for recovery. Problematic snapshot can be removed but it will lead to data loss");
-            abort();
-        }
+                getCurrentExceptionMessage(/* with_stacktrace= */ false, /* check_embedded_stacktrace= */ true));
+            }
     }
 
     auto last_committed_idx = keeper_context->lastCommittedIndex();
@@ -965,6 +964,8 @@ template<typename Storage>
 void KeeperStateMachine<Storage>::shutdownStorage()
 {
     LockGuardWithStats<false> lock(storage_mutex);
+    if (!storage)
+        return;
     storage->finalize();
 }
 

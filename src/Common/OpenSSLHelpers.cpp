@@ -246,12 +246,12 @@ std::string generateCSR(const std::vector<std::string> domain_names, EVP_PKEY * 
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in i2d_X509_REQ_bio: {}", getOpenSSLErrors());
 
     /// Convert CSR to string
-    int csr_len = BIO_ctrl_pending(req_bio.get());
-    if (csr_len <= 0)
+    size_t csr_len = BIO_ctrl_pending(req_bio.get());
+    if (csr_len == 0)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in BIO_ctrl_pending: {}", getOpenSSLErrors());
 
     std::string csr(csr_len, '\0');
-    if (BIO_read(req_bio.get(), csr.data(), csr_len) != csr_len)
+    if (BIO_read(req_bio.get(), csr.data(), static_cast<int>(csr_len)) != static_cast<int>(csr_len))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in BIO_read: {}", getOpenSSLErrors());
 
     csr = base64Encode(csr, /*url_encoding*/ true, /*no_padding*/ true);

@@ -1,4 +1,4 @@
-SET allow_experimental_qbit_type = 1;
+SET enable_qbit_type = 1;
 
 SELECT 'Test QBit subcolumns: corner cases';
 DROP TABLE IF EXISTS qbit;

@@ -77,7 +77,7 @@ namespace
         else
             str = fmt::format("table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
         if (first_upper)
-            str[0] = std::toupper(str[0]);
+            str[0] = static_cast<char>(std::toupper(str[0]));
         return str;
     }
 
@@ -960,6 +960,7 @@ void RestorerFromBackup::removeUnresolvedDependencies()
                 "Table {} in backup doesn't have dependencies and dependent tables as it expected to. It's a bug",
                 table_id);
 
+        LOG_TRACE(log, "Excluding dependency {}", table_id.getQualifiedName().getFullName());
         return true; /// Exclude this dependency.
     };
 

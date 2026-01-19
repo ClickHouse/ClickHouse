@@ -210,14 +210,49 @@ The generated file will be appended to the prefix PID and sequence number.
 
 ## Analyzing heap profiles {#analyzing-heap-profiles}
 
-After heap profiles have been generated, they need to be analyzed.  
+After heap profiles have been generated, they need to be analyzed.
 For that, `jemalloc`'s tool called [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in) can be used. It can be installed in multiple ways:
 - Using the system's package manager
 - Cloning the [jemalloc repo](https://github.com/jemalloc/jemalloc) and running `autogen.sh` from the root folder. This will provide you with the `jeprof` script inside the `bin` folder
 
+There are many different formats to generate from the heap profile using `jeprof`.
+You can run `jeprof --help` for information on the usage and the various options the tool provides.
+
+### Symbolized heap profiles {#symbolized-heap-profiles}
+
+Starting from version 26.1+, ClickHouse automatically generates symbolized heap profiles when you flush using `SYSTEM JEMALLOC FLUSH PROFILE`.
+The symbolized profile (with `.symbolized` extension) contains embedded function symbols and can be analyzed by `jeprof` without requiring the ClickHouse binary.
+
+For example, when you run:
+
+```sql
+SYSTEM JEMALLOC FLUSH PROFILE
+```
+
+ClickHouse will return the path to the symbolized profile (e.g., `/tmp/jemalloc_clickhouse.12345.0.heap.symbolized`).
+
+You can then analyze it directly with `jeprof`:
+
+```sh
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --output_format [ > output_file]
+```
+
 :::note
-`jeprof` uses `addr2line` to generate stacktraces which can be really slow.  
-If that's the case, it is recommended to install an [alternative implementation](https://github.com/gimli-rs/addr2line) of the tool.   
+
+**No binary required**: When using symbolized profiles (`.symbolized` files), you don't need to provide the ClickHouse binary path to `jeprof`. This makes it much easier to analyze profiles on different machines or after the binary has been updated.
+
+:::
+
+If you have an older non-symbolized heap profile and still have access to the ClickHouse binary, you can use the traditional approach:
+
+```sh
+jeprof path/to/clickhouse path/to/heap/profile --output_format [ > output_file]
+```
+
+:::note
+
+For non-symbolized profiles, `jeprof` uses `addr2line` to generate stacktraces which can be really slow.
+If that's the case, it is recommended to install an [alternative implementation](https://github.com/gimli-rs/addr2line) of the tool.
 
 ```bash
 git clone https://github.com/gimli-rs/addr2line.git --depth=1 --branch=0.23.0
@@ -226,37 +261,46 @@ cargo build --features bin --release
 cp ./target/release/addr2line path/to/current/addr2line
 ```
 
-Alternatively, `llvm-addr2line` works equally well.
+Alternatively, `llvm-addr2line` works equally well (But note, that `llvm-objdump` is not compatible with `jeprof`)
+
+And later use it like this `jeprof --tools addr2line:/usr/bin/llvm-addr2line,nm:/usr/bin/llvm-nm,objdump:/usr/bin/objdump,c++filt:/usr/bin/llvm-cxxfilt`
 
 :::
 
-There are many different formats to generate from the heap profile using `jeprof`.
-It is recommended to run `jeprof --help` for information on the usage and the various options the tool provides. 
-
-In general, the `jeprof` command is used as:
+When comparing two profiles, you can use the `--base` argument:
 
 ```sh
-jeprof path/to/binary path/to/heap/profile --output_format [ > output_file]
-```
-
-If you want to compare which allocations happened between two profiles you can set the `base` argument:
-
-```sh
-jeprof path/to/binary --base path/to/first/heap/profile path/to/second/heap/profile --output_format [ > output_file]
+jeprof --base /path/to/first.heap.symbolized /path/to/second.heap.symbolized --output_format [ > output_file]
 ```
 
 ### Examples {#examples}
 
-- if you want to generate a text file with each procedure written per line:
+Using symbolized profiles (recommended):
+
+- Generate a text file with each procedure written per line:
 
 ```sh
-jeprof path/to/binary path/to/heap/profile --text > result.txt
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --text > result.txt
 ```
 
-- if you want to generate a PDF file with a call-graph:
+- Generate a PDF file with a call-graph:
 
 ```sh
-jeprof path/to/binary path/to/heap/profile --pdf > result.pdf
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --pdf > result.pdf
+```
+
+Using non-symbolized profiles (requires binary):
+
+- Generate a text file with each procedure written per line:
+
+```sh
+jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --text > result.txt
+```
+
+- Generate a PDF file with a call-graph:
+
+```sh
+jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --pdf > result.pdf
 ```
 
 ### Generating a flame graph {#generating-flame-graph}
@@ -266,7 +310,13 @@ jeprof path/to/binary path/to/heap/profile --pdf > result.pdf
 You need to use the `--collapsed` argument:
 
 ```sh
-jeprof path/to/binary path/to/heap/profile --collapsed > result.collapsed
+jeprof /tmp/jemalloc_clickhouse.12345.0.heap.symbolized --collapsed > result.collapsed
+```
+
+Or with a non-symbolized profile:
+
+```sh
+jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --collapsed > result.collapsed
 ```
 
 After that, you can use many different tools to visualize collapsed stacks.

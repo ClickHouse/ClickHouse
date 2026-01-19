@@ -125,7 +125,7 @@ bool AggregateFunctionCount::isCompilable() const
 {
     bool is_compilable = true;
     for (const auto & argument_type : argument_types)
-    is_compilable &= canBeNativeType(*argument_type);
+        is_compilable &= canBeNativeType(*argument_type);
 
     return is_compilable;
 }

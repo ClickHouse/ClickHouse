@@ -49,15 +49,14 @@ CREATE MATERIALIZED VIEW sync_insert_mv TO target_table_remote_sync AS
 SELECT * FROM source_table;
 
 -- Default setting, unset async_insert, so its default is 0
-SET async_insert = DEFAULT;
 -- One type of inserts each
-INSERT INTO source_table (id, data) VALUES (1, 'test1'), (2, 'test2'), (3, 'test3');
-SET async_insert = 1;
--- One type of inserts each
-INSERT INTO source_table (id, data) VALUES (4, 'test4'), (5, 'test5'), (6, 'test6');
-SET async_insert = 0;
+INSERT INTO source_table (id, data) SETTINGS async_insert=DEFAULT VALUES (1, 'test1'), (2, 'test2'), (3, 'test3');
+
+-- One type of inserts eacnnh
+INSERT INTO source_table (id, data) SETTINGS async_insert=1 VALUES (4, 'test4'), (5, 'test5'), (6, 'test6');
+
 -- This time both inserts have async_insert = 0, so 2 async and 4 sync inserts in total
-INSERT INTO source_table (id, data) VALUES (7, 'test7'), (8, 'test8'), (9, 'test9');
+INSERT INTO source_table (id, data) SETTINGS async_insert=0 VALUES (7, 'test7'), (8, 'test8'), (9, 'test9');
 
 SYSTEM FLUSH LOGS query_log;
 SELECT count() FROM system.query_log
