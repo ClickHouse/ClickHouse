@@ -719,9 +719,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             return +1;
         if (rhs.isPositiveInfinity())
             return lhs.isNullAt(row) ? 0 : -1; // +Inf == +Inf
-        /// If rhs.value is null, we can't use rhs.column for comparison
-        if (rhs.value.isNull())
-            return lhs.isNullAt(row) ? 0 : +1; // null == null, non-null > null
         return lhs.compareAt(row, 0, *rhs.column, 1);
     };
 
@@ -832,7 +829,7 @@ bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const
 
 void MergeTreeSetIndex::FieldValue::update(const Field & x)
 {
-    if (x.isNull() || x.isNegativeInfinity() || x.isPositiveInfinity())
+    if (x.isNegativeInfinity() || x.isPositiveInfinity())
         value = x;
     else
     {

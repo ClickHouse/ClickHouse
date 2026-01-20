@@ -14,7 +14,6 @@ namespace DB
 /// Float64 can exactly represent integers in the range [-2^53, 2^53].
 static constexpr Float64 MAX_EXACT_FLOAT64 = static_cast<Float64>(1ULL << std::numeric_limits<Float64>::digits);
 
-
 /// Try to convert Float64 value to target type using strict conversion.
 /// Returns the converted Field if successful, nullopt otherwise.
 static std::optional<Field> tryConvertFloat64Strict(Float64 value, const DataTypePtr & data_type)
@@ -69,7 +68,7 @@ static bool exceedsFloat64PrecisionRange(Float64 value)
 }
 
 /// Create a Range from statistics estimate for use in part pruning.
-/// For nullable columns, the range is conservatively extended to POSITIVE_INFINITY
+/// For nullable columns, the range is conservatively extended to POSITIVE_INFINITY.
 /// This is a conservative approach because StatisticsMinMax loses information about whether the column actually contains NULL values.
 static std::optional<Range> createRangeFromEstimate(const Estimate & est, const DataTypePtr & data_type, bool is_nullable)
 {
@@ -136,8 +135,6 @@ static std::optional<Range> createRangeFromEstimate(const Estimate & est, const 
     }
 
     /// For types that may exceed Float64 precision, check precision range first.
-    /// If the value exceeds Float64 precision range, use conservative boundary values directly
-    /// since tryConvertFloat64Strict doesn't detect precision loss for integer types.
     std::optional<Field> min_field_opt;
     std::optional<Field> max_field_opt;
 
