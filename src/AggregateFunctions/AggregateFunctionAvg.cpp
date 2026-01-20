@@ -61,7 +61,7 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
     }
     else if (which.isDate())
     {
-        // Preserve Date result type: average over underlying UInt16 days, rounded and returned as Date
+        /// Preserve Date result type
         res = std::make_shared<AggregateFunctionAvg<UInt16>>(argument_types, data_type);
     }
     else if (which.isDate32())
