@@ -78,7 +78,7 @@ SELECT currentDatabase()
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionCurrentDatabase>(documentation);
+    factory.registerFunctionAllowingOmittedParentheses<FunctionCurrentDatabase>(documentation);
     factory.registerAlias("DATABASE", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("SCHEMA", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_database", FunctionCurrentDatabase::name, FunctionFactory::Case::Insensitive);

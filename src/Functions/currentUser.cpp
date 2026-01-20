@@ -76,7 +76,7 @@ SELECT currentUser()
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionCurrentUser>(documentation);
+    factory.registerFunctionAllowingOmittedParentheses<FunctionCurrentUser>(documentation);
     factory.registerAlias("user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_user", FunctionCurrentUser::name, FunctionFactory::Case::Insensitive);
 }
