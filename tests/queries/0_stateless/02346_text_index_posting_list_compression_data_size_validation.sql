@@ -1,14 +1,7 @@
 -- Tags: no-random-mergetree-settings, no-random-settings 
--- This test compares two identical tables that differ only in the text index posting-list compression setting (posting_list_codec).
--- The inserted data covers a range of posting-list shapes:
--- - very large lists (aa/bb/cc),
--- - a block-boundary case (129 hits = 128 + tail),
--- - a medium non-aligned size (1003 hits),
--- - a single-hit list, and
--- - very sparse lists (2 and 5 hits).
--- After OPTIMIZE FINAL to stabilize on-disk parts, each hasToken() query validates that the compressed
--- and uncompressed tables return identical counts (and matches expected exact counts for key tokens),
--- ensuring correctness across full blocks, tail blocks, and small-N cases.
+
+-- This test case is intended to validate the data size in two scenarios: with posting list compression enabled and with it disabled.
+-- Disable the randomized settings to prevent the data size from varying with random parameters, which could otherwise cause the test to fail.
 
 SET allow_experimental_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
