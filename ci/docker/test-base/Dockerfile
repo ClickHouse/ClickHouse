@@ -51,6 +51,7 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && apt-get install -y --no-install-recommends \
         llvm-${LLVM_VERSION} \
         make \
+        libdatetime-perl \
     && ln -s /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
     && ln -s /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
     && apt-get clean \

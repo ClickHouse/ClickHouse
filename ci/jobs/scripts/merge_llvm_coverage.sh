@@ -2,23 +2,6 @@
 
 set -e
 
-# Install newer lcov if needed (version 1.14 doesn't support --sort-tables, --hierarchical)
-LCOV_VERSION=$(genhtml --version 2>&1 | grep -oP 'LCOV version \K[0-9.]+' || echo "0")
-echo "Current lcov version: $LCOV_VERSION"
-if [ "$(printf '%s\n' "$LCOV_VERSION" "2.0" | sort -V | head -n1)" != "2.0" ]; then
-    echo "Installing newer lcov from source..."
-    OLD_DIR=$(pwd)
-    cd /tmp
-    wget -q https://github.com/linux-test-project/lcov/releases/download/v2.1/lcov-2.1.tar.gz
-    tar xzf lcov-2.1.tar.gz
-    cd lcov-2.1
-    make install PREFIX=/usr/local
-    cd "$OLD_DIR"
-    rm -rf /tmp/lcov-2.1 /tmp/lcov-2.1.tar.gz
-    export PATH="/usr/local/bin:$PATH"
-    echo "Installed lcov version: $(genhtml --version 2>&1 | head -n1)"
-fi
-
 echo "Merging LLVM coverage files..."
 
 # Debug: List available llvm tools
