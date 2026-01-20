@@ -7,6 +7,7 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ActionsMatcher.h>
 #include <Interpreters/ActionsVisitor.h>
@@ -19,7 +20,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Storages/IndicesDescription.h>
-#include "DataTypes/IDataType.h"
 
 
 namespace DB
