@@ -123,12 +123,12 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         ostr << " SYNC";
 }
 
-ASTs ASTDropQuery::getRewrittenASTsOfSingleTable(ASTPtr self) const
+ASTs ASTDropQuery::getRewrittenASTsOfSingleTable()
 {
     ASTs res;
     if (database_and_tables == nullptr)
     {
-        res.push_back(self);
+        res.push_back(shared_from_this());
         return res;
     }
 

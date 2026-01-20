@@ -960,7 +960,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.as_table_function)
     {
         /// Table function without columns list.
-        auto table_function_ast = create.getChild(*create.as_table_function);
+        auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
         properties.columns = table_function->getActualTableStructure(getContext(), /*is_insert_query*/ true);
     }
@@ -972,7 +972,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Evaluate expressions (like currentDatabase() or tcpPort()) in dictionary source definition.
         NormalizeAndEvaluateConstantsVisitor::Data visitor_data{getContext()};
         NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
-        visitor.visit(create.dictionary->getChild(*create.dictionary->source));
+        visitor.visit(create.dictionary->source->ptr());
 
         return {};
     }
@@ -1362,12 +1362,12 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
         else if (as_create.as_table_function)
         {
-            create.set(create.as_table_function, as_create.getChild(*as_create.as_table_function));
+            create.set(create.as_table_function, as_create.as_table_function->ptr());
             return;
         }
         else if (as_create.storage)
         {
-            storage_def = typeid_cast<std::shared_ptr<ASTStorage>>(as_create.getChild(*as_create.storage));
+            storage_def = typeid_cast<std::shared_ptr<ASTStorage>>(as_create.storage->ptr());
             create.is_time_series_table = as_create.is_time_series_table;
         }
         else
@@ -1523,7 +1523,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
     if (!create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
-        create.set(create.sql_security, std::make_shared<ASTSQLSecurity>());
+        create.sql_security = std::make_shared<ASTSQLSecurity>();
 
     if (create.sql_security)
         processSQLSecurityOption(getContext(), create.sql_security->as<ASTSQLSecurity &>(), create.is_materialized_view, /* skip_check_permissions= */ mode >= LoadingStrictnessLevel::SECONDARY_CREATE);
@@ -1967,7 +1967,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
-        auto table_function_ast = create.getChild(*create.as_table_function);
+        auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
         if (!table_function->canBeUsedToCreateTable())

@@ -57,12 +57,11 @@ static MutationCommand createMutationCommand(const ASTUpdateQuery & update_query
     if (update_query.partition)
         alter_query->set(alter_query->partition, update_query.partition);
 
-    auto mutation_command = MutationCommand::parse(*alter_query);
+    auto mutation_command = MutationCommand::parse(alter_query.get());
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Failed to convert query '{}' to mutation command. It's a bug", update_query.formatForErrorMessage());
 
-    mutation_command->ast = alter_query;
     return *mutation_command;
 }
 
