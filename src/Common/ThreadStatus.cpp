@@ -87,7 +87,7 @@ struct ThreadStack
 
     static size_t getSize()
     {
-        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
+        auto size = std::max<size_t>({UNWIND_MINSIGSTKSZ, MINSIGSTKSZ, static_cast<size_t>(getPageSize())});
 
         if constexpr (guardPagesEnabled())
             size += getPageSize();
