@@ -219,7 +219,7 @@ StorageObjectStorage::StorageObjectStorage(
             sample_path);
     }
 
-    bool format_supports_prewhere = !configuration->isDataLakeConfiguration() && FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
+    bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
 
     /// TODO: Known problems with datalake prewhere:
     ///  * If the iceberg table went through schema evolution, columns read from file may need to
@@ -242,7 +242,7 @@ StorageObjectStorage::StorageObjectStorage(
     ///    There's probably no reason for this, and it should just copy those fields like the others.
     ///  * If the table contains files in different formats, with only some of them supporting
     ///    prewhere, things break.
-    supports_prewhere = format_supports_prewhere;
+    supports_prewhere = !configuration->isDataLakeConfiguration() && format_supports_prewhere;
     supports_tuple_elements = format_supports_prewhere;
 
     StorageInMemoryMetadata metadata;
