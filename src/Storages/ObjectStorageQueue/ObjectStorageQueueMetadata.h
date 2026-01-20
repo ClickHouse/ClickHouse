@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/SettingsChanges.h>
@@ -62,8 +63,7 @@ public:
         size_t cleanup_interval_max_ms_,
         bool use_persistent_processing_nodes_,
         size_t persistent_processing_nodes_ttl_seconds_,
-        size_t keeper_multiread_batch_size_,
-        bool path_with_hive_partitioning_);
+        size_t keeper_multiread_batch_size_);
 
     ~ObjectStorageQueueMetadata();
 
@@ -87,7 +87,6 @@ public:
         const std::string & format,
         const ContextPtr & context,
         bool is_attach,
-        bool is_path_with_hive_partitioning,
         LoggerPtr log);
     /// Alter settings in keeper metadata
     /// (rewrites what we write in syncWithKeeper()).
@@ -156,7 +155,8 @@ public:
     /// Set local ref count for metadata.
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
 
-    bool isPathWithHivePartitioning() const { return is_path_with_hive_partitioning; }
+    ObjectStorageQueuePartitioningMode getPartitioningMode() const { return partitioning_mode; }
+    const ObjectStorageQueueFilenameParser * getFilenameParser() const { return filename_parser.get(); }
 
     void updateSettings(const SettingsChanges & changes);
 
@@ -181,8 +181,11 @@ private:
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
+    const ObjectStorageQueuePartitioningMode partitioning_mode;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
+
+    std::unique_ptr<ObjectStorageQueueFilenameParser> filename_parser;
 
     std::atomic<size_t> cleanup_interval_min_ms;
     std::atomic<size_t> cleanup_interval_max_ms;
@@ -215,8 +218,6 @@ private:
     /// Number of S3(Azure)Queue tables on the same
     /// clickhouse server instance referencing the same metadata object.
     std::atomic<size_t> * metadata_ref_count = nullptr;
-
-    const bool is_path_with_hive_partitioning = false;
 };
 
 using ObjectStorageQueueMetadataPtr = std::unique_ptr<ObjectStorageQueueMetadata>;

@@ -1237,7 +1237,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
 
     if (fixed_fractional_length && fractional_length < scale)
     {
-        T new_value = value / static_cast<T>(DecimalUtils::scaleMultiplier<Int256>(scale - fractional_length - 1));
+        T new_value = static_cast<T>(value / DecimalUtils::scaleMultiplier<Int256>(scale - fractional_length - 1));
         auto round_carry = new_value % 10;
         value = new_value / 10;
         if (round_carry >= 5)
