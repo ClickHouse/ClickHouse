@@ -106,7 +106,7 @@ Typical use cases for the preprocessor argument include
 2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8).
 3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode).
 
-The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
+The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
 
 Examples:
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
@@ -127,7 +127,7 @@ CREATE TABLE tab
     col Array(String),
     INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))
 
-    -- this is not legal:
+    -- This is not legal:
     INDEX idx_illegal col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arraySort(col))
 )
 ENGINE = MergeTree

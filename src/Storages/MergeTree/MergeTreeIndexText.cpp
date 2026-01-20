@@ -1086,7 +1086,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (*pos >= block.rows())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.",
+            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}",
             *pos, block.rows());
     }
 
@@ -1105,7 +1105,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
 
     if (isArray(index_column.type->getTypeId()))
     {
-        auto [preprocessed_column, offset] = preprocessor->processColumnArray(index_column, *pos, rows_read);
+        auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
         const auto & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
         const auto & column_data = column_array.getData();
