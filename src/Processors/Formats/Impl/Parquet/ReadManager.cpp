@@ -654,10 +654,14 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
             break;
 
         if (!stage.schedulable_row_groups.unset(row_group_idx, std::memory_order_acquire))
+        {
+            LOG_DEBUG(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: another thread got row group {}", row_group_idx);
             continue; // another thread picked up this row group while we were checking limits
+        }
 
         /// Kicks off prefetches and adds their (and other) memory usage estimate to `diff`.
         auto & stage_tasks = stage.row_group_tasks_to_schedule[row_group_idx];
+        LOG_DEBUG(getLogger("ParquetReadManager"), "scheduleTasksIfNeeded: want to schedule tasks rg={}, stage_tasks.size()={}", row_group_idx, stage_tasks.size());
         chassert(!stage_tasks.empty());
         for (size_t i = 0; i < stage_tasks.size(); ++i)
             scheduleTask(stage_tasks[i], i == 0, diff, tasks);
@@ -725,6 +729,8 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
 
 void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks)
 {
+    LOG_DEBUG(getLogger("ParquetReadManager"), "scheduleTask: schedule task.row_group_idx={}, task.row_subgroup_idx={}, task.stage={}, task.column_idx={}, task.step_idx={}", task.row_group_idx, task.row_subgroup_idx, static_cast<Int32>(task.stage), task.column_idx, task.step_idx);
+
     /// Kick off prefetches and count estimated memory usage.
     std::vector<PrefetchHandle *> prefetches;
     RowGroup & row_group = reader.row_groups[task.row_group_idx];
