@@ -2,6 +2,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTCheckDatabaseQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/parseDatabaseAndTableName.h>
@@ -20,7 +21,10 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return true;
     }
 
-    return parseCheckTable(pos, node, expected);
+    if (parseCheckTable(pos, node, expected))
+        return true;
+
+    return parseCheckDatabase(pos, node, expected);
 }
 
 bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expected)
@@ -63,6 +67,25 @@ bool ParserCheckQuery::parseCheckTable(Pos & pos, ASTPtr & node, Expected & expe
 
     if (query->table)
         query->children.push_back(query->table);
+
+    node = query;
+    return true;
+}
+
+bool ParserCheckQuery::parseCheckDatabase(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_check_table(Keyword::CHECK_DATABASE);
+
+    if (!s_check_table.ignore(pos, expected))
+        return false;
+
+    auto query = std::make_shared<ASTCheckDatabaseQuery>();
+
+    if (!parseDatabaseAsAST(pos, expected, query->database))
+        return false;
+
+    if (query->database)
+        query->children.push_back(query->database);
 
     node = query;
     return true;
