@@ -23,10 +23,12 @@
 #include <Common/BitHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/WeakHash.h>
+#include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
@@ -38,6 +40,8 @@
 #include <base/types.h>
 
 #include <algorithm>
+#include <chrono>
+#include <memory>
 #include <numeric>
 #include <deque>
 #include <ranges>
@@ -171,6 +175,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
           /*max_free_threads_*/ 0,
           /*queue_size_*/ slots))
     , stats_collecting_params(stats_collecting_params_)
+    , reuse_filled_right(false)
 {
     hash_joins.resize(slots);
 
@@ -189,6 +194,81 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                     auto inner_hash_join = std::make_shared<InternalHashJoin>();
                     inner_hash_join->data = std::make_unique<HashJoin>(
                         table_join_,
+                        right_sample_block,
+                        any_take_last_row_,
+                        reserve_size,
+                        fmt::format("concurrent{}", i),
+                        /*use_two_level_maps*/ true);
+                    inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
+                    inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
+                    hash_joins[i] = std::move(inner_hash_join);
+                });
+        }
+        pool->wait();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        pool->wait();
+        throw;
+    }
+}
+
+ConcurrentHashJoin::ConcurrentHashJoin(
+    JoinPtr source_join_,
+    std::shared_ptr<TableJoin> table_join_,
+    size_t slots_,
+    SharedHeader right_sample_block,
+    const StatsCollectingParams & stats_collecting_params_,
+    bool any_take_last_row_
+)
+    : table_join(table_join_)
+    , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
+    , any_take_last_row(any_take_last_row_)
+    , pool(std::make_unique<ThreadPool>(
+          CurrentMetrics::ConcurrentHashJoinPoolThreads,
+          CurrentMetrics::ConcurrentHashJoinPoolThreadsActive,
+          CurrentMetrics::ConcurrentHashJoinPoolThreadsScheduled,
+          /*max_threads_*/ slots,
+          /*max_free_threads_*/ 0,
+          /*queue_size_*/ slots))
+    , stats_collecting_params(stats_collecting_params_)
+    , reuse_filled_right(true)
+{
+    hash_joins.resize(slots);
+
+    auto * source_concurrent_hash_join = typeid_cast<ConcurrentHashJoin *>(source_join_.get());
+
+    std::vector<HashJoin::RightTableDataPtr> source_data;
+    source_data.reserve(slots);
+    if (source_concurrent_hash_join)
+    {
+        LOG_DEBUG(getLogger(__func__), "Reusing filled ConcurrentHashJoin for {} {}", table_join->kind(), table_join->strictness());
+        for (const auto & join : source_concurrent_hash_join->hash_joins)
+            source_data.push_back(getData(join));
+    }
+    else
+    {
+        for (size_t i = 0; i < slots; ++i)
+            source_data.push_back(std::make_shared<HashJoin::RightTableData>());
+    }
+
+    try
+    {
+        for (size_t i = 0; i < slots; ++i)
+        {
+            pool->scheduleOrThrow(
+                [&, i, thread_group = CurrentThread::getGroup()]()
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN);
+
+                    /// reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
+                    const size_t reserve_size = 0;
+
+                    auto inner_hash_join = std::make_shared<InternalHashJoin>();
+                    inner_hash_join->data = std::make_unique<HashJoin>(
+                        table_join_,
+                        std::move(source_data[i]),
                         right_sample_block,
                         any_take_last_row_,
                         reserve_size,
@@ -672,6 +752,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 {
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
+        auto merge_start = std::chrono::high_resolution_clock::now();
         // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.
         // It is done in two steps:
         //     1. Merge hash maps into a single one. For that, we iterate over all sub-maps and move buckets from the current `HashJoin` instance to the common map.
@@ -713,6 +794,10 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             getData(hash_joins[i])->rows_to_join = 0;
             getData(hash_joins[i])->keys_to_join = 0;
         }
+        auto merge_end = std::chrono::high_resolution_clock::now();
+        LOG_TRACE(getLogger(__func__),
+            "Merged into single map in {} ms",
+            std::chrono::duration_cast<std::chrono::milliseconds>(merge_end - merge_start).count());
         getData(hash_joins[0])->sorted = false;
 
         /// rebuild per-slot right-side nullmaps into slot 0 so that

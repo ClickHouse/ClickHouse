@@ -427,6 +427,15 @@ public:
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
 
+    HashJoin(
+        std::shared_ptr<TableJoin> table_join_,
+        RightTableDataPtr right_table_data_,
+        SharedHeader right_sample_block,
+        bool any_take_last_row_ = false,
+        size_t reserve_num_ = 0,
+        const String & instance_id_ = "",
+        bool use_two_level_maps_ = false);
+
     /// We keep correspondence between used_flags and hash table internal buffer.
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
     void setLock(TableLockHolder rwlock_holder)
@@ -476,6 +485,9 @@ public:
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
 private:
+
+    void initializeHashJoin(bool use_two_level_maps);
+
     friend class NotJoinedHash;
     friend class JoinSource;
     friend class CrossJoinResult;

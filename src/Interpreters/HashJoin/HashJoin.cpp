@@ -156,6 +156,40 @@ HashJoin::HashJoin(
     , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
     , log(getLogger("HashJoin"))
 {
+    initializeHashJoin(use_two_level_maps);
+}
+
+HashJoin::HashJoin(
+    std::shared_ptr<TableJoin> table_join_,
+    RightTableDataPtr right_table_data_,
+    SharedHeader right_sample_block_,
+    bool any_take_last_row_,
+    size_t reserve_num_,
+    const String & instance_id_,
+    bool use_two_level_maps
+)
+    : table_join(table_join_)
+    , kind(table_join->kind())
+    , strictness(table_join->strictness())
+    , any_take_last_row(any_take_last_row_)
+    , reserve_num(reserve_num_)
+    , instance_id(instance_id_)
+    , asof_inequality(table_join->getAsofInequality())
+    , data(std::move(right_table_data_))
+    , tmp_data(table_join_->getTempDataOnDisk())
+    , right_sample_block(*right_sample_block_)
+    , max_joined_block_rows(table_join->maxJoinedBlockRows())
+    , max_joined_block_bytes(table_join->maxJoinedBlockBytes())
+    , joined_block_split_single_row(table_join->joinedBlockAllowSplitSingleRow())
+    , enable_lazy_columns_replication(table_join->enableColumnsLazyReplication())
+    , instance_log_id(!instance_id_.empty() ? "(" + instance_id_ + ") " : "")
+    , log(getLogger("HashJoin"))
+{
+    initializeHashJoin(use_two_level_maps);
+}
+
+void HashJoin::initializeHashJoin(bool use_two_level_maps)
+{
     if (joined_block_split_single_row && max_joined_block_rows == 0)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

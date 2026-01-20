@@ -991,6 +991,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     JoinExpressionActions expression_actions,
     JoinSettings join_settings,
     JoinAlgorithmParams join_algorithm_params,
+    QueryPlanNode * right_side_input_node,
     SortingStep::Settings sorting_settings,
     const ActionsDAG::NodeRawConstPtrs & actions_after_join,
     const QueryPlanOptimizationSettings & optimization_settings,
@@ -1284,7 +1285,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         prepared_join_storage,
         left_sample_block,
         right_sample_block,
-        join_algorithm_params);
+        join_algorithm_params,
+        right_side_input_node);
 
     QueryPlanNode node;
     node.children = std::move(children);
@@ -1355,6 +1357,7 @@ void JoinStepLogical::buildPhysicalJoin(
         std::move(join_step->expression_actions),
         join_step->join_settings,
         *join_step->join_algorithm_params,
+        join_step->right_hand_side_input_node,
         join_step->sorting_settings,
         join_step->actions_after_join,
         optimization_settings,

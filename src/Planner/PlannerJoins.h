@@ -282,7 +282,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const PreparedJoinStorage & right_table_expression,
     SharedHeader left_table_expression_header,
     SharedHeader right_table_expression_header,
-    const JoinAlgorithmParams & params);
+    const JoinAlgorithmParams & params,
+    QueryPlan::Node * right_side_input_node = nullptr
+);
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
 TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node);

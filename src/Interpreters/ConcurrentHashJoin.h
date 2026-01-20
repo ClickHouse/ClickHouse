@@ -50,6 +50,14 @@ public:
         const StatsCollectingParams & stats_collecting_params_,
         bool any_take_last_row_ = false);
 
+    explicit ConcurrentHashJoin(
+        JoinPtr source_join_,
+        std::shared_ptr<TableJoin> table_join_,
+        size_t slots_,
+        SharedHeader right_sample_block,
+        const StatsCollectingParams & stats_collecting_params_,
+        bool any_take_last_row_ = false);
+
     ~ConcurrentHashJoin() override;
 
     std::string getName() const override { return "ConcurrentHashJoin"; }
@@ -63,6 +71,8 @@ public:
     size_t getTotalByteCount() const override;
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
+
+    JoinPipelineType pipelineType() const override { return reuse_filled_right ? JoinPipelineType::FilledRight : JoinPipelineType::FillRightFirst; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
@@ -118,6 +128,8 @@ private:
 
     std::mutex totals_mutex;
     Block totals;
+
+    bool reuse_filled_right = false;
 
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
 };

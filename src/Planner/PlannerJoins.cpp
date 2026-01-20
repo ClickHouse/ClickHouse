@@ -48,6 +48,8 @@
 #include <Core/Joins.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 
 #include <stack>
 
@@ -1136,7 +1138,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     const PreparedJoinStorage & right_table_expression,
     SharedHeader & left_table_expression_header,
     SharedHeader & right_table_expression_header,
-    const JoinAlgorithmParams & params)
+    const JoinAlgorithmParams & params,
+    QueryPlan::Node * right_side_input_node
+)
 {
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
@@ -1172,6 +1176,18 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     params.collect_hash_table_stats_during_joins,
                     params.max_entries_for_hash_table_stats,
                     params.max_size_to_preallocate_for_joins};
+                if (right_side_input_node)
+                {
+                    LOG_DEBUG(getLogger(__func__), "[YES] Using ConcurrentHashJoin with existing right side input JoinStep");
+                    auto * right_side_input_join_node = typeid_cast<JoinStep *>(right_side_input_node->step.get());
+                    return std::make_shared<ConcurrentHashJoin>(
+                        right_side_input_join_node->getJoin(),
+                        table_join,
+                        params.max_threads,
+                        right_table_expression_header,
+                        stats_collecting_params);
+                }
+                LOG_DEBUG(getLogger(__func__), "[NOT] Using ConcurrentHashJoin with existing right side input JoinStep");
                 return std::make_shared<ConcurrentHashJoin>(table_join, params.max_threads, right_table_expression_header, stats_collecting_params);
             }
         }
@@ -1261,7 +1277,9 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const PreparedJoinStorage & right_table_expression,
     SharedHeader left_table_expression_header,
     SharedHeader right_table_expression_header,
-    const JoinAlgorithmParams & params)
+    const JoinAlgorithmParams & params,
+    QueryPlan::Node * right_side_input_node
+)
 {
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
@@ -1325,7 +1343,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             right_table_expression,
             left_table_expression_header,
             right_table_expression_header,
-            params);
+            params,
+            right_side_input_node);
         if (join)
             return join;
     }

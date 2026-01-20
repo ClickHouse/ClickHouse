@@ -4,6 +4,8 @@
 #include <Analyzer/UnionNode.h>
 
 #include <Common/Exception.h>
+#include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Joins.h>
@@ -198,6 +200,8 @@ struct DecorrelationContext
     /// Whether the input subplan is referenced during decorrelation.
     /// This is necessary to identify if in-memory buffer would be used.
     bool referenced_input_subplan = false;
+
+    std::vector<QueryPlan::Node *> join_with_subquery_input = {};
 };
 
 /// Correlated subquery is represented by implicit dependent join operator.
@@ -300,6 +304,7 @@ QueryPlan decorrelateQueryPlan(
             JoinSettings(settings),
             SortingStep::Settings(settings));
         decorrelated_join->setStepDescription("JOIN to evaluate correlated expression");
+        decorrelated_join->setOptimized();
 
         /// Add CROSS JOIN to combine data streams from left and right plans.
         QueryPlan result_plan;
@@ -309,6 +314,7 @@ QueryPlan decorrelateQueryPlan(
         plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
 
         result_plan.unitePlans(std::move(decorrelated_join), {std::move(plans)});
+        context.join_with_subquery_input.push_back(result_plan.getRootNode());
 
         return result_plan;
     }
@@ -784,6 +790,13 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(decorrelated_plan),
                 correlated_subquery,
                 context.referenced_input_subplan);
+
+            for (auto * input_referencing_join : context.join_with_subquery_input)
+            {
+                auto * input_referencing_join_step = typeid_cast<JoinStepLogical *>(input_referencing_join->step.get());
+                LOG_DEBUG(getLogger(__func__), "SETTING RHS {}", input_referencing_join_step != nullptr);
+                input_referencing_join_step->setRightHandSideInputNode(query_plan.getRootNode());
+            }
             break;
         }
     }
