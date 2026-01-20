@@ -140,7 +140,7 @@ def run_func_test(
     for i, path in enumerate(output_paths):
         with open(path, "w", encoding="utf-8") as op:
             full_command = (
-                f"{cmd} {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
+                f"{cmd} --stress-tests {get_options(i, upgrade_check, encrypted_storage)} {global_time_limit_option} "
                 f"{skip_tests_option} {upgrade_check_option} {encrypted_storage_option}"
             )
             logging.info("Run func tests '%s'", full_command)
@@ -391,7 +391,6 @@ def main():
             cmd = " ".join(
                 [
                     args.test_cmd,
-                    "--stress-tests",
                     # Do not track memory allocations up to 1Gi,
                     # this will allow to ignore server memory limit (max_server_memory_usage) for this query.
                     #
