@@ -21,6 +21,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/CurrentThread.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <ranges>
 #include <random>
@@ -438,13 +440,30 @@ void performHubPruning(
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAndReset()
 {
+    /// Check experimental setting guard - if disabled, ignore leann_params for backward compatibility
+    bool leann_enabled = false;
+    if (leann_params.enable_hub_pruning)
+    {
+        auto query_context = CurrentThread::get().getQueryContext();
+        if (query_context)
+        {
+            auto merge_tree_settings = query_context->getMergeTreeSettings();
+            if (merge_tree_settings && (*merge_tree_settings)[MergeTreeSetting::allow_experimental_leann_optimization_for_hnsw])
+                leann_enabled = true;
+        }
+    }
+
     /// Perform hub pruning if enabled
-    if (leann_params.enable_hub_pruning && index && index->size() > 0 && !stored_vectors.empty())
+    if (leann_enabled && index && index->size() > 0 && !stored_vectors.empty())
     {
         performHubPruning(index, stored_vectors, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
     }
 
-    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, metric_kind, scalar_kind, usearch_hnsw_params, index, leann_params);
+    LeaNNParams effective_leann_params = leann_params;
+    if (!leann_enabled)
+        effective_leann_params.enable_hub_pruning = false;
+
+    auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, metric_kind, scalar_kind, usearch_hnsw_params, index, effective_leann_params);
 
     /// Clear stored vectors after use (they're no longer needed after index construction)
     stored_vectors.clear();
