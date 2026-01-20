@@ -70,28 +70,28 @@ def test_multistage_prewhere(started_cluster_iceberg_with_spark, format_version,
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
     query_id = get_uuid_str()
-    instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a = 0 AND a = 1")
     target_0 = ""
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a = 0 AND a = 1") == target_0
     assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE a = 0 AND a = 1", query_id=query_id) == target_0
     instance.query("SYSTEM FLUSH LOGS query_log;")
     prof_events = instance.query(f"SELECT ProfileEvents['ParquetRowsFilterExpression'], ProfileEvents['ParquetColumnsFilterExpression'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'")
     assert prof_events == '1000\t1\n'
 
     query_id = get_uuid_str()
-    instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a = 0")
     target_1 = ""
     for i in range(100):
         target_1 += f"0\t{(i + 1) // 100}\t{(i + 1000) // 100}\n"
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a = 0") == target_1
     assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE a = 0", query_id=query_id) == target_1
     instance.query("SYSTEM FLUSH LOGS query_log;")
     prof_events = instance.query(f"SELECT ProfileEvents['ParquetRowsFilterExpression'], ProfileEvents['ParquetColumnsFilterExpression'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'")
     assert prof_events == '1000\t1\n'
 
     query_id = get_uuid_str()
-    instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a != 0")
     target_2 = ""
     for i in range(100, 1000):
         target_2 += f"{i // 100}\t{(i + 1) // 100}\t{(i + 1000) // 100}\n"
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a != 0") == target_2
     assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE a != 0", query_id=query_id) == target_2
     instance.query("SYSTEM FLUSH LOGS query_log;")
     prof_events = instance.query(f"SELECT ProfileEvents['ParquetRowsFilterExpression'], ProfileEvents['ParquetColumnsFilterExpression'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'")
@@ -103,27 +103,26 @@ def test_multistage_prewhere(started_cluster_iceberg_with_spark, format_version,
         if (i + 1000) // 100 == 13:
             continue
         target_3 += f"{i // 100}\t{(i + 1) // 100}\t{(i + 1000) // 100}\n"
-    instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a != 0 AND c != 13")
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a != 0 AND c != 13") == target_3
     assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE a != 0 AND c != 13", query_id=query_id) == target_3
     instance.query("SYSTEM FLUSH LOGS query_log;")
     prof_events = instance.query(f"SELECT ProfileEvents['ParquetRowsFilterExpression'], ProfileEvents['ParquetColumnsFilterExpression'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'")
     assert prof_events == '1900\t2\n'
 
     query_id = get_uuid_str()
-    instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a != 0 AND c >= 12 AND c < 14")
     target_4 = ""
     for i in range(100, 1000):
         c_val = (i + 1000) // 100
         if c_val >= 12 and c_val < 14:
             target_4 += f"{i // 100}\t{(i + 1) // 100}\t{(i + 1000) // 100}\n"
 
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a != 0 AND c >= 12 AND c < 14") == target_4
     assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE a != 0 AND c >= 12 AND c < 14", query_id=query_id) == target_4
     instance.query("SYSTEM FLUSH LOGS query_log;")
     prof_events = instance.query(f"SELECT ProfileEvents['ParquetRowsFilterExpression'], ProfileEvents['ParquetColumnsFilterExpression'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'")
     assert prof_events == '1900\t2\n'
 
     query_id = get_uuid_str()
-    instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a != 0 AND c != 13 AND b != '12'")
     target_5 = ""
     for i in range(100, 1000):
         c_val = (i + 1000) // 100
@@ -131,6 +130,7 @@ def test_multistage_prewhere(started_cluster_iceberg_with_spark, format_version,
         if c_val != 13 and b_val != 12:
             target_5 += f"{i // 100}\t{(i + 1) // 100}\t{(i + 1000) // 100}\n"
 
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a != 0 AND c != 13 AND b != '12'") == target_5
     assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE a != 0 AND c != 13 AND b != '12'", query_id=query_id) == target_5
     instance.query("SYSTEM FLUSH LOGS query_log;")
     prof_events = instance.query(f"SELECT ProfileEvents['ParquetRowsFilterExpression'], ProfileEvents['ParquetColumnsFilterExpression'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'")

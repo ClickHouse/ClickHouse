@@ -76,7 +76,6 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
     /// E.g. if the budget was shared among all stages, maybe PrewhereData could run far ahead and
     /// eat all memory, and MainData would have to execute in one thread to minimize memory usage.
     double sum = 0;
-    //stages[size_t(ReadStage::ColumnData)].memory_target_fraction *= 10;
     stages[size_t(ReadStage::NotStarted)].memory_target_fraction = 0;
     stages[size_t(ReadStage::Deliver)].memory_target_fraction = 0;
     for (const Stage & stage : stages)
@@ -342,13 +341,6 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
               row_group_idx, row_subgroup_idx, magic_enum::enum_name(stage), step_idx,
               row_subgroup.filter.rows_pass, row_subgroup.filter.rows_total);
 
-    /// Handle OffsetIndex -> ColumnData transition
-    if (stage == ReadStage::OffsetIndex)
-    {
-        addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::ColumnData, step_idx, diff);
-        return;
-    }
-
     switch (stage)
     {
         case ReadStage::NotStarted:
@@ -430,6 +422,10 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         case ReadStage::BloomFilterBlocksOrDictionary:
         case ReadStage::ColumnIndexAndOffsetIndex:
         case ReadStage::OffsetIndex:
+        {
+            addTasksToReadColumns(row_group_idx, row_subgroup_idx, ReadStage::ColumnData, step_idx, diff);
+            return;
+        }
         case ReadStage::Deallocated:
             chassert(false);
             break;
