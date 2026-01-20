@@ -219,8 +219,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write() is not implemented for configuration type {}", getTypeName());
     }
 
-    virtual bool isIceberg() { return false; }
-
     virtual bool supportsDelete() const { return false; }
     virtual void mutate(const MutationCommands & /*commands*/,
         ContextPtr /*context*/,

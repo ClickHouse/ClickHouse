@@ -146,15 +146,6 @@ public:
         current_metadata->mutate(commands, shared_from_this(), context, storage_id, metadata_snapshot, catalog, format_settings);
     }
 
-    bool isIceberg() override
-    {
-#if USE_AVRO
-        return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
-#else
-        return false;
-#endif
-    }
-
     void checkMutationIsPossible(const MutationCommands & commands) override
     {
         assertInitialized();
