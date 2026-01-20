@@ -239,7 +239,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
             {
                 // We don't have individual column size info, likely because it is a compact part. Let's try to estimate it.
                 const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
-                if (column.column->size() && counter % 50 == 0 && counter < 150)
+                if (!column.column->empty() && counter % 50 == 0 && counter < 150)
                 {
                     auto [sample, compressed] = estimateCompressedColumnSize(column);
                     statistics.sample_bytes += sample;
