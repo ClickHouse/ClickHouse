@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 TABLE="default.tm1"
-PARQUET_FILE="${CLICKHOUSE_TMP}/03793_parquet_complex_types_fix.parquet"
+PARQUET_FILE="${USER_FILES_PATH}/03793_parquet_complex_types_fix.parquet"
 
 ${CLICKHOUSE_CLIENT} --query="
 DROP TABLE IF EXISTS ${TABLE};
