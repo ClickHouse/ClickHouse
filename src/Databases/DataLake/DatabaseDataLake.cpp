@@ -730,7 +730,7 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
 
     for (const auto & table_name : iceberg_tables)
     {
-		if (filter_by_table_name && !filter_by_table_name(table_name))
+        if (filter_by_table_name && !filter_by_table_name(table_name))
             continue;
         result.emplace_back(table_name);
     }
