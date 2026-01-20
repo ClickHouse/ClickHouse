@@ -15,7 +15,6 @@ import sys
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-sys.path.append("..")
 from integration.helpers.cluster import ZOOKEEPER_CONTAINERS
 from sparkserver import (
     get_unique_free_ports,
@@ -228,6 +227,7 @@ parser.add_argument("--with-redis", action="store_true", help="With Redis integr
 parser.add_argument(
     "--with-arrowflight", action="store_true", help="With Arrow flight support"
 )
+parser.add_argument("--with-kafka", action="store_true", help="With Kafka integration")
 parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
@@ -326,6 +326,25 @@ parser.add_argument(
     action="store_true",
     help="Set shared merge tree disk or policy",
 )
+parser.add_argument(
+    "--without-monitoring",
+    action="store_false",
+    dest="with_monitoring",
+    help="Remove periodic monitoring of the cluster",
+)
+parser.add_argument(
+    "--time-between-monitoring-runs",
+    type=ordered_pair,
+    default=(5, 10),
+    help="In seconds. Two ordered integers separated by comma (e.g., 30,60)",
+)
+UNSET = object()
+parser.add_argument(
+    "--timeout",
+    type=int,
+    default=UNSET,
+    help="Total time to run the test in minutes (the test will stop after this time)",
+)
 
 args = parser.parse_args()
 
@@ -388,7 +407,7 @@ with open(first_server, "rb") as f:
     is_private_binary = mm.find(b"isCoordinatedMergesTasksActivated") > -1
     mm.close()
 
-logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
+logger.info(f"Private binary {'' if is_private_binary else 'not '}detected")
 keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
 
 if args.with_minio:
@@ -410,6 +429,7 @@ if args.with_minio:
 
 cluster = ClickHouseCluster(
     __file__,
+    name="dolor",
     custom_keeper_configs=keeper_configs,
     azurite_default_port=10000,
     server_bin_path=first_server,
@@ -466,6 +486,7 @@ for i in range(0, len(args.replica_values)):
             with_glue_catalog=args.with_glue,
             with_hms_catalog=args.with_hms,
             with_arrowflight=args.with_arrowflight,
+            with_kafka=args.with_kafka,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             main_configs=dolor_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
@@ -512,7 +533,6 @@ if args.with_postgresql:
     cursor.close()
     postgres_conn.close()
 
-
 # Handler for HTTP server
 catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_variables)
 
@@ -520,43 +540,50 @@ catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_var
 generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
 if args.generator == "buzzhouse":
     generator = BuzzHouseGenerator(args, cluster, catalog_server, server_settings)
-logger.info("Start load generator")
+logger.info("Starting load generator")
 client = generator.run_generator(servers[0], logger, args)
+logger.info("Load generator started with PID %s", client.process.pid)
+everything_cleaned = False
 
 
 def dolor_cleanup():
-    if client.process.poll() is None:
-        client.process.kill()
-        client.process.wait()
-    try:
-        cluster.shutdown(kill=True, ignore_fatal=True)
-    except:
-        pass
-    close_spark_http_server(catalog_server)
-    if modified_server_settings:
+    global everything_cleaned
+    if not everything_cleaned:
+        if client.process.poll() is None:
+            client.process.kill()
+            client.process.wait()
+        logger.info(f"Load generator exited with code: {client.process.returncode}")
+
         try:
-            os.unlink(server_settings)
+            cluster.shutdown(kill=True, ignore_fatal=False)
+        except:
+            pass
+        close_spark_http_server(catalog_server)
+        if modified_server_settings:
+            try:
+                os.unlink(server_settings)
+            except FileNotFoundError:
+                pass
+        if modified_user_settings:
+            try:
+                os.unlink(user_settings)
+            except FileNotFoundError:
+                pass
+        try:
+            os.unlink(generator.temp.name)
         except FileNotFoundError:
             pass
-    if modified_user_settings:
-        try:
-            os.unlink(user_settings)
-        except FileNotFoundError:
-            pass
-    try:
-        os.unlink(generator.temp.name)
-    except FileNotFoundError:
-        pass
-    if args.with_minio:
-        try:
-            os.unlink(credentials_file.name)
-        except FileNotFoundError:
-            pass
-    for entry in keeper_configs:
-        try:
-            os.unlink(entry)
-        except FileNotFoundError:
-            pass
+        if args.with_minio:
+            try:
+                os.unlink(credentials_file.name)
+            except FileNotFoundError:
+                pass
+        for entry in keeper_configs:
+            try:
+                os.unlink(entry)
+            except FileNotFoundError:
+                pass
+        everything_cleaned = True
 
 
 def my_signal_handler(sig, frame):
@@ -585,6 +612,8 @@ if args.with_mongodb:
     integrations.append("mongo")
 if args.with_redis:
     integrations.append("redis")
+if args.with_kafka:
+    integrations.append("kafka")
 
 # This is the main loop, run while client and server are running
 all_running = True
@@ -594,11 +623,15 @@ lower_bound, upper_bound = args.time_between_shutdowns
 integration_lower_bound, integration_upper_bound = (
     args.time_between_integration_shutdowns
 )
+monitoring_lower_bound, monitoring_upper_bound = args.time_between_monitoring_runs
 # Leak detection
 leak_detector: ElOracloDeLeaks = ElOracloDeLeaks()
 leak_lower_bound, leak_upper_bound = args.time_between_leak_detections
 if args.with_leak_detection:
     leak_detector.reset_and_capture_baseline(cluster)
+# Test timeout if set
+test_limit = None if args.timeout is UNSET else time.time() + args.timeout * 60
+reached_limit = False
 
 
 def explain_returncode(rc: int) -> str:
@@ -619,13 +652,15 @@ def explain_returncode(rc: int) -> str:
     return f"with status {rc}."
 
 
-while all_running:
+while all_running and (not reached_limit):
     start = time.time()
     finish = start + random.randint(lower_bound, upper_bound)
     next_leak_detection = start + random.randint(leak_lower_bound, leak_upper_bound)
+    next_monitoring = start + random.randint(
+        monitoring_lower_bound, monitoring_upper_bound
+    )
 
-    while all_running and start < finish:
-        interval = 1
+    while all_running and (not reached_limit) and start < finish:
         if client.process.poll() is not None:
             logger.info(
                 f"Load generator finished {explain_returncode(client.process.returncode)}"
@@ -636,17 +671,25 @@ while all_running:
             if pid is None:
                 logger.info(f"The server {server.name} is not running")
                 all_running = False
-        if (
-            all_running
-            and args.with_leak_detection
-            and next_leak_detection < time.time()
-        ):
-            leak_detector.run_next_leak_detection(cluster, client)
-            next_leak_detection += random.randint(leak_lower_bound, leak_upper_bound)
+        reached_limit = test_limit is not None and time.time() >= test_limit
+        if reached_limit:
+            logger.info("Test timeout reached, stopping the load generator and exiting")
+        if all_running and (not reached_limit):
+            if args.with_leak_detection and next_leak_detection < time.time():
+                leak_detector.run_next_leak_detection(cluster, client)
+                next_leak_detection += random.randint(
+                    leak_lower_bound, leak_upper_bound
+                )
+            if args.with_monitoring and next_monitoring < time.time():
+                tables_oracle.run_health_check(cluster, servers, logger)
+                next_monitoring += random.randint(
+                    monitoring_lower_bound, monitoring_upper_bound
+                )
+        interval = 1
         time.sleep(interval)
         start += interval
 
-    if not all_running:
+    if (not all_running) or reached_limit:
         break
 
     dump_table = (
@@ -660,7 +703,7 @@ while all_running:
     if random.randint(1, 100) <= args.restart_clickhouse_prob:
         next_pick = random.choice(servers)
         logger.info(
-            f"Restarting the server {next_pick.name} with {"kill" if kill_server else "manual shutdown"}"
+            f"Restarting the server {next_pick.name} with {'kill' if kill_server else 'manual shutdown'}"
         )
 
         next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
@@ -707,6 +750,7 @@ while all_running:
             "mysql8": ["mysql80"],
             "mongo": ["mongo1", "mongo_no_cred", "mongo_secure"],
             "redis": ["redis1"],
+            "kafka": ["kafka1"],
         }
 
         restart_choices = list(available_options[next_pick])
@@ -714,7 +758,7 @@ while all_running:
         for i in range(0, random.randint(1, len(restart_choices))):
             choosen_instances.append(restart_choices[i])
         logger.info(
-            f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {"kill" if kill_server else "manual shutdown"}"
+            f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {'kill' if kill_server else 'manual shutdown'}"
         )
 
         cluster.process_integration_nodes(

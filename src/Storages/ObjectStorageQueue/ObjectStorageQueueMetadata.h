@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/SettingsChanges.h>
@@ -154,6 +155,9 @@ public:
     /// Set local ref count for metadata.
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
 
+    ObjectStorageQueuePartitioningMode getPartitioningMode() const { return partitioning_mode; }
+    const ObjectStorageQueueFilenameParser * getFilenameParser() const { return filename_parser.get(); }
+
     void updateSettings(const SettingsChanges & changes);
 
     std::pair<size_t, size_t> getCleanupIntervalMS() const { return {cleanup_interval_min_ms, cleanup_interval_max_ms }; }
@@ -177,8 +181,11 @@ private:
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
+    const ObjectStorageQueuePartitioningMode partitioning_mode;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
+
+    std::unique_ptr<ObjectStorageQueueFilenameParser> filename_parser;
 
     std::atomic<size_t> cleanup_interval_min_ms;
     std::atomic<size_t> cleanup_interval_max_ms;

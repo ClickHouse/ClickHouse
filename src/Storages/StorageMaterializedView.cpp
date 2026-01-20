@@ -139,7 +139,7 @@ StorageMaterializedView::StorageMaterializedView(
                         "either ENGINE or an existing table in a TO clause");
 
     if (to_table_engine && to_table_engine->primary_key)
-        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->primary_key->ptr(),
+        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->getChild(*to_table_engine->primary_key),
                                                                      storage_metadata.columns,
                                                                      local_context->getGlobalContext());
 
@@ -286,22 +286,22 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->has_uuid = to_inner_uuid != UUIDHelpers::Nil;
 
         auto new_columns_list = std::make_shared<ASTColumns>();
-        new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
+        new_columns_list->set(new_columns_list->columns, query.columns_list->getChild(*query.columns_list->columns));
         if (storage_features.supports_skipping_indices)
         {
             if (query.columns_list->indices)
-                new_columns_list->set(new_columns_list->indices, query.columns_list->indices->ptr());
+                new_columns_list->set(new_columns_list->indices, query.columns_list->getChild(*query.columns_list->indices));
             if (query.columns_list->constraints)
-                new_columns_list->set(new_columns_list->constraints, query.columns_list->constraints->ptr());
+                new_columns_list->set(new_columns_list->constraints, query.columns_list->getChild(*query.columns_list->constraints));
             if (query.columns_list->primary_key)
-                new_columns_list->set(new_columns_list->primary_key, query.columns_list->primary_key->ptr());
+                new_columns_list->set(new_columns_list->primary_key, query.columns_list->getChild(*query.columns_list->primary_key));
             if (query.columns_list->primary_key_from_columns)
-                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->primary_key_from_columns->ptr());
+                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->getChild(*query.columns_list->primary_key_from_columns));
         }
         if (storage_features.supports_projections)
         {
             if (query.columns_list->projections)
-                new_columns_list->set(new_columns_list->projections, query.columns_list->projections->ptr());
+                new_columns_list->set(new_columns_list->projections, query.columns_list->getChild(*query.columns_list->projections));
         }
 
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
@@ -545,7 +545,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
 
-    auto select_query = getInMemoryMetadataPtr()->getSelectQuery().select_query;
+    auto select_query = getInMemoryMetadataPtr()->getSelectQuery().select_query->clone();
     InterpreterSetQuery::applySettingsFromQuery(select_query, refresh_context);
 
     if (!append)
@@ -559,7 +559,8 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         /// Pre-check the permissions. Would be awkward if we create a temporary table and can't drop it.
         refresh_context->checkAccess(AccessType::DROP_TABLE | AccessType::CREATE_TABLE | AccessType::SELECT | AccessType::INSERT, db_name);
 
-        auto create_query = std::dynamic_pointer_cast<ASTCreateQuery>(db->getCreateTableQuery(inner_table_id.table_name, getContext()));
+        auto create_query
+            = std::dynamic_pointer_cast<ASTCreateQuery>(db->getCreateTableQuery(inner_table_id.table_name, getContext())->clone());
         create_query->setTable(new_table_name);
         create_query->setDatabase(db_name);
         create_query->create_or_replace = true;

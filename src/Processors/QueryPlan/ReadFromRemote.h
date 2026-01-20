@@ -133,4 +133,11 @@ private:
     ConnectionPoolWithFailoverPtr connection_pool_with_failover;
 };
 
+ASTPtr tryBuildAdditionalFilterAST(
+    const ActionsDAG & dag,
+    const std::unordered_set<std::string> & projection_names,
+    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    Tables * external_tables,
+    ContextMutablePtr & context);
+
 }
