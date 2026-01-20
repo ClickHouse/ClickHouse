@@ -7,7 +7,7 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=1, parallel_rep
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
 -- For runs with the old analyzer
-SET parallel_replicas_only_with_analyzer=0;
+SET enable_analyzer=1;
 
 SET max_threads=2;
 
