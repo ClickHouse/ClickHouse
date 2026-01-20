@@ -10,10 +10,10 @@ Date
 Date32
 -- DateTime type basic test
 2020-01-01 00:00:01
-DateTime('UTC')
+DateTime(\'UTC\')
 -- DateTime64 type basic test (scale 3)
 2020-01-01 00:00:00.001
-DateTime64(3, 'UTC')
+DateTime64(3, \'UTC\')
 -- Time type basic test
 02:00:00
 Time
@@ -60,11 +60,11 @@ avg(t64):  -999:59:59.808
 00:00:00.000
 -- DateTime64/Time64 different scales
 2020-01-01 00:00:01
-DateTime64(0, 'UTC')
+DateTime64(0, \'UTC\')
 2020-01-01 00:00:00.000001
-DateTime64(6, 'UTC')
+DateTime64(6, \'UTC\')
 2020-01-01 00:00:00.000000000
-DateTime64(9, 'UTC')
+DateTime64(9, \'UTC\')
 02:00:00
 Time64(0)
 02:00:00.000000
@@ -133,8 +133,8 @@ avg(t):  00:00:02
 -- Result type verification
 Date result type:	Date
 Date32 result type:	Date32
-DateTime result type:	DateTime('UTC')
-DateTime64(3) result type:	DateTime64(3, 'UTC')
+DateTime result type:	DateTime(\'UTC\')
+DateTime64(3) result type:	DateTime64(3, \'UTC\')
 Time result type:	Time
 Time64(3) result type:	Time64(3)
 -- Expressions with avg results
