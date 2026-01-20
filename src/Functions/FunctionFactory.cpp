@@ -179,4 +179,12 @@ FunctionDocumentation FunctionFactory::getDocumentation(const std::string & name
     return it->second.second;
 }
 
+bool FunctionFactory::allowsOmittingParentheses(const std::string & name) const
+{
+    String canonical_name = getAliasToOrName(name);
+    if (functions_allowing_omitted_parentheses.contains(canonical_name))
+        return true;
+    return functions_allowing_omitted_parentheses.contains(Poco::toLower(canonical_name));
+}
+
 }

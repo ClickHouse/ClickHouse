@@ -180,7 +180,7 @@ SELECT now('Asia/Istanbul')
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunctionAllowingOmittedParentheses<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 

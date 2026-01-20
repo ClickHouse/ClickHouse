@@ -2804,6 +2804,25 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if (!resolved_identifier_node)
             {
+                /// Check if identifier is a function that allows omitting parentheses (e.g., NOW, CURRENT_TIMESTAMP)
+                const auto & function_factory = FunctionFactory::instance();
+                auto identifier_name = unresolved_identifier.getFullName();
+                
+                if (function_factory.has(identifier_name) && function_factory.allowsOmittingParentheses(identifier_name))
+                {
+                    /// Transform identifier into function call with zero arguments
+                    auto function_node = std::make_shared<FunctionNode>(identifier_name);
+                    node = function_node;
+                    
+                    /// Resolve the function
+                    resolveFunction(node, scope);
+                    
+                    if (result_projection_names.empty())
+                        result_projection_names.push_back(identifier_name);
+                    
+                    break;
+                }
+
                 std::string message_clarification;
                 if (allow_lambda_expression)
                     message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::FUNCTION);
