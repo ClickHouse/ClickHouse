@@ -887,6 +887,10 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 break;
             case ReadStage::ColumnData:
             {
+                RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
+                if (row_subgroup.filter.rows_pass == 0)
+                    break;
+
                 if (!column.dictionary.isInitialized() && column.dictionary_page_prefetch)
                 {
                     if (!reader.decodeDictionaryPage(column, column_info))
@@ -897,9 +901,6 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
                 size_t prev_page_idx = column.data_pages_idx;
 
                 chassert(task.row_subgroup_idx != UINT64_MAX);
-                RowSubgroup & row_subgroup = row_group.subgroups.at(task.row_subgroup_idx);
-                if (row_subgroup.filter.rows_pass == 0)
-                    break;
                 reader.decodePrimitiveColumn(
                     column, column_info, row_subgroup.columns.at(task.column_idx),
                     row_group, row_subgroup);
