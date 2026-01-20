@@ -170,7 +170,7 @@ public:
     {
     public:
         const String & getName() const;
-        const String & getPath() const;
+        const char * getPath() const;
         Field getValue() const;
         void setValue(const Field & value);
         String getValueString() const;
@@ -790,12 +790,12 @@ const String & BaseSettings<TTraits>::SettingFieldRef::getName() const
 }
 
 template <typename TTraits>
-const String & BaseSettings<TTraits>::SettingFieldRef::getPath() const
+const char * BaseSettings<TTraits>::SettingFieldRef::getPath() const
 {
     if constexpr (Traits::allow_custom_settings)
     {
         if (custom_setting)
-            return (*custom_setting)->first;
+            return "";
     }
     return accessor->getPath(index);
 }
@@ -933,44 +933,34 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             size_t size() const { return field_infos.size(); } \
             size_t find(std::string_view name) const; \
             const String & getName(size_t index) const { return field_infos[index].name; } \
-            const String & getPath(size_t index) const { return field_infos[index].path; } \
+            const char * getPath(size_t index) const { return field_infos[index].path; } \
             const char * getTypeName(size_t index) const { return field_infos[index].type; } \
             const char * getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
-            Field castValueUtil(size_t index, const Field & value) const { return field_infos[index].cast_value_util_function(value); } \
-            String valueToStringUtil(size_t index, const Field & value) const { return field_infos[index].value_to_string_util_function(value); } \
-            Field stringToValueUtil(size_t index, const String & str) const { return field_infos[index].string_to_value_util_function(str); } \
-            void setValue(Data & data, size_t index, const Field & value) const { return field_infos[index].set_value_function(data, value); } \
-            Field getValue(const Data & data, size_t index) const { return field_infos[index].get_value_function(data); } \
-            void setValueString(Data & data, size_t index, const String & str) const { return field_infos[index].set_value_string_function(data, str); } \
-            String getValueString(const Data & data, size_t index) const { return field_infos[index].get_value_string_function(data); } \
-            bool isValueChanged(const Data & data, size_t index) const { return field_infos[index].is_value_changed_function(data); } \
-            void resetValueToDefault(Data & data, size_t index) const { return field_infos[index].reset_value_to_default_function(data); } \
-            void writeBinary(const Data & data, size_t index, WriteBuffer & out) const { return field_infos[index].write_binary_function(data, out); } \
-            void readBinary(Data & data, size_t index, ReadBuffer & in) const { return field_infos[index].read_binary_function(data, in); } \
-            String getDefaultValueString(size_t index) const { return field_infos[index].get_default_value_string_function(); } \
+            Field castValueUtil(size_t index, const Field & value) const { auto p = field_infos[index].create_default_function(); *p = value; return static_cast<Field>(*p); } \
+            String valueToStringUtil(size_t index, const Field & value) const { auto p = field_infos[index].create_default_function(); *p = value; return p->toString(); } \
+            Field stringToValueUtil(size_t index, const String & str) const { auto p = field_infos[index].create_default_function(); p->parseFromString(str); return static_cast<Field>(*p); } \
+            void setValue(Data & data, size_t index, const Field & value) const { field_infos[index].get_data_function(data)->operator=(value); } \
+            Field getValue(const Data & data, size_t index) const { return static_cast<Field>(*field_infos[index].get_data_function(*const_cast<Data*>(&data))); } \
+            void setValueString(Data & data, size_t index, const String & str) const { field_infos[index].get_data_function(data)->parseFromString(str); } \
+            String getValueString(const Data & data, size_t index) const { return field_infos[index].get_data_function(*const_cast<Data*>(&data))->toString(); } \
+            bool isValueChanged(const Data & data, size_t index) const { return field_infos[index].get_data_function(*const_cast<Data*>(&data))->isChanged(); } \
+            void resetValueToDefault(Data & data, size_t index) const { auto p = field_infos[index].create_default_function(); field_infos[index].get_data_function(*const_cast<Data*>(&data))->operator=(static_cast<Field>(*p));  } \
+            void writeBinary(const Data & data, size_t index, WriteBuffer & out) const { field_infos[index].get_data_function(*const_cast<Data*>(&data))->writeBinary(out); } \
+            void readBinary(Data & data, size_t index, ReadBuffer & in) const { field_infos[index].get_data_function(data)->readBinary(in); } \
+            String getDefaultValueString(size_t index) const { return field_infos[index].create_default_function()->toString(); } \
         private: \
             Accessor(); \
             struct FieldInfo \
             { \
                 String name; \
-                String path; \
-                const char * type; \
-                const char * description; \
-                UInt64 flags; \
-                Field (*cast_value_util_function)(const Field &); \
-                String (*value_to_string_util_function)(const Field &); \
-                Field (*string_to_value_util_function)(const String &); \
-                void (*set_value_function)(Data &, const Field &) ; \
-                Field (*get_value_function)(const Data &) ; \
-                void (*set_value_string_function)(Data &, const String &) ; \
-                String (*get_value_string_function)(const Data &) ; \
-                bool (*is_value_changed_function)(const Data &); \
-                void (*reset_value_to_default_function)(Data &) ; \
-                void (*write_binary_function)(const Data &, WriteBuffer &) ; \
-                void (*read_binary_function)(Data &, ReadBuffer &) ; \
-                String (*get_default_value_string_function)() ; \
+                const char * const path; \
+                const char * const type; \
+                const char * const description; \
+                const UInt64 flags; \
+                SettingFieldBase* (*get_data_function)(Data &); \
+                std::unique_ptr<SettingFieldBase> (*create_default_function)(); \
             }; \
             std::vector<FieldInfo> field_infos; \
             std::unordered_map<std::string_view, size_t> name_to_index_map; \
@@ -979,7 +969,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         \
         static inline const AliasMap aliases_to_settings = { \
             LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
-            LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_PATH_AND_ALIAS_TRAITS_) \
+            LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
         }; \
         using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
         static inline const SettingsToAliasesMap & settingsToAliases() \
@@ -1012,11 +1002,6 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 #define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS) \
     { #ALIAS, #NAME },
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_WITH_PATH_AND_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ALIAS) \
-    { #ALIAS, #NAME },
-// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_WITH_PATH_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ...) \
-    { PATH, #NAME },
 
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
@@ -1032,9 +1017,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
     { \
         static const Accessor the_instance = [] \
         { \
+            [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
             Accessor res; \
-            constexpr int IMPORTANT = 0x01; \
-            UNUSED(IMPORTANT); \
             LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
             LIST_OF_SETTINGS_WITH_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_, IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_) \
             for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
@@ -1062,38 +1046,18 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     res.field_infos.emplace_back( \
-        FieldInfo{#NAME, #NAME, #TYPE, DESCRIPTION, \
+        FieldInfo{#NAME, "", #TYPE, DESCRIPTION, \
             static_cast<UInt64>(FLAGS), \
-            [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
-            [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \
-            [](const String & str) -> Field { SettingField##TYPE temp; temp.parseFromString(str); return static_cast<Field>(temp); }, \
-            [](Data & data, const Field & value) { data.NAME = value; }, \
-            [](const Data & data) -> Field { return static_cast<Field>(data.NAME); }, \
-            [](Data & data, const String & str) { data.NAME.parseFromString(str); }, \
-            [](const Data & data) -> String { return data.NAME.toString(); }, \
-            [](const Data & data) -> bool { return data.NAME.changed; }, \
-            [](Data & data) { data.NAME = SettingField##TYPE{DEFAULT}; }, \
-            [](const Data & data, WriteBuffer & out) { data.NAME.writeBinary(out); }, \
-            [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); }, \
-            []() -> String { return SettingField##TYPE{DEFAULT}.toString(); } \
+            [](Data & data) -> SettingFieldBase * { return &data.NAME; }, \
+            []() -> std::unique_ptr<SettingFieldBase> { return std::make_unique<SettingField##TYPE>(DEFAULT); }, \
         });
 
-        /// NOLINTNEXTLINE
+/// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ...) \
     res.field_infos.emplace_back( \
         FieldInfo{#NAME, PATH, #TYPE, DESCRIPTION, \
             static_cast<UInt64>(FLAGS), \
-            [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
-            [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \
-            [](const String & str) -> Field { SettingField##TYPE temp; temp.parseFromString(str); return static_cast<Field>(temp); }, \
-            [](Data & data, const Field & value) { data.NAME = value; }, \
-            [](const Data & data) -> Field { return static_cast<Field>(data.NAME); }, \
-            [](Data & data, const String & str) { data.NAME.parseFromString(str); }, \
-            [](const Data & data) -> String { return data.NAME.toString(); }, \
-            [](const Data & data) -> bool { return data.NAME.changed; }, \
-            [](Data & data) { data.NAME = SettingField##TYPE{DEFAULT}; }, \
-            [](const Data & data, WriteBuffer & out) { data.NAME.writeBinary(out); }, \
-            [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); }, \
-            []() -> String { return SettingField##TYPE{DEFAULT}.toString(); } \
+            [](Data & data) -> SettingFieldBase * { return &data.NAME; }, \
+            []() -> std::unique_ptr<SettingFieldBase> { return std::make_unique<SettingField##TYPE>(DEFAULT); }, \
         });
 }

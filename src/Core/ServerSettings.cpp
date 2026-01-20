@@ -1580,13 +1580,14 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
-        const auto & path = setting.getPath();
+        String path = setting.getPath();
+        const String * path_or_name = path.empty() ? &name : &path;
         try
         {
-            if (config.has(path))
-                set(name, config.getString(path));
-            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + path))
-                set(name, config.getString("profiles.default." + path));
+            if (config.has(*path_or_name))
+                set(name, config.getString(*path_or_name));
+            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
+                set(name, config.getString("profiles.default." + *path_or_name));
         }
         catch (Exception & e)
         {
