@@ -129,7 +129,7 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
-    ONCE(database_replicated_drop_after_removing_keeper_failed)
+    ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE_ONCE(rmt_merge_selecting_task_pause_when_scheduled) \
     ONCE(parallel_replicas_reading_response_timeout)
