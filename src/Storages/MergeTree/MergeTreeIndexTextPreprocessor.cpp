@@ -73,20 +73,6 @@ void validatePreprocessorASTExpression(const ASTFunction * function, const Strin
     }
 }
 
-bool isValidResultType(const DataTypePtr type)
-{
-    if (isStringOrFixedString(type))
-        return true;
-
-    if (const DataTypeArray * array_type = typeid_cast<const DataTypeArray*>(type.get()); array_type != nullptr)
-        return isStringOrFixedString(array_type->getNestedType());
-
-    if (const DataTypeLowCardinality * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()); low_cardinality_type != nullptr)
-        return isStringOrFixedString(low_cardinality_type->getDictionaryType());
-
-    return false;
-}
-
 DataTypePtr getProcessingType(DataTypePtr type)
 {
     DataTypePtr result = type;
@@ -282,8 +268,8 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
     if (outputs.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must return only a single value");
 
-    if (!isValidResultType(outputs.front()->result_type))
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must return a String, FixedString or an array of them.");
+    if (!isStringOrFixedString(outputs.front()->result_type))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression should return a String or a FixedString.");
 
     if (actions.hasNonDeterministic())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must not contain non-deterministic functions");
