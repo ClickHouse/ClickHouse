@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
-#include <atomic>
 #include <barrier>
 #include <functional>
 #include <memory>

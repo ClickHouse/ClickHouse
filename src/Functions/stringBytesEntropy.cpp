@@ -1,13 +1,5 @@
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
 #include <Functions/stringBytes.h>
-#include <Common/BitHelpers.h>
-#include <Common/PODArray.h>
 
 #include <cmath>
 
