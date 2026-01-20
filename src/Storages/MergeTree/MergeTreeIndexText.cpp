@@ -1101,13 +1101,13 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (rows_read == 0)
         return;
 
-    const ColumnWithTypeAndName & column_with_type_and_name = block.getByName(index_column_name);
+    const ColumnWithTypeAndName & index_column = block.getByName(index_column_name);
 
-    if (isArray(column_with_type_and_name.column->getDataType()))
+    if (isArray(index_column.type->getTypeId()))
     {
-        auto [processed_column, offset] = preprocessor->processColumnArray(column_with_type_and_name, *pos, rows_read);
+        auto [preprocessed_column, offset] = preprocessor->processColumnArray(index_column, *pos, rows_read);
 
-        const auto & column_array = assert_cast<const ColumnArray &>(*processed_column);
+        const auto & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
         const auto & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
 
@@ -1115,19 +1115,18 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         {
             for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
             {
-                const std::string_view ref = column_data.getDataAt(element_idx);
+                std::string_view ref = column_data.getDataAt(element_idx);
                 granule_builder.addDocument(ref);
             }
-
             granule_builder.incrementCurrentRow();
         }
     }
     else
     {
-        auto [processed_column, offset] = preprocessor->processColumn(column_with_type_and_name, *pos, rows_read);
+        auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
         for (size_t i = 0; i < rows_read; ++i)
         {
-            const std::string_view ref = processed_column->getDataAt(offset + i);
+            std::string_view ref = preprocessed_column->getDataAt(offset + i);
             granule_builder.addDocument(ref);
             granule_builder.incrementCurrentRow();
         }
