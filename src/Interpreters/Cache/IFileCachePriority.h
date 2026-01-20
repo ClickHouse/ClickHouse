@@ -54,6 +54,16 @@ public:
             return state.load(std::memory_order_relaxed) == State::Evicting;
         }
 
+        bool isMoving(const LockedKey &) const
+        {
+            return isMovingUnlocked();
+        }
+
+        bool isMovingUnlocked() const
+        {
+            return state.load(std::memory_order_relaxed) == State::Moving;
+        }
+
         bool isRemoved(const CachePriorityGuard::WriteLock &) const
         {
             return state.load(std::memory_order_relaxed) == State::Removed;
@@ -62,13 +72,21 @@ public:
         void setEvictingFlag(const LockedKey &)
         {
             [[maybe_unused]] auto prev = state.exchange(State::Evicting, std::memory_order_relaxed);
-            chassert(prev != State::Evicting, toString("Evicting flag is already set for "));
+            chassert(prev == State::Active, toString("expected state to be Active while setting evicting flag for "));
+        }
+
+        void setMovingFlag(const LockedKey &)
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Moving, std::memory_order_relaxed);
+            chassert(prev == State::Active, toString("expected state to be Active while setting evicting flag for "));
         }
 
         void setRemoved(const CachePriorityGuard::WriteLock &)
         {
             [[maybe_unused]] auto prev = state.exchange(State::Removed, std::memory_order_relaxed);
-            chassert(prev != State::Removed, toString("Removed flag is already set for "));
+            chassert(
+                prev == State::Active || prev == State::Evicting,
+                toString("expected state to be either Active or Evicting while setting evicting flag for "));
         }
 
         void resetEvictingFlag()
@@ -82,6 +100,9 @@ public:
         {
             Active,
             Evicting,
+            /// Can only be set in SLRU eviciton policy during moves
+            /// in between protected/probationary queues.
+            Moving,
             Removed
         };
         std::atomic<State> state = State::Active;

@@ -610,8 +610,10 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 
         /// As we are in progress now of moving this queue entry to a protected queue,
         /// then we need to make sure no one tries to concurrently evict this entry from cache.
-        /// So we set "evicting flag" to make sure no one touches this entry in the meantime.
-        prev_entry->setEvictingFlag(*locked_key);
+        /// So we set "moving flag" to make sure no one touches this entry in the meantime.
+        /// And we do not reuse "evicting flag" because we want queries to be able
+        /// to use this file segment in the meantime.
+        prev_entry->setMovingFlag(*locked_key);
     }
 
     bool reset_evicting_flag_for_prev_entry = true;

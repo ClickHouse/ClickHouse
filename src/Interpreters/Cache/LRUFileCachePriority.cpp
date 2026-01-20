@@ -18,6 +18,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheEvictionSkippedFileSegments;
     extern const Event FilesystemCacheEvictionTries;
     extern const Event FilesystemCacheEvictionSkippedEvictingFileSegments;
+    extern const Event FilesystemCacheEvictionSkippedMovingFileSegments;
     extern const Event FilesystemCacheEvictionReusedIterator;
 }
 
@@ -243,6 +244,15 @@ LRUFileCachePriority::iterateImpl(
             continue;
         }
 
+        /// Similar to isEvictingUnlocked() above.
+        if (entry.isMovingUnlocked())
+        {
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedMovingFileSegments);
+            stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Moving);
+            ++it;
+            continue;
+        }
+
         auto locked_key = entry.key_metadata->tryLock();
         if (!locked_key || entry.invalidated)
         {
@@ -261,6 +271,15 @@ LRUFileCachePriority::iterateImpl(
             /// We treat them the same way as deleted entries.
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
             stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Evicting);
+            ++it;
+            continue;
+        }
+
+        /// Similar to isEvicting(locked_key) above.
+        if (entry.isMoving(*locked_key))
+        {
+            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedMovingFileSegments);
+            stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Moving);
             ++it;
             continue;
         }
