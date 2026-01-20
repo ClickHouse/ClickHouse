@@ -42,7 +42,7 @@ std::vector<uint32_t> generateMaxData(size_t count, uint32_t max_bits)
     return std::vector<uint32_t>(count, max_val);
 }
 
-static void verifyRoundTrip(const std::vector<uint32_t> & original, std::optional<uint32_t> bits = std::nullopt)
+void verifyRoundTrip(const std::vector<uint32_t> & original, std::optional<uint32_t> bits = std::nullopt)
 {
     std::span<uint32_t> data_span(const_cast<uint32_t*>(original.data()), original.size());
 
@@ -394,7 +394,7 @@ TEST(PostingListCodecTest, LargeDataWithTail)
 
 TEST(PostingListCodecTest, StressRandomSizes)
 {
-    std::mt19937 rng(12345);
+    std::mt19937 rng(12345); // NOLINT(cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<size_t> size_dist(1, 500);
     std::uniform_int_distribution<uint32_t> bits_dist(0, 32);
 
@@ -502,7 +502,7 @@ TEST(PostingListCodecTest, MixedRandomMonotonicLarger)
             x = std::min<uint64_t>(x, 0xFFFFFFFFull);
             values[i] = static_cast<uint32_t>(x);
         }
-        verifyRoundTrip(std::move(values));
+        verifyRoundTrip(values);
     }
 }
 
