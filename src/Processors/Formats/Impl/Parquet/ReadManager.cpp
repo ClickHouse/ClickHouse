@@ -246,6 +246,7 @@ void ReadManager::setTasksToSchedule(size_t row_group_idx, ReadStage stage, std:
     chassert(tasks.empty());
     tasks = std::move(add_tasks);
     bool changed = stage_state.schedulable_row_groups.set(row_group_idx, std::memory_order_release);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    LOG_DEBUG(getLogger("ParquetReadManager"), "setTasksToSchedule: check row group is set: {}", stage_state.schedulable_row_groups.findFirst());
     chassert(changed);
     diff.scheduleStage(stage);
 }

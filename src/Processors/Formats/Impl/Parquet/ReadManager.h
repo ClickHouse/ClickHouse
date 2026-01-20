@@ -13,13 +13,13 @@ struct AtomicBitSet
 
     bool set(size_t i, std::memory_order memory_order)
     {
-        UInt64 mask = 1ul << (i & 63);
+        UInt64 mask = 1ull << (i & 63);
         UInt64 x = a[i >> 6].fetch_or(mask, memory_order);
         return (x & mask) == 0;
     }
     bool unset(size_t i, std::memory_order memory_order)
     {
-        UInt64 mask = 1ul << (i & 63);
+        UInt64 mask = 1ull << (i & 63);
         UInt64 x = a[i >> 6].fetch_and(~mask, memory_order);
         return (x & mask) != 0;
     }
