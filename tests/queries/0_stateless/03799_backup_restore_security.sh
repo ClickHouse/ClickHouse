@@ -4,6 +4,9 @@
 # 1. RESTORE should be forbidden in readonly mode
 # 2. The 'internal' setting should not be allowed for initial queries
 # 3. Permission check should happen before backup destination is opened (e.g., S3 connection)
+#
+# All tests use fake S3 URLs with invalid credentials. Since all security checks happen
+# before any connection attempt, we should always get ACCESS_DENIED errors, not S3 errors.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,27 +15,29 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 backup_name="${CLICKHOUSE_DATABASE}_03799_backup_security"
 user_name="test_03799_user_${CLICKHOUSE_DATABASE}"
 
-$CLICKHOUSE_CLIENT -m -q "
+$CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS test_backup_security;
 CREATE TABLE test_backup_security (id Int32) ENGINE=MergeTree() ORDER BY id;
 INSERT INTO test_backup_security VALUES (1), (2), (3);
-BACKUP TABLE test_backup_security TO File('$backup_name.zip') FORMAT Null;
 "
 
 # Test 1: RESTORE should be forbidden in readonly mode
+# The readonly check happens before any backup destination is accessed.
 # Note: we can't use -m here because test framework tries to inject settings which fails in readonly mode
-$CLICKHOUSE_CLIENT --readonly=1 -q "RESTORE TABLE test_backup_security AS test_restored FROM File('$backup_name.zip')" 2>&1 | grep -q "ACCESS_DENIED" && echo "OK" || echo "FAIL"
+$CLICKHOUSE_CLIENT --readonly=1 -q "RESTORE TABLE test_backup_security AS test_restored FROM S3('http://localhost:11111/test/backups/${backup_name}', 'INVALID_ACCESS_KEY', 'INVALID_SECRET')" 2>&1 | grep -q "ACCESS_DENIED" && echo "OK" || echo "FAIL"
 # Verify that the table was not created
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'test_restored'"
 
 # Test 2: The 'internal' setting should not be allowed for initial BACKUP query
+# This check happens before any connection attempt.
 $CLICKHOUSE_CLIENT -m -q "
-BACKUP TABLE test_backup_security TO File('${backup_name}_internal.zip') SETTINGS internal=1; -- { serverError ACCESS_DENIED }
+BACKUP TABLE test_backup_security TO S3('http://localhost:11111/test/backups/${backup_name}_internal', 'INVALID_ACCESS_KEY', 'INVALID_SECRET') SETTINGS internal=1; -- { serverError ACCESS_DENIED }
 "
 
 # Test 3: The 'internal' setting should not be allowed for initial RESTORE query
+# This check happens before any connection attempt.
 $CLICKHOUSE_CLIENT -m -q "
-RESTORE TABLE test_backup_security AS test_restored FROM File('$backup_name.zip') SETTINGS internal=1; -- { serverError ACCESS_DENIED }
+RESTORE TABLE test_backup_security AS test_restored FROM S3('http://localhost:11111/test/backups/${backup_name}', 'INVALID_ACCESS_KEY', 'INVALID_SECRET') SETTINGS internal=1; -- { serverError ACCESS_DENIED }
 "
 
 # Test 4: User without BACKUP permission should get ACCESS_DENIED (not S3_ERROR)
