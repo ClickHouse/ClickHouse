@@ -389,6 +389,11 @@ bool SQLBase::isAliasEngine() const
     return teng == TableEngineValues::Alias;
 }
 
+bool SQLBase::isKafkaEngine() const
+{
+    return teng == TableEngineValues::Kafka;
+}
+
 bool SQLBase::isNotTruncableEngine() const
 {
     return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
@@ -618,7 +623,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         /// What Delta Lake supports
         file_format = INOUT_Parquet;
     }
-    else if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine())
+    else if (isAnyS3Engine() || isAnyAzureEngine() || isFileEngine() || isURLEngine() || isKafkaEngine())
     {
         /// Set other parameters
         if (isFileEngine() || rg.nextMediumNumber() < 91)
@@ -627,7 +632,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 
             file_format = static_cast<InOutFormat>(inout_range(rg.generator));
         }
-        if (rg.nextMediumNumber() < 51)
+        if (!isKafkaEngine() && rg.nextMediumNumber() < 51)
         {
             file_comp = rg.pickRandomly(compressionMethods);
         }
@@ -671,6 +676,12 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     else if (isURLEngine())
     {
         integration = IntegrationCall::HTTP;
+    }
+    else if (has_dolor && isKafkaEngine())
+    {
+        integration = IntegrationCall::Dolor;
+        topic = "t" + std::to_string(rg.randomInt<uint32_t>(0, 19));
+        group = "g" + std::to_string(rg.randomInt<uint32_t>(0, 19));
     }
 }
 

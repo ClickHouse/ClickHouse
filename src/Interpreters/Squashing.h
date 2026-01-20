@@ -73,10 +73,10 @@ private:
 
     static Chunk squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoCollection && infos, SharedHeader header);
     static Chunk squash(std::vector<Chunk> && input_chunks);
-    // LazilyMaterializingTransform calls private method squash(std::vector<Chunk> && input_chunks)
+    // LazyMaterializingTransform calls private method squash(std::vector<Chunk> && input_chunks)
     // that method does not handle ChunkInfos,
     // therefore it is private method to force using Squashing instance with proper arguments
-    friend class LazilyMaterializingTransform;
+    friend class LazyMaterializingTransform;
 
     bool isEnoughSize() const;
     bool isEnoughSize(size_t rows, size_t bytes) const;

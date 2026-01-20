@@ -228,7 +228,7 @@ CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
 
 CacheMetadata::MetadataBucket & CacheMetadata::getMetadataBucket(const Key & key)
 {
-    const auto bucket = key.key % buckets_num;
+    const auto bucket = static_cast<size_t>(key.key % buckets_num);
     return metadata_buckets[bucket];
 }
 
@@ -377,6 +377,12 @@ public:
 
             if (!key_lock)
             {
+                if (!key->checkAccess(user_id))
+                {
+                    ++key_it.value();
+                    continue;
+                }
+
                 /// Will lock only if key is in state ACTIVE.
                 key_lock = key->tryLock();
                 if (!key_lock)
@@ -433,6 +439,9 @@ public:
             auto bucket_lock = bucket_it->lock();
             for (const auto & [_, key_metadata] : *bucket_it)
             {
+                if (!key_metadata->checkAccess(user_id))
+                    continue;
+
                 /// Will lock only if key is in state ACTIVE.
                 auto key_lock = key_metadata->tryLock();
                 if (!key_lock)
