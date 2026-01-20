@@ -112,9 +112,6 @@ std::pair<ColumnPtr,size_t> MergeTreeIndexTextPreprocessor::processColumn(const 
     chassert(index_column_with_type_and_name.name == column_name);
     DataTypePtr input_processing_type = getProcessingType(index_column_with_type_and_name.type);
 
-    if (!isStringOrFixedString(input_processing_type))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input index column type {} is not supported", index_column_with_type_and_name.type->getName());
-
     ColumnPtr index_column = index_column_with_type_and_name.column;
     chassert(index_column->getDataType() == index_column_with_type_and_name.type->getTypeId());
 
