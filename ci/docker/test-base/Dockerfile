@@ -52,6 +52,11 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
         llvm-${LLVM_VERSION} \
         make \
         libdatetime-perl \
+        libcapture-tiny-perl \
+        libjson-xs-perl \
+        libperlio-gzip-perl \
+        libmemory-process-perl \
+        libdevel-cover-perl \
     && ln -s /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
     && ln -s /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
     && apt-get clean \

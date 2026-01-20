@@ -107,8 +107,7 @@ rm -rf ./coverage_html/*
 
 echo "Generating HTML report..."
 genhtml --version
-llvm-cov --version
-# genhtml --help
+genhtml --help
 genhtml "llvm_coverage.info" \
     --output-directory "llvm_coverage_html_report" \
     --title "ClickHouse Coverage Report" \
