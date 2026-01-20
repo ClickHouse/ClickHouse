@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Keeper stress test CI job runner."""
 import argparse
+import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -253,16 +255,18 @@ def build_pytest_command(args):
     extra.extend([f"--timeout={timeout_val}", "--timeout-method=signal"])
 
     # xdist workers
-    xdist_workers = str(os.environ.get("KEEPER_XDIST_WORKERS", "") or "").strip()
-    if not xdist_workers:
-        # If we run a matrix over multiple backends, parallelize them by default.
+    xdist_workers_raw = str(os.environ.get("KEEPER_XDIST_WORKERS", "") or "").strip()
+    xdist_workers = "0"
+    is_parallel = False
+    if xdist_workers_raw:
         try:
-            bcnt = len([p for p in matrix_backends.split(",") if p.strip()])
+            xw = int(xdist_workers_raw)
         except Exception:
-            bcnt = 0
-        xdist_workers = str(bcnt) if bcnt > 1 else DEFAULT_XDIST_WORKERS
-    extra.append(f"-n {xdist_workers}")
-    is_parallel = xdist_workers not in ("1", "no", "0")
+            xw = 0
+        if xw > 1:
+            xdist_workers = str(xw)
+            extra.append(f"-n {xdist_workers}")
+            is_parallel = True
 
     extra.append(f"--junitxml={TEMP_DIR}/keeper_junit.xml")
 
@@ -355,6 +359,91 @@ def parse_junit_summary(junit_file):
         pass
     passed = max(0, tests - failures - errors - skipped)
     return tests, passed, failures, errors, skipped
+
+
+def validate_metrics_jsonl(metrics_path):
+    """Validate that keeper_metrics.jsonl contains expected metric families.
+
+    Returns (ok: bool, report: str).
+    """
+    p = str(metrics_path or "").strip()
+    if not p:
+        return False, "metrics sidecar path is empty"
+    if not Path(p).exists():
+        return False, f"metrics sidecar not found: {p}"
+
+    total_rows = 0
+    parse_errors = 0
+    sources = set()
+    bench_names = set()
+
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            for line in f:
+                line = (line or "").strip()
+                if not line:
+                    continue
+                total_rows += 1
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    parse_errors += 1
+                    continue
+                src = str(row.get("source") or "").strip()
+                if src:
+                    sources.add(src)
+                if src == "bench":
+                    nm = str(row.get("name") or "").strip()
+                    if nm:
+                        bench_names.add(nm)
+    except Exception as e:
+        return False, f"failed reading metrics sidecar {p}: {e}"
+
+    missing = []
+    if total_rows <= 0:
+        missing.append("no rows")
+
+    # Required sources
+    for req in ("bench", "prom", "derived", "gate"):
+        if req not in sources:
+            missing.append(f"missing source={req}")
+
+    # Required bench fields
+    required_bench_names = {
+        "read_total_requests",
+        "read_requests_per_second",
+        "read_bytes_per_second",
+        "write_total_requests",
+        "write_requests_per_second",
+        "write_bytes_per_second",
+    }
+    miss_bench = sorted(required_bench_names - bench_names)
+    if miss_bench:
+        missing.append("missing bench metrics: " + ", ".join(miss_bench))
+
+    # Ensure we have *some* non-canonical percentiles (not just p50/p95/p99).
+    # Examples: read_p99_9_ms, write_p99_99_ms, read_p0_ms, etc.
+    extra_pct_re = re.compile(r"^(read|write)_p\d+_\d+_ms$")
+    has_extra_pct = any(extra_pct_re.match(n) for n in bench_names)
+    if not has_extra_pct:
+        missing.append(
+            "missing bench percentile metrics beyond p50/p95/p99 (expected names like read_p99_9_ms)"
+        )
+
+    ok = not missing
+    report_lines = [
+        f"metrics_path={p}",
+        f"rows_total={total_rows}",
+        f"rows_parse_errors={parse_errors}",
+        "sources=" + ",".join(sorted(sources)) if sources else "sources=<empty>",
+        f"bench_names_count={len(bench_names)}",
+    ]
+    if missing:
+        report_lines.append("MISSING:")
+        report_lines.extend([f"- {m}" for m in missing])
+    else:
+        report_lines.append("OK")
+    return ok, "\n".join(report_lines)
 
 
 def collect_failure_artifacts(pytest_ok):
@@ -557,6 +646,27 @@ def main():
     )
     stop_keepalive(keepalive)
     pytest_ok = results[-1].is_ok()
+
+    # Validate metrics sidecar and fail job if required metrics are missing.
+    validate_enabled = str(os.environ.get("KEEPER_VALIDATE_METRICS", "1") or "1").strip()
+    if validate_enabled.lower() not in ("0", "false", "no", "off"):
+        metrics_ok, metrics_report = validate_metrics_jsonl(sidecar)
+        report_path = f"{TEMP_DIR}/keeper_metrics_validation.txt"
+        try:
+            Path(report_path).write_text(metrics_report + "\n", encoding="utf-8")
+            files_to_attach.append(report_path)
+        except Exception:
+            report_path = ""
+        results.append(
+            Result(
+                name="Validate keeper_metrics.jsonl",
+                status=Result.Status.SUCCESS if metrics_ok else Result.Status.FAILED,
+                info=metrics_report,
+                files=[report_path] if report_path else [],
+            )
+        )
+        if not metrics_ok:
+            pytest_ok = False
 
     # Handle large report files
     max_mb = env_int("KEEPER_ATTACH_PYTEST_JSONL_MAX_MB", 512)
