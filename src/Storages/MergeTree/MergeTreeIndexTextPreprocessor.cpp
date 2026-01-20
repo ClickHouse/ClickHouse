@@ -1,8 +1,12 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Columns/IColumn_fwd.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ActionsMatcher.h>
 #include <Interpreters/ActionsVisitor.h>
@@ -15,9 +19,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Storages/IndicesDescription.h>
-#include <DataTypes/DataTypeArray.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnString.h>
 
 
 namespace DB
@@ -94,6 +95,13 @@ DataTypePtr getProcessingType(DataTypePtr type)
         chassert(array_type != nullptr);
 
         result = array_type->getNestedType();
+    }
+    else if (type->lowCardinality())
+    {
+        const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get());
+        chassert(low_cardinality_type != nullptr);
+
+        result = low_cardinality_type->getDictionaryType();
     }
 
     if (isStringOrFixedString(result))
