@@ -162,8 +162,8 @@ TEST(SchedulerThrottlerConstraint, ThrottlerAndFairness)
     double share_b = 0.9;
 
     // Bandwidth-latency coupling due to fairness: worst latency is inversely proportional to share
-    auto max_latency_a = static_cast<ResourceCost>(static_cast<double>(req_cost) * (1.0 + 1.0 / static_cast<double>(share_a)));
-    auto max_latency_b = static_cast<ResourceCost>(static_cast<double>(req_cost) * (1.0 + 1.0 / static_cast<double>(share_b)));
+    auto max_latency_a = static_cast<ResourceCost>(static_cast<double>(req_cost) * (1.0 + 1.0 / share_a));
+    auto max_latency_b = static_cast<ResourceCost>(static_cast<double>(req_cost) * (1.0 + 1.0 / share_b));
 
     double consumed_a = 0;
     double consumed_b = 0;

@@ -5,6 +5,7 @@
 #    pragma clang diagnostic ignored "-Wshadow"
 #    pragma clang diagnostic ignored "-Wextra-semi-stmt"
 #    pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#    pragma clang diagnostic ignored "-Wimplicit-int-float-conversion"
 
 #    include <pocketfft_hdronly.h>
 

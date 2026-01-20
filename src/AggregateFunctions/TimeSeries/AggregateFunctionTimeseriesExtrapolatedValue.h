@@ -152,7 +152,7 @@ private:
         Float64 duration_to_end = static_cast<Float64>(range_end - last_timestamp);
 
         const auto sampled_interval = time_difference;
-        const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval / (samples_in_window.size() - 1));
+        const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval) / static_cast<Float64>(samples_in_window.size() - 1);
 
         // If samples are close enough to the (lower or upper) boundary of the
         // range, we extrapolate the rate all the way to the boundary in

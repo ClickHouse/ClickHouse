@@ -115,7 +115,10 @@ public:
         ValueType value_difference = (adjust_to_resets && value < previous_value) ? value : (value - previous_value);
         result = value_difference;
         if constexpr (is_rate)
-            result = result * static_cast<ValueType>(Base::timestamp_scale_multiplier) / time_difference;
+        {
+            using TimestampScaleMultiplierType = std::conditional_t<std::is_floating_point_v<ValueType>, ValueType, TimestampType>;
+            result = result * static_cast<TimestampScaleMultiplierType>(Base::timestamp_scale_multiplier) / time_difference;
+        }
         null = 0;
     }
 

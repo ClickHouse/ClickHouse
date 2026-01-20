@@ -216,7 +216,10 @@ private:
         for (size_t i = 0; i < histogram.size(); ++i)
         {
             if (count_histogram[i] > 0)
-                histogram[i] = histogram[i] / static_cast<Y>(count_histogram[i]);
+            {
+                using CountHistogramType = std::conditional_t<is_floating_point<Y>, Y, UInt64>;
+                histogram[i] = histogram[i] / static_cast<CountHistogramType>(count_histogram[i]);
+            }
         }
 
         Y y_max{};
@@ -227,7 +230,7 @@ private:
             y_max = std::max(y_max, y);
         }
 
-        if (static_cast<Float64>(y_max) == 0)
+        if (y_max == 0)
         {
             auto last = offsets.back();
             offsets.push_back(last);
