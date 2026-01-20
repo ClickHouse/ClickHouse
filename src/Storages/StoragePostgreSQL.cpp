@@ -431,7 +431,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type conversion not supported");
 
         if (is_nullable)
-            return ColumnNullable::create(std::move(nested_column), ColumnUInt8::create(nested_column->size(), 0));
+            return ColumnNullable::create(std::move(nested_column), ColumnUInt8::create(nested_column->size(), static_cast<UInt8>(0)));
 
         return nested_column;
     }

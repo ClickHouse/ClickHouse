@@ -1,6 +1,6 @@
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
-SET allow_statistic_optimize = 1;
+SET use_statistics = 1;
 SET query_plan_join_swap_table='auto';
 
 -- R1: Small dimension table (Demo size: 10)

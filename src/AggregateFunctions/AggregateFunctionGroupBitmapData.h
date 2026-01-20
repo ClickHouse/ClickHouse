@@ -476,7 +476,7 @@ public:
         {
             for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
             {
-                res.emplace_back(*it);
+                res.emplace_back(static_cast<Element>(*it));
                 ++count;
             }
         }
@@ -513,7 +513,7 @@ public:
 
                 if (*it < range_end)
                 {
-                    r1.add(*it);
+                    r1.add(static_cast<T>(*it));
                     ++count;
                 }
                 else
@@ -562,7 +562,7 @@ public:
 
             if (count < limit)
             {
-                r1.add(*it);
+                r1.add(static_cast<T>(*it));
                 ++count;
             }
             else
@@ -596,7 +596,7 @@ public:
             ++offset_count;
 
         for (; it != roaring_bitmap->end() && count < limit; ++it, ++count)
-            r1.add(*it);
+            r1.add(static_cast<T>(*it));
         return count;
     }
 
@@ -689,7 +689,7 @@ public:
             int idx = roaring::internal::ra_get_index(ra, container_id);
             if (idx < 0)
                 return 0;
-            return roaring::internal::container_to_uint32_array(res.data(), ra->containers[idx], ra->typecodes[idx], base);
+            return static_cast<UInt16>(roaring::internal::container_to_uint32_array(res.data(), ra->containers[idx], ra->typecodes[idx], base));
         }
     }
 
@@ -710,7 +710,7 @@ public:
                 if (static_cast<UInt32>(x.getValue()) >> 16 == container_id)
                     num_added++;
             }
-            return num_added;
+            return static_cast<UInt16>(num_added);
         }
         else
         {
@@ -719,7 +719,7 @@ public:
             int idx = roaring::internal::ra_get_index(ra, container_id);
             if (idx < 0)
                 return 0;
-            return roaring::internal::container_get_cardinality(ra->containers[idx], ra->typecodes[idx]);
+            return static_cast<UInt16>(roaring::internal::container_get_cardinality(ra->containers[idx], ra->typecodes[idx]));
         }
     }
 
@@ -774,7 +774,7 @@ public:
             int idx = roaring::internal::ra_get_index(ra, container_id);
             if (idx < 0)
                 return nullptr;
-            return roaring::internal::ra_get_container_at_index(ra, idx, typecode);
+            return roaring::internal::ra_get_container_at_index(ra, static_cast<uint16_t>(idx), typecode);
         }
     }
 
@@ -829,7 +829,7 @@ public:
                 if (static_cast<UInt32>(rhs_value.getValue()) >> 16 == container_id and lhs_values.count(rhs_value.getValue()) > 0)
                     (*output)[num_added++] = (static_cast<UInt32>(rhs_value.getValue()) & 0xFFFFu) + base;
             }
-            return num_added;
+            return static_cast<UInt16>(num_added);
         }
         else if (lhs_small || rhs_small)
         {
@@ -848,10 +848,10 @@ public:
                 if ((value >> 16) != container_id)
                     continue;
                 UInt32 low_16bits = value & 0xFFFFu;
-                if (roaring::internal::container_contains(large_bm_c, low_16bits, large_bm_c_typecode))
+                if (roaring::internal::container_contains(large_bm_c, static_cast<uint16_t>(low_16bits), large_bm_c_typecode))
                     (*output)[num_added++] = low_16bits + base;
             }
-            return num_added;
+            return static_cast<UInt16>(num_added);
         }
         else
         {
@@ -860,7 +860,7 @@ public:
             roaring::internal::container_t * c = this->container_and(rhs, container_id, &result_type);
             if (!c)
                 return 0;
-            UInt16 result_size = roaring::internal::container_to_uint32_array(output->data(), c, result_type, base);
+            UInt16 result_size = static_cast<UInt16>(roaring::internal::container_to_uint32_array(output->data(), c, result_type, base));
             roaring::internal::container_free(c, result_type);
             return result_size;
         }
@@ -897,7 +897,7 @@ public:
         if (ctn_idx >= 0)
         {
             uint8_t old_type = 0;
-            auto * c = roaring::internal::ra_get_container_at_index(&rb32->roaring.high_low_container, ctn_idx, &old_type);
+            auto * c = roaring::internal::ra_get_container_at_index(&rb32->roaring.high_low_container, static_cast<uint16_t>(ctn_idx), &old_type);
             roaring::internal::container_free(c, old_type);
             roaring::internal::ra_set_container_at_index(&rb32->roaring.high_low_container, ctn_idx, ctn, type);
             return;

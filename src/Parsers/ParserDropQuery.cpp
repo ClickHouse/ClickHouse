@@ -178,7 +178,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->cluster = cluster_str;
 
     if (database_and_tables && database_and_tables->as<ASTExpressionList &>().children.size() == 1)
-        node = query->getRewrittenASTsOfSingleTable()[0];
+        node = query->getRewrittenASTsOfSingleTable(query)[0];
 
     return true;
 }

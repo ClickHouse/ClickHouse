@@ -27,24 +27,20 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
-#include <Common/re2.h>
 
 #include <TableFunctions/TableFunctionURL.h>
 
 #include <Formats/SchemaInferenceUtils.h>
-#include <Core/FormatFactorySettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>

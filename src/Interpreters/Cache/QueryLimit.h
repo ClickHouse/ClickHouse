@@ -13,14 +13,14 @@ public:
     class QueryContext;
     using QueryContextPtr = std::shared_ptr<QueryContext>;
 
-    QueryContextPtr tryGetQueryContext(const CachePriorityGuard::Lock & lock);
+    QueryContextPtr tryGetQueryContext(const CacheStateGuard::Lock & lock);
 
     QueryContextPtr getOrSetQueryContext(
         const std::string & query_id,
         const ReadSettings & settings,
-        const CachePriorityGuard::Lock &);
+        const CachePriorityGuard::WriteLock &);
 
-    void removeQueryContext(const std::string & query_id, const CachePriorityGuard::Lock &);
+    void removeQueryContext(const std::string & query_id, const CachePriorityGuard::WriteLock &);
 
     class QueryContext
     {
@@ -38,19 +38,19 @@ public:
         Priority::IteratorPtr tryGet(
             const Key & key,
             size_t offset,
-            const CachePriorityGuard::Lock &);
+            const CachePriorityGuard::WriteLock &);
 
         void add(
             KeyMetadataPtr key_metadata,
             size_t offset,
             size_t size,
             const FileCacheUserInfo & user,
-            const CachePriorityGuard::Lock &);
+            const CachePriorityGuard::WriteLock &);
 
         void remove(
             const Key & key,
             size_t offset,
-            const CachePriorityGuard::Lock &);
+            const CachePriorityGuard::WriteLock &);
 
     private:
         using Records = std::unordered_map<FileCacheKeyAndOffset, Priority::IteratorPtr, FileCacheKeyAndOffsetHash>;

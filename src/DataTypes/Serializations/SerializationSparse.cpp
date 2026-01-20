@@ -186,15 +186,15 @@ size_t readOrGetCachedSparseOffsets(
     settings.path.push_back(ISerialization::Substream::SparseOffsets);
     const auto * cached_element = ISerialization::getElementFromSubstreamsCache(cache, settings.path);
 
-    size_t old_size = 0;
+    size_t num_read_offsets = 0;
     if (cached_element)
     {
         /// Reuse cached offsets info
         const auto & cached_offsets_element = assert_cast<const SubstreamsCacheSparseOffsetsElement &>(*cached_element);
-        old_size = cached_offsets_element.old_size;
+        num_read_offsets = cached_offsets_element.offsets->size() - cached_offsets_element.old_size;
         read_rows = cached_offsets_element.read_rows;
         skipped_values_rows = cached_offsets_element.skipped_values_rows;
-        ISerialization::insertDataFromCachedColumn(settings, offsets_column, cached_offsets_element.offsets, cached_offsets_element.offsets->size() - old_size, cache);
+        ISerialization::insertDataFromCachedColumn(settings, offsets_column, cached_offsets_element.offsets, num_read_offsets, cache);
     }
     else if (auto * stream = settings.getter(settings.path))
     {
@@ -202,17 +202,18 @@ size_t readOrGetCachedSparseOffsets(
             state_sparse.reset();
 
         auto & offsets_data = assert_cast<ColumnUInt64 &>(offsets_column->assumeMutableRef()).getData();
-        old_size = offsets_data.size();
+        size_t old_size = offsets_data.size();
         read_rows = deserializeOffsets(offsets_data, *stream, prev_size, rows_offset, limit, skipped_values_rows, state_sparse);
 
         ISerialization::addElementToSubstreamsCache(
             cache,
             settings.path,
             std::make_unique<SubstreamsCacheSparseOffsetsElement>(offsets_column, old_size, read_rows, skipped_values_rows));
+        num_read_offsets = offsets_column->size() - old_size;
     }
 
     settings.path.pop_back();
-    return offsets_column->size() - old_size;
+    return num_read_offsets;
 }
 
 }

@@ -9,14 +9,9 @@
 #include <Common/logger_useful.h>
 #include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
-#include <boost/container_hash/hash.hpp>
-#include <boost/range/algorithm/copy.hpp>
-#include <iterator>
 #include <sstream>
-#include <unordered_map>
 
 
 namespace DB

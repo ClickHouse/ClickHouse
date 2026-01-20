@@ -387,7 +387,7 @@ std::string normalizeUuid(const std::string & uuid)
     {
         if (std::isalnum(c))
         {
-            result.push_back(std::tolower(c));
+            result.push_back(static_cast<char>(std::tolower(c)));
         }
     }
     return result;

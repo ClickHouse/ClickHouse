@@ -44,6 +44,7 @@ struct FillColumnDescription
 /// Description of the sorting rule by one column.
 struct SortColumnDescription
 {
+    std::string alias;
     std::string column_name; /// The name of the column.
     int direction;           /// 1 - ascending, -1 - descending.
     int nulls_direction;     /// 1 - NULLs and NaNs are greater, -1 - less.
@@ -53,6 +54,24 @@ struct SortColumnDescription
     FillColumnDescription fill_description;
 
     SortColumnDescription() = default;
+
+    explicit SortColumnDescription(
+        std::string alias_,
+        std::string column_name_,
+        int direction_ = 1,
+        int nulls_direction_ = 1,
+        const std::shared_ptr<Collator> & collator_ = nullptr,
+        bool with_fill_ = false,
+        const FillColumnDescription & fill_description_ = {})
+        : alias(std::move(alias_))
+        , column_name(std::move(column_name_))
+        , direction(direction_)
+        , nulls_direction(nulls_direction_)
+        , collator(collator_)
+        , with_fill(with_fill_)
+        , fill_description(fill_description_)
+    {
+    }
 
     explicit SortColumnDescription(
         std::string column_name_,

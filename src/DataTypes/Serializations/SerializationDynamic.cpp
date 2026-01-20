@@ -13,7 +13,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
-#include <Interpreters/castColumn.h>
 #include <Formats/EscapingRuleUtils.h>
 
 namespace DB
@@ -855,7 +854,7 @@ static void deserializeTextImpl(
     if (!checkIfTypeIsComplete(variant_type))
     {
         size_t shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
-        for (size_t i = 0; i != variant_types.size(); ++i)
+        for (ColumnVariant::Discriminator i = 0; i != variant_types.size(); ++i)
         {
             auto field_buf = std::make_unique<ReadBufferFromString>(field);
             if (i != shared_variant_discr

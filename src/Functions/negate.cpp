@@ -18,7 +18,7 @@ struct NegateImpl
         if constexpr (is_decimal<A>)
             return negateOverflow(a);
 
-        return -static_cast<ResultType>(a);
+        return static_cast<ResultType>(-static_cast<ResultType>(a));
     }
 
 #if USE_EMBEDDED_COMPILER

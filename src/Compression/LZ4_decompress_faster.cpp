@@ -25,7 +25,7 @@ namespace
 ALWAYS_INLINE UInt16 LZ4_readLE16(const void * mem_ptr)
 {
     const UInt8* p = reinterpret_cast<const UInt8*>(mem_ptr);
-    return static_cast<UInt16>(p[0]) + (p[1] << 8);
+    return static_cast<UInt16>(p[0] + (p[1] << 8));
 }
 
 template <size_t block_size>

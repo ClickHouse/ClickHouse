@@ -1,8 +1,10 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
@@ -28,6 +30,43 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
+}
+
+/// Helper to create Enum data type from ASTEnumDataType values
+static DataTypePtr createEnumFromValues(const String & type_name, const std::vector<std::pair<String, Int64>> & values)
+{
+    String type_name_upper = Poco::toUpper(type_name);
+    bool use_enum16 = (type_name_upper == "ENUM16");
+
+    if (!use_enum16 && type_name_upper == "ENUM")
+    {
+        /// Auto-detect Enum8 vs Enum16 based on values
+        for (const auto & [_, value] : values)
+        {
+            if (value < std::numeric_limits<Int8>::min() || value > std::numeric_limits<Int8>::max())
+            {
+                use_enum16 = true;
+                break;
+            }
+        }
+    }
+
+    if (use_enum16)
+    {
+        DataTypeEnum16::Values enum_values;
+        enum_values.reserve(values.size());
+        for (const auto & [name, value] : values)
+            enum_values.emplace_back(name, static_cast<Int16>(value));
+        return std::make_shared<DataTypeEnum16>(enum_values);
+    }
+    else
+    {
+        DataTypeEnum8::Values enum_values;
+        enum_values.reserve(values.size());
+        for (const auto & [name, value] : values)
+            enum_values.emplace_back(name, static_cast<Int8>(value));
+        return std::make_shared<DataTypeEnum8>(enum_values);
+    }
 }
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const
@@ -86,6 +125,10 @@ DataTypePtr DataTypeFactory::tryGet(const ASTPtr & ast) const
 template <bool nullptr_on_error>
 DataTypePtr DataTypeFactory::getImpl(const ASTPtr & ast) const
 {
+    /// Handle specialized ASTEnumDataType directly
+    if (const auto * enum_type = ast->as<ASTEnumDataType>())
+        return createEnumFromValues(enum_type->name, enum_type->values);
+
     if (const auto * type = ast->as<ASTDataType>())
     {
         return getImpl<nullptr_on_error>(type->name, type->arguments);

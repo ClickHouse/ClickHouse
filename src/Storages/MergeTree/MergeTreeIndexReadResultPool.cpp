@@ -47,7 +47,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
 
     auto ranges = part.ranges;
-    size_t ending_mark = ranges.empty() ? 0 : ranges.back().end;
+    [[maybe_unused]] size_t total_granules = ranges.getNumberOfMarks();
+
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (use_for_disjunctions)
         partial_eval_results.resize(part.data_part->index_granularity->getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
@@ -75,6 +76,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             use_for_disjunctions,
             partial_eval_results,
             log).first;
+
+        LOG_DEBUG(log, "Index {} has dropped {}/{} granules in part {}", index_and_condition.index->index.name,
+                        (total_granules - ranges.getNumberOfMarks()), total_granules, part.data_part->name);
+        total_granules = ranges.getNumberOfMarks();
     }
 
     if (use_for_disjunctions)
@@ -82,6 +87,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
                             part.data_part, ranges, key_condition_rpn_template.value(),
                             partial_eval_results, reader_settings, log);
+
+        LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
+                        ranges.getNumberOfMarks(), total_granules, part.data_part->name);
+        total_granules = ranges.getNumberOfMarks();
     }
 
     for (const auto & indices_and_condition : skip_indexes.merged_indices)
@@ -110,7 +119,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         return {};
 
     auto res = std::make_shared<SkipIndexReadResult>();
-    res->granules_selected.resize(ending_mark, false);
+    res->granules_selected.resize(part.data_part->index_granularity->getMarksCountWithoutFinal(), false);
     for (const auto & range : ranges)
     {
         for (auto i = range.begin; i < range.end; ++i)
@@ -260,7 +269,7 @@ bool ProjectionIndexBitmap::rangeAllZero(size_t begin, size_t end) const
     {
         roaring::api::roaring_uint32_iterator_t it;
         roaring_iterator_init(data.bitmap32, &it);
-        if (!roaring_uint32_iterator_move_equalorlarger(&it, begin))
+        if (!roaring_uint32_iterator_move_equalorlarger(&it, static_cast<UInt32>(begin)))
             return true;
 
         return it.current_value >= end;
@@ -299,7 +308,7 @@ bool ProjectionIndexBitmap::appendToFilter(PaddedPODArray<UInt8> & filter, size_
     {
         roaring::api::roaring_uint32_iterator_t it;
         roaring_iterator_init(data.bitmap32, &it);
-        if (!roaring_uint32_iterator_move_equalorlarger(&it, starting_row))
+        if (!roaring_uint32_iterator_move_equalorlarger(&it, static_cast<UInt32>(starting_row)))
             return false;
 
         bool has_value = false;
@@ -395,14 +404,14 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
                     if (ranges.parent_ranges.isContiguousFullRange())
                     {
                         for (auto offset : offsets.getData())
-                            res->add<Offset>(offset);
+                            res->add<Offset>(static_cast<Offset>(offset));
                     }
                     else
                     {
                         for (auto offset : offsets.getData())
                         {
                             if (ranges.parent_ranges.contains(offset))
-                                res->add<Offset>(offset);
+                                res->add<Offset>(static_cast<Offset>(offset));
                         }
                     }
                 };

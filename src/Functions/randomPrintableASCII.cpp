@@ -90,9 +90,9 @@ public:
             {
                 UInt64 rand = rng();
 
-                UInt16 rand1 = rand;
-                UInt16 rand2 = rand >> 16;
-                UInt16 rand3 = rand >> 32;
+                UInt16 rand1 = static_cast<UInt16>(rand);
+                UInt16 rand2 = static_cast<UInt16>(rand >> 16);
+                UInt16 rand3 = static_cast<UInt16>(rand >> 32);
                 UInt16 rand4 = rand >> 48;
 
                 /// Printable characters are from range [32; 126].

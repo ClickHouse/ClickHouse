@@ -3889,7 +3889,8 @@ def test_truncate(started_cluster):
     assert count_files() == 3
 
 
-def test_deletion_vector(started_cluster):
+@pytest.mark.parametrize("on_cluster", [False, True])
+def test_deletion_vector(started_cluster, on_cluster):
     node = started_cluster.instances["node1"]
     table_name = randomize_table_name("test_dv")
     spark = started_cluster.spark_session
@@ -3897,12 +3898,13 @@ def test_deletion_vector(started_cluster):
     bucket = started_cluster.minio_bucket
     path = f"/{table_name}"
 
+    suffix = "Cluster" if on_cluster else ""
+    cluster = "cluster," if on_cluster else ""
     delta_function = f"""
-deltaLake(
+deltaLake{suffix}({cluster}
         'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
         '{minio_access_key}',
-        '{minio_secret_key}',
-        SETTINGS allow_experimental_delta_kernel_rs=1)
+        '{minio_secret_key}')
     """
 
     delta_table = (

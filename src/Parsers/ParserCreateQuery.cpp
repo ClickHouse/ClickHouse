@@ -975,7 +975,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         else if (query->storage->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
-        query->storage->primary_key = query->columns_list->primary_key;
+        query->storage->set(query->storage->primary_key, query->columns_list->getChild(*query->columns_list->primary_key));
 
     }
 
@@ -987,7 +987,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         else if (query->storage->primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
 
-        query->storage->primary_key = query->columns_list->primary_key_from_columns;
+        query->storage->set(query->storage->primary_key, query->columns_list->getChild(*query->columns_list->primary_key_from_columns));
     }
 
     tryGetIdentifierNameInto(as_database, query->as_database);
@@ -1199,9 +1199,9 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->is_watermark_strictly_ascending = is_watermark_strictly_ascending;
     query->is_watermark_ascending = is_watermark_ascending;
     query->is_watermark_bounded = is_watermark_bounded;
-    query->watermark_function = watermark;
+    query->set(query->watermark_function, watermark);
     query->allowed_lateness = allowed_lateness;
-    query->lateness_function = lateness;
+    query->set(query->lateness_function, lateness);
     query->is_populate = is_populate;
     query->is_create_empty = is_create_empty;
 
@@ -1651,7 +1651,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (comment)
         query->set(query->comment, comment);
     if (sql_security)
-        query->sql_security = typeid_cast<std::shared_ptr<ASTSQLSecurity>>(sql_security);
+        query->set(query->sql_security, sql_security);
 
     if (query->columns_list && query->columns_list->primary_key)
     {
@@ -1661,7 +1661,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         auto & storage_ref = typeid_cast<ASTStorage &>(*storage);
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
-        storage_ref.primary_key = query->columns_list->primary_key;
+        storage_ref.set(storage_ref.primary_key, query->columns_list->getChild(*query->columns_list->primary_key));
     }
 
     if (query->columns_list && (query->columns_list->primary_key_from_columns))
@@ -1672,7 +1672,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         auto & storage_ref = typeid_cast<ASTStorage &>(*storage);
         if (storage_ref.primary_key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple primary keys are not allowed.");
-        storage_ref.primary_key = query->columns_list->primary_key_from_columns;
+        storage_ref.set(storage_ref.primary_key, query->columns_list->getChild(*query->columns_list->primary_key_from_columns));
     }
 
     std::shared_ptr<ASTViewTargets> targets;

@@ -445,7 +445,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             has_error = True
             error_info.append(test_result_sequential.info)
 
-    # Collect logs before rerun
+    # Collect logs before re-run
     attached_files = []
     if not info.is_local_run:
         failed_suits = []

@@ -204,7 +204,7 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
                     column_nullable.getNestedColumn(), value, type_description.first,
                     data_type.getNestedType(), storage_data.array_info, column_idx_in_table);
 
-            column_nullable.getNullMapData().emplace_back(0);
+            column_nullable.getNullMapData().emplace_back(false);
         }
         else
         {
@@ -345,7 +345,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
     };
 
     std::exception_ptr error;
-    for (int column_idx = 0; column_idx < num_columns; ++column_idx)
+    for (Int16 column_idx = 0; column_idx < num_columns; ++column_idx)
     {
         try
         {

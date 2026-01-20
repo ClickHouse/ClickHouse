@@ -2472,7 +2472,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
     if (value.isNull())
         return true;
 
-    UInt8 predicate_value = value.safeGet<UInt8>();
+    auto predicate_value = value.safeGet<UInt8>();
     return predicate_value == 0;
 }
 

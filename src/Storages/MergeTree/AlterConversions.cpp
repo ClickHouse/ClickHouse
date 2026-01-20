@@ -99,11 +99,12 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
         alter_command->partition = alter_command->children.emplace_back(command.partition->clone()).get();
 
     alter_command->predicate = alter_command->children.emplace_back(command.predicate->clone()).get();
-    auto mutation_command = MutationCommand::parse(alter_command.get());
+    auto mutation_command = MutationCommand::parse(*alter_command);
 
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
 
+    mutation_command->ast = alter_command;
     return *mutation_command;
 }
 

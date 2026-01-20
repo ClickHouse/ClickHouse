@@ -1,7 +1,6 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/FilterDescription.h>
 #include <Columns/IColumn.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -13,21 +12,14 @@
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/createBlockSelector.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/DumpASTNode.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Common/BitHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/WeakHash.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
@@ -40,7 +32,6 @@
 #include <algorithm>
 #include <numeric>
 #include <deque>
-#include <ranges>
 #include <iterator>
 
 using namespace DB;
@@ -731,7 +722,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 if (!sc)
                     return;
                 // matches the original right block rows referenced by this slot's ScatteredColumns
-                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns_info.columns.at(0)->size(), 0);
+                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns_info.columns.at(0)->size(), static_cast<UInt8>(0));
                 // apply a contiguous [start, end) range from the source mask into the destination mask
                 // fill with 1s if NULLs only
                 auto apply_range = [&](size_t start, size_t end)

@@ -67,7 +67,7 @@ void ASTTableJoin::forEachPointerToChild(std::function<void(void **)> f)
     if (new_using_expression_list != using_expression_list.get())
     {
         if (new_using_expression_list)
-            using_expression_list = new_using_expression_list->ptr();
+            using_expression_list = getChild(*new_using_expression_list);
         else
             using_expression_list.reset();
     }
@@ -77,7 +77,7 @@ void ASTTableJoin::forEachPointerToChild(std::function<void(void **)> f)
     if (new_on_expression != on_expression.get())
     {
         if (new_on_expression)
-            on_expression = new_on_expression->ptr();
+            on_expression = getChild(*new_on_expression);
         else
             on_expression.reset();
     }

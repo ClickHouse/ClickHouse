@@ -38,7 +38,7 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
         options.prompt = buildCompletePrompt(prompt);
         options.temperature = config.temperature;
         options.max_tokens = config.max_tokens;
-        options.max_steps = config.max_steps;
+        options.max_steps = static_cast<int>(config.max_steps);
         if (schema_tools)
             options.tools = schema_tools->getToolSet();
 

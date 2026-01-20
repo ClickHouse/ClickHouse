@@ -7,8 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
-#include <base/range.h>
 
 namespace DB
 {

@@ -178,7 +178,7 @@ void AddingDefaultsTransform::transform(Chunk & chunk)
     }
 
     if (!evaluate_block.columns())
-        evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, 0), num_rows), std::make_shared<DataTypeUInt8>(), "_dummy"});
+        evaluate_block.insert({ColumnConst::create(ColumnUInt8::create(1, static_cast<UInt8>(0)), num_rows), std::make_shared<DataTypeUInt8>(), "_dummy"});
 
     auto dag = evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), columns, context, false);
     if (dag)

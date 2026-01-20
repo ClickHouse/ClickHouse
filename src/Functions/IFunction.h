@@ -60,8 +60,12 @@ protected:
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
       *  if some of arguments are Nullable, then execute function as usual for columns,
-      *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
+      *   where Nullable columns are substituted with nested columns,
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
+      * The underlying function may or may not be called for the rows containing NULLs. When called,
+      * arbitrary values are used instead of NULLs - whatever values happened to be in ColumnNullable's
+      * nested column; typically default values, but that's not guaranteed.
+      * So this only makes sense for functions that don't fail and don't have side effects.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
@@ -450,6 +454,11 @@ public:
 
     virtual String getName() const = 0;
 
+    /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
+    ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting
+    ///  getReturnTypeImpl sometimes; I didn't understand it. This only applies to conversion functions,
+    ///  not any IFunction. Are there other cases where getReturnTypeImpl result is not passed through?
+    ///  I don't know. If you know, consider documenting it here.)
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
     virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {

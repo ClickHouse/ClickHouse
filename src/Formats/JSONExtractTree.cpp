@@ -1529,7 +1529,7 @@ public:
             auto & variant = column_variant.getVariantByGlobalDiscriminator(i);
             if (variant_nodes[i]->insertResultToColumn(variant, element, insert_settings, format_settings, error))
             {
-                column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(i));
+                column_variant.getLocalDiscriminators().push_back(column_variant.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(i)));
                 column_variant.getOffsets().push_back(variant.size() - 1);
                 return true;
             }
@@ -1600,7 +1600,7 @@ public:
 
                     if (it->second->insertResultToColumn(variant_column.getVariantByGlobalDiscriminator(i), element, insert_settings_with_no_type_conversion, format_settings, error))
                     {
-                        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(i));
+                        variant_column.getLocalDiscriminators().push_back(variant_column.localDiscriminatorByGlobal(static_cast<ColumnVariant::Discriminator>(i)));
                         variant_column.getOffsets().push_back(variant_column.getVariantByGlobalDiscriminator(i).size() - 1);
                         return true;
                     }

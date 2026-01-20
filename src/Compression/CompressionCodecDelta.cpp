@@ -110,7 +110,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
         dest += sizeof(T);
     }
 
-    return dest - original_dest;
+    return static_cast<UInt32>(dest - original_dest);
 }
 
 }

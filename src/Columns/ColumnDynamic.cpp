@@ -236,7 +236,7 @@ void ColumnDynamic::insert(const Field & x)
     auto & variant_col = getVariantColumn();
     auto shared_variant_discr = getSharedVariantDiscriminator();
     /// Check if we can insert field into existing variants and avoid Variant extension.
-    for (size_t i = 0; i != variant_col.getNumVariants(); ++i)
+    for (ColumnVariant::Discriminator i = 0; i != variant_col.getNumVariants(); ++i)
     {
         if (i != shared_variant_discr && variant_col.getVariantByGlobalDiscriminator(i).tryInsert(x))
         {

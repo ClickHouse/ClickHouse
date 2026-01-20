@@ -201,7 +201,7 @@ def handle_slash_command(form: dict):
 
     # Subscribe command
     if action == "subscribe":
-        # Use provided email or get user's email from Slack
+        # Use provided email or let worker fetch it from Slack
         if len(args) >= 2:
             user_email = args[1]
         else:
@@ -214,14 +214,6 @@ def handle_slash_command(form: dict):
                     }
                 )
 
-        # Publish home view immediately with subscription info
-        publish_home_view(
-            user_id=user_id,
-            username=username,
-            github_login=user_email,
-            footer=f"_{user_email}_",
-        )
-
         # Invoke worker Lambda for subscription processing
         invoke_worker_lambda(
             {
@@ -229,13 +221,14 @@ def handle_slash_command(form: dict):
                 "user_id": user_id,
                 "username": username,
                 "github_login": user_email,
+                "response_url": response_url,
             }
         )
 
         return _json_response(
             {
                 "response_type": "ephemeral",
-                "text": f"✅ Subscribing to praktika feed for: `{user_email}`",
+                "text": "✅ Subscribing to praktika feed...",
             }
         )
 
@@ -254,6 +247,7 @@ def handle_slash_command(form: dict):
                 "action": "unsubscribe",
                 "user_id": user_id,
                 "username": username,
+                "response_url": response_url,
             }
         )
 
@@ -309,6 +303,33 @@ def handle_interactivity(payload: dict):
     print("Interactivity user_id:", user_id)
     print("Interactivity action_id:", action_id, "value:", value)
 
+    username = payload.get("user", {}).get("username", "") or payload.get(
+        "user", {}
+    ).get("name", "")
+
+    toggle_action_ids = {
+        "toggle_hide_merged_prs": "hide_merged_prs",
+        "toggle_hide_merges": "hide_merges",
+        "toggle_hide_secondary_prs": "hide_secondary_prs",
+        "toggle_show_last_7d": "show_last_7d",
+        "toggle_notify_on_complete": "notify_on_complete",
+        "toggle_notify_on_failure": "notify_on_failure",
+    }
+
+    if action_id in toggle_action_ids:
+        invoke_worker_lambda(
+            {
+                "action": "toggle_pref",
+                "user_id": user_id,
+                "username": username,
+                "pref_key": toggle_action_ids[action_id],
+                "response_url": response_url,
+                "value": value,
+            }
+        )
+
+        return {"statusCode": 200, "body": ""}
+
     # Handle subscribe button click
     if action_id == "subscribe_button":
         # Extract GitHub login from input field
@@ -316,8 +337,6 @@ def handle_interactivity(payload: dict):
         github_login_block = view_state.get("github_login_input", {})
         github_login_input = github_login_block.get("github_login", {})
         github_login = github_login_input.get("value", "")
-
-        username = payload.get("user", {}).get("username", "")
 
         print(
             f"User {user_id} ({username}) requested subscribe for GitHub login: {github_login}"
@@ -333,20 +352,9 @@ def handle_interactivity(payload: dict):
                 "user_id": user_id,
                 "username": username,
                 "github_login": github_login,
+                "response_url": response_url,
             }
         )
-
-    if response_url:
-        # Send a follow-up ephemeral message to the user who clicked
-        post_to_response_url(
-            response_url,
-            {
-                "response_type": "ephemeral",
-                "text": f"👋 Processing your request, <@{user_id}>...",
-            },
-        )
-    else:
-        print("No response_url in payload; cannot send follow-up message.")
 
     # Important: Return immediately to avoid Slack timeout
     return {"statusCode": 200, "body": ""}

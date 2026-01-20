@@ -205,7 +205,7 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
         if (rows_offset)
             column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
         else
-            insertDataFromCachedColumn(settings, column, cached_column, num_read_rows, cache);
+            insertDataFromCachedColumn(settings, column, cached_column, num_read_rows, cache, true);
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {

@@ -1,5 +1,6 @@
 #include <memory>
 #include <optional>
+#include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
 #include <Core/Settings.h>
 #include <Common/setThreadName.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -646,7 +647,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         configuration->addDeleteTransformers(object_info, builder, format_settings, context_);
 
-        if (object_info->data_lake_metadata && object_info->data_lake_metadata->excluded_rows)
+        if (object_info->data_lake_metadata
+            && object_info->data_lake_metadata->excluded_rows
+            && object_info->data_lake_metadata->excluded_rows->size() > 0)
         {
             builder.addSimpleTransform([&](const SharedHeader & header)
             {

@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
 

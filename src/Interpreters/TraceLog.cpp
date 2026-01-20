@@ -202,8 +202,8 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
 
     const auto & hostname = getFQDNOrHostName();
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
-    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(DateLUT::instance().toDayNum(event_time).toUnderType());
-    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(event_time);
+    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(static_cast<UInt16>(DateLUT::instance().toDayNum(event_time).toUnderType()));
+    typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(static_cast<UInt32>(event_time));
     typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(event_time_microseconds);
     typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(timestamp_ns);
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(ClickHouseRevision::getVersionRevision());

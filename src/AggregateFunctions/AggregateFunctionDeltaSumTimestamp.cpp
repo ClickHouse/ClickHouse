@@ -5,7 +5,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>

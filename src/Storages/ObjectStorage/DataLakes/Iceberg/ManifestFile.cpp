@@ -104,7 +104,7 @@ namespace
 
             if (const auto * decimal_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
             {
-                DB::DecimalField<DB::Decimal32> result(unscaled_value, decimal_type->getScale());
+                DB::DecimalField<DB::Decimal32> result(static_cast<Int32>(unscaled_value), decimal_type->getScale());
                 return result;
             }
             if (const auto * decimal_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
@@ -321,7 +321,7 @@ ManifestFileContent::ManifestFileContent(
                 for (const auto & column_stats : values_count.safeGet<Array>())
                 {
                     const auto & column_number_and_count = column_stats.safeGet<Tuple>();
-                    Int32 number = column_number_and_count[0].safeGet<Int32>();
+                    Int32 number = static_cast<Int32>(column_number_and_count[0].safeGet<Int32>());
                     Int64 count = column_number_and_count[1].safeGet<Int64>();
                     if (path == c_data_file_value_counts)
                         columns_infos[number].rows_count = count;
@@ -344,7 +344,7 @@ ManifestFileContent::ManifestFileContent(
                     for (const auto & column_stats : bounds.safeGet<Array>())
                     {
                         const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
-                        Int32 number = column_number_and_bound[0].safeGet<Int32>();
+                        Int32 number = static_cast<Int32>(column_number_and_bound[0].safeGet<Int32>());
                         const Field & bound_value = column_number_and_bound[1];
 
                         if (path == c_data_file_lower_bounds)
@@ -481,7 +481,7 @@ ManifestFileContent::ManifestFileContent(
                 {
                     Field equality_ids_field = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_equality_ids);
                     for (const Field & id : equality_ids_field.safeGet<Array>())
-                        equality_ids.push_back(id.safeGet<Int32>());
+                        equality_ids.push_back(static_cast<Int32>(id.safeGet<Int32>()));
                 }
                 else
                     throw Exception(

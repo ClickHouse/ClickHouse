@@ -736,7 +736,7 @@ private:
             DB::Field value;
             if (precision <= DB::DecimalUtils::max_precision<DB::Decimal32>)
             {
-                value = DB::DecimalField<DB::Decimal32>(value_ls, scale);
+                value = DB::DecimalField<DB::Decimal32>(static_cast<Int32>(value_ls), scale);
                 state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeDecimal32>(precision, scale));
             }
             else if (precision <= DB::DecimalUtils::max_precision<DB::Decimal64>)

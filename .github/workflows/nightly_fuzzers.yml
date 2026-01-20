@@ -217,7 +217,7 @@ jobs:
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_fuzzers, libfuzzer_tests]
-    if: ${{ !cancelled() }}
+    if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}

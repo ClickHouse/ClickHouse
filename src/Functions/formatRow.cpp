@@ -10,7 +10,6 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Processors/Port.h>
 
 #include <memory>
 #include <ranges>

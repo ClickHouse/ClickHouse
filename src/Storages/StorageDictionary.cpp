@@ -8,12 +8,10 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
-#include <Parsers/ASTLiteral.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
-#include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>

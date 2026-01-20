@@ -1459,7 +1459,7 @@ bool DolorIntegration::httpPut(const String & path, const String & body)
     Poco::URI uri;
     uri.setScheme("http");
     uri.setHost(sc.server_hostname);
-    uri.setPort(sc.port);
+    uri.setPort(static_cast<uint16_t>(sc.port));
     uri.setPath(path);
 
     /// Build PUT request
@@ -1826,7 +1826,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
     else if (t.isKafkaEngine())
     {
         const String & host = fc.kafka_server.has_value() ? fc.kafka_server.value().server_hostname : "localhost";
-        const uint16_t & port = fc.kafka_server.has_value() ? fc.kafka_server.value().port : 9092;
+        const uint16_t & port = static_cast<uint16_t>(fc.kafka_server.has_value() ? fc.kafka_server.value().port : 9092);
 
         te->add_params()->set_svalue(fmt::format("{}:{}", host, port));
         te->add_params()->set_svalue(t.topic.value()); /// topic

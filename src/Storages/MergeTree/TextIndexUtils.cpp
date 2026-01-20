@@ -75,7 +75,7 @@ makeOutputStreams(
     return {std::move(streams), std::move(streams_holders)};
 }
 
-void writeMarks(MergeTreeIndexOutputStreams & streams)
+void writeMarks(MergeTreeIndexOutputStreams & streams, bool can_use_adaptive_granularity)
 {
     for (const auto & [_, stream] : streams)
     {
@@ -83,7 +83,8 @@ void writeMarks(MergeTreeIndexOutputStreams & streams)
 
         writeBinaryLittleEndian(stream->plain_hashing.count(), marks_out);
         writeBinaryLittleEndian(stream->compressed_hashing.offset(), marks_out);
-        writeBinaryLittleEndian(1UL, marks_out);
+        if (can_use_adaptive_granularity)
+            writeBinaryLittleEndian(1UL, marks_out);
     }
 }
 
@@ -192,7 +193,7 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
         marks_file_extension,
         writer_settings);
 
-    writeMarks(streams);
+    writeMarks(streams, writer_settings.can_use_adaptive_granularity);
     granule->serializeBinaryWithMultipleStreams(streams);
 
     for (auto & stream : streams_holders)
@@ -315,7 +316,7 @@ PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, Postin
     size_t part_index = segments[source_num].part_index;
 
     for (auto & offset : offsets)
-        offset = (*merged_part_offsets)[part_index, offset];
+        offset = static_cast<UInt32>((*merged_part_offsets)[part_index, offset]);
 
     return std::make_shared<PostingList>(offsets.size(), offsets.data());
 }
@@ -391,7 +392,9 @@ bool MergeTextIndexesTask::executeStep()
         is_initialized = true;
         initializeQueue();
         /// Write marks for compatibility with other skip indexes.
-        writeMarks(output_streams);
+        chassert(new_data_part);
+        bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
+        writeMarks(output_streams, can_use_adaptive_granularity);
     }
 
     if (!queue.isValid())

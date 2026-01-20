@@ -1095,7 +1095,7 @@ void registerStorageHive(StorageFactory & factory)
                 args.columns,
                 args.constraints,
                 args.comment,
-                partition_by->ptr(),
+                args.storage_def->getChild(*partition_by),
                 std::move(hive_settings),
                 args.getContext());
         },

@@ -122,7 +122,7 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
     auto port = config().getInt(port_name);
     try
     {
-        func(port);
+        func(static_cast<UInt16>(port));
     }
     catch (const Poco::Exception &)
     {

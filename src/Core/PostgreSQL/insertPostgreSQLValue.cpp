@@ -50,7 +50,7 @@ void insertPostgreSQLValue(
             else if (value == "f")
                 assert_cast<ColumnUInt8 &>(column).insertValue(0);
             else
-                assert_cast<ColumnUInt8 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
+                assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(pqxx::from_string<uint16_t>(value)));
             break;
         }
         case ExternalResultDescription::ValueType::vtUInt16:
@@ -63,7 +63,7 @@ void insertPostgreSQLValue(
             assert_cast<ColumnUInt64 &>(column).insertValue(pqxx::from_string<uint64_t>(value));
             break;
         case ExternalResultDescription::ValueType::vtInt8:
-            assert_cast<ColumnInt8 &>(column).insertValue(pqxx::from_string<int16_t>(value));
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(pqxx::from_string<int16_t>(value)));
             break;
         case ExternalResultDescription::ValueType::vtInt16:
             assert_cast<ColumnInt16 &>(column).insertValue(pqxx::from_string<int16_t>(value));

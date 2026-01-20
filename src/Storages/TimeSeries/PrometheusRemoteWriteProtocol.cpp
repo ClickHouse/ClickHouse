@@ -10,10 +10,6 @@
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/logger_useful.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesColumnsValidator.h>

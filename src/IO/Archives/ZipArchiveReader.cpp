@@ -203,7 +203,7 @@ private:
             file_info.emplace();
             file_info->uncompressed_size = finfo.uncompressed_size;
             file_info->compressed_size = finfo.compressed_size;
-            file_info->compression_method = finfo.compression_method;
+            file_info->compression_method = static_cast<int>(finfo.compression_method);
             file_info->is_encrypted = (finfo.flag & MZ_ZIP_FLAG_ENCRYPTED);
         }
         if (!file_name)

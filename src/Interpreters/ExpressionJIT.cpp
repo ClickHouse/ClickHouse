@@ -7,14 +7,9 @@
 #include <Common/logger_useful.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
-#include <Functions/IFunctionAdaptors.h>
 
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileDAG.h>

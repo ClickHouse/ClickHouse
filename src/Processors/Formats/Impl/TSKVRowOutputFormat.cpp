@@ -3,7 +3,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/TSKVRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Port.h>
 
 namespace DB
 {

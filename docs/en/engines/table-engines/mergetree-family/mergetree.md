@@ -1103,7 +1103,7 @@ ALTER TABLE tab DROP STATISTICS a;
 ```
 
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
-They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
+They can be used for prewhere optimization only if we enable `set use_statistics = 1`.
 
 ### Available types of column statistics {#available-types-of-column-statistics}
 

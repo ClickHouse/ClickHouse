@@ -9,7 +9,8 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/TableLockHolder.h>
-
+#include <Access/Common/AccessType.h>
+#include <Access/Common/AccessFlags.h>
 
 namespace DB
 {
@@ -138,6 +139,11 @@ template <bool or_null>
 ExecutableFunctionPtr FunctionJoinGet<or_null>::prepare(const ColumnsWithTypeAndName &) const
 {
     Block result_columns {{return_type->createColumn(), return_type, attr_name}};
+
+    Names column_names = storage_join->getKeyNames();
+    column_names.push_back(attr_name);
+    context->checkAccess(AccessType::SELECT, storage_join->getStorageID(), column_names);
+
     return std::make_unique<ExecutableFunctionJoinGet<or_null>>(context, table_lock, storage_join, result_columns);
 }
 

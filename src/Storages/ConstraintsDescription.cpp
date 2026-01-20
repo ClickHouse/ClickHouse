@@ -86,7 +86,7 @@ std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildCon
     std::vector<std::vector<CNFQueryAtomicFormula>> constraint_data;
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
-        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
+        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
             .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
         for (const auto & group : cnf.getStatements())
             constraint_data.emplace_back(std::begin(group), std::end(group));
@@ -100,7 +100,7 @@ std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomicConstraintDa
     std::vector<CNFQueryAtomicFormula> constraint_data;
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
-        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr->ptr())
+        const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
              .pullNotOutFunctions();
         for (const auto & group : cnf.getStatements())
         {
@@ -193,7 +193,7 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
 
     for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
     {
-        auto expr = constraint->as<ASTConstraintDeclaration>()->expr->ptr();
+        auto expr = constraint->getChild(*constraint->as<ASTConstraintDeclaration>()->expr);
         // Wrap the scalar expression with a function call "equals(SELECT..., 1)".
         if (dynamic_cast<ASTSubquery *>(expr.get()))
         {

@@ -464,7 +464,7 @@ private:
             for (size_t bit = 0; bit < precision; ++bit)
             {
                 const auto & col = assert_cast<const ColumnFixedString &>(*arguments[bit].column);
-                Word bit_mask = Word(1) << (sizeof(Word) * 8 - 1 - bit);
+                Word bit_mask = static_cast<Word>(Word(1) << (sizeof(Word) * 8 - 1 - bit));
 
                 for (size_t r = 0; r < rows_in_block; ++r)
                 {

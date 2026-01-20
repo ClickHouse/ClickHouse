@@ -78,7 +78,7 @@ public:
         {
             const UInt64 hindex = data[row];
 
-            UInt8 res = getResolution(hindex);
+            auto res = static_cast<UInt8>(getResolution(hindex));
 
             dst_data[row] = res;
         }

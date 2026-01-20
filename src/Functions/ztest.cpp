@@ -1,4 +1,3 @@
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -8,10 +7,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/castTypeToEither.h>
 #include <Interpreters/castColumn.h>
 #include <boost/math/distributions/normal.hpp>
-#include <Common/typeid_cast.h>
 
 
 namespace DB

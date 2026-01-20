@@ -13,7 +13,6 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>

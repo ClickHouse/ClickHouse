@@ -304,10 +304,16 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
     /// Process schema.
     SchemaConverter schemer(file_metadata, options, &extended_sample_block);
-    if (row_level_filter && !row_level_filter->do_remove_column)
-        schemer.external_columns.push_back(row_level_filter->column_name);
-    if (prewhere_info && !prewhere_info->remove_prewhere_column)
-        schemer.external_columns.push_back(prewhere_info->prewhere_column_name);
+    auto add_prewhere_outputs = [&](const ActionsDAG & actions)
+    {
+        for (const auto * node : actions.getOutputs())
+            if (sample_block->has(node->result_name))
+                schemer.external_columns.push_back(node->result_name);
+    };
+    if (row_level_filter)
+        add_prewhere_outputs(row_level_filter->actions);
+    if (prewhere_info)
+        add_prewhere_outputs(prewhere_info->prewhere_actions);
     schemer.column_mapper = format_filter_info->column_mapper.get();
     schemer.prepareForReading();
     primitive_columns = std::move(schemer.primitive_columns);
@@ -644,48 +650,25 @@ void Reader::preparePrewhere()
 {
     const auto & row_level_filter = format_filter_info->row_level_filter;
     const auto & prewhere_info = format_filter_info->prewhere_info;
-    if (row_level_filter || prewhere_info)
+    std::unordered_set<size_t> prewhere_output_column_idxs;
+
+    /// TODO [parquet]: We currently run prewhere after reading all prewhere columns of the row
+    ///     subgroup, in one thread per row group. Instead, we could extract single-column conditions
+    ///     and run them after decoding the corresponding columns, in parallel.
+    ///     (Still run multi-column conditions, like `col1 = 42 or col2 = 'yes'`, after reading all columns.)
+    ///     Probably reuse tryBuildPrewhereSteps from MergeTree for splitting the expression.
+
+    /// Convert ActionsDAG to ExpressionActions.
+    std::optional<ExpressionActionsSettings> actions_settings;
+    auto add_step = [&](const ActionsDAG & dag, const String & filter_column_name, bool needs_filter)
     {
-        /// TODO [parquet]: We currently run prewhere after reading all prewhere columns of the row
-        ///     subgroup, in one thread per row group. Instead, we could extract single-column conditions
-        ///     and run them after decoding the corresponding columns, in parallel.
-        ///     (Still run multi-column conditions, like `col1 = 42 or col2 = 'yes'`, after reading all columns.)
-        ///     Probably reuse tryBuildPrewhereSteps from MergeTree for splitting the expression.
+        if (!actions_settings.has_value())
+            actions_settings.emplace();
+        PrewhereStep step { .actions = ExpressionActions(dag.clone(), actions_settings.value()) };
+        if (needs_filter)
+            step.filter_column_name = filter_column_name;
 
-        /// Convert ActionsDAG to ExpressionActions.
-        ExpressionActionsSettings actions_settings;
-        if (row_level_filter)
-        {
-            ExpressionActions actions(row_level_filter->actions.clone(), actions_settings);
-            prewhere_steps.push_back(PrewhereStep
-                {
-                    .actions = std::move(actions),
-                    .result_column_name = row_level_filter->column_name,
-                });
-
-            if (!row_level_filter->do_remove_column)
-                prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(row_level_filter->column_name);
-        }
-
-        if (prewhere_info)
-        {
-            ExpressionActions actions(prewhere_info->prewhere_actions.clone(), actions_settings);
-            prewhere_steps.push_back(PrewhereStep
-                {
-                    .actions = std::move(actions),
-                    .result_column_name = prewhere_info->prewhere_column_name,
-                    .need_filter = prewhere_info->need_filter,
-                });
-
-            if (!prewhere_info->remove_prewhere_column)
-                prewhere_steps.back().idx_in_output_block = sample_block->getPositionByName(prewhere_info->prewhere_column_name);
-        }
-    }
-
-    /// Look up expression inputs in extended_sample_block.
-    std::unordered_set<size_t> seen_prewhere_outputs;
-    for (PrewhereStep & step : prewhere_steps)
-    {
+        /// Find inputs in extended sample block.
         for (const auto & col : step.actions.getRequiredColumnsWithTypes())
         {
             size_t idx_in_output_block = extended_sample_block.getPositionByName(col.name, /* case_insensitive= */ false);
@@ -704,27 +687,38 @@ void Reader::preparePrewhere()
             }
             else
             {
-                if (!seen_prewhere_outputs.contains(idx_in_output_block))
+                if (!prewhere_output_column_idxs.contains(idx_in_output_block))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "PREWHERE appears to use its own output as input");
             }
             step.input_idxs.push_back(idx_in_output_block);
         }
-        if (step.idx_in_output_block.has_value())
-        {
-            if (seen_prewhere_outputs.contains(*step.idx_in_output_block))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate PREWHERE output column: {}", extended_sample_block.getByPosition(*step.idx_in_output_block).name);
-            seen_prewhere_outputs.insert(*step.idx_in_output_block);
-        }
-    }
 
-    /// Assert that sample_block_to_output_columns_idx is valid.
+        /// Find outputs in sample block.
+        for (const auto * node : dag.getOutputs())
+        {
+            auto idx = extended_sample_block.findPositionByName(node->result_name);
+            /// Note: prewhere output may also be an input, if it's just passed through.
+            if (idx.has_value() && !sample_block_to_output_columns_idx.at(*idx).has_value() && !prewhere_output_column_idxs.contains(*idx))
+            {
+                step.idxs_in_output_block.emplace_back(node->result_name, *idx);
+                prewhere_output_column_idxs.insert(*idx);
+            }
+        }
+
+        prewhere_steps.push_back(std::move(step));
+    };
+
+    if (row_level_filter)
+        add_step(row_level_filter->actions, row_level_filter->column_name, true);
+    if (prewhere_info)
+        add_step(prewhere_info->prewhere_actions, prewhere_info->prewhere_column_name, prewhere_info->need_filter);
+
+    /// Assert that we found all columns of the sample block, either in the file or in prewhere outputs.
     for (size_t i = 0; i < sample_block_to_output_columns_idx.size(); ++i)
     {
         /// Column must appear in exactly one of {output_columns, prewhere output}.
-        if (sample_block_to_output_columns_idx[i].has_value() != !seen_prewhere_outputs.contains(i))
-        {
+        if (sample_block_to_output_columns_idx[i].has_value() == prewhere_output_column_idxs.contains(i))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column in sample block: {}", extended_sample_block.getByPosition(i).name);
-        }
     }
 }
 
@@ -1369,7 +1363,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (column_info.output_nullable)
     {
         if (!subchunk.null_map)
-            subchunk.null_map = ColumnUInt8::create(subchunk.column->size(), 0);
+            subchunk.null_map = ColumnUInt8::create(subchunk.column->size(), false);
         subchunk.column = ColumnNullable::create(std::move(subchunk.column), std::move(subchunk.null_map));
         subchunk.null_map.reset();
     }
@@ -2072,13 +2066,11 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
 
         step.actions.execute(block);
 
-        ColumnPtr filter_column = block.getByName(step.result_column_name).column;
-
-        if (step.idx_in_output_block.has_value())
+        for (const auto & [name, idx] : step.idxs_in_output_block)
         {
-            OutputColumnState & state = row_subgroup.output.at(step.idx_in_output_block.value());
+            OutputColumnState & state = row_subgroup.output.at(idx);
             chassert(!state.column);
-            state.column = filter_column;
+            state.column = block.getByName(name).column;
         }
 
         /// If it's the last prewhere step, deallocate the columns that were only needed for prewhere.
@@ -2088,9 +2080,10 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
                 row_subgroup.output.pop_back(); // because OutputColumnState has no move constructor
         }
 
-        if (!step.need_filter)
+        if (!step.filter_column_name.has_value())
             continue;
 
+        ColumnPtr filter_column = block.getByName(step.filter_column_name.value()).column;
         filter_column = FilterDescription::preprocessFilterColumn(std::move(filter_column));
         const IColumnFilter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
         chassert(filter.size() == row_subgroup.filter.rows_pass);

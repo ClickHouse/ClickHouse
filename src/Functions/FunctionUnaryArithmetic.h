@@ -366,8 +366,8 @@ public:
                             auto n = col->getN();
                             for (size_t i = 0; i < size; ++i)
                             {
-                                vec_res[i] = StringUnaryOperationReduceImpl<Op<UInt8>>::vector(
-                                    chars.data() + n * i, chars.data() + n * (i + 1));
+                                vec_res[i] = static_cast<UInt16>(
+                                    StringUnaryOperationReduceImpl<Op<UInt8>>::vector(chars.data() + n * i, chars.data() + n * (i + 1)));
                             }
                             result_column = std::move(col_res);
                             return true;

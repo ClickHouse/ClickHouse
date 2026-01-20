@@ -70,7 +70,7 @@ QUERY id: 0, group_by_type: grouping_sets
   ORDER BY
     LIST id: 48, nodes: 1
       SORT id: 49, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION k
           FUNCTION id: 50, function_name: multiply, function_type: ordinary, result_type: Float64
             ARGUMENTS
               LIST id: 51, nodes: 2
@@ -147,7 +147,7 @@ QUERY id: 0, group_by_type: grouping_sets
   ORDER BY
     LIST id: 41, nodes: 1
       SORT id: 42, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION k
           FUNCTION id: 43, function_name: multiply, function_type: ordinary, result_type: Float64
             ARGUMENTS
               LIST id: 44, nodes: 2
@@ -232,7 +232,7 @@ QUERY id: 0, group_by_type: grouping_sets
   ORDER BY
     LIST id: 47, nodes: 1
       SORT id: 48, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION k
           FUNCTION id: 49, function_name: multiply, function_type: ordinary, result_type: Float64
             ARGUMENTS
               LIST id: 50, nodes: 2

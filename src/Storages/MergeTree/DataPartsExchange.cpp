@@ -423,7 +423,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     Poco::URI uri;
     uri.setScheme(interserver_scheme);
     uri.setHost(host);
-    uri.setPort(port);
+    uri.setPort(static_cast<uint16_t>(port));
     uri.setQueryParameters(
     {
         {"endpoint",                endpoint_id},

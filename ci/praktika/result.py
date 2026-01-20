@@ -554,6 +554,7 @@ class Result(MetaClasses.Serializable):
             if result_.status in (
                 self.Status.ERROR,
                 self.Status.FAILED,
+                self.Status.DROPPED,
                 self.StatusExtended.FAIL,
             ):
                 has_failed = True
@@ -895,17 +896,33 @@ class Result(MetaClasses.Serializable):
         return self
 
     def to_event(self, info: "Info"):
+        result_dict = Result.to_dict(self)
+
+        def _prune_result_info(result):
+            if not isinstance(result, dict):
+                return
+            result.pop("info", None)
+
+            results = result.get("results")
+            if not isinstance(results, list):
+                return
+            for r in results:
+                _prune_result_info(r)
+
+        _prune_result_info(result_dict)
+
         return Event(
             type=Event.Type.COMPLETED if self.is_completed() else Event.Type.RUNNING,
             timestamp=int(time.time()),
             sha=info.sha,
             ci_status=self.status,
-            result=Result.to_dict(self),
+            result=result_dict,
             ext={
                 "pr_number": info.pr_number,
                 "pr_title": info.pr_title,
                 "branch": info.git_branch,
                 "commit_message": info.commit_message,
+                "linked_pr_number": info.linked_pr_number or 0,
                 "parent_pr_number": info.get_kv_data("parent_pr_number") or 0,
                 "repo_name": info.repo_name,
                 "report_url": info.get_job_report_url(latest=False),
@@ -915,6 +932,7 @@ class Result(MetaClasses.Serializable):
                 "run_id": info.run_id,
                 "run_url": info.run_url,
                 "commit_authors": info.commit_authors,
+                "is_cancelled": self.ext.get("is_cancelled", False),
             },
         )
 

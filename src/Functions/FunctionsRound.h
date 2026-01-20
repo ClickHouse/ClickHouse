@@ -477,7 +477,7 @@ private:
 public:
     static NO_INLINE void apply(const Container & in, UInt32 in_scale, Container & out, Scale scale_arg)
     {
-        scale_arg = in_scale - scale_arg;
+        scale_arg = static_cast<Scale>(in_scale - scale_arg);
         if (scale_arg > 0)
         {
             auto scale = intExp10OfSize<NativeType>(scale_arg);
@@ -501,7 +501,7 @@ public:
 
     static void applyOne(NativeType in, UInt32 in_scale, NativeType& out, Scale scale_arg)
     {
-        scale_arg = in_scale - scale_arg;
+        scale_arg = static_cast<Scale>(in_scale - scale_arg);
         if (scale_arg > 0)
         {
             auto scale = intExp10OfSize<NativeType>(scale_arg);
@@ -528,7 +528,7 @@ inline Scale getScaleArg(const ColumnConst* scale_col)
     Int64 scale64 = scale_field.safeGet<Int64>();
     validateScale(scale64);
 
-    return scale64;
+    return static_cast<Scale>(scale64);
 }
 
 /// Generic dispatcher
@@ -585,7 +585,7 @@ struct Dispatcher
                     {
                         Int64 scale64 = static_cast<Int64>(scale_data[i]);
                         validateScale(scale64);
-                        Scale raw_scale = scale64;
+                        Scale raw_scale = static_cast<Scale>(scale64);
 
                         if (raw_scale == 0)
                         {
@@ -642,7 +642,7 @@ public:
                 if (scale_col == nullptr || isColumnConst(*scale_col))
                 {
                     auto scale_arg = scale_col == nullptr ? 0 : getScaleArg(checkAndGetColumnConst<ColumnVector<ScaleType>>(scale_col));
-                    DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(vec_src, value_col_typed->getScale(), vec_res, scale_arg);
+                    DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(vec_src, value_col_typed->getScale(), vec_res, static_cast<Scale>(scale_arg));
                 }
                 /// Non-const scale argument:
                 else if (const auto * scale_col_typed = checkAndGetColumn<ColumnVector<ScaleType>>(scale_col))
@@ -654,7 +654,7 @@ public:
                     {
                         Int64 scale64 = static_cast<Int64>(scale[i]);
                         validateScale(scale64);
-                        Scale raw_scale = scale64;
+                        Scale raw_scale = static_cast<Scale>(scale64);
 
                         DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::applyOne(value_col_typed->getElement(i), value_col_typed->getScale(),
                             reinterpret_cast<typename ColumnDecimal<T>::NativeT&>(col_res->getElement(i)), raw_scale);

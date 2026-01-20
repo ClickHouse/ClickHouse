@@ -669,7 +669,7 @@ ColumnPtr convertOffsetsToIndexesImpl(const IColumn::Offsets & offsets)
     auto & data = result->getData();
     data.reserve_exact(offsets.back());
     for (size_t i = 0; i != offsets.size(); ++i)
-        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], i);
+        data.resize_fill(data.size() + offsets[i] - offsets[i - 1], static_cast<T>(i));
     return result;
 }
 

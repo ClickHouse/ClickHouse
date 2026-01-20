@@ -1,7 +1,5 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnConst.h>
-#include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/PerformanceAdaptors.h>

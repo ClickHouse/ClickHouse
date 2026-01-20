@@ -8,7 +8,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
-#include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 
 #include <Columns/ColumnConst.h>
@@ -25,7 +24,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/IFunction.h>

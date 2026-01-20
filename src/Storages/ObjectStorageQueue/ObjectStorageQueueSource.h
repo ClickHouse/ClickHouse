@@ -28,7 +28,7 @@ public:
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolders = std::vector<BucketHolderPtr>;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
-    using HiveLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap;
+    using PartitionLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::PartitionLastProcessedFileInfoMap;
     using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
     struct ObjectStorageQueueObjectInfo : public ObjectInfo
@@ -199,14 +199,14 @@ public:
         Coordination::Requests & requests,
         bool insert_succeeded,
         StoredObjects & successful_files,
-        HiveLastProcessedFileInfoMap & file_map,
+        PartitionLastProcessedFileInfoMap & file_map,
         LastProcessedFileInfoMapPtr created_nodes = nullptr,
         const std::string & exception_message = {},
         int error_code = 0);
 
-    static void prepareHiveProcessedRequests(
+    static void preparePartitionProcessedRequests(
         Coordination::Requests & requests,
-        const HiveLastProcessedFileInfoMap & last_processed_file_per_hive_partition);
+        const PartitionLastProcessedFileInfoMap & last_processed_file_per_partition);
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(

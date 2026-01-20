@@ -650,7 +650,7 @@ private:
             HalfType a1 = lhs.items[little(1)];
 
             HalfType b01 = static_cast<HalfType>(rhs);
-            uint64_t b0 = b01;
+            uint64_t b0 = static_cast<uint64_t>(b01);
             uint64_t b1 = 0;
             HalfType b23 = 0;
             if constexpr (sizeof(T) > 8)
@@ -664,7 +664,7 @@ private:
             HalfType r12_x = a1 * b0;
 
             integer<Bits, Signed> res;
-            res.items[little(0)] = r01;
+            res.items[little(0)] = static_cast<base_type>(r01);
             res.items[little(3)] = r23 >> 64;
 
             if constexpr (sizeof(T) > 8)
@@ -679,7 +679,7 @@ private:
             if (r12 < r12_x)
                 ++res.items[little(3)];
 
-            res.items[little(1)] = r12;
+            res.items[little(1)] = static_cast<base_type>(r12);
             res.items[little(2)] = r12 >> 64;
             return res;
         }
@@ -690,7 +690,7 @@ private:
             CompilerUInt128 b = (CompilerUInt128(rhs.items[little(1)]) << 64) + rhs.items[little(0)]; // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
             CompilerUInt128 c = a * b;
             integer<Bits, Signed> res;
-            res.items[little(0)] = c;
+            res.items[little(0)] = static_cast<base_type>(c);
             res.items[little(1)] = c >> 64;
             return res;
         }
@@ -1000,11 +1000,11 @@ public:
             CompilerUInt128 c = a / b; // NOLINT
 
             integer<Bits, Signed> res;
-            res.items[little(0)] = c;
+            res.items[little(0)] = static_cast<base_type>(c);
             res.items[little(1)] = c >> 64;
 
             CompilerUInt128 remainder = a - b * c;
-            numerator.items[little(0)] = remainder;
+            numerator.items[little(0)] = static_cast<base_type>(remainder);
             numerator.items[little(1)] = remainder >> 64;
 
             return res;

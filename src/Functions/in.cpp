@@ -105,7 +105,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, bool dry_run, size_t input_rows_count) const
     {
         if constexpr (ignore_set)
-            return ColumnUInt8::create(input_rows_count, 0u);
+            return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
         if (input_rows_count == 0)
             return ColumnUInt8::create();
 
@@ -137,7 +137,7 @@ public:
         if (!future_set)
         {
             if (dry_run)
-                return ColumnUInt8::create(input_rows_count, 0u);
+                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No Set is passed as the second argument for function '{}'", getName());
         }
@@ -174,7 +174,7 @@ public:
         auto res = set->execute(columns_of_key_columns, negative);
 
         if (is_const)
-            res = ColumnUInt8::create(input_rows_count, res->getUInt(0));
+            res = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(res->getUInt(0)));
 
         if (res->size() != input_rows_count)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Output size is different from input size, expect {}, get {}", input_rows_count, res->size());

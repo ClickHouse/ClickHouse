@@ -431,10 +431,9 @@ struct Reader
     struct PrewhereStep
     {
         ExpressionActions actions;
-        String result_column_name;
+        std::optional<String> filter_column_name {};
         std::vector<size_t> input_idxs {}; // indices in extended_sample_block
-        std::optional<size_t> idx_in_output_block = std::nullopt;
-        bool need_filter = true;
+        std::vector<std::pair<String, size_t>> idxs_in_output_block {};
     };
 
     ReadOptions options;
@@ -470,7 +469,7 @@ struct Reader
     /// Maps idx_in_output_block to index in output_columns. I.e.:
     ///     sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
     /// nullopt if the column is produced by PREWHERE expression:
-    ///     prewhere_steps[?].idx_in_output_block == i
+    ///     prewhere_steps[?].idxs_in_output_block[?].second == i
     std::vector<std::optional<size_t>> sample_block_to_output_columns_idx;
 
     /// sample_block with maybe some columns added at the end.

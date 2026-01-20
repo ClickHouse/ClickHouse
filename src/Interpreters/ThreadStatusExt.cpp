@@ -596,7 +596,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)
 {
-#if !defined(SANITIZER) && !defined(__APPLE__)
+#if !defined(SANITIZER) && defined(SIGEV_THREAD_ID)
     /// profilers are useless without trace collector
     auto context = Context::getGlobalContextInstance();
     if (!context->hasTraceCollector())

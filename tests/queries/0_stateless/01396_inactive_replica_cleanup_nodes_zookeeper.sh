@@ -12,7 +12,7 @@ REPLICA=$($CLICKHOUSE_CLIENT --query "Select getMacro('replica')")
 # Check that if we have one inactive replica and a huge number of INSERTs to active replicas,
 # the number of nodes in ZooKeeper does not grow unbounded.
 
-SCALE=500
+SCALE=200
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS r1;

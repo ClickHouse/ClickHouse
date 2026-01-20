@@ -4,7 +4,6 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <arrow/io/memory.h>
-#include <arrow/io/api.h>
 #include <arrow/api.h>
 #include <arrow/status.h>
 #include <parquet/file_reader.h>
@@ -12,14 +11,11 @@
 #include <orc/Statistics.hh>
 
 #include <fmt/core.h>
-#include <Core/Types.h>
 #include <Common/Exception.h>
-#include <Common/typeid_cast.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/Context.h>
 
 namespace DB

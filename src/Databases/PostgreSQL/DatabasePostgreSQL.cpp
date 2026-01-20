@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Interpreters/Context.h>
@@ -16,14 +15,11 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Common/escapeForFileName.h>
 #include <Common/parseRemoteDescription.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>

@@ -15,6 +15,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 
+
 namespace DB
 {
 namespace Setting
@@ -1466,10 +1467,11 @@ private:
 
         if (!function_node_type->equals(*node->getResultType()))
         {
-            /// Result of replacement_function can be low cardinality, while redundant equal
+            /// Result of replacement_function can be low cardinality or nullable, while redundant equal
             /// returns UInt8, and this equal can be an argument of external function -
             /// so we want to convert replacement_function to the expected UInt8
-            chassert(function_node_type->equals(*removeLowCardinality(node->getResultType())));
+            /// An example when it can be Nullable - using GROUP BY with GROUPING SETS and group_by_use_nulls = true
+            chassert(removeNullable(removeLowCardinality(function_node_type))->equals(*removeNullable(removeLowCardinality(node->getResultType()))));
             node = createCastFunction(node, function_node_type, getContext());
         }
     }

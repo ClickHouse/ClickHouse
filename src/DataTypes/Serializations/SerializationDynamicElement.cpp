@@ -224,13 +224,13 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
                     }
                     else if (is_null_map_subcolumn)
                     {
-                        null_map->push_back(0);
+                        null_map->push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
                         variant_serialization->deserializeBinary(*non_nullable_variant_column, buf, format_settings);
                         if (null_map)
-                            null_map->push_back(0);
+                            null_map->push_back(static_cast<UInt8>(0));
                     }
                 }
                 else

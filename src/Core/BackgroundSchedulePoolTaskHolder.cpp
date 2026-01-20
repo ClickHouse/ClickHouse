@@ -34,4 +34,9 @@ const BackgroundSchedulePoolTaskInfo * BackgroundSchedulePoolTaskHolder::operato
     return task_info.get();
 }
 
+BackgroundSchedulePoolTaskInfoPtr BackgroundSchedulePoolTaskHolder::getTaskInfoPtr() const
+{
+    return task_info;
+}
+
 }

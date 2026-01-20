@@ -497,7 +497,7 @@ jobs:
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_amd_coverage, stateless_tests_amd_coverage_1_8, stateless_tests_amd_coverage_2_8, stateless_tests_amd_coverage_3_8, stateless_tests_amd_coverage_4_8, stateless_tests_amd_coverage_5_8, stateless_tests_amd_coverage_6_8, stateless_tests_amd_coverage_7_8, stateless_tests_amd_coverage_8_8]
-    if: ${{ !cancelled() }}
+    if: ${{ always() }}
     name: "Finish Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}

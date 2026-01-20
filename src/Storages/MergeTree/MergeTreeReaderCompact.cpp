@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <ranges>

@@ -174,7 +174,7 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(type);
     columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);
-    columns[i++]->insert(static_cast<DayNum>(DateLUT::instance().toDayNum(event_time).toUnderType()));
+    columns[i++]->insert(static_cast<UInt16>(DateLUT::instance().toDayNum(event_time).toUnderType()));
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
 

@@ -238,7 +238,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
             StoragePostgreSQL::Configuration common_configuration;
             common_configuration.host = named_collection->getOrDefault<String>("host", "");
-            common_configuration.port = named_collection->getOrDefault<UInt64>("port", 0);
+            common_configuration.port = static_cast<UInt16>(named_collection->getOrDefault<UInt64>("port", 0));
             common_configuration.username = named_collection->getOrDefault<String>("user", "");
             common_configuration.password = named_collection->getOrDefault<String>("password", "");
             common_configuration.database = named_collection->getAnyOrDefault<String>({"database", "db"}, "");
@@ -266,7 +266,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
             StoragePostgreSQL::Configuration common_configuration;
             common_configuration.host = config.getString(settings_config_prefix + ".host", "");
-            common_configuration.port = config.getUInt(settings_config_prefix + ".port", 0);
+            common_configuration.port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", 0));
             common_configuration.username = config.getString(settings_config_prefix + ".user", "");
             common_configuration.password = config.getString(settings_config_prefix + ".password", "");
             common_configuration.database = config.getString(fmt::format("{}.database", settings_config_prefix), config.getString(fmt::format("{}.db", settings_config_prefix), ""));
@@ -301,7 +301,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
                         size_t priority = config.getInt(replica_name + ".priority", 0);
                         replica_configuration.host = config.getString(replica_name + ".host", common_configuration.host);
-                        replica_configuration.port = config.getUInt(replica_name + ".port", common_configuration.port);
+                        replica_configuration.port = static_cast<UInt16>(config.getUInt(replica_name + ".port", common_configuration.port));
                         replica_configuration.username = config.getString(replica_name + ".user", common_configuration.username);
                         replica_configuration.password = config.getString(replica_name + ".password", common_configuration.password);
 

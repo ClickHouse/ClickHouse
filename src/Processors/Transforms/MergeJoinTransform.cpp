@@ -5,14 +5,12 @@
 #include <memory>
 #include <optional>
 #include <ranges>
-#include <type_traits>
 #include <vector>
 
 #include <base/defines.h>
 #include <base/types.h>
 
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
@@ -20,7 +18,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Chunk.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/MergeJoinTransform.h>

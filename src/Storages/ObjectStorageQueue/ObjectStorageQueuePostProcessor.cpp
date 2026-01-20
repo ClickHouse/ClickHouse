@@ -6,7 +6,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 #include <IO/AzureBlobStorage/copyAzureBlobStorageFile.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/copyS3File.h>

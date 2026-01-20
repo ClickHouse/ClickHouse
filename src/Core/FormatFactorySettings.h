@@ -1089,7 +1089,7 @@ If the data rendered in Pretty formats arrived in multiple chunks, even after a 
 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
 )", 0) \
     DECLARE(String, output_format_pretty_grid_charset, "UTF-8", R"(
-Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default one).
+Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default).
 )", 0) \
     DECLARE(UInt64, output_format_pretty_display_footer_column_names, true, R"(
 Display column names in the footer if there are many table rows.

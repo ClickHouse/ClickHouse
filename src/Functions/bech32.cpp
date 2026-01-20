@@ -276,7 +276,7 @@ private:
                 reinterpret_cast<const uint8_t *>(&data_vec[data_prev_offset]),
                 reinterpret_cast<const uint8_t *>(&data_vec[data_new_offset]));
 
-            uint8_t witness_version = have_witness_version ? witness_version_col->getUInt(i) : default_witness_version;
+            uint8_t witness_version = have_witness_version ? static_cast<uint8_t>(witness_version_col->getUInt(i)) : default_witness_version;
 
             bech32_data input_5bit;
             input_5bit.push_back(witness_version);

@@ -229,9 +229,9 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t)
     bool may_be_true = index.condition->mayBeTrueOnGranule(granule, nullptr);
 
     if (may_be_true)
-        may_be_true_granules.add(mark);
+        may_be_true_granules.add(static_cast<UInt32>(mark));
 
-    analyzed_granules.add(mark);
+    analyzed_granules.add(static_cast<UInt32>(mark));
     granule_text.resetAfterAnalysis();
     return can_skip_mark && !may_be_true;
 }
@@ -283,12 +283,12 @@ size_t MergeTreeReaderTextIndex::readRows(
 
         /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
         /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.
-        if (!analyzed_granules.contains(from_mark))
+        if (!analyzed_granules.contains(static_cast<UInt32>(from_mark)))
         {
             canSkipMark(from_mark, current_task_last_mark);
         }
 
-        if (!may_be_true_granules.contains(from_mark))
+        if (!may_be_true_granules.contains(static_cast<UInt32>(from_mark)))
         {
             for (const auto & column : res_columns)
             {

@@ -107,7 +107,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         )
     # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
     # That is why we use it with fallback to 'greedy'.
-    join_order_algorithm_combinations = ['greedy', 'dpsize,greedy', 'greedy,dpsize']
+    join_order_algorithm_combinations = ["greedy", "dpsize,greedy", "greedy,dpsize"]
     client_options.append(
         f"query_plan_optimize_join_order_algorithm={random.choice(join_order_algorithm_combinations)}"
     )

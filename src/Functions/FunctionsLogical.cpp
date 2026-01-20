@@ -307,7 +307,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
                         auto has_value = static_cast<UInt8>(column_data[i] != 0);
                         auto is_null = !!null_data[i];
 
-                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                        ternary_column_data[i] = static_cast<UInt8>(((has_value << 1) | is_null) & (1 << !is_null));
                     }
                 }
                 else
@@ -323,7 +323,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
                         auto has_value = ternary_column_data[i];
                         auto is_null = !!null_data[i];
 
-                        ternary_column_data[i] = ((has_value << 1) | is_null) & (1 << !is_null);
+                        ternary_column_data[i] = static_cast<UInt8>(((has_value << 1) | is_null) & (1 << !is_null));
                     }
                 }
             }
@@ -336,7 +336,7 @@ struct TernaryValueBuilderImpl<Type, Types...>
 
             for (size_t i = 0; i < size; ++i)
             {
-                ternary_column_data[i] = (column_data[i] != 0) << 1;
+                ternary_column_data[i] = static_cast<UInt8>((column_data[i] != 0) << 1);
             }
         }
         else

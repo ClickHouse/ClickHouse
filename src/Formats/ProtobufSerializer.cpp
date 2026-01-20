@@ -102,7 +102,7 @@ namespace
 
         static char convertChar(char c)
         {
-            c = tolower(c);
+            c = static_cast<char>(tolower(c));
             if (c == '.')
                 c = '_';
             return c;
@@ -2129,7 +2129,7 @@ namespace
             if (row_num < column_nullable.size())
                 return;
             column_nullable.getNestedColumn().insertDefault();
-            column_nullable.getNullMapData().push_back(0);
+            column_nullable.getNullMapData().push_back(false);
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override

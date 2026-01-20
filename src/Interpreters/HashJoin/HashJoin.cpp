@@ -757,7 +757,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             {
                 ///  - build mask in the source block row space
                 ///  - set bits only for rows that belong to THIS slot (by selector)
-                not_joined_map = ColumnUInt8::create(block.rows(), 0);
+                not_joined_map = ColumnUInt8::create(block.rows(), static_cast<UInt8>(0));
                 const auto & sel = stored_columns->selector;
 
                 auto mark_if_needed = [&](size_t row)

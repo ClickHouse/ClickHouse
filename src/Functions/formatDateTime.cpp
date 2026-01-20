@@ -271,7 +271,7 @@ private:
             }
             if (digits_written < digits)
             {
-                dest[pos] = '0' + n;
+                dest[pos] = static_cast<char>('0' + n);
                 ++pos;
             }
 
@@ -592,7 +592,7 @@ private:
                 ++writes;
             }
 
-            for (UInt32 i = writes; i < 6; ++i)
+            for (size_t i = writes; i < 6; ++i)
                 dest[i] = '0';
 
             return 6;

@@ -2,9 +2,6 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>

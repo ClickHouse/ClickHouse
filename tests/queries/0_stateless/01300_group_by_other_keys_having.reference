@@ -95,7 +95,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 35, nodes: 1
       SORT id: 36, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION k
           FUNCTION id: 37, function_name: multiply, function_type: ordinary, result_type: Float64
             ARGUMENTS
               LIST id: 38, nodes: 2
@@ -173,7 +173,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 32, nodes: 1
       SORT id: 33, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION k
           FUNCTION id: 34, function_name: multiply, function_type: ordinary, result_type: Float64
             ARGUMENTS
               LIST id: 35, nodes: 2
@@ -251,7 +251,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 33, nodes: 1
       SORT id: 34, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION k
           FUNCTION id: 35, function_name: multiply, function_type: ordinary, result_type: UInt16
             ARGUMENTS
               LIST id: 36, nodes: 2
@@ -351,7 +351,7 @@ QUERY id: 0
   ORDER BY
     LIST id: 45, nodes: 1
       SORT id: 46, sort_direction: ASCENDING, with_fill: 0
-        EXPRESSION
+        EXPRESSION k
           FUNCTION id: 47, function_name: multiply, function_type: ordinary, result_type: Float64
             ARGUMENTS
               LIST id: 48, nodes: 2

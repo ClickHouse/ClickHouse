@@ -520,7 +520,7 @@ JoinMask getColumnAsMask(const Block & block, const String & column_name)
         const auto & nest_col = assert_cast<const ColumnUInt8 &>(*nested_column);
         const auto & null_map = nullable_col->getNullMapColumn();
 
-        auto res = ColumnUInt8::create(nullable_col->size(), 0);
+        auto res = ColumnUInt8::create(nullable_col->size(), static_cast<UInt8>(0));
         for (size_t i = 0, sz = nullable_col->size(); i < sz; ++i)
             res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
         return JoinMask(std::move(res));

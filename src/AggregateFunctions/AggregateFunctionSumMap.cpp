@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>

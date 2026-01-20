@@ -386,7 +386,7 @@ void ProgressTable::MetricInfo::updateValue(Int64 new_value, double new_time)
     switch (type)
     {
         case ProfileEvents::Type::INCREMENT:
-            new_snapshot.value = new_snapshot.value + new_value;
+            common::addOverflow(new_snapshot.value, new_value, new_snapshot.value);
             break;
         case ProfileEvents::Type::GAUGE:
             new_snapshot.value = new_value;

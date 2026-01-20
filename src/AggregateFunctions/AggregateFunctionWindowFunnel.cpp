@@ -331,7 +331,7 @@ private:
                 for (size_t event = 0; event < events_timestamp.size(); ++event)
                 {
                     if (!events_timestamp[event].has_value())
-                        return event;
+                        return static_cast<UInt8>(event);
                 }
             }
             else if (events_timestamp[event_idx - 1].has_value())
@@ -352,7 +352,7 @@ private:
         for (size_t event = events_timestamp.size(); event > 0; --event)
         {
             if (events_timestamp[event - 1].has_value())
-                return event;
+                return static_cast<UInt8>(event);
         }
         return 0;
     }
@@ -412,7 +412,7 @@ private:
                 for (size_t event = 0; event < event_sequences.size(); ++event)
                 {
                     if (event_sequences[event].empty())
-                        return event;
+                        return static_cast<UInt8>(event);
                 }
             }
             else if (!event_sequences[event_idx - 1].empty())
@@ -460,7 +460,7 @@ private:
         for (size_t event = event_sequences.size(); event > 0; --event)
         {
             if (!event_sequences[event - 1].empty())
-                return event;
+                return static_cast<UInt8>(event);
         }
         return 0;
     }
@@ -490,7 +490,7 @@ public:
     AggregateFunctionWindowFunnel(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionWindowFunnel<T, Data>>(arguments, params, std::make_shared<DataTypeUInt8>())
     {
-        events_size = arguments.size() - 1;
+        events_size = static_cast<UInt8>(arguments.size() - 1);
         window = params.at(0).safeGet<UInt64>();
 
         strict_deduplication = false;

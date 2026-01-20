@@ -24,7 +24,7 @@ public:
     String getNameForLogs() const override;
 private:
     Float64 min = std::numeric_limits<Float64>::max();
-    Float64 max = std::numeric_limits<Float64>::min();
+    Float64 max = std::numeric_limits<Float64>::lowest();
     UInt64 row_count = 0;
 
     DataTypePtr data_type;

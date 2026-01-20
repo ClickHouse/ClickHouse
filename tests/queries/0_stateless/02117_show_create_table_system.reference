@@ -489,6 +489,7 @@ CREATE TABLE system.parts
     `active` UInt8,
     `marks` UInt64,
     `rows` UInt64,
+    `files` UInt64,
     `bytes_on_disk` UInt64,
     `data_compressed_bytes` UInt64,
     `data_uncompressed_bytes` UInt64,

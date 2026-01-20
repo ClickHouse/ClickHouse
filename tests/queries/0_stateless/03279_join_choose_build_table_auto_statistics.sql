@@ -20,7 +20,7 @@ INSERT INTO products SELECT number, 'product ' || toString(number) FROM numbers(
 
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 2;
-SET allow_statistics_optimize=1;
+SET use_statistics=1;
 SET allow_experimental_statistics=1;
 
 SELECT * FROM products, sales

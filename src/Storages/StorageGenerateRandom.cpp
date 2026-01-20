@@ -192,10 +192,10 @@ ColumnPtr fillColumnWithRandomData(
                 {
                     UInt64 rand = rng();
 
-                    UInt16 rand1 = rand;
-                    UInt16 rand2 = rand >> 16;
-                    UInt16 rand3 = rand >> 32;
-                    UInt16 rand4 = rand >> 48;
+                    UInt16 rand1 = static_cast<UInt16>(rand);
+                    UInt16 rand2 = static_cast<UInt16>(rand >> 16);
+                    UInt16 rand3 = static_cast<UInt16>(rand >> 32);
+                    UInt16 rand4 = static_cast<UInt16>(rand >> 48);
 
                     /// Printable characters are from range [32; 126].
                     /// https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
@@ -221,7 +221,7 @@ ColumnPtr fillColumnWithRandomData(
             auto & data = column->getData();
             data.resize(limit);
 
-            UInt8 size = values.size();
+            UInt8 size = static_cast<UInt8>(values.size());
             UInt8 off;
             for (UInt64 i = 0; i < limit; ++i)
             {
@@ -239,11 +239,11 @@ ColumnPtr fillColumnWithRandomData(
             auto & data = column->getData();
             data.resize(limit);
 
-            UInt16 size = values.size();
+            UInt16 size = static_cast<UInt16>(values.size());
             UInt8 off;
             for (UInt64 i = 0; i < limit; ++i)
             {
-                off = static_cast<UInt16>(rng()) % size;
+                off = static_cast<UInt8>(static_cast<UInt16>(rng()) % size);
                 data[i] = values[off].second;
             }
 

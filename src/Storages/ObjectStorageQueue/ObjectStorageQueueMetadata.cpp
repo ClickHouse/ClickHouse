@@ -138,11 +138,11 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_max_ms_,
     bool use_persistent_processing_nodes_,
     size_t persistent_processing_nodes_ttl_seconds_,
-    size_t keeper_multiread_batch_size_,
-    bool is_path_with_hive_partitioning_)
+    size_t keeper_multiread_batch_size_)
     : table_metadata(table_metadata_)
     , storage_type(storage_type_)
     , mode(table_metadata.getMode())
+    , partitioning_mode(table_metadata.getPartitioningMode())
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
@@ -152,8 +152,27 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
-    , is_path_with_hive_partitioning(is_path_with_hive_partitioning_)
 {
+    // Initialize regex-based parser if configured
+    if (partitioning_mode == ObjectStorageQueuePartitioningMode::REGEX)
+    {
+        LOG_DEBUG(log, "Initializing regex-based filename parser - partition_regex: '{}', partition_component: '{}'",
+                 table_metadata.partition_regex, table_metadata.partition_component);
+
+        filename_parser = std::make_unique<ObjectStorageQueueFilenameParser>(
+            table_metadata.partition_regex,
+            table_metadata.partition_component);
+
+        if (!filename_parser->isValid())
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Failed to initialize filename parser: {}",
+                filename_parser->getError());
+        }
+
+        LOG_DEBUG(log, "Successfully initialized regex-based filename parser for partitioning");
+    }
+
     LOG_TRACE(
         log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}, use persistent processing nodes: {}",
         table_metadata.mode, table_metadata.buckets.load(),
@@ -254,7 +273,8 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
-                is_path_with_hive_partitioning,
+                partitioning_mode,
+                filename_parser.get(),
                 log);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
@@ -453,7 +473,6 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
     const std::string & format,
     const ContextPtr & context,
     bool is_attach,
-    bool is_path_with_hive_partitioning,
     LoggerPtr log)
 {
     ObjectStorageQueueTableMetadata table_metadata(settings, columns, format);
@@ -548,7 +567,8 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
-                    is_path_with_hive_partitioning,
+                    table_metadata.getPartitioningMode(),
+                    /* parser */nullptr,  /// Parser not needed for ZK metadata initialization
                     log).prepareProcessedAtStartRequests(requests);
             }
 

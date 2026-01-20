@@ -13,7 +13,8 @@
 <!-- Q1 -->
 <query><![CDATA[
 SELECT
-    l_returnflag, l_linestatus,
+    l_returnflag,
+    l_linestatus,
     sum(l_quantity) AS sum_qty,
     sum(l_extendedprice) AS sum_base_price,
     sum(l_extendedprice * (1 - l_discount)) AS sum_disc_price,
@@ -172,7 +173,7 @@ FROM
 WHERE
     l_shipdate >= DATE '1994-01-01'
     AND l_shipdate < DATE '1994-01-01' + INTERVAL '1' year
-    AND l_discount BETWEEN 0.06 - 0.01 AND 0.06 + 0.01
+    AND l_discount BETWEEN toDecimal32(0.06, 2) - toDecimal32(0.01, 2) AND toDecimal32(0.06, 2) + toDecimal32(0.01, 2)
     AND l_quantity < 24;
 ]]></query>
 
@@ -326,7 +327,8 @@ GROUP BY
     c_address,
     c_comment
 ORDER BY
-    revenue DESC;
+    revenue DESC
+LIMIT 20;
 ]]></query>
 
 <!-- Q11 -->
@@ -435,33 +437,33 @@ WHERE
 
 <!-- Q15 -->
 <query><![CDATA[
-with revenue_view as (
-    select
-        l_suppkey as supplier_no,
-        sum(l_extendedprice * (1 - l_discount)) as total_revenue
-    from
+WITH revenue_view AS (
+    SELECT
+        l_suppkey AS supplier_no,
+        sum(l_extendedprice * (1 - l_discount)) AS total_revenue
+    FROM
         {table}.lineitem
-    where
+    WHERE
         l_shipdate >= '1996-01-01'
-      and l_shipdate < '1996-04-01'
-    group by
+      AND l_shipdate < '1996-04-01'
+    GROUP BY
         l_suppkey)
-select
+SELECT
     s_suppkey,
     s_name,
     total_revenue
-from
+FROM
     {table}.supplier,
     revenue_view
-where
+WHERE
     s_suppkey = supplier_no
-    and total_revenue = (
-        select
+    AND total_revenue = (
+        SELECT
             max(total_revenue)
-        from
+        FROM
             revenue_view
     )
-order by
+ORDER BY
     s_suppkey;
 ]]></query>
 
@@ -554,7 +556,8 @@ GROUP BY
     o_totalprice
 ORDER BY
     o_totalprice DESC,
-    o_orderdate;
+    o_orderdate
+LIMIT 100;
 ]]></query>
 
 <!-- Q19 -->
@@ -677,7 +680,8 @@ GROUP BY
     s_name
 ORDER BY
     numwait DESC,
-    s_name;
+    s_name
+LIMIT 100;
 ]]></query>
 
 <!-- Q22 -->

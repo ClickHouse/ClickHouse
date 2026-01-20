@@ -1382,13 +1382,17 @@ SortDescription InterpreterSelectQuery::getSortDescription(const ASTSelectQuery 
         if (order_by_elem.getCollation())
             collator = std::make_shared<Collator>(order_by_elem.getCollation()->as<ASTLiteral &>().value.safeGet<String>());
 
+        std::string alias;
+        if (auto * identifier = order_by_elem.children[0]->as<ASTIdentifier>())
+            alias = identifier->name();
+
         if (order_by_elem.with_fill)
         {
             FillColumnDescription fill_desc = getWithFillDescription(order_by_elem, context_);
-            order_descr.emplace_back(column_name, order_by_elem.direction, order_by_elem.nulls_direction, collator, true, fill_desc);
+            order_descr.emplace_back(alias, column_name, order_by_elem.direction, order_by_elem.nulls_direction, collator, true, fill_desc);
         }
         else
-            order_descr.emplace_back(column_name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
+            order_descr.emplace_back(alias, column_name, order_by_elem.direction, order_by_elem.nulls_direction, collator);
     }
 
     order_descr.compile_sort_description = context_->getSettingsRef()[Setting::compile_sort_description];

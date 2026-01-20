@@ -320,19 +320,4 @@ class HtmlRunnerHooks:
                 job_name=_job.name,
             ),
         )
-
-        if updated_status:
-            if Settings.USE_CUSTOM_GH_AUTH:
-                from .gh_auth import GHAuth
-
-                pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-                app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_id=app_id, app_key=pem)
-
-            print(f"Update GH commit status [{result.name}]: [{updated_status}]")
-            GH.post_commit_status(
-                name=_workflow.name,
-                status=GH.convert_to_gh_status(updated_status),
-                description="",
-                url=Info().get_report_url(latest=False),
-            )
+        return updated_status
