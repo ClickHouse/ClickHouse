@@ -11,31 +11,19 @@ from helpers.config_cluster import minio_secret_key
 
 
 def generate_data_complex(start, end, div):
-    """
-    Generate data similar to the original Spark version:
-    - a: Int32 values from start to end-1, divided by div
-    - b: String values from (start+1) to end, divided by div
-    - c: Int32 values from (start+end) to (end+end-1), divided by div
-    """
     a_values = []
     b_values = []
     c_values = []
     
-    # Generate a: range(start, end) -> [0, 1, 2, ..., 999]
-    # Then divide by div: [0, 0, 0, ..., 0, 1, 1, ..., 1, ..., 9, 9, ..., 9]
     for i in range(start, end):
         a_values.append(i // div)
-    
-    # Generate b: range(start+1, end+1) -> [1, 2, 3, ..., 1000]
-    # Then divide by div and convert to string: ['0', '0', ..., '0', '1', ..., '1', ..., '10', ...]
+
     for i in range(start + 1, end + 1):
         b_values.append(str(i // div))
-    
-    # Generate c: range(start+end, end+end) -> [1000, 1001, ..., 1999]
-    # Then divide by div: [10, 10, ..., 10, 11, ..., 11, ..., 19, ..., 19]
+
     for i in range(start + end, end + end):
         c_values.append(i // div)
-    
+
     return {
         "a": a_values,
         "b": b_values,
