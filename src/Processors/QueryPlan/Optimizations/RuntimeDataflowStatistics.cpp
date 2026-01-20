@@ -241,7 +241,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
                 const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
                 if (!column.column->empty() && counter % 50 == 0 && counter < 150)
                 {
-                    auto [sample, compressed] = estimateCompressedColumnSize(column);
+                    const auto [sample, compressed] = estimateCompressedColumnSize(column);
                     statistics.sample_bytes += sample;
                     statistics.compressed_bytes += compressed;
                 }
