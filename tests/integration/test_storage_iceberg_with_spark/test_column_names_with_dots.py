@@ -205,7 +205,7 @@ def test_deeply_nested_struct_with_dotted_names(started_cluster_iceberg_with_spa
     result = instance.query(
         f"SELECT `my.struct.some_dot.separated_parent.weird.field` FROM {table_function_expr} ORDER BY id"
     ).strip()
-    expected = "deep_value1\ndep_value2\ndep_value3"
+    expected = "deep_value1\ndeep_value2\ndeep_value3"
     assert result == expected, f"Expected:\n{expected}\nGot:\n{result}"
 
     # Test via table engine
@@ -214,5 +214,5 @@ def test_deeply_nested_struct_with_dotted_names(started_cluster_iceberg_with_spa
     result = instance.query(
         f"SELECT `my.struct.some_dot.separated_parent.weird.field` FROM {TABLE_NAME} ORDER BY id"
     ).strip()
-    expected = "deep_value1\ndep_value2\ndep_value3"
+    expected = "deep_value1\ndeep_value2\ndeep_value3"
     assert result == expected, f"Expected:\n{expected}\nGot:\n{result}"
