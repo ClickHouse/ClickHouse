@@ -2107,6 +2107,11 @@ void Reader::applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_grou
         ProfileEvents::increment(ProfileEvents::ParquetRowsFilterExpression, block.rows());
         ProfileEvents::increment(ProfileEvents::ParquetColumnsFilterExpression, block.columns());
 
+        if (block.rows() == 0)
+        {
+            row_subgroup.filter.rows_pass = 0;
+            return;
+        }
         step.actions.execute(block);
 
         for (const auto & [name, idx] : step.idxs_in_output_block)
