@@ -1097,6 +1097,29 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     ctx = {"cluster": cluster, "faults_mode": faults_mode, "seed": seed_val}
     if sink_url:
         try:
+            gcount = len(scenario.get("gates") or [])
+        except Exception:
+            gcount = 0
+        _best_effort(
+            sink_clickhouse,
+            sink_url,
+            "keeper_metrics_ts",
+            [
+                _make_metric_row(
+                    run_id,
+                    run_meta_eff,
+                    scenario_id,
+                    topo,
+                    "all",
+                    "summary",
+                    "gate",
+                    "gate_expected_count",
+                    float(gcount),
+                )
+            ],
+        )
+    if sink_url:
+        try:
             mf = (os.environ.get("KEEPER_METRICS_FILE") or "").strip()
             if mf:
                 ctx["metrics_file"] = os.path.abspath(mf)

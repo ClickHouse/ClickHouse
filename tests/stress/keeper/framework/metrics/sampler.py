@@ -216,7 +216,8 @@ class MetricsSampler:
             return
         print("[keeper][push-metrics] begin")
         for r in self._metrics_ts_rows:
-            print(json.dumps(r, ensure_ascii=False))
+            if os.environ.get("KEEPER_PRINT_METRICS", False):
+                print(json.dumps(r, ensure_ascii=False))
         print("[keeper][push-metrics] end")
         sink_clickhouse(self.sink_url or "ci", "keeper_metrics_ts", self._metrics_ts_rows)
         self._metrics_ts_rows = []
