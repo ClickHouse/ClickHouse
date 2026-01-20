@@ -70,7 +70,15 @@ SELECT currentUser()
 │ default       │
 └───────────────┘
         )"
-    }
+    },
+        {"SQL standard syntax without parentheses", R"(
+SELECT CURRENT_USER
+        )",
+        R"(
+┌─CURRENT_USER─┐
+│ default      │
+└──────────────┘
+        )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;

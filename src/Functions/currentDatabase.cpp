@@ -71,8 +71,15 @@ SELECT currentDatabase()
 ┌─currentDatabase()─┐
 │ default           │
 └───────────────────┘
-        )"
-    }
+        )"},
+        {"SQL standard syntax without parentheses", R"(
+SELECT CURRENT_DATABASE
+        )",
+        R"(
+┌─CURRENT_DATABASE─┐
+│ default          │
+└──────────────────┘
+        )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;

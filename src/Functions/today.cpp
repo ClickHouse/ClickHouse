@@ -98,7 +98,17 @@ R"(
 │ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
 └────────────┴────────────┴──────────────┘
 )"
-        }
+        },
+        {"SQL standard syntax without parentheses", R"(
+SELECT TODAY, CURDATE,CURRENT_DATE
+        )",
+        R"(
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃      TODAY ┃    CURDATE ┃ CURRENT_DATE ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
+└────────────┴────────────┴──────────────┘
+        )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
