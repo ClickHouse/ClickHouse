@@ -80,7 +80,7 @@ private:
                 }
             }
 
-            data.push_back(negative ^ empty);
+            data.push_back(static_cast<UInt8>(negative ^ empty));
         }
 
         return res;

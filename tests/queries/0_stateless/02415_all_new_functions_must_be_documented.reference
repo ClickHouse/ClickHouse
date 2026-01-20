@@ -9,7 +9,6 @@ __bitBoolMaskOr
 __bitSwapLastTwo
 __bitWrapperFunc
 __getScalar
-__interpolate
 __scalarSubqueryResult
 caseWithExpression
 dotProduct
