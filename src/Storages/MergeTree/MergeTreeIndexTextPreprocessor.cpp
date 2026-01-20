@@ -117,11 +117,12 @@ std::pair<ColumnPtr,size_t> MergeTreeIndexTextPreprocessor::processColumn(const 
     chassert(isStringOrFixedString(index_column_with_type_and_name.type));
 
     ColumnPtr index_column = index_column_with_type_and_name.column;
-    chassert(isStringOrFixedString(index_column->getDataType()));
+    chassert(index_column->getDataType() == index_column_with_type_and_name.type->getTypeId());
 
     if (expression.getActions().empty())
         return {index_column, start_row};
 
+    /// Only copy if needed
     if (start_row != 0 || n_rows != index_column->size())
         index_column = index_column->cut(start_row, n_rows);
 
@@ -138,6 +139,8 @@ std::pair<ColumnPtr, size_t> MergeTreeIndexTextPreprocessor::processColumnArray(
     chassert(isArray(index_column_with_type_and_name.type));
 
     ColumnPtr index_column = index_column_with_type_and_name.column;
+    chassert(index_column->getDataType() == index_column_with_type_and_name.type->getTypeId());
+
     if (expression.getActions().empty())
         return {index_column, start_row};
 
@@ -152,7 +155,8 @@ std::pair<ColumnPtr, size_t> MergeTreeIndexTextPreprocessor::processColumnArray(
     chassert(column_array != nullptr);
 
     ColumnWithTypeAndName tmp(column_array->getDataPtr(), nested_type, column_name);
-    auto [processed_column, _] = processColumn(tmp, 0, index_column->size());
+
+    auto [processed_column, _] = processColumn(tmp, 0, tmp.column->size());
 
     const ColumnPtr offsets = column_array->getOffsetsPtr();
 
