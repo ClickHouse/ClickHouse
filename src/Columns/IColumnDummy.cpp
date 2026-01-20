@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Common/Arena.h>
 #include <Common/iota.h>
+#include <IO/ReadBuffer.h>
 
 
 namespace DB
@@ -40,7 +41,7 @@ bool IColumnDummy::isDefaultAt(size_t) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());
 }
 
-StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const
+std::string_view IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const IColumn::SerializationSettings *) const
 {
     /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
     char * res = arena.allocContinue(1, begin);
@@ -48,21 +49,26 @@ StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, cha
     return { res, 1 };
 }
 
-const char * IColumnDummy::deserializeAndInsertFromArena(const char * pos)
+void IColumnDummy::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     ++s;
-    return pos + 1;
+    in.ignore(1);
 }
 
-const char * IColumnDummy::skipSerializedInArena(const char * pos) const
+void IColumnDummy::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos;
+    in.ignore(1);
 }
 
 ColumnPtr IColumnDummy::filter(const Filter & filt, ssize_t /*result_size_hint*/) const
 {
     size_t bytes = countBytesInFilter(filt);
     return cloneDummy(bytes);
+}
+
+void IColumnDummy::filter(const Filter & filt)
+{
+    s = countBytesInFilter(filt);
 }
 
 void IColumnDummy::expand(const IColumn::Filter & mask, bool)

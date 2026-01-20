@@ -417,43 +417,33 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         return;
     }
 
-    /// We need to remove the entry from probationary first
-    /// in order to make space for downgrade from protected.
-    iterator.lru_iterator.remove(lock);
-
     EvictionCandidates eviction_candidates;
     FileCacheReserveStat stat;
-    try
-    {
-        /// Check if there is enough space in protected queue to move entry there.
-        /// If not - we need to "downgrade" lowest priority entries from protected
-        /// queue to probationary queue.
-        ///
-        if (!collectCandidatesForEvictionInProtected(
-                entry->size, /* elements */1, stat, eviction_candidates, nullptr, false, FileCache::getInternalUser().user_id, lock))
-        {
-            /// "downgrade" candidates cannot be moved to probationary queue,
-            /// so entry cannot be moved to protected queue as well.
-            /// Then just increase its priority within probationary queue.
-            iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
-            return;
-        }
 
-        eviction_candidates.evict();
-        eviction_candidates.finalize(nullptr, lock);
-
-        /// Count how much we evict,
-        /// because it could affect performance if we have to do this often.
-        ProfileEvents::increment(
-            ProfileEvents::FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease,
-            eviction_candidates.size());
-    }
-    catch (...)
+    /// Check if there is enough space in protected queue to move entry there.
+    /// If not - we need to "downgrade" lowest priority entries from protected
+    /// queue to probationary queue.
+    ///
+    if (!collectCandidatesForEvictionInProtected(
+            entry->size, /* elements */1, stat, eviction_candidates, nullptr, false, FileCache::getInternalUser().user_id, lock))
     {
-        iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
-        throw;
+        /// "downgrade" candidates cannot be moved to probationary queue,
+        /// so entry cannot be moved to protected queue as well.
+        /// Then just increase its priority within probationary queue.
+        iterator.lru_iterator.increasePriority(lock);
+        return;
     }
 
+    eviction_candidates.evict();
+    eviction_candidates.finalize(nullptr, lock);
+
+    /// Count how much we evict,
+    /// because it could affect performance if we have to do this often.
+    ProfileEvents::increment(
+        ProfileEvents::FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease,
+        eviction_candidates.size());
+
+    iterator.lru_iterator.remove(lock);
     iterator.lru_iterator = addOrThrow(entry, protected_queue, lock);
     iterator.is_protected = true;
 }

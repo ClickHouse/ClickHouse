@@ -264,6 +264,7 @@ void EvictionCandidates::finalize(
     {
         auto iterator = queue_entries_to_invalidate.back();
         iterator->invalidate();
+        iterator->check(lock);
         queue_entries_to_invalidate.pop_back();
 
         /// Remove entry from per query priority queue.

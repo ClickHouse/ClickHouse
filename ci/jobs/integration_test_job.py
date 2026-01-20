@@ -17,8 +17,9 @@ MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
 mem_gb = round(Utils.physical_memory() // (1024**3), 1)
-MAX_CPUS_PER_WORKER = 4
-MAX_MEM_PER_WORKER = 7
+
+MAX_CPUS_PER_WORKER = 5
+MAX_MEM_PER_WORKER = 11
 
 
 def _start_docker_in_docker():
@@ -80,6 +81,15 @@ def parse_args():
         default=None,
         type=int,
     )
+    parser.add_argument(
+        "--param",
+        help=(
+            "Optional. Comma-separated KEY=VALUE pairs to inject as environment "
+            "variables for pytest (e.g. --param PYTEST_ADDOPTS=-vv,CUSTOM_FLAG=1)"
+        ),
+        type=str,
+        default="",
+    )
     return parser.parse_args()
 
 
@@ -87,8 +97,14 @@ FLAKY_CHECK_TEST_REPEAT_COUNT = 3
 FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
-def tests_to_run(
-    batch_num: int, total_batches: int, args_test: List[str], workers: int
+def get_parallel_sequential_tests_to_run(
+    batch_num: int,
+    total_batches: int,
+    args_test: List[str],
+    workers: int,
+    job_options: str,
+    info: Info,
+    no_strict: bool = False,
 ) -> Tuple[List[str], List[str]]:
     if args_test:
         batch_num = 1
@@ -102,7 +118,7 @@ def tests_to_run(
     assert len(test_files) > 100
 
     parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
-        test_files, total_batches, batch_num, workers
+        test_files, total_batches, batch_num, workers, job_options, info
     )
     if not args_test:
         return parallel_test_modules, sequential_test_modules
@@ -131,7 +147,8 @@ def tests_to_run(
             if test_match(test_file, test_arg):
                 sequential_tests.append(test_arg)
                 matched = True
-        assert matched, f"Test [{test_arg}] not found"
+        if not no_strict:
+            assert matched, f"Test [{test_arg}] not found"
 
     return parallel_tests, sequential_tests
 
@@ -150,6 +167,35 @@ def main():
     is_parallel = False
     is_sequential = False
     is_targeted_check = False
+
+    # Set on_error_hook to collect logs on hard timeout
+    Result.from_fs(info.job_name).set_on_error_hook(
+        """
+dmesg -T >./ci/tmp/dmesg.log
+sudo chown -R $(id -u):$(id -g) ./tests/integration
+tar -czf ./ci/tmp/logs.tar.gz \
+  ./tests/integration/test_*/_instances*/ \
+  ./ci/tmp/*.log \
+  ./ci/tmp/*.jsonl || :
+"""
+    ).set_files(
+        [
+            "./ci/tmp/logs.tar.gz",
+            "./ci/tmp/dmesg.log",
+            "./ci/tmp/docker-in-docker.log",
+        ],
+        strict=False,
+    )
+
+    if args.param:
+        for item in args.param.split(","):
+            print(f"Setting env variable: {item}")
+            key, _, value = item.partition("=")
+            key = key.strip()
+            if not key:
+                continue
+            os.environ[key] = value.strip()
+
     java_path = Shell.get_output(
         "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,
@@ -193,6 +239,8 @@ def main():
     if args.workers:
         workers = args.workers
     else:
+        print("ncpu:", ncpu)
+        print("mem_gb:", mem_gb)
         workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
@@ -233,7 +281,12 @@ def main():
             # TODO: reduce scope to modified test cases instead of entire modules
             changed_files = info.get_changed_files()
             for file in changed_files:
-                if file.startswith("tests/integration/test") and file.endswith(".py"):
+                if (
+                    file.startswith("tests/integration/test")
+                    and Path(file).name.startswith("test")
+                    and file.endswith(".py")
+                    and Path(file).is_file()
+                ):
                     changed_test_modules.append(file.removeprefix("tests/integration/"))
 
     if is_bugfix_validation:
@@ -252,6 +305,11 @@ def main():
                 verbose=True,
                 strict=True,
             )
+
+    if is_bugfix_validation or is_flaky_check:
+        assert (
+            changed_test_modules
+        ), "No changed test modules found, either job must be skipped or bug in changed test search logic"
 
     Shell.check(f"chmod +x {clickhouse_path}", verbose=True, strict=True)
     Shell.check(f"{clickhouse_path} --version", verbose=True, strict=True)
@@ -285,11 +343,16 @@ def main():
         _start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
-    parallel_test_modules, sequential_test_modules = tests_to_run(
-        batch_num,
-        total_batches,
-        args.test or targeted_tests or changed_test_modules,
-        workers,
+    parallel_test_modules, sequential_test_modules = (
+        get_parallel_sequential_tests_to_run(
+            batch_num,
+            total_batches,
+            args.test or targeted_tests or changed_test_modules,
+            workers,
+            args.options,
+            info,
+            no_strict=is_targeted_check,  # targeted check might want to run test that was removed on a merge-commit
+        )
     )
 
     if is_sequential:
@@ -329,13 +392,17 @@ def main():
     if is_flaky_check:
         module_repeat_cnt = FLAKY_CHECK_MODULE_REPEAT_COUNT
 
+    failed_test_cases = []
+
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
+            log_file = f"{temp_path}/pytest_parallel.log"
             test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
+                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout=5400",
                 cwd="./tests/integration/",
                 env=test_env,
                 pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
+                logfile=log_file,
             )
             if is_flaky_check and not test_result_parallel.is_ok():
                 print(
@@ -343,6 +410,9 @@ def main():
                 )
                 break
         test_results.extend(test_result_parallel.results)
+        failed_test_cases.extend(
+            [t.name for t in test_result_parallel.results if t.is_failure()]
+        )
         if test_result_parallel.files:
             failed_tests_files.extend(test_result_parallel.files)
         if test_result_parallel.is_error():
@@ -352,11 +422,13 @@ def main():
     fail_num = len([r for r in test_results if not r.is_ok()])
     if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
         for attempt in range(module_repeat_cnt):
+            log_file = f"{temp_path}/pytest_sequential.log"
             test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile",
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=5400",
                 env=test_env,
                 cwd="./tests/integration/",
                 pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
+                logfile=log_file,
             )
             if is_flaky_check and not test_result_sequential.is_ok():
                 print(
@@ -364,33 +436,17 @@ def main():
                 )
                 break
         test_results.extend(test_result_sequential.results)
+        failed_test_cases.extend(
+            [t.name for t in test_result_sequential.results if t.is_failure()]
+        )
         if test_result_sequential.files:
             failed_tests_files.extend(test_result_sequential.files)
         if test_result_sequential.is_error():
             has_error = True
             error_info.append(test_result_sequential.info)
 
-    # Remove iptables rule added in tests
-    Shell.check("sudo iptables -D DOCKER-USER 1 ||:", verbose=True)
-
-    if not info.is_local_run:
-        print("Dumping dmesg")
-        Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
-        failed_tests_files.append("dmesg.log")
-        with open("dmesg.log", "rb") as dmesg:
-            dmesg = dmesg.read()
-            if (
-                b"Out of memory: Killed process" in dmesg
-                or b"oom_reaper: reaped process" in dmesg
-                or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
-            ):
-                test_results.append(
-                    Result(
-                        name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
-                    )
-                )
-
-    files = []
+    # Collect logs before rerun
+    attached_files = []
     if not info.is_local_run:
         failed_suits = []
         # Collect docker compose configs used in tests
@@ -405,14 +461,62 @@ def main():
         for failed_suit in failed_suits:
             failed_tests_files.append(f"tests/integration/{failed_suit}")
 
-        files.append(
-            Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
-        )
-        files.append(
-            Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
-        )
+        # Add all files matched ./ci/tmp/*.log ./ci/tmp/*.jsonl into failed_tests_files
+        for pattern in ["*.log", "*.jsonl"]:
+            for log_file in Path("./ci/tmp/").glob(pattern):
+                if log_file.is_file():
+                    failed_tests_files.append(str(log_file))
 
-    R = Result.create_from(results=test_results, stopwatch=sw, files=files)
+        if failed_suits:
+            attached_files.append(
+                Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
+            )
+            attached_files.append(
+                Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
+            )
+            if Path("./ci/tmp/docker-in-docker.log").exists():
+                attached_files.append("./ci/tmp/docker-in-docker.log")
+
+    # Rerun failed tests if any to check if failure is reproducible
+    if 0 < len(failed_test_cases) < 10 and not (
+        is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
+    ):
+        test_result_retries = Result.from_pytest_run(
+            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
+            env=test_env,
+            cwd="./tests/integration/",
+            pytest_report_file=f"{temp_path}/pytest_retries.jsonl",
+        )
+        successful_retries = [t.name for t in test_result_retries.results if t.is_ok()]
+        failed_retries = [t.name for t in test_result_retries.results if t.is_failure()]
+        if successful_retries or failed_retries:
+            for test_case in test_results:
+                if test_case.name in successful_retries:
+                    test_case.set_label(Result.Label.OK_ON_RETRY)
+                elif test_case.name in failed_retries:
+                    test_case.set_label(Result.Label.FAILED_ON_RETRY)
+
+    # Remove iptables rule added in tests
+    Shell.check("sudo iptables -D DOCKER-USER 1 ||:", verbose=True)
+
+    if not info.is_local_run:
+        print("Dumping dmesg")
+        Shell.check("dmesg -T > ./ci/tmp/dmesg.log", verbose=True, strict=True)
+        with open("./ci/tmp/dmesg.log", "rb") as dmesg:
+            dmesg = dmesg.read()
+            if (
+                b"Out of memory: Killed process" in dmesg
+                or b"oom_reaper: reaped process" in dmesg
+                or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
+            ):
+                test_results.append(
+                    Result(
+                        name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
+                    )
+                )
+                attached_files.append("./ci/tmp/dmesg.log")
+
+    R = Result.create_from(results=test_results, stopwatch=sw, files=attached_files)
 
     if has_error:
         R.set_error().set_info("\n".join(error_info))

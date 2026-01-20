@@ -102,6 +102,7 @@ private:
     size_t number_of_alter_mutations = 0;
 
     /// Names of columns which are updated by mutation commands.
+    /// Used to check dependencies for ALTERs, lightweight deletes and MATERIALIZED columns
     NameSet all_updated_columns;
 
     /// Patches required to be applied for a part.

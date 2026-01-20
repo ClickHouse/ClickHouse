@@ -4,11 +4,11 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
-#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
@@ -46,16 +46,15 @@
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
+#include <IO/AsynchronousReader.h>
 #include <IO/S3Settings.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/getIOUringReader.h>
-#include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -64,6 +63,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
@@ -98,8 +98,6 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/WriteSettings.h>
@@ -114,7 +112,6 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -140,6 +137,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 namespace fs = std::filesystem;
 
@@ -248,6 +247,7 @@ namespace CurrentMetrics
     extern const Metric IndexUncompressedCacheBytes;
     extern const Metric IndexUncompressedCacheCells;
     extern const Metric ZooKeeperSessionExpired;
+    extern const Metric ZooKeeperConnectionLossStartedTimestampSeconds;
 }
 
 
@@ -285,7 +285,6 @@ namespace Setting
     extern const SettingsUInt64 hsts_max_age;
     extern const SettingsString local_filesystem_read_method;
     extern const SettingsBool local_filesystem_read_prefetch;
-    extern const SettingsBool load_marks_asynchronously;
     extern const SettingsUInt64 max_backup_bandwidth;
     extern const SettingsUInt64 max_local_read_bandwidth;
     extern const SettingsUInt64 max_local_write_bandwidth;
@@ -322,6 +321,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
+    extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
 
 namespace MergeTreeSetting
@@ -368,6 +368,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
+    extern const ServerSettingsUInt64 max_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_view_num_to_throw;
+    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
+    extern const ServerSettingsUInt64 max_database_num_to_throw;
+    extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
 }
 
 namespace ErrorCodes
@@ -390,6 +395,7 @@ namespace ErrorCodes
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
+    extern const int TYPE_MISMATCH;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -688,6 +694,19 @@ struct ContextSharedPart : boost::noncopyable
 
     ~ContextSharedPart()
     {
+        /// Shutdown must be called first to stop all background tasks (like loadOutdatedDataParts)
+        /// that may be using the thread pool readers. Otherwise there is a data race between
+        /// background tasks calling getThreadPoolReader() and the destructor resetting the readers.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/62143
+        try
+        {
+            shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
 #if USE_NURAFT
         if (keeper_dispatcher)
         {
@@ -787,15 +806,6 @@ struct ContextSharedPart : boost::noncopyable
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
-
-        try
-        {
-            shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
     }
 
     void setConfig(const ConfigurationPtr & config_value)
@@ -843,7 +853,6 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
         SHUTDOWN(log, "another UDFs storage", user_defined_sql_objects_storage, stopWatching());
-        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
 
         LOG_TRACE(log, "Shutting down named sessions");
         Session::shutdownNamedSessions();
@@ -875,6 +884,9 @@ struct ContextSharedPart : boost::noncopyable
         SHUTDOWN(log, "common executor", common_executor, wait());
 
         TransactionLog::shutdownIfAny();
+
+        // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
+        SHUTDOWN(log, "workload entity storage", workload_entity_storage, stopWatching());
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
@@ -973,11 +985,14 @@ struct ContextSharedPart : boost::noncopyable
             trace_collector.reset();
         }
 
+        zkutil::ZooKeeperPtr delete_zookeeper;
         {
             /// Stop zookeeper connection
             std::lock_guard lock(zookeeper_mutex);
-            zookeeper.reset();
+            delete_zookeeper = std::move(zookeeper);
         }
+        if (delete_zookeeper)
+            delete_zookeeper->finalize("shutdown");
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
@@ -1343,18 +1358,78 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
     {
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
-        if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create("The number of attached tables is more than {}.", shared->max_table_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create("The number of attached views is more than {}.", shared->max_view_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create("The number of attached databases is more than {}.", shared->max_database_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = PreformattedMessage::create("The number of active parts is more than {}.", shared->max_part_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::NamedCollection) > static_cast<Int64>(shared->max_named_collection_num_to_warn))
-            common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create("The number of named collections is more than {}.", shared->max_named_collection_num_to_warn.load());
+
+        auto attached_tables = CurrentMetrics::get(CurrentMetrics::AttachedTable);
+        auto attached_views = CurrentMetrics::get(CurrentMetrics::AttachedView);
+        auto attached_dictionaries = CurrentMetrics::get(CurrentMetrics::AttachedDictionary);
+        auto attached_databases = CurrentMetrics::get(CurrentMetrics::AttachedDatabase);
+        auto attached_named_collections = CurrentMetrics::get(CurrentMetrics::NamedCollection);
+        auto active_parts = CurrentMetrics::get(CurrentMetrics::PartsActive);
+
+        if (attached_tables > static_cast<Int64>(shared->max_table_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_table_num_to_throw]; limit > shared->max_table_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create(
+                    "The number of attached tables ({}) exceeds the warning limit of {}. You will not be able to create new tables once the limit of {} is reached.",
+                    attached_tables, shared->max_table_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create(
+                    "The number of attached tables ({}) exceeds the warning limit of {}.",
+                    attached_tables, shared->max_table_num_to_warn.load());
+        }
+
+        if (attached_views > static_cast<Int64>(shared->max_view_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_view_num_to_throw]; limit > shared->max_view_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create(
+                    "The number of attached views ({}) exceeds the warning limit of {}. You will not be able to create new views once the limit of {} is reached.",
+                    attached_views, shared->max_view_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create(
+                    "The number of attached views ({}) exceeds the warning limit of {}.",
+                    attached_views, shared->max_view_num_to_warn.load());
+        }
+
+        if (attached_dictionaries > static_cast<Int64>(shared->max_dictionary_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_dictionary_num_to_throw]; limit > shared->max_dictionary_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create(
+                    "The number of attached dictionaries ({}) exceeds the warning limit of {}. You will not be able to create new dictionaries once the limit of {} is reached.",
+                    attached_dictionaries, shared->max_dictionary_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create(
+                    "The number of attached dictionaries ({}) exceeds the warning limit of {}.",
+                    attached_dictionaries, shared->max_dictionary_num_to_warn.load());
+        }
+
+        if (attached_databases > static_cast<Int64>(shared->max_database_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_database_num_to_throw]; limit > shared->max_database_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create(
+                    "The number of attached databases ({}) exceeds the warning limit of {}. You will not be able to create new databases once the limit of {} is reached.",
+                    attached_databases, shared->max_database_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create(
+                    "The number of attached databases ({}) exceeds the warning limit of {}.",
+                    attached_databases, shared->max_database_num_to_warn.load());
+        }
+
+        if (attached_named_collections > static_cast<Int64>(shared->max_named_collection_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_named_collection_num_to_throw]; limit > shared->max_named_collection_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create(
+                    "The number of named collections ({}) exceeds the warning limit of {}. You will not be able to create new named collections once the limit of {} is reached.",
+                    attached_named_collections, shared->max_named_collection_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create(
+                    "The number of named collections ({}) exceeds the warning limit of {}.",
+                    attached_named_collections, shared->max_named_collection_num_to_warn.load());
+        }
+
+        if (active_parts > static_cast<Int64>(shared->max_part_num_to_warn))
+            common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = PreformattedMessage::create(
+                "The number of active parts ({}) exceeds the warning limit of {}.",
+                active_parts, shared->max_part_num_to_warn.load());
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
@@ -1447,7 +1522,7 @@ void Context::setFilesystemCacheUser(const String & user)
 static void setupTmpPath(LoggerPtr log, const DiskPtr & disk)
 try
 {
-    LOG_DEBUG(log, "Setting up {}:{} to store temporary data in it", disk->getName(), disk->getPath());
+    LOG_DEBUG(log, "Setting up temporary data storage at disk '{}' with path '{}'", disk->getName(), disk->getPath());
 
     if (disk->existsDirectory(""))
     {
@@ -2329,20 +2404,20 @@ void Context::addQueryAccessInfo(
     addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
 }
 
-ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector()
+std::shared_ptr<ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector()
 {
     {
         SharedLockGuard lock(mutex);
         if (time_series_tags_collector)
-            return *time_series_tags_collector;
+            return time_series_tags_collector;
     }
     std::lock_guard lock(mutex);
     if (!time_series_tags_collector)
         time_series_tags_collector = std::make_shared<ContextTimeSeriesTagsCollector>();
-    return *time_series_tags_collector;
+    return time_series_tags_collector;
 }
 
-const ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector() const
+std::shared_ptr<const ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector() const
 {
     return const_cast<Context *>(this)->getTimeSeriesTagsCollector();
 }
@@ -2484,8 +2559,8 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
         if (parts.size() == 2)
         {
-            database_name = parts[0];
-            table_name = parts[1];
+            database_name = std::move(parts[0]);
+            table_name = std::move(parts[1]);
         }
     }
 
@@ -2513,7 +2588,13 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     }
     auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     auto key = toString(hash);
-    StoragePtr & res = table_function_results[key];
+
+    StoragePtr res;
+    {
+        std::lock_guard lock(table_function_results_mutex);
+        res = table_function_results[key];
+    }
+
     if (!res)
     {
         TableFunctionPtr table_function_ptr;
@@ -2533,12 +2614,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         uint64_t use_structure_from_insertion_table_in_table_functions
             = getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
         if (select_query_hint && use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint()
-            && hasInsertionTable())
+            && hasInsertionTableColumnsDescription())
         {
-            const auto & insert_columns = DatabaseCatalog::instance()
-                                              .getTable(getInsertionTable(), shared_from_this())
-                                              ->getInMemoryMetadataPtr()
-                                              ->getColumns();
+            const auto & insert_columns = *getInsertionTableColumnsDescription();
 
             const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
             DB::ColumnsDescription structure_hint;
@@ -2553,7 +2631,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
             bool asterisk = false;
             const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
-            const auto * expression = expression_list.begin();
+            auto expression = expression_list.begin();
 
             /// We want to go through SELECT expression list and correspond each expression to column in insert table
             /// which type will be used as a hint for the file structure inference.
@@ -2674,6 +2752,9 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
         ///
         auto new_hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
+
+        std::lock_guard lock(table_function_results_mutex);
+        table_function_results[key] = res;
         if (hash != new_hash)
         {
             key = toString(new_hash);
@@ -2687,18 +2768,27 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 {
     const auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
     const auto key = toString(hash);
-    StoragePtr & res = table_function_results[key];
+
+    StoragePtr res;
+    {
+        std::lock_guard lock(table_function_results_mutex);
+        res = table_function_results[key];
+    }
 
     if (!res)
     {
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+        std::lock_guard lock(table_function_results_mutex);
+        /// In case of race, another thread might have inserted a result already.
+        /// We just overwrite it since both should be equivalent.
+        table_function_results[key] = res;
     }
 
     return res;
 }
 
 
-StoragePtr Context::buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values)
+StoragePtr Context::buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const
 {
     if (table_name.empty())
         return nullptr;
@@ -2725,9 +2815,32 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
+
+    /* Check that the actual schema matches the defined one (if any) */
+    auto actual_names_and_types = sample_block->getNamesAndTypesList();
+    const auto original_defined_columns = original_view_metadata->getColumns();
+    if (!original_defined_columns.empty())
+    {
+        auto throw_schema_mismatch = [table_name]()
+        {
+            throw Exception(
+                ErrorCodes::TYPE_MISMATCH,
+                "After parameters substitution of parameterized view {} the actual schema does not match the defined one",
+                backQuote(table_name));
+        };
+        if (original_defined_columns.size() != actual_names_and_types.size())
+            throw_schema_mismatch();
+
+        for (const auto [defined_column, actual_column] : std::views::zip(original_defined_columns.getAll(), actual_names_and_types))
+        {
+            if (defined_column.name != actual_column.name || defined_column.type->getName() != actual_column.type->getName())
+                throw_schema_mismatch();
+        }
+    }
+
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
-                                                ColumnsDescription(sample_block->getNamesAndTypesList()),
+                                                ColumnsDescription(actual_names_and_types),
             /* comment */ "",
             /* is_parameterized_view */ true);
     res->startup();
@@ -3072,6 +3185,14 @@ bool Context::isCurrentQueryKilled() const
     return false;
 }
 
+void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> column_names, std::optional<ColumnsDescription> column_description)
+{
+    insertion_table_info = {
+        .table = std::move(db_and_table),
+        .column_names = std::move(column_names),
+        .columns_description = std::move(column_description),
+    };
+}
 
 String Context::getDefaultFormat() const
 {
@@ -3377,7 +3498,6 @@ const IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
         shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
     });
 
-    SharedLockGuard lock(shared->mutex);
     return *shared->user_defined_sql_objects_storage;
 }
 
@@ -3387,14 +3507,7 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
         shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
     });
 
-    std::lock_guard lock(shared->mutex);
     return *shared->user_defined_sql_objects_storage;
-}
-
-void Context::setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->user_defined_sql_objects_storage = std::move(storage);
 }
 
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
@@ -3403,7 +3516,6 @@ IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
         shared->workload_entity_storage = createWorkloadEntityStorage(getGlobalContext());
     });
 
-    std::lock_guard lock(shared->mutex);
     return *shared->workload_entity_storage;
 }
 
@@ -4449,6 +4561,23 @@ DDLWorker & Context::getDDLWorker() const
     throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
 }
 
+namespace
+{
+
+void recordZooKeeperConnectionLoss()
+{
+    /// Use CAS to make sure we only set the timestamp for the first connection loss.
+    CurrentMetrics::cas(
+        CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds,
+        0,
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count()
+    );
+}
+
+}
+
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -4460,7 +4589,20 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
         args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
 
-        shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
+        try
+        {
+            shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
+            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
+            {
+                recordZooKeeperConnectionLoss();
+            }
+            throw;
+        }
+
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
             zookeeper_connection_log->addConnected(
                 ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
@@ -4475,7 +4617,19 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
         auto old_zookeeper = shared->zookeeper;
 
-        shared->zookeeper = shared->zookeeper->startNewSession();
+        try
+        {
+            shared->zookeeper = shared->zookeeper->startNewSession();
+            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
+            {
+                recordZooKeeperConnectionLoss();
+            }
+            throw;
+        }
 
         if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
         {
@@ -4491,6 +4645,12 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     }
 
     return shared->zookeeper;
+}
+
+int64_t Context::getZooKeeperLastZXIDSeen() const
+{
+    std::lock_guard lock(shared->zookeeper_mutex);
+    return shared->zookeeper ? shared->zookeeper->getLastZXIDSeen() : 0;
 }
 
 namespace
@@ -4892,7 +5052,7 @@ const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 UInt16 Context::getTCPPort() const
 {
     const auto & config = getConfigRef();
-    return config.getInt("tcp_port", DBMS_DEFAULT_PORT);
+    return static_cast<UInt16>(config.getInt("tcp_port", DBMS_DEFAULT_PORT));
 }
 
 std::optional<UInt16> Context::getTCPPortSecure() const
@@ -5274,7 +5434,7 @@ std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
     return shared->system_logs->query_views_log;
 }
 
-std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
+std::shared_ptr<PartLog> Context::getPartLog() const
 {
     SharedLockGuard lock(shared->mutex);
 
@@ -5282,13 +5442,17 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database) const
     if (!shared->system_logs)
         return {};
 
-    /// Will not log operations on system tables (including part_log itself).
-    /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
-    /// and also make troubles on startup.
-    if (part_database == DatabaseCatalog::SYSTEM_DATABASE)
+    return shared->system_logs->part_log;
+}
+
+std::shared_ptr<BackgroundSchedulePoolLog> Context::getBackgroundSchedulePoolLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
         return {};
 
-    return shared->system_logs->part_log;
+    return shared->system_logs->background_schedule_pool_log;
 }
 
 std::shared_ptr<TraceLog> Context::getTraceLog() const
@@ -5300,7 +5464,6 @@ std::shared_ptr<TraceLog> Context::getTraceLog() const
 
     return shared->system_logs->trace_log;
 }
-
 
 std::shared_ptr<TextLog> Context::getTextLog() const
 {
@@ -5949,9 +6112,31 @@ size_t Context::getConfigReloaderInterval() const
     return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
 }
 
-InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
+InputFormatPtr Context::getInputFormat(
+    const String & name,
+    ReadBuffer & buf,
+    const Block & sample,
+    UInt64 max_block_size,
+    const std::optional<FormatSettings> & format_settings,
+    const std::optional<UInt64> & max_block_size_bytes,
+    const std::optional<UInt64> & min_block_size_rows,
+    const std::optional<UInt64> & min_block_size_bytes) const
 {
-    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
+    return FormatFactory::instance().getInput(
+        name,
+        buf,
+        sample,
+        shared_from_this(),
+        max_block_size,
+        format_settings,
+        nullptr,
+        nullptr,
+        false,
+        CompressionMethod::None,
+        false,
+        max_block_size_bytes,
+        min_block_size_rows,
+        min_block_size_bytes);
 }
 
 OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
@@ -6096,16 +6281,15 @@ std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> Context::ge
     return std::make_pair(&getQueryContext()->sample_block_cache, std::unique_lock(getQueryContext()->sample_block_cache_mutex));
 }
 
-std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> Context::getStorageMetadataCache() const
+QueryMetadataCachePtr Context::getQueryMetadataCache() const
 {
     chassert(hasQueryContext());
-    return std::make_pair(&getQueryContext()->storage_metadata_cache, std::unique_lock(getQueryContext()->storage_metadata_cache_mutex));
+    return getQueryContext()->query_metadata_cache.lock();
 }
 
-std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> Context::getStorageSnapshotCache() const
+void Context::setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_)
 {
-    chassert(hasQueryContext());
-    return std::make_pair(&getQueryContext()->storage_snapshot_cache, std::unique_lock(getQueryContext()->storage_snapshot_cache_mutex));
+    query_metadata_cache = query_metadata_cache_;
 }
 
 bool Context::hasQueryParameters() const
@@ -6626,6 +6810,10 @@ void Context::setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback
     merge_tree_read_task_callback = callback;
 }
 
+bool Context::hasMergeTreeAllRangesCallback() const
+{
+    return merge_tree_all_ranges_callback.has_value();
+}
 
 MergeTreeAllRangesCallback Context::getMergeTreeAllRangesCallback() const
 {
@@ -6649,6 +6837,13 @@ BlockMarshallingCallback Context::getBlockMarshallingCallback() const
 void Context::setBlockMarshallingCallback(BlockMarshallingCallback && callback)
 {
     block_marshalling_callback = std::move(callback);
+}
+
+RuntimeDataflowStatisticsCacheUpdaterPtr Context::getRuntimeDataflowStatisticsCacheUpdater() const
+{
+    if (!dataflow_cache_updater)
+        dataflow_cache_updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>();
+    return dataflow_cache_updater;
 }
 
 void Context::setParallelReplicasGroupUUID(UUID uuid)
@@ -6868,8 +7063,6 @@ ReadSettings Context::getReadSettings() const
     res.local_fs_prefetch = settings_ref[Setting::local_filesystem_read_prefetch];
     res.remote_fs_prefetch = settings_ref[Setting::remote_filesystem_read_prefetch];
 
-    res.load_marks_asynchronously = settings_ref[Setting::load_marks_asynchronously];
-
     res.enable_filesystem_read_prefetches_log = settings_ref[Setting::enable_filesystem_read_prefetches_log];
 
     res.remote_fs_read_max_backoff_ms = settings_ref[Setting::remote_fs_read_max_backoff_ms];
@@ -7043,6 +7236,26 @@ void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
 PreparedSetsCachePtr Context::getPreparedSetsCache() const
 {
     return prepared_sets_cache;
+}
+
+ReverseLookupCache & Context::getReverseLookupCache() const
+{
+    auto query_context = getQueryContext();
+
+    const auto & settings_ref = getSettingsRef();
+
+    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
+    if (!query_context->reverse_lookup_cache)
+    {
+        query_context->reverse_lookup_cache = std::make_shared<ReverseLookupCache>(
+            "LRU",
+            CurrentMetrics::end(),
+            CurrentMetrics::end(),
+            settings_ref[Setting::max_reverse_dictionary_lookup_cache_size_bytes],
+            ReverseLookupCache::NO_MAX_COUNT,
+            ReverseLookupCache::DEFAULT_SIZE_RATIO);
+    }
+    return *query_context->reverse_lookup_cache;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)

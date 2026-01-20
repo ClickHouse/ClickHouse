@@ -84,7 +84,7 @@ public:
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
-                    toString(data[row]),
+                    static_cast<uint8_t>(data[row]),
                     getName(),
                     MAX_H3_RES);
 
@@ -134,7 +134,7 @@ Returns all the pentagon [H3](#h3-index) indices at the specified resolution.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetPentagonIndexes>(documentation);
 }
 

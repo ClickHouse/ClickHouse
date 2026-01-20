@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -14,9 +14,6 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -108,6 +105,8 @@ public:
             H3Index h3index = data[row];
             LatLng coord{};
 
+            validateH3Cell(h3index);
+
             cellToLatLng(h3index,&coord);
             lon_data[row] = radsToDegs(coord.lng);
             lat_data[row] = radsToDegs(coord.lat);
@@ -161,7 +160,7 @@ The previous behavior can be restored using setting `h3togeo_lon_lat_result_orde
     };
     FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3ToGeo>(documentation);
 }
 

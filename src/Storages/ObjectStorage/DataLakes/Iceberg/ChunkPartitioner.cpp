@@ -8,11 +8,17 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
 
 #if USE_AVRO
+
+namespace Setting
+{
+    extern const SettingsUInt64 iceberg_insert_max_partitions;
+}
 
 namespace ErrorCodes
 {
@@ -22,6 +28,7 @@ namespace ErrorCodes
 ChunkPartitioner::ChunkPartitioner(
     Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, SharedHeader sample_block_)
     : sample_block(sample_block_)
+    , max_partitions_count(context->getSettingsRef()[Setting::iceberg_insert_max_partitions])
 {
     std::unordered_map<Int32, String> id_to_column;
     {
@@ -121,6 +128,12 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
 
 
     size_t partitions_count = partition_num_to_first_row.size();
+    if (partitions_count > max_partitions_count)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Too many partitions per insert operation: {}. The maximum allowed number of partitions is {}. To change this, use the `iceberg_insert_max_partitions` setting",
+            partitions_count,
+            max_partitions_count);
     chassert(partitions_count > 0);
     std::vector<std::pair<ChunkPartitioner::PartitionKey, MutableColumns>> result_columns;
     result_columns.reserve(partitions_count);

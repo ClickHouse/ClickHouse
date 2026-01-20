@@ -1,7 +1,6 @@
 #include <memory>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
 #include <Common/Logger.h>
 #include <Core/ColumnsWithTypeAndName.h>
@@ -145,9 +144,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                     /// Remove filter after SEMI JOIN because it's a constant expression that always evaluates to TRUE for matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after SEMI JOIN because it's always TRUE for matched rows", filter_column_name);
                     parent_node->step = convertToExpressionStep(filter);
-                    return 2;
                 }
-                return 1;
+                return 2;
             }
             if (result_for_matched_rows == FilterResult::FALSE)
             {
@@ -158,9 +156,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                     /// Remove filter after ANTI JOIN because it's a constant expression that always evaluates to TRUE for not matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after ANTI JOIN because it's always TRUE for not matched rows", filter_column_name);
                     parent_node->step = convertToExpressionStep(filter);
-                    return 2;
                 }
-                return 1;
+                return 2;
             }
             return 0;
         }
@@ -178,9 +175,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                     /// Remove filter after SEMI JOIN because it's a constant expression that always evaluates to TRUE for matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after SEMI JOIN because it's always TRUE for matched rows", filter_column_name);
                     parent_node->step = convertToExpressionStep(filter);
-                    return 2;
                 }
-                return 1;
+                return 2;
             }
             if (result_for_matched_rows == FilterResult::FALSE)
             {
@@ -191,9 +187,8 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                     /// Remove filter after ANTI JOIN because it's a constant expression that always evaluates to TRUE for not matched rows
                     LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Removing filter '{}' after ANTI JOIN because it's always TRUE for not matched rows", filter_column_name);
                     parent_node->step = convertToExpressionStep(filter);
-                    return 2;
                 }
-                return 1;
+                return 2;
             }
             return 0;
         }

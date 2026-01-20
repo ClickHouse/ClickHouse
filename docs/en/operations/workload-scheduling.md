@@ -208,6 +208,10 @@ There are two ways to control CPU consumption of a workload:
 * Thread number limit: `max_concurrent_threads` and `max_concurrent_threads_ratio_to_cores`
 * CPU throttling: `max_cpus`, `max_cpu_share` and `max_burst_cpu_seconds`
 
+:::warning
+CPU throttling settings are active only if `cpu_slot_preemption` server setting is enabled and ignored otherwise.
+:::
+
 The first allows one to dynamically control how many threads are spawned for a query, depending on the current server load. It effectively lowers what `max_threads` query setting dictates. The second throttles CPU consumption of the workload using token bucket algorithm. It does not affect thread number directly, but throttles the total CPU consumption of all threads in the workload.
 
 Token bucket throttling with `max_cpus` and `max_burst_cpu_seconds` means the following. During any interval of `delta` seconds, the total CPU consumption by all queries in the workload is not allowed to be greater than `max_cpus * delta + max_burst_cpu_seconds` CPU seconds. It limits average consumption by `max_cpus` in long-term, but this limit might be exceeded in short-term. For example, given `max_burst_cpu_seconds = 60` and `max_cpus=0.001`, one is allowed to run either 1 thread for 60 seconds or 2 threads for 30 seconds or 60 threads for 1 second without being throttled. Default value for `max_burst_cpu_seconds` is 1 second. Lower values may lead to under-utilization of allowed `max_cpus` cores given many concurrent threads.

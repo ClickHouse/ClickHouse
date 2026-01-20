@@ -1,13 +1,5 @@
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
 #include <Functions/stringBytes.h>
-#include <Common/BitHelpers.h>
-#include <Common/PODArray.h>
 
 #include <cmath>
 
@@ -75,7 +67,7 @@ Calculates Shannon's entropy of byte distribution in a string.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionStringBytesEntropy>(documentation);
 }

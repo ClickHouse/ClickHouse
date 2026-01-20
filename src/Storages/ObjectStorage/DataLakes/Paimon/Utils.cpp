@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Core/Types.h>
 
 namespace DB
 {
@@ -102,6 +103,88 @@ String formatDateTime(const DateTime64 & x, UInt32 scale, const DateLUTImpl & ti
         res = res.substr(0, res.length() - 3);
     return res;
 }
+
+DB::Row getPartitionFields(const String & partition_string, const PaimonTableSchema & table_schema)
+{
+    Paimon::BinaryRow partition(partition_string);
+    auto get_partition_value = [&partition](Int32 i, Paimon::DataType & data_type) -> Field
+    {
+        if (data_type.clickhouse_data_type->isNullable() && partition.isNullAt(i))
+        {
+            return Null();
+        }
+
+        switch (data_type.root_type)
+        {
+            case RootDataType::CHAR:
+            case RootDataType::VARCHAR:
+                return Field(partition.getString(i));
+            case RootDataType::BOOLEAN: {
+                return Field(partition.getBoolean(i));
+            }
+            case RootDataType::DECIMAL: {
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal32 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return DecimalField<Decimal32>(
+                        partition.getDecimal<Int32>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal64 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return DecimalField<Decimal64>(
+                        partition.getDecimal<Int64>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal128 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return DecimalField<Decimal128>(
+                        partition.getDecimal<Int128>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal256 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return DecimalField<Decimal256>(
+                        partition.getDecimal<Int256>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type {}", data_type.clickhouse_data_type->getName());
+            }
+            case RootDataType::TINYINT:
+                return Field(partition.getByte(i));
+            case RootDataType::SMALLINT:
+                return Field(partition.getShort(i));
+            case RootDataType::INTEGER:
+            case RootDataType::DATE:
+            case RootDataType::TIME_WITHOUT_TIME_ZONE:
+                return Field(partition.getInt(i));
+            case RootDataType::BIGINT:
+                return Field(partition.getLong(i));
+            case RootDataType::FLOAT:
+                return Field(partition.getFloat(i));
+            case RootDataType::DOUBLE:
+                return Field(partition.getDouble(i));
+            case RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE:
+            case RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE: {
+                const auto * type = typeid_cast<const DataTypeDateTime64 *>(removeNullable(data_type.clickhouse_data_type).get());
+                LOG_TEST(
+                    &Poco::Logger::get("getPartitionString"), "getPrecision: {}, getScale: {}", type->getPrecision(), type->getScale());
+                return DecimalField<DateTime64>(partition.getTimestamp(i, type->getScale()), 3);
+            }
+            default:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type {} in partition", data_type.root_type);
+        }
+    };
+
+    DB::Row partition_key_value;
+    for (size_t i = 0; i < table_schema.partition_keys.size(); ++i)
+    {
+        auto it = table_schema.fields_by_name_indexes.find(table_schema.partition_keys[i]);
+        if (it == table_schema.fields_by_name_indexes.end() || it->second >= table_schema.fields.size())
+        {
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "{} is not found in table schema fields: [{}]",
+                table_schema.partition_keys[i],
+                fmt::join(table_schema.fields_by_name_indexes, ","));
+        }
+        auto field = table_schema.fields[it->second];
+        partition_key_value.emplace_back(get_partition_value(static_cast<Int32>(i), field.type));
+    }
+    return partition_key_value;
+};
 
 String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema & table_schema, const String & partition_default_name)
 {
@@ -204,7 +287,7 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
     return path_writer.str();
 };
 
-String getBucketPath(String partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name)
+String getBucketPath(const String & partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name)
 {
     Paimon::BinaryRow binary_row(partition);
     String partition_string = getPartitionString(binary_row, table_schema, partition_default_name);

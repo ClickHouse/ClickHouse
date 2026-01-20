@@ -109,6 +109,7 @@ namespace Setting
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -591,25 +592,13 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return;
 
             /// For union mode, schema can be different for different files, so we need to
             /// cache last inferred schema only for last processed file.
             auto cache_key = getKeyForSchemaCache(paths[current_index - 1], *format, format_settings, getContext());
             StorageFile::getSchemaCache(getContext()).addColumns(cache_key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            /// For default mode we cache resulting schema for all paths.
-            auto cache_keys = getKeysForSchemaCache(paths, *format, format_settings, getContext());
-            StorageFile::getSchemaCache(getContext()).addManyColumns(cache_keys, columns);
         }
 
         String getLastFilePath() const override
@@ -857,8 +846,7 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return;
 
             /// For union mode, schema can be different for different files in archive, so we need to
@@ -866,22 +854,6 @@ namespace
             auto & schema_cache = StorageFile::getSchemaCache(getContext());
             auto cache_key = getKeyForSchemaCache(last_read_file_path, *format, format_settings, getContext());
             schema_cache.addColumns(cache_key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_file]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            /// For default mode we cache resulting schema for all paths.
-            /// Also add schema for initial paths (maybe with globes) in cache,
-            /// so next time we won't iterate through files (that can be expensive).
-            for (const auto & archive : archive_info.paths_to_archives)
-                paths_for_schema_cache.emplace_back(fmt::format("{}::{}", archive, archive_info.path_in_archive));
-            auto & schema_cache = StorageFile::getSchemaCache(getContext());
-            auto cache_keys = getKeysForSchemaCache(paths_for_schema_cache, *format, format_settings, getContext());
-            schema_cache.addManyColumns(cache_keys, columns);
         }
 
         void setFormatName(const String & format_name) override
@@ -1294,7 +1266,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         format_settings,
         args.getContext());
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
     setInMemoryMetadata(storage_metadata);
 
     supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
@@ -1796,6 +1768,9 @@ void StorageFile::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+        num_streams = context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
+
     if (use_table_fd)
     {
         paths = {""};   /// when use fd, paths are empty

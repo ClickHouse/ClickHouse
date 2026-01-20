@@ -3,7 +3,6 @@
 #include <Columns/ColumnCompressed.h>
 
 #include <IO/WriteHelpers.h>
-#include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -11,8 +10,6 @@
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
-#include <base/sort.h>
-#include <base/scope_guard.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -119,17 +116,16 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
     memset(chars.data() + old_size + length, 0, n - length);
 }
 
-const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
+void ColumnFixedString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpy(chars.data() + old_size, pos, n);
-    return pos + n;
+    in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), n);
 }
 
-const char * ColumnFixedString::skipSerializedInArena(const char * pos) const
+void ColumnFixedString::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + n;
+    in.ignore(n);
 }
 
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
@@ -219,7 +215,7 @@ size_t ColumnFixedString::estimateCardinalityInPermutedRange(const Permutation &
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
+        auto value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
@@ -311,6 +307,69 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     }
 
     return res;
+}
+
+void ColumnFixedString::filter(const IColumn::Filter & filt)
+{
+    size_t col_size = size();
+    if (col_size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), col_size);
+
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + col_size;
+    const auto * data_pos = chars.data();
+    auto * res_data_pos = chars.data();
+    size_t res_chars_size = 0;
+
+    /** A slightly more optimized version.
+        * Based on the assumption that often pieces of consecutive values
+        *  completely pass or do not pass the filter.
+        * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+        */
+    static constexpr size_t SIMD_BYTES = 64;
+    const UInt8 * filt_end_aligned = filt_pos + col_size / SIMD_BYTES * SIMD_BYTES;
+    const size_t chars_per_simd_elements = SIMD_BYTES * n;
+
+    while (filt_pos < filt_end_aligned)
+    {
+        uint64_t mask = bytes64MaskToBits64Mask(filt_pos);
+
+        if (0xffffffffffffffff == mask)
+        {
+            memmove(res_data_pos + res_chars_size, data_pos, chars_per_simd_elements);
+            res_chars_size += chars_per_simd_elements;
+        }
+        else
+        {
+            while (mask)
+            {
+                size_t index = std::countr_zero(mask);
+                memmove(res_data_pos + res_chars_size, data_pos + index * n, n);
+                res_chars_size += n;
+            #ifdef __BMI__
+                mask = _blsr_u64(mask);
+            #else
+                mask = mask & (mask-1);
+            #endif
+            }
+        }
+        data_pos += chars_per_simd_elements;
+        filt_pos += SIMD_BYTES;
+    }
+
+    while (filt_pos < filt_end)
+    {
+        if (*filt_pos)
+        {
+            memmove(res_data_pos + res_chars_size, data_pos, n);
+            res_chars_size += n;
+        }
+
+        ++filt_pos;
+        data_pos += n;
+    }
+
+    chars.resize_assume_reserved(res_chars_size);
 }
 
 void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
