@@ -2369,7 +2369,6 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseOfRunningHasPrio
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationCancelPendingAllocation)
 {
-    // TODO(serxa): this test is flaky - https://pastila.nl/?000db1e0/48461ddb885d2ba64843eecc1bdaf9fc#s0WpBcUsPWv+lwQ97WBMTQ==
     ResourceTest t;
 
     t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");

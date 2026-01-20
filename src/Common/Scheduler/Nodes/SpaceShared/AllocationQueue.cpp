@@ -249,8 +249,10 @@ void AllocationQueue::processActivation()
         std::lock_guard lock(mutex);
 
         // Remove allocation if necessary
-        for (auto & allocation : removing_allocations)
+        while (!removing_allocations.empty())
         {
+            ResourceAllocation & allocation = removing_allocations.front();
+            removing_allocations.pop_front(); // Unlink before calling allocationFailed() to avoid use-after-free race
             if (allocation.pending_hook.is_linked()) // Allocation is still pending - cancel it
             {
                 pending_allocations.erase(pending_allocations.iterator_to(allocation));
@@ -259,7 +261,6 @@ void AllocationQueue::processActivation()
             }
             // else: allocation is now running - it is responsibility of allocation to decrease itself to zero in this case
         }
-        removing_allocations.clear();
 
         // Update requests
         if (setIncrease())
