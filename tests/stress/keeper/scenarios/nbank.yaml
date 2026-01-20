@@ -8,7 +8,7 @@ scenarios:
     topology: 3
     pre:
       - { kind: nbank_seed, on: leader, accounts: 200, initial: 50 }
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: nbank_transfers, on: leader, count: 2000, max_amount: 5, seed: 12345 }
     gates:
@@ -20,7 +20,8 @@ scenarios:
     topology: 3
     pre:
       - { kind: nbank_seed, on: leader, accounts: 100, initial: 100 }
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - kind: parallel
         steps:

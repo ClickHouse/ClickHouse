@@ -32,9 +32,6 @@ def load_files(files_arg):
         files = [SCN_BASE / p.strip() for p in env_target.split(",") if p.strip()]
     else:
         files = [SCN_BASE / env_target]
-    extra = os.environ.get("KEEPER_EXTRA_SCENARIOS", "")
-    for p in [x.strip() for x in extra.split(",") if x.strip()]:
-        files.append(pathlib.Path(p))
     return files
 
 

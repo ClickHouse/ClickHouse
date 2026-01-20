@@ -19,21 +19,24 @@ scenarios:
   - id: IMP-01
     name: fallback_session_lifetime A/B
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    duration: 120
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
 
   - id: IMP-02
     name: TCP_NODELAY A/B
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
 
   - id: IMP-04
     name: async_replication A/B
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
     opts:
@@ -42,14 +45,16 @@ scenarios:
   - id: IMP-05
     name: Health API gating
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    duration: 120
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
 
   - id: IMP-06
     name: async_replication live toggle
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    duration: 120
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
     opts:
@@ -58,7 +63,8 @@ scenarios:
   - id: IMP-07
     name: Feature flags runtime flips
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    duration: 120
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
     opts:

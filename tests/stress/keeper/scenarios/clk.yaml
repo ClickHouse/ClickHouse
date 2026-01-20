@@ -6,7 +6,7 @@ scenarios:
   - id: CLK-01
     name: "±500ms clock skew"
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: clock_skew, on: followers, seconds: 500 }
     gates:
@@ -15,7 +15,7 @@ scenarios:
   - id: CLK-02
     name: "±1000ms skew edges"
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: time_strobe, on: followers, swings: 6, step_s: 500, interval_s: 5 }
     gates:

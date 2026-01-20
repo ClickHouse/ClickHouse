@@ -6,7 +6,7 @@ scenarios:
   - id: CFG-02
     name: Readiness lifecycle
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: rcvr, on: leader }
       - { kind: expect_ready, on: leader, ok: false }
@@ -16,7 +16,7 @@ scenarios:
   - id: CFG-03
     name: 4LW allowlist
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
       - { type: fourlw_enforces, allow: ["ruok", "mntr", "stat"], deny: ["conf", "srvr", "cons"] }
@@ -26,14 +26,14 @@ scenarios:
   - id: CFG-04
     name: Hostname checks
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
 
   - id: CFG-05
     name: IPv6 end-to-end
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
     opts:
@@ -42,7 +42,7 @@ scenarios:
   - id: CFG-06
     name: auto_forwarding=false semantics
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
     opts:
@@ -51,7 +51,7 @@ scenarios:
   - id: CFG-07
     name: Startup/shutdown timeouts
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
       - { type: coord_timeouts_match, startup: 5000, shutdown: 5000 }
@@ -61,7 +61,7 @@ scenarios:
   - id: CFG-08
     name: Feature flags truth + errors
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
     opts:
@@ -73,7 +73,7 @@ scenarios:
   - id: RCV-01
     name: Recovery mode semantics
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: rcvr, on: leader }
     gates:

@@ -120,18 +120,13 @@ def _parallelize_long_steps(step_list, base_s, dur_s):
 def _effective_duration(s, defaults, cli_duration=None):
     if cli_duration is not None:
         return cli_duration
-    try:
-        w = s.get("workload") or {}
-        wd = w.get("duration")
-        if wd is not None:
-            return int(wd)
-    except Exception:
-        pass
-    try:
-        if isinstance(defaults, dict) and defaults.get("duration") is not None:
-            return int(defaults.get("duration"))
-    except Exception:
-        pass
+    for src in (s, defaults if isinstance(defaults, dict) else {}):
+        dur = src.get("duration") if isinstance(src, dict) else None
+        if dur is not None:
+            try:
+                return int(dur)
+            except (ValueError, TypeError):
+                pass
     return None
 
 
@@ -141,36 +136,31 @@ def apply_file_defaults_to_scenario(s, defaults):
     sc = copy.deepcopy(s)
     if "topology" not in sc and defaults.get("topology") is not None:
         sc["topology"] = defaults.get("topology")
-    if "workload" in sc and isinstance(sc.get("workload"), dict):
-        wl = dict(sc.get("workload") or {})
-        if "duration" not in wl and defaults.get("duration") is not None:
-            wl["duration"] = defaults.get("duration")
-        sc["workload"] = wl
     return sc
 
 
-def build_preset_scenario(s, cli_duration=None):
+def build_preset_scenario(s, duration_s=None):
     if not isinstance(s, dict) or not s.get("preset") or _presets is None:
         return s
-    name = str(s.get("preset")).strip()
+    name = str(s["preset"]).strip()
     fn = getattr(_presets, f"build_{name}", None)
     if fn is None:
         raise AssertionError(f"unknown preset: {name}")
-    args = dict(s.get("preset_args", {}))
-    try:
-        sig = inspect.signature(fn)
-        if cli_duration is not None and "duration_s" in sig.parameters:
-            args["duration_s"] = int(cli_duration)
-    except Exception:
-        pass
-    if s.get("id"):
-        args.setdefault("sid", s.get("id"))
-    if s.get("name"):
-        args.setdefault("name", s.get("name"))
-    if s.get("topology"):
-        args.setdefault("topology", int(s.get("topology", 0)))
-    if s.get("backend"):
-        args.setdefault("backend", s.get("backend"))
+    args = dict(s.get("preset_args") or {})
+    if duration_s is not None and "duration_s" not in args:
+        try:
+            if "duration_s" in inspect.signature(fn).parameters:
+                args["duration_s"] = int(duration_s)
+        except (ValueError, TypeError):
+            pass
+    for src_key, dst_key, conv in (
+        ("id", "sid", None),
+        ("name", "name", None),
+        ("topology", "topology", int),
+        ("backend", "backend", None),
+    ):
+        if (val := s.get(src_key)) is not None:
+            args.setdefault(dst_key, conv(val) if conv else val)
     try:
         return fn(**args)
     except TypeError as e:
@@ -189,10 +179,10 @@ def normalize_scenario_durations(s, defaults=None, cli_duration=None):
         out["_duration_s"] = int(eff_dur)
     except (ValueError, TypeError):
         pass
-    if isinstance(out.get("workload"), dict):
-        wl = dict(out.get("workload") or {})
-        wl["duration"] = int(eff_dur)
-        out["workload"] = wl
+    try:
+        out["duration"] = int(eff_dur)
+    except (ValueError, TypeError):
+        pass
     if (
         cli_duration is not None
         and base_dur is not None
@@ -322,8 +312,6 @@ def _resolve_scenario_files():
         files = [_SCN_BASE / p.strip() for p in env_target.split(",") if p.strip()]
     else:
         files = [_SCN_BASE / env_target]
-    extra = os.environ.get("KEEPER_EXTRA_SCENARIOS", "")
-    files.extend(pathlib.Path(p.strip()) for p in extra.split(",") if p.strip())
     return files
 
 
@@ -333,36 +321,36 @@ def _load_scenarios_from_files(files):
         if not f.exists():
             continue
         d = yaml.safe_load(f.read_text())
-        if not (isinstance(d, dict) and isinstance(d.get("scenarios"), list)):
+        if not isinstance(d, dict) or not isinstance(d.get("scenarios"), list):
             continue
-        defaults = d.get("defaults") if isinstance(d.get("defaults"), dict) else {}
+        defaults = d.get("defaults") or {}
+        if not isinstance(defaults, dict):
+            defaults = {}
         for s in d["scenarios"]:
             if not isinstance(s, dict):
                 continue
             sc = apply_file_defaults_to_scenario(s, defaults)
             if defaults:
-                sc["_defaults"] = dict(defaults)
+                sc["_defaults"] = defaults
             scenarios_raw.append(sc)
     return scenarios_raw
 
 
 def _parse_include_ids(cfg):
-    include_ids_str = _getopt(cfg, "--keeper-include-ids", "KEEPER_INCLUDE_IDS", "") or ""
-    return set(sid for sid in include_ids_str.split(",") if sid)
+    include_ids_str = _getopt(cfg, "--keeper-include-ids", "KEEPER_INCLUDE_IDS", "")
+    return {sid for sid in include_ids_str.split(",") if sid} if include_ids_str else set()
 
 
 def _resolve_matrix_backends(cfg):
     mb_raw = _getopt(cfg, "--matrix-backends", "KEEPER_MATRIX_BACKENDS", "") or ""
-    mb = [x.strip() for x in mb_raw.split(",") if x.strip()]
-    if not mb:
-        cli_backend = _getopt(cfg, "--keeper-backend", "KEEPER_BACKEND", "")
-        if cli_backend:
-            mb = [cli_backend]
-    return mb
+    if mb := [x.strip() for x in mb_raw.split(",") if x.strip()]:
+        return mb
+    cli_backend = _getopt(cfg, "--keeper-backend", "KEEPER_BACKEND", "")
+    return [cli_backend] if cli_backend else []
 
 
 def _resolve_matrix_topologies(cfg):
-    mtops_raw = _getopt(cfg, "--matrix-topologies", "KEEPER_MATRIX_TOPOLOGIES", "") or ""
+    mtops_raw = _getopt(cfg, "--matrix-topologies", "KEEPER_MATRIX_TOPOLOGIES", "")
     return [int(x.strip()) for x in mtops_raw.split(",") if x.strip()]
 
 
@@ -371,7 +359,8 @@ def _build_params(scenarios_raw, *, cli_duration, include_ids, mb, mtops):
     seen_ids = set()
     for s in scenarios_raw:
         defaults = s.pop("_defaults", {}) if isinstance(s, dict) else {}
-        s = build_preset_scenario(s, cli_duration=cli_duration)
+        eff_dur = _effective_duration(s, defaults or {}, cli_duration=cli_duration)
+        s = build_preset_scenario(s, duration_s=eff_dur)
         s = normalize_scenario_durations(s, defaults=defaults, cli_duration=cli_duration)
         sid_val = s.get("id")
         if sid_val in seen_ids:
@@ -382,12 +371,13 @@ def _build_params(scenarios_raw, *, cli_duration, include_ids, mb, mtops):
             continue
         _inject_gate_macros(s)
         _inject_prefix_tags(s)
-        errs = validate_scenario(s)
-        if errs:
-            raise AssertionError(f"Scenario {s.get('id')} invalid: {', '.join(errs)}")
-        seen_ids.add(s.get("id"))
-        for clone in expand_matrix_clones(s, mb, mtops):
-            params.append(pytest.param(clone, id=clone["id"]))
+        if errs := validate_scenario(s):
+            raise AssertionError(f"Scenario {sid_val} invalid: {', '.join(errs)}")
+        seen_ids.add(sid_val)
+        params.extend(
+            pytest.param(clone, id=clone["id"])
+            for clone in expand_matrix_clones(s, mb, mtops)
+        )
     return params
 
 

@@ -5,6 +5,7 @@ class ScenarioBuilder:
         self._topology = int(topology)
         self._backend = backend
         self._workload = {}
+        self._duration = None
         self._pre = []
         self._faults = []
         self._gates = []
@@ -13,8 +14,11 @@ class ScenarioBuilder:
         if step:
             collection.append(step)
 
-    def set_workload_config(self, path, duration):
-        self._workload = {"config": path, "duration": int(duration)}
+    def set_workload_config(self, path):
+        self._workload = {"config": path}
+
+    def set_duration(self, duration_s):
+        self._duration = int(duration_s)
 
     def pre(self, step):
         self._add_step(self._pre, step)
@@ -35,6 +39,8 @@ class ScenarioBuilder:
             "topology": self._topology,
             "backend": self._backend,
         }
+        if self._duration is not None:
+            out["duration"] = int(self._duration)
         if self._workload:
             out["workload"] = dict(self._workload)
         if self._pre:

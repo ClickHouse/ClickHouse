@@ -14,7 +14,6 @@ def main():
     )
     ap.add_argument("--seeds", default=os.environ.get("KEEPER_SEEDS", "1,2"))
     ap.add_argument("--jobs", default=os.environ.get("KEEPER_JOBS", ""))
-    ap.add_argument("--extra", default=os.environ.get("KEEPER_EXTRA_SCENARIOS", ""))
     ap.add_argument("--include-ids", default=os.environ.get("KEEPER_INCLUDE_IDS", ""))
     ap.add_argument(
         "--matrix-backends", default=os.environ.get("KEEPER_MATRIX_BACKENDS", "")
@@ -52,8 +51,6 @@ def main():
         env["KEEPER_COORD_OVERRIDES_XML"] = args.coord_overrides_xml
     if args.keep_on_fail:
         env["KEEPER_KEEP_ON_FAIL"] = "1"
-    if args.extra:
-        env.setdefault("KEEPER_EXTRA_SCENARIOS", args.extra)
     if args.include_ids:
         env.setdefault("KEEPER_INCLUDE_IDS", args.include_ids)
     base = [sys.executable, "-m", "pytest", "-q"]

@@ -6,7 +6,7 @@ scenarios:
   - id: DF-01
     name: ENOSPC + leader kill
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: enospc, on: leader, size_mb: 2048 }
       - { kind: kill, on: leader }
@@ -16,7 +16,8 @@ scenarios:
   - id: DF-02
     name: Partition + disk delay
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: partition_symmetric, on: leader, duration_s: 30 }
       - { kind: dm_delay, on: all, ms: 10, duration_s: 120 }
