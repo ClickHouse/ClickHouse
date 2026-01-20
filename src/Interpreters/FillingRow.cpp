@@ -85,7 +85,9 @@ Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_
 {
     Field shifted_value = row[column_ind];
 
-    for (int32_t step_len = 1, step_no = 0; step_no < 100 && step_len > 0 && step_len < INT32_MAX/2; ++step_no)
+    int32_t step_len;
+    int32_t step_no;
+    for (step_len = 1, step_no = 0; step_no < 100 && step_len > 0 && step_len < INT32_MAX/2; ++step_no)
     {
         Field next_value = shifted_value;
         descr.step_func(next_value, step_len);
@@ -103,6 +105,7 @@ Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_
         }
     }
 
+    logDebug("jumped to next value: {} (step_no: {}, step_len: {})", shifted_value, step_no, step_len);
     return shifted_value;
 }
 
@@ -244,7 +247,6 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
             return false;
 
         Field next_value = doLongJump(getFillDescription(pos), pos, next_original_row[pos]);
-        logDebug("jumped to next value: {}", next_value);
 
         row[pos] = std::move(next_value);
 
