@@ -21,7 +21,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/CurrentThread.h>
+#include <Common/CurrentThread.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <ranges>
