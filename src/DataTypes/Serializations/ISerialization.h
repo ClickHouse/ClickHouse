@@ -70,6 +70,7 @@ public:
         SPARSE = 1,
         DETACHED = 2,
         REPLICATED = 3,
+        FSST = 4,
     };
 
     /// We can have multiple serialization kinds created over each other.
@@ -192,6 +193,7 @@ public:
 
             Fsst,
             FsstOffsets,
+            FsstCompressed,
 
             StringSizes,
             InlinedStringSizes,

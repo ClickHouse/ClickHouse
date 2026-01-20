@@ -2,18 +2,18 @@
 #include <cstring>
 #include <memory>
 #include <optional>
-#include <ostream>
-#include "Common/Exception.h"
-#include "Common/PODArray.h"
-#include "Common/PODArray_fwd.h"
-#include "Common/assert_cast.h"
-#include "Columns/ColumnFSST.h"
-#include "Columns/ColumnString.h"
-#include "Columns/IColumn_fwd.h"
-#include "Core/Field.h"
-#include "DataTypes/Serializations/ISerialization.h"
-#include "SerializationStringFsst.h"
-#include "base/types.h"
+
+#include <Columns/ColumnFSST.h>
+#include <Columns/ColumnString.h>
+#include <Columns/IColumn_fwd.h>
+#include <Core/Field.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationStringFsst.h>
+#include <base/types.h>
+#include <Common/Exception.h>
+#include <Common/PODArray.h>
+#include <Common/PODArray_fwd.h>
+#include <Common/assert_cast.h>
 
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
@@ -24,10 +24,10 @@ namespace DB
 
 struct fsst_decoder_t
 {
-    unsigned long long version;
+    unsigned long long version; // NOLINT
     unsigned char zero_terminated;
     unsigned char len[255];
-    unsigned long long symbol[255];
+    unsigned long long symbol[255]; // NOLINT
 };
 
 struct SerializeFsstState : public ISerialization::SerializeBinaryBulkState
@@ -92,7 +92,7 @@ void SerializationStringFsst::serializeState(SerializeBinaryBulkSettings & setti
         throw Exception(ErrorCodes::INCORRECT_DATA, "No compressed strings offsets stream");
     settings.path.pop_back();
 
-    settings.path.push_back(Substream::Regular);
+    settings.path.push_back(Substream::FsstCompressed);
     auto * compressed_data_stream = settings.getter(settings.path);
     if (!compressed_data_stream)
         throw Exception(ErrorCodes::INCORRECT_DATA, "No compressed data stream");
@@ -127,7 +127,7 @@ void SerializationStringFsst::serializeState(SerializeBinaryBulkSettings & setti
     fsst_compress(
         fsst_encoder,
         strings,
-        reinterpret_cast<unsigned long *>(origin_lengths.data()),
+        reinterpret_cast<unsigned long *>(origin_lengths.data()), // NOLINT
         string_pointers.get(),
         compressed_data.size(),
         reinterpret_cast<unsigned char *>(compressed_data.data()),
@@ -168,7 +168,7 @@ size_t SerializationStringFsst::deserializeState(DeserializeBinaryBulkSettings &
         throw Exception(ErrorCodes::INCORRECT_DATA, "No compressed strings offsets stream");
     settings.path.pop_back();
 
-    settings.path.push_back(Substream::Regular);
+    settings.path.push_back(Substream::FsstCompressed);
     auto * compressed_data_stream = settings.getter(settings.path);
     if (!compressed_data_stream)
         throw Exception(ErrorCodes::INCORRECT_DATA, "No compressed data stream");
@@ -207,6 +207,23 @@ size_t SerializationStringFsst::deserializeState(DeserializeBinaryBulkSettings &
     return decoder_read_bytes + metadata_bytes_read + compressed_bytes_read;
 }
 
+ISerialization::KindStack SerializationStringFsst::getKindStack() const
+{
+    auto kind_stack = nested->getKindStack();
+    kind_stack.push_back(Kind::FSST);
+    return kind_stack;
+}
+
+SerializationPtr SerializationStringFsst::SubcolumnCreator::create(const SerializationPtr & string_nested, const DataTypePtr &) const
+{
+    return std::make_shared<SerializationStringFsst>(string_nested);
+}
+
+ColumnPtr SerializationStringFsst::SubcolumnCreator::create(const ColumnPtr & prev) const
+{
+    return ColumnFSST::create(prev);
+}
+
 void SerializationStringFsst::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & /*data*/) const
 {
@@ -221,7 +238,8 @@ void SerializationStringFsst::enumerateStreams(
     settings.path.pop_back();
 
     // compressed strings data stream
-    settings.path.push_back(Substream::Regular);
+    settings.path.push_back(Substream::FsstCompressed);
+    settings.path.back().creator = std::make_shared<SubcolumnCreator>(ColumnString::create());
     callback(settings.path);
     settings.path.pop_back();
 }
@@ -261,7 +279,7 @@ void SerializationStringFsst::deserializeBinaryBulkWithMultipleStreams(
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
-    SubstreamsCache * cache) const
+    SubstreamsCache * /* cache */) const
 {
     auto & column_fsst = assert_cast<ColumnFSST &>(*column->assumeMutable());
 

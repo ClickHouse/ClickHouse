@@ -2,12 +2,15 @@
 
 #include <cstddef>
 #include <memory>
-#include "Common/COW.h"
-#include "Common/WeakHash.h"
+
+#include <Common/COW.h>
+#include <Common/WeakHash.h>
 #include <Common/PODArray.h>
-#include "Columns/IColumn.h"
-#include "DataTypes/SerializationStringFsst.h"
-#include "base/types.h"
+#include <Columns/ColumnString.h>
+#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
+#include <DataTypes/Serializations/SerializationStringFsst.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -27,13 +30,14 @@ private:
     friend class COWHelper<IColumnHelper<ColumnFSST>, ColumnFSST>;
     friend class COW<IColumn>;
 
-    struct BatchDsc {
+    struct BatchDsc
+    {
         std::shared_ptr<fsst_decoder_t> decoder;
         size_t batch_start_index;
     };
 
     WrappedPtr string_column;
-    PODArray<UInt64> origin_lengths;
+    std::vector<UInt64> origin_lengths;
     std::vector<BatchDsc> decoders;
 
     explicit ColumnFSST(MutableColumnPtr && _string_column)
@@ -55,7 +59,11 @@ private:
     void decompressField(Field & x, size_t size) const;
 
     std::optional<size_t> batchByRow(size_t row) const;
+
 public:
+    using Base = COWHelper<IColumnHelper<ColumnFSST>, ColumnFSST>;
+    static Ptr create(const ColumnPtr & nested) { return Base::create(nested->assumeMutable()); }
+
     std::string getName() const override { return "FixedString(FSST)"; }
     const char * getFamilyName() const override { return "FixedString"; }
     TypeIndex getDataType() const override { return TypeIndex::FixedString; }
@@ -67,7 +75,7 @@ public:
 
     DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwNotImplemented(); }
 
-    [[nodiscard]] StringRef getDataAt(size_t) const override { throwNotSupported(); }
+    [[nodiscard]] std::string_view getDataAt(size_t) const override { throwNotSupported(); }
     [[nodiscard]] bool isDefaultAt(size_t n) const override;
 
     void insert(const Field & x) override;
@@ -77,14 +85,20 @@ public:
 
     void popBack(size_t n) override;
 
-    [[nodiscard]] const char * deserializeAndInsertFromArena(const char * /* pos */) override { throwNotImplemented(); }
-    [[nodiscard]] const char * skipSerializedInArena(const char *) const override { throwNotImplemented(); }
+    MutableColumnPtr cloneEmpty() const override { return create(ColumnString::create())->assumeMutable(); }
+
+    void deserializeAndInsertFromArena(ReadBuffer & /* in */, const SerializationSettings * /* settings */) override
+    {
+        throwNotImplemented();
+    }
+    void skipSerializedInArena(ReadBuffer & /* in */) const override { throwNotImplemented(); }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override { string_column->updateHashWithValue(n, hash); }
     WeakHash32 getWeakHash32() const override { return string_column->getWeakHash32(); }
     void updateHashFast(SipHash & hash) const override { string_column->updateHashFast(hash); }
 
     [[nodiscard]] ColumnPtr filter(const Filter & /* filt */, ssize_t /* result_size_hint */) const override { throwNotImplemented(); }
+    void filter(const Filter & /* filt */) override { throwNotImplemented(); }
     void expand(const Filter & /*mask*/, bool /*inverted*/) override { throwNotImplemented(); }
     [[nodiscard]] ColumnPtr permute(const Permutation & /* perm */, size_t /* limit */) const override { throwNotImplemented(); }
     [[nodiscard]] ColumnPtr index(const IColumn & /* indexes */, size_t /* limit */) const override { throwNotImplemented(); }
@@ -146,8 +160,8 @@ public:
 
     WrappedPtr getStringColumn() const { return string_column; }
 
-    void append(const CompressedField& x);
-    void appendNewBatch(const CompressedField& x, std::shared_ptr<fsst_decoder_t> decoder);
+    void append(const CompressedField & x);
+    void appendNewBatch(const CompressedField & x, std::shared_ptr<fsst_decoder_t> decoder);
 
     [[noreturn]] static void throwNotImplemented()
     {

@@ -46,8 +46,8 @@ void ColumnFSST::get(size_t n, Field & res) const
     String uncompressed_string(origin_lengths[n], ' ');
     fsst_decompress(
         reinterpret_cast<::fsst_decoder_t*>(batch_dsc.decoder.get()),
-        compressed_data.size,
-        reinterpret_cast<const unsigned char *>(compressed_data.data),
+        compressed_data.size(),
+        reinterpret_cast<const unsigned char *>(compressed_data.data()),
         origin_lengths[n],
         reinterpret_cast<unsigned char *>(uncompressed_string.data()));
     res = std::move(uncompressed_string);
@@ -95,7 +95,7 @@ void ColumnFSST::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size
 
 size_t ColumnFSST::byteSize() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO");
+    return string_column->byteSize() + origin_lengths.size() * sizeof(UInt64) + decoders.size() * sizeof(BatchDsc);
 }
 
 size_t ColumnFSST::byteSizeAt(size_t  /*n*/) const
