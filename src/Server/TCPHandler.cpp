@@ -10,7 +10,6 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
-#include <Core/ExternalTable.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -20,15 +19,12 @@
 #include <Formats/NativeWriter.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Progress.h>
-#include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TablesStatus.h>
@@ -42,7 +38,6 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/defines.h>
 #include <base/scope_guard.h>
-#include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -55,11 +50,9 @@
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 
-#include <Columns/ColumnSparse.h>
 
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
@@ -84,8 +77,6 @@
 
 #include <fmt/format.h>
 
-#include <fmt/ostream.h>
-#include <Common/StringUtils.h>
 
 #include <Common/FailPoint.h>
 
@@ -800,12 +791,12 @@ void TCPHandler::runImpl()
             {
                 /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
                 query_state->need_receive_data_for_insert = true;
-                processInsertQuery(*query_state);
+                processInsertQuery(*query_state, *query_scope);
                 query_state->io.onFinish();
             }
             else if (query_state->io.pipeline.pulling())
             {
-                processOrdinaryQuery(*query_state);
+                processOrdinaryQuery(*query_state, *query_scope);
                 query_state->io.onFinish();
             }
             else if (query_state->io.pipeline.completed())
@@ -830,7 +821,12 @@ void TCPHandler::runImpl()
                 /// NOTE: we cannot send Progress for regular INSERT (with VALUES)
                 /// without breaking protocol compatibility, but it can be done
                 /// by increasing revision.
+
                 sendProgress(*query_state);
+
+                /// Log peak memory usage just before sending it to client to make it as accurate as possible
+                /// (though note we may still have some allocations in between, that will make the difference)
+                query_scope->logPeakMemoryUsage();
                 sendSelectProfileEvents(*query_state);
             }
             else
@@ -843,13 +839,13 @@ void TCPHandler::runImpl()
                     create_query && create_query->isCreateQueryWithImmediateInsertSelect())
                 {
                     sendProgress(*query_state);
+
+                    /// Log peak memory usage just before sending it to client to make it as accurate as possible
+                    /// (though note we may still have some allocations in between, that will make the difference)
+                    query_scope->logPeakMemoryUsage();
                     sendSelectProfileEvents(*query_state);
                 }
             }
-
-            /// Do it before sending end of stream, to have a chance to show log message in client.
-            query_scope->logPeakMemoryUsage();
-
             sendLogs(*query_state);
             sendEndOfStream(*query_state);
 
@@ -996,6 +992,8 @@ void TCPHandler::runImpl()
                 return;
             }
 
+            /// We close the connection after an exception if there is something wrong with the connection,
+            /// otherwise we try to preserve it and reuse for other queries.
             if (exception->code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT || exception->code() == ErrorCodes::USER_EXPIRED
                 || exception->code() == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED)
             {
@@ -1003,10 +1001,15 @@ void TCPHandler::runImpl()
                 query_state->finalizeOut(out);
                 return;
             }
-            else
+
+            if (in->isCanceled())
             {
-                LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
+                LOG_DEBUG(log, "Going to close connection because the input stream was canceled");
+                query_state->finalizeOut(out);
+                return;
             }
+
+            LOG_TRACE(log, "Logs and exception has been sent. The connection is preserved.");
         }
 
         query_state->finalizeOut(out);
@@ -1186,6 +1189,9 @@ void TCPHandler::readTemporaryTables(QueryState & state)
 
 void TCPHandler::skipData(QueryState & state)
 {
+    if (in->isCanceled())
+        return;
+
     state.skipping_data = true;
     SCOPE_EXIT({ state.skipping_data = false; });
 
@@ -1261,7 +1267,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
 }
 
 
-void TCPHandler::processInsertQuery(QueryState & state)
+void TCPHandler::processInsertQuery(QueryState & state, CurrentThread::QueryScope & query_scope)
 {
     size_t num_threads = state.io.pipeline.getNumThreads();
 
@@ -1350,11 +1356,14 @@ void TCPHandler::processInsertQuery(QueryState & state)
         run_executor(executor, std::move(processed_block));
     }
 
+    /// Log peak memory usage just before sending it to client to make it as accurate as possible
+    /// (though note we may still have some allocations in between, that will make the difference)
+    query_scope.logPeakMemoryUsage();
     sendInsertProfileEvents(state);
 }
 
 
-void TCPHandler::processOrdinaryQuery(QueryState & state)
+void TCPHandler::processOrdinaryQuery(QueryState & state, CurrentThread::QueryScope & query_scope)
 {
     auto & pipeline = state.io.pipeline;
 
@@ -1436,6 +1445,10 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
         sendProfileInfo(state, executor.getProfileInfo());
         sendProgress(state);
         sendLogs(state);
+
+        /// Log peak memory usage just before sending it to client to make it as accurate as possible
+        /// (though note we may still have some allocations in between, that will make the difference)
+        query_scope.logPeakMemoryUsage();
         sendSelectProfileEvents(state);
 
         sendData(state, {});

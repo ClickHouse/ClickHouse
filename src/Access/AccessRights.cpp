@@ -919,7 +919,13 @@ private:
         const AccessFlags & parent_flags_go,
         String path)
     {
-        auto grantable_flags = ::DB::getAllGrantableFlags(static_cast<Level>(full_name.size()));
+        Node * target_node = node;
+        if (!target_node)
+            target_node = node_go;
+
+        auto grantable_flags = target_node
+            ? ::DB::getAllGrantableFlags(target_node->level)
+            : ::DB::getAllGrantableFlags(static_cast<Level>(full_name.size()));
         auto parent_fl = parent_flags & grantable_flags;
         auto parent_fl_go = parent_flags_go & grantable_flags;
         auto flags = node ? node->flags : parent_fl;
@@ -928,10 +934,6 @@ private:
         auto revokes_go = parent_fl_go - flags_go - revokes;
         auto grants_go = flags_go - parent_fl_go;
         auto grants = flags - parent_fl - grants_go;
-
-        Node * target_node = node;
-        if (!target_node)
-            target_node = node_go;
 
         /// Inserts into result only meaningful nodes (e.g. wildcards or leafs).
         if (target_node && (target_node->isLeaf() || target_node->wildcard_grant))

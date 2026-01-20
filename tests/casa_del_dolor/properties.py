@@ -384,6 +384,7 @@ cache_storage_properties = {
     "background_download_threads": threads_lambda,
     "boundary_alignment": threshold_generator(0.2, 0.2, 0, 128),
     "cache_on_write_operations": true_false_lambda,
+    "check_cache_probability": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "enable_bypass_cache_with_threshold": true_false_lambda,
     "enable_filesystem_query_cache_limit": true_false_lambda,
     "keep_free_space_elements_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),

@@ -422,9 +422,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
     else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
     {
-        /// In this case we can also push down to left side of JOIN using equivalent sets.
-        for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
-            equivalent_columns_to_push_down.push_back(name);
+        if (!logical_join->typeChangingSides().contains(JoinTableSide::Left))
+        {
+            /// In this case we can also push down to left side of JOIN using equivalent sets.
+            for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
+                equivalent_columns_to_push_down.push_back(name);
+        }
     }
 
     if (right_stream_filter_push_down_input_columns_available)
@@ -434,9 +437,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
     else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
     {
-        /// In this case we can also push down to right side of JOIN using equivalent sets.
-        for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
-            equivalent_columns_to_push_down.push_back(name);
+        if (!logical_join->typeChangingSides().contains(JoinTableSide::Right))
+        {
+            /// In this case we can also push down to right side of JOIN using equivalent sets.
+            for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
+                equivalent_columns_to_push_down.push_back(name);
+        }
     }
 
     const bool is_filter_column_const_before = isFilterColumnConst(*filter);
