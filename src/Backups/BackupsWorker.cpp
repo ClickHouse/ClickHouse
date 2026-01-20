@@ -877,8 +877,11 @@ struct BackupsWorker::RestoreStarter
         if (is_internal_restore && (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY))
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
-        /// RESTORE is a write operation, it should be forbidden in readonly mode.
-        if (query_context->getSettingsRef()[Setting::readonly])
+        /// RESTORE is a write operation, it should be forbidden in strict readonly mode (readonly=1).
+        /// Note: readonly=2 allows changing settings but still restricts writes - however it's set automatically
+        /// by the HTTP interface for GET requests (to protect against accidental writes), so we only block readonly=1
+        /// which is explicitly set by the user to enforce read-only mode.
+        if (query_context->getSettingsRef()[Setting::readonly] == 1)
             throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot execute RESTORE in readonly mode");
 
         on_cluster = !restore_query->cluster.empty() || is_internal_restore;
