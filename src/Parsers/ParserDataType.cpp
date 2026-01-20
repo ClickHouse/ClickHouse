@@ -312,7 +312,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto saved_pos = pos;
         ++pos;
 
-        auto enum_node = std::make_intrusive<ASTEnumDataType>();
+        auto enum_node = make_intrusive<ASTEnumDataType>();
         enum_node->name = type_name;
 
         if (parseEnumValues(pos, enum_node->values, expected) && pos->type == TokenType::ClosingRoundBracket)
@@ -325,7 +325,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         pos = saved_pos;
     }
 
-    auto data_type_node = std::make_intrusive<ASTDataType>();
+    auto data_type_node = make_intrusive<ASTDataType>();
     data_type_node->name = type_name;
 
     if (pos->type != TokenType::OpeningRoundBracket)

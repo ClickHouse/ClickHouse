@@ -14,7 +14,7 @@ struct StackDecrementer
     }
 };
 
-struct ASTCounting : public DB::IAST, public StackDecrementer
+struct ASTCounting : public StackDecrementer, public DB::IAST
 {
     explicit ASTCounting(size_t & depth_) : StackDecrementer(depth_) {}
 
