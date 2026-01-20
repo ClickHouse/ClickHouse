@@ -6,11 +6,10 @@
 
 #include <Interpreters/ActionsDAG.h>
 
-#include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerContext.h>
-#include <Planner/PlannerCorrelatedSubqueries.h>
-#include <Planner/PlannerQueryProcessingInfo.h>
+#include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerWindowFunctions.h>
+#include <Planner/PlannerQueryProcessingInfo.h>
 
 namespace DB
 {
@@ -18,7 +17,6 @@ namespace DB
 struct ProjectionAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr projection_actions;
-    CorrelatedSubtrees correlated_subtrees;
     Names projection_column_names;
     NamesWithAliases projection_column_names_with_display_aliases;
     ActionsAndProjectInputsFlagPtr project_names_actions;
@@ -27,7 +25,6 @@ struct ProjectionAnalysisResult
 struct FilterAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr filter_actions;
-    CorrelatedSubtrees correlated_subtrees;
     std::string filter_column_name;
     bool remove_filter_column = false;
 };
@@ -51,7 +48,6 @@ struct SortAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_order_by_actions;
     bool has_with_fill = false;
-    ActionsAndProjectInputsFlagPtr before_interpolate_actions;
 };
 
 struct LimitByAnalysisResult

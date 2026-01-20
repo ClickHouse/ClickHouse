@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
+#include "ReplicatedMergeTreeMutationEntry.h"
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -18,8 +18,9 @@ using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjecti
 /// Since 22.11 it creates single ephemeral node with `path_prefix` that references persistent fake "secondary node".
 class EphemeralLockInZooKeeper : public boost::noncopyable
 {
-    friend EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
-        const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_path,
+    template<typename T>
+    friend std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
+        const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path,
         const std::optional<String> & znode_data);
 
 protected:
@@ -93,8 +94,9 @@ private:
     String conflict_path;
 };
 
-EphemeralLockInZooKeeper createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_paths,
+template<typename T>
+std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path,
     const std::optional<String> & znode_data);
 
 /// Acquires block number locks in all partitions.
@@ -102,10 +104,7 @@ class EphemeralLocksInAllPartitions : public boost::noncopyable
 {
 public:
     EphemeralLocksInAllPartitions(
-        const String & block_numbers_path,
-        const String & path_prefix,
-        const String & temp_path,
-        const std::optional<String> & znode_data,
+        const String & block_numbers_path, const String & path_prefix, const String & temp_path,
         zkutil::ZooKeeper & zookeeper_);
 
     EphemeralLocksInAllPartitions() = default;
@@ -153,26 +152,23 @@ public:
     PartitionBlockNumbersHolder(const PartitionBlockNumbersHolder &) = delete;
     PartitionBlockNumbersHolder & operator=(const PartitionBlockNumbersHolder &) = delete;
 
-    PartitionBlockNumbersHolder(PartitionBlockNumbersHolder &&) = default;
-    PartitionBlockNumbersHolder & operator=(PartitionBlockNumbersHolder &&) = default;
-
     using BlockNumbersType = ReplicatedMergeTreeMutationEntry::BlockNumbersType;
 
     PartitionBlockNumbersHolder() = default;
-
     PartitionBlockNumbersHolder(
         BlockNumbersType block_numbers_, std::optional<EphemeralLocksInAllPartitions> locked_block_numbers_holder)
         : block_numbers(std::move(block_numbers_))
         , multiple_partitions_holder(std::move(locked_block_numbers_holder))
     {
     }
-
     PartitionBlockNumbersHolder(
         BlockNumbersType block_numbers_, std::optional<EphemeralLockInZooKeeper> locked_block_numbers_holder)
         : block_numbers(std::move(block_numbers_))
         , single_partition_holder(std::move(locked_block_numbers_holder))
     {
     }
+
+    PartitionBlockNumbersHolder & operator=(PartitionBlockNumbersHolder &&) = default;
 
     const BlockNumbersType & getBlockNumbers() const { return block_numbers; }
 

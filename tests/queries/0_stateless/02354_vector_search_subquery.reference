@@ -1,60 +1,45 @@
 Expression (Project names)
-  Expression
-    JoinLazyColumnsStep
-      Limit (preliminary LIMIT)
-        Sorting (Sorting for ORDER BY)
-          Expression
-            Expression
-              ReadFromMergeTree (default.tab)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 2/4
-                Ranges: 1
-      LazilyReadFromMergeTree
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
 Expression (Project names)
-  Expression
-    JoinLazyColumnsStep
-      Limit (preliminary LIMIT)
-        Sorting (Sorting for ORDER BY)
-          Expression
-            Expression
-              ReadFromMergeTree (default.tab)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 2/4
-                Ranges: 2
-      LazilyReadFromMergeTree
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4
 Expression (Project names)
-  Expression
-    JoinLazyColumnsStep
-      Limit (preliminary LIMIT)
-        Sorting (Sorting for ORDER BY)
-          Expression
-            Expression
-              ReadFromMergeTree (default.tab)
-              Indexes:
-                PrimaryKey
-                  Condition: true
-                  Parts: 1/1
-                  Granules: 4/4
-                Skip
-                  Name: idx
-                  Description: vector_similarity GRANULARITY 2
-                  Parts: 1/1
-                  Granules: 2/4
-                Ranges: 1
-      LazilyReadFromMergeTree
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          PrimaryKey
+            Condition: true
+            Parts: 1/1
+            Granules: 4/4
+          Skip
+            Name: idx
+            Description: vector_similarity GRANULARITY 2
+            Parts: 1/1
+            Granules: 2/4

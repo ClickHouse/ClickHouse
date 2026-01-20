@@ -29,6 +29,7 @@
     Also, it can provide visual indication that credentials are correct.
 
     Nice to have:
+    - resizable columns
     - display totals
     - show/hide the editor
     - check for readonly
@@ -49,7 +50,6 @@
             --element-color-ok: #080;
             --element-background-color-fail: #FEE;
             --bar-color: #FF8; /* Light bar in background of table cells. */
-            --bar-color-negative: #FEE;
             --border-color: #CCC;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --button-color: #FF0;
@@ -68,9 +68,6 @@
 
             --progress-color: #0C4;
             --progress: 0%;
-
-            --selection-color: #FFF;
-            --selection-background-color: #456;
         }
 
         [data-theme="dark"] {
@@ -80,7 +77,6 @@
             --element-color-ok: #8F8;
             --element-background-color-fail: #300;
             --bar-color: #320;
-            --bar-color-negative: #311;
             --border-color: #444;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --text-color: #CCC;
@@ -99,14 +95,6 @@
             --menu-toggle-color: #FF0;
 
             --progress-color: #FF0;
-
-            --selection-color: #000;
-            --selection-background-color: #FF8;
-        }
-
-        ::selection {
-            color: var(--selection-color);
-            background-color: var(--selection-background-color);
         }
 
         *
@@ -124,7 +112,6 @@
             margin: 0;
             /* This enables position: sticky on controls */
             overflow: auto;
-            scrollbar-color: var(--border-color) var(--element-background-color);
         }
 
         html
@@ -158,9 +145,6 @@
         #main
         {
             overflow: auto;
-            grid-area: main;
-            padding: 0.5rem;
-            position: relative; /* for stacking context */
         }
 
         .menu-icon
@@ -209,9 +193,7 @@
             padding: 0;
             user-select: none;
             color: var(--text-color);
-            &:hover {
-                text-decoration: 1px underline dotted var(--text-color);
-            }
+            border-bottom: 1px dashed var(--text-color);
         }
 
         .database button:hover
@@ -251,7 +233,7 @@
         .table-addendum
         {
             position: absolute;
-            z-index: 999;
+            z-index: 1;
             display: none;
             white-space: pre;
             transform: translate(0.25rem, calc(-50% + 0.5em));
@@ -279,13 +261,10 @@
             display: inline-block;
         }
 
-        .table-addendum-elem
+        #main
         {
-            display: block;
-            cursor: pointer;
-            &:hover {
-                text-decoration: 1px underline dotted var(--element-background-color);
-            }
+            grid-area: main;
+            padding: 0.5rem;
         }
 
         #controls
@@ -340,7 +319,6 @@
             max-width: 100%;
             margin-top: -1px; /* To compensate the border. */
             contain: strict; /* Less input lag even if the table is large. */
-            resize: none; /* Disable default browser resizer */
         }
 
         #inputs
@@ -375,8 +353,8 @@
             display: grid;
             place-items: center;
             gap: 1rem;
-            grid-template-columns: auto auto auto 1fr auto auto auto;
-            grid-template-areas: "run hint hourglass progress-bar download progress-text theme";
+            grid-template-columns: auto auto auto 1fr auto auto;
+            grid-template-areas: "run hint hourglass progress-bar progress-text theme";
         }
 
         #run
@@ -391,7 +369,7 @@
             font-size: 100%; /* Otherwise button element will have a lower font size. */
         }
 
-        #run:hover, #run:focus, #download-div:hover, #download-div:focus
+        #run:hover, #run:focus
         {
             color: var(--button-active-text-color);
             background-color: var(--button-active-color);
@@ -431,98 +409,6 @@
             color: var(--progress-color);
         }
 
-        #download-div
-        {
-            grid-area: download;
-            display: none;
-            user-select: none;
-            color: var(--button-text-color);
-            background-color: var(--button-color);
-            padding: 0.25rem 0.65rem;
-            cursor: pointer;
-            position: relative;
-        }
-
-        #download
-        {
-            width: 1em;
-            height: 1em;
-        }
-
-        #download-dropdown
-        {
-            display: none;
-            position: absolute;
-            background-color: var(--button-color);
-            border: 1px solid var(--button-text-color);
-            padding: 0.5rem;
-            z-index: 999;
-            box-shadow: 0 4px 6px var(--shadow-color);
-        }
-
-        #download-dropdown.show
-        {
-            display: block;
-        }
-
-        .download-option
-        {
-            margin-bottom: 0.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-        }
-
-        .download-option label
-        {
-            color: var(--button-text-color);
-            white-space: nowrap;
-            margin-right: 0.5rem;
-        }
-
-        .download-option select,
-        #download-format-other
-        {
-            flex: 1;
-            padding: 0.25rem;
-            background-color: var(--element-background-color);
-            color: var(--text-color);
-            border: 1px solid var(--shadow-color);
-
-            &:focus {
-                outline: none;
-            }
-        }
-
-        #download-format-other
-        {
-            display: none;
-            margin-top: 0.25rem;
-            margin-bottom: 0.5rem;
-        }
-
-        #download-format-other.show
-        {
-            display: block;
-        }
-
-        #download-button
-        {
-            width: 100%;
-            margin-top: 0rem;
-            padding: 0.5rem 0.5rem;
-            background-color: var(--element-background-color);
-            color: var(--text-color);
-            border: none;
-            cursor: pointer;
-            font-weight: bold;
-
-            &:hover {
-                background-color: var(--button-active-color);
-                color: var(--button-active-text-color);
-            }
-        }
-
         #progress
         {
             display: none;
@@ -558,24 +444,12 @@
             background-color: var(--element-background-color);
         }
 
-        #data_div.fixed
-        {
-            width: fit-content;
-        }
-
         #data-table
         {
             width: 100%;
             border-spacing: 0;
             background-color: var(--element-background-color);
-            border-collapse: collapse;
         }
-
-        #data-table.fixed
-        {
-            table-layout: fixed;
-            width: var(--table-width);
-         }
 
         /* Will be displayed when user specified custom format. */
         #data-unparsed
@@ -621,67 +495,23 @@
             border: 1px solid var(--border-color);
         }
 
-        th .name {
-            display: block;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
         .type-hint
         {
             display: none;
             position: absolute;
             user-select: none;
-            left: 0;
-            top: -1px;
-            transform: translateY(-100%);
+            right: 0;
+            top: -1.25em;
             font-size: 75%;
             font-weight: normal;
             color: var(--misc-text-color);
+            z-index: 1;
             background: var(--element-background-color);
-            max-height: 5em;
-            white-space: pre;
         }
 
         th:hover .type-hint
         {
             display: inline-block;
-        }
-
-        .resizer {
-            position: absolute;
-            top: 0;
-            right: -0.3rem;
-            width: 0.5rem;
-            cursor: col-resize;
-            user-select: none;
-            height: 100%;
-        }
-
-        .resizer:hover, .resizer-dragging
-        {
-            border-radius: 0.25rem;
-            background-color: var(--border-color-selected);
-        }
-
-        .textarea-resizer {
-            position: absolute;
-            bottom: -0.3rem;
-            left: 0;
-            width: 100%;
-            height: 0.5rem;
-            cursor: row-resize;
-            user-select: none;
-        }
-
-        .textarea-resizer:hover, .textarea-resizer-dragging
-        {
-            border-radius: 0.25rem;
-            background-color: var(--border-color);
-        }
-
-        #query_div {
-            position: relative;
         }
 
         /* The row under mouse pointer is highlight for better legibility. */
@@ -708,7 +538,13 @@
             white-space: pre-wrap;
             max-width: none;
             outline: 2px solid var(--border-color-selected);
-            outline-offset: -2px;
+        }
+
+        td.transposed
+        {
+            max-width: none;
+            overflow: auto;
+            white-space: pre-wrap;
         }
 
         td.empty-result
@@ -794,8 +630,6 @@
             text-align: center;
             margin-top: 5em;
             line-height: 0.75;
-            position: sticky;
-            left: 0;
         }
 
         #chart
@@ -833,23 +667,15 @@
             color: var(--misc-text-color);
         }
 
-        /* Prevents a different color when Chromium auto-fills inputs from the list. */
-        input:-webkit-autofill,
-        input:-webkit-autofill:hover,
-        input:-webkit-autofill:focus,
-        input:-webkit-autofill:active
-        {
-            transition: background-color 600000s 0s, color 600000s 0s;
-        }
-
         /* This is for charts (uPlot), Copyright (c) 2022 Leon Sorokin, MIT License, https://github.com/leeoniya/uPlot/ */
         .u-wrap {position: relative;user-select: none;}
         .u-over, .u-under, .u-axis {position: absolute;}
         .u-under {overflow: hidden;}
         .uplot canvas {display: block;position: relative;width: 100%;height: 100%;}
-        .u-legend {font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace; border-spacing: 0; border-collapse: collapse;}
+        .u-legend {margin: auto;text-align: center; margin-top: 1em; font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;}
         .u-inline {display: block;}
         .u-inline * {display: inline-block;}
+        .u-inline tr {margin-right: 16px;}
         .u-legend th {font-weight: 600;}
         .u-legend th > * {vertical-align: middle;display: inline-block;}
         .u-legend td { min-width: 13em; }
@@ -883,28 +709,21 @@
         </div>
     </div>
     <div id="main">
-        <form id="controls">
+        <div id="controls">
             <div id="inputs">
-                <input name="url" spellcheck="false" class="monospace shadow" id="url" type="url" value="" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input name="user" spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input name="password" class="monospace shadow" id="password" type="password" placeholder="password" />
+                <input spellcheck="false" class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
             </div>
-            <div id="query_div"><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
+            <div id="query_div"><textarea autofocus spellcheck="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
             <div id="run_div">
-                <button type="submit" class="shadow" id="run">Run</button>
+                <button class="shadow" id="run">Run</button>
                 <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
                 <div id="hourglass">⧗</div>
                 <div id="check-mark">✔</div>
                 <div id="progress"></div>
-                <div id="download-div" class="shadow">
-                    <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="7 10 12 15 17 10"/>
-                        <line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                </div>
                 <div id="stats"></div>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
-        </form>
+        </div>
         <div id="data_div">
             <table class="monospace shadow" id="data-table"></table>
             <pre class="monospace shadow" id="data-unparsed"></pre>
@@ -919,24 +738,6 @@
             </a>
             <a id="cloud-logo" href="https://clickhouse.cloud/">☁</a>
         </p>
-        <div id="download-dropdown">
-            <div>
-                <div class="download-option">
-                    <label for="download-format">Format:</label>
-                    <select id="download-format">
-                        <option value="CSV">CSV</option>
-                        <option value="TSV">TSV</option>
-                        <option value="JSON">JSON</option>
-                        <option value="NDJSON" selected>JSONLines</option>
-                        <option value="Parquet">Parquet</option>
-                        <option value="Markdown">Markdown</option>
-                        <option value="other">Other...</option>
-                    </select>
-                </div>
-                <input type="text" id="download-format-other" placeholder="Enter format name (e.g., Arrow, Avro)" />
-            </div>
-            <button id="download-button">Download</button>
-        </div>
     </div>
 </body>
 
@@ -963,16 +764,12 @@ let url_elem = document.getElementById('url');
 let user_elem = document.getElementById('user');
 let password_elem = document.getElementById('password');
 
-if (url_elem.value == '') {
-    const server_address = current_url.searchParams.get('url');
-    if (server_address) {
-        url_elem.value = server_address;
-    } else if (!opened_locally) {
-        /// Substitute the address of the server where the page is served.
-        url_elem.value = location.origin;
-    } else {
-        url_elem.value = 'http://localhost:8123/';
-    }
+const server_address = current_url.searchParams.get('url');
+if (server_address) {
+    url_elem.value = server_address;
+} else if (!opened_locally) {
+    /// Substitute the address of the server where the page is served.
+    url_elem.value = location.origin;
 }
 
 /// Substitute username if it's specified in the query string
@@ -1067,22 +864,6 @@ async function loadDatabases(server_address, user, password) {
     let databases_elem = document.getElementById('databases');
     while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
 
-    // Use natural order for database names
-    json.data.sort((a, b) => {
-        // Maintain original order for default, system, information_schema
-        const getPriority = (name) => {
-            switch (name) {
-                case 'default': return 0;
-                case 'system': return 2;
-                case 'information_schema': return 3
-                default: return 1;
-            }
-        }
-
-        return getPriority(a.database) - getPriority(b.database)
-            || a.database.localeCompare(b.database, undefined, { numeric: true });
-    });
-
     for (let elem of json.data) {
         let database = document.createElement('div');
         database.className = 'database';
@@ -1134,9 +915,6 @@ async function loadTables(server_address, user, password, database, container) {
 
     let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
 
-    // Use natural order for table names
-    json.data.sort((a, b) => a.table.localeCompare(b.table, undefined, { numeric: true }));
-
     for (let elem of json.data) {
         let table = document.createElement('div');
         table.className = 'table';
@@ -1154,42 +932,25 @@ async function loadTables(server_address, user, password, database, container) {
         let table_addendum = document.createElement('span');
         table_addendum.className = 'table-addendum';
 
-        const set_query_or_run = (e, value) => {
+        let addendum = '';
+        if (+elem.total_bytes) addendum += formatReadableBytes(elem.total_bytes) + '\n';
+        if (+elem.total_rows) addendum += formatReadableRows(elem.total_rows) + ' rows\n';
+        addendum += elem.engine;
+        table_addendum.append(addendum);
+
+        table.appendChild(table_link);
+        table.appendChild(table_addendum);
+        tables_elem.appendChild(table);
+
+        table.addEventListener('click', e => {
+            const value = `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`;
             if (query_area.value == value) {
                 /// Double click will run the query.
                 post();
             } else {
                 query_area.value = value;
             }
-            e.stopPropagation();
-        }
-
-        const show_table_properties = e => set_query_or_run(e, `SELECT * FROM system.tables WHERE database = '${database}' AND table = '${elem.table}'`);
-
-        if (+elem.total_bytes) {
-            let bytes_elem = document.createElement('span');
-            bytes_elem.className = 'table-addendum-elem';
-            bytes_elem.textContent = formatReadableBytes(elem.total_bytes) + '\n';
-            bytes_elem.addEventListener('click', show_table_properties);
-            table_addendum.append(bytes_elem);
-        }
-        if (+elem.total_rows) {
-            let rows_elem = document.createElement('span');
-            rows_elem.className = 'table-addendum-elem';
-            rows_elem.textContent = formatReadableRows(elem.total_rows) + ' rows\n';
-            rows_elem.addEventListener('click', show_table_properties);
-            table_addendum.append(rows_elem);
-        }
-        let engine_elem = document.createElement('span');
-        engine_elem.textContent = elem.engine;
-        engine_elem.className = 'table-addendum-elem';
-        engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
-        table_addendum.append(engine_elem);
-
-        table.appendChild(table_link);
-        table.appendChild(table_addendum);
-        table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
-        tables_elem.appendChild(table);
+        });
     }
 
     if (json.data.length == 0) {
@@ -1235,45 +996,21 @@ function checkCredentials() {
     });
 }
 
-function resetCredentialsStatus() {
-    [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.remove('fail'); });
-}
-
-user_elem.addEventListener('input', resetCredentialsStatus);
-password_elem.addEventListener('input', resetCredentialsStatus);
-
-/// The password is usually copy-pasted.
-/// To not worry about extracting the clipboard data, but use the value instead,
-/// and not worry too much about input/paste race, add the timeout.
-user_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
-password_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
+user_elem.addEventListener('input', checkCredentials);
+password_elem.addEventListener('input', checkCredentials);
 
 
 function queryToColor(str) {
-    let hash = 2166136261;
+    let hash = 0;
     for (let i = 0; i < str.length; i++) {
-        hash ^= str.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash = hash & hash;
     }
 
     /// Limited range to avoid violet colors.
-    return 50 + ((hash >>> 0) % 200);
+    return 50 + Math.abs(hash % 200);
 }
 
-function toBase64(str) {
-    const encoder = new TextEncoder();
-    const bytes = encoder.encode(str);
-    const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
-    return btoa(binary);
-}
-
-function fromBase64(base64) {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) { bytes[i] = binary.charCodeAt(i); }
-    const decoder = new TextDecoder();
-    return decoder.decode(bytes);
-}
 
 let row_idx = 0;
 let elapsed_ns = 0;
@@ -1299,9 +1036,6 @@ async function postImpl(posted_request_num, query)
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     url += '&default_format=' + default_format + '&enable_http_compression=1';
-    /// We will put the result in the query cache, so it can be used when download is initiated later.
-    /// But we don't use cached results, so the results that we get here, are always fresh.
-    url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save';
 
     /// Extremes only if the format is likely to be unchanged. This is imprecise.
     if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
@@ -1309,7 +1043,6 @@ async function postImpl(posted_request_num, query)
     last_query_start = performance.now();
 
     document.getElementById('check-mark').style.display = 'none';
-    document.getElementById('download-div').style.display = 'none';
     document.getElementById('hourglass').style.display = 'inline-block';
 
     clear();
@@ -1346,7 +1079,6 @@ async function postImpl(posted_request_num, query)
             }
 
             document.getElementById('hourglass').style.display = 'none';
-            document.getElementById('download-div').style.display = 'none';
             document.documentElement.style.setProperty('--progress', '0');
             return;
         } else if (format == default_format) {
@@ -1420,7 +1152,6 @@ async function postImpl(posted_request_num, query)
         }
         renderError(reply);
         document.getElementById('hourglass').style.display = 'none';
-        document.getElementById('download-div').style.display = 'none';
         document.documentElement.style.setProperty('--progress', '0');
         return;
     }
@@ -1434,8 +1165,6 @@ async function postImpl(posted_request_num, query)
 
     document.getElementById('check-mark').style.display = 'inline-block';
     document.getElementById('hourglass').style.display = 'none';
-    document.getElementById('download-div').style.display = 'block';
-    last_query_for_download = query;
 
     if (is_raw) {
         elapsed_ns = 1e6 * (performance.now() - last_query_start);
@@ -1467,7 +1196,7 @@ async function postImpl(posted_request_num, query)
             /// Save server's address in URL if it's not identical to the address of the play UI.
             history_url += '&url=' + encodeURIComponent(server_address);
         }
-        history_url += '#' + toBase64(query);
+        history_url += '#' + window.btoa(query);
 
         if (previous_query == '') {
             history.replaceState(state, title, history_url);
@@ -1551,15 +1280,13 @@ async function restoreFromHistory(state) {
 
 let query_area = document.getElementById('query');
 
-appendTextareaResizer();
-
 window.onpopstate = function(event) {
     if (!event.state) return;
     restoreFromHistory(event.state);
 };
 
 if (window.location.hash) {
-    query_area.value = fromBase64(window.location.hash.substr(1));
+    query_area.value = window.atob(window.location.hash.substr(1));
 }
 
 let in_flight = false;
@@ -1567,7 +1294,7 @@ async function post()
 {
     ++request_num;
     document.body.scrollTo(0, 0);
-    let query = await getQueryUnderCursor();
+    let query = query_area.value;
     in_flight = true;
     let run = document.getElementById('run');
     run.innerText = 'Stop';
@@ -1583,29 +1310,19 @@ async function cancel()
     document.getElementById('run').innerText = 'Run';
 }
 
-document.getElementById('controls').addEventListener('submit', e =>
+document.getElementById('run').onclick = function(e)
 {
-    e.preventDefault();
     if (in_flight) {
         cancel();
     } else {
         post();
-
-        if (password_elem.value) {
-            const cred = new PasswordCredential({
-                id: user_elem.value,
-                password: password_elem.value,
-                name: url_elem.value,
-            });
-            navigator.credentials.store(cred);
-        }
     }
-});
+}
 
 document.addEventListener('keydown', event => {
     /// Firefox has code 13 for Enter and Chromium has code 10.
     if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
-        document.getElementById('controls').requestSubmit();
+        post();
     }
 });
 
@@ -1622,7 +1339,14 @@ let user_prefers_tab_navigation = false;
 
 query_area.onkeydown = (e) => {
     if (e.key == 'Tab' && !event.shiftKey && !user_prefers_tab_navigation) {
-        document.execCommand('insertText', false, '    ');
+        let elem = e.target;
+        let selection_start = elem.selectionStart;
+        let selection_end = elem.selectionEnd;
+
+        elem.value = elem.value.substring(0, elem.selectionStart) + '    ' + elem.value.substring(elem.selectionEnd);
+        elem.selectionStart = selection_start + 4;
+        elem.selectionEnd = selection_start + 4;
+
         e.preventDefault();
         return false;
     } else if (e.key === 'Enter' && !(event.metaKey || event.ctrlKey)) {
@@ -1652,44 +1376,6 @@ query_area.onkeydown = (e) => {
 
         e.preventDefault();
         return false;
-    } else if ((e.ctrlKey || e.metaKey) && e.key === '/' && !e.shiftKey) {
-        // Comment/uncomment selected lines on Ctrl+/ or Cmd+/
-        const elem = e.target;
-        const start = elem.selectionStart;
-        const end = elem.selectionEnd;
-        const value = elem.value;
-
-        let lineStart = value.lastIndexOf('\n', start - 1) + 1;
-        let lineEnd = value.indexOf('\n', end);
-        if (lineEnd === -1) lineEnd = value.length;
-
-        let selectedText = value.substring(lineStart, lineEnd);
-        let lines = selectedText.split('\n');
-
-        // Comment out each line, or uncomment if all lines are already commented
-        const allCommented = lines.every(line => /^\s*--/.test(line));
-
-        // If all lines are commented out, uncomment them
-        if (allCommented) {
-            lines = lines.map(line => line.replace(/^(\s*)-- ?/, '$1'));
-        } else {
-            lines = lines.map(line => {
-                if (/^\s*$/.test(line)) {
-                    return line;
-                }
-                return line.replace(/^(\s*)/, '$1-- ');
-            });
-        }
-
-        const replacedText = lines.join('\n');
-        elem.value = value.slice(0, lineStart) + replacedText + value.slice(lineEnd);
-
-        // Adjust selection to keep the user in flow and enable quick reversal 
-        elem.selectionStart = lineStart;
-        elem.selectionEnd = lineStart + replacedText.length;
-
-        e.preventDefault();
-        return false;
     }
 };
 
@@ -1711,8 +1397,6 @@ function clear()
     clearElement('error');
     clearElement('progress');
 
-    document.getElementById('data-table').classList.remove('fixed');
-    document.getElementById('data_div').classList.remove('fixed');
     document.getElementById('check-mark').display = 'none';
     document.getElementById('hourglass').display = 'none';
     document.getElementById('stats').innerText = '';
@@ -1849,7 +1533,6 @@ function transposeTableIfNeeded()
         let th = heads[1];
         th.className = 'right';
         th.style.width = '0';
-        th.removeChild(th.querySelector('.resizer'))
         tr.appendChild(th);
         if (values) {
             let td = values[1];
@@ -1926,10 +1609,10 @@ function updateProgress(progress) {
     let stats = document.getElementById('stats');
     let progress_elem = document.getElementById('progress');
 
-    const rows = +progress.read_rows;
-    const bytes = +progress.read_bytes;
-    const total_rows = +progress.total_rows_to_read;
-    elapsed_ns = +progress.elapsed_ns;
+    const rows = progress.read_rows;
+    const bytes = progress.read_bytes;
+    const total_rows = progress.total_rows_to_read;
+    elapsed_ns = progress.elapsed_ns;
 
     let formatted_rows = formatReadableRows(rows);
     let formatted_bytes = formatReadableBytes(bytes);
@@ -1961,129 +1644,6 @@ function updateProgress(progress) {
         rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
 }
 
-function changeTableLayout() {
-    const table = document.getElementById('data-table');
-    const headers = table.querySelectorAll('th');
-
-    document.getElementById('data-table').style.setProperty('--table-width', `${table.offsetWidth}px`);
-
-    columnWidths = [];
-    headers.forEach(header => {
-        columnWidths.push(header.offsetWidth);
-    });
-
-    table.classList.add('fixed');
-    document.getElementById('data_div').classList.add('fixed');
-
-    headers.forEach((header, index) => {
-        header.style.width = `${columnWidths[index]}px`;
-    });
-}
-
-
-function appendHeaderResizer(header) {
-    let drag_state = {
-        elem: null,
-        is_dragging: true,
-        offset_x: null,
-        offset_width: null
-    };
-
-    const start = (e) => {
-        if (e.button !== 0) { return; }
-
-        changeTableLayout();
-        drag_state.offset_x = e.clientX;
-        drag_state.offset_width = header.offsetWidth;
-        drag_state.is_dragging = true;
-        drag_state.elem = e.target;
-        drag_state.elem.classList.add('resizer-dragging');
-
-        document.addEventListener('pointermove', move);
-        document.addEventListener('pointerup', stop);
-        document.addEventListener('pointercancel', stop);
-    }
-
-    const move = (e) => {
-        if (!drag_state.is_dragging) { return; }
-
-        const dx = e.clientX - drag_state.offset_x;
-        header.style.width = `${drag_state.offset_width + dx}px`;
-        if(dx < 0) {
-            const table = document.getElementById('data-table');
-            table.style.setProperty('--table-width', `${table.offsetWidth + dx}px`)
-        };
-    }
-
-    const stop = (e) => {
-        drag_state.is_dragging = false;
-        drag_state.elem.classList.remove('resizer-dragging');
-
-        document.removeEventListener('pointermove', move);
-        document.removeEventListener('pointerup', stop);
-        document.removeEventListener('pointercancel', stop);
-    }
-
-    const resizer = document.createElement('div');
-    resizer.className = 'resizer';
-    resizer.addEventListener('pointerdown', start);
-    resizer.addEventListener('touchstart', (e) => e.preventDefault());
-
-    header.appendChild(resizer);
-}
-
-
-function appendTextareaResizer() {
-    const queryDiv = document.getElementById('query_div');
-    const textarea = document.getElementById('query');
-
-    let drag_state = {
-        elem: null,
-        is_dragging: false,
-        offset_y: null,
-        offset_height: null
-    };
-
-    const start = (e) => {
-        if (e.button !== 0) { return; }
-
-        drag_state.offset_y = e.clientY;
-        drag_state.offset_height = textarea.offsetHeight;
-        drag_state.is_dragging = true;
-        drag_state.elem = e.target;
-        drag_state.elem.classList.add('textarea-resizer-dragging');
-
-        document.addEventListener('pointermove', move);
-        document.addEventListener('pointerup', stop);
-        document.addEventListener('pointercancel', stop);
-    }
-
-    const move = (e) => {
-        if (!drag_state.is_dragging) { return; }
-
-        const dy = e.clientY - drag_state.offset_y;
-        const newHeight = drag_state.offset_height + dy;
-
-        textarea.style.height = `${newHeight}px`;
-    }
-
-    const stop = (e) => {
-        drag_state.is_dragging = false;
-        drag_state.elem.classList.remove('textarea-resizer-dragging');
-
-        document.removeEventListener('pointermove', move);
-        document.removeEventListener('pointerup', stop);
-        document.removeEventListener('pointercancel', stop);
-    }
-
-    const resizer = document.createElement('div');
-    resizer.className = 'textarea-resizer';
-    resizer.addEventListener('pointerdown', start);
-    resizer.addEventListener('touchstart', (e) => e.preventDefault());
-
-    queryDiv.appendChild(resizer);
-}
-
 function appendHeader(meta) {
     if (meta.length == 0) { return; }
     header = meta;
@@ -2095,24 +1655,14 @@ function appendHeader(meta) {
     th.appendChild(document.createTextNode('№'));
     thead.appendChild(th);
 
-    /// Assign z-index in the reverse order.
-    /// This is needed to make sure the contents that overflow to the right (column resizer) is visible.
-    let zIndex = meta.length;
-
     meta.forEach(elem => {
         let th = document.createElement('th');
         const name = document.createTextNode(elem.name);
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'name';
-        nameSpan.appendChild(name);
-        th.appendChild(nameSpan);
+        th.appendChild(name);
         let type_hint = document.createElement('span');
         type_hint.className = 'type-hint';
         type_hint.appendChild(document.createTextNode(elem.type));
         th.appendChild(type_hint);
-        appendHeaderResizer(th);
-        th.style.zIndex = zIndex;
-        --zIndex;
         thead.appendChild(th);
 
         column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
@@ -2180,51 +1730,19 @@ function renderExtremes() {
             && extremes.min[name] !== undefined && extremes.max[name] !== undefined
             && Number(extremes.max[name]) > Number(extremes.min[name])) {
             let table = document.getElementById('data-table');
-
-            const double_sided = extremes.min[name] < 0;
-            const ratio_positive = extremes.max[name] / (extremes.max[name] - extremes.min[name]);
-            const ratio_negative = 1 - ratio_positive;
-
             for (let row of table.rows) {
                 let cell = row.cells[col_idx];
                 let value = +cell.innerText;
+                if (value > 0) {
+                    const ratio = 100 * value / extremes.max[name];
 
-                if (!double_sided) {
-                    if (value > 0) {
-                        const ratio = value / extremes.max[name];
-
-                        cell.style.cssText = `
-                            background-size: 100% 50%;
-                            background-position: center;
-                            background-repeat: no-repeat;
-                            background: linear-gradient(to right,
-                                var(--bar-color) 0%, var(--bar-color) ${100 * ratio}%,
-                                var(--element-background-color) ${100 * ratio}%, var(--element-background-color) 100%)`;
-                    }
-                } else {
-                    if (value > 0) {
-                        const ratio = value / extremes.max[name];
-
-                        cell.style.cssText = `
-                            background-size: 100% 50%;
-                            background-position: center;
-                            background-repeat: no-repeat;
-                            background: linear-gradient(to right,
-                                var(--element-background-color) 0%, var(--element-background-color) ${100 * ratio_negative}%,
-                                var(--bar-color) ${100 * ratio_negative}%, var(--bar-color) ${100 * (ratio_negative + ratio * ratio_positive)}%,
-                                var(--element-background-color) ${100 * (ratio_negative + ratio * ratio_positive)}%, var(--element-background-color) 100%)`;
-                    } else if (value < 0) {
-                        const ratio = value / extremes.min[name];
-
-                        cell.style.cssText = `
-                            background-size: 100% 50%;
-                            background-position: center;
-                            background-repeat: no-repeat;
-                            background: linear-gradient(to right,
-                                var(--element-background-color) 0%, var(--element-background-color) ${100 * (1 - ratio) * ratio_negative}%,
-                                var(--bar-color-negative) ${100 * (1 - ratio) * ratio_negative}%, var(--bar-color-negative) ${100 * ratio_negative}%,
-                                var(--element-background-color) ${100 * ratio_negative}%, var(--element-background-color) 100%)`;
-                    }
+                    cell.style.cssText = `
+                        background-size: 100% 50%;
+                        background-position: center;
+                        background-repeat: no-repeat;
+                        background: linear-gradient(to right,
+                            var(--bar-color) 0%, var(--bar-color) ${ratio}%,
+                            var(--element-background-color) ${ratio}%, var(--element-background-color) 100%)`;
                 }
             }
         }
@@ -2305,95 +1823,6 @@ function loadUplot() {
     return load_uplot_promise;
 }
 
-function legendAsTooltipPlugin({ className, style = {} } = {}) {
-    let legendEl;
-    let multiline;
-
-    function init(u, opts) {
-        legendEl = u.root.querySelector(".u-legend");
-        legendEl.classList.remove("u-inline");
-        className && legendEl.classList.add(className);
-
-        uPlot.assign(legendEl.style, {
-            textAlign: "right",
-            pointerEvents: "none",
-            display: "none",
-            position: "absolute",
-            left: 0,
-            top: 0,
-            zIndex: 100,
-            boxShadow: "2px 2px 10px rgba(0, 0, 0, 0.1)",
-            ...style
-        });
-
-        const nodes = legendEl.querySelectorAll("th");
-        for (let i = 0; i < nodes.length; i++)
-            nodes[i]._order = i;
-
-        if (opts.series.length == 2) {
-            multiline = false;
-            for (let i = 0; i < nodes.length; i++)
-                nodes[i].style.display = "none";
-        } else {
-            multiline = true;
-            legendEl.querySelector("th").remove();
-            legendEl.querySelector("td").setAttribute('colspan', '2');
-            legendEl.querySelector("td").style.textAlign = 'center';
-            let footer = legendEl.insertRow().insertCell();
-            footer.setAttribute('colspan', '2');
-            footer.style.textAlign = 'center';
-            footer.classList.add('u-value');
-            footer.parentNode.classList.add('u-series','footer');
-            footer.textContent = ". . .";
-        }
-
-        const overEl = u.over;
-        overEl.style.overflow = "visible";
-
-        overEl.appendChild(legendEl);
-
-        overEl.addEventListener("mouseenter", () => {legendEl.style.display = null;});
-        overEl.addEventListener("mouseleave", () => {legendEl.style.display = "none";});
-    }
-
-    function nodeListToArray(nodeList) {
-        return Array.prototype.slice.call(nodeList);
-    }
-
-    function update(u) {
-        let { left, top } = u.cursor;
-        /// This will make the balloon to the right of the cursor when the cursor is on the left side, and vise-versa,
-        /// avoiding the borders of the chart.
-        left -= legendEl.clientWidth * (left / u.width);
-        if (top >= legendEl.clientHeight) {
-            top -= legendEl.clientHeight;
-        }
-        legendEl.style.transform = "translate(" + left + "px, " + top + "px)";
-
-        if (multiline) {
-            let nodes = nodeListToArray(legendEl.querySelectorAll("tr"));
-            let header = nodes.shift();
-            let footer = nodes.pop();
-            let showLimit = Math.floor(u.height / 30);
-            nodes.forEach(function (node) { node._sort_key = nodes.length > showLimit ? +node.querySelector("td").textContent.replace(/,/g,'') : node._order; });
-            nodes.sort((a, b) => b._sort_key - a._sort_key);
-            nodes.forEach(function (node) { node.parentNode.appendChild(node); });
-            for (let i = 0; i < nodes.length; i++) {
-                nodes[i].style.display = i < showLimit ? null : "none";
-            }
-            footer.parentNode.appendChild(footer);
-            footer.style.display = nodes.length > showLimit ? null : "none";
-        }
-    }
-
-    return {
-        hooks: {
-            init: init,
-            setCursor: update,
-        }
-    };
-}
-
 let uplot;
 async function renderChart(json)
 {
@@ -2403,11 +1832,11 @@ async function renderChart(json)
     let chart = document.getElementById('chart');
     chart.style.display = 'block';
 
-    let paths = json[0].length < chart.clientWidth / 5 ? uPlot.paths.bars() : uPlot.paths.linear();
+    let paths = uPlot.paths.stepped({align:  1});
 
     const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
-        ? ["rgba(255, 0, 200, 100%)", "rgba(255, 128, 200, 50%)", "#CCC", "#444"]
-        : ["rgba(255, 255, 0, 100%)", "rgba(255, 255, 100, 50%)", "#444", "#CCC"];
+        ? ["#F8C", "#F8C", "#CCC", "#444"]
+        : ["#FF6", "#FF6", "#444", "#CCC"];
 
     const opts = {
         width: chart.clientWidth,
@@ -2420,9 +1849,9 @@ async function renderChart(json)
                     grid: { width: 1 / devicePixelRatio, stroke: grid_color },
                     ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
         series: [ { label: "x" },
-                    { label: "y", stroke: line_color, fill: fill_color, paths, points: { show: false } } ],
+                    { label: "y", stroke: line_color, fill: fill_color,
+                    drawStyle: 0, lineInterpolation: 1, paths } ],
         padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
-        plugins: [ legendAsTooltipPlugin() ],
     };
 
     uplot = new uPlot(opts, json, chart);
@@ -2443,103 +1872,13 @@ function redrawChart() {
 
 new ResizeObserver(resizeChart).observe(document.getElementById('chart'));
 
-let lexer_module;
-async function loadLexer() {
-    // base64 -w0 build/src/Parsers/Lexer.wasm
-    const lexer_base64 = "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A08NAkEBIQgDQCACLQAAIgVBMGshAQJAAkAgBwRAIAFB/wFxQQpJIAVBwQBrQQZJcg0CIAVB4QBrQQZPDQEMAgsgAUH/AXFBCkkNAQsgCCAFQd8AR3JBAXENBAJAIAJBAWoiCSADTw0AIAktAAAiBUEwayEBIAcEQCABQf8BcUEKSSAFQcEAa0EGSXINASAFQeEAa0EGTw0HDAELIAFB/wFxQQlLDQYLIAMgCUYNBAsgBiACQQFqIgI2AgBBACEIIAIgA0kNAAsMAgsgBiACQQFqIgI2AgBBACEIIAIgA0cNAAsLIAJBAWoiASADTw0AIAItAAAhBQJAIAcEQCAFQSByQfAARw0CDAELIAVBIHJB5QBHDQELIAYgATYCAAJAIAJBAmogA08NAAJAIAEtAABBK2sOAwABAAELIAYgAUEBaiIBNgIAIAEgA08NAgtBASECA0AgAS0AACIFQTBrQf8BcUEKTwRAIAIgBUHfAEdyQQFxDQMgAUEBaiICIANPDQMgAi0AAEEwa0H/AXFBCUsNAwsgBiABQQFqIgE2AgBBACECIAEgA0cNAAsMAQsgAiEBCwJ/AkACQCABIANPDQAgAS0AACICQd8ARiACQTBrQf8BcUEKSXJFIAJB3wFxQcEAa0H/AXFBGUtxDQAgAUEBaiEFA0AgBiAFIgE2AgAgASADTw0CIAFBAWohBSABLQAAIgdBMGshAiAHQd8ARiACQf8BcUEKSXIgB0HfAXFBwQBrQf8BcUEaSXINAAsgAUEBawwCCyAAIAE2AggMCgsgAUEBawshAwJAIAEgBE0NACAEQQFrIQUDQCAFQQFqIgUtAAAiAkEkRiACQd8ARnIgAkEwa0H/AXFBCklyRSACQd8BcUHBAGtB/wFxQRpPcUUEQCADIAVLDQEMAgsLIAAgATYCCCAAIAQ2AgQgAEEvOgAADwsMCQsgBiAEQQJqIgE2AgACQCABIANGDQADQCABLQAAQQpGDQEgAUEBaiIBIANHDQALIAMhAQsLIAAgATYCCCAAIAQ2AgQgAEEBOgAACyAGIAE2AgAPCyAAIAE2AgggACAENgIEIABBADoAAA8LIAAgBEEBaiIANgIIDAILIAAgBEECaiIANgIIDAELIAAgATYCCCAAIAQ2AgQgAEEoOgAADwsgBiAANgIADwsgACAENgIEIABBAzoAAA8LIAAgATYCCCAAIAQ2AgQgAEECOgAACyUAIABBADoAECAAIAM2AgwgACACNgIIIAAgATYCBCAAIAE2AgALNgEBfyMAQRBrIgMkACADQQRqIAAQASABIAMoAgg2AgAgAiADKAIMNgIAIAMtAAQgA0EQaiQACwcAIABBAUsLBwAgAEEnSwsHACAAQSdGCwsIAQBBgAgLARQAeQlwcm9kdWNlcnMBDHByb2Nlc3NlZC1ieQEFY2xhbmdZMjAuMC4wZ2l0IChnaXRAZ2l0aHViLmNvbTpsbHZtL2xsdm0tcHJvamVjdC5naXQgNmNiYzY0ZWQ5MjJjYzY5YmMyOTJkMzk0YmE1YzY4MWZhMzA5ZjQwNCkAaw90YXJnZXRfZmVhdHVyZXMGKw9tdXRhYmxlLWdsb2JhbHMrE25vbnRyYXBwaW5nLWZwdG9pbnQrC2J1bGstbWVtb3J5KwhzaWduLWV4dCsPcmVmZXJlbmNlLXR5cGVzKwptdWx0aXZhbHVl";
-
-    if (!lexer_module) {
-        const binary = atob(lexer_base64);
-        const bytes = new Uint8Array(binary.length);
-
-        for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-        }
-
-        lexer_module = await WebAssembly.instantiate(bytes);
-    }
+/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
+let theme = current_url.searchParams.get('theme');
+if (['dark', 'light'].indexOf(theme) === -1) {
+    theme = window.localStorage.getItem('theme');
 }
-
-async function tokenize(query) {
-    await loadLexer();
-
-    let exports = lexer_module.instance.exports;
-    let buffer = exports.memory.buffer;
-    let memory_offset = 0;
-
-    /// Allocate memory for the lexer object
-    const lexer = new Uint8Array(buffer, memory_offset, exports.clickhouse_lexer_size);
-    memory_offset += exports.clickhouse_lexer_size;
-
-    /// Allocate the query
-    const bytes = new TextEncoder().encode(query);
-    const query_array = new Uint8Array(buffer, memory_offset, bytes.length);
-    query_array.set(bytes);
-    const query_begin = memory_offset;
-    memory_offset += bytes.length;
-    const query_end = memory_offset;
-
-    /// Initialize the lexer
-    exports.clickhouse_lexer_create(lexer, query_begin, query_end, 65536);
-
-    /// Allocate the out ptrs
-    const token_begin = memory_offset;
-    memory_offset += 4;
-    const token_end = memory_offset;
-    memory_offset += 4;
-
-    let result = [];
-
-    while (true) {
-        const token_type = exports.clickhouse_lexer_next_token(lexer, token_begin, token_end);
-        if (exports.clickhouse_lexer_token_is_error(token_type) || exports.clickhouse_lexer_token_is_end(token_type)) {
-            break;
-        }
-
-        const view = new DataView(buffer);
-        const begin = view.getUint32(token_begin, true);
-        const end = view.getUint32(token_end, true);
-
-        const token_bytes = new Uint8Array(buffer, begin, end - begin);
-        let token = new TextDecoder().decode(token_bytes);
-
-        result.push({type: token_type, significant: exports.clickhouse_lexer_token_is_significant(token_type), token: token});
-    }
-
-    return result;
-}
-
-async function getQueryUnderCursor() {
-    const all_queries = query_area.value;
-
-    if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
-        return all_queries;
-    }
-
-    const tokens = await tokenize(all_queries);
-
-    const cursor_position = query_area.selectionStart;
-    let current_query_start = 0;
-    let current_offset = 0;
-
-    for (const elem of tokens) {
-        if (current_query_start == current_offset && !elem.significant) {
-            current_query_start += elem.token.length;
-        }
-        current_offset += elem.token.length;
-        if (elem.token == ';') {
-            if (current_offset >= cursor_position) {
-                query_area.setSelectionRange(current_query_start, current_offset);
-                query_area.focus();
-                return all_queries.substring(current_query_start, current_offset);
-            } else {
-                current_query_start = current_offset;
-            }
-        }
-
-    }
-
-    return all_queries;
+if (!theme) {
+    theme = 'light';
 }
 
 function setColorTheme(new_theme, update_preference) {
@@ -2550,11 +1889,6 @@ function setColorTheme(new_theme, update_preference) {
     document.documentElement.setAttribute('data-theme', theme);
     redrawChart();
 }
-/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
-let theme = current_url.searchParams.get('theme');
-if (['dark', 'light'].indexOf(theme) === -1) {
-    theme = window.localStorage.getItem('theme');
-}
 
 if (theme) {
     document.documentElement.setAttribute('data-theme', theme);
@@ -2563,8 +1897,6 @@ if (theme) {
     const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
     if (media_query_list.matches) {
         setColorTheme('dark');
-    } else {
-        setColorTheme('light');
     }
 
     /// There is a rumor that on some computers, the theme is changing automatically on day/night.
@@ -2584,110 +1916,5 @@ document.getElementById('toggle-light').onclick = function() {
 document.getElementById('toggle-dark').onclick = function() {
     setColorTheme('dark', true);
 }
-
-// Download functionality
-let last_query_for_download = '';
-
-// Toggle download dropdown
-document.getElementById('download-div').addEventListener('click', function(e) {
-    e.stopPropagation();
-    const dropdown = document.getElementById('download-dropdown');
-    const button = document.getElementById('download-div');
-    const context = document.getElementById('main');
-
-    if (dropdown.classList.contains('show')) {
-        dropdown.classList.remove('show');
-    } else {
-        // Position the dropdown relative to the button
-        dropdown.classList.add('show');
-        const button_rect = button.getBoundingClientRect();
-        const context_rect = context.getBoundingClientRect();
-        const dropdown_rect = dropdown.getBoundingClientRect();
-
-        dropdown.style.top = (button_rect.top - context_rect.top) + 'px';
-        dropdown.style.left = (button_rect.left - context_rect.left + button_rect.width - dropdown_rect.width) + 'px';
-    }
-});
-
-// Prevent dropdown from closing when clicking inside it
-document.getElementById('download-dropdown').addEventListener('click', function(e) {
-    e.stopPropagation();
-});
-
-// Close dropdown when clicking outside
-document.addEventListener('click', function() {
-    const dropdown = document.getElementById('download-dropdown');
-    dropdown.classList.remove('show');
-});
-
-// Handle "Other" format selection
-document.getElementById('download-format').addEventListener('change', function() {
-    const otherInput = document.getElementById('download-format-other');
-    if (this.value === 'other') {
-        otherInput.classList.add('show');
-        otherInput.focus();
-    } else {
-        otherInput.classList.remove('show');
-    }
-});
-
-// Handle download button click
-document.getElementById('download-button').addEventListener('click', async function() {
-    const formatSelect = document.getElementById('download-format');
-    const formatOther = document.getElementById('download-format-other');
-
-    let format = formatSelect.value;
-    if (format === 'other') {
-        format = formatOther.value.trim();
-        if (!format) {
-            alert('Please enter a format name');
-            return;
-        }
-    }
-
-    // Get current values
-    const user = user_elem.value;
-    const password = password_elem.value;
-    const server_address = url_elem.value;
-    const query = last_query_for_download;
-
-    if (!query) {
-        alert('No query to download results for');
-        return;
-    }
-
-    // Build download URL
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1' +
-        '&enable_http_compression=1' +
-        '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save' +
-        '&default_format=' + encodeURIComponent(format) +
-        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(format.toLowerCase())}"'}`);
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
-
-    let downloadQuery = query.replaceAll(/\bFORMAT\s+\w+/ig, '');
-
-    // Create a form and submit it to trigger download
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = url;
-    form.enctype = 'multipart/form-data';
-    form.style.display = 'none';
-
-    const queryInput = document.createElement('input');
-    queryInput.type = 'hidden';
-    queryInput.name = 'query';
-    queryInput.value = downloadQuery;
-    form.appendChild(queryInput);
-
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
-
-    // Close dropdown
-    document.getElementById('download-dropdown').classList.remove('show');
-});
 </script>
 </html>

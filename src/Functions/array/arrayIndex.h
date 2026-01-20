@@ -42,7 +42,7 @@ struct HasAction
 {
     using ResultType = UInt8;
     static constexpr const bool resume_execution = false;
-    static constexpr void apply(ResultType & current, size_t) noexcept { current = 1; }
+    static constexpr void apply(ResultType& current, size_t) noexcept { current = 1; }
 };
 
 /// The index is returned starting from 1.
@@ -50,7 +50,7 @@ struct IndexOfAction
 {
     using ResultType = UInt64;
     static constexpr const bool resume_execution = false;
-    static constexpr void apply(ResultType & current, size_t j) noexcept { current = j + 1; }
+    static constexpr void apply(ResultType& current, size_t j) noexcept { current = j + 1; }
 };
 
 struct IndexOfAssumeSorted : public IndexOfAction
@@ -358,6 +358,7 @@ private:
         [[maybe_unused]] const NullMap * item_map)
     {
         const size_t size = offsets.size();
+
         result.resize(size);
 
         ArrayOffset current_offset = 0;
@@ -371,7 +372,7 @@ private:
 
             if constexpr (!IsConst) // workaround because ?: ternary operator is not constexpr
             {
-                value_pos = item_offsets[i - 1];
+                if (0 != i) value_pos = item_offsets[i - 1];
                 value_size = item_offsets[i] - value_pos;
             }
 
@@ -379,8 +380,11 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                const ArrayOffset string_pos = string_offsets[current_offset + j - 1];
-                const ArrayOffset string_size = string_offsets[current_offset + j] - string_pos;
+                const ArrayOffset string_pos = current_offset + j == 0
+                    ? 0
+                    : string_offsets[current_offset + j - 1];
+
+                const ArrayOffset string_size = string_offsets[current_offset + j] - string_pos - IsConst * 1;
 
                 if constexpr (IsConst)
                 {
@@ -554,7 +558,8 @@ private:
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
     }
 
-    /** If one or both arguments passed to this function are nullable,
+    /**
+      * If one or both arguments passed to this function are nullable,
       * we create a new column that contains non-nullable arguments:
       *
       * - if the 1st argument is a non-constant array of nullable values,
@@ -571,10 +576,11 @@ private:
     {
         const ColumnPtr & ptr = arguments[0].column;
 
-        /** The columns here have two general cases, either being Array(T) or Const(Array(T)).
-          * The last type will return nullptr after casting to ColumnArray, so we leave the casting
-          * to execute* functions.
-          */
+        /**
+         * The columns here have two general cases, either being Array(T) or Const(Array(T)).
+         * The last type will return nullptr after casting to ColumnArray, so we leave the casting
+         * to execute* functions.
+         */
         const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(ptr.get());
         const ColumnNullable * nullable = nullptr;
 
@@ -589,11 +595,12 @@ private:
             return executeOnNonNullable(arguments, result_type);
         }
 
-        /** To correctly process the Nullable values (either #col_array, #arg_column or both) we create a new columns
-          * and operate on it. The columns structure follows:
-          * {0, 1, 2, 3, 4}
-          * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
-          */
+        /**
+             * To correctly process the Nullable values (either #col_array, #arg_column or both) we create a new columns
+             * and operate on it. The columns structure follows:
+             * {0, 1, 2, 3, 4}
+             * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
+             */
         ColumnsWithTypeAndName source_columns(4);
 
         if (nullable)
@@ -808,7 +815,7 @@ private:
             if (right->isNullable())
                 right = checkAndGetColumn<ColumnNullable>(*right).getNestedColumnPtr();
 
-            std::string_view elem = right->getDataAt(0);
+            StringRef elem = right->getDataAt(0);
             const auto & left_dict = left_lc->getDictionary();
 
             if (std::optional<UInt64> maybe_index = left_dict.getOrFindValueIndex(elem); maybe_index)
@@ -893,7 +900,7 @@ private:
                     array->getOffsets(),
                     left->getOffsets(),
                     item_const_string->getChars(),
-                    item_const_string->getDataAt(0).size(),
+                    item_const_string->getDataAt(0).size,
                     result->getData(),
                     null_map_data,
                     null_map_item);

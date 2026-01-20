@@ -1,12 +1,9 @@
-#include <Storages/MergeTree/Compaction/MergeSelectors/PartitionStatistics.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
-#include <Storages/MergeTree/Compaction/MergeSelectors/DisjointPartsRangesSet.h>
+#include <Storages/MergeTree/Compaction/MergeSelectors/MergeSelectorFactory.h>
 
 #include <base/interpolate.h>
-
 #include <Common/thread_local_rng.h>
 
-#include <algorithm>
 #include <cmath>
 #include <cassert>
 #include <random>
@@ -14,25 +11,33 @@
 namespace DB
 {
 
+void registerSimpleMergeSelector(MergeSelectorFactory & factory)
+{
+    factory.registerPublicSelector("Simple", MergeSelectorAlgorithm::SIMPLE, [](const std::any & settings)
+    {
+        return std::make_shared<SimpleMergeSelector>(std::any_cast<SimpleMergeSelector::Settings>(settings));
+    });
+}
+
+void registerStochasticSimpleMergeSelector(MergeSelectorFactory & factory)
+{
+    factory.registerPublicSelector("StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE, [](const std::any & settings)
+    {
+        return std::make_shared<SimpleMergeSelector>(std::any_cast<SimpleMergeSelector::Settings>(settings));
+    });
+}
+
 namespace
 {
 
+using Iterator = PartsRange::const_iterator;
+
 /** Estimates best set of parts to merge within passed alternatives.
   */
-class Estimator
+struct Estimator
 {
-public:
-    explicit Estimator(const PartsRanges & parts_ranges)
-        : disjoint_set(parts_ranges)
+    void consider(Iterator begin, Iterator end, size_t sum_size, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
     {
-    }
-
-    void consider(RangesIterator range_it, PartsIterator begin, PartsIterator end, size_t sum_size, size_t sum_rows, size_t size_prev_at_left, const SimpleMergeSelector::Settings & settings)
-    {
-        if (settings.enable_heuristic_to_remove_small_parts_at_right)
-            while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
-                --end;
-
         double current_score = score(end - begin, sum_size, settings.size_fixed_cost_to_add);
 
         if (settings.enable_heuristic_to_align_parts
@@ -44,7 +49,21 @@ public:
                     difference / settings.heuristic_to_align_parts_max_absolute_difference_in_powers_of_two);
         }
 
-        ranges.emplace_back(range_it, begin, end, sum_size, sum_rows, current_score);
+        if (settings.enable_heuristic_to_remove_small_parts_at_right)
+            while (end >= begin + 3 && (end - 1)->size < settings.heuristic_to_remove_small_parts_at_right_max_ratio * sum_size)
+                --end;
+
+        if (min_score == 0.0 || current_score < min_score)
+        {
+            min_score = current_score;
+            best_begin = begin;
+            best_end = end;
+        }
+    }
+
+    PartsRange getBest() const
+    {
+        return PartsRange(best_begin, best_end);
     }
 
     static double score(double count, double sum_size, double sum_size_fixed_cost)
@@ -67,48 +86,9 @@ public:
         return (sum_size + sum_size_fixed_cost * count) / (count - 1.9);
     }
 
-    std::optional<PartsRange> buildMergeRange(const MergeConstraint & constraint)
-    {
-        constexpr static auto range_compare = [](const ScoredRange & lhs, const ScoredRange & rhs)
-        {
-            /// If the ranges have the same score, use the range that is most likely to have the lower merge level -
-            /// the right one, according to the block number sorting.
-            return lhs.score > rhs.score || (lhs.score == rhs.score && lhs.range_begin < rhs.range_begin);
-        };
-
-        if (!is_heap_constructed)
-        {
-            std::make_heap(ranges.begin(), ranges.end(), range_compare);
-            is_heap_constructed = true;
-        }
-
-        while (!ranges.empty())
-        {
-            std::pop_heap(ranges.begin(), ranges.end(), range_compare);
-            const auto [range_it, range_begin, range_end, bytes, rows, _] = std::move(ranges.back());
-            ranges.pop_back();
-
-            if (bytes <= constraint.max_size_bytes && rows <= constraint.max_size_rows && disjoint_set.addRangeIfPossible(range_it, range_begin, range_end))
-                return PartsRange(range_begin, range_end);
-        }
-
-        return std::nullopt;
-    }
-
-private:
-    struct ScoredRange
-    {
-        RangesIterator range_it;
-        PartsIterator range_begin;
-        PartsIterator range_end;
-        size_t bytes = 0;
-        size_t rows = 0;
-        double score;
-    };
-
-    DisjointPartsRangesSet disjoint_set;
-    std::vector<ScoredRange> ranges;
-    bool is_heap_constructed = false;
+    double min_score = 0.0;
+    Iterator best_begin {};
+    Iterator best_end {};
 };
 
 
@@ -136,8 +116,8 @@ bool allow(
     double partition_size,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log,
-    PartsIterator begin,
-    PartsIterator end,
+    Iterator begin,
+    Iterator end,
     const IMergeSelector::RangeFilter & range_filter,
     const SimpleMergeSelector::Settings & settings)
 {
@@ -201,15 +181,14 @@ size_t calculateRangeWithStochasticSliding(size_t parts_count, size_t parts_thre
 }
 
 void selectWithinPartsRange(
-    RangesIterator range_it,
-    const MergeConstraint & constraint,
+    const PartsRange & parts,
+    const size_t max_total_size_to_merge,
     const IMergeSelector::RangeFilter & range_filter,
     Estimator & estimator,
     const SimpleMergeSelector::Settings & settings,
     double min_size_to_lower_base_log,
     double max_size_to_lower_base_log)
 {
-    const PartsRange & parts = *range_it;
     size_t parts_count = parts.size();
     if (parts_count <= 1)
         return;
@@ -232,61 +211,26 @@ void selectWithinPartsRange(
             begin = parts_count - parts_threshold;
     }
 
-    /// Enable heuristic for lowering selected merge ranges. This can increase number of
-    /// concurrently running merges and thus increase the merge speed.
-    size_t max_parts_to_merge_at_once = settings.max_parts_to_merge_at_once;
-    if (settings.enable_heuristic_to_lower_max_parts_to_merge_at_once)
-    {
-        assert(settings.partitions_stats);
-        assert(range_it->size() > 1);
-        const auto & partition_stats = settings.partitions_stats->at(range_it->front().info.getPartitionId());
-
-        if (partition_stats.part_count < settings.base)
-        {
-            /// Partition is not filled
-        }
-        else if (partition_stats.part_count >= settings.parts_to_throw_insert)
-        {
-            /// Partition is fully filled - let's lower the max parts to merge to base to enable only small merges
-            max_parts_to_merge_at_once = std::max<size_t>(2, static_cast<size_t>(settings.base));
-        }
-        else
-        {
-            /// Partition is not fully filled but but may be approaching it. Let's lower max parts to merge according to the fullness.
-            size_t exponent = settings.heuristic_to_lower_max_parts_to_merge_at_once_exponent;
-            max_parts_to_merge_at_once = static_cast<size_t>(
-                settings.base +
-                (max_parts_to_merge_at_once - settings.base) * (1.0 - std::pow((partition_stats.part_count - settings.base) / (settings.parts_to_throw_insert - settings.base), exponent))
-            );
-        }
-    }
-
     for (; begin < parts_count; ++begin)
     {
         size_t sum_size = parts[begin].size;
-        size_t sum_rows = parts[begin].rows;
         size_t max_size = parts[begin].size;
         size_t min_age = parts[begin].age;
 
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
             assert(end > begin);
-            if (max_parts_to_merge_at_once && end - begin > max_parts_to_merge_at_once)
+            if (settings.max_parts_to_merge_at_once && end - begin > settings.max_parts_to_merge_at_once)
                 break;
 
             size_t cur_size = parts[end - 1].size;
             size_t cur_age = parts[end - 1].age;
-            size_t cur_rows = parts[end - 1].rows;
 
             sum_size += cur_size;
-            sum_rows += cur_rows;
             max_size = std::max(max_size, cur_size);
             min_age = std::min(min_age, cur_age);
 
-            if (sum_size > constraint.max_size_bytes)
-                break;
-
-            if (sum_rows > constraint.max_size_rows)
+            if (max_total_size_to_merge && sum_size > max_total_size_to_merge)
                 break;
 
             auto range_begin = parts.begin() + begin;
@@ -294,11 +238,9 @@ void selectWithinPartsRange(
 
             if (allow(sum_size, max_size, min_age, parts_count, min_size_to_lower_base_log, max_size_to_lower_base_log, range_begin, range_end, range_filter, settings))
                 estimator.consider(
-                    range_it,
                     range_begin,
                     range_end,
                     sum_size,
-                    sum_rows,
                     begin == 0 ? 0 : parts[begin - 1].size,
                     settings);
         }
@@ -307,31 +249,21 @@ void selectWithinPartsRange(
 
 }
 
-PartsRanges SimpleMergeSelector::select(
+PartsRange SimpleMergeSelector::select(
     const PartsRanges & parts_ranges,
-    const MergeConstraints & merge_constraints,
-    const RangeFilter & range_filter) const
+    size_t max_total_size_to_merge,
+    RangeFilter range_filter) const
 {
-    Estimator estimator(parts_ranges);
+    Estimator estimator;
 
     /// Precompute logarithm of settings boundaries, because log function is quite expensive in terms of performance
     const double min_size_to_lower_base_log = log(1 + settings.min_size_to_lower_base);
     const double max_size_to_lower_base_log = log(1 + settings.max_size_to_lower_base);
 
-    /// Using max size constraint to create more merge candidates
-    for (auto range_it = parts_ranges.begin(); range_it != parts_ranges.end(); ++range_it)
-        selectWithinPartsRange(range_it, merge_constraints[0], range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
+    for (const auto & part_range : parts_ranges)
+        selectWithinPartsRange(part_range, max_total_size_to_merge, range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
 
-    PartsRanges result;
-    for (const auto & constraint : merge_constraints)
-    {
-        if (auto range = estimator.buildMergeRange(constraint))
-            result.push_back(std::move(range.value()));
-        else
-            break;
-    }
-
-    return result;
+    return estimator.getBest();
 }
 
 }

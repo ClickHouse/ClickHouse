@@ -1,4 +1,4 @@
-#include <BridgeHelper/IBridgeHelper.h>
+#include "IBridgeHelper.h"
 
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ReadHelpers.h>

@@ -17,21 +17,13 @@
 #include <Parsers/ParserDatabaseOrNone.h>
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-
 #include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <base/insertAtEnd.h>
-
 #include "config.h"
-
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 namespace
 {
@@ -43,7 +35,7 @@ namespace
                 return false;
 
             String maybe_new_name;
-            if (!parseUserName(pos, expected, maybe_new_name, /*allow_query_parameter=*/true))
+            if (!parseUserName(pos, expected, maybe_new_name))
                 return false;
 
             new_name.emplace(std::move(maybe_new_name));
@@ -90,9 +82,6 @@ namespace
                 {
                     type = check_type;
 
-                    if (check_type == AuthenticationType::NO_AUTHENTICATION)
-                        return true;
-
                     if (check_type == AuthenticationType::LDAP)
                         expect_ldap_server_name = true;
                     else if (check_type == AuthenticationType::KERBEROS)
@@ -103,8 +92,6 @@ namespace
                         expect_public_ssh_key = true;
                     else if (check_type == AuthenticationType::HTTP)
                         expect_http_auth_server = true;
-                    else if (check_type == AuthenticationType::JWT)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE USER is not supported for JWT");
                     else if (check_type != AuthenticationType::NO_PASSWORD)
                         expect_password = true;
 
@@ -130,11 +117,6 @@ namespace
                 if (ParserKeyword{Keyword::SHA256_HASH}.ignore(pos, expected))
                 {
                     type = AuthenticationType::SHA256_PASSWORD;
-                    expect_hash = true;
-                }
-                else if (ParserKeyword{Keyword::SCRAM_SHA256_HASH}.ignore(pos, expected))
-                {
-                    type = AuthenticationType::SCRAM_SHA256_PASSWORD;
                     expect_hash = true;
                 }
                 else if (ParserKeyword{Keyword::DOUBLE_SHA1_HASH}.ignore(pos, expected))
@@ -171,7 +153,7 @@ namespace
                 if (!ParserKeyword{Keyword::BY}.ignore(pos, expected) || !ParserStringAndSubstitution{}.parse(pos, value, expected))
                     return false;
 
-                if (expect_hash && (type == AuthenticationType::SHA256_PASSWORD || type == AuthenticationType::SCRAM_SHA256_PASSWORD))
+                if (expect_hash && type == AuthenticationType::SHA256_PASSWORD)
                 {
                     if (ParserKeyword{Keyword::SALT}.ignore(pos, expected))
                     {
@@ -573,9 +555,10 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     }
 
     ASTPtr names_ast;
-    if (!ParserUserNamesWithHost(/*allow_query_parameter=*/true).parse(pos, names_ast, expected))
+    if (!ParserUserNamesWithHost{}.parse(pos, names_ast, expected))
         return false;
     auto names = typeid_cast<std::shared_ptr<ASTUserNamesWithHost>>(names_ast);
+    auto names_ref = names->names;
 
     auto pos_after_parsing_names = pos;
 
@@ -710,8 +693,13 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     {
         String common_host_pattern;
         if (names->getHostPatternIfCommon(common_host_pattern) && !common_host_pattern.empty())
+        {
             hosts.emplace().addLikePattern(common_host_pattern);
+            names->concatParts();
+        }
     }
+    else if (alter)
+        names->concatParts();
 
     bool alter_query_with_no_changes = alter && pos_after_parsing_names == pos;
 

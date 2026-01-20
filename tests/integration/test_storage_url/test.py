@@ -1,19 +1,16 @@
 import pytest
-import time
-import uuid
-import os
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-from helpers.mock_servers import start_mock_servers
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/conf.xml", "configs/named_collections.xml", "configs/query_log.xml"],
+    main_configs=["configs/conf.xml", "configs/named_collections.xml"],
     user_configs=["configs/users.xml"],
     with_nginx=True,
 )
+
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_node():
@@ -57,27 +54,6 @@ def test_url_cluster():
     assert result.strip() == "1\t2\t3"
 
 
-def test_url_cluster_secure():
-    query_id = f"{uuid.uuid4()}"
-
-    METADATA_SERVER_HOSTNAME = "node_imds"
-    METADATA_SERVER_PORT = 8080
-    url = f"http://adminka:secretPasswordick@{METADATA_SERVER_HOSTNAME}:{METADATA_SERVER_PORT}"
-    node1.query(
-        f"CREATE TABLE leaked_secret_test (column1 UInt32, column2 UInt32, column3 UInt32) ENGINE = URL('{url}', 'TSV')",
-        query_id=query_id
-    )
-    node1.query("SYSTEM FLUSH LOGS")
-
-    result = node1.query(
-        f"select query from clusterAllReplicas(test_cluster_one_shard_three_replicas_localhost,system.query_log) where query_id='{query_id}'"
-    )
-
-    assert 'leaked_secret_test' in result
-    assert 'secretPasswordick' not in result
-
-    node1.query("DROP TABLE leaked_secret_test")
-
 def test_url_cluster_with_named_collection():
     result = node1.query(
         f"select * from urlCluster(test_cluster_one_shard_three_replicas_localhost, test_url)"
@@ -93,13 +69,13 @@ def test_url_cluster_with_named_collection():
 def test_table_function_url_access_rights():
     node1.query("CREATE USER OR REPLACE u1")
 
-    expected_error = "necessary to have the grant READ ON URL"
+    expected_error = "necessary to have the grant CREATE TEMPORARY TABLE, URL ON *.*"
     assert expected_error in node1.query_and_get_error(
         f"SELECT * FROM url('http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')",
         user="u1",
     )
 
-    expected_error = "necessary to have the grant READ ON URL"
+    expected_error = "necessary to have the grant CREATE TEMPORARY TABLE, URL ON *.*"
     assert expected_error in node1.query_and_get_error(
         f"SELECT * FROM url('http://nginx:80/test_1', 'TSV')", user="u1"
     )
@@ -114,12 +90,12 @@ def test_table_function_url_access_rights():
         user="u1",
     ) == TSV([["column1", "UInt32"], ["column2", "UInt32"], ["column3", "UInt32"]])
 
-    expected_error = "necessary to have the grant READ ON URL"
+    expected_error = "necessary to have the grant URL ON *.*"
     assert expected_error in node1.query_and_get_error(
         f"DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')", user="u1"
     )
 
-    node1.query("GRANT READ ON URL TO u1")
+    node1.query("GRANT URL ON *.* TO u1")
     assert node1.query(
         f"DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')",
         user="u1",
@@ -134,11 +110,7 @@ def test_table_function_url_access_rights():
 
 @pytest.mark.parametrize("file_format", ["Parquet", "CSV", "TSV", "JSONEachRow"])
 def test_file_formats(file_format):
-    # Generate random URL with timestamp to make test idempotent
-    # Note: we could have just deleted a file using requests.delete(url)
-    # But it seems we can do it only from inside the container (this is not reliable)
-    timestamp = int(time.time() * 1000000)
-    url = f"http://nginx:80/{file_format}_file_{timestamp}"
+    url = f"http://nginx:80/{file_format}_file"
 
     values = ", ".join([f"({i}, {i + 1}, {i + 2})" for i in range(100)])
     node1.query(

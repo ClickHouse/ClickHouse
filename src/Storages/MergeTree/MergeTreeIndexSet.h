@@ -30,30 +30,14 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
 
     size_t size() const { return block.rows(); }
     bool empty() const override { return !size(); }
-    size_t memoryUsageBytes() const override { return block.bytes() + (set_hyperrectangle.capacity() * sizeof(Range)); }
 
     ~MergeTreeIndexGranuleSet() override = default;
 
-    const String & index_name;
+    const String index_name;
     const size_t max_rows;
 
     Block block;
-    Serializations serializations;
     std::vector<Range> set_hyperrectangle;
-};
-
-
-struct MergeTreeIndexBulkGranulesSet final : public IMergeTreeIndexBulkGranules
-{
-    explicit MergeTreeIndexBulkGranulesSet(const Block & index_sample_block_);
-    void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
-
-    size_t min_granule = 0;
-    size_t max_granule = 0;
-    Block block;
-    Block block_for_reading;
-    Serializations serializations;
-    bool empty = true;
 };
 
 
@@ -106,31 +90,23 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
-
-    FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
-
-    std::string getDescription() const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
 
     ~MergeTreeIndexConditionSet() override = default;
-
 private:
     const ActionsDAG::Node & traverseDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
-        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
-        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
+        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 
     const ActionsDAG::Node * atomFromDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
-        const ContextPtr & context,
-        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
+        const ContextPtr & context) const;
 
     const ActionsDAG::Node * operatorFromDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
-        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
-        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
+        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 
     bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic = false) const;
 
@@ -163,14 +139,8 @@ public:
 
     ~MergeTreeIndexSet() override = default;
 
-    bool supportsBulkFiltering() const override
-    {
-        return true;
-    }
-
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
