@@ -384,7 +384,7 @@ def test_excluded_from_backups(request, user2: str):
     assert_(f"BACKUP TABLE `{db2}`.table1, DATABASE `{db1}` TO File('{file}')")
 
 
-    query(session2, f"BACKUP ALL TO File('{file}')", user=user2)
+    query(session2, f"BACKUP ALL EXCEPT DATABASE system TO File('{file}')", user=user2)
     drop_db(session1, db1)
     drop_db(session2, db2, user=user2)
     query(session2, f"RESTORE ALL FROM File('{file}')", user=user2)

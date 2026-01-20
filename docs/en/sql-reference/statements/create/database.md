@@ -76,6 +76,7 @@ You probably want to specify `session_id` if the [HTTP interface](/interfaces/ht
 - [ATTACH](/sql-reference/statements/attach) statement on database or and tables inside
 - [ON CLUSTER](#on-cluster) clause
 - [Replicated](/engines/database-engines/replicated) and [Backup](/engines/database-engines/backup) database engines
+- Cannot be backed up with [BACKUP](/sql-reference/statements/backup) statement
 
 :::note
 Please note that the database name will be reserved, and you will not be able to create a new database with the same name, as with regular databases.
