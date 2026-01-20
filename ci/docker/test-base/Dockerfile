@@ -60,12 +60,12 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
 # Install newer lcov from source
 # Ubuntu 22.04 has old 1.14 version, we need 2.x for --sort-tables and --hierarchical options
 RUN cd /tmp \
-    && wget -q https://github.com/linux-test-project/lcov/releases/download/v2.1/lcov-2.1.tar.gz \
-    && tar xzf lcov-2.1.tar.gz \
-    && cd lcov-2.1 \
+    && wget -q https://github.com/linux-test-project/lcov/releases/download/v2.4/lcov-2.4.tar.gz \
+    && tar xzf lcov-2.4.tar.gz \
+    && cd lcov-2.4 \
     && make install \
     && cd /tmp \
-    && rm -rf lcov-2.1 lcov-2.1.tar.gz
+    && rm -rf lcov-2.4 lcov-2.4.tar.gz
 
 # Install cmake 3.20+ for Rust support
 # Used https://askubuntu.com/a/1157132 as reference
