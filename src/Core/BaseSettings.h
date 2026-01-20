@@ -917,7 +917,8 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
     DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, 1)
 
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS) \
+#define DECLARE_SETTINGS_TRAITS_COMMON( \
+    SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS) \
     struct SETTINGS_TRAITS_NAME \
     { \
         struct Data \
@@ -938,18 +939,60 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             const char * getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
-            Field castValueUtil(size_t index, const Field & value) const { auto p = field_infos[index].create_default_function(); *p = value; return static_cast<Field>(*p); } \
-            String valueToStringUtil(size_t index, const Field & value) const { auto p = field_infos[index].create_default_function(); *p = value; return p->toString(); } \
-            Field stringToValueUtil(size_t index, const String & str) const { auto p = field_infos[index].create_default_function(); p->parseFromString(str); return static_cast<Field>(*p); } \
-            void setValue(Data & data, size_t index, const Field & value) const { field_infos[index].get_data_function(data)->operator=(value); } \
-            Field getValue(const Data & data, size_t index) const { return static_cast<Field>(*field_infos[index].get_data_function(*const_cast<Data*>(&data))); } \
-            void setValueString(Data & data, size_t index, const String & str) const { field_infos[index].get_data_function(data)->parseFromString(str); } \
-            String getValueString(const Data & data, size_t index) const { return field_infos[index].get_data_function(*const_cast<Data*>(&data))->toString(); } \
-            bool isValueChanged(const Data & data, size_t index) const { return field_infos[index].get_data_function(*const_cast<Data*>(&data))->isChanged(); } \
-            void resetValueToDefault(Data & data, size_t index) const { auto p = field_infos[index].create_default_function(); field_infos[index].get_data_function(*const_cast<Data*>(&data))->operator=(static_cast<Field>(*p));  } \
-            void writeBinary(const Data & data, size_t index, WriteBuffer & out) const { field_infos[index].get_data_function(*const_cast<Data*>(&data))->writeBinary(out); } \
-            void readBinary(Data & data, size_t index, ReadBuffer & in) const { field_infos[index].get_data_function(data)->readBinary(in); } \
+            Field castValueUtil(size_t index, const Field & value) const \
+            { \
+                auto p = field_infos[index].create_default_function(); \
+                *p = value; \
+                return static_cast<Field>(*p); \
+            } \
+            String valueToStringUtil(size_t index, const Field & value) const \
+            { \
+                auto p = field_infos[index].create_default_function(); \
+                *p = value; \
+                return p->toString(); \
+            } \
+            Field stringToValueUtil(size_t index, const String & str) const \
+            { \
+                auto p = field_infos[index].create_default_function(); \
+                p->parseFromString(str); \
+                return static_cast<Field>(*p); \
+            } \
+            void setValue(Data & data, size_t index, const Field & value) const \
+            { \
+                field_infos[index].get_data_function(data)->operator=(value); \
+            } \
+            Field getValue(const Data & data, size_t index) const \
+            { \
+                return static_cast<Field>(*field_infos[index].get_data_function(*const_cast<Data *>(&data))); \
+            } \
+            void setValueString(Data & data, size_t index, const String & str) const \
+            { \
+                field_infos[index].get_data_function(data)->parseFromString(str); \
+            } \
+            String getValueString(const Data & data, size_t index) const \
+            { \
+                return field_infos[index].get_data_function(*const_cast<Data *>(&data))->toString(); \
+            } \
+            bool isValueChanged(const Data & data, size_t index) const \
+            { \
+                return field_infos[index].get_data_function(*const_cast<Data *>(&data))->isChanged(); \
+            } \
+            void resetValueToDefault(Data & data, size_t index) const \
+            { \
+                auto p = field_infos[index].create_default_function(); \
+                field_infos[index].get_data_function(*const_cast<Data *>(&data))->operator=(static_cast<Field>(*p)); \
+                field_infos[index].get_data_function(*const_cast<Data *>(&data))->setChanged(false); \
+            } \
+            void writeBinary(const Data & data, size_t index, WriteBuffer & out) const \
+            { \
+                field_infos[index].get_data_function(*const_cast<Data *>(&data))->writeBinary(out); \
+            } \
+            void readBinary(Data & data, size_t index, ReadBuffer & in) const \
+            { \
+                field_infos[index].get_data_function(data)->readBinary(in); \
+            } \
             String getDefaultValueString(size_t index) const { return field_infos[index].create_default_function()->toString(); } \
+        \
         private: \
             Accessor(); \
             struct FieldInfo \
@@ -959,18 +1002,16 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
                 const char * const type; \
                 const char * const description; \
                 const UInt64 flags; \
-                SettingFieldBase* (*get_data_function)(Data &); \
+                SettingFieldBase * (*get_data_function)(Data &); \
                 std::unique_ptr<SettingFieldBase> (*create_default_function)(); \
             }; \
             std::vector<FieldInfo> field_infos; \
             std::unordered_map<std::string_view, size_t> name_to_index_map; \
         }; \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
-        \
-        static inline const AliasMap aliases_to_settings = { \
-            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
-            LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
-        }; \
+        static inline const AliasMap aliases_to_settings \
+            = {LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
+                   LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_)}; \
         using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
         static inline const SettingsToAliasesMap & settingsToAliases() \
         { \
@@ -983,7 +1024,6 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             }(); \
             return setting_to_aliases_mapping; \
         } \
-        \
         static std::string_view resolveName(std::string_view name) \
         { \
             if (auto it = aliases_to_settings.find(name); it != aliases_to_settings.end()) \

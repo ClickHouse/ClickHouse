@@ -28,6 +28,7 @@ struct SettingFieldBase
     virtual SettingFieldBase & operator=(const Field & f) = 0;
 
     virtual bool isChanged() const = 0;
+    virtual void setChanged(bool changed_) = 0;
 
     virtual operator Field() const = 0;
 
@@ -54,6 +55,7 @@ struct SettingFieldNumber : SettingFieldBase
     {}
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     virtual SettingFieldNumber & operator=(Type x);
     virtual SettingFieldNumber & operator=(const Field & f) override;
@@ -138,6 +140,7 @@ struct SettingAutoWrapper final : SettingFieldBase
     }
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     explicit operator Field() const override { return is_auto ? Field(keyword) : Field(base); }
 
@@ -210,6 +213,7 @@ struct SettingFieldMaxThreads final : SettingFieldBase
     }
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     operator UInt64() const { return value; } /// NOLINT
     explicit operator Field() const override { return value; }
@@ -273,6 +277,7 @@ struct SettingFieldTimespan final : SettingFieldBase
     }
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     operator Poco::Timespan() const { return value; } /// NOLINT
 
@@ -328,6 +333,7 @@ struct SettingFieldString final : SettingFieldBase
     }
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     operator const String &() const { return value; } /// NOLINT
     explicit operator Field() const override { return value; }
@@ -365,6 +371,7 @@ public:
     }
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     operator const Map &() const { return value; } /// NOLINT
     explicit operator Field() const override { return value; }
@@ -401,6 +408,7 @@ public:
     }
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     operator char() const { return value; } /// NOLINT
     explicit operator Field() const override { return toString(); }
@@ -441,6 +449,7 @@ struct SettingFieldURI final : SettingFieldBase
     }
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     operator const Poco::URI &() const { return value; } /// NOLINT
     explicit operator String() const { return toString(); }
@@ -493,6 +502,7 @@ struct SettingFieldEnum final : SettingFieldBase
     }
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     operator EnumType() const { return value; } /// NOLINT
     explicit operator Field() const override { return toString(); }
@@ -552,6 +562,7 @@ struct SettingFieldMultiEnum final : SettingFieldBase
     }
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     operator ValueType() const { return value; } /// NOLINT
     explicit operator Field() const override { return toString(); }
@@ -657,6 +668,7 @@ struct SettingFieldTimezone final : SettingFieldBase
     }
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     operator const String &() const { return value; } /// NOLINT
     explicit operator Field() const override { return value; }
@@ -694,6 +706,7 @@ struct SettingFieldCustom final : SettingFieldBase
     }
 
     bool isChanged() const override { return changed; }
+    void setChanged(bool changed_) override { changed = changed_; }
 
     explicit operator Field() const override { return value; }
 
