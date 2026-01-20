@@ -2205,64 +2205,28 @@ CONV_FN(MongoDBFunc, mfunc)
     ret += ")";
 }
 
-CONV_FN(S3Func, sfunc)
+CONV_FN(ObjectStoreFunc, ofunc)
 {
-    ret += S3Func_FName_Name(sfunc.fname());
-    ret += "(";
-    if (sfunc.has_cluster() && sfunc.fname() > S3Func_FName_icebergS3)
+    ret += ObjectStoreFunc_FName_Name(ofunc.fname());
+    if (ofunc.cluster_func())
     {
-        ClusterToString(ret, false, sfunc.cluster());
+        ret += "Cluster";
     }
-    ret += sfunc.credential();
-    for (int i = 0; i < sfunc.params_size(); i++)
+    ret += "(";
+    if (ofunc.cluster_func() && ofunc.has_cluster())
+    {
+        ClusterToString(ret, false, ofunc.cluster());
+    }
+    ret += ofunc.credential();
+    for (int i = 0; i < ofunc.params_size(); i++)
     {
         ret += ", ";
-        KeyValuePairToString(ret, sfunc.params(i));
+        KeyValuePairToString(ret, ofunc.params(i));
     }
-    if (sfunc.has_setting_values())
+    if (ofunc.has_setting_values())
     {
         ret += ", SETTINGS ";
-        SettingValuesToString(ret, sfunc.setting_values());
-    }
-    ret += ")";
-}
-
-CONV_FN(AzureBlobStorageFunc, azure)
-{
-    ret += AzureBlobStorageFunc_FName_Name(azure.fname());
-    ret += "(";
-    if (azure.has_cluster() && azure.fname() > AzureBlobStorageFunc_FName_icebergAzure)
-    {
-        ClusterToString(ret, false, azure.cluster());
-    }
-    ret += azure.credential();
-    for (int i = 0; i < azure.params_size(); i++)
-    {
-        ret += ", ";
-        KeyValuePairToString(ret, azure.params(i));
-    }
-    if (azure.has_setting_values())
-    {
-        ret += ", SETTINGS ";
-        SettingValuesToString(ret, azure.setting_values());
-    }
-    ret += ")";
-}
-
-CONV_FN(LocalFunc, local)
-{
-    ret += LocalFunc_FName_Name(local.fname());
-    ret += "(";
-    ret += local.credential();
-    for (int i = 0; i < local.params_size(); i++)
-    {
-        ret += ", ";
-        KeyValuePairToString(ret, local.params(i));
-    }
-    if (local.has_setting_values())
-    {
-        ret += ", SETTINGS ";
-        SettingValuesToString(ret, local.setting_values());
+        SettingValuesToString(ret, ofunc.setting_values());
     }
     ret += ")";
 }
@@ -2401,6 +2365,12 @@ CONV_FN(MergeTreeAnalyzeIndexesFunc, mfunc)
         ret += ", ";
         ExprToString(ret, mfunc.pred());
     }
+    if (mfunc.has_part())
+    {
+        ret += ", '";
+        ret += mfunc.part();
+        ret += "'";
+    }
     ret += ")";
 }
 
@@ -2477,8 +2447,8 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kSqite:
             SQLiteFuncToString(ret, tf.sqite());
             break;
-        case TableFunctionType::kS3:
-            S3FuncToString(ret, tf.s3());
+        case TableFunctionType::kObjectFunc:
+            ObjectStoreFuncToString(ret, tf.object_func());
             break;
         case TableFunctionType::kMerge:
             MergeFuncToString(ret, tf.merge());
@@ -2504,12 +2474,6 @@ CONV_FN(TableFunction, tf)
             ret += "dictionary(";
             FlatExprSchemaTableToString(ret, tf.dictionary(), ".");
             ret += ")";
-            break;
-        case TableFunctionType::kAzure:
-            AzureBlobStorageFuncToString(ret, tf.azure());
-            break;
-        case TableFunctionType::kLocal:
-            LocalFuncToString(ret, tf.local());
             break;
         case TableFunctionType::kUrl:
             URLFuncToString(ret, tf.url());
@@ -3905,9 +3869,9 @@ CONV_FN(DescribeStatement, ds)
             TableOrFunctionToString(ret, false, ds.tof());
             break;
         case DescType::kSel:
-            ret += "(";
+            ret += ds.paren() ? "(" : "";
             ExplainQueryToString(ret, ds.sel());
-            ret += ")";
+            ret += ds.paren() ? ")" : "";
             break;
         case DescType::kStf:
             SQLTableFuncCallToString(ret, ds.stf());
@@ -5514,11 +5478,6 @@ CONV_FN(ShowStatement, sh)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, sh.setting_values());
-    }
-    if (sh.has_format())
-    {
-        ret += " FORMAT ";
-        ret += OutFormat_Name(sh.format()).substr(4);
     }
 }
 

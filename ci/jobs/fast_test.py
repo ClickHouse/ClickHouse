@@ -25,7 +25,7 @@ def clone_submodules():
         "contrib/zlib-ng",
         "contrib/libxml2",
         "contrib/fmtlib",
-        "contrib/aklomp-base64",
+        "contrib/base64",
         "contrib/cctz",
         "contrib/libcpuid",
         "contrib/libdivide",
