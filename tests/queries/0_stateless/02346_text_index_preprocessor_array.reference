@@ -1,0 +1,29 @@
+Positive tests on preprocessor construction and use with array columns.
+- Test single tokenizer and preprocessor (lower) argument.
+-- with Lower String
+0	lower
+1	upper
+2	capital
+0	lower
+1	upper
+2	capital
+0	lower
+1	upper
+2	capital
+0	lower
+1	upper
+2	capital
+-- with Upper String
+0	lower
+1	upper
+2	capital
+0	lower
+1	upper
+2	capital
+0	lower
+1	upper
+2	capital
+0	lower
+1	upper
+2	capital
+-- with Empty Match
