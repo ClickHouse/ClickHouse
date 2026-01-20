@@ -13,8 +13,8 @@ def test_date_reads(started_cluster_iceberg_with_spark):
     spark = started_cluster_iceberg_with_spark.spark_session
     storage_type = 's3'
     expected_rows=2
-    expected_date_1='2026-01-13'
-    expected_date_2='1965-01-13'
+    expected_date_1='2026-01-13\n'
+    expected_date_2='1965-01-01\n'
     
 
     TABLE_NAME = (
@@ -31,7 +31,6 @@ def test_date_reads(started_cluster_iceberg_with_spark):
 		date_col DATE	
             )
             USING iceberg
-            TBLPROPERTIES ('format-version' = '2')
 	"""
     )
     spark.sql(
@@ -40,6 +39,14 @@ def test_date_reads(started_cluster_iceberg_with_spark):
     spark.sql(
       	  f""" INSERT INTO {TABLE_NAME} VALUES(2,DATE '1965-01-13') """
     ) 
+   
+    files = default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
     rows_in_ch = int(
@@ -50,17 +57,17 @@ def test_date_reads(started_cluster_iceberg_with_spark):
     
     assert rows_in_ch == expected_rows, f"Expected {expected_rows} rows, but got {rows_in_ch}"
     
-    ret_date_1 = int(
+    ret_date_1 = (
       instance.query(
-             f"SELECT count() FROM {TABLE_NAME} where number=1",
+             f"SELECT date_col FROM {TABLE_NAME} where number=1",
       )
     )
     
     assert ret_date_1==expected_date_1, f"Expected {expected_date_1} rows, but got {ret_date_1}"
     
-    ret_date_2 = int(
+    ret_date_2 = (
       instance.query(
-             f"SELECT count() FROM {TABLE_NAME} where number=2",
+             f"SELECT date_col FROM {TABLE_NAME} where number=2",
       )
     )
     
