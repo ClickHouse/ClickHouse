@@ -81,8 +81,8 @@ void ExecutionSpeedLimits::throttle(
             /// If the predicted execution time is longer than `max_estimated_execution_time`.
             if (timeout_overflow_mode == OverflowMode::THROW && max_estimated_execution_time != 0 && total_rows_to_read && read_rows)
             {
-                // We impose additional constraints to make estimation more reliable.
-                // At least 1% of the rows must be read, or at least 1% of the time must be spent.
+                /// We impose additional constraints to make estimation more reliable.
+                /// At least 1% of the rows must be read, or at least 1% of the time must be spent.
                 if (read_rows * 100 > total_rows_to_read || elapsed_seconds * 100 > max_estimated_execution_time.totalSeconds())
                 {
                     double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows_to_read) / read_rows);
