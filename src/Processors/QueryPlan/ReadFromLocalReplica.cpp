@@ -27,26 +27,17 @@ QueryPlanPtr ReadFromLocalParallelReplicaStep::extractQueryPlan()
 
     auto qp = std::move(query_plan);
     query_plan.reset();
-
-    for (const auto & filter_info : pushed_down_filters)
-    {
-        auto filter_step = std::make_unique<FilterStep>(
-            qp->getCurrentHeader(), filter_info.actions.clone(), filter_info.column_name, filter_info.do_remove_column);
-
-        qp->addStep(std::move(filter_step));
-    }
-
     return qp;
 }
 
-void ReadFromLocalParallelReplicaStep::addFilterDAGInfo(FilterDAGInfo filter)
+void ReadFromLocalParallelReplicaStep::addFilter(FilterDAGInfo filter)
 {
-    output_header = std::make_shared<const Block>(FilterTransform::transformHeader(
-            *output_header,
-            &filter.actions,
-            filter.column_name,
-            filter.do_remove_column));
-    pushed_down_filters.push_back(std::move(filter));
+    output_header = std::make_shared<const Block>(
+        FilterTransform::transformHeader(*output_header, &filter.actions, filter.column_name, filter.do_remove_column));
+
+    auto filter_step = std::make_unique<FilterStep>(
+        query_plan->getCurrentHeader(), std::move(filter.actions), std::move(filter.column_name), filter.do_remove_column);
+    query_plan->addStep(std::move(filter_step));
 }
 
 }

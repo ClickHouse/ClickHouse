@@ -18,12 +18,10 @@ public:
 
     QueryPlanPtr extractQueryPlan();
 
-    void addFilterDAGInfo(FilterDAGInfo filter);
+    void addFilter(FilterDAGInfo filter);
 
 private:
     QueryPlanPtr query_plan;
-
-    std::vector<FilterDAGInfo> pushed_down_filters;
 };
 
 }

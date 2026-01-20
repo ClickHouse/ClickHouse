@@ -683,18 +683,12 @@ InputOrder buildInputOrderFromUnorderedKeys(
     using ReverseMatches = std::unordered_map<const ActionsDAG::Node *, MatchedTrees::Matches::const_iterator>;
     ReverseMatches reverse_matches;
 
-    // LOG_DEBUG(getLogger(__func__), "dag:\n{}", dag ? dag.value().dumpDAG() : "");
-    //
-    // LOG_DEBUG(getLogger(__func__), "sorting_key_dag:\n{}", sorting_key_dag.dumpDAG());
-
     if (dag)
     {
         matches = matchTrees(sorting_key_dag.getOutputs(), *dag);
 
         for (const auto & [node, match] : matches)
         {
-            // LOG_DEBUG(getLogger(__func__), "match:\n{} : {}", node->result_name, match.node ? match.node->result_name : "nullptr");
-
             if (!match.monotonicity || match.monotonicity->strict)
             {
                 if (match.node && fixed_columns.contains(node))
@@ -734,9 +728,6 @@ InputOrder buildInputOrderFromUnorderedKeys(
                 }
             }
         }
-
-        // for(auto [node, it] : reverse_matches)
-        //     LOG_DEBUG(getLogger(__func__), "reverse_matches\n{}", node->result_name);
     }
 
     /// This is a result direction we will read from MergeTree
@@ -748,8 +739,6 @@ InputOrder buildInputOrderFromUnorderedKeys(
     int read_direction = 0;
     size_t next_sort_key = 0;
     std::unordered_set<std::string_view> not_matched_keys(unordered_keys.begin(), unordered_keys.end());
-    // for(const auto k : not_matched_keys)
-    //     LOG_DEBUG(getLogger(__func__), "not_matched_keys: {}", k);
 
     SortDescription sort_description;
     sort_description.reserve(unordered_keys.size());

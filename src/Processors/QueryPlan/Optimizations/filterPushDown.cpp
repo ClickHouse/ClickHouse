@@ -827,7 +827,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     {
         // actual push down will be done when plan for local parallel replica will be optimized
         FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
-        parallel_replicas_local_plan->addFilterDAGInfo(std::move(info));
+        parallel_replicas_local_plan->addFilter(std::move(info));
         std::swap(*parent_node, *child_node);
         return 1;
     }
@@ -835,7 +835,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(child.get()))
     {
         FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
-        read_from_merge->addFilterDAGInfo(std::move(info));
+        read_from_merge->addFilter(std::move(info));
         std::swap(*parent_node, *child_node);
         return 1;
     }
