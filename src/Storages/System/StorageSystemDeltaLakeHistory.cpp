@@ -1,36 +1,36 @@
-#include <Storages/System/StorageSystemDeltaLakeHistory.h>
 #include <mutex>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeDateTime.h>
+#include <Access/ContextAccess.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Access/ContextAccess.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Core/Settings.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/System/StorageSystemDeltaLakeHistory.h>
 
 #include "config.h"
 
 #if USE_PARQUET
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
-#include <Storages/ObjectStorage/Utils.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadHelpers.h>
-#include <Poco/JSON/Parser.h>
-#include <Poco/JSON/Object.h>
-#include <filesystem>
+#    include <filesystem>
+#    include <IO/ReadBufferFromFileBase.h>
+#    include <IO/ReadHelpers.h>
+#    include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#    include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#    include <Storages/ObjectStorage/Utils.h>
+#    include <Poco/JSON/Object.h>
+#    include <Poco/JSON/Parser.h>
 #endif
 
 /// Delta Lake timestamps are stored in milliseconds
@@ -41,24 +41,27 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsSeconds lock_acquire_timeout;
+extern const SettingsSeconds lock_acquire_timeout;
 }
 
 ColumnsDescription StorageSystemDeltaLakeHistory::getColumnsDescription()
 {
-    return ColumnsDescription
-    {
+    return ColumnsDescription{
         {"database", std::make_shared<DataTypeString>(), "Database name."},
         {"table", std::make_shared<DataTypeString>(), "Table name."},
         {"version", std::make_shared<DataTypeUInt64>(), "Version number of the Delta Lake table."},
-        {"timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)), "Timestamp when this version was committed."},
+        {"timestamp",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime64>(TIME_SCALE)),
+         "Timestamp when this version was committed."},
         {"operation", std::make_shared<DataTypeString>(), "Operation type (e.g., WRITE, DELETE, MERGE)."},
-        {"operation_parameters", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Parameters of the operation."},
-        {"is_current", std::make_shared<DataTypeUInt8>(), "Flag indicating if this is the current version."}
-    };
+        {"operation_parameters",
+         std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
+         "Parameters of the operation."},
+        {"is_current", std::make_shared<DataTypeUInt8>(), "Flag indicating if this is the current version."}};
 }
 
-void StorageSystemDeltaLakeHistory::fillData([[maybe_unused]] MutableColumns & res_columns, [[maybe_unused]] ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemDeltaLakeHistory::fillData(
+    [[maybe_unused]] MutableColumns & res_columns, [[maybe_unused]] ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
 #if USE_PARQUET
     ContextMutablePtr context_copy = Context::createCopy(context);
@@ -72,25 +75,17 @@ void StorageSystemDeltaLakeHistory::fillData([[maybe_unused]] MutableColumns & r
 
         try
         {
-            /// Check if this is a Delta Lake table by checking the metadata type
-            auto * metadata = object_storage_table->getExternalMetadata(context_copy);
-            if (!metadata)
+            /// Check if this is a Delta Lake table using dynamic_cast (similar to IcebergMetadata check)
+            DeltaLakeMetadata * delta_metadata = dynamic_cast<DeltaLakeMetadata *>(object_storage_table->getExternalMetadata(context_copy));
+            if (!delta_metadata)
                 return;
 
-            /// Verify this is a Delta Lake table (not Iceberg or Hudi)
-            if (std::string_view(metadata->getName()) != "DeltaLake")
-                return;
-
-            /// Get the table path and object storage
-            auto object_storage = object_storage_table->getObjectStorage();
+            /// Get the table path and object storage from public members
+            const auto & object_storage = object_storage_table->object_storage;
             if (!object_storage)
                 return;
 
-            auto configuration = object_storage_table->getConfiguration();
-            if (!configuration)
-                return;
-
-            auto config_ptr = configuration.lock();
+            auto config_ptr = object_storage_table->configuration;
             if (!config_ptr)
                 return;
 
@@ -107,7 +102,9 @@ void StorageSystemDeltaLakeHistory::fillData([[maybe_unused]] MutableColumns & r
             }
             catch (...)
             {
-                tryLogCurrentException(log, fmt::format("Failed to list metadata files for table {}", object_storage_table->getStorageID().getFullTableName()));
+                tryLogCurrentException(
+                    log,
+                    fmt::format("Failed to list metadata files for table {}", object_storage_table->getStorageID().getFullTableName()));
                 return;
             }
 
@@ -127,7 +124,10 @@ void StorageSystemDeltaLakeHistory::fillData([[maybe_unused]] MutableColumns & r
                     {
                         current_version = std::stoull(filename);
                     }
-                    catch (...) {}
+                    catch (...)
+                    {
+                        /// Ignore parsing errors for version extraction
+                    }
                 }
             }
 
@@ -240,15 +240,19 @@ void StorageSystemDeltaLakeHistory::fillData([[maybe_unused]] MutableColumns & r
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(getLogger("SystemDeltaLakeHistory"),
-                        fmt::format("Failed to process metadata file {} for table {}",
-                            metadata_file, object_storage_table->getStorageID().getFullTableName()));
+                    tryLogCurrentException(
+                        getLogger("SystemDeltaLakeHistory"),
+                        fmt::format(
+                            "Failed to process metadata file {} for table {}",
+                            metadata_file,
+                            object_storage_table->getStorageID().getFullTableName()));
                 }
             }
         }
         catch (...)
         {
-            tryLogCurrentException(getLogger("SystemDeltaLakeHistory"),
+            tryLogCurrentException(
+                getLogger("SystemDeltaLakeHistory"),
                 fmt::format("Ignoring broken table {}", object_storage_table->getStorageID().getFullTableName()));
         }
     };
@@ -264,7 +268,8 @@ void StorageSystemDeltaLakeHistory::fillData([[maybe_unused]] MutableColumns & r
             {
                 StoragePtr storage = iterator->table();
 
-                TableLockHolder lock = storage->tryLockForShare(context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
+                TableLockHolder lock = storage->tryLockForShare(
+                    context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
                 if (!lock)
                     continue;
 
