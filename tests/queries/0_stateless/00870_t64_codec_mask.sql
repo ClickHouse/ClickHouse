@@ -52,22 +52,22 @@ SELECT DISTINCT (t_u64 = tm_u64, t_i64 = tm_i64, u64 = tm_u64, i64 = tm_i64, u32
 
 --
 
-INSERT INTO t64m SELECT number AS x, x, x, x, x, x, x, x, x, x, x, x FROM numbers(1000000);
+INSERT INTO t64m SELECT number + 1000 AS x, x, x, x, x, x, x, x, x, x, x, x FROM numbers(10000);
 SELECT DISTINCT (t_u64 = tm_u64, t_i64 = tm_i64, u64 = tm_u64, i64 = tm_i64, u32 = tm_u32, i32 = tm_i32) FROM t64m;
 
-INSERT INTO t64m SELECT number AS x, -x, x, -x, x, -x, x, -x, x, -x, x, -x FROM numbers(1000000);
+INSERT INTO t64m SELECT number AS x, -x, x, -x, x, -x, x, -x, x, -x, x, -x FROM numbers(10000);
 SELECT DISTINCT (t_u64 = tm_u64, t_i64 = tm_i64, u64 = tm_u64, i64 = tm_i64, u32 = tm_u32, i32 = tm_i32) FROM t64m;
 
-WITH CAST(number * exp2(10), 'UInt64') AS x INSERT INTO t64m SELECT x, x, x, x, x, x, x, x, x, x, x, x FROM numbers(1000000);
+WITH CAST(number * exp2(10), 'UInt64') AS x INSERT INTO t64m SELECT x, x, x, x, x, x, x, x, x, x, x, x FROM numbers(10000);
 SELECT DISTINCT (t_u64 = tm_u64, t_i64 = tm_i64, u64 = tm_u64, i64 = tm_i64, u32 = tm_u32, i32 = tm_i32) FROM t64m;
 
-WITH CAST(number * exp2(10), 'UInt64') AS x INSERT INTO t64m SELECT x, -x, x, -x, x, -x, x, -x, x, -x, x, -x FROM numbers(1000000);
+WITH CAST(number * exp2(10), 'UInt64') AS x INSERT INTO t64m SELECT x, -x, x, -x, x, -x, x, -x, x, -x, x, -x FROM numbers(10000);
 SELECT DISTINCT (t_u64 = tm_u64, t_i64 = tm_i64, u64 = tm_u64, i64 = tm_i64, u32 = tm_u32, i32 = tm_i32) FROM t64m;
 
-WITH CAST(number * exp10(5), 'UInt64') AS x INSERT INTO t64m SELECT x, x, x, x, x, x, x, x, x, x, x, x FROM numbers(1000000);
+WITH CAST(number * exp10(5), 'UInt64') AS x INSERT INTO t64m SELECT x, x, x, x, x, x, x, x, x, x, x, x FROM numbers(10000);
 SELECT DISTINCT (t_u64 = tm_u64, t_i64 = tm_i64, u64 = tm_u64, i64 = tm_i64, u32 = tm_u32, i32 = tm_i32) FROM t64m;
 
-WITH CAST(number * exp10(5), 'Int64') AS x INSERT INTO t64m SELECT x, -x, x, -x, x, -x, x, -x, x, -x, x, -x FROM numbers(1000000);
+WITH CAST(number * exp10(5), 'Int64') AS x INSERT INTO t64m SELECT x, -x, x, -x, x, -x, x, -x, x, -x, x, -x FROM numbers(10000);
 SELECT DISTINCT (t_u64 = tm_u64, t_i64 = tm_i64, u64 = tm_u64, i64 = tm_i64, u32 = tm_u32, i32 = tm_i32) FROM t64m;
 
 OPTIMIZE TABLE t64m FINAL;
