@@ -7,3 +7,9 @@ SELECT arrayJoin([toTimeZone(fromUnixTimestamp(10), 'UTC'), toTimeZone(fromUnixT
 1970-01-01 00:00:10
 1970-01-01 00:00:09
 1970-01-01 00:00:00
+-- no overflow
+SELECT arrayJoin([toTimeZone(fromUnixTimestamp(10), 'UTC'), toTimeZone(fromUnixTimestamp(2), 'UTC')]) a ORDER BY a DESC WITH FILL STALENESS toIntervalSecond(-2);
+1970-01-01 00:00:10
+1970-01-01 00:00:09
+1970-01-01 00:00:02
+1970-01-01 00:00:01
