@@ -61,22 +61,22 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
     }
     else if (which.isDate())
     {
-        // Preserve Date result type
+        // Preserve Date result type: average over underlying UInt16 days, rounded and returned as Date
         res = std::make_shared<AggregateFunctionAvg<UInt16>>(argument_types, data_type);
     }
     else if (which.isDate32())
     {
-        // Preserve Date32 result type
+        // Preserve Date32 result type: average over underlying Int32 days, rounded and returned as Date32
         res = std::make_shared<AggregateFunctionAvg<Int32>>(argument_types, data_type);
     }
     else if (which.isDateTime())
     {
-        // Preserve DateTime result type
+        // Preserve DateTime result type: average over underlying UInt32 seconds, rounded and returned as DateTime
         res = std::make_shared<AggregateFunctionAvg<UInt32>>(argument_types, data_type);
     }
     else if (which.isTime())
     {
-        // Preserve Time result type
+        // Preserve Time result type: average over underlying Int32 value, rounded and returned as Time
         res = std::make_shared<AggregateFunctionAvg<Int32>>(argument_types, data_type);
     }
     else
