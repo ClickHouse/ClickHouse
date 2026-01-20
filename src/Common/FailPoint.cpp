@@ -132,8 +132,7 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
-    ONCE(database_replicated_drop_after_removing_keeper_failed) \
-    ONCE(parallel_replicas_reading_response_timeout)
+    ONCE(database_replicated_drop_after_removing_keeper_failed)
 
 
 namespace FailPoints
