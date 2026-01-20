@@ -35,19 +35,21 @@ struct BitpackingBlockCodecImpl<true>
 {
     static size_t bitpackingCompressedBytes(size_t count, uint32_t bits) noexcept
     {
-        return simdpack_compressedbytes(count, bits);
+        /// Type cast is required by simdcomp function signature (expects int).
+        /// This conversion is safe because count never exceeds 128 (BLOCK_SIZE) in current usage.
+        return static_cast<size_t>(simdpack_compressedbytes(static_cast<int>(count), bits));
     }
     /// Returns {compressed_bytes, bits} where bits is the max bit-width required
     /// to represent all values in [0..n).
-    static std::pair<size_t, size_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data) noexcept
+    static std::pair<size_t, uint32_t> calculateNeededBytesAndMaxBits(std::span<uint32_t> & data) noexcept
     {
-        size_t n = data.size();
+        uint32_t n = static_cast<uint32_t>(data.size());
         auto bits = maxbits_length(data.data(), n);
         auto bytes = simdpack_compressedbytes(n, bits);
         return {bytes, bits};
     }
 
-    static uint32_t encode(std::span<uint32_t> & in, uint32_t max_bits, std::span<char> & out)
+    static size_t encode(std::span<uint32_t> & in, int32_t max_bits, std::span<char> & out)
     {
         if (max_bits > 32)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
@@ -91,9 +93,9 @@ struct BitpackingBlockCodecImpl<false>
         size_t n = in.size();
         uint32_t xored_in = 0;
         // Process in chunks of 4 (mirrors the SIMD path grouping), but without SSE.
-        const uint32_t offset = (n / 4) * 4;
+        size_t offset = (n / 4) * 4;
 
-        for (uint32_t k = 0; k < offset; k += 4)
+        for (size_t k = 0; k < offset; k += 4)
         {
             xored_in |= in[k + 0];
             xored_in |= in[k + 1];
@@ -102,7 +104,7 @@ struct BitpackingBlockCodecImpl<false>
         }
 
         // Tail
-        for (uint32_t k = offset; k < n; ++k)
+        for (size_t k = offset; k < n; ++k)
             xored_in |= in[k];
 
         // Bits(xored_in): 0 -> 0, else 32 - clz(xored_in)
@@ -127,10 +129,10 @@ struct BitpackingBlockCodecImpl<false>
 
     /// Returns {compressed_bytes, bits} where bits is the max bit-width required
     /// to represent all values in [0..n).
-    [[maybe_unused]] static std::pair<size_t, size_t> calculateNeededBytesAndMaxBits(const std::span<uint32_t> & data) noexcept
+    [[maybe_unused]] static std::pair<size_t, uint32_t> calculateNeededBytesAndMaxBits(const std::span<uint32_t> & data) noexcept
     {
         size_t n = data.size();
-        size_t bits = maxbitsLength(data);
+        uint32_t bits = maxbitsLength(data);
         chassert(bits >= 0 && bits <= 32);
         size_t bytes = bitpackingCompressedBytes(n, bits);
         return {bytes, bits};
@@ -142,7 +144,7 @@ struct BitpackingBlockCodecImpl<false>
     /// - `out`: destination buffer; the function writes the packed stream into it
     ///          and advances `out` to point past the written bytes.
     /// Returns: number of bytes written into `out` (the packed payload size).
-    [[maybe_unused]] static uint32_t encode(std::span<uint32_t> & in, uint32_t max_bits, std::span<char> & out)
+    [[maybe_unused]] static size_t encode(std::span<uint32_t> & in, uint32_t max_bits, std::span<char> & out)
     {
         if (max_bits > 32)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
