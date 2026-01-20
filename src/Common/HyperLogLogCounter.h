@@ -430,7 +430,7 @@ private:
         if (unlikely(zeros_plus_one) > max_rank)
             return max_rank;
 
-        return zeros_plus_one;
+        return static_cast<UInt8>(zeros_plus_one);
     }
 
     HashValueType getHash(Value key) const

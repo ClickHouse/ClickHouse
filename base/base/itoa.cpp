@@ -126,7 +126,7 @@ inline ALWAYS_INLINE char * to_text_from_integer(char * b, T i)
         /// Original jeaii code
         //      *reinterpret_cast<pair *>(b) = digits.fd[n];
         //      return n < 10 ? b + 1 : b + 2;
-        return n < 10 ? outOneDigit(b, n) : outTwoDigits(b, n);
+        return n < 10 ? outOneDigit(b, static_cast<uint8_t>(n)) : outTwoDigits(b, static_cast<uint8_t>(n));
     }
     if (n < UInt32(1e6))
     {

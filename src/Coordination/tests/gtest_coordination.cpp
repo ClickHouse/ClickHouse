@@ -288,7 +288,7 @@ void testLogAndStateMachine(
             .force_sync = true, .compress_logs = enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
         keeper_context);
-    changelog.init(state_machine->last_commit_index() + 1, (*settings)[DB::CoordinationSetting::reserved_log_items]);
+    changelog.init(state_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
 
     for (size_t i = 1; i < total_logs + 1; ++i)
     {
@@ -336,7 +336,7 @@ void testLogAndStateMachine(
             .force_sync = true, .compress_logs = enable_compression, .rotate_interval = (*settings)[DB::CoordinationSetting::rotate_log_storage_interval]},
         DB::FlushSettings(),
         keeper_context);
-    restore_changelog.init(restore_machine->last_commit_index() + 1, (*settings)[DB::CoordinationSetting::reserved_log_items]);
+    restore_changelog.init(restore_machine->last_commit_index(), (*settings)[DB::CoordinationSetting::reserved_log_items]);
 
     EXPECT_EQ(restore_changelog.size(), std::min((*settings)[DB::CoordinationSetting::reserved_log_items] + total_logs % (*settings)[DB::CoordinationSetting::snapshot_distance], total_logs));
     EXPECT_EQ(restore_changelog.next_slot(), total_logs + 1);

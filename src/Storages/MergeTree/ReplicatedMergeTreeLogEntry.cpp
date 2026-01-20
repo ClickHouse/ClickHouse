@@ -283,7 +283,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in, MergeTreeDataFor
                 {
                     UInt32 value;
                     in >> value;
-                    merge_type = checkAndGetMergeType(value);
+                    merge_type = checkAndGetMergeType(static_cast<std::underlying_type_t<MergeType>>(value));
                 }
                 else if (checkString("into_uuid: ", in))
                 {
