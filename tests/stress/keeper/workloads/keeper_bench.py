@@ -1186,7 +1186,7 @@ class KeeperBench:
         }
         adapt_env = os.environ.get("KEEPER_BENCH_ADAPTIVE")
         if str(adapt_env or "").strip().lower() in ("1", "true", "yes", "on"):
-            return self._run_adaptive(bench_cfg, env_clients, summary)
+            return self._run_adaptive(bench_cfg, clients, summary)
         # Execute the bench tool (replay mode or generator mode)
         # Hard-cap execution: duration + 30s
         hard_cap = max(5, int(self.duration_s) + 60)

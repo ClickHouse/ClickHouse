@@ -422,12 +422,31 @@ def validate_metrics_jsonl(metrics_path):
         missing.append("missing bench metrics: " + ", ".join(miss_bench))
 
     # Ensure we have *some* non-canonical percentiles (not just p50/p95/p99).
-    # Examples: read_p99_9_ms, write_p99_99_ms, read_p0_ms, etc.
-    extra_pct_re = re.compile(r"^(read|write)_p\d+_\d+_ms$")
-    has_extra_pct = any(extra_pct_re.match(n) for n in bench_names)
+    # We accept both integer and decimal forms emitted by the stress framework:
+    # - read_p10_ms
+    # - read_p99_9_ms  (99.9)
+    # - read_p99_99_ms (99.99)
+    # Canonical ones are still emitted separately (read_p50_ms, read_p95_ms, read_p99_ms).
+    canon = {"50", "95", "99"}
+
+    def _is_extra_percentile_metric(name: str) -> bool:
+        if not name:
+            return False
+        m = re.match(r"^(read|write)_p([0-9]+)(?:_([0-9]+))?_ms$", name)
+        if not m:
+            return False
+        whole = str(m.group(2) or "")
+        frac = str(m.group(3) or "")
+        # Treat any decimal percentile as extra (e.g. 99.9, 99.99)
+        if frac:
+            return True
+        # Integer percentiles: anything other than 50/95/99 is extra.
+        return whole not in canon
+
+    has_extra_pct = any(_is_extra_percentile_metric(n) for n in bench_names)
     if not has_extra_pct:
         missing.append(
-            "missing bench percentile metrics beyond p50/p95/p99 (expected names like read_p99_9_ms)"
+            "missing bench percentile metrics beyond p50/p95/p99 (expected names like read_p10_ms or read_p99_9_ms)"
         )
 
     ok = not missing
