@@ -654,10 +654,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     std::nullopt /*max_block_size_bytes*/
                 );
             }
-            else
-            {
-                LOG_DEBUG(cache_log, "failed format check or etag is empty etag, skipping parquet metadata cache");
-            }
         }
         else
         {
