@@ -24,13 +24,13 @@ class WriteBuffer;
 
 struct SettingFieldBase
 {
-    virtual ~SettingFieldBase() {}
+    virtual ~SettingFieldBase() = default;
     virtual SettingFieldBase & operator=(const Field & f) = 0;
 
     virtual bool isChanged() const = 0;
     virtual void setChanged(bool changed_) = 0;
 
-    virtual operator Field() const = 0;
+    virtual explicit operator Field() const = 0;
 
     virtual String toString() const = 0;
     virtual void parseFromString(const String & str) = 0;
@@ -58,7 +58,7 @@ struct SettingFieldNumber : SettingFieldBase
     void setChanged(bool changed_) override { changed = changed_; }
 
     virtual SettingFieldNumber & operator=(Type x);
-    virtual SettingFieldNumber & operator=(const Field & f) override;
+    SettingFieldNumber & operator=(const Field & f) override;
     SettingFieldNumber & operator=(const SettingFieldNumber & o)
     {
         if (this != &o)
