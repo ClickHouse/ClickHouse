@@ -1,3 +1,4 @@
+-- Tags: no-bugfix-check
 -- Test case for issue #94671: if() should accept float literals with Decimal branches
 
 -- Works with integer literal (baseline)
