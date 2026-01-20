@@ -8,6 +8,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
 #include <Common/HashTable/HashSet.h>
+#include "base/types.h"
 
 #include <algorithm>
 
@@ -150,9 +151,10 @@ template <bool is_utf8>
 struct ByteJaccardIndexImpl
 {
 
+    /// For byte strings (and ASCII chars of UTF8) use an array
     struct ScratchASCII
     {
-        /// For byte strings (and ASCII chars of UTF8) use an array
+        using CalcType = UInt8;
         constexpr static size_t max_size = std::numeric_limits<unsigned char>::max() + 1;
         alignas(64) UInt8 haystack_set[max_size]{};
         alignas(64) UInt8 needle_set[max_size]{};
@@ -161,6 +163,7 @@ struct ByteJaccardIndexImpl
     /// For UTF8 use a hash set for wider codepoints
     struct ScratchUTF8
     {
+        using CalcType = UInt32;
         using Set = HashSet<UInt32, DefaultHash<UInt32>>;
         Set haystack_utf8_set;
         Set needle_utf8_set;
@@ -192,34 +195,22 @@ struct ByteJaccardIndexImpl
         }
         else
         {
-            auto fill_set = [&](auto& bitset, const char* ptr, const char* end)
+            while (haystack < haystack_end)
             {
-                while (ptr + 7 < end)
-                {
-                    bitset[static_cast<unsigned char>(ptr[0])] = 1;
-                    bitset[static_cast<unsigned char>(ptr[1])] = 1;
-                    bitset[static_cast<unsigned char>(ptr[2])] = 1;
-                    bitset[static_cast<unsigned char>(ptr[3])] = 1;
-                    bitset[static_cast<unsigned char>(ptr[4])] = 1;
-                    bitset[static_cast<unsigned char>(ptr[5])] = 1;
-                    bitset[static_cast<unsigned char>(ptr[6])] = 1;
-                    bitset[static_cast<unsigned char>(ptr[7])] = 1;
-                    ptr += 8;
-                }
-
-                while (ptr < end)
-                {
-                    bitset[static_cast<unsigned char>(*ptr)] = 1;
-                    ++ptr;
-                }
-            };
-
-            fill_set(scratch.haystack_set, haystack, haystack_end);
-            fill_set(scratch.needle_set, needle, needle_end);
+                scratch.haystack_set[static_cast<unsigned char>(*haystack)] = 1;
+                ++haystack;
+            }
+            while (needle < needle_end)
+            {
+                scratch.needle_set[static_cast<unsigned char>(*needle)] = 1;
+                ++needle;
+            }
         }
 
-        UInt32 intersection = 0;
-        UInt32 union_size = 0;
+        using CalcType = typename ScratchType::CalcType;
+
+        CalcType intersection = 0;
+        CalcType union_size = 0;
 
         if constexpr (is_utf8)
         {
