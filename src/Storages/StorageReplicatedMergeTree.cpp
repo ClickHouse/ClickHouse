@@ -279,6 +279,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int FAULT_INJECTED;
     extern const int CANNOT_FORGET_PARTITION;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace ActionLocks
