@@ -758,7 +758,20 @@ Disabled by default.
     DECLARE(Bool, check_conversion_from_numbers_to_enum, true, R"(
 Throw an exception during Numbers to Enum conversion if the value does not exist in Enum.
 
-Enabled by default.
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+**Example**
+
+```text
+CREATE TABLE tab (
+  val Enum('first' = 1, 'second' = 2, 'third' = 3)
+) ENGINE = Memory;
+
+INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -- returns an error
+```
 )", 0) \
     DECLARE(String, bool_true_representation, "true", R"(
 Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.
