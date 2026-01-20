@@ -90,7 +90,37 @@ static struct InitFiu
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \
-
+    ONCE(parallel_replicas_wait_for_unused_replicas) \
+    REGULAR(plain_object_storage_copy_fail_on_file_move) \
+    REGULAR(database_replicated_delay_recovery) \
+    REGULAR(database_replicated_delay_entry_execution) \
+    PAUSEABLE(database_replicated_stop_entry_execution) \
+    REGULAR(remove_merge_tree_part_delay) \
+    REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
+    REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
+    REGULAR(output_format_sleep_on_progress) \
+    ONCE(smt_commit_exception_before_op) \
+    ONCE(disk_object_storage_fail_commit_metadata_transaction) \
+    REGULAR(slowdown_parallel_replicas_local_plan_read) \
+    ONCE(iceberg_writes_cleanup) \
+    ONCE(backup_add_empty_memory_table) \
+    PAUSEABLE(sc_state_application_pause) \
+    PAUSEABLE(sc_state_application_pause_after_fetch) \
+    REGULAR(sc_intentions_commit_fail) \
+    REGULAR(sleep_in_logs_flush) \
+    ONCE(database_replicated_drop_before_removing_keeper_failed) \
+    ONCE(database_replicated_drop_after_removing_keeper_failed) \
+    PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
+    PAUSEABLE_ONCE(smt_mutate_task_pause_in_prepare) \
+    PAUSEABLE_ONCE(smt_merge_selecting_task_pause_when_scheduled) \
+    ONCE(shared_set_full_update_fails_when_initializing) \
+    PAUSEABLE(after_kill_part_pause) \
+    ONCE(parallel_replicas_reading_response_timeout) \
+    ONCE(database_iceberg_gcs) \
+    REGULAR(rmt_delay_execute_drop_range) \
+    REGULAR(rmt_delay_commit_part)
 
 namespace FailPoints
 {
