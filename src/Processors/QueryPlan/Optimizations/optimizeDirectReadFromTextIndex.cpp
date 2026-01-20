@@ -342,7 +342,7 @@ private:
             if (!info.is_fully_materialied)
             {
                 default_expression = convertNodeToAST(function_node);
-                if (auto function = std::dynamic_pointer_cast<ASTFunction>(default_expression))
+                if (auto * function = default_expression->as<ASTFunction>())
                 {
                     function->addConfigurator(
                         [function_name = search_query->function_name,

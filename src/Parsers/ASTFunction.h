@@ -90,6 +90,12 @@ public:
 
     void addConfigurator(FunctionConfigurator configurator) { configurators.emplace_back(std::move(configurator)); }
 
+    void applyConfigurator(const ActionsDAG::Node * function_dag_node) const
+    {
+        for (const auto & configurator : configurators)
+            configurator(function_dag_node);
+    }
+
 protected:
     void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
