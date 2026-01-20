@@ -733,12 +733,10 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
             UInt32 min_precision = max_scale + leastDecimalPrecisionFor(max_int);
 
-            /// For Float types, we need sufficient precision to handle the conversion
-            /// Float64 has ~15-17 decimal digits of precision, Float32 has ~6-9
-            if (have_float64)
-                min_precision = std::max(min_precision, max_scale + 17U);
-            else if (have_float32)
-                min_precision = std::max(min_precision, max_scale + 9U);
+            /// For Float types, we don't increase precision requirements.
+            /// The Float value will be converted to Decimal, potentially with loss of precision.
+            /// This allows float literals (e.g., 0., 1.0) to work with Decimal types in if() function.
+            /// The actual conversion is handled by convertFloatToDecimalType().
 
             /// special cases Int32 -> Dec32, Int64 -> Dec64
             if (max_scale == 0)
