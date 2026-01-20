@@ -32,6 +32,7 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/SingleDiskVolume.h>
 
+#include <base/sleep.h>
 #include <base/sort.h>
 
 #include <Storages/buildQueryTreeForShard.h>
@@ -118,9 +119,10 @@
 #include <Common/scope_guard_safe.h>
 #include <IO/SharedThreadPools.h>
 
+#include <base/types.h>
+#include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <boost/algorithm/string.hpp>
 
 #include <algorithm>
 #include <ctime>
@@ -239,6 +241,8 @@ namespace FailPoints
     extern const char zero_copy_unlock_zk_fail_before_op[];
     extern const char zero_copy_unlock_zk_fail_after_op[];
     extern const char rmt_lightweight_update_sleep_after_block_allocation[];
+    extern const char rmt_merge_selecting_task_pause_when_scheduled[];
+    extern const char rmt_delay_execute_drop_range[];
 }
 
 namespace ErrorCodes
@@ -2717,6 +2721,8 @@ static void paranoidCheckForCoveredPartsInZooKeeper(
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     LOG_TRACE(log, "Executing DROP_RANGE {}", entry.new_part_name);
+
+    fiu_do_on(FailPoints::rmt_delay_execute_drop_range, { sleepForSeconds(10); });
 
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
 
@@ -8491,12 +8497,13 @@ void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
                 LOG_WARNING(log, new_version_warning, paths_to_get[i], result.data);
 
             Stopwatch time_waiting;
-            const auto & stop_waiting = [this, &time_waiting]()
-            {
-                auto timeout = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].value.seconds();
-                return partial_shutdown_called || (timeout < time_waiting.elapsedSeconds());
-            };
-            zookeeper.waitForDisappear(paths_to_get[i], stop_waiting);
+            const Int64 timeout = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].value.totalSeconds();
+            const auto & stop_waiting
+                = [this, &time_waiting, &timeout]() { return partial_shutdown_called || (timeout < Int64(time_waiting.elapsedSeconds())); };
+
+            if (!zookeeper.waitForDisappear(paths_to_get[i], stop_waiting))
+                throw Exception(
+                    ErrorCodes::TIMEOUT_EXCEEDED, "Path {} does not disappear, timed out after {} seconds", paths_to_get[i], timeout);
         }
     }
 }
