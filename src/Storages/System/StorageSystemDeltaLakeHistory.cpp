@@ -80,16 +80,12 @@ void StorageSystemDeltaLakeHistory::fillData(
             if (!delta_metadata)
                 return;
 
-            /// Get the table path and object storage from public members
-            const auto & object_storage = object_storage_table->object_storage;
+            /// Get the table path and object storage from metadata getters
+            const auto & object_storage = delta_metadata->getObjectStorage();
             if (!object_storage)
                 return;
 
-            auto config_ptr = object_storage_table->configuration;
-            if (!config_ptr)
-                return;
-
-            const auto table_path = config_ptr->getPath();
+            const auto table_path = delta_metadata->getTablePath();
             static constexpr auto deltalake_metadata_directory = "_delta_log";
             static constexpr auto metadata_file_suffix = ".json";
 
@@ -126,7 +122,8 @@ void StorageSystemDeltaLakeHistory::fillData(
                     }
                     catch (...)
                     {
-                        /// Ignore parsing errors for version extraction
+                        /// Ignore parsing errors for version extraction - non-numeric filenames are skipped
+                        current_version = 0;
                     }
                 }
             }
