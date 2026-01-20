@@ -84,7 +84,6 @@ RUN apt-get update \
         rename \
         software-properties-common \
         tzdata \
-        lcov \
         netbase \
         perl \
         pv \
