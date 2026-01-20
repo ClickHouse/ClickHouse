@@ -39,54 +39,56 @@ public:
 
         std::atomic<size_t> size;
         std::atomic<size_t> hits = 0;
-        std::atomic<bool> invalidated = false;
 
         std::string toString(const std::string & prefix = "") const;
 
-        bool isEvicting(const LockedKey &) const
+        enum class State
         {
-            return isEvictingUnlocked();
-        }
+            Active,
+            Evicting,
+            /// Can only be set in SLRU eviciton policy during moves
+            /// in between protected/probationary queues.
+            Moving,
+            /// Has size 0, will never get non-zero size and must soon be removed from queue.
+            Invalidated,
+            /// Removed from queue completely.
+            Removed,
+        };
 
-        /// Used when less strong guarantees are acceptable trade off for not taking a mutex.
-        bool isEvictingUnlocked() const
-        {
-            return state.load(std::memory_order_relaxed) == State::Evicting;
-        }
-
-        bool isMoving(const LockedKey &) const
-        {
-            return isMovingUnlocked();
-        }
-
-        bool isMovingUnlocked() const
-        {
-            return state.load(std::memory_order_relaxed) == State::Moving;
-        }
-
-        bool isRemoved(const CachePriorityGuard::WriteLock &) const
-        {
-            return state.load(std::memory_order_relaxed) == State::Removed;
-        }
+        /// Be aware that by default this method has relaxed guarantees.
+        /// See which locks are used in setter methods below if stronger guarantees are needed.
+        State getState() const { return state.load(std::memory_order_relaxed); }
 
         void setEvictingFlag(const LockedKey &)
         {
             [[maybe_unused]] auto prev = state.exchange(State::Evicting, std::memory_order_relaxed);
-            chassert(prev == State::Active, toString("expected state to be Active while setting evicting flag for "));
+            chassert(
+                prev == State::Active,
+                printUnexpectedState(prev, "Active", "Evicting"));
         }
 
         void setMovingFlag(const LockedKey &)
         {
             [[maybe_unused]] auto prev = state.exchange(State::Moving, std::memory_order_relaxed);
-            chassert(prev == State::Active, toString("expected state to be Active while setting evicting flag for "));
+            chassert(
+                prev == State::Active,
+                printUnexpectedState(prev, "Active", "Moving"));
         }
 
         void setRemoved(const CachePriorityGuard::WriteLock &)
         {
             [[maybe_unused]] auto prev = state.exchange(State::Removed, std::memory_order_relaxed);
             chassert(
-                prev == State::Active || prev == State::Evicting,
-                toString("expected state to be either Active or Evicting while setting evicting flag for "));
+                prev == State::Active || prev == State::Evicting || prev == State::Invalidated,
+                printUnexpectedState(prev, "Active or Evicting or Invalidated", "Removed"));
+        }
+
+        void setInvalidatedFlag()
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Invalidated);
+            chassert(
+                prev == State::Active || prev == State::Evicting || prev == State::Moving,
+                printUnexpectedState(prev, "Active or Evicting", "Invalidated"));
         }
 
         void resetEvictingFlag()
@@ -96,15 +98,14 @@ public:
         }
 
     private:
-        enum class State
+        std::string printUnexpectedState(
+            State prev_state, std::string_view expected_state, std::string type)
         {
-            Active,
-            Evicting,
-            /// Can only be set in SLRU eviciton policy during moves
-            /// in between protected/probationary queues.
-            Moving,
-            Removed
-        };
+            return fmt::format(
+                "Previous state is {}, but expected state to be {} while setting {} flag for {}",
+                magic_enum::enum_name(prev_state), expected_state, type, toString());
+        }
+
         std::atomic<State> state = State::Active;
     };
     using EntryPtr = std::shared_ptr<Entry>;

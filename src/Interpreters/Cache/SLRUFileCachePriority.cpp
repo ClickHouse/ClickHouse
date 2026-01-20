@@ -605,7 +605,9 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 
     {
         auto locked_key = prev_entry->key_metadata->lock();
-        if (prev_entry->isEvicting(*locked_key))
+        const auto entry_state = prev_entry->getState();
+        chassert(entry_state == Entry::State::Active || entry_state == Entry::State::Evicting);
+        if (entry_state != Entry::State::Active)
             return false;
 
         /// As we are in progress now of moving this queue entry to a protected queue,
