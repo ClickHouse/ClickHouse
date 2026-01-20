@@ -101,7 +101,7 @@ public:
 
     private:
         std::string printUnexpectedState(
-            State prev_state, std::string_view expected_state, std::string type)
+            State prev_state, std::string_view expected_state, std::string type) const
         {
             return fmt::format(
                 "Previous state is {}, but expected state to be {} while setting {} flag for {}",
