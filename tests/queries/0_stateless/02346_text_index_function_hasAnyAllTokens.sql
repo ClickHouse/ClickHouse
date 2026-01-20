@@ -1,8 +1,8 @@
--- Tags: no-parallel-replicas, long
+-- Tags: no-parallel-replicas
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
+SET allow_experimental_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -92,12 +92,11 @@ SELECT id FROM tab WHERE hasAllTokens('a b', 'a c');
 SELECT id FROM tab WHERE hasAllTokens(col_str, 'a a');
 SELECT id FROM tab WHERE hasAllTokens(col_str, 'b c');
 
--- Test search without needle on non-empty columns (all are expected to match nothing)
+-- Test search without needle on non-empty columns (all are expected to match)
 SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
 SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
-SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']);
-SELECT count() FROM tab WHERE hasAnyTokens(col_str, '');
-SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['','']);
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']); -- matches nothing
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ''); -- TODO currently this goes through the default tokenizer and matches everything
 -- { echoOff }
 
 DROP TABLE tab;
@@ -224,7 +223,7 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['cdef', 'defg']); --
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['efgh', 'cdef', 'defg']); --search for either cdefg or defgh
 
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efgh');
-SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efg');
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efg'); -- TODO currently returns all rows in table
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efghi');
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'cdefg');
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'cdefgh');
@@ -237,7 +236,7 @@ SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['cdef', 'defg']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['efgh', 'cdef', 'defg']);
 
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efgh');
-SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efg');
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efg'); -- TODO currently returns all rows in table
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efghi');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'cdefg');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'cdefgh');
@@ -720,7 +719,7 @@ CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha')
+    INDEX idx(`message`) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY (id)

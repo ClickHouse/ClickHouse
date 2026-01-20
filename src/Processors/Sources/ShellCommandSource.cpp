@@ -5,7 +5,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -120,7 +119,7 @@ static bool pollFd(int fd, size_t timeout_milliseconds, int events)
 {
     pollfd pfd;
     pfd.fd = fd;
-    pfd.events = static_cast<int16_t>(events);
+    pfd.events = events;
     pfd.revents = 0;
 
     return pollWithTimeout(&pfd, 1, timeout_milliseconds) > 0;
@@ -383,7 +382,7 @@ namespace
                 {
                     send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
                     {
-                        ThreadGroupSwitcher switcher(thread_group, ThreadName::SEND_TO_SHELL_CMD);
+                        ThreadGroupSwitcher switcher(thread_group, "SendToShellCmd");
 
                         try
                         {
@@ -699,7 +698,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             executor.execute();
 
             timeout_write_buffer->finalize();
-            (*timeout_write_buffer).reset();
+            timeout_write_buffer->reset();
 
             if (!is_executable_pool)
             {

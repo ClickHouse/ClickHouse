@@ -22,6 +22,8 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
+    extern const MergeTreeSettingsUInt64 max_file_name_length;
 }
 
 namespace ErrorCodes
@@ -127,7 +129,10 @@ void MergeTreeDataPartWriterOnDisk::initStatistics()
 {
     for (const auto & stat_ptr : stats)
     {
-        auto stats_filename = replaceFileNameToHashIfNeeded(escapeForFileName(stat_ptr->getStatisticName()), *storage_settings, data_part_storage.get());
+        auto stats_filename = escapeForFileName(stat_ptr->getStatisticName());
+        if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && stats_filename.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
+            stats_filename = sipHash128String(stats_filename);
+
         stats_streams.emplace_back(std::make_unique<MergeTreeWriterStream<true>>(
                                        stats_filename,
                                        data_part_storage,
@@ -175,7 +180,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             skip_indices_streams_holders.push_back(std::move(stream));
         }
 
-        skip_indices_aggregators.push_back(skip_index->createIndexAggregator());
+        skip_indices_aggregators.push_back(skip_index->createIndexAggregator(settings));
         skip_index_accumulated_marks.push_back(0);
     }
 }
@@ -257,7 +262,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                skip_indices_aggregators[i] = index_helper->createIndexAggregator();
+                skip_indices_aggregators[i] = index_helper->createIndexAggregator(settings);
 
                 for (const auto & [type, stream] : index_streams)
                 {
@@ -358,13 +363,10 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         }
     }
 
-    for (const auto & streams : skip_indices_streams)
+    for (auto & stream : skip_indices_streams_holders)
     {
-        for (const auto & [type, stream] : streams)
-        {
-            stream->preFinalize();
-            stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
-        }
+        stream->preFinalize();
+        stream->addToChecksums(checksums);
     }
 }
 
@@ -388,7 +390,7 @@ void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataP
         auto & stream = *stats_streams[i];
         stats[i]->serialize(stream.compressed_hashing);
         stream.preFinalize();
-        stream.addToChecksums(checksums, true);
+        stream.addToChecksums(checksums);
     }
 }
 

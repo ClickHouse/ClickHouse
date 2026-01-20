@@ -540,7 +540,7 @@ namespace DB
                 }
                 else
                 {
-                    std::string_view string_ref = internal_column.getDataAt(string_i);
+                    std::string_view string_ref = internal_column.getDataAt(string_i).toView();
                     status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 }
                 checkStatus(status, write_column->getName(), format_name);
@@ -550,7 +550,7 @@ namespace DB
         {
             for (size_t string_i = start; string_i < end; ++string_i)
             {
-                std::string_view string_ref = internal_column.getDataAt(string_i);
+                std::string_view string_ref = internal_column.getDataAt(string_i).toView();
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 checkStatus(status, write_column->getName(), format_name);
             }
@@ -1066,84 +1066,20 @@ namespace DB
     }
 
     CHColumnToArrowColumn::CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_)
-        : CHColumnToArrowColumn(header.getColumnsWithTypeAndName(), format_name_, settings_)
+        : format_name(format_name_), settings(settings_)
     {
-    }
+        arrow_fields.reserve(header.columns());
+        header_columns.reserve(header.columns());
+        for (auto column : header.getColumnsWithTypeAndName())
+        {
+            if (!settings.low_cardinality_as_dictionary)
+            {
+                column.type = recursiveRemoveLowCardinality(column.type);
+                column.column = recursiveRemoveLowCardinality(column.column);
+            }
 
-    CHColumnToArrowColumn::CHColumnToArrowColumn(
-        const ColumnsWithTypeAndName & header_columns_, const std::string & format_name_, const Settings & settings_)
-        : format_name(format_name_)
-        , settings(settings_)
-    {
-        if (settings.low_cardinality_as_dictionary)
-        {
-            header_columns = header_columns_;
-            return;
-        }
-        header_columns.reserve(header_columns_.size());
-        for (auto column : header_columns_)
-        {
-            column.type = recursiveRemoveLowCardinality(column.type);
-            column.column = recursiveRemoveLowCardinality(column.column);
             header_columns.emplace_back(std::move(column));
         }
-    }
-
-    std::unique_ptr<CHColumnToArrowColumn> CHColumnToArrowColumn::clone(bool copy_arrow_schema) const
-    {
-        auto res = std::make_unique<CHColumnToArrowColumn>(header_columns, format_name, settings);
-        if (copy_arrow_schema)
-            res->arrow_schema = arrow_schema;
-        return res;
-    }
-
-    void CHColumnToArrowColumn::initializeArrowSchema(
-        const Chunk * chunk, std::optional<size_t> columns_num, const std::optional<std::unordered_map<String, Int64>> & column_to_field_id)
-    {
-        if (arrow_schema)
-            return;
-
-        if (!columns_num)
-            columns_num = header_columns.size();
-
-        std::vector<std::shared_ptr<arrow::Field>> arrow_fields;
-        arrow_fields.reserve(*columns_num);
-
-        for (size_t column_i = 0; column_i < *columns_num; ++column_i)
-        {
-            const ColumnWithTypeAndName & header_column = header_columns[column_i];
-            auto column = chunk ? chunk->getColumns()[column_i] : header_column.column;
-
-            if (!settings.low_cardinality_as_dictionary)
-                column = recursiveRemoveLowCardinality(column);
-
-            bool is_column_nullable = false;
-            auto arrow_type = getArrowType(
-                header_column.type,
-                column,
-                header_column.name,
-                format_name,
-                settings,
-                &is_column_nullable);
-            if (column_to_field_id && column_to_field_id->contains(header_column.name))
-            {
-                Int64 field_id = column_to_field_id->at(header_column.name);
-                auto key_value_metadata = arrow::key_value_metadata({"PARQUET:field_id"},
-                            {std::to_string(field_id)});
-                arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable, key_value_metadata));
-            }
-            else
-                arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
-        }
-
-        arrow_schema = std::make_shared<arrow::Schema>(arrow_fields);
-    }
-
-    std::shared_ptr<arrow::Schema> CHColumnToArrowColumn::getArrowSchema() const
-    {
-        if (!arrow_schema)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Arrow schema is not initialized");
-        return arrow_schema;
     }
 
     void CHColumnToArrowColumn::chChunkToArrowTable(
@@ -1152,15 +1088,12 @@ namespace DB
         size_t columns_num,
         const std::optional<std::unordered_map<String, Int64>> & column_to_field_id)
     {
+        std::shared_ptr<arrow::Schema> arrow_schema;
         std::vector<arrow::ArrayVector> table_data(columns_num);
-
-        /// We use the first chunk to initialize the arrow schema.
-        const Chunk * chunk_to_initialize_schema = chunks.empty() ? nullptr : chunks.data();
-        initializeArrowSchema(chunk_to_initialize_schema, columns_num, column_to_field_id);
 
         for (const auto & chunk : chunks)
         {
-            /// For arrow::Table creation
+            /// For arrow::Schema and arrow::Table creation
             for (size_t column_i = 0; column_i < columns_num; ++column_i)
             {
                 const ColumnWithTypeAndName & header_column = header_columns[column_i];
@@ -1169,8 +1102,29 @@ namespace DB
                 if (!settings.low_cardinality_as_dictionary)
                     column = recursiveRemoveLowCardinality(column);
 
+                if (!is_arrow_fields_initialized)
+                {
+                    bool is_column_nullable = false;
+                    auto arrow_type = getArrowType(
+                        header_column.type,
+                        column,
+                        header_column.name,
+                        format_name,
+                        settings,
+                        &is_column_nullable);
+                    if (column_to_field_id && column_to_field_id->contains(header_column.name))
+                    {
+                        Int64 field_id = column_to_field_id->at(header_column.name);
+                        auto key_value_metadata = arrow::key_value_metadata({"PARQUET:field_id"},
+                                  {std::to_string(field_id)});
+                        arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable, key_value_metadata));
+                    }
+                    else
+                        arrow_fields.emplace_back(std::make_shared<arrow::Field>(header_column.name, arrow_type, is_column_nullable));
+                }
+
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_schema->field(static_cast<int>(column_i))->type(), &array_builder);
+                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_fields[column_i]->type(), &array_builder);
                 checkStatus(status, column->getName(), format_name);
 
                 fillArrowArray(
@@ -1191,6 +1145,10 @@ namespace DB
 
                 table_data.at(column_i).emplace_back(std::move(arrow_array));
             }
+
+            is_arrow_fields_initialized = true;
+            if (!arrow_schema)
+                arrow_schema = std::make_shared<arrow::Schema>(arrow_fields);
         }
 
         std::vector<std::shared_ptr<arrow::ChunkedArray>> columns;
@@ -1200,6 +1158,7 @@ namespace DB
 
         res = arrow::Table::Make(arrow_schema, columns);
     }
+
 }
 
 #endif

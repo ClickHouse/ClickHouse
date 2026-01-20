@@ -6,15 +6,13 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/Utils.h>
-#include <Common/FieldAccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/convertFieldToType.h>
 
+#include <iostream>
 
 namespace DB
 {
@@ -933,32 +931,12 @@ private:
 
             if (function_name == "equals")
             {
-                /*
-                 * This function checks a pattern of `col = X and col = Y` such that if there are two different constant values are assigned for the same expression.
-                 * That pattern always yields to `FALSE`, except implicit conversion from a string to an integer / a boolean
-                 * which the pattern could be `col = X and col = 'X'`. In such cases, constant values are same.
-                 */
                 const auto has_and_with_different_constant = [&](const QueryTreeNodePtr & expression, const ConstantNode * constant)
                 {
-                    /// This is an implicit conversion from a string to the type of an constant node (`expected`).
-                    const auto convert_and_check_equals = [](const ConstantNode * string_value, const ConstantNode * expected)
-                    {
-                        Field converted = tryConvertFieldToType(string_value->getValue(), *expected->getResultType());
-                        if (!converted.isNull())
-                            return accurateEquals(converted, expected->getValue());
-                        return false;
-                    };
-
                     if (auto it = equals_node_to_constants.find(expression); it != equals_node_to_constants.end())
                     {
                         if (!it->second->isEqual(*constant))
-                        {
-                            if (it->second->getResultType()->equals(DataTypeString()) && convert_and_check_equals(it->second, constant))
-                                return false;
-                            else if (constant->getResultType()->equals(DataTypeString()) && convert_and_check_equals(constant, it->second))
-                                return false;
                             return true;
-                        }
                     }
                     else
                     {
@@ -1467,11 +1445,10 @@ private:
 
         if (!function_node_type->equals(*node->getResultType()))
         {
-            /// Result of replacement_function can be low cardinality or nullable, while redundant equal
+            /// Result of replacement_function can be low cardinality, while redundant equal
             /// returns UInt8, and this equal can be an argument of external function -
             /// so we want to convert replacement_function to the expected UInt8
-            /// An example when it can be Nullable - using GROUP BY with GROUPING SETS and group_by_use_nulls = true
-            chassert(removeNullable(removeLowCardinality(function_node_type))->equals(*removeNullable(removeLowCardinality(node->getResultType()))));
+            chassert(function_node_type->equals(*removeLowCardinality(node->getResultType())));
             node = createCastFunction(node, function_node_type, getContext());
         }
     }

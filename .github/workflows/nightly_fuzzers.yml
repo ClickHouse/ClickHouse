@@ -21,7 +21,7 @@ jobs:
     name: "Config Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -30,14 +30,11 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
@@ -46,6 +43,7 @@ jobs:
       - name: Run
         id: run
         run: |
+          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -61,7 +59,7 @@ jobs:
     name: "Dockers Build (amd)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -70,14 +68,11 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
@@ -86,6 +81,7 @@ jobs:
       - name: Run
         id: run
         run: |
+          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -101,7 +97,7 @@ jobs:
     name: "Dockers Build (arm)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -110,14 +106,11 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
@@ -126,6 +119,7 @@ jobs:
       - name: Run
         id: run
         run: |
+          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -134,14 +128,14 @@ jobs:
             python3 -m praktika run 'Dockers Build (arm)' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
           fi
 
-  build_arm_fuzzers:
+  build_fuzzers:
     runs-on: [self-hosted, arm-large]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFybV9mdXp6ZXJzKQ==') }}
-    name: "Build (arm_fuzzers)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGZ1enplcnMp') }}
+    name: "Build (fuzzers)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -150,14 +144,11 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
@@ -166,22 +157,23 @@ jobs:
       - name: Run
         id: run
         run: |
+          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (arm_fuzzers)' --workflow "NightlyFuzzers" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (fuzzers)' --workflow "NightlyFuzzers" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'Build (arm_fuzzers)' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'Build (fuzzers)' --workflow "NightlyFuzzers" --ci |& tee ./ci/tmp/job.log
           fi
 
   libfuzzer_tests:
     runs-on: [self-hosted, arm-medium]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_fuzzers]
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_fuzzers]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'bGliRnV6emVyIHRlc3Rz') }}
     name: "libFuzzer tests"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -190,14 +182,11 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
@@ -206,6 +195,7 @@ jobs:
       - name: Run
         id: run
         run: |
+          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
@@ -216,12 +206,12 @@ jobs:
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_arm_fuzzers, libfuzzer_tests]
-    if: ${{ always() }}
+    needs: [config_workflow, dockers_build_amd, dockers_build_arm, build_fuzzers, libfuzzer_tests]
+    if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -230,14 +220,11 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
           cat > ./ci/tmp/workflow_status.json << 'EOF'
           ${{ toJson(needs) }}
           EOF
@@ -246,6 +233,7 @@ jobs:
       - name: Run
         id: run
         run: |
+          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then

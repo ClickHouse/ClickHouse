@@ -11,7 +11,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/System/StorageSystemNumbers.h>
-#include <base/types.h>
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -336,11 +335,8 @@ namespace
 /// Whether we should push limit down to scan.
 bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
 {
-    /// Reject negative, fractional, and zero limits for pushdown
-    if (lim_info.is_limit_length_negative
-        || lim_info.fractional_limit > 0
-        || lim_info.fractional_offset > 0
-        || lim_info.limit_length == 0)
+    /// Reject negative and zero limits for pushdown
+    if (lim_info.is_limit_length_negative || lim_info.limit_length == 0)
         return false;
 
     chassert(query_info.query);
@@ -590,7 +586,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             total_size = *limit;
             /// We should shrink intersected_ranges for case:
             ///     intersected_ranges: [1, 4], [7, 100]; query_limit: 2
-            shrinkRanges(intersected_ranges, static_cast<size_t>(total_size));
+            shrinkRanges(intersected_ranges, total_size);
         }
 
         checkLimits(size_t(total_size));
@@ -609,7 +605,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
                 intersected_ranges, ranges_state, max_block_size, numbers_storage.step, numbers_storage.column_name);
 
             if (i == 0)
-                source->addTotalRowsApprox(static_cast<size_t>(total_size));
+                source->addTotalRowsApprox(total_size);
 
             pipe.addSource(std::move(source));
         }

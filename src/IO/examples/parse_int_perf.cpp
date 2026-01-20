@@ -50,7 +50,7 @@ int main(int argc, char ** argv)
             Stopwatch watch;
 
             for (size_t i = 0; i < n; ++i)
-                data[i] = static_cast<T>(rng());
+                data[i] = rng();
 
             watch.stop();
             std::cerr << std::fixed << std::setprecision(2)
