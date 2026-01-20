@@ -152,12 +152,18 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     if (it == map.end())
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
 
-    /// At top level (empty path), return the full mapped name. For nested elements, extract the last component.
+    /// At top level (empty path), return the full mapped name. For nested
+    /// elements, strip the parent path prefix to get the child name.
     if (current_path.empty())
         return it->second;
 
-    auto split = Nested::splitName(std::string_view(it->second), /*reverse=*/ true);
-    return split.second.empty() ? split.first : split.second;
+    /// Strip "current_path." prefix to get the child name (preserves dots in child names)
+    std::string_view mapped = it->second;
+    if (mapped.starts_with(current_path) && mapped.size() > current_path.size()
+        && mapped[current_path.size()] == '.')
+        return mapped.substr(current_path.size() + 1);
+
+    return it->second;
 }
 
 void SchemaConverter::processSubtree(TraversalNode & node)
