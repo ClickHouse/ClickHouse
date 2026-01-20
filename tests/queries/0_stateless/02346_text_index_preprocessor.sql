@@ -103,16 +103,16 @@ ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO tab VALUES (1, ['foo']), (2, ['BAR']), (3, ['Baz']);
 
-SELECT count() FROM tab WHERE has(arr_str, 'foo');
-SELECT count() FROM tab WHERE has(arr_str, 'FOO');
+SELECT count() FROM tab WHERE hasAnyToken(arr_str, 'foo');
+SELECT count() FROM tab WHERE hasAnyToken(arr_str, 'FOO');
 
-SELECT count() FROM tab WHERE has(arr_str, 'BAR');
-SELECT count() FROM tab WHERE has(arr_str, 'Baz');
+SELECT count() FROM tab WHERE hasAnyToken(arr_str, 'BAR');
+SELECT count() FROM tab WHERE hasAnyToken(arr_str, 'Baz');
 
-SELECT count() FROM tab WHERE has(arr_str, 'bar');
-SELECT count() FROM tab WHERE has(arr_str, 'baz');
+SELECT count() FROM tab WHERE hasAnyToken(arr_str, 'bar');
+SELECT count() FROM tab WHERE hasAnyToken(arr_str, 'baz');
 
-SELECT count() FROM tab WHERE has(arr_str, 'def');
+SELECT count() FROM tab WHERE hasAnyToken(arr_str, 'def');
 
 DROP TABLE tab;
 
