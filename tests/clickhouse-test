@@ -2033,7 +2033,8 @@ class TestCase:
         if tags and ("no-encrypted-storage" in tags) and args.encrypted_storage:
             return FailureReason.ENCRYPTED_STORAGE
 
-        if tags:
+        # Ingore no-{build} tags in stress-tests job
+        if tags and not args.stress_tests:
             for build_flag in args.build_flags:
                 # We ignore no-buildflag for flaky check (args.flaky_check and args.test_runs > 1)
                 # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
@@ -4866,6 +4867,11 @@ def parse_args():
         "--flaky-check",
         action="store_true",
         help="Enables CI flakiness detection by running new tests multiple times. This mode adds specific checks for the flaky-check job and requires the --test-runs argument.",
+    )
+    parser.add_argument(
+        "--stress-tests",
+        action="store_true",
+        help="A CI test configuration that runs all possible test combinations without validating results. This is used to bypass specific test restrictions.",
     )
     parser.add_argument(
         "--secure",

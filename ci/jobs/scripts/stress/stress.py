@@ -391,6 +391,7 @@ def main():
             cmd = " ".join(
                 [
                     args.test_cmd,
+                    "--stress-tests",
                     # Do not track memory allocations up to 1Gi,
                     # this will allow to ignore server memory limit (max_server_memory_usage) for this query.
                     #
