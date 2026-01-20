@@ -77,6 +77,26 @@ def post_to_response_url(response_url: str, message: dict) -> None:
         resp.read()
 
 
+def get_user_email(user_id: str) -> str:
+    """Fetch user's email from Slack API."""
+    req = urllib.request.Request(
+        f"https://slack.com/api/users.info?user={user_id}",
+        headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            if result.get("ok"):
+                return result.get("user", {}).get("profile", {}).get("email", "")
+            else:
+                print(f"Error fetching user info: {result.get('error')}")
+                return ""
+    except Exception as e:
+        print(f"Failed to fetch user email: {e}")
+        return ""
+
+
 def publish_home_view(
     user_id: str,
     username: str,
@@ -169,8 +189,7 @@ def handle_slash_command(form: dict):
                         "text": {
                             "type": "mrkdwn",
                             "text": (
-                                "/praktika subscribe <gh_login>\n"
-                                "/praktika unsubscribe"
+                                "/praktika subscribe [email]\n" "/praktika unsubscribe"
                             ),
                         },
                     },
@@ -182,23 +201,18 @@ def handle_slash_command(form: dict):
 
     # Subscribe command
     if action == "subscribe":
-        if len(args) < 2:
-            return _json_response(
-                {
-                    "response_type": "ephemeral",
-                    "text": "❌ Missing GitHub login. Usage: `/praktika subscribe <gh_login>`",
-                }
-            )
-
-        github_login = args[1]
-
-        # Publish home view immediately with subscription info
-        publish_home_view(
-            user_id=user_id,
-            username=username,
-            github_login=github_login,
-            footer=f"_{github_login}_",
-        )
+        # Use provided email or let worker fetch it from Slack
+        if len(args) >= 2:
+            user_email = args[1]
+        else:
+            user_email = get_user_email(user_id)
+            if not user_email:
+                return _json_response(
+                    {
+                        "response_type": "ephemeral",
+                        "text": "❌ Unable to retrieve your email from Slack. Please provide your email: `/praktika subscribe <email>`",
+                    }
+                )
 
         # Invoke worker Lambda for subscription processing
         invoke_worker_lambda(
@@ -206,14 +220,15 @@ def handle_slash_command(form: dict):
                 "action": "subscribe",
                 "user_id": user_id,
                 "username": username,
-                "github_login": github_login,
+                "github_login": user_email,
+                "response_url": response_url,
             }
         )
 
         return _json_response(
             {
                 "response_type": "ephemeral",
-                "text": f"✅ Subscribing to praktika feed for GitHub user: `{github_login}`",
+                "text": "✅ Subscribing to praktika feed...",
             }
         )
 
@@ -223,7 +238,7 @@ def handle_slash_command(form: dict):
         publish_home_view(
             user_id=user_id,
             username=username,
-            footer="_To subscribe to feed, type:_\n`/praktika subscribe <gh_login>`",
+            footer="_To subscribe to feed, type:_\n`/praktika subscribe [email]`",
         )
 
         # Invoke worker Lambda for unsubscription processing
@@ -232,6 +247,7 @@ def handle_slash_command(form: dict):
                 "action": "unsubscribe",
                 "user_id": user_id,
                 "username": username,
+                "response_url": response_url,
             }
         )
 
@@ -287,6 +303,33 @@ def handle_interactivity(payload: dict):
     print("Interactivity user_id:", user_id)
     print("Interactivity action_id:", action_id, "value:", value)
 
+    username = payload.get("user", {}).get("username", "") or payload.get(
+        "user", {}
+    ).get("name", "")
+
+    toggle_action_ids = {
+        "toggle_hide_merged_prs": "hide_merged_prs",
+        "toggle_hide_merges": "hide_merges",
+        "toggle_hide_secondary_prs": "hide_secondary_prs",
+        "toggle_show_last_7d": "show_last_7d",
+        "toggle_notify_on_complete": "notify_on_complete",
+        "toggle_notify_on_failure": "notify_on_failure",
+    }
+
+    if action_id in toggle_action_ids:
+        invoke_worker_lambda(
+            {
+                "action": "toggle_pref",
+                "user_id": user_id,
+                "username": username,
+                "pref_key": toggle_action_ids[action_id],
+                "response_url": response_url,
+                "value": value,
+            }
+        )
+
+        return {"statusCode": 200, "body": ""}
+
     # Handle subscribe button click
     if action_id == "subscribe_button":
         # Extract GitHub login from input field
@@ -294,8 +337,6 @@ def handle_interactivity(payload: dict):
         github_login_block = view_state.get("github_login_input", {})
         github_login_input = github_login_block.get("github_login", {})
         github_login = github_login_input.get("value", "")
-
-        username = payload.get("user", {}).get("username", "")
 
         print(
             f"User {user_id} ({username}) requested subscribe for GitHub login: {github_login}"
@@ -311,20 +352,9 @@ def handle_interactivity(payload: dict):
                 "user_id": user_id,
                 "username": username,
                 "github_login": github_login,
+                "response_url": response_url,
             }
         )
-
-    if response_url:
-        # Send a follow-up ephemeral message to the user who clicked
-        post_to_response_url(
-            response_url,
-            {
-                "response_type": "ephemeral",
-                "text": f"👋 Processing your request, <@{user_id}>...",
-            },
-        )
-    else:
-        print("No response_url in payload; cannot send follow-up message.")
 
     # Important: Return immediately to avoid Slack timeout
     return {"statusCode": 200, "body": ""}

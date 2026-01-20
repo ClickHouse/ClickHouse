@@ -146,9 +146,23 @@ class HtmlRunnerHooks:
         summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
             "git_branch", info.git_branch
         ).add_ext_key_value("report_url", report_url_current_sha).add_ext_key_value(
+            "commit_sha", env.SHA
+        ).add_ext_key_value(
             "commit_message", env.COMMIT_MESSAGE
+        ).add_ext_key_value(
+            "repo_name", env.REPOSITORY
+        ).add_ext_key_value(
+            "pr_number", env.PR_NUMBER
+        ).add_ext_key_value(
+            "run_url", env.RUN_URL
+        ).add_ext_key_value(
+            "change_url", env.CHANGE_URL
+        ).add_ext_key_value(
+            "workflow_name", env.WORKFLOW_NAME
+        ).add_ext_key_value(
+            "base_branch", env.BASE_BRANCH
         )
-        summary_result.ext["report_url"] = report_url_current_sha
+
         summary_result.dump()
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
         print(f"CI Status page url [{report_url_current_sha}]")
@@ -306,19 +320,4 @@ class HtmlRunnerHooks:
                 job_name=_job.name,
             ),
         )
-
-        if updated_status:
-            if Settings.USE_CUSTOM_GH_AUTH:
-                from .gh_auth import GHAuth
-
-                pem = _workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
-                app_id = _workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
-                GHAuth.auth(app_id=app_id, app_key=pem)
-
-            print(f"Update GH commit status [{result.name}]: [{updated_status}]")
-            GH.post_commit_status(
-                name=_workflow.name,
-                status=GH.convert_to_gh_status(updated_status),
-                description="",
-                url=Info().get_report_url(latest=False),
-            )
+        return updated_status

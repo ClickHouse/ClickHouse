@@ -63,7 +63,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"allow_push_predicate_when_subquery_contains_with", trueOrFalseSetting},
        {"allow_reorder_prewhere_conditions", trueOrFalseSetting},
        {"allow_simdjson", trueOrFalseSetting},
-       {"allow_statistics_optimize", trueOrFalseSetting},
        {"cluster_function_process_archive_on_multiple_nodes", trueOrFalseSetting},
        {"compile_aggregate_expressions", trueOrFalseSetting},
        {"compile_expressions", trueOrFalseSetting},
@@ -270,6 +269,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_skip_indexes_for_top_k", trueOrFalseSetting},
        {"use_skip_indexes_if_final", trueOrFalseSetting},
        {"use_skip_indexes_on_data_read", trueOrFalseSetting},
+       {"use_statistics", trueOrFalseSetting},
        {"use_statistics_cache", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
        {"use_uncompressed_cache", trueOrFalseSetting}};
@@ -506,7 +506,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     /// {"exact_rows_before_limit", trueOrFalseSetting}, cannot use with generateRandom
     {"except_default_mode", setSetting},
     {"exclude_materialize_skip_indexes_on_insert",
-     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2", "i3"}); }, {}, false)},
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2"}); }, {}, false)},
     {"extremes", trueOrFalseSettingNoOracle},
     {"fallback_to_stale_replicas_for_distributed_queries", trueOrFalseSetting},
     {"filesystem_cache_allow_background_download", trueOrFalseSettingNoOracle},
@@ -699,6 +699,16 @@ std::unordered_map<String, CHSetting> serverSettings = {
          [](RandomGenerator & rg, FuzzConfig &)
          {
              static const DB::Strings & choices = {"0", "1", "'auto'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"deduplicate_insert_select",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings & choices
+                 = {"'enable_when_possible'", "'force_enable'", "'disable'", "'enable_even_for_bad_queries'"};
              return rg.pickRandomly(choices);
          },
          {},
@@ -1171,6 +1181,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_text_index_header_cache", trueOrFalseSetting},
     {"use_text_index_postings_cache", trueOrFalseSetting},
     {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
+    {"use_variant_default_implementation_for_comparisons", trueOrFalseSettingNoOracle},
     {"use_with_fill_by_sorting_prefix", trueOrFalseSetting},
     {"validate_enum_literals_in_operators", trueOrFalseSettingNoOracle},
     {"validate_experimental_and_suspicious_types_inside_nested_types", trueOrFalseSettingNoOracle},
@@ -1364,7 +1375,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"empty_result_for_aggregation_by_empty_set", trueOrFalseSettingNoOracle}, /// the oracle doesn't get output
              {"external_table_functions_use_nulls", trueOrFalseSettingNoOracle},
              {"external_table_strict_query", trueOrFalseSettingNoOracle},
-             {"ignore_data_skipping_indices", trueOrFalseSettingNoOracle},
+             {"ignore_data_skipping_indices",
+              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2"}); }, {}, false)},
              {"optimize_using_constraints", trueOrFalseSettingNoOracle},
              {"parallel_replica_offset",
               CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.nextSmallNumber() - 1); }, {}, false)},
@@ -1375,50 +1387,50 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              {"wait_for_async_insert", trueOrFalseSettingNoOracle}}); /// breaks table dump oracle
         max_block_sizes.insert(
             max_block_sizes.end(),
-            {"max_analyze_depth",
+            {/*"max_analyze_depth",
              "max_ast_depth",
-             "max_ast_elements",
+             "max_ast_elements",*/
              "max_autoincrement_series",
              "max_backup_bandwidth",
              "max_distributed_connections",
-             "max_distributed_depth",
+             /// "max_distributed_depth",
              "max_download_threads",
-             "max_expanded_ast_elements",
+             /// "max_expanded_ast_elements",
              "max_fetch_partition_retries_count",
              "max_http_get_redirects",
              "max_network_bandwidth",
              "max_network_bandwidth_for_all_users",
              "max_network_bandwidth_for_user",
-             "max_parser_backtracks",
+             /*"max_parser_backtracks",
              "max_parser_depth",
-             "max_partitions_to_read",
+             "max_partitions_to_read",*/
              "max_sessions_for_user",
              "max_streams_for_merge_tree_reading",
-             "max_streams_multiplier_for_merge_tables",
-             "max_subquery_depth"});
+             "max_streams_multiplier_for_merge_tables"/*,
+             "max_subquery_depth"*/});
         max_bytes_values.insert(
             max_bytes_values.end(),
-            {"max_bytes_in_distinct",
+            {/*"max_bytes_in_distinct",
              "max_bytes_in_join",
              "max_bytes_in_set",
              "max_bytes_to_read",
              "max_bytes_to_read_leaf",
              "max_bytes_to_sort",
              "max_bytes_to_transfer",
-             "max_execution_speed_bytes",
+             "max_execution_speed_bytes",*/
              "max_hyperscan_regexp_length",
              "max_hyperscan_regexp_total_length",
              "max_network_bytes",
-             "max_query_size",
-             "max_result_bytes",
+             /*"max_query_size",
+             "max_result_bytes",*/
              "max_size_to_preallocate_for_aggregation",
-             "max_size_to_preallocate_for_joins",
-             "min_execution_speed_bytes"});
+             "max_size_to_preallocate_for_joins"/*,
+             "min_execution_speed_bytes"*/});
         max_rows_values.insert(
             max_rows_values.end(),
             {"limit",
              "max_concurrent_queries_for_all_users",
-             "max_concurrent_queries_for_user",
+             "max_concurrent_queries_for_user"/*,
              "max_execution_speed",
              "max_result_rows",
              "max_rows_in_distinct",
@@ -1429,7 +1441,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
              "max_rows_to_read",
              "max_rows_to_read_leaf",
              "max_rows_to_sort",
-             "min_execution_speed"});
+             "min_execution_speed"*/});
         /*max_columns_values.insert( too many errors on queries
             max_columns_values.end(), {"max_columns_to_read", "max_temporary_columns", "max_temporary_non_const_columns"});*/
     }
@@ -1490,7 +1502,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     {
         serverSettings.insert(
             {{"force_aggregation_in_order", trueOrFalseSettingNoOracle},
-             {"force_data_skipping_indices", trueOrFalseSettingNoOracle},
+             {"force_data_skipping_indices",
+              CHSetting([](RandomGenerator & rg, FuzzConfig &) { return settingCombinations(rg, {"i0", "i1", "i2"}); }, {}, false)},
              {"force_grouping_standard_compatibility", trueOrFalseSettingNoOracle},
              {"force_index_by_date", trueOrFalseSettingNoOracle},
              {"force_optimize_projection", trueOrFalseSettingNoOracle},

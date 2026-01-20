@@ -1486,6 +1486,16 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </aggregated_zookeeper_log>
 
+    <!--
+    <zookeeper_log>
+        <database>system</database>
+        <table>zookeeper_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+        <duration_threshold_microseconds>0</duration_threshold_microseconds>
+    </zookeeper_log>
+    -->
+
     <!-- ZooKeeper connection log.
     -->
     <zookeeper_connection_log>
