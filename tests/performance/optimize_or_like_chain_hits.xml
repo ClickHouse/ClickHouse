@@ -2,37 +2,27 @@
   <settings>
       <use_query_condition_cache>0</use_query_condition_cache>
   </settings> 
-    <query> SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' settings optimize_or_like_chain=0</query>
-    <query> SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' settings optimize_or_like_chain=1</query>
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%'</query>
 
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' settings optimize_or_like_chain=0</query>
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' settings optimize_or_like_chain=1</query>
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%'</query>
 
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' OR URL LIKE 'http://tours%' OR URL LIKE 'http://holo%' OR URL LIKE 'https://random%' OR URL LIKE 'https://cool%' OR URL LIKE 'http://mega%' OR URL LIKE 'http://krasn%' OR URL LIKE 'http://stroyp%' settings optimize_or_like_chain=0</query>
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' OR URL LIKE 'http://tours%' OR URL LIKE 'http://holo%' OR URL LIKE 'https://random%' OR URL LIKE 'https://cool%' OR URL LIKE 'http://mega%' OR URL LIKE 'http://krasn%' OR URL LIKE 'http://stroyp%' settings optimize_or_like_chain=1</query>
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' OR URL LIKE 'http://tours%' OR URL LIKE 'http://holo%' OR URL LIKE 'https://random%' OR URL LIKE 'https://cool%' OR URL LIKE 'http://mega%' OR URL LIKE 'http://krasn%' OR URL LIKE 'http://stroyp%'</query>
 
     <!-- From this query, optimiz_or_like_chain should do well -->
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' OR URL LIKE 'http://tours%' OR URL LIKE 'http://holo%' OR URL LIKE 'https://random%' OR URL LIKE 'https://cool%' OR URL LIKE 'http://mega%' OR URL LIKE 'http://krasn%' OR URL LIKE 'http://stroyp%' OR URL LIKE 'http://3dnews%' OR URL LIKE 'http://news%' OR URL LIKE 'http://russia' settings optimize_or_like_chain=1</query>
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' OR URL LIKE 'http://tours%' OR URL LIKE 'http://holo%' OR URL LIKE 'https://random%' OR URL LIKE 'https://cool%' OR URL LIKE 'http://mega%' OR URL LIKE 'http://krasn%' OR URL LIKE 'http://stroyp%' OR URL LIKE 'http://3dnews%' OR URL LIKE 'http://news%' OR URL LIKE 'http://russia' settings optimize_or_like_chain=1</query>
-
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'http://bonprix%' OR URL LIKE 'https://produkt%' OR URL LIKE 'http://auto%' OR URL LIKE 'http://time%' OR URL LIKE 'http://tours%' OR URL LIKE 'http://holo%' OR URL LIKE 'https://random%' OR URL LIKE 'https://cool%' OR URL LIKE 'http://mega%' OR URL LIKE 'http://krasn%' OR URL LIKE 'http://stroyp%' OR URL LIKE 'http://3dnews%' OR URL LIKE 'http://news%' OR URL LIKE 'http://russia'</query>
 
     <!-- No match, quick exit -->
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'httx1%' OR URL LIKE 'httpx1%' settings optimize_or_like_chain=0</query>
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'httx1%' OR URL LIKE 'httpx1%' settings optimize_or_like_chain=1</query>
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE 'httx1%' OR URL LIKE 'httpx1%'</query>
 
     <!-- mutliMatchAny is okay -->
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%' settings optimize_or_like_chain=0</query>
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%' settings optimize_or_like_chain=1</query>
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%'</query>
 
     <!-- mutliMatchAny is okay -->
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%' OR URL LIKE '%video%' settings optimize_or_like_chain=0</query>
-    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%' OR URL LIKE '%video%' settings optimize_or_like_chain=1</query>
+    <query>SELECT count(*) FROM hits_100m_single WHERE URL LIKE '%databa%' OR URL LIKE '%match%' OR URL LIKE '%video%'</query>
 
     <!-- short string with multiMatchAny -->
-    <query>SELECT count(*) FROM hits_100m_single WHERE SearchPhrase LIKE '%love%' OR SearchPhrase LIKE '%dead%' settings optimize_or_like_chain=0</query>
-    <query>SELECT count(*) FROM hits_100m_single WHERE SearchPhrase LIKE '%love%' OR SearchPhrase LIKE '%dead%' settings optimize_or_like_chain=1</query>
+    <query>SELECT count(*) FROM hits_100m_single WHERE SearchPhrase LIKE '%love%' OR SearchPhrase LIKE '%dead%'</query>
 
     <!-- short string with regex -->
-    <query>SELECT count(*) FROM hits_100m_single WHERE SearchPhrase LIKE 'love%' OR SearchPhrase LIKE 'dead%' settings optimize_or_like_chain=0</query>
-    <query>SELECT count(*) FROM hits_100m_single WHERE SearchPhrase LIKE 'love%' OR SearchPhrase LIKE 'dead%' settings optimize_or_like_chain=1</query>
+    <query>SELECT count(*) FROM hits_100m_single WHERE SearchPhrase LIKE 'love%' OR SearchPhrase LIKE 'dead%'</query>
 </test>
