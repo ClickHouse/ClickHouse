@@ -520,7 +520,11 @@ void PaimonMetadata::runBackgroundRefresh()
 PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) const
 {
     /// Get snapshot by ID
-    auto snapshot = table_client->getSnapshot({snapshot_id, ""});
+    /// Build snapshot file path: `table_location/snapshot/snapshot-<id>`
+    const String snapshot_path = (std::filesystem::path(persistent_components.table_location)
+        / PAIMON_SNAPSHOT_DIR
+        / fmt::format("{}{}", PAIMON_SNAPSHOT_PRIFIX, snapshot_id));
+    auto snapshot = table_client->getSnapshot({snapshot_id, snapshot_path});
 
     /// Ensure schema is cached for this snapshot_id
     if (!persistent_components.schema_processor->hasSchema(snapshot.schema_id))
