@@ -447,8 +447,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
         auto query_context = CurrentThread::get().getQueryContext();
         if (query_context)
         {
-            auto merge_tree_settings = query_context->getMergeTreeSettings();
-            if (merge_tree_settings && (*merge_tree_settings)[MergeTreeSetting::allow_experimental_leann_optimization_for_hnsw])
+            const auto & merge_tree_settings = query_context->getMergeTreeSettings();
+            if (merge_tree_settings[MergeTreeSetting::allow_experimental_leann_optimization_for_hnsw])
                 leann_enabled = true;
         }
     }
