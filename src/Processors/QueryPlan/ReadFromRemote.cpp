@@ -1028,10 +1028,18 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
 void ReadFromParallelRemoteReplicasStep::describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options)
 {
-    auto header = std::make_shared<const Block>(Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
+    auto header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}});
 
-    auto explain_query = makeExplain(options, query_ast);
-    formatExplain(settings, addPipes(explain_query, header));
+    if (query_plan)
+    {
+        query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.indent, 1) + 1);
+    }
+    else
+    {
+        auto explain_query = makeExplain(options, query_ast);
+        formatExplain(settings, addPipes(explain_query, header));
+    }
 }
 
 }

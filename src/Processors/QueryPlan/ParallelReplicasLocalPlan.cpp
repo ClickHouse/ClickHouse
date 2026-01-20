@@ -41,6 +41,7 @@ std::shared_ptr<const QueryPlan> createRemotePlanForParallelReplicas(
     /// can be applied only for non-distributed tables
     /// and we can produce query, inconsistent with remote plans.
     auto select_query_options = SelectQueryOptions(processed_stage).ignoreASTOptimizations();
+    select_query_options.build_logical_plan = true;
 
     /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
     /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
