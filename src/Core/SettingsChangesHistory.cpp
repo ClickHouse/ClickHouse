@@ -1027,6 +1027,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
             {"materialize_statistics_on_merge", true, true, "New setting"},
+            {"allow_experimental_leann_optimization_for_hnsw", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
