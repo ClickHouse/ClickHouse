@@ -1,17 +1,18 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <Columns/ColumnSparse.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/Block.h>
 #include <base/EnumReflection.h>
 
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
-#include <Poco/JSON/Stringifier.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Stringifier.h>
 
 
 namespace DB
@@ -19,7 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CORRUPTED_DATA;
+extern const int CORRUPTED_DATA;
 }
 
 namespace
@@ -45,18 +46,21 @@ void SerializationInfo::Data::add(const IColumn & column)
 
     num_rows += rows;
     num_defaults += static_cast<size_t>(ratio * rows);
+    is_string_column |= column.getFamilyName() == std::string("String");
 }
 
 void SerializationInfo::Data::add(const Data & other)
 {
     num_rows += other.num_rows;
     num_defaults += other.num_defaults;
+    is_string_column |= other.is_string_column;
 }
 
 void SerializationInfo::Data::remove(const Data & other)
 {
     num_rows -= other.num_rows;
     num_defaults -= other.num_defaults;
+    is_string_column ^= other.is_string_column;
 }
 
 void SerializationInfo::Data::addDefaults(size_t length)
@@ -136,10 +140,8 @@ static bool preserveDefaultsAfterConversion(const IDataType & lhs, const IDataTy
     return false;
 }
 
-std::shared_ptr<SerializationInfo> SerializationInfo::createWithType(
-    const IDataType & old_type,
-    const IDataType & new_type,
-    const Settings & new_settings) const
+std::shared_ptr<SerializationInfo>
+SerializationInfo::createWithType(const IDataType & old_type, const IDataType & new_type, const Settings & new_settings) const
 {
     ISerialization::KindStack new_kind_stack;
     for (auto kind : kind_stack)
@@ -163,9 +165,9 @@ enum class KindStackBinarySerializationType : UInt8
     /// First 4 added for compatibility with old versions where we didn't have kind stack but a single kind.
     DEFAULT = 0,
     SPARSE = 1, /// stack: {Default, Sparse}
-    DETACHED = 2,  /// stack: {Default, Detached}
-    DETACHED_OVER_SPARSE = 3,  /// stack: {Default, Sparse, Detached}
-    REPLICATED = 4,  /// stack: {Default, Replicated}
+    DETACHED = 2, /// stack: {Default, Detached}
+    DETACHED_OVER_SPARSE = 3, /// stack: {Default, Sparse, Detached}
+    REPLICATED = 4, /// stack: {Default, Replicated}
 
     COMBINATION = 5, /// other stacks, serialized as number of kinds and all kinds one after another.
 };
@@ -186,7 +188,9 @@ void SerializationInfo::serialializeKindStackBinary(WriteBuffer & out) const
     {
         writeBinary(static_cast<UInt8>(KindStackBinarySerializationType::DETACHED), out);
     }
-    else if (kind_stack == ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE, ISerialization::Kind::DETACHED})
+    else if (
+        kind_stack
+        == ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE, ISerialization::Kind::DETACHED})
     {
         writeBinary(static_cast<UInt8>(KindStackBinarySerializationType::DETACHED_OVER_SPARSE), out);
     }
@@ -228,8 +232,7 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
         case KindStackBinarySerializationType::REPLICATED:
             kind_stack = {ISerialization::Kind::DEFAULT, ISerialization::Kind::REPLICATED};
             break;
-        case KindStackBinarySerializationType::COMBINATION:
-        {
+        case KindStackBinarySerializationType::COMBINATION: {
             size_t num_kinds;
             readVarUInt(num_kinds, in);
             for (size_t i = 0; i != num_kinds; ++i)
@@ -257,9 +260,12 @@ void SerializationInfo::toJSON(Poco::JSON::Object & object) const
 void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 {
     if (!object.has(KEY_KIND) || !object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
             "Missed field '{}' or '{}' or '{}' in SerializationInfo of columns",
-            KEY_KIND, KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
+            KEY_KIND,
+            KEY_NUM_DEFAULTS,
+            KEY_NUM_ROWS);
 
     data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
     data.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
@@ -272,6 +278,9 @@ ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, 
     double ratio = data.num_rows ? std::min(static_cast<double>(data.num_defaults) / data.num_rows, 1.0) : 0.0;
     if (ratio > settings.ratio_of_defaults_for_sparse)
         kind_stack.push_back(ISerialization::Kind::SPARSE);
+    if (data.is_string_column)
+        kind_stack.push_back(ISerialization::Kind::FSST);
+    
     return kind_stack;
 }
 
@@ -399,7 +408,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
         object.set(KEY_TYPES_SERIALIZATION_VERSIONS, type_versions_obj);
     }
 
-    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(object, oss);
 
@@ -508,15 +517,13 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
 
             if (!elem_object->has(KEY_NAME))
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Missed field '{}' in serialization infos", KEY_NAME);
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed field '{}' in serialization infos", KEY_NAME);
 
             auto name = elem_object->getValue<String>(KEY_NAME);
             auto it = column_type_by_name.find(name);
 
             if (it == column_type_by_name.end())
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Found unexpected column '{}' in serialization infos", name);
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Found unexpected column '{}' in serialization infos", name);
 
             auto info = it->second->createSerializationInfo(infos.settings);
             info->fromJSON(*elem_object);

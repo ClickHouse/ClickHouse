@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+
 #include "DataTypes/Serializations/ISerialization.h"
 
 namespace DB
@@ -20,18 +21,13 @@ struct CompressedField
 
 class SerializationStringFsst final : public ISerialization
 {
-private:
-    SerializationPtr nested;
-    constexpr static size_t kCompressSize = 16 << 10; // 16KB
-
-    void serializeState(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const;
-    size_t deserializeState(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state) const;
-
 public:
     explicit SerializationStringFsst(SerializationPtr _nested)
         : nested(_nested)
     {
     }
+
+    KindStack getKindStack() const override;
 
     void enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const override;
 
@@ -113,11 +109,25 @@ public:
     }
 
 private:
-    [[noreturn]] static void throwNotImplemented()
+    void serializeState(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const;
+    size_t deserializeState(DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state) const;
+
+    struct SubcolumnCreator : public ISubcolumnCreator
     {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "text escaped/text quoted/text csv/whole text/json serialization are not implemented for FSST");
-    }
+        const ColumnPtr nested;
+
+        explicit SubcolumnCreator(const ColumnPtr & _nested)
+            : nested(_nested)
+        {
+        }
+
+        DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
+        SerializationPtr create(const SerializationPtr & nested, const DataTypePtr &) const override;
+        ColumnPtr create(const ColumnPtr & prev) const override;
+    };
+
+    SerializationPtr nested;
+    constexpr static size_t kCompressSize = 16 << 10; // 16KB
 };
 
 }

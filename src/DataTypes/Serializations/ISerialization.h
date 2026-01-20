@@ -67,6 +67,7 @@ public:
         SPARSE = 1,
         DETACHED = 2,
         REPLICATED = 3,
+        FSST = 4,
     };
 
     /// We can have multiple serialization kinds created over each other.
@@ -189,6 +190,7 @@ public:
 
             Fsst,
             FsstOffsets,
+            FsstCompressed,
 
             StringSizes,
             InlinedStringSizes,
@@ -655,12 +657,7 @@ public:
     static bool
     insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column);
     /// Perform insertion from column found in substreams cache.
-<<<<<<< HEAD
     static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert = false);
-=======
-    static void insertDataFromCachedColumn(
-        const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows);
->>>>>>> b54b1d764ab (implement basic version of SerializationStringFsst)
 
 protected:
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
