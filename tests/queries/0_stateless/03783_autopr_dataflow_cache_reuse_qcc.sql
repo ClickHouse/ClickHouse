@@ -10,10 +10,8 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=1, parallel_rep
 -- For runs with the old analyzer
 SET enable_analyzer=1;
 
-SET max_threads=4;
-
--- For runs with the old analyzer
-SET parallel_replicas_only_with_analyzer=0;
+-- max_block_size is set explicitly to ensure enough blocks will be fed to the statistics collector
+SET max_threads=4, max_block_size=128;
 
 SET use_query_condition_cache=1;
 SET automatic_parallel_replicas_min_bytes_per_replica='1Mi';

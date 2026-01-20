@@ -10,6 +10,7 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=1, parallel_rep
 -- For runs with the old analyzer
 SET enable_analyzer=1;
 
+-- max_block_size is set explicitly to ensure enough blocks will be fed to the statistics collector
 SET max_threads=4, max_block_size=128;
 
 INSERT INTO t SELECT toString(number), number FROM numbers(1e4);
