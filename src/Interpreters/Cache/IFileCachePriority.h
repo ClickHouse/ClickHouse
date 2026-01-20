@@ -45,6 +45,8 @@ public:
         enum class State
         {
             Active,
+            /// Entry is collected for eviction via IFileCachePriority::collectEvictionCandidates
+            /// and is being or soon will be removed from filesystem.
             Evicting,
             /// Can only be set in SLRU eviciton policy during moves
             /// in between protected/probationary queues.
