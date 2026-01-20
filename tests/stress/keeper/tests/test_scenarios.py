@@ -413,6 +413,13 @@ def _emit_bench_summary(summary, run_id, run_meta_eff, scenario_id, topo, sink_u
         "read_bps": _safe_float(s.get("read_bps")),
         "write_rps": _safe_float(s.get("write_rps")),
         "write_bps": _safe_float(s.get("write_bps")),
+        # Keep keeper-bench stdout field names as aliases (useful when consumers expect them).
+        "read_total_requests": _safe_float(s.get("reads")),
+        "read_requests_per_second": _safe_float(s.get("read_rps")),
+        "read_bytes_per_second": _safe_float(s.get("read_bps")),
+        "write_total_requests": _safe_float(s.get("writes")),
+        "write_requests_per_second": _safe_float(s.get("write_rps")),
+        "write_bytes_per_second": _safe_float(s.get("write_bps")),
         "read_ratio": _safe_float(s.get("read_ratio")),
         "write_ratio": _safe_float(s.get("write_ratio")),
         "error_rate": err / ops if ops > 0 else 0.0,

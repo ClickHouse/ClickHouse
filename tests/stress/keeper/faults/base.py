@@ -409,6 +409,8 @@ def _step_run_bench(step, nodes, leader, ctx):
             "write_p50_ms": 0.0,
             "write_p95_ms": 0.0,
             "write_p99_ms": 0.0,
+            "read_percentiles_ms": {},
+            "write_percentiles_ms": {},
             "has_latency": False,
         }
         for r in results:
@@ -443,6 +445,39 @@ def _step_run_bench(step, nodes, leader, ctx):
                     agg["write_p99_ms"], float(r.get("write_p99_ms") or 0)
                 )
                 agg["has_latency"] = agg["has_latency"] or bool(r.get("has_latency"))
+
+                try:
+                    rpm = r.get("read_percentiles_ms")
+                    if isinstance(rpm, dict) and rpm:
+                        for k, v in rpm.items():
+                            try:
+                                fk = float(k)
+                                fv = float(v)
+                            except Exception:
+                                continue
+                            prev = agg["read_percentiles_ms"].get(fk)
+                            if prev is None:
+                                agg["read_percentiles_ms"][fk] = fv
+                            else:
+                                agg["read_percentiles_ms"][fk] = max(float(prev), fv)
+                except Exception:
+                    pass
+                try:
+                    wpm = r.get("write_percentiles_ms")
+                    if isinstance(wpm, dict) and wpm:
+                        for k, v in wpm.items():
+                            try:
+                                fk = float(k)
+                                fv = float(v)
+                            except Exception:
+                                continue
+                            prev = agg["write_percentiles_ms"].get(fk)
+                            if prev is None:
+                                agg["write_percentiles_ms"][fk] = fv
+                            else:
+                                agg["write_percentiles_ms"][fk] = max(float(prev), fv)
+                except Exception:
+                    pass
             except Exception:
                 continue
         tot = float(agg.get("reads") or 0) + float(agg.get("writes") or 0)
