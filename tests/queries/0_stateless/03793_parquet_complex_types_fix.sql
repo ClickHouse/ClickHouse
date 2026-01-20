@@ -18,8 +18,8 @@ FROM default.tm1;
 
 SELECT *
 FROM default.tm1
-INTO OUTFILE 'tm15.parquet'
+INTO OUTFILE '03793_parquet_complex_types_fix.parquet'
 FORMAT Parquet;
 
 SELECT *
-FROM file('tm15.parquet', Parquet);
+FROM file('03793_parquet_complex_types_fix.parquet', Parquet);
