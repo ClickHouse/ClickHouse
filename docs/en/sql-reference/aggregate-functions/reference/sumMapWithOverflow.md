@@ -13,4 +13,4 @@ doc_type: 'reference'
 
 **See Also**
     
-- [sumMap](../reference/sumMap.md)
+- [sumMap](../reference/sumMappedArrays.md)
