@@ -2479,7 +2479,6 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationUpdateMaxWaitingQueries)
 
 TEST(SchedulerWorkloadResourceManager, MemoryReservationUpdateMaxMemory)
 {
-    // TODO(serxa): this test is flaky - it hangs sometimes https://pastila.nl/?00321021/3156799c72d6fa9d02de018612013ff4#yEJxwF7FHJSz4f85ZbjcxA==
     ResourceTest t;
 
     t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
@@ -2515,7 +2514,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationUpdateMaxMemory)
         a3.waitSync();
 
         // There should be enough memory for the last waiting allocation after eviction
-        a1.waitSync();
+        a4.waitSync();
     }
 }
 
