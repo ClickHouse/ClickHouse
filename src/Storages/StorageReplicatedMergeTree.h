@@ -1011,8 +1011,8 @@ private:
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {
-        explicit DataValidationTasks(DataPartsVector && parts_, std::unique_lock<std::mutex> && parts_check_lock_)
-            : parts_check_lock(std::move(parts_check_lock_)), parts(std::move(parts_)), it(parts.begin())
+        explicit DataValidationTasks(DataPartsVector && parts_, ReplicatedMergeTreePartCheckThread::TemporaryPause && pause_)
+            : pause(std::move(pause_)), parts(std::move(parts_)), it(parts.begin())
         {}
 
         DataPartPtr next()
@@ -1029,7 +1029,9 @@ private:
             return std::distance(it, parts.end());
         }
 
-        std::unique_lock<std::mutex> parts_check_lock;
+        /// Pauses the part check thread while this object exists.
+        /// Safe to destroy from any thread (unlike unique_lock which has thread affinity).
+        ReplicatedMergeTreePartCheckThread::TemporaryPause pause;
 
         mutable std::mutex mutex;
         DataPartsVector parts;
