@@ -388,7 +388,7 @@ void StorageSystemUnicode::fillData(
                 ++offset;
                 col_notation_chars[offset] = '+';
                 ++offset;
-                writeHexByteUppercase(code >> 8, &col_notation_chars[offset]);
+                writeHexByteUppercase(static_cast<UInt8>(code >> 8), &col_notation_chars[offset]);
                 offset += 2;
                 writeHexByteUppercase(code & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
@@ -403,7 +403,7 @@ void StorageSystemUnicode::fillData(
                 ++offset;
                 col_notation_chars[offset] = '+';
                 ++offset;
-                col_notation_chars[offset] = hexDigitUppercase(code >> 16);
+                col_notation_chars[offset] = hexDigitUppercase(static_cast<unsigned char>(code >> 16));
                 ++offset;
                 writeHexByteUppercase((code >> 8) & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
@@ -420,7 +420,7 @@ void StorageSystemUnicode::fillData(
                 ++offset;
                 col_notation_chars[offset] = '+';
                 ++offset;
-                writeHexByteUppercase(code >> 16, &col_notation_chars[offset]);
+                writeHexByteUppercase(static_cast<UInt8>(code >> 16), &col_notation_chars[offset]);
                 offset += 2;
                 writeHexByteUppercase((code >> 8) & 0xFF, &col_notation_chars[offset]);
                 offset += 2;
