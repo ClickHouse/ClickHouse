@@ -15,7 +15,7 @@ using SIMDComp = DB::impl::BitpackingBlockCodecImpl<true>;
 #endif
 namespace
 {
-std::vector<uint32_t> generateRandomData(size_t count, uint32_t max_bits, uint32_t seed = 42)
+std::vector<uint32_t> generateRandomData(size_t count, uint32_t max_bits, size_t seed = 42)
 {
     std::mt19937 rng(seed);
     std::vector<uint32_t> data(count);
@@ -55,7 +55,7 @@ static void verifyRoundTrip(const std::vector<uint32_t> & original, std::optiona
     std::vector<char> buffer(needed_bytes + 64, char(0xCC));
     std::span<char> out_span(buffer.data(), buffer.size());
 
-    uint32_t used_encode = Portable::encode(data_span, use_bits, out_span);
+    size_t used_encode = Portable::encode(data_span, use_bits, out_span);
 
     ASSERT_EQ(static_cast<size_t>(used_encode), needed_bytes)
         << "encode used bytes must equal calculateNeededBytesAndMaxBits().first";
@@ -572,7 +572,7 @@ TEST(PostingListCodecTest, MixedRandomMonotonicLarger)
 }
 
 // Portable encode helper: encodes into `out` sized exactly to the expected payload length.
-[[maybe_unused]] static uint32_t encodePortable(const std::vector<uint32_t> & in, uint32_t bit, std::vector<std::byte> & out)
+[[maybe_unused]] static size_t encodePortable(const std::vector<uint32_t> & in, uint32_t bit, std::vector<std::byte> & out)
 {
     const size_t expected_bytes = expectedCompressedBytes(in.size(), bit);
     out.assign(expected_bytes, std::byte{0});
@@ -580,7 +580,7 @@ TEST(PostingListCodecTest, MixedRandomMonotonicLarger)
     std::span<uint32_t> in_span(const_cast<uint32_t*>(in.data()), in.size());
     std::span<char> out_span(reinterpret_cast<char*>(out.data()), out.size());
 
-    const uint32_t used = Portable::encode(in_span, bit, out_span);
+    const size_t used = Portable::encode(in_span, bit, out_span);
     EXPECT_EQ(size_t(used), expected_bytes) << "Portable encode used-bytes must match the format formula";
     return used;
 }
@@ -600,7 +600,7 @@ TEST(PostingListCodecTest, MixedRandomMonotonicLarger)
 }
 
 #if USE_SIMDCOMP
-static uint32_t encodeSIMDComp(const std::vector<uint32_t> & in, uint32_t bit, std::vector<std::byte> & out)
+static size_t encodeSIMDComp(const std::vector<uint32_t> & in, uint32_t bit, std::vector<std::byte> & out)
 {
     const size_t expected_bytes = expectedCompressedBytes(in.size(), bit);
     out.assign(expected_bytes, std::byte{0});
@@ -608,8 +608,8 @@ static uint32_t encodeSIMDComp(const std::vector<uint32_t> & in, uint32_t bit, s
     std::span<uint32_t> in_span(const_cast<uint32_t*>(in.data()), in.size());
     std::span<char> out_span(reinterpret_cast<char*>(out.data()), out.size());
 
-    const uint32_t used = SIMDComp::encode(in_span, bit, out_span);
-    EXPECT_EQ(size_t(used), expected_bytes) << "Portable encode used-bytes must match the format formula";
+    const size_t used = SIMDComp::encode(in_span, bit, out_span);
+    EXPECT_EQ(used, expected_bytes) << "Portable encode used-bytes must match the format formula";
     return used;
 }
 
@@ -650,11 +650,11 @@ TEST(PostingListCodecTest, EncodeBytesMatchSSEvsPortable)
             std::vector<std::byte> enc_port(expected_bytes, std::byte{0});
             std::vector<std::byte> enc_sse(expected_bytes, std::byte{0});
 
-            const uint32_t used_port = encodePortable(input, bit, enc_port);
-            const uint32_t used_sse = encodeSIMDComp(input, bit, enc_sse);
+            const size_t used_port = encodePortable(input, bit, enc_port);
+            const size_t used_sse = encodeSIMDComp(input, bit, enc_sse);
 
-            ASSERT_EQ(size_t(used_sse), expected_bytes) << "SSE encode used-bytes mismatch the format formula";
-            ASSERT_EQ(size_t(used_port), expected_bytes);
+            ASSERT_EQ(used_sse, expected_bytes) << "SSE encode used-bytes mismatch the format formula";
+            ASSERT_EQ(used_port, expected_bytes);
 
             ASSERT_EQ(enc_port.size(), enc_sse.size());
             ASSERT_EQ(0, std::memcmp(enc_port.data(), enc_sse.data(), expected_bytes))
@@ -685,7 +685,7 @@ TEST(PostingListCodecTest, CrossDecodeSSEtoPortableandBack)
 
             // SSE encode -> Portable decode
             std::vector<std::byte> enc_sse(expected_bytes, std::byte{0});
-            const uint32_t used_sse = encodeSIMDComp(input, bit, enc_sse);
+            const size_t used_sse = encodeSIMDComp(input, bit, enc_sse);
             ASSERT_EQ(size_t(used_sse), expected_bytes);
 
             std::vector<uint32_t> dec_port;
@@ -740,7 +740,7 @@ TEST(PostingListCodecTest, SpecialPatterns)
             std::vector<std::byte> enc_port, enc_sse(expected_bytes, std::byte{0});
 
             encodePortable(input, c.bit, enc_port);
-            const uint32_t used_sse = encodeSIMDComp(input, c.bit, enc_sse);
+            const size_t used_sse = encodeSIMDComp(input, c.bit, enc_sse);
             ASSERT_EQ(size_t(used_sse), expected_bytes);
 
             ASSERT_EQ(enc_port.size(), expected_bytes);
@@ -801,7 +801,7 @@ TEST(PostingListCodecTest, PortableEncodeDecodedBySSEAndSSEEncodeDecodedByPortab
             std::vector<std::byte> enc_sse(expected_bytes, std::byte{0});
             std::span<uint32_t> input_span(input.data(), input.size());
             std::span<char> enc_sse_span(reinterpret_cast<char*>(enc_sse.data()), enc_sse.size());
-            const uint32_t used_enc_sse = SIMDComp::encode(input_span, bit, enc_sse_span);
+            const size_t used_enc_sse = SIMDComp::encode(input_span, bit, enc_sse_span);
             ASSERT_EQ(size_t(used_enc_sse), expected_bytes) << "SSE encode used-bytes mismatch";
 
             std::vector<uint32_t> dec_port;
