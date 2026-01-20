@@ -7,9 +7,9 @@
 
   <create_query>CREATE TABLE text_index_partially_materialized (text String) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
-  <fill_query>INSERT INTO text_index_partially_materialized SELECT arrayStringConcat(arrayMap(x -> toString(rand(number * 30 + x) % 500000), range(30)), ' ') FROM numbers(1000000)</fill_query>
+  <fill_query>INSERT INTO text_index_partially_materialized SELECT arrayStringConcat(arrayMap(x -> toString(rand(number * 30 + x) % 500000), range(42)), ' ') FROM numbers(1000)</fill_query>
   <fill_query>ALTER TABLE text_index_partially_materialized ADD INDEX idx(text) TYPE text(tokenizer = splitByNonAlpha)</fill_query>
-  <fill_query>INSERT INTO text_index_partially_materialized SELECT arrayStringConcat(arrayMap(x -> toString(rand(number * 30 + x) % 500000), range(30)), ' ') FROM numbers(1000000)</fill_query>
+  <fill_query>INSERT INTO text_index_partially_materialized SELECT arrayStringConcat(arrayMap(x -> toString(rand(number * 30 + x) % 500000), range(42)), ' ') FROM numbers(1000000)</fill_query>
   <fill_query>SYSTEM STOP MERGES text_index_partially_materialized</fill_query>
 
   <query>SELECT count() FROM text_index_partially_materialized WHERE hasToken(text, '143565')</query>

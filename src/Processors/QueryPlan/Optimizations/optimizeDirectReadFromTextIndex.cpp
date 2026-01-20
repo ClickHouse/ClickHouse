@@ -344,15 +344,16 @@ private:
                 default_expression = convertNodeToAST(function_node);
                 if (auto * function = default_expression->as<ASTFunction>())
                 {
-                    function->addConfigurator(
-                        [function_name = search_query->function_name,
-                         search_tokens = search_query->tokens,
-                         token_extractor = std::shared_ptr<ITokenExtractor>(text_index_condition.tokenExtractor()->clone())](
-                            const ActionsDAG::Node * function_dag_node) mutable
-                        {
-                            applyTextIndexFunctionParams(
-                                function_dag_node, std::move(function_name), token_extractor->clone(), std::move(search_tokens));
-                        });
+                    if (search_query->function_name == "hasAnyTokens" || search_query->function_name == "hasAllTokens")
+                        function->addConfigurator(
+                            [function_name = search_query->function_name,
+                             search_tokens = search_query->tokens,
+                             token_extractor = std::shared_ptr<ITokenExtractor>(text_index_condition.tokenExtractor()->clone())](
+                                const ActionsDAG::Node * function_dag_node) mutable
+                            {
+                                applyTextIndexFunctionParams(
+                                    function_dag_node, std::move(function_name), token_extractor->clone(), std::move(search_tokens));
+                            });
                 }
             }
 
