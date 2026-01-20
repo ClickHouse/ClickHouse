@@ -99,7 +99,7 @@ public:
                                      ->execute(arguments, std::make_shared<DataTypeUInt32>(), input_rows_count, false);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                result_data[i] = murmur_result->getUInt(i);
+                result_data[i] = static_cast<Int32>(murmur_result->getUInt(i));
             }
         }
         else if (which.isUUID())

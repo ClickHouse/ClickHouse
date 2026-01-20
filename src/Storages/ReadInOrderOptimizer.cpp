@@ -82,7 +82,7 @@ NameSet getFixedSortingColumns(
         return {};
 
     /// Convert condition to CNF for more convenient analysis.
-    auto cnf = TreeCNFConverter::tryConvertToCNF(condition);
+    auto cnf = TreeCNFConverter::tryConvertToCNF(condition.get());
     if (!cnf)
         return {};
 

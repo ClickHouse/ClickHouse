@@ -14,7 +14,7 @@ namespace
 class ExecutableFunctionToday : public IExecutableFunction
 {
 public:
-    explicit ExecutableFunctionToday(time_t time_) : day_value(time_) {}
+    explicit ExecutableFunctionToday(time_t time_) : day_value(static_cast<UInt16>(time_)) {}
 
     String getName() const override { return "today"; }
 
@@ -75,7 +75,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_unique<FunctionBaseToday>(DayNum(DateLUT::instance().toDayNum(time(nullptr)).toUnderType()));
+        return std::make_unique<FunctionBaseToday>(DayNum(static_cast<UInt16>(DateLUT::instance().toDayNum(time(nullptr)))));
     }
 };
 
