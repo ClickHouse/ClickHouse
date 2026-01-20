@@ -14,8 +14,6 @@ DROP TABLE IF EXISTS d5;
 DROP TABLE IF EXISTS d6;
 DROP TABLE IF EXISTS d7;
 DROP TABLE IF EXISTS d8;
-DROP TABLE IF EXISTS temp1;
-DROP TABLE IF EXISTS temp2;
 DROP TABLE IF EXISTS buffer1;
 DROP VIEW IF EXISTS view1;
 DROP VIEW IF EXISTS view2;
@@ -28,9 +26,6 @@ CREATE TABLE d1 (key Int, value Int) ENGINE=Memory();
 CREATE TABLE d2 (key Int, value Int) ENGINE=MergeTree() ORDER BY key;
 CREATE TABLE d3 (_table Int, value Int) ENGINE=Memory();
 CREATE TABLE d8 (key Int, value Int) ENGINE=Memory();
-
-CREATE TEMPORARY TABLE temp1(key Int);
-CREATE TEMPORARY TABLE temp2(key Int);
 
 CREATE TABLE m0 ENGINE=Merge(currentDatabase(), '^(d1|d2)$');
 CREATE TABLE d4 ENGINE=Distributed('test_shard_localhost', currentDatabase(), d8, rand());
@@ -48,9 +43,6 @@ INSERT INTO d3 VALUES (6, 60);
 
 INSERT INTO d8 VALUES (5, 50);
 INSERT INTO d8 VALUES (6, 60);
-
-INSERT INTO temp1 VALUES (1);
-INSERT INTO temp2 VALUES (2);
 
 CREATE TABLE m1 ENGINE=Merge(currentDatabase(), '^(d1|d2)$');
 CREATE TABLE m2 ENGINE=Merge(currentDatabase(), '^(d1|d4)$');
@@ -111,9 +103,5 @@ SELECT _table, * FROM dist6 ORDER BY key ASC;
 SELECT _table, * FROM m3 ORDER BY key ASC;
 SELECT _table, * FROM m4 WHERE _table = 'd8' ORDER BY key ASC;
 SELECT _table, * FROM m5 WHERE _table = 'd8' ORDER BY key ASC;
-
-SELECT _table, * FROM temp1 ORDER BY key ASC;
-SELECT _table, * FROM temp2 ORDER BY key ASC;
-SELECT *,_table FROM (SELECT *, _table FROM temp1 UNION ALL SELECT *, _table FROM temp2) ORDER BY key ASC;
 
 SELECT * FROM d1 PREWHERE _table = 'd1'; -- { serverError ILLEGAL_PREWHERE }
