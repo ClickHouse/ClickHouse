@@ -2,7 +2,6 @@ import argparse
 import os
 import random
 import re
-import subprocess
 from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
@@ -21,7 +20,6 @@ class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
     START = "start"
     TEST = "test"
-    RETRIES = "retries"
     CHECK_ERRORS = "check_errors"
     COLLECT_LOGS = "collect_logs"
     COLLECT_COVERAGE = "collect_coverage"
@@ -65,12 +63,6 @@ def parse_args():
         help="Optional. Number of parallel workers for the test runner. Default: automatically computed from CPU count and job type",
         default=None,
     )
-    parser.add_argument(
-        "--debug",
-        help="Optional. Open clickhouse-client console after test run",
-        default=False,
-        action="store_true",
-    )
     return parser.parse_args()
 
 
@@ -92,7 +84,7 @@ def run_tests(
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {5*2**30} --trace \
+    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
                 {extra_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
@@ -124,8 +116,6 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
-    "flaky check": "--flaky-check",
-    "targeted": "--flaky-check",  # to disable tests not compatible with the thread fuzzer
 }
 
 
@@ -155,7 +145,12 @@ def main():
         elif to in OPTIONS_TO_INSTALL_ARGUMENTS:
             print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
-        elif to.startswith("amd_") or to.startswith("arm_"):
+        elif (
+            to.startswith("amd_")
+            or to.startswith("arm_")
+            or "flaky" in to
+            or "targeted" in to
+        ):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             print(
@@ -198,9 +193,6 @@ def main():
             nproc = int(Utils.cpu_count() * 1.2)
         elif is_database_replicated:
             nproc = int(Utils.cpu_count() * 0.4)
-        elif "msan" in args.options:
-            # MSan is slow
-            nproc = int(Utils.cpu_count() * 0.4)
         elif is_coverage:
             cidb_cluster = CIDBCluster()
             assert cidb_cluster.is_ready()
@@ -224,7 +216,7 @@ def main():
         rerun_count = 50
     elif is_targeted_check:
         print(f"Rerun count set to 5 for targeted check")
-        rerun_count = 5
+        rerun_count = 10
 
     if not info.is_local_run:
         # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
@@ -284,52 +276,17 @@ def main():
         stages.remove(JobStages.COLLECT_COVERAGE)
     else:
         stages.remove(JobStages.COLLECT_LOGS)
-    if is_coverage or info.is_local_run:
+    if is_coverage or is_bugfix_validation or info.is_local_run:
+        # not needed for these job flavors
+        # moreover it updates/rewrites inverted Tests status for bugfix validation check which should stay inverted
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
             stages.remove(JobStages.COLLECT_LOGS)
         if JobStages.COLLECT_COVERAGE in stages:
             stages.remove(JobStages.COLLECT_COVERAGE)
-    if (
-        is_flaky_check
-        or is_coverage
-        or is_bugfix_validation
-        or is_targeted_check
-        or info.is_local_run
-    ):
-        stages.remove(JobStages.RETRIES)
 
     tests = args.test
-
-    # for local run check if stateful tests are present to skip prepare_stateful_data and start faster if not
-    has_stateful_tests = True
-    if tests and info.is_local_run:
-        from glob import glob
-
-        has_stateful = False
-        for test_pattern in tests:
-            test_pattern_clean = test_pattern.strip()
-            matching_files = glob(
-                f"tests/queries/**/*{test_pattern_clean}*.sql", recursive=True
-            )
-            matching_files += glob(
-                f"tests/queries/**/*{test_pattern_clean}*.sh", recursive=True
-            )
-            for test_file in matching_files:
-                try:
-                    with open(test_file, "r", encoding="utf-8", errors="ignore") as f:
-                        content = f.read()
-                        if "stateful" in content.lower():
-                            has_stateful = True
-                            break
-                except Exception:
-                    pass
-            if has_stateful:
-                break
-        if not has_stateful:
-            has_stateful_tests = False
-
     targeter = Targeting(info=info)
     if is_flaky_check or is_bugfix_validation:
         if info.is_local_run:
@@ -443,14 +400,13 @@ def main():
                     )
                     print("Failed to create minio log tables")
 
-                if has_stateful_tests:
-                    res = (
-                        CH.prepare_stateful_data(
-                            with_s3_storage=is_s3_storage,
-                            is_db_replicated=is_database_replicated,
-                        )
-                        and CH.insert_system_zookeeper_config()
+                res = (
+                    CH.prepare_stateful_data(
+                        with_s3_storage=is_s3_storage,
+                        is_db_replicated=is_database_replicated,
                     )
+                    and CH.insert_system_zookeeper_config()
+                )
             if res:
                 print("stateful data prepared")
             return res
@@ -469,26 +425,15 @@ def main():
         step_name = "Tests"
         print(step_name)
 
-        # FIXME: Determine optimal mode for targeted job:
-        # Mode (1): Run all tests N times in one go (flaky-mode)
-        #   - Drawback: Noisy errors when tests can't run in parallel with themselves
-        #   - Skips tests marked as no-flaky-check
-        # Mode (2): N consequent runs for chosen tests
-        #   - Drawback: Might eliminate mode (1) issues but potentially catches fewer problems
-        #
-        # Mode (1):
-        # run_sets_cnt = 1
-        # Mode (2):
-        run_sets_cnt = rerun_count if is_targeted_check else 1
-        rerun_count = 1 if is_targeted_check else rerun_count
-
+        # Experimental mode for targeted flavor: run a test subset N times instead of repeating each test N times
+        #   in a single run to avoid failures for tests that cannot run in parallel with themselves
+        run_sets_cnt = 1
+        if is_targeted_check:
+            run_sets_cnt = rerun_count
+            rerun_count = 1
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
-
-        # Track collected test results across multiple runs (only used when run_sets_cnt > 1)
-        collected_test_results = []
-        seen_test_names = set()
-
         for cnt in range(run_sets_cnt):
+            ft_res_processor.debug_files = []
             run_tests(
                 batch_num=batch_num if not tests else 0,
                 batch_total=total_batches if not tests else 0,
@@ -500,125 +445,16 @@ def main():
                 rerun_count=rerun_count,
             )
             test_result = ft_res_processor.run()
-
-            # Experimental mode for targeted check: collect first failure of each test,
-            # or all results on the final attempt
-            if run_sets_cnt > 1:
-                is_final_run = cnt == run_sets_cnt - 1
-
-                for test_case_result in test_result.results:
-                    # Only collect each test once (first failure or final result)
-                    if test_case_result.name not in seen_test_names:
-                        # On non-final runs: collect only failed test cases
-                        # On final run: collect all remaining test cases
-                        should_collect = not test_case_result.is_ok() or is_final_run
-                        if should_collect:
-                            test_case_result.set_info(
-                                f"Run attempt {cnt + 1} out of {run_sets_cnt}"
-                            )
-                            collected_test_results.append(test_case_result)
-                            seen_test_names.add(test_case_result.name)
-
-                # On final run, replace results with collected ones
-                if is_final_run:
-                    test_result.results = collected_test_results
-                    # Set overall status to failed if any collected test cases failed
-                    has_failures = any(not t.is_ok() for t in collected_test_results)
-                    if has_failures and test_result.is_ok():
-                        test_result.set_failed()
+            if is_targeted_check:
+                test_result.set_info(f"Run attempt {cnt + 1} out of {run_sets_cnt}")
+            if not test_result.is_ok():
+                break
 
         if not info.is_local_run:
             CH.stop_log_exports()
 
         results.append(test_result)
         debug_files += ft_res_processor.debug_files
-
-        results[-1].set_timing(stopwatch=stop_watch_)
-        if results[-1].info:
-            job_info = results[-1].info
-            results[-1].info = ""
-
-        res = results[-1].is_ok()
-
-    if JobStages.RETRIES in stages and test_result and test_result.is_failure():
-        # retry all failed tests and mark original failed either as success on retry or failed on retry
-        failed_tests = [t.name for t in test_result.results if t.is_failure()]
-        if len(failed_tests) > 10:
-            results.append(
-                Result(
-                    name="Retries",
-                    status=Result.Status.SKIPPED,
-                    info="Too many failed tests",
-                )
-            )
-        elif failed_tests:
-            ft_res_processor = FTResultsProcessor(wd=temp_dir)
-            run_tests(
-                batch_num=0,
-                batch_total=0,
-                tests=failed_tests,
-                extra_args=runner_options,
-                random_order=True,
-                rerun_count=1,
-            )
-            retry_result = ft_res_processor.run(task_name="Retries")
-            if retry_result.is_failure():
-                # do not produce noise failures
-                retry_result.set_success()
-            success_after_rerun = [t.name for t in retry_result.results if t.is_ok()]
-            failed_after_rerun = [
-                t.name for t in retry_result.results if t.is_failure()
-            ]
-            if success_after_rerun or failed_after_rerun:
-                for test_case in test_result.results:
-                    if test_case.name in success_after_rerun:
-                        test_case.set_label(Result.Label.OK_ON_RETRY)
-                    elif test_case.name in failed_after_rerun:
-                        test_case.set_label(Result.Label.FAILED_ON_RETRY)
-            results.append(retry_result)
-
-    if args.debug:
-        print("\n\n=== Debug mode enabled, starting clickhouse-client ===\n")
-        subprocess.call("clickhouse-client", shell=True)
-
-    CH.terminate()
-
-    reset_success = False
-    if (
-        test_result
-        and not test_result.is_error()
-        and JobStages.COLLECT_COVERAGE in stages
-    ):
-        print("Collect coverage")
-        os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
-        results.append(
-            Result.from_commands_run(
-                name="Collect coverage",
-                command=lambda: CoverageExporter(
-                    src=CH,
-                    dest=cidb_cluster,
-                    job_name=info.job_name,
-                ).do(),
-            )
-        )
-        if results[-1].is_ok():
-            reset_success = True
-
-    if test_result and JobStages.CHECK_ERRORS in stages:
-        # must not be performed for a test validation - test must fail and log errors are not respected
-        print("Check fatal errors")
-        sw_ = Utils.Stopwatch()
-        results.append(
-            Result.create_from(
-                name="Check errors",
-                results=CH.check_fatal_messages_in_logs(),
-                status=Result.Status.SUCCESS,
-                stopwatch=sw_,
-            )
-        )
-        # fatal failures found in logs represented as normal test cases
-        test_result.extend_sub_results(results[-1].results)
-        results[-1].results = []
 
         # invert result status for bugfix validation
         if is_bugfix_validation:
@@ -636,6 +472,48 @@ def main():
             else:
                 results[-1].set_success()
 
+        results[-1].set_timing(stopwatch=stop_watch_)
+        if results[-1].info:
+            job_info = results[-1].info
+            results[-1].info = ""
+
+        res = results[-1].is_ok()
+
+    CH.terminate()
+
+    if (
+        test_result
+        and not test_result.is_error()
+        and JobStages.COLLECT_COVERAGE in stages
+    ):
+        print("Collect coverage")
+        os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+        results.append(
+            Result.from_commands_run(
+                name="Collect coverage",
+                command=lambda: CoverageExporter(
+                    src=CH,
+                    dest=cidb_cluster,
+                    job_name=info.job_name,
+                ).do(),
+            )
+        )
+
+    if test_result and JobStages.CHECK_ERRORS in stages:
+        # must not be performed for a test validation - test must fail and log errors are not respected
+        print("Check fatal errors")
+        sw_ = Utils.Stopwatch()
+        results.append(
+            Result.create_from(
+                name="Check errors",
+                results=CH.check_fatal_messages_in_logs(),
+                status=Result.Status.SUCCESS,
+                stopwatch=sw_,
+            )
+        )
+        # fatal failures found in logs represented as normal test cases
+        test_result.extend_sub_results(results[-1].results)
+        results[-1].results = []
         if not results[-1].is_ok():
             results[-1].set_info("Found errors added into Tests results")
 
@@ -672,18 +550,12 @@ def main():
     if test_result:
         test_result.sort()
 
-    R = Result.create_from(
+    Result.create_from(
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
         info=job_info,
-    )
-
-    if reset_success:
-        # coverage job ignores test failures
-        R.set_success()
-
-    R.complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
+    ).complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
 
 if __name__ == "__main__":

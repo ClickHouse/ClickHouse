@@ -43,7 +43,6 @@ class WriteBuffer;
 
 /// List of available types supported in Settings object (!= MergeTreeSettings, MySQLSettings, etc)
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
-    M(CLASS_NAME, AggregateFunctionInputFormat) \
     M(CLASS_NAME, ArrowCompression) \
     M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \
@@ -111,9 +110,7 @@ class WriteBuffer;
     M(CLASS_NAME, VectorSearchFilterStrategy) \
     M(CLASS_NAME, GeoToH3ArgumentOrder) \
     M(CLASS_NAME, ObjectStorageGranularityLevel) \
-    M(CLASS_NAME, DecorrelationJoinKind) \
-    M(CLASS_NAME, JoinOrderAlgorithm) \
-    M(CLASS_NAME, DeduplicateInsertSelectMode)
+    M(CLASS_NAME, DecorrelationJoinKind)
 
 
 COMMON_SETTINGS_SUPPORTED_TYPES(Settings, DECLARE_SETTING_TRAIT)

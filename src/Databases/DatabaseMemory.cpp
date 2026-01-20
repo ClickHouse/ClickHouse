@@ -22,10 +22,10 @@ namespace ErrorCodes
 
 DatabaseMemory::DatabaseMemory(const String & name_, ContextPtr context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")", context_)
-    , data_path(DatabaseCatalog::getDataDirPath(name_) / "")
+    , data_path("data/" + escapeForFileName(database_name) + "/")
 {
-    /// Temporary database should not have any data at the moment of its creation.
-    /// In case of starting up after sudden server shutdown, remove the database folder of the temporary database.
+    /// Temporary database should not have any data on the moment of its creation
+    /// In case of sudden server shutdown remove database folder of temporary database
     if (name_ == DatabaseCatalog::TEMPORARY_DATABASE)
         removeDataPath(context_);
 }

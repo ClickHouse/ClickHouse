@@ -69,7 +69,6 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
@@ -711,7 +710,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns, has_dependency);
 
     bool need_rebuild_indexes = false;
-    bool need_rebuild_indexes_for_update_delete = false;
     bool need_rebuild_projections = false;
     std::vector<String> read_columns;
 
@@ -752,10 +750,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         stage.filters.push_back(std::move(filter));
     }
 
-    const auto index_mode = source.getMergeTreeData()
-        ? (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::alter_column_secondary_index_mode]
-        : AlterColumnSecondaryIndexMode::REBUILD;
-
     /// First, break a sequence of commands into stages.
     for (const auto & command : commands)
     {
@@ -772,9 +766,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages.back().filters.push_back(predicate);
             }
 
-            /// ALTER DELETE can change the number of rows in the part, so we need to rebuild indexes and projection
+            /// ALTER DELETE can changes number of rows in the part, so we need to rebuild indexes and projection
+            need_rebuild_indexes = true;
             need_rebuild_projections = true;
-            need_rebuild_indexes_for_update_delete = true;
         }
         else if (command.type == MutationCommand::UPDATE)
         {
@@ -1065,10 +1059,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             read_columns.emplace_back(command.column_name);
             materialized_statistics.insert(command.column_name);
 
+            /// Check if the type of this column is changed and there are projections that
+            /// have this column in the primary key. We should rebuild such projections.
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
-                /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
-                /// that depend on it. We should rebuild such projections and indices
                 const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
                 if (column && command.data_type && !column->type->equals(*command.data_type))
                 {
@@ -1082,43 +1076,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                             materialized_projections.insert(projection.name);
                         }
                     }
-
-                    for (const auto & index : metadata_snapshot->getSecondaryIndices())
-                    {
-                        const auto & index_cols = index.expression->getRequiredColumns();
-                        if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
-                        {
-                            switch (index_mode)
-                            {
-                                case AlterColumnSecondaryIndexMode::THROW:
-                                case AlterColumnSecondaryIndexMode::COMPATIBILITY:
-                                    /// The only way to reach this would be if the ALTER was created and then the table setting changed
-                                    throw Exception(
-                                        ErrorCodes::BAD_ARGUMENTS,
-                                        "Cannot ALTER column `{}` because index `{}` depends on it", command.column_name, index.name);
-                                case AlterColumnSecondaryIndexMode::REBUILD:
-                                {
-                                    for (const auto & col : index_cols)
-                                        dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
-                                    materialized_indices.insert(index.name);
-                                    break;
-                                }
-                                case AlterColumnSecondaryIndexMode::DROP:
-                                    dropped_indices.insert(index.name);
-                            }
-                        }
-                    }
                 }
-            }
-        }
-        else if (command.type == MutationCommand::DROP_COLUMN && command.clear)
-        {
-            /// When clearing a column, we need to also clear any indices that depend on it
-            for (const auto & index : metadata_snapshot->getSecondaryIndices())
-            {
-                const auto & index_cols = index.expression->getRequiredColumns();
-                if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
-                    dropped_indices.insert(index.name);
             }
         }
         /// The following mutations handled separately:
@@ -1130,10 +1088,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else
         {
-            throw Exception(
-                ErrorCodes::UNKNOWN_MUTATION_COMMAND,
-                "Unknown mutation command: {}",
-                command.ast ? command.ast->formatForLogging() : fmt::to_string(command.type));
+            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
         }
     }
 
@@ -1199,15 +1154,12 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
-        if (!source.hasSecondaryIndex(index.name) || dropped_indices.contains(index.name))
+        if (!source.hasSecondaryIndex(index.name))
             continue;
 
-        if (need_rebuild_indexes_for_update_delete || need_rebuild_indexes)
+        if (need_rebuild_indexes)
         {
-            if (index_mode == AlterColumnSecondaryIndexMode::DROP)
-                dropped_indices.insert(index.name);
-            else
-                materialized_indices.insert(index.name);
+            materialized_indices.insert(index.name);
             continue;
         }
 
@@ -1218,12 +1170,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
 
         if (changed)
-        {
-            if (index_mode == AlterColumnSecondaryIndexMode::DROP)
-                dropped_indices.insert(index.name);
-            else
-                materialized_indices.insert(index.name);
-        }
+            materialized_indices.insert(index.name);
     }
 
     for (const auto & projection : metadata_snapshot->getProjections())

@@ -1,9 +1,12 @@
 #include <memory>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Planner/Planner.h>
 
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Core/Names.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
@@ -15,9 +18,15 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <DataTypes/DataTypeString.h>
+
+#include <Functions/FunctionFactory.h>
+#include <Functions/CastOverloadResolver.h>
 
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -40,6 +49,7 @@
 #include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -53,6 +63,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -61,12 +72,17 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
+#include <Analyzer/WindowNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/JoinNode.h>
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
@@ -75,6 +91,7 @@
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -84,6 +101,7 @@
 #include <Planner/PlannerSorting.h>
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/Utils.h>
+#include <base/Decimal_fwd.h>
 #include <base/types.h>
 
 
@@ -143,8 +161,6 @@ namespace Setting
     extern const SettingsBool enable_parallel_blocks_marshalling;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
-    extern const SettingsString temporary_files_codec;
-    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace ServerSetting
@@ -569,9 +585,6 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
-    auto tmp_data_scope = query_context->getTempDataOnDisk();
-    if (tmp_data_scope)
-        tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
@@ -585,7 +598,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set]
                 && aggregation_analysis_result.aggregation_keys.empty() && aggregation_analysis_result.group_by_with_constant_keys),
-        tmp_data_scope,
+        query_context->getTempDataOnDisk(),
         settings[Setting::max_threads],
         settings[Setting::min_free_disk_space_for_temporary_data],
         settings[Setting::compile_aggregate_expressions],
@@ -891,11 +904,8 @@ ALWAYS_INLINE void addMergeSortingStep(QueryPlan & query_plan,
 
 void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const QueryAnalysisResult & query_analysis_result,
-    SortAnalysisResult & sort_analysis_result,
     const PlannerContextPtr & planner_context,
-    const QueryNode & query_node,
-    const SelectQueryOptions & select_query_options,
-    UsefulSets & useful_sets)
+    const QueryNode & query_node)
 {
     NameSet column_names_with_fill;
     SortDescription fill_description;
@@ -920,11 +930,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 
     if (query_node.hasInterpolate())
     {
-        auto & before_interpolate_actions = sort_analysis_result.before_interpolate_actions;
-        addExpressionStep(planner_context, query_plan, before_interpolate_actions, CorrelatedSubtrees(), select_query_options, "Before INTERPOLATE", useful_sets);
-
         ActionsDAG interpolate_actions_dag;
-        auto query_plan_columns = query_plan.getCurrentHeader()->getColumnsWithTypeAndName();
+        auto query_plan_columns = header->getColumnsWithTypeAndName();
         for (auto & query_plan_column : query_plan_columns)
         {
             /// INTERPOLATE actions dag input columns must be non constant
@@ -968,6 +975,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
                 const auto * expression_to_interpolate = expression_to_interpolate_expression_nodes[0];
+                const auto & expression_to_interpolate_name = expression_to_interpolate->result_name;
+
                 const auto * interpolate_expression = interpolate_expression_nodes[0];
                 if (!interpolate_expression->result_type->equals(*expression_to_interpolate->result_type))
                 {
@@ -977,8 +986,31 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                         planner_context->getQueryContext());
                 }
 
-                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, interpolate_node_typed.getExpressionName());
+                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, expression_to_interpolate_name);
                 interpolate_actions_dag.getOutputs().push_back(alias_node);
+
+                /// Here we fix INTERPOLATE by constant expression.
+                /// Example from 02336_sort_optimization_with_fill:
+                ///
+                /// SELECT 5 AS x, 'Hello' AS s ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (s AS s||'A')
+                ///
+                /// For this query, INTERPOLATE_EXPRESSION would be : s AS concat(s, 'A'),
+                /// so that interpolate_actions_dag would have INPUT `s`.
+                ///
+                /// However, INPUT `s` does not exist. Instead, we have a constant with execution name 'Hello'_String.
+                /// To fix this, we prepend a rename : 'Hello'_String -> s
+                if (const auto * /*constant_node*/ _ = interpolate_node_typed.getExpression()->as<const ConstantNode>())
+                {
+                    const auto & name = interpolate_node_typed.getExpressionName();
+                    const auto * node = &rename_dag.addInput(alias_node->result_name, alias_node->result_type);
+                    node = &rename_dag.addAlias(*node, name);
+                    rename_dag.getOutputs().push_back(node);
+
+                    /// Interpolate DAG should contain INPUT with same name to ensure a proper merging
+                    const auto & inputs = interpolate_actions_dag.getInputs();
+                    if (std::ranges::find_if(inputs, [&name](const auto & input){ return input->result_name == name; }) == inputs.end())
+                        interpolate_actions_dag.addInput(name, interpolate_node_typed.getExpression()->getResultType());
+                }
             }
 
             if (!rename_dag.getOutputs().empty())
@@ -994,7 +1026,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const auto & query_context = planner_context->getQueryContext();
     const Settings & settings = query_context->getSettingsRef();
     auto filling_step = std::make_unique<FillingStep>(
-        query_plan.getCurrentHeader(),
+        header,
         query_analysis_result.sort_description,
         std::move(fill_description),
         interpolate_description,
@@ -1735,6 +1767,7 @@ void Planner::buildPlanForQueryNode()
 
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
+
     if (query_node.hasWhere())
     {
         auto condition_constant = tryExtractConstantFromConditionNode(query_node.getWhere());
@@ -2166,7 +2199,7 @@ void Planner::buildPlanForQueryNode()
         }
 
         if (query_node.hasOrderBy())
-            addWithFillStepIfNeeded(query_plan, query_analysis_result, expression_analysis_result.getSort(), planner_context, query_node, select_query_options, useful_sets);
+            addWithFillStepIfNeeded(query_plan, query_analysis_result, planner_context, query_node);
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
         const bool apply_offset = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;

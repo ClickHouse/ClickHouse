@@ -387,7 +387,7 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast, const size_t nproj)
     if (fuzz_rand() % 50 == 0)
     {
         /// Order by one of the projections, starting from position 1
-        auto pos = list->children.empty() ? list->children.begin() : list->children.begin() + fuzz_rand() % list->children.size();
+        auto * pos = list->children.empty() ? list->children.begin() : list->children.begin() + fuzz_rand() % list->children.size();
         const auto col = nproj && (fuzz_rand() % 4 == 0) ? std::make_shared<ASTLiteral>((fuzz_rand() % nproj) + 1) : getRandomColumnLike();
         if (col)
         {
@@ -439,7 +439,7 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     // Add element
     if (fuzz_rand() % 50 == 0)
     {
-        auto pos = impl->children.empty() ? impl->children.begin() : impl->children.begin() + fuzz_rand() % impl->children.size();
+        auto * pos = impl->children.empty() ? impl->children.begin() : impl->children.begin() + fuzz_rand() % impl->children.size();
         auto col = getRandomColumnLike();
         if (col)
             impl->children.insert(pos, col);
@@ -1123,8 +1123,7 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
             {
                 /// Move alias to the end of the identifier (most of the time) or somewhere else
                 Strings clone_parts = id->name_parts;
-                int name_parts_size = static_cast<int>(id->name_parts.size());
-                const int index = (fuzz_rand() % 2) == 0 ? (name_parts_size - 1) : (fuzz_rand() % name_parts_size);
+                const int index = (fuzz_rand() % 2) == 0 ? (id->name_parts.size() - 1) : (fuzz_rand() % id->name_parts.size());
 
                 clone_parts[index] = alias;
                 return std::make_shared<ASTIdentifier>(std::move(clone_parts));

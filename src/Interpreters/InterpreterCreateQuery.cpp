@@ -110,7 +110,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
-    extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool allow_experimental_full_text_index;
     extern const SettingsBool allow_experimental_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_suspicious_codecs;
@@ -129,6 +129,8 @@ namespace Setting
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsString default_view_definer;
     extern const SettingsUInt64 distributed_ddl_entry_format_version;
+    extern const SettingsBool enable_deflate_qpl_codec;
+    extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool flatten_nested;
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool insert_allow_materialized_columns;
@@ -167,7 +169,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE;
     extern const int PATH_ACCESS_DENIED;
-    extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_STORAGE;
@@ -176,7 +177,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_TABLES;
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
-    extern const int CANNOT_RESTORE_TABLE;
 }
 
 namespace fs = std::filesystem;
@@ -229,9 +229,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto default_db_disk = getContext()->getDatabaseDisk();
 
     /// Will write file with database metadata, if needed.
-    default_db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath());
-    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
-    auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(database_name);
+    String database_name_escaped = escapeForFileName(database_name);
+    fs::path metadata_dir_path("metadata");
+    fs::path store_dir_path("store");
+    default_db_disk->createDirectories(metadata_dir_path);
+    fs::path metadata_file_tmp_path = metadata_dir_path / (database_name_escaped + ".sql.tmp");
+    fs::path metadata_file_path = metadata_dir_path / (database_name_escaped + ".sql");
 
     fs::path metadata_path;
     if (!create.storage && create.attach)
@@ -284,7 +287,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (create.uuid == UUIDHelpers::Nil)
             create.uuid = UUIDHelpers::generateV4();
 
-        metadata_path = DatabaseCatalog::getStoreDirPath(create.uuid);
+        metadata_path = store_dir_path / DatabaseCatalog::getPathForUUID(create.uuid);
 
         if (!create.attach && default_db_disk->existsDirectory(metadata_path) && !default_db_disk->isDirectoryEmpty(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
@@ -299,7 +302,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
         /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
         create.uuid = UUIDHelpers::Nil;
-        metadata_path = DatabaseCatalog::getMetadataDirPath(database_name);
+        metadata_path = metadata_dir_path / database_name_escaped;
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
@@ -339,12 +342,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         String statement = statement_buf.str();
 
         /// Needed to make database creation retriable if it fails after the file is created
-        default_db_disk->removeFileIfExists(metadata_tmp_file_path);
+        default_db_disk->removeFileIfExists(metadata_file_tmp_path);
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         writeMetadataFile(
             default_db_disk,
-            /*file_path=*/metadata_tmp_file_path,
+            /*file_path=*/metadata_file_tmp_path,
             /*content=*/statement,
             /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
     }
@@ -363,7 +366,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (need_write_metadata)
         {
             /// Prevents from overwriting metadata of detached database
-            default_db_disk->moveFile(metadata_tmp_file_path, metadata_file_path);
+            default_db_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
             renamed = true;
         }
 
@@ -515,8 +518,7 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
     auto res = std::make_shared<ASTExpressionList>();
 
     for (const auto & index : indices)
-        if (!index.isImplicitlyCreated())
-            res->children.push_back(index.definition_ast->clone());
+        res->children.push_back(index.definition_ast->clone());
 
     return res;
 }
@@ -626,10 +628,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
     bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
     bool allow_experimental_codecs = skip_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
+    bool enable_deflate_qpl_codec = skip_checks || context_->getSettingsRef()[Setting::enable_deflate_qpl_codec];
+    bool enable_zstd_qat_codec = skip_checks || context_->getSettingsRef()[Setting::enable_zstd_qat_codec];
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
-    for (auto ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
+    for (const auto * ast_it = columns_ast.children.begin(); ast_it != columns_ast.children.end(); ++ast_it, ++name_type_it)
     {
         ColumnDescription column;
 
@@ -686,7 +690,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
         }
 
         if (col_decl.statistics_desc)
@@ -772,13 +776,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         if (create.columns_list->indices)
             for (const auto & index : create.columns_list->indices->children)
             {
-                IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, /* is_implicitly_created */ false, getContext());
+                IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext());
                 if (properties.indices.has(index_desc.name))
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
 
                 const auto & settings = getContext()->getSettingsRef();
-                if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+                if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::allow_experimental_full_text_index])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The experimental text index feature is disabled. Enable the setting 'allow_experimental_full_text_index' to use it");
 
                 properties.indices.push_back(index_desc);
             }
@@ -888,19 +892,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
-        {
-            // For parameterized views, extract columns if explicitly declared
-            if (create.columns_list && create.columns_list->columns)
-            {
-                properties.columns = getColumnsDescription(
-                    *create.columns_list->columns,
-                    getContext(),
-                    mode,
-                    is_restore_from_backup
-                );
-            }
             return properties;
-        }
 
         if (create.aliases_list)
         {
@@ -945,9 +937,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
-                getContext(),
-                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
         }
         else
         {
@@ -1102,9 +1092,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
                 context->setQueryKindInitial();
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
-                    context,
-                    SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), context, SelectQueryOptions{}.analyze().createView());
             }
             else
             {
@@ -1113,11 +1101,8 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                     SelectQueryOptions().analyze()).getSampleBlock();
             }
         }
-        catch (Exception & e)
+        catch (Exception &)
         {
-            if (e.code() == ErrorCodes::ACCESS_DENIED)
-                throw;
-
             if (!getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
                 throw;
             check_columns = false;
@@ -2589,13 +2574,6 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
-    /// When converting to replicated, remove all transaction metadata files
-    if (to_replicated && !engine_name.starts_with("Replicated"))
-    {
-        String table_data_path = database->getTableDataPath(create);
-        clearTransactionMetadata(table_data_path, getContext());
-    }
-
     /// Set new engine
     DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
 
@@ -2610,52 +2588,6 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
         /*content=*/statement,
         /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
-}
-
-void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_path, ContextPtr local_context)
-{
-    LOG_INFO(getLogger("InterpreterCreateQuery"), "Clearing transaction metadata for table, relative path: {} when ATTACH AS REPLICATED.", table_data_path);
-
-    /// Use disk API to remove transaction metadata files from all disks
-    auto disks = local_context->getDisksMap();
-    size_t total_removed = 0;
-
-    for (const auto & [disk_name, disk] : disks)
-    {
-        try
-        {
-            /// Skip if the table data path doesn't exist on this disk
-            if (!disk->existsDirectory(table_data_path))
-                continue;
-
-            /// Iterate through all parts in the table data directory
-            for (auto it = disk->iterateDirectory(table_data_path); it->isValid(); it->next())
-            {
-                String part_name = it->name();
-                String part_path = fs::path(table_data_path) / part_name;
-
-                /// Check if it's a directory (part directory)
-                if (!disk->existsDirectory(part_path))
-                    continue;
-
-                /// Try to remove txn_version.txt file
-                String txn_file = fs::path(part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME;
-                if (disk->existsFile(txn_file))
-                {
-                    disk->removeFile(txn_file);
-                    total_removed++;
-                }
-            }
-        }
-        catch (...)
-        {
-            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
-                           "Cannot ATTACH AS REPLICATED: failed to clear transaction metadata on disk {}, due to {}",
-                           disk_name, getCurrentExceptionMessage(false));
-        }
-    }
-
-    LOG_INFO(getLogger("InterpreterCreateQuery"), "Removed {} transaction metadata files for table, relative path: {}.", total_removed, table_data_path);
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory)

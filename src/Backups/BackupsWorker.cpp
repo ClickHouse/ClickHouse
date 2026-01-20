@@ -666,13 +666,8 @@ void BackupsWorker::doBackup(
         BackupEntries backup_entries;
         {
             BackupEntriesCollector backup_entries_collector(
-                backup_query->elements,
-                backup_settings,
-                backup_id,
-                backup_coordination,
-                read_settings,
-                context,
-                getThreadPool(ThreadPoolId::BACKUP));
+                backup_query->elements, backup_settings, backup_coordination,
+                read_settings, context, getThreadPool(ThreadPoolId::BACKUP));
             backup_entries = backup_entries_collector.run();
         }
 
@@ -812,7 +807,7 @@ void BackupsWorker::writeBackupEntries(
             continue;
         }
 
-        runner.enqueueAndKeepTrack(std::move(job));
+        runner(std::move(job));
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
