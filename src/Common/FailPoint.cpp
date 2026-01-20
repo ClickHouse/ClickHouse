@@ -120,6 +120,18 @@ static struct InitFiu
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
+    ONCE(database_replicated_drop_after_removing_keeper_failed) \
+    PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
+    PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
+    PAUSEABLE_ONCE(smt_mutate_task_pause_in_prepare) \
+    PAUSEABLE_ONCE(smt_merge_selecting_task_pause_when_scheduled) \
+    ONCE(shared_set_full_update_fails_when_initializing) \
+    PAUSEABLE(after_kill_part_pause) \
+    ONCE(parallel_replicas_reading_response_timeout) \
+    ONCE(database_iceberg_gcs) \
+    REGULAR(rmt_delay_execute_drop_range) \
+    REGULAR(rmt_delay_commit_part) \
     ONCE(database_replicated_drop_after_removing_keeper_failed)
 
 
