@@ -390,6 +390,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             }
             else if (step_idx == 0)
             {
+                if (row_subgroup.filter.rows_pass == 0)
+                    break;
                 /// Main step finished. Move to Deliver.
                 LOG_DEBUG(getLogger("ParquetReadManager"), "finishRowSubgroupStage: rg={} sg={} main step finished, moving to Deliver, advancing next_subgroup_for_step[0]",
                           row_group_idx, row_subgroup_idx);
@@ -764,7 +766,7 @@ void ReadManager::scheduleTask(Task task, bool is_first_in_group, MemoryUsageDif
                 ColumnSubchunk & subchunk = row_subgroup.columns.at(task.column_idx);
 
                 if (row_subgroup.filter.rows_pass == 0)
-                    return;
+                    break;
                 reader.determinePagesToPrefetch(column, row_subgroup, row_group, prefetches);
 
                 /// Side note: would be nice to avoid reading the dictionary if all dictionary-encoded

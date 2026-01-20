@@ -70,6 +70,14 @@ def test_multistage_prewhere(started_cluster_iceberg_with_spark, format_version,
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
     query_id = get_uuid_str()
+    instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a = 0 AND a = 1")
+    target_0 = ""
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} WHERE a = 0 AND a = 1", query_id=query_id) == target_0
+    instance.query("SYSTEM FLUSH LOGS query_log;")
+    prof_events = instance.query(f"SELECT ProfileEvents['ParquetRowsFilterExpression'], ProfileEvents['ParquetColumnsFilterExpression'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'")
+    assert prof_events == '1000\t1\n'
+
+    query_id = get_uuid_str()
     instance.query(f"SELECT * FROM {TABLE_NAME} PREWHERE a = 0")
     target_1 = ""
     for i in range(100):
