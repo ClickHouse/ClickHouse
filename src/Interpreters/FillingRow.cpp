@@ -90,7 +90,9 @@ Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_
         Field next_value = shifted_value;
         descr.step_func(next_value, step_len);
 
-        if (less(to, next_value, getDirection(0)))
+        int direction = getDirection(column_ind);
+        bool overflowed = less(next_value, shifted_value, direction);
+        if (overflowed || less(to, next_value, direction))
         {
             step_len /= 2;
         }
