@@ -271,6 +271,14 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                         {"move", ObjectStorageQueueAction::MOVE},
                         {"tag", ObjectStorageQueueAction::TAG}})
 
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueuePartitioningMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", ObjectStorageQueuePartitioningMode::NONE},
+     {"NONE", ObjectStorageQueuePartitioningMode::NONE},
+     {"hive", ObjectStorageQueuePartitioningMode::HIVE},
+     {"HIVE", ObjectStorageQueuePartitioningMode::HIVE},
+     {"regex", ObjectStorageQueuePartitioningMode::REGEX},
+     {"REGEX", ObjectStorageQueuePartitioningMode::REGEX}})
+
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},

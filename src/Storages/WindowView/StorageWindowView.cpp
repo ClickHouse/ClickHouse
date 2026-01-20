@@ -276,7 +276,7 @@ namespace
         }
     };
 
-    void extractWindowArgument(const ASTPtr & ast, IntervalKind::Kind & kind, Int64 & num_units, String err_msg)
+    void extractWindowArgument(const IAST * ast, IntervalKind::Kind & kind, Int64 & num_units, String err_msg)
     {
         const auto * arg = ast->as<ASTFunction>();
         if (!arg || !startsWith(arg->name, "toInterval")
@@ -1319,7 +1319,7 @@ StorageWindowView::StorageWindowView(
             target_create_query->setTable(generateTargetTableName(table_id_));
 
             auto new_columns_list = std::make_shared<ASTColumns>();
-            new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
+            new_columns_list->set(new_columns_list->columns, query.columns_list->getChild(*query.columns_list->columns));
 
             target_create_query->set(target_create_query->columns_list, new_columns_list);
             target_create_query->set(target_create_query->storage, to_table_engine);
@@ -1408,7 +1408,7 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
     if (arguments.size() < required_args)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too few arguments for function {}: expected at least {}, got {}", window_function.name, required_args, arguments.size());
     extractWindowArgument(
-        arguments.at(1), window_kind, window_num_units,
+        arguments.at(1).get(), window_kind, window_num_units,
         "Illegal type of second argument of function " + window_function.name + " should be Interval");
 
     window_id_alias = window_function.alias;
@@ -1427,7 +1427,7 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
         hop_kind = window_kind;
         hop_num_units = window_num_units;
         extractWindowArgument(
-            arguments.at(2), window_kind, window_num_units,
+            arguments.at(2).get(), window_kind, window_num_units,
             "Illegal type of third argument of function " + window_function.name + " should be Interval");
         slice_num_units = std::gcd(hop_num_units, window_num_units);
     }
