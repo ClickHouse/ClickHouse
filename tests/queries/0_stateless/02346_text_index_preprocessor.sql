@@ -36,6 +36,33 @@ SELECT count() FROM tab WHERE hasToken(str, 'def');
 
 DROP TABLE tab;
 
+SELECT '- Test single tokenizer and preprocessor argument on LowCardinality.';
+
+CREATE TABLE tab
+(
+    key UInt64,
+    str LowCardinality(String),
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+)
+ENGINE = MergeTree
+ORDER BY key;
+
+INSERT INTO tab VALUES (1, 'foo'), (2, 'BAR'), (3, 'Baz');
+
+SELECT count() FROM tab WHERE hasToken(str, 'foo');
+SELECT count() FROM tab WHERE hasToken(str, 'FOO');
+
+SELECT count() FROM tab WHERE hasToken(str, 'BAR');
+SELECT count() FROM tab WHERE hasToken(str, 'Baz');
+
+SELECT count() FROM tab WHERE hasToken(str, 'bar');
+SELECT count() FROM tab WHERE hasToken(str, 'baz');
+
+SELECT count() FROM tab WHERE hasToken(str, 'def');
+
+DROP TABLE tab;
+
+
 SELECT '- Test preprocessor declaration using column more than once.';
 CREATE TABLE tab
 (

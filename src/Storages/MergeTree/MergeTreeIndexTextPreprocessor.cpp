@@ -19,6 +19,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Storages/IndicesDescription.h>
+#include "DataTypes/IDataType.h"
 
 
 namespace DB
@@ -73,14 +74,18 @@ void validatePreprocessorASTExpression(const ASTFunction * function, const Strin
 }
 
 
-bool isValidTextIndexType(const DataTypePtr type)
+bool isValidTextIndexPreprocessorType(const DataTypePtr type)
 {
     if (isStringOrFixedString(type))
         return true;
 
-    const DataTypeArray * array_type = typeid_cast<const DataTypeArray*>(type.get());
-    if (array_type != nullptr && isStringOrFixedString(array_type->getNestedType()))
-        return true;
+    if (const DataTypeArray * array_type = typeid_cast<const DataTypeArray*>(type.get());
+        array_type != nullptr)
+        return isStringOrFixedString(array_type->getNestedType());
+
+    if (const DataTypeLowCardinality * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get());
+        low_cardinality_type != nullptr)
+        return isStringOrFixedString(low_cardinality_type->getDictionaryType());
 
     return false;
 }
@@ -122,7 +127,10 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(const String & ex
 std::pair<ColumnPtr,size_t> MergeTreeIndexTextPreprocessor::processColumn(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const
 {
     chassert(index_column_with_type_and_name.name == column_name);
-    chassert(isStringOrFixedString(index_column_with_type_and_name.type));
+    DataTypePtr input_processing_type = getProcessingType(index_column_with_type_and_name.type);
+
+    if (!isStringOrFixedString(input_processing_type))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input index column type {} is not supported", index_column_with_type_and_name.type->getName());
 
     ColumnPtr index_column = index_column_with_type_and_name.column;
     chassert(index_column->getDataType() == index_column_with_type_and_name.type->getTypeId());
@@ -277,7 +285,7 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
     if (outputs.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must return only one argument");
 
-    if (!isValidTextIndexType(outputs.front()->result_type))
+    if (!isValidTextIndexPreprocessorType(outputs.front()->result_type))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression should return a String, FixedString or an array of them.");
 
     if (actions.hasNonDeterministic())
