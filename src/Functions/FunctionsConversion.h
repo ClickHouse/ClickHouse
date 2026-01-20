@@ -95,7 +95,7 @@ namespace Setting
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
-    extern const SettingsBool strict_named_tuple_conversion;
+    extern const SettingsBool allow_named_tuple_conversion_with_extra_source_fields;
 }
 
 namespace ErrorCodes
@@ -136,6 +136,7 @@ struct FunctionConvertSettings
     const bool input_format_ipv6_default_on_conversion_error;
     const bool check_conversion_from_numbers_to_enum;
     const bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
+    const bool allow_named_tuple_conversion_with_extra_source_fields;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
 
@@ -151,6 +152,7 @@ struct FunctionConvertSettings
         , input_format_ipv6_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error])
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
+        , allow_named_tuple_conversion_with_extra_source_fields(context && context->getSettingsRef()[Setting::allow_named_tuple_conversion_with_extra_source_fields])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
@@ -4819,31 +4821,18 @@ private:
                 }
             }
 
-            /// When `strict_named_tuple_conversion` is enabled, named tuple
-            /// conversions will throw an exception if any fields are lost, helping
-            /// prevent silent data loss. Otherwise, named tuple conversions allow
-            /// different sets of elements, filling missing elements with default
-            /// values.
-            ///
-            /// NOTE: Background operations are not subject to this setting.
-            bool strict_named_tuple_conversion = false;
-
-            if (DB::CurrentThread::isInitialized())
+            /// When `allow_named_tuple_conversion_with_extra_source_fields` is disabled, named tuple conversions will
+            /// throw an exception if any fields are lost, helping prevent silent data loss. Otherwise, named tuple
+            /// conversions allow different sets of elements, filling missing elements with default values.
+            if (!settings.allow_named_tuple_conversion_with_extra_source_fields && num_from_fields < from_names.size())
             {
-                const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
-                /// Avoid strict checks for background operations like part
-                /// merging to achieve better backward compatibility.
-                if (query_context && !query_context->isBackgroundOperationContext())
-                    strict_named_tuple_conversion = query_context->getSettingsRef()[Setting::strict_named_tuple_conversion];
-            }
-
-            if (strict_named_tuple_conversion && num_from_fields < from_names.size())
                 throw Exception(
                     ErrorCodes::CANNOT_CONVERT_TYPE,
-                    "Some fields from source tuple are lost when casting {} to {} (strict_named_tuple_conversion is enabled)",
+                    "Some fields from source tuple are lost when casting {} to {} (allow_named_tuple_conversion_with_extra_source_fields "
+                    "is disabled)",
                     from_type->getName(),
                     to_type->getName());
+            }
         }
         else
         {

@@ -68,7 +68,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_hash_table_stats_for_join_reordering", true, true, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."},
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
             {"enable_named_columns_in_function_tuple", false, true, "Re-enable the setting since all known bugs are fixed"},
-            {"strict_named_tuple_conversion", true, true, "New setting"},
+            {"allow_named_tuple_conversion_with_extra_source_fields", true, true, "New setting"},
+            {"allow_named_tuple_conversion_with_extra_source_fields_on_insert", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {

@@ -5596,8 +5596,13 @@ List all names of element of large tuple literals in their column names instead 
     DECLARE(Bool, enable_named_columns_in_function_tuple, true, R"(
 Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers.
 )", 0) \
-    DECLARE(Bool, strict_named_tuple_conversion, true, R"(
-When enabled, throws an exception if any fields are lost during named tuple conversions, helping prevent silent data loss. Background operations are not subject to this setting.
+    DECLARE(Bool, allow_named_tuple_conversion_with_extra_source_fields, true, R"(
+Allow conversion between named Tuple types when the source tuple contains fields that do not exist in the destination tuple. Extra source fields are ignored and missing destination fields are filled with default values for backward compatibility. When disabled, such conversions are treated as potentially lossy and an exception is thrown if any extra source fields are lost during conversion.
+)", 0) \
+    DECLARE(Bool, allow_named_tuple_conversion_with_extra_source_fields_on_insert, false, R"(
+Additional INSERT-level guard for named Tuple conversion with extra source fields.
+
+For INSERT queries, the conversion is allowed only if both allow_named_tuple_conversion_with_extra_source_fields and allow_named_tuple_conversion_with_extra_source_fields_on_insert evaluate to true.
 )", 0) \
     \
     DECLARE(Bool, query_plan_enable_optimizations, true, R"(
