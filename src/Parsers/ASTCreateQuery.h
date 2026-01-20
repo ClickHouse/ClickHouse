@@ -170,6 +170,10 @@ public:
     /// The function also removes UUIDs for inner target tables from this create query (see also generateRandomUUID()).
     void resetUUIDs();
 
+    void resetColumnUUIDs() const;
+
+    void generateColumnRandomUUIDs() const;
+
     /// Returns information about a target table.
     /// If that information isn't specified in this create query (or even not allowed) then the function returns an empty value.
     StorageID getTargetTableID(ViewTarget::Kind target_kind) const;

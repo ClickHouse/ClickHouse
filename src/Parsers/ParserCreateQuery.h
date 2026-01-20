@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/ReadHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -139,6 +140,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_alias{Keyword::ALIAS};
     ParserKeyword s_auto_increment{Keyword::AUTO_INCREMENT};
     ParserKeyword s_comment{Keyword::COMMENT};
+    ParserKeyword s_column_uuid{Keyword::COLUMN_UUID};
     ParserKeyword s_codec{Keyword::CODEC};
     ParserKeyword s_stat{Keyword::STATISTICS};
     ParserKeyword s_ttl{Keyword::TTL};
@@ -194,6 +196,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     bool ephemeral_default = false;
     ASTPtr default_expression;
     ASTPtr comment_expression;
+    ASTPtr column_uuid_expression;
     ASTPtr codec_expression;
     ASTPtr statistics_desc_expression;
     ASTPtr ttl_expression;
@@ -223,6 +226,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && !s_alias.checkWithoutMoving(pos, expected)
         && !s_auto_increment.checkWithoutMoving(pos, expected)
         && !s_primary_key.checkWithoutMoving(pos, expected)
+        && !s_column_uuid.checkWithoutMoving(pos, expected)
         && (require_type
             || (!s_comment.checkWithoutMoving(pos, expected)
                 && !s_codec.checkWithoutMoving(pos, expected))))
@@ -325,6 +329,15 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
+    if (s_column_uuid.ignore(pos, expected))
+    {
+        ASTPtr ast_uuid;
+        if (!string_literal_parser.parse(pos, ast_uuid, expected))
+            return false;
+        auto uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.safeGet<String>());
+        column_uuid_expression = std::make_shared<ASTLiteral>(Field(uuid));
+    }
+
     if (s_codec.ignore(pos, expected))
     {
         if (!codec_parser.parse(pos, codec_expression, expected))
@@ -392,6 +405,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         column_declaration->comment = comment_expression;
         column_declaration->children.push_back(std::move(comment_expression));
+    }
+
+    if (column_uuid_expression)
+    {
+        column_declaration->uuid = column_uuid_expression;
+        column_declaration->children.push_back(std::move(column_uuid_expression));
     }
 
     if (codec_expression)

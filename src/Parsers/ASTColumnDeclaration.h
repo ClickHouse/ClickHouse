@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -23,6 +24,7 @@ public:
     ASTPtr ttl;
     ASTPtr collation;
     ASTPtr settings;
+    ASTPtr uuid;
     bool primary_key_specifier = false;
 
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }

@@ -333,6 +333,9 @@ ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
     auto & old_create_query_ast = old_ast->as<ASTCreateQuery &>();
     /// Reset UUID
     old_create_query_ast.uuid = UUIDHelpers::Nil;
+
+    old_create_query_ast.resetColumnUUIDs();
+
     return old_ast;
 }
 
@@ -752,7 +755,11 @@ void SystemLog<LogElement>::prepareTable()
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty CREATE QUERY for {}", backQuoteIfNeed(table_id.table_name));
         }
 
-        if (old_create_query != create_query)
+        const auto & ast = getCreateTableQuery();
+        auto & ast_create_query = ast->template as<ASTCreateQuery &>();
+        ast_create_query.resetColumnUUIDs();
+
+        if (old_create_query != ast_create_query.formatWithSecretsOneLine())
         {
             /// TODO: Handle altering comment, because otherwise all table will be renamed.
 

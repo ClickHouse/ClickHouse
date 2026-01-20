@@ -1199,6 +1199,15 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.
     )", 0) \
     DECLARE(Float, distributed_cache_keep_up_free_connections_ratio, 0.1f, "Soft limit for number of active connection distributed cache will try to keep free. After the number of free connections goes below distributed_cache_keep_up_free_connections_ratio * max_connections, connections with oldest activity will be closed until the number goes above the limit.", 0) \
+    DECLARE(Bool, enable_uuids_for_columns, false, R"(
+    Enables UUIDs for columns in Atomic databases.
+
+    If `enable_uuids_for_columns` is `true` then `uuid` field is visible in `system.columns`. UUIDs of columns are saved in table's metadata as `COLUMN_UUID`. It is not displayed in `SHOW CREATE TABLE`, `DESCRIBE TABLE` and in `create_table_query` of `system.tables`. UUIDs for columns are generated only for tables in Atomic databases. For other databases UUIDs are saved as `00000000-0000-0000-0000-000000000000`.
+
+    For ON CLUSTER queries like CREATE TABLE ON CLUSTER and ALTER TABLE ON CLUSTER ADD COLUMN the same UUID is created for each column on each host of cluster.
+
+    If `enable_uuids_for_columns` is `false` then `uuid` field is not visible in `system.columns`.
+    )", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_num, 0, R"(Maximum number of queries allowed per TCP connection before the connection is closed. Set to 0 for unlimited queries.)", 0) \
     DECLARE(UInt64, tcp_close_connection_after_queries_seconds, 0, R"(Maximum lifetime of a TCP connection in seconds before it is closed. Set to 0 for unlimited connection lifetime.)", 0) \
     DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \

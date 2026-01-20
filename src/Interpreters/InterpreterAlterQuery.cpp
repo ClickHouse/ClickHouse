@@ -52,6 +52,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
+    extern const ServerSettingsBool enable_uuids_for_columns;
 }
 
 namespace ErrorCodes
@@ -114,6 +115,29 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    }
+
+    if (table_id && getContext()->getServerSettings()[ServerSetting::enable_uuids_for_columns])
+    {
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+        for (auto & child : alter.command_list->children)
+        {
+            auto * command_ast = child->as<ASTAlterCommand>();
+            if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
+            {
+                auto & col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
+                if (database->getEngineName() == "Atomic" || !alter.cluster.empty())
+                {
+                    if (!col_decl.uuid)
+                    {
+                        auto uuid_ast = ASTLiteral(Field(UUIDHelpers::generateV4()));
+                        col_decl.uuid = uuid_ast.clone();
+                    }
+                }
+                else
+                    col_decl.uuid = nullptr;
+            }
+        }
     }
 
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
