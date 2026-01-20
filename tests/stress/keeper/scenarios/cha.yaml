@@ -6,7 +6,7 @@ scenarios:
   - id: CHA-02
     name: WAN variance
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: netem, on: all, delay_ms: 25, jitter_ms: 7, loss_pct: 2, duration_s: 120 }
     gates:
@@ -19,7 +19,8 @@ scenarios:
   - id: CHA-03
     name: Latency jitter sweep
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: netem, on: all, delay_ms: 20, jitter_ms: 15, duration_s: 180, target_parallel: true }
     gates:
@@ -34,7 +35,8 @@ scenarios:
   - id: CHA-04
     name: Packet loss 2%
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: netem, on: all, loss_pct: 2, jitter_ms: 5, duration_s: 180, target_parallel: true }
     gates:
@@ -49,7 +51,8 @@ scenarios:
   - id: CHA-05
     name: Rolling restart (stop/cont)
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: stop_cont, on: ["keeper2"], count: 1, sleep_s: 2.0 }
       - { kind: stop_cont, on: ["keeper3"], count: 1, sleep_s: 2.0 }
@@ -66,7 +69,8 @@ scenarios:
   - id: CHA-06
     name: Net+Disk combined (parallel)
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - kind: parallel
         steps:

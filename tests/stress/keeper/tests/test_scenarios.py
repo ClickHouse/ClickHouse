@@ -227,9 +227,9 @@ def resolve_duration(scenario, hard_default=120):
     except Exception:
         pass
     try:
-        v = (scenario or {}).get("workload")
-        if isinstance(v, dict) and v.get("duration"):
-            return int(v.get("duration"))
+        v = (scenario or {}).get("duration")
+        if v:
+            return int(v)
     except Exception:
         pass
     return int(hard_default)
@@ -241,6 +241,9 @@ def build_bench_step(wl, eff_dur):
     cfg = (wl or {}).get("config")
     if cfg:
         rb["config"] = str(WORKDIR / cfg)
+    rp = (wl or {}).get("replay")
+    if rp:
+        rb["replay"] = str(rp)
     return rb
 
 
@@ -392,6 +395,7 @@ def _emit_bench_summary(summary, run_id, run_meta_eff, scenario_id, topo, sink_u
     if not summary:
         return False
     s = summary
+    failed = 1.0 if (s.get("failed") or s.get("bench_failed")) else 0.0
     dur, ops, err = (
         _safe_float(s.get("duration_s")),
         _safe_float(s.get("ops")),
@@ -419,6 +423,7 @@ def _emit_bench_summary(summary, run_id, run_meta_eff, scenario_id, topo, sink_u
         "write_p50_ms": _safe_float(s.get("write_p50_ms")),
         "write_p95_ms": _safe_float(s.get("write_p95_ms")),
         "write_p99_ms": _safe_float(s.get("write_p99_ms")),
+        "bench_failed": failed,
     }
     # Emit full percentile maps (if present) as additional scalar metrics.
     # We keep the existing *_p50/p95/p99 fields above for backwards compatibility.
@@ -472,7 +477,7 @@ def _emit_bench_summary(summary, run_id, run_meta_eff, scenario_id, topo, sink_u
             "summary",
             "bench",
             "bench_ran",
-            1.0,
+            0.0 if failed else 1.0,
         )
     )
     print("[keeper][push-metrics] begin")
@@ -758,6 +763,7 @@ def _parse_prom_text_local(txt, cfg):
     if cfg.get("prom_allow_prefixes") is None:
         return parse_prometheus_text(
             txt,
+            allow_prefixes=None,
             name_allowlist=_nallow,
             exclude_label_keys=cfg.get("prom_exclude_label_keys"),
         )

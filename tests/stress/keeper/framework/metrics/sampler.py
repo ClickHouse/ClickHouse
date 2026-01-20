@@ -38,33 +38,17 @@ class MetricsSampler:
         self.stage_prefix = stage_prefix
         self.run_id = run_id or ""
         # Defaults to reduce volume safely across all scenarios
-        DEFAULT_NAME_ALLOW = (
-            "keeper_znode_count",
-            "keeper_ephemerals_count",
-            "keeper_total_watches_count",
-            "keeper_session_count",
-            "keeper_packets_received_total",
-            "keeper_packets_sent_total",
-            "keeper_outstanding_requests",
-            "keeper_approximate_data_size",
-            "keeper_connections",
-            "raft_current_term",
-            "raft_commit_index",
-            "raft_snapshot_index",
-            "raft_is_leader",
-        )
         DEFAULT_EXCL_LABEL_KEYS = ("le", "quantile")
 
         self.prom_allow_prefixes = (
             tuple(prom_allow_prefixes) if prom_allow_prefixes else None
         )
-        # None -> use default allowlist; empty tuple/list -> disable
+        # None -> no name allowlist (allow all matching prefixes);
+        # empty tuple/list -> no name allowlist as well.
         if prom_name_allowlist is None:
-            self.prom_name_allowlist = DEFAULT_NAME_ALLOW
+            self.prom_name_allowlist = None
         else:
-            self.prom_name_allowlist = tuple(prom_name_allowlist)
-            if len(self.prom_name_allowlist) == 0:
-                self.prom_name_allowlist = None
+            self.prom_name_allowlist = tuple(prom_name_allowlist) or None
         self.prom_exclude_label_keys = (
             tuple(prom_exclude_label_keys)
             if prom_exclude_label_keys
@@ -138,6 +122,7 @@ class MetricsSampler:
         if self.prom_allow_prefixes is None:
             return parse_prometheus_text(
                 text,
+                allow_prefixes=None,
                 name_allowlist=self.prom_name_allowlist,
                 exclude_label_keys=self.prom_exclude_label_keys,
             )
@@ -203,7 +188,7 @@ class MetricsSampler:
         while not self._stop:
             self._snapshot_once()
             self._snap_count += 1
-            if self.sink_url and (
+            if (
                 self._snap_count % self._flush_every == 0
                 or len(self._metrics_ts_rows) > self._row_flush_threshold
             ):
@@ -233,6 +218,5 @@ class MetricsSampler:
         for r in self._metrics_ts_rows:
             print(json.dumps(r, ensure_ascii=False))
         print("[keeper][push-metrics] end")
-        if self.sink_url:
-            sink_clickhouse(self.sink_url, "keeper_metrics_ts", self._metrics_ts_rows)
+        sink_clickhouse(self.sink_url or "ci", "keeper_metrics_ts", self._metrics_ts_rows)
         self._metrics_ts_rows = []

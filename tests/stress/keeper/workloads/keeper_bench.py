@@ -544,21 +544,6 @@ def _load_cfg_text(cfg_path):
         base, frag = path_str.split("#", 1)
         cfg_path = base
         preset = (frag or "").strip()
-    # Back-compat: alias old specialized YAMLs to presets in size_depth.yaml
-    try:
-        alias_map = {
-            "write_heavy.yaml": "write_heavy",
-            "multi_op.yaml": "multi_op",
-            "create_heavy.yaml": "create_heavy",
-            "safe_mix.yaml": "safe_mix",
-        }
-        bname = Path(str(cfg_path)).name
-        if not preset and bname in alias_map:
-            # Point to sibling size_depth.yaml and select corresponding preset
-            cfg_path = str(Path(str(cfg_path)).with_name("size_depth.yaml"))
-            preset = alias_map[bname]
-    except Exception:
-        pass
     # Try direct path first
     txt = None
     if os.path.exists(cfg_path):

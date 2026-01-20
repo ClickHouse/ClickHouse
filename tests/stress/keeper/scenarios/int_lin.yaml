@@ -8,7 +8,6 @@ scenarios:
     topology: 3
     workload:
       config: workloads/prod_mix.yaml
-      duration: 120
     pre:
       - kind: sql
         on: all
@@ -34,7 +33,6 @@ scenarios:
     topology: 3
     workload:
       config: workloads/prod_mix.yaml
-      duration: 120
     pre:
       - kind: sql
         on: all
@@ -68,7 +66,6 @@ scenarios:
     topology: 3
     workload:
       config: workloads/prod_mix.yaml
-      duration: 120
     pre:
       - kind: sql
         on: all
@@ -89,9 +86,9 @@ scenarios:
   - id: INT-04
     name: High watch/DDL scale simulation
     topology: 3
+    duration: 180
     workload:
       config: workloads/prod_mix.yaml
-      duration: 180
     pre:
       - kind: record_watch_baseline
       - kind: sql
@@ -119,7 +116,6 @@ scenarios:
     topology: 3
     workload:
       config: workloads/prod_mix.yaml
-      duration: 120
     faults:
       - kind: partition_symmetric
         on: leader

@@ -231,6 +231,7 @@ def _step_run_bench(step, nodes, leader, ctx):
     clients = int(step["clients"]) if step.get("clients") is not None else None
     cfg_main = step.get("config")
     cfg_list = step.get("configs") or []
+    replay_path = step.get("replay")
     replicas = 1
     try:
         replicas = int(step.get("replicas", step.get("instances", 1)) or 1)
@@ -271,7 +272,7 @@ def _step_run_bench(step, nodes, leader, ctx):
             servers_arg(nodes),
             cfg_path=path if path else None,
             duration_s=duration,
-            replay_path=None,
+            replay_path=replay_path,
             secure=False,
             clients=clients,
         )
@@ -367,6 +368,17 @@ def _step_run_bench(step, nodes, leader, ctx):
         raise AssertionError(msg)
 
     if errors:
+        # Preserve minimal bench context for metrics even on failure.
+        try:
+            ctx["bench_summary"] = {
+                "ops": 0,
+                "errors": 0,
+                "duration_s": int(duration),
+                "has_latency": False,
+                "failed": 1,
+            }
+        except Exception:
+            pass
         msg = "\n\n".join(
             [
                 "keeper-bench failed in background thread: "

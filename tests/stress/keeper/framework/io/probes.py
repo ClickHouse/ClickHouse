@@ -178,9 +178,38 @@ def srvr_kv(node):
 
 
 def prom_metrics(node):
-    return sh(
-        node, f"curl -sf --max-time 2 http://127.0.0.1:{PROM_PORT}/metrics", timeout=4
-    )["out"]
+    url = f"http://127.0.0.1:{PROM_PORT}/metrics"
+    try:
+        if has_bin(node, "curl"):
+            return sh(node, f"curl -sf --max-time 2 {url}", timeout=4)["out"]
+    except Exception:
+        pass
+    try:
+        if has_bin(node, "wget"):
+            return sh(node, f"wget -qO- {url}", timeout=4)["out"]
+    except Exception:
+        pass
+    try:
+        if has_bin(node, "nc"):
+            cmd = (
+                "printf 'GET /metrics HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' "
+                f"| nc -w2 127.0.0.1 {PROM_PORT}"
+            )
+            return sh(node, cmd, timeout=4)["out"]
+    except Exception:
+        pass
+    try:
+        if has_bin(node, "bash"):
+            inner = (
+                f"exec 3<>/dev/tcp/127.0.0.1/{PROM_PORT}; "
+                "printf 'GET /metrics HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3; "
+                "cat <&3; "
+                "exec 3<&-; exec 3>&-"
+            )
+            return sh(node, f'bash -lc "{inner}"', timeout=4)["out"]
+    except Exception:
+        pass
+    return ""
 
 
 def ch_metrics(node):

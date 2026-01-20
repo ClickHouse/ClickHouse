@@ -6,7 +6,7 @@ scenarios:
   - id: SEM-01
     name: Read barrier with SYNC
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
       - { type: sync_read_barrier, iterations: 3, path_prefix: /sem01 }
@@ -15,7 +15,7 @@ scenarios:
   - id: SEM-02
     name: Quorum reads linearizable
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
       - { type: linearizable_reads_ok, iterations: 10, base: /sem02 }
@@ -26,7 +26,7 @@ scenarios:
   - id: SEM-03
     name: Watch churn & restart
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: record_watch_baseline }
       - { kind: kill, on: followers }
@@ -38,7 +38,7 @@ scenarios:
   - id: SEM-04
     name: Ephemerals expiry
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     pre:
       - { kind: create_ephemerals, on: leader, count: 1000, path_prefix: /sem_ephem }
       - { kind: stop_ephemeral_client, on: leader }
@@ -49,7 +49,7 @@ scenarios:
   - id: SEM-05
     name: ACLs world/auth/digest
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
       - { type: acl_matrix_ok }
@@ -58,7 +58,8 @@ scenarios:
   - id: SEM-06
     name: Multi-op atomicity under churn
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 60 }
+    duration: 60
+    workload: { config: workloads/prod_mix.yaml }
     pre:
       - { kind: record_watch_baseline }
     faults:
@@ -72,14 +73,14 @@ scenarios:
   - id: SEM-07
     name: Half-open TCP session GC
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
 
   - id: SEM-08
     name: Unsupported ZK ops
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
       - { type: lin_register_ok, duration_s: 10, writers: 2, readers: 4, path: /lin/reg }

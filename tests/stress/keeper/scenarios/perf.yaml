@@ -6,7 +6,8 @@ scenarios:
   - id: PERF-01
     name: Prod-mix baseline tails
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.02 }
@@ -14,14 +15,15 @@ scenarios:
   - id: PERF-02
     name: Write-heavy default vs Rocks
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
 
   - id: PERF-03
     name: Backpressure recovery
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: netem, on: all, delay_ms: 80, duration_s: 60 }
     gates:
@@ -30,7 +32,8 @@ scenarios:
   - id: PERF-04
     name: Huge MultiRead stripes
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.05 }
@@ -41,13 +44,15 @@ scenarios:
   - id: PERF-05
     name: Read-only stripes fairness
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
 
   - id: IMP-03
     name: RocksKeeper compaction tails
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 180 }
+    duration: 180
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }

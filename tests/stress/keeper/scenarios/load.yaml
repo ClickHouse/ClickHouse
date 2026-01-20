@@ -6,9 +6,9 @@ scenarios:
   - id: LOAD-01
     name: Replay zookeeper_log once
     topology: 3
+    duration: 120
     workload:
       replay: /artifacts/system.zookeeper_log
-      duration: 120
     gates:
       - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.05 }

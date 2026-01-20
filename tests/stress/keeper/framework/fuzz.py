@@ -136,7 +136,8 @@ def generate_fuzz_scenario(
 ):
     rnd = random.Random(seed)
     sb = ScenarioBuilder("FUZZ-01", f"Fuzz chaos seed={seed}", topology=3)
-    sb.set_workload_config("workloads/prod_mix.yaml", duration=duration_s)
+    sb.set_duration(duration_s)
+    sb.set_workload_config("workloads/prod_mix.yaml")
     # Optional pre baseline
     if rnd.random() < 0.5:
         sb.pre({"kind": "record_watch_baseline"})

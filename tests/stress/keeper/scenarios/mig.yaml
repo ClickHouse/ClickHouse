@@ -6,7 +6,7 @@ scenarios:
   - id: MIG-01
     name: "ZK→Keeper conversion parity"
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
     requires: [zookeeper_artifacts]
@@ -14,13 +14,13 @@ scenarios:
   - id: MIG-02
     name: Mixed cluster refused
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }
 
   - id: MIG-03
     name: Mixed version join attempts
     topology: 3
-    workload: { config: workloads/prod_mix.yaml, duration: 120 }
+    workload: { config: workloads/prod_mix.yaml }
     gates:
       - { type: single_leader }

@@ -13,7 +13,8 @@ def build_gp3_jitter(
     backend="default",
 ):
     sb = ScenarioBuilder(sid, name, topology=topology, backend=backend)
-    sb.set_workload_config("workloads/prod_mix.yaml", duration=duration_s)
+    sb.set_duration(duration_s)
+    sb.set_workload_config("workloads/prod_mix.yaml")
     from .core.scenario_builder import with_gp3_disk, with_jitter
 
     sb.pre(
@@ -55,7 +56,8 @@ def build_partition_during_reconfig(
     backend="default",
 ):
     sb = ScenarioBuilder(sid, name, topology=topology, backend=backend)
-    sb.set_workload_config("workloads/prod_mix.yaml", duration=120)
+    sb.set_duration(120)
+    sb.set_workload_config("workloads/prod_mix.yaml")
     sb.during(
         "partition_symmetric_during",
         "leader",
