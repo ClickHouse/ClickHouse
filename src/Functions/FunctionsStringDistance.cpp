@@ -8,7 +8,6 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
 #include <Common/HashTable/HashSet.h>
-#include "base/types.h"
 
 #include <algorithm>
 
