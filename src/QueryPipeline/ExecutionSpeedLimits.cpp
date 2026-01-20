@@ -79,19 +79,24 @@ void ExecutionSpeedLimits::throttle(
                     min_execution_bps);
 
             /// If the predicted execution time is longer than `max_estimated_execution_time`.
-            if (max_estimated_execution_time != 0 && total_rows_to_read && read_rows)
+            if (timeout_overflow_mode == OverflowMode::THROW && max_estimated_execution_time != 0 && total_rows_to_read && read_rows)
             {
-                double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows_to_read) / read_rows);
+                // We impose additional constraints to make estimation more reliable.
+                // At least 1% of the rows must be read, or at least 1% of the time must be spent.
+                if (read_rows * 100 > total_rows_to_read || elapsed_seconds * 100 > max_estimated_execution_time.totalSeconds())
+                {
+                    double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows_to_read) / read_rows);
 
-                if (timeout_overflow_mode == OverflowMode::THROW && estimated_execution_time_seconds > max_estimated_execution_time.totalSeconds())
-                    throw Exception(
-                        ErrorCodes::TOO_SLOW,
-                        "Estimated query execution time ({:.5f} seconds) is too long. Maximum: {}. Estimated rows to process: {} ({} read in {:.5f} seconds).",
-                        estimated_execution_time_seconds,
-                        max_estimated_execution_time.totalSeconds(),
-                        total_rows_to_read,
-                        read_rows,
-                        elapsed_seconds);
+                    if (estimated_execution_time_seconds > max_estimated_execution_time.totalSeconds())
+                        throw Exception(
+                            ErrorCodes::TOO_SLOW,
+                            "Estimated query execution time ({:.5f} seconds) is too long. Maximum: {}. Estimated rows to process: {} ({} read in {:.5f} seconds).",
+                            estimated_execution_time_seconds,
+                            max_estimated_execution_time.totalSeconds(),
+                            total_rows_to_read,
+                            read_rows,
+                            elapsed_seconds);
+                }
             }
 
             if (max_execution_rps && rows_per_second >= max_execution_rps)
