@@ -5,7 +5,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 
-CH_URL_BASE="$CLICKHOUSE_URL&http_write_exception_in_output_format=1&enable_analyzer=0"
+CH_URL_BASE="$CLICKHOUSE_URL&http_write_exception_in_output_format=1&enable_analyzer=0&check_conversion_from_numbers_to_enum=0"
 
 
 for http_wait_end_of_query in 0 1
