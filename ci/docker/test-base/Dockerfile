@@ -55,6 +55,15 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+# Install newer lcov from source (Ubuntu 22.04 has old 1.14 version)
+RUN cd /tmp \
+    && wget https://github.com/linux-test-project/lcov/releases/download/v2.1/lcov-2.1.tar.gz \
+    && tar xzf lcov-2.1.tar.gz \
+    && cd lcov-2.1 \
+    && make install PREFIX=/usr/local \
+    && cd /tmp \
+    && rm -rf lcov-2.1 lcov-2.1.tar.gz
+
 # Install cmake 3.20+ for Rust support
 # Used https://askubuntu.com/a/1157132 as reference
 RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg && \

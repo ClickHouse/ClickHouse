@@ -2,6 +2,23 @@
 
 set -e
 
+# Install newer lcov if needed (version 1.14 doesn't support --sort-tables, --hierarchical)
+LCOV_VERSION=$(genhtml --version 2>&1 | grep -oP 'LCOV version \K[0-9.]+' || echo "0")
+echo "Current lcov version: $LCOV_VERSION"
+if [ "$(printf '%s\n' "$LCOV_VERSION" "2.0" | sort -V | head -n1)" != "2.0" ]; then
+    echo "Installing newer lcov from source..."
+    OLD_DIR=$(pwd)
+    cd /tmp
+    wget -q https://github.com/linux-test-project/lcov/releases/download/v2.1/lcov-2.1.tar.gz
+    tar xzf lcov-2.1.tar.gz
+    cd lcov-2.1
+    make install PREFIX=/usr/local
+    cd "$OLD_DIR"
+    rm -rf /tmp/lcov-2.1 /tmp/lcov-2.1.tar.gz
+    export PATH="/usr/local/bin:$PATH"
+    echo "Installed lcov version: $(genhtml --version 2>&1 | head -n1)"
+fi
+
 echo "Merging LLVM coverage files..."
 
 # Debug: List available llvm tools
@@ -92,13 +109,44 @@ fi
 
 echo "Using workspace path: $WORKSPACE_PATH"
 
-"$LLVM_COV" show   \
+"$LLVM_COV" export   \
         -instr-profile=merged.profdata   \
         -object ./clickhouse   \
         -object ./unit_tests_dbms   \
-        -format=html   \
-        -output-dir=llvm_coverage_html_report   \
-        -show-line-counts-or-regions   \
-        -show-expansions \
-        -path-equivalence=ci/tmp/build,"$WORKSPACE_PATH" \
-        -ignore-filename-regex='contrib'
+        -format=lcov   \
+        -path-equivalence=ci/tmp/build,$WORKSPACE_PATH \
+        -ignore-filename-regex='contrib|_gtest_|\.pb\.' \
+        -skip-expansions \
+        > llvm_coverage.info
+
+sed -i "s|^SF:ci/tmp/build/|SF:|" "llvm_coverage.info"
+rm -rf ./coverage_html/*
+
+echo "Generating HTML report..."
+genhtml --version
+llvm-cov --version
+# genhtml --help
+genhtml "llvm_coverage.info" \
+    --output-directory "llvm_coverage_html_report" \
+    --title "ClickHouse Coverage Report" \
+    --legend \
+    --demangle-cpp \
+    --branch-coverage \
+    --function-coverage \
+    --num-spaces 4 \
+    --sort-tables \
+    --hierarchical \
+    --css-file css.css \
+    --no-function-coverage \
+    --prefix $WORKSPACE_PATH \
+    --ignore-errors inconsistent \
+    --ignore-errors category,category,category \
+    --ignore-errors corrupt,corrupt \
+    --ignore-errors unsupported,unsupported \
+    --ignore-errors source,source \
+    --ignore-errors branch,branch 
+
+
+        # --sort-tables \
+    # --hierarchical \
+    # --verbose \
