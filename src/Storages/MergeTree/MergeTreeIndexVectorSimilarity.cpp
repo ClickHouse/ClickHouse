@@ -55,6 +55,11 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_experimental_leann_optimization_for_hnsw;
+}
+
 namespace ServerSetting
 {
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
