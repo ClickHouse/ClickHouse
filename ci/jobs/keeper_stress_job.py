@@ -280,8 +280,6 @@ def build_pytest_command(args):
                 "log_level=WARNING",
                 "-p",
                 "no:cacheprovider",
-                "-p",
-                "no:logging",
                 "--max-worker-restart=2",
                 "--dist",
                 "load",
