@@ -285,9 +285,8 @@ def main():
     else:
         stages.remove(JobStages.COLLECT_LOGS)
     if is_coverage or info.is_local_run or is_bugfix_validation:
-        # For bugfix validation, we intentionally skip the check error stage (cehcks FATAL messages):
-        # regular test failures are expected and serve as the
-        # validation signal rather than a CI misconfiguration.
+        # For bugfix validation, we intentionally skip the check error stage (checks FATAL messages):
+        # regular test failures are assumed to be sufficient to validate the test
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -545,7 +544,11 @@ def main():
 
     if JobStages.RETRIES in stages and test_result and test_result.is_failure():
         # retry all failed tests and mark original failed either as success on retry or failed on retry
-        failed_tests = [t.name for t in test_result.results if t.is_failure()]
+        failed_tests = [
+            t.name
+            for t in test_result.results
+            if t.is_failure() and t.name and t.name[0].isdigit()
+        ]
         if len(failed_tests) > 10:
             results.append(
                 Result(
