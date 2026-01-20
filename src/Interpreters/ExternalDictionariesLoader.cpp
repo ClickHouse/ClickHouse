@@ -196,7 +196,6 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         {qualified_name->database, qualified_name->table},
         const_pointer_cast<Context>(getContext()));
 
-    std::string current_database_name = local_context->getCurrentDatabase();
     if (database_empty && !db)
     {
         res = name;
@@ -204,8 +203,8 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
         if (is_xml_dictionary)
             return res;
 
-        qualified_name->database = current_database_name;
-        res = current_database_name + '.' + name;
+        qualified_name->database = local_context->getCurrentDatabase();
+        res = qualified_name->database + '.' + name;
 
         std::tie(db, table) = DatabaseCatalog::instance().tryGetDatabaseAndTable(
             {qualified_name->database, qualified_name->table},
