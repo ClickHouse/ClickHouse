@@ -549,5 +549,6 @@ def test_yt_named_collection(started_cluster):
     )
 
     instance.query("DROP TABLE yt_test SYNC")
+    instance.query("DROP NAMED COLLECTION ytsaurus_nc")
 
     yt.remove_table(table)

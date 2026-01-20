@@ -410,4 +410,5 @@ def test_yt_dictionary_with_named_collection(started_cluster):
     assert instance.query("SELECT dictGet('yt_dict', 'len', 2)") == "3\n"
 
     instance.query("DROP DICTIONARY yt_dict")
+    instance.query("DROP NAMED COLLECTION ytsaurus_nc")
     yt.remove_table(path)

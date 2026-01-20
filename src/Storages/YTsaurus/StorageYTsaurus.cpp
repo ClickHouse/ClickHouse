@@ -94,7 +94,7 @@ YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"ytsaurus_columns_description"};
     if (is_for_dictionary)
     {
-        for (const auto& name : settings.getAllRegisteredNames())
+        for (const auto & name : settings.getAllRegisteredNames())
         {
             optional_arguments.insert(name);
         }
