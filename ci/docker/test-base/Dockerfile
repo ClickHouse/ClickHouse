@@ -55,14 +55,15 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-# Install newer lcov from source (Ubuntu 22.04 has old 1.14 version)
-RUN cd /tmp \
-    && wget https://github.com/linux-test-project/lcov/releases/download/v2.1/lcov-2.1.tar.gz \
-    && tar xzf lcov-2.1.tar.gz \
-    && cd lcov-2.1 \
-    && make install PREFIX=/usr/local \
-    && cd /tmp \
-    && rm -rf lcov-2.1 lcov-2.1.tar.gz
+# Install newer lcov from Ubuntu 24.04 (noble) repository
+# Ubuntu 22.04 has old 1.14 version, we need 2.x for --sort-tables and --hierarchical options
+RUN echo "deb http://archive.ubuntu.com/ubuntu noble main universe" >> /etc/apt/sources.list.d/noble.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends -t noble lcov \
+    && rm /etc/apt/sources.list.d/noble.list \
+    && apt-get update \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Install cmake 3.20+ for Rust support
 # Used https://askubuntu.com/a/1157132 as reference
