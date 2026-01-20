@@ -1615,7 +1615,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
-    DECLARE(Bool, use_skip_indexes_on_data_read, false, R"(
+    DECLARE(Bool, use_skip_indexes_on_data_read, true, R"(
 Enable using data skipping indexes during data reading.
 
 When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
@@ -7000,6 +7000,14 @@ Replace table function engines with their -Cluster alternatives
 )", 0) \
     DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
 Allow usage of materialized views with parallel replicas
+)", 0) \
+    DECLARE(Bool, distributed_index_analysis, false, R"(
+Index analysis will be distributed across replicas.
+Beneficial for shared storage and huge amount of data in cluster.
+Uses replicas from cluster_for_parallel_replicas.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
+Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
