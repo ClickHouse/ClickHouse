@@ -54,7 +54,7 @@ struct AvgFraction
         if constexpr (is_decimal<Denominator>)
             denominator_float = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
         else
-            denominator_float = denominator;
+            denominator_float = static_cast<Float64>(denominator);
 
         return numerator_float / denominator_float;
     }
@@ -64,7 +64,7 @@ struct AvgFraction
         if constexpr (DecimalOrExtendedInt<Denominator>) /// if extended int
             return static_cast<Float64>(numerator) / static_cast<Float64>(denominator);
         else
-            return static_cast<Float64>(numerator) / denominator;
+            return static_cast<Float64>(numerator) / static_cast<Float64>(denominator);
     }
 };
 

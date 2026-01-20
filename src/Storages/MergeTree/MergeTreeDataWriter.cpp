@@ -756,7 +756,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         const UInt64 & total_disk_bytes = disk->getTotalSpace().value_or(0);
         const UInt64 & free_disk_bytes = disk->getUnreservedSpace().value_or(0);
 
-        const UInt64 & min_bytes_from_ratio = static_cast<UInt64>(min_ratio_to_perform_insert * total_disk_bytes);
+        const UInt64 & min_bytes_from_ratio = static_cast<UInt64>(min_ratio_to_perform_insert * static_cast<double>(total_disk_bytes));
         const UInt64 & needed_free_bytes = std::max(min_bytes_to_perform_insert, min_bytes_from_ratio);
 
         if (needed_free_bytes > free_disk_bytes)

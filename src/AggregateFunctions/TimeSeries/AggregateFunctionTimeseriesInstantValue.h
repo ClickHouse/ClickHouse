@@ -100,7 +100,7 @@ public:
 
     void fillResultValue(TimestampType timestamp, ValueType value, TimestampType previous_timestamp, ValueType previous_value, ValueType & result, UInt8 & null) const
     {
-        ValueType time_difference = timestamp - previous_timestamp;
+        ValueType time_difference = static_cast<ValueType>(timestamp - previous_timestamp);
         if (time_difference == 0)
         {
             result = 0;
@@ -115,7 +115,7 @@ public:
         ValueType value_difference = (adjust_to_resets && value < previous_value) ? value : (value - previous_value);
         result = value_difference;
         if constexpr (is_rate)
-            result = result * Base::timestamp_scale_multiplier / time_difference;
+            result = result * static_cast<ValueType>(Base::timestamp_scale_multiplier) / time_difference;
         null = 0;
     }
 

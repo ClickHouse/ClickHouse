@@ -158,8 +158,8 @@ public:
             return true;
         }
 
-        double step = 0.5 / (spec_len - 1);
-        auto freq = idx * step;
+        double step = 0.5 / static_cast<double>(spec_len - 1);
+        auto freq = static_cast<double>(idx) * step;
 
         period = std::round(1 / freq);
         return true;

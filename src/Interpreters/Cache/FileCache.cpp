@@ -1231,8 +1231,8 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
     const size_t size_limit = main_priority->getSizeLimit(lock);
     const size_t elements_limit = main_priority->getElementsLimit(lock);
 
-    const size_t desired_size = std::lround(keep_current_size_to_max_ratio * size_limit);
-    const size_t desired_elements_num = std::lround(keep_current_elements_to_max_ratio * elements_limit);
+    const size_t desired_size = std::lround(keep_current_size_to_max_ratio * static_cast<double>(size_limit));
+    const size_t desired_elements_num = std::lround(keep_current_elements_to_max_ratio * static_cast<double>(elements_limit));
 
     if ((size_limit == 0 || main_priority->getSize(lock) <= desired_size)
         && (elements_limit == 0 || main_priority->getElementsCount(lock) <= desired_elements_num))

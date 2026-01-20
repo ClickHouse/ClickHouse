@@ -362,7 +362,7 @@ try
             size_t physical_server_memory = getMemoryAmount();
             if (ratio > 0 && physical_server_memory > 0)
             {
-                memory_soft_limit = static_cast<UInt64>(physical_server_memory * ratio);
+                memory_soft_limit = static_cast<UInt64>(static_cast<double>(physical_server_memory) * ratio);
                 config.setUInt64("keeper_server.max_memory_usage_soft_limit", memory_soft_limit);
             }
         }

@@ -190,8 +190,8 @@ private:
                 delta = delta + 1;
 
             X value = point.getKey() - from_x;
-            Float64 w = histogram.size();
-            size_t index = std::min<size_t>(static_cast<size_t>(w / delta * value), histogram.size() - 1);
+            Float64 w = static_cast<Float64>(histogram.size());
+            size_t index = std::min<size_t>(static_cast<size_t>(w / static_cast<Float64>(delta) * static_cast<Float64>(value)), histogram.size() - 1);
 
             Y res;
             bool has_overfllow = false;
@@ -216,7 +216,7 @@ private:
         for (size_t i = 0; i < histogram.size(); ++i)
         {
             if (count_histogram[i] > 0)
-                histogram[i] = histogram[i] / count_histogram[i];
+                histogram[i] = histogram[i] / static_cast<Y>(count_histogram[i]);
         }
 
         Y y_max{};
@@ -227,7 +227,7 @@ private:
             y_max = std::max(y_max, y);
         }
 
-        if (y_max == 0)
+        if (static_cast<Float64>(y_max) == 0)
         {
             auto last = offsets.back();
             offsets.push_back(last);

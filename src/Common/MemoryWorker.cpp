@@ -360,7 +360,7 @@ void MemoryWorker::backgroundThread()
 
         const bool needs_purge = resident > memory_tracker_limit
             || (purge_dirty_pages_threshold_ratio > 0
-                && pdirty_mib.getValue() * page_size > memory_tracker_limit * purge_dirty_pages_threshold_ratio);
+                && static_cast<double>(pdirty_mib.getValue() * page_size) > static_cast<double>(memory_tracker_limit) * purge_dirty_pages_threshold_ratio);
 
         if (needs_purge)
         {

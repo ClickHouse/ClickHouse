@@ -720,7 +720,7 @@ void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkInd
     ///  * bloom filter size must be at most 128 MiB.
     /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
     /// requires this.
-    double requested_num_blocks = hashes.size() * options.bloom_filter_bits_per_value / 256;
+    size_t requested_num_blocks = static_cast<size_t>(static_cast<double>(hashes.size()) * options.bloom_filter_bits_per_value / 256);
     size_t num_blocks = 1;
     while (num_blocks < requested_num_blocks)
     {
