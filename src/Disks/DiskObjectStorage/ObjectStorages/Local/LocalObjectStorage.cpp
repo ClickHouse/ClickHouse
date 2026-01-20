@@ -5,10 +5,14 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/copyData.h>
+#include <Interpreters/BlobStorageLog.h>
 #include <Interpreters/Context.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/StackTrace.h>
+#include <Common/Stopwatch.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -62,6 +66,54 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
 }
 
+namespace
+{
+
+/// Wrapper around WriteBufferFromFile that adds blob storage logging on finalize.
+/// Inherits from WriteBufferFromFileDecorator to follow the established pattern.
+class WriteBufferFromFileWithLogging final : public WriteBufferFromFileDecorator
+{
+public:
+    WriteBufferFromFileWithLogging(
+        const String & file_path_,
+        size_t buf_size,
+        const String & bucket_,
+        BlobStorageLogWriterPtr blob_log_)
+        : WriteBufferFromFileDecorator(std::make_unique<WriteBufferFromFile>(file_path_, buf_size))
+        , file_path(file_path_)
+        , bucket(bucket_)
+        , blob_log(std::move(blob_log_))
+    {
+    }
+
+    std::string getFileName() const override { return file_path; }
+
+private:
+    void finalizeImpl() override
+    {
+        WriteBufferFromFileDecorator::finalizeImpl();
+
+        if (blob_log)
+        {
+            blob_log->addEvent(
+                BlobStorageLogElement::EventType::Upload,
+                /* bucket */ bucket,
+                /* remote_path */ file_path,
+                /* local_path */ {},
+                /* data_size */ count(),
+                /* elapsed_microseconds */ 0,
+                /* error_code */ 0,
+                /* error_message */ {});
+        }
+    }
+
+    const String file_path;
+    const String bucket;
+    BlobStorageLogWriterPtr blob_log;
+};
+
+}
+
 std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NOLINT
     const StoredObject & object,
     WriteMode mode,
@@ -80,7 +132,15 @@ std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NO
     /// So let's create it.
     fs::create_directories(fs::path(object.remote_path).parent_path());
 
-    return std::make_unique<WriteBufferFromFile>(object.remote_path, buf_size);
+    auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
+    if (blob_storage_log)
+        blob_storage_log->local_path = object.local_path;
+
+    return std::make_unique<WriteBufferFromFileWithLogging>(
+        object.remote_path,
+        buf_size,
+        settings.key_prefix,
+        std::move(blob_storage_log));
 }
 
 void LocalObjectStorage::removeObject(const StoredObject & object) const
@@ -91,8 +151,44 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
     if (!exists(object))
         return;
 
+    auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
+
+    Stopwatch watch;
+    Int32 error_code = 0;
+    String error_message;
+
     if (0 != unlink(object.remote_path.data()))
+    {
+        error_code = errno;
+        error_message = errnoToString();
+        auto elapsed = watch.elapsedMicroseconds();
+
+        if (blob_storage_log)
+            blob_storage_log->addEvent(
+                BlobStorageLogElement::EventType::Delete,
+                /* bucket */ settings.key_prefix,
+                /* remote_path */ object.remote_path,
+                /* local_path */ object.local_path,
+                /* data_size */ object.bytes_size,
+                elapsed,
+                error_code,
+                error_message);
+
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, object.remote_path, "Cannot unlink file {}", object.remote_path);
+    }
+
+    auto elapsed = watch.elapsedMicroseconds();
+
+    if (blob_storage_log)
+        blob_storage_log->addEvent(
+            BlobStorageLogElement::EventType::Delete,
+            /* bucket */ settings.key_prefix,
+            /* remote_path */ object.remote_path,
+            /* local_path */ object.local_path,
+            /* data_size */ object.bytes_size,
+            elapsed,
+            error_code,
+            error_message);
 
     /// Remove empty directories.
     fs::path dir = fs::path(object.remote_path).parent_path();
