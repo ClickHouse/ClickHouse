@@ -5,7 +5,6 @@
 #include <Core/Types.h>
 #include <fmt/format.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Core/ColumnsWithTypeAndName.h>
 
 namespace DB
 {
@@ -82,8 +81,7 @@ struct YTsaurusGetQuery : public IYTsaurusQuery
 // https://ytsaurus.tech/docs/en/api/commands#select_rows
 struct YTsaurusSelectRowsQuery : public IYTsaurusHeavyQuery
 {
-    explicit YTsaurusSelectRowsQuery(const String & table_path_, const String & columns_str_)
-        : table_path(table_path_) , column_names_str(columns_str_) {}
+    explicit YTsaurusSelectRowsQuery(const String & table_path_) : table_path(table_path_) {}
 
     String getQueryName() const override
     {
@@ -97,7 +95,7 @@ struct YTsaurusSelectRowsQuery : public IYTsaurusHeavyQuery
 
     String constructQuery() const
     {
-        return fmt::format("{} from [{}]", column_names_str, table_path);
+        return fmt::format("* from [{}]", table_path);
     }
 
     QueryParameters getQueryParameters() const override
@@ -105,7 +103,6 @@ struct YTsaurusSelectRowsQuery : public IYTsaurusHeavyQuery
         return {{.name="query", .value=constructQuery()}};
     }
     String table_path;
-    String column_names_str;
 };
 
 // https://ytsaurus.tech/docs/en/api/commands#lookup_rows

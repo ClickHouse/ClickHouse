@@ -546,9 +546,6 @@ namespace ErrorCodes
     Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
     OPTIMIZE FINAL query.
     )", 0) \
-    DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
-    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
-    or [during INSERTs](/operations/settings/settings.md#materialize_statistics_on_insert))", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
     When enabled, merges build and store skip indices for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
@@ -959,13 +956,6 @@ namespace ErrorCodes
     DECLARE(Bool, use_adaptive_write_buffer_for_dynamic_subcolumns, true, R"(
     Allow to use adaptive writer buffers during writing dynamic subcolumns to
     reduce memory usage
-    )", 0) \
-    DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
-    Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
-
-    Possible values:
-    - 0 - unlimited
-    - 1 - always enabled
     )", 0) \
     DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
     Initial size of an adaptive write buffer

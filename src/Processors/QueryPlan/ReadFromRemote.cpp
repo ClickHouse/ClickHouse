@@ -231,12 +231,12 @@ ASTSelectQuery & getSelectQuery(ASTPtr ast)
 
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
 /// It should not be needed after we send a full plan for distributed queries.
-ASTPtr tryBuildAdditionalFilterAST(
+static ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
-    ContextMutablePtr & context)
+    const ContextPtr & context)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
@@ -383,12 +383,7 @@ ASTPtr tryBuildAdditionalFilterAST(
                 if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
                     set_from_subquery && set_from_subquery->getSourceAST())
                 {
-                    auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
-
-                    /// Support running optimization multiple times
-                    auto source_ast = set_from_subquery->getSourceAST();
-                    if (auto * table_identifier = source_ast->as<ASTTableIdentifier>())
-                        temporary_table_name = table_identifier->name();
+                    const auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
 
                     auto & external_table = (*external_tables)[temporary_table_name];
                     if (!external_table)
@@ -398,7 +393,7 @@ ASTPtr tryBuildAdditionalFilterAST(
                         /// This should happen because filter expression on initiator needs the set as well,
                         /// and it should be built before sending the external tables.
 
-                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(source_ast, context);
+                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(set_from_subquery->getSourceAST(), context);
                         NamesAndTypesList columns = header->getNamesAndTypesList();
 
                         auto external_storage_holder = TemporaryTableHolder(
@@ -410,12 +405,9 @@ ASTPtr tryBuildAdditionalFilterAST(
 
                         external_table = external_storage_holder.getTable();
                         set_from_subquery->setExternalTable(external_table);
-
-                        context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
                     }
 
                     node_to_ast[second_arg] = std::make_shared<ASTIdentifier>(temporary_table_name);
-                    arguments[1] = node_to_ast[second_arg];
                 }
             }
         }
@@ -429,7 +421,7 @@ ASTPtr tryBuildAdditionalFilterAST(
 
 static void addFilters(
     Tables * external_tables,
-    ContextMutablePtr & context,
+    const ContextMutablePtr & context,
     const ASTPtr & query_ast,
     const QueryTreeNodePtr & query_tree,
     const PlannerContextPtr & planner_context,

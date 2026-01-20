@@ -29,9 +29,6 @@ struct RuntimeFilterStats
 {
     std::atomic<Int64> rows_checked = 0;
     std::atomic<Int64> rows_passed = 0;
-    std::atomic<Int64> rows_skipped = 0;
-    std::atomic<Int64> blocks_processed = 0;
-    std::atomic<Int64> blocks_skipped = 0;
 };
 
 class IRuntimeFilter
@@ -45,48 +42,26 @@ public:
     virtual void finishInsert() = 0;
 
     /// Looks up each value and returns column of Bool-s
-    ColumnPtr find(const ColumnWithTypeAndName & values) const;
+    virtual ColumnPtr find(const ColumnWithTypeAndName & values) const = 0;
 
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     virtual void merge(const IRuntimeFilter * source) = 0;
 
     /// Usage statistics
-    void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
-    void setFullyDisabled() { is_fully_disabled = true; }
 
 protected:
 
-    IRuntimeFilter(
-        size_t filters_to_merge_,
-        const DataTypePtr & filter_column_target_type_,
-        Float64 pass_ratio_threshold_for_disabling_,
-        UInt64 blocks_to_skip_before_reenabling_)
+    IRuntimeFilter(size_t filters_to_merge_, const DataTypePtr & filter_column_target_type_)
         : filters_to_merge(filters_to_merge_)
-        , filter_column_target_type(filter_column_target_type_)
-        , pass_ratio_threshold_for_disabling(pass_ratio_threshold_for_disabling_)
-        , blocks_to_skip_before_reenabling(blocks_to_skip_before_reenabling_)
-    {}
-
-    /// Checks if a block of rows should be skipped because this filter was disabled.
-    bool shouldSkip(size_t next_block_rows) const;
-
-    virtual ColumnPtr findImpl(const ColumnWithTypeAndName & values) const = 0;
+        , filter_column_target_type(filter_column_target_type_) {}
 
     size_t filters_to_merge;
     const DataTypePtr filter_column_target_type;
 
     std::atomic<bool> inserts_are_finished = false;
 
-    const Float64 pass_ratio_threshold_for_disabling = 0.7;
-    const UInt64 blocks_to_skip_before_reenabling = 30;
-
     mutable RuntimeFilterStats stats;
-
-    /// How many rows should be skipped before trying to re-enable the filter after it was disabled due to
-    /// low percentage of filtered rows
-    mutable std::atomic<Int64> rows_to_skip = 0;
-    std::atomic<bool> is_fully_disabled = false;
 };
 
 template <bool negate>
@@ -97,12 +72,10 @@ public:
     RuntimeFilterBase(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
-        Float64 pass_ratio_threshold_for_disabling_,
-        UInt64 blocks_to_skip_before_reenabling_,
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_
     )
-        : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
+        : IRuntimeFilter(filters_to_merge_, filter_column_target_type_)
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
         , exact_values(std::make_shared<Set>(SizeLimits{}, -1, false))
@@ -151,7 +124,7 @@ public:
         values_count = ValuesCount::MANY;
     }
 
-    ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;
+    ColumnPtr find(const ColumnWithTypeAndName & values) const override;
 
 protected:
 
@@ -187,26 +160,6 @@ private:
     std::optional<Field> single_element_in_set;
 };
 
-class ExactContainsRuntimeFilter : public RuntimeFilterBase<false>
-{
-    using Base = RuntimeFilterBase<false>;
-
-public:
-    ExactContainsRuntimeFilter(
-        size_t filters_to_merge_,
-        const DataTypePtr & filter_column_target_type_,
-        Float64 pass_ratio_threshold_for_disabling_,
-        UInt64 blocks_to_skip_before_reenabling_,
-        UInt64 bytes_limit_,
-        UInt64 exact_values_limit_
-    )
-        : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
-    {}
-
-    void merge(const IRuntimeFilter * source) override;
-
-    void finishInsert() override;
-};
 
 class ExactNotContainsRuntimeFilter : public RuntimeFilterBase<true>
 {
@@ -214,12 +167,10 @@ public:
     ExactNotContainsRuntimeFilter(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
-        Float64 pass_ratio_threshold_for_disabling_,
-        UInt64 blocks_to_skip_before_reenabling_,
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_
     )
-        : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
+        : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, bytes_limit_, exact_values_limit_)
     {}
 
     void merge(const IRuntimeFilter * source) override;
@@ -231,17 +182,12 @@ class ApproximateRuntimeFilter : public RuntimeFilterBase<false>
 {
     using Base = RuntimeFilterBase<false>;
 public:
-    static bool isDataTypeSupported(const DataTypePtr & data_type);
-
     ApproximateRuntimeFilter(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
-        Float64 pass_ratio_threshold_for_disabling_,
-        UInt64 blocks_to_skip_before_reenabling_,
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_,
-        UInt64 bloom_filter_hash_functions_,
-        Float64 max_ratio_of_set_bits_in_bloom_filter_);
+        UInt64 bloom_filter_hash_functions_);
 
     void insert(ColumnPtr values) override;
 
@@ -249,7 +195,7 @@ public:
     void finishInsert() override;
 
     /// Looks up each value and returns column of Bool-s
-    ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;
+    ColumnPtr find(const ColumnWithTypeAndName & values) const override;
 
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     void merge(const IRuntimeFilter * source) override;
@@ -258,11 +204,7 @@ private:
     void insertIntoBloomFilter(ColumnPtr values);
     void switchToBloomFilter();
 
-    /// Disables bloom filter if it is likely to have bad selectivity
-    void checkBloomFilterWorthiness();
-
     const UInt64 bloom_filter_hash_functions;
-    const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
 
     BloomFilterPtr bloom_filter;
 };

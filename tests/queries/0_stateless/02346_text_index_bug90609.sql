@@ -1,6 +1,6 @@
 -- Test for Bug 90609
 
-SET enable_full_text_index = 1;
+SET allow_experimental_full_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab

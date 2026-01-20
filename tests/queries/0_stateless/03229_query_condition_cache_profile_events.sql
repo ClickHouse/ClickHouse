@@ -1,6 +1,5 @@
 -- Tags: no-parallel, no-parallel-replicas
 -- Tag no-parallel: Messes with internal cache
--- add_minmax_index_for_numeric_columns=0: Would use the index instead (used before the QueryConditionCache)
 
 -- Does additional QCC lookups that the test doesn't expect
 set automatic_parallel_replicas_mode=0;
@@ -18,7 +17,7 @@ SYSTEM DROP QUERY CONDITION CACHE;
 
 DROP TABLE IF EXISTS tab;
 
-CREATE TABLE tab (a Int64, b Int64) ENGINE = MergeTree ORDER BY a SETTINGS add_minmax_index_for_numeric_columns=0;
+CREATE TABLE tab (a Int64, b Int64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO tab SELECT number, number FROM numbers(1_000_000); -- 1 mio rows sounds like a lot but the QCC doesn't cache anything for less data
 
 SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true;
