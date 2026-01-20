@@ -190,6 +190,9 @@ public:
         const auto & result_type = this->getResultType();
         can_be_compiled &= canBeNativeType(*result_type);
 
+        /// JIT compilation does not support non-float result types (like DateTime[64]/Time[64])
+        can_be_compiled &= WhichDataType(result_type).isFloat64();
+
         return can_be_compiled;
     }
 
