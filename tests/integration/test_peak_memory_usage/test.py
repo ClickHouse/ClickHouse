@@ -118,3 +118,6 @@ def test_clickhouse_client_max_peak_memory_single_node(started_cluster):
     peak_memory_usage = get_memory_usage_from_client_output_and_close(client_output)
     assert peak_memory_usage
     assert shard_1.contains_in_log(f"Query peak memory usage: {peak_memory_usage}")
+
+
+    
