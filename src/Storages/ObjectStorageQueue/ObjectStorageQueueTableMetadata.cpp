@@ -19,6 +19,10 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 buckets;
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
+    extern const ObjectStorageQueueSettingsObjectStorageQueuePartitioningMode partitioning_mode;
+    extern const ObjectStorageQueueSettingsString partition_regex;
+    extern const ObjectStorageQueueSettingsString partition_component;
+    extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
@@ -59,6 +63,12 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , columns(columns_.toString(true))
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
     , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
+    , partitioning_mode(
+          engine_settings[ObjectStorageQueueSetting::use_hive_partitioning]
+              ? "hive"
+              : engine_settings[ObjectStorageQueueSetting::partitioning_mode].toString())
+    , partition_regex(engine_settings[ObjectStorageQueueSetting::partition_regex])
+    , partition_component(engine_settings[ObjectStorageQueueSetting::partition_component])
     , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing])
     , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
@@ -70,6 +80,17 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
         processing_threads_num = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
     else
         processing_threads_num = engine_settings[ObjectStorageQueueSetting::processing_threads_num];
+
+    // Validate regex partitioning configuration
+    if (partitioning_mode == "regex")
+    {
+        if (partition_regex.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "partition_regex must be specified when using partitioning_mode='regex'");
+        if (partition_component.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "partition_component must be specified when using partitioning_mode='regex'");
+    }
 }
 
 String ObjectStorageQueueTableMetadata::toString() const
@@ -85,6 +106,9 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("columns", columns);
     json.set("last_processed_file", last_processed_path);
     json.set("loading_retries", loading_retries.load());
+    json.set("partitioning_mode", partitioning_mode);
+    json.set("partition_regex", partition_regex);
+    json.set("partition_component", partition_component);
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -125,6 +149,17 @@ ObjectStorageQueueMode ObjectStorageQueueTableMetadata::getMode() const
     return modeFromString(mode);
 }
 
+ObjectStorageQueuePartitioningMode ObjectStorageQueueTableMetadata::getPartitioningMode() const
+{
+    if (partitioning_mode == "none")
+        return ObjectStorageQueuePartitioningMode::NONE;
+    if (partitioning_mode == "hive")
+        return ObjectStorageQueuePartitioningMode::HIVE;
+    if (partitioning_mode == "regex")
+        return ObjectStorageQueuePartitioningMode::REGEX;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue partitioning mode: {}", partitioning_mode);
+}
+
 template <typename T>
 static auto getOrDefault(
     const Poco::JSON::Object::Ptr & json,
@@ -146,6 +181,9 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , columns(json->getValue<String>("columns"))
     , mode(json->getValue<String>("mode"))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
+    , partitioning_mode(getOrDefault<String>(json, "partitioning_mode", "", "none"))
+    , partition_regex(getOrDefault<String>(json, "partition_regex", "", ""))
+    , partition_component(getOrDefault<String>(json, "partition_component", "", ""))
     , after_processing(actionFromString(json->getValue<String>("after_processing")))
     , loading_retries(getOrDefault(json, "loading_retries", "", 10ULL))
     , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))
@@ -203,6 +241,30 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
             "Stored in ZooKeeper: {}, local: {}",
             from_zk.mode,
             mode);
+
+    if (partitioning_mode != from_zk.partitioning_mode)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in partitioning mode. "
+            "Stored in ZooKeeper: {}, local: {}",
+            from_zk.partitioning_mode,
+            partitioning_mode);
+
+    if (partition_regex != from_zk.partition_regex)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in partition_regex. "
+            "Stored in ZooKeeper: {}, local: {}",
+            from_zk.partition_regex,
+            partition_regex);
+
+    if (partition_component != from_zk.partition_component)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in partition_component. "
+            "Stored in ZooKeeper: {}, local: {}",
+            from_zk.partition_component,
+            partition_component);
 
     if (tracked_files_limit != from_zk.tracked_files_limit)
         throw Exception(

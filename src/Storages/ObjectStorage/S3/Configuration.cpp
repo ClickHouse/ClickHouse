@@ -342,7 +342,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
 
     ASTs key_value_asts;
-    if (auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
+    if (auto first_key_value_arg_it = getFirstKeyValueArgument(args);
         first_key_value_arg_it != args.end())
     {
         key_value_asts = ASTs(first_key_value_arg_it, args.end());
@@ -712,7 +712,7 @@ static void addStructureAndFormatToArgsIfNeededS3(
         size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
 
         ASTs key_value_asts;
-        auto * first_key_value_arg_it = getFirstKeyValueArgument(args);
+        auto first_key_value_arg_it = getFirstKeyValueArgument(args);
         if (first_key_value_arg_it != args.end())
         {
             key_value_asts = ASTs(first_key_value_arg_it, args.end());
@@ -733,7 +733,7 @@ static void addStructureAndFormatToArgsIfNeededS3(
 
         bool format_in_key_value = false;
         bool structure_in_key_value = false;
-        for (auto * it = first_key_value_arg_it; it != args.end(); ++it)
+        for (auto it = first_key_value_arg_it; it != args.end(); ++it)
         {
             const auto & arg = *it;
             const auto * function_ast = arg->as<ASTFunction>();
@@ -984,7 +984,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
     initializeFromParsedArguments(std::move(parsed_arguments));
     if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
     {
-        String path = object_storage_disk->getObjectsKeyPrefix();
+        String path = object_storage_disk->getObjectStorage()->getCommonKeyPrefix();
         fs::path root = path;
         setPathForRead(String(root / suffix));
         keys = {String(root / suffix)};

@@ -71,7 +71,7 @@ llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
         return builder.getInt16Ty();
     if (data_type.isInt32() || data_type.isUInt32() || data_type.isDate32() || data_type.isDateTime() || data_type.isDecimal32() || data_type.isTime())
         return builder.getInt32Ty();
-    if (data_type.isInt64() || data_type.isUInt64() || data_type.isDecimal64() || data_type.isDateTime64())
+    if (data_type.isInt64() || data_type.isUInt64() || data_type.isDecimal64() || data_type.isDateTime64() || data_type.isTime64())
         return builder.getInt64Ty();
     if (data_type.isInt128() || data_type.isUInt128() || data_type.isDecimal128())
         return builder.getInt128Ty();
@@ -224,6 +224,7 @@ llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataT
     GET_NUMERIC_CONSTANT(Int16, Int16)
     GET_NUMERIC_CONSTANT(Int32, Int32)
     GET_NUMERIC_CONSTANT(Time, Int32)
+    GET_NUMERIC_CONSTANT(Time64, Time64)
     GET_NUMERIC_CONSTANT(Int64, Int64)
     GET_NUMERIC_CONSTANT(UInt8, UInt8)
     GET_NUMERIC_CONSTANT(UInt16, UInt16)
@@ -232,6 +233,7 @@ llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataT
     GET_NUMERIC_CONSTANT(Enum8, Int8)
     GET_NUMERIC_CONSTANT(Enum16, Int16)
     GET_NUMERIC_CONSTANT(Date, UInt16)
+    GET_NUMERIC_CONSTANT(Date32, Int32)
     GET_NUMERIC_CONSTANT(DateTime, UInt32)
     GET_NUMERIC_CONSTANT(DateTime64, DateTime64)
     GET_NUMERIC_CONSTANT(Int128, Int128)

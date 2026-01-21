@@ -316,6 +316,8 @@ void updateTTL(
         subquery->buildSetInplace(context);
 
     auto ttl_column = ITTLAlgorithm::executeExpressionAndGetColumn(expr_and_set.expression, block, ttl_entry.result_column);
+    /// In some cases block can contain Sparse columns (for example, during direct deserialization into Sparse in input formats).
+    ttl_column = ttl_column->convertToFullColumnIfSparse();
     ColumnPtr where_column;
 
     if (ttl_entry.where_expression_ast)
@@ -423,12 +425,15 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     /// After expression execution partition key columns will be added to block_copy with names regarding partition function.
     auto partition_key_names_and_types = MergeTreePartition::executePartitionByExpression(metadata_snapshot, block_copy, context);
 
-    ColumnRawPtrs partition_columns;
+    Columns partition_columns;
+    ColumnRawPtrs partition_columns_raw_ptrs;
     partition_columns.reserve(partition_key_names_and_types.size());
+    partition_columns_raw_ptrs.reserve(partition_key_names_and_types.size());
     bool all_partition_columns_are_equal = true;
     for (const auto & element : partition_key_names_and_types)
     {
-        partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
+        partition_columns.emplace_back(block_copy.getColumnOrSubcolumnByName(element.name).column);
+        partition_columns_raw_ptrs.emplace_back(partition_columns.back().get());
         if (!partition_columns.back()->hasEqualValues())
             all_partition_columns_are_equal = false;
     }
@@ -452,7 +457,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
-    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts, context);
+    buildScatterSelector(partition_columns_raw_ptrs, partition_num_to_first_row, selector, max_parts, context);
 
     size_t partitions_count = partition_num_to_first_row.size();
     result.reserve(partitions_count);
@@ -611,8 +616,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum min_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>());
-        DayNum max_date(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>());
+        DayNum min_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].left.safeGet<UInt64>()));
+        DayNum max_date(static_cast<DayNum::UnderlyingType>(minmax_idx->hyperrectangle[data.minmax_idx_date_column_pos].right.safeGet<UInt64>()));
 
         const auto & date_lut = DateLUT::serverTimezoneInstance();
 
@@ -884,7 +889,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         Block projection_block;
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
-            projection_block = projection.calculate(block, context, perm_ptr);
+            projection_block = projection.calculate(block, 0, context, perm_ptr);
             LOG_DEBUG(
                 log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed() / 1000, projection.name, new_data_part->name);
         }

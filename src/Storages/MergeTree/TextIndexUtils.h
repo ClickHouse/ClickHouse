@@ -155,12 +155,6 @@ using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
 MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
 
-std::vector<MergeTreeIndexPtr> getTextIndexesToBuildMerge(
-    const IndicesDescription & indices_description,
-    const NameSet & read_column_names,
-    const IMergeTreeDataPart & data_part,
-    bool merge_may_reduce_rows);
-
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,
     const String & stream_name,

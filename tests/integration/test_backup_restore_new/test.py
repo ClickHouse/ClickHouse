@@ -36,6 +36,16 @@ def create_and_fill_table(engine="MergeTree", n=100):
     )
 
 
+def format_settings(settings):
+    if not settings:
+        return ""
+
+    def vstr(v):
+        return "'" + v + "'" if type(v) == str else str(v)
+
+    return "SETTINGS " + ",".join(f"{k}={vstr(v)}" for k, v in settings.items())
+
+
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
     try:
@@ -53,6 +63,7 @@ def cleanup_after_test():
         instance.query("DROP DATABASE IF EXISTS test")
         instance.query("DROP DATABASE IF EXISTS test2")
         instance.query("DROP DATABASE IF EXISTS test3")
+        instance.query("DROP DATABASE IF EXISTS restored")
         instance.query("DROP USER IF EXISTS u1, u2")
         instance.query("DROP ROLE IF EXISTS r1, r2")
         instance.query("DROP SETTINGS PROFILE IF EXISTS prof1")
@@ -226,7 +237,7 @@ def test_restore_empty_table(engine):
 
 def test_restore_empty_memory_table_failpoint():
     backup_name = new_backup_name()
-    create_and_fill_table(engine='Memory', n=0)
+    create_and_fill_table(engine="Memory", n=0)
 
     instance.query("SYSTEM ENABLE FAILPOINT backup_add_empty_memory_table")
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
@@ -1112,6 +1123,64 @@ def test_materialized_view_with_target_table():
     )
 
 
+def test_skip_rmv_backup():
+    size = 100
+    create_and_fill_table(n=size)
+    instance.query(
+        "CREATE TABLE test.target(x Int64) ENGINE=MergeTree ORDER BY tuple()"
+    )
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.view REFRESH EVERY 6 HOURS TO test.target AS SELECT x FROM test.table"
+    )
+
+    backup_name = new_backup_name()
+    backup_settings = {"backup_data_from_refreshable_materialized_view_targets": False}
+
+    instance.query(
+        f"BACKUP DATABASE test TO {backup_name} {format_settings(backup_settings)}"
+    )
+
+    assert not os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name),
+            f"data/test/target/",
+        )
+    )
+
+    instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
+    instance.query("SYSTEM REFRESH VIEW restored.view")
+    instance.query("SYSTEM WAIT VIEW restored.view")
+
+    assert int(instance.query(f"SELECT count(*) FROM restored.target")) == size
+
+
+def test_rmv_append_backup():
+    size = 100
+    create_and_fill_table(n=size)
+    instance.query(
+        "CREATE TABLE test.target(x Int64) ENGINE=MergeTree ORDER BY tuple()"
+    )
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.view REFRESH EVERY 6 HOURS APPEND TO test.target AS SELECT x FROM test.table"
+    )
+
+    backup_name = new_backup_name()
+    backup_settings = {"backup_data_from_refreshable_materialized_view_targets": False}
+
+    instance.query(
+        f"BACKUP DATABASE test TO {backup_name} {format_settings(backup_settings)}"
+    )
+    assert os.path.exists(
+        os.path.join(
+            get_path_to_backup(backup_name),
+            f"data/test/target/",
+        )
+    )
+    instance.query(f"RESTORE DATABASE test AS restored FROM {backup_name}")
+
+    assert int(instance.query(f"SELECT count(*) FROM restored.target")) >= size
+
+
 def test_temporary_table():
     session_id = new_session_id()
     instance.http_query(
@@ -1835,17 +1904,19 @@ def test_system_backups():
         restore_info = get_backup_info_from_system_backups(by_id=id)
         restore_events = get_events_for_query(restore_query_id)
         return (
-            restore_info.name == escaped_backup_name and
-            restore_info.status == "RESTORED" and
-            restore_info.error == "" and
-            restore_info.start_time < restore_info.end_time and
-            restore_info.num_files == info.num_files and
-            restore_info.total_size == info.total_size and
-            restore_info.num_entries == info.num_entries and
-            restore_info.uncompressed_size == info.uncompressed_size and
-            restore_info.compressed_size == info.compressed_size and
-            restore_info.files_read + restore_events["RestorePartsSkippedFiles"] == restore_info.num_files and
-            restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"] == restore_info.total_size
+            restore_info.name == escaped_backup_name
+            and restore_info.status == "RESTORED"
+            and restore_info.error == ""
+            and restore_info.start_time < restore_info.end_time
+            and restore_info.num_files == info.num_files
+            and restore_info.total_size == info.total_size
+            and restore_info.num_entries == info.num_entries
+            and restore_info.uncompressed_size == info.uncompressed_size
+            and restore_info.compressed_size == info.compressed_size
+            and restore_info.files_read + restore_events["RestorePartsSkippedFiles"]
+            == restore_info.num_files
+            and restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"]
+            == restore_info.total_size
         )
 
     wait_condition(verify_restore_info, lambda x: x)
@@ -2075,7 +2146,9 @@ def test_rmv_no_definer():
     instance.query("GRANT CURRENT GRANTS ON *.* TO u1")
     instance.query("CREATE TABLE test.src (x UInt64) ENGINE = MergeTree ORDER BY x")
     instance.query("CREATE TABLE test.tgt (x UInt64) ENGINE = MergeTree ORDER BY x")
-    instance.query("CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 6 HOUR TO test.tgt (id UInt64) DEFINER = u1 SQL SECURITY DEFINER AS SELECT * FROM test.src")
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 6 HOUR TO test.tgt (id UInt64) DEFINER = u1 SQL SECURITY DEFINER AS SELECT * FROM test.src"
+    )
 
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
     instance.query("DROP TABLE test.rmv")
@@ -2089,6 +2162,7 @@ def test_rmv_no_definer():
         ).strip()
         == "rmv"
     )
+
 
 # Test for the "clickhouse_backupview" utility.
 
@@ -2114,7 +2188,9 @@ def test_restore_table_with_checksum_data_file_name(engine):
     create_and_fill_table(engine=engine)
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-    instance.query(f"BACKUP TABLE test.table TO {backup_name} SETTINGS data_file_name_generator='checksum'")
+    instance.query(
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS data_file_name_generator='checksum'"
+    )
 
     instance.query("DROP TABLE test.table")
     assert instance.query("EXISTS test.table") == "0\n"
@@ -2129,7 +2205,9 @@ def test_incremental_backup_with_checksum_data_file_name():
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
-    instance.query(f"BACKUP TABLE test.table TO {backup_name} SETTINGS data_file_name_generator='checksum'")
+    instance.query(
+        f"BACKUP TABLE test.table TO {backup_name} SETTINGS data_file_name_generator='checksum'"
+    )
 
     instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
 

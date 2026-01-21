@@ -32,6 +32,7 @@ instance = cluster.add_instance(
         "kafka_format_json_each_row": "JSONEachRow",
     },
     clickhouse_path_dir="clickhouse_path",
+    cpu_limit=5,
 )
 
 
@@ -3653,7 +3654,7 @@ def test_kafka_consumer_reschedule_validation(kafka_cluster, create_query_genera
         },
     )
     with pytest.raises(
-        QueryRuntimeException, 
+        QueryRuntimeException,
         match=r".*kafka_consumers_pool_ttl_ms.*cannot be less than.*kafka_consumer_reschedule_ms.*"
     ):
         instance.query(create_query)
