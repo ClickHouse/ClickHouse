@@ -126,7 +126,7 @@ size_t CachedOnDiskReadBufferFromFile::getFileSize()
 {
     const auto object_size = tryGetFileSize();
     if (!object_size.has_value())
-        throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", source_file_path);
+        throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", info.source_file_path);
     return object_size.value();
 }
 
@@ -498,6 +498,7 @@ CachedOnDiskReadBufferFromFile::ReadFromFileSegmentStatePtr CachedOnDiskReadBuff
     FileSegment & file_segment,
     size_t offset,
     ReadInfo & info,
+    size_t file_size_,
     LoggerPtr log)
 {
     chassert(!file_segment.isDownloader(),
@@ -541,7 +542,7 @@ CachedOnDiskReadBufferFromFile::ReadFromFileSegmentStatePtr CachedOnDiskReadBuff
     /// we do not resize file segment when write-through cache buffer is destructed,
     /// because we do not know at that moment if all data was fully sent or we just disconnected (this is in TODO to fix).
     /// So here we can have file segment size bigger than actual object size.
-    state->buf->setReadUntilPosition(std::min(range.right + 1, getFileSize())); /// [..., range.right]
+    state->buf->setReadUntilPosition(std::min(range.right + 1, file_size_)); /// [..., range.right]
 
     switch (state->read_type)
     {
@@ -640,7 +641,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     current_file_segment = &info.file_segments->front();
     current_file_segment->increasePriority();
 
-    state = prepareReadFromFileSegmentState(*current_file_segment, file_offset_of_buffer_end, info, log);
+    state = prepareReadFromFileSegmentState(*current_file_segment, file_offset_of_buffer_end, info, getFileSize(), log);
 
     LOG_TEST(
         log, "New segment range: {}, old range: {}",
@@ -881,7 +882,7 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
 
         if (file_offset_of_buffer_end >= file_segment.getCurrentWriteOffset())
         {
-            state = prepareReadFromFileSegmentState(file_segment, file_offset_of_buffer_end, info, log);
+            state = prepareReadFromFileSegmentState(file_segment, file_offset_of_buffer_end, info, getFileSize(), log);
             return true;
         }
     }
@@ -900,7 +901,7 @@ bool CachedOnDiskReadBufferFromFile::updateImplementationBufferIfNeeded()
         * to read by marks range given to him. Therefore, each nextImpl() call, in case of
         * READ_AND_PUT_IN_CACHE, starts with getOrSetDownloader().
         */
-        state = prepareReadFromFileSegmentState(file_segment, file_offset_of_buffer_end, info, log);
+        state = prepareReadFromFileSegmentState(file_segment, file_offset_of_buffer_end, info, getFileSize(), log);
     }
 
     return true;
@@ -1020,7 +1021,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     }
     else
     {
-        state = prepareReadFromFileSegmentState(info.file_segments->front(), file_offset_of_buffer_end, info, log);
+        state = prepareReadFromFileSegmentState(info.file_segments->front(), file_offset_of_buffer_end, info, getFileSize(), log);
         info.file_segments->front().increasePriority();
     }
 
@@ -1432,7 +1433,8 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             fmt::format("Current offset: {}, file segment: {}", offset, file_segment.getInfoForLog()));
 
         if (!current_state)
-            current_state = prepareReadFromFileSegmentState(file_segment, offset, current_info, log);
+            current_state = prepareReadFromFileSegmentState(
+                file_segment, offset, current_info, const_cast<CachedOnDiskReadBufferFromFile &>(*this).getFileSize(), log);
 
         [[maybe_unused]] size_t remaining_size_in_file_segment = file_segment.range().right - offset + 1;
         current_state->buf->set(to + read_bytes, n - read_bytes);

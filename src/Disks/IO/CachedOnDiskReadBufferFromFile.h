@@ -134,6 +134,7 @@ private:
         FileSegment & file_segment,
         size_t offset,
         ReadInfo & info,
+        size_t file_size_,
         LoggerPtr log);
 
     /// read_buffer, read_type, bytes_to_predownload
