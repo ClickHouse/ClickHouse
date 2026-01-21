@@ -40,11 +40,11 @@ try:
     import pymongo
     import pymysql
     import nats
+    from filelock import FileLock, Timeout
     from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
     # Not an easy dep
     import cassandra.cluster
     from cassandra.policies import RoundRobinPolicy
-    from filelock import FileLock, Timeout
 
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
@@ -895,18 +895,18 @@ class ClickHouseCluster:
         if with_spark:
             import pyspark
 
-            (
-                pyspark.sql.SparkSession.builder.appName("spark_test")
-                # The jars are now linked to "$SPARK_HOME/jars" and we don't
-                # need packages to be downloaded once and once again
-                # .config(
-                #     "spark.jars.packages",
-                #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
-                # )
-                .master("local")
-                .getOrCreate()
-                .stop()
-            )
+            # (
+            #     pyspark.sql.SparkSession.builder.appName("spark_test")
+            #     # The jars are now linked to "$SPARK_HOME/jars" and we don't
+            #     # need packages to be downloaded once and once again
+            #     # .config(
+            #     #     "spark.jars.packages",
+            #     #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+            #     # )
+            #     .master("local")
+            #     .getOrCreate()
+            #     .stop()
+            # )
 
         self.port_pool = PortPoolManager()
         # For La Casa Del Dolor to run upgrades
@@ -1965,6 +1965,8 @@ class ClickHouseCluster:
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
+        cpu_limit=None,
+        pids_limit=None,
         zookeeper_docker_compose_path=None,
         minio_certs_dir=None,
         minio_data_dir=None,
@@ -2108,6 +2110,8 @@ class ClickHouseCluster:
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             mem_limit=mem_limit,
+            cpu_limit=cpu_limit,
+            pids_limit=pids_limit,
             config_root_name=config_root_name,
             extra_configs=extra_configs,
             randomize_settings=randomize_settings,
@@ -3915,9 +3919,9 @@ class ClickHouseCluster:
             bufsize=0,
         )
 
-    def shutdown(self, kill=True, ignore_fatal=True):
+    def shutdown(self, kill=True, ignore_fatal=False, ignore_logical_errors=False):
         sanitizer_assert_instance = None
-        fatal_log = None
+        failure_logs = []
 
         if self.up_called:
             if kill:
@@ -3934,6 +3938,13 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
+                # Collect exit codes for later inspection
+                if instance.with_dolor:
+                    container = self.docker_client.containers.get(instance.docker_id)
+                    res = container.wait()
+                    exit_code = res["StatusCode"]
+                    logging.info(f"The server {name} exited with code: {exit_code}")
+
                 if instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
@@ -3949,14 +3960,19 @@ class ClickHouseCluster:
                         sanitizer_assert_instance,
                     )
 
-                if not ignore_fatal and instance.contains_in_log(
-                    "Fatal", from_host=True
-                ):
-                    fatal_log = instance.grep_in_log("Fatal", from_host=True)
-                    if "Child process was terminated by signal 9 (KILL)" in fatal_log:
-                        fatal_log = None
-                        continue
-                    logging.error("Crash in instance %s fatal log %s", name, fatal_log)
+                if not ignore_logical_errors:
+                    logical_error_log = instance.grep_in_log("LOGICAL_ERROR", from_host=True)
+                    if logical_error_log and '<Error>' in logical_error_log:
+                        msg = f"Logical error in instance '{name}':\n{logical_error_log}"
+                        failure_logs.append(msg)
+                        logging.error(msg)
+
+                if not ignore_fatal:
+                    fatal_log = instance.grep_in_log("<Fatal>", from_host=True)
+                    if fatal_log and "Child process was terminated by signal 9 (KILL)" not in fatal_log:
+                        msg = f"Crash in instance '{name}':\n{fatal_log}"
+                        failure_logs.append(msg)
+                        logging.error(msg)
 
             try:
                 subprocess_check_call(self.base_cmd + ["down", "--volumes"])
@@ -4008,14 +4024,24 @@ class ClickHouseCluster:
                     sanitizer_assert_instance
                 )
             )
-        if fatal_log is not None:
-            raise Exception("Fatal messages found: {}".format(fatal_log))
+
+        if self.spark_session:
+            self.spark_session.stop()
+
+        if failure_logs:
+            raise Exception("\n".join(failure_logs))
 
     def _pause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
 
     def _unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
+
+    def _pause_container_using_signal(self, instance_name):
+        subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGSTOP", instance_name])
+
+    def _unpause_container_using_signal(self, instance_name):
+        subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGCONT", instance_name])
 
     @contextmanager
     def pause_container(self, instance_name):
@@ -4028,6 +4054,14 @@ class ClickHouseCluster:
             yield
         finally:
             self._unpause_container(instance_name)
+
+    @contextmanager
+    def pause_container_using_signal(self, instance_name):
+        self._pause_container_using_signal(instance_name)
+        try:
+            yield
+        finally:
+            self._unpause_container_using_signal(instance_name)
 
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
@@ -4155,6 +4189,8 @@ services:
         stop_grace_period: 10m
         tmpfs: {tmpfs}
         {mem_limit}
+        {cpu_limit}
+        {pids_limit}
         cap_add:
             - SYS_PTRACE
             - NET_ADMIN
@@ -4251,6 +4287,8 @@ class ClickHouseInstance:
         external_dirs=None,
         tmpfs=None,
         mem_limit=None,
+        cpu_limit=None,
+        pids_limit=None,
         config_root_name="clickhouse",
         extra_configs=[],
         randomize_settings=True,
@@ -4267,9 +4305,22 @@ class ClickHouseInstance:
         self.external_dirs = external_dirs
         self.tmpfs = tmpfs or []
         if mem_limit is not None:
-            self.mem_limit = "mem_limit : " + mem_limit
+            self.mem_limit = f"mem_limit: {mem_limit}"
         else:
-            self.mem_limit = ""
+            self.mem_limit = "mem_limit: 12g"
+
+        if cpu_limit is None:
+            self.cpu_limit = "cpus: 5"
+        elif cpu_limit == False:
+            self.cpu_limit = ""
+        else:
+            self.cpu_limit = f"cpus: {cpu_limit}"
+
+        if pids_limit is not None:
+            self.pids_limit = f"pids_limit: {pids_limit}"
+        else:
+            self.pids_limit = f"pids_limit: 5000"
+
         self.base_config_dir = (
             p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         )
@@ -4758,7 +4809,7 @@ class ClickHouseInstance:
             )
             if not ps_clickhouse:
                 logging.warning("ClickHouse process already stopped")
-                return
+                return False
 
             self.exec_in_container(
                 ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")],
@@ -4766,42 +4817,38 @@ class ClickHouseInstance:
             )
 
             start_time = time.time()
-            stopped = False
             while time.time() <= start_time + stop_wait_sec:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
-                    stopped = True
-                    break
+                    return True
                 else:
                     time.sleep(1)
 
-            if not stopped:
-                # Some sanitizer report in progress?
-                while self.get_process_pid("llvm-symbolizer") is not None:
-                    time.sleep(1)
+            # Some sanitizer report in progress?
+            while self.get_process_pid("llvm-symbolizer") is not None:
+                time.sleep(1)
 
-                pid = self.get_process_pid("clickhouse")
-                if pid is not None:
-                    logging.warning(
-                        f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
-                    )
-                    self.exec_in_container(
-                        [
-                            "bash",
-                            "-c",
-                            f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
-                        ],
-                        user="root",
-                    )
-                    self.stop_clickhouse(kill=True)
-                else:
-                    ps_all = self.exec_in_container(
-                        ["bash", "-c", "ps aux"], nothrow=True, user="root"
-                    )
-                    logging.warning(
-                        f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}"
-                    )
-                    return
+            pid = self.get_process_pid("clickhouse")
+            if pid is not None:
+                logging.warning(
+                    f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
+                )
+                self.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
+                    ],
+                    user="root",
+                )
+                self.stop_clickhouse(kill=True)
+            else:
+                ps_all = self.exec_in_container(
+                    ["bash", "-c", "ps aux"], nothrow=True, user="root"
+                )
+                logging.warning(
+                    f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}"
+                )
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
@@ -5531,6 +5578,7 @@ class ClickHouseInstance:
             use_distributed_plan = self.use_distributed_plan
 
         write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
+        write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
 
         if use_old_analyzer:
             write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
@@ -5769,6 +5817,8 @@ class ClickHouseInstance:
                     metrika_xml=metrika_xml,
                     tmpfs=str(self.tmpfs),
                     mem_limit=self.mem_limit,
+                    cpu_limit=self.cpu_limit,
+                    pids_limit=self.pids_limit,
                     logs_dir=logs_dir,
                     depends_on=str(depends_on),
                     user=os.getuid(),
@@ -5786,7 +5836,7 @@ class ClickHouseInstance:
                     net_alias1=net_alias1,
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
-                    CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR
+                    CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
                 )
             )
 

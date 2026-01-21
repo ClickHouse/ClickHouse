@@ -401,7 +401,7 @@ The following data types are supported:
 - `Map`
 
 :::note Map data type: specifying index creation with keys or values
-For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapvalues) functions.
+For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapKeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions.
 :::
 
 #### N-gram bloom filter {#n-gram-bloom-filter}
@@ -488,7 +488,7 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 ### Text index {#text}
 
-Supports full-text search, see [here](invertedindexes.md) for details.
+Supports full-text search, see [here](textindexes.md) for details.
 
 #### Vector similarity {#vector-similarity}
 
@@ -527,7 +527,10 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
 | [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains)                                                        | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [mapContains (mapContainsKey)](/sql-reference/functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
@@ -1100,7 +1103,7 @@ ALTER TABLE tab DROP STATISTICS a;
 ```
 
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
-They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
+They can be used for prewhere optimization only if we enable `set use_statistics = 1`.
 
 ### Available types of column statistics {#available-types-of-column-statistics}
 

@@ -75,7 +75,7 @@ makeOutputStreams(
     return {std::move(streams), std::move(streams_holders)};
 }
 
-void writeMarks(MergeTreeIndexOutputStreams & streams)
+void writeMarks(MergeTreeIndexOutputStreams & streams, bool can_use_adaptive_granularity)
 {
     for (const auto & [_, stream] : streams)
     {
@@ -83,7 +83,8 @@ void writeMarks(MergeTreeIndexOutputStreams & streams)
 
         writeBinaryLittleEndian(stream->plain_hashing.count(), marks_out);
         writeBinaryLittleEndian(stream->compressed_hashing.offset(), marks_out);
-        writeBinaryLittleEndian(1UL, marks_out);
+        if (can_use_adaptive_granularity)
+            writeBinaryLittleEndian(1UL, marks_out);
     }
 }
 
@@ -106,10 +107,12 @@ BuildTextIndexTransform::BuildTextIndexTransform(
     , marks_file_extension(std::move(marks_file_extension_))
     , segment_numbers(indexes.size(), 0)
 {
-    for (const auto & index : indexes)
+
+    for (size_t i = 0; i < indexes.size(); ++i)
     {
-        auto aggregator = index->createIndexAggregator();
+        auto aggregator = indexes[i]->createIndexAggregator();
         aggregators.push_back(std::move(aggregator));
+        index_position_by_name.emplace(indexes[i]->index.name, i);
     }
 }
 
@@ -155,8 +158,13 @@ void BuildTextIndexTransform::finalize()
     }
 }
 
-std::vector<TextIndexSegment> BuildTextIndexTransform::getSegments(size_t index_idx, size_t part_idx) const
+std::vector<TextIndexSegment> BuildTextIndexTransform::getSegments(const String & index_name, size_t part_idx) const
 {
+    auto it = index_position_by_name.find(index_name);
+    if (it == index_position_by_name.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} not found in BuildTextIndexTransform", index_name);
+
+    size_t index_idx = it->second;
     std::vector<TextIndexSegment> segments;
 
     for (size_t i = 0; i < segment_numbers[index_idx]; ++i)
@@ -185,7 +193,7 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
         marks_file_extension,
         writer_settings);
 
-    writeMarks(streams);
+    writeMarks(streams, writer_settings.can_use_adaptive_granularity);
     granule->serializeBinaryWithMultipleStreams(streams);
 
     for (auto & stream : streams_holders)
@@ -308,7 +316,7 @@ PostingListPtr MergeTextIndexesTask::adjustPartOffsets(size_t source_num, Postin
     size_t part_index = segments[source_num].part_index;
 
     for (auto & offset : offsets)
-        offset = (*merged_part_offsets)[part_index, offset];
+        offset = static_cast<UInt32>((*merged_part_offsets)[part_index, offset]);
 
     return std::make_shared<PostingList>(offsets.size(), offsets.data());
 }
@@ -384,7 +392,9 @@ bool MergeTextIndexesTask::executeStep()
         is_initialized = true;
         initializeQueue();
         /// Write marks for compatibility with other skip indexes.
-        writeMarks(output_streams);
+        chassert(new_data_part);
+        bool can_use_adaptive_granularity = new_data_part->index_granularity_info.mark_type.adaptive;
+        writeMarks(output_streams, can_use_adaptive_granularity);
     }
 
     if (!queue.isValid())
@@ -480,32 +490,6 @@ MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, 
     storage->beginTransaction();
     storage->createDirectories();
     return storage;
-}
-
-std::vector<MergeTreeIndexPtr> getTextIndexesToBuildMerge(
-    const IndicesDescription & indices_description,
-    const NameSet & read_column_names,
-    const IMergeTreeDataPart & data_part,
-    bool merge_may_reduce_rows)
-{
-    std::vector<MergeTreeIndexPtr> indexes;
-
-    for (const auto & index : indices_description)
-    {
-        if (index.column_names.size() != 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index must have one input column, got {}", index.column_names.size());
-
-        if (!read_column_names.contains(index.column_names[0]))
-            continue;
-
-        auto index_ptr = MergeTreeIndexFactory::instance().get(index);
-        /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
-        /// Build index if it is not materialized in the data part.
-        if (merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part.checksums, index_ptr->getFileName()))
-            indexes.push_back(std::move(index_ptr));
-    }
-
-    return indexes;
 }
 
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(

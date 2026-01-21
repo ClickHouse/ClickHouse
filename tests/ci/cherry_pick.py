@@ -33,7 +33,6 @@ from typing import Iterable, List, Optional
 
 from cache_utils import GitHubCache
 from ci_buddy import CIBuddy
-from ci_config import Labels
 from ci_utils import Shell
 from env_helper import (
     GITHUB_REPOSITORY,
@@ -45,6 +44,7 @@ from env_helper import (
 from get_robot_token import get_best_robot_token
 from git_helper import GIT_PREFIX, git_runner, is_shallow, stash
 from github_helper import GitHub, PullRequest, PullRequests, Repository
+from pr_info import Labels
 from report import GITHUB_JOB_URL
 from s3_helper import S3Helper
 from ssh import SSHKey

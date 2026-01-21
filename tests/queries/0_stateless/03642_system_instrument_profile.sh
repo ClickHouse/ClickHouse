@@ -15,7 +15,7 @@ trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE ALL;
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` PROFILE;
+    SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' PROFILE;
 """
 
 query_id="${CLICKHOUSE_DATABASE}_profile"
@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 query_id="${CLICKHOUSE_DATABASE}_profile_recursive"
-$CLICKHOUSE_CLIENT -q "SYSTEM INSTRUMENT ADD \`DB::recursiveRemoveLowCardinality(std::__1::shared_ptr<DB::IDataType const> const&)\` PROFILE;"
+$CLICKHOUSE_CLIENT -q "SYSTEM INSTRUMENT ADD 'DB::recursiveRemoveLowCardinality(std::__1::shared_ptr<DB::IDataType const> const&)' PROFILE;"
 $CLICKHOUSE_CLIENT --query-id="$query_id" -q "SELECT arrayFold(acc, x -> acc + x, [1, 2, 3], 0::Int64) FORMAT Null;"
 
 $CLICKHOUSE_CLIENT -q "
