@@ -2751,8 +2751,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
 
     if (result_predicate->type == ActionType::COLUMN)
     {
-        /// If result is a column, it means that predicate is constant.
-        /// We can remove it.
+        /// If result is a column, it means that predicate is constant. Let's not push it further.
         return {};
     }
 
