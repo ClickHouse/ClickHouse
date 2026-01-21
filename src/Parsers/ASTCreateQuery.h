@@ -109,15 +109,15 @@ public:
     ASTExpressionList * aliases_list = nullptr; /// Aliases such as "(a, b)" in "CREATE VIEW my_view (a, b) AS SELECT 1, 2"
     ASTStorage * storage = nullptr;
 
-    IAST * watermark_function;
-    IAST * lateness_function;
+    ASTPtr watermark_function;
+    ASTPtr lateness_function;
     String as_database;
     String as_table;
     IAST * as_table_function = nullptr;
     ASTSelectWithUnionQuery * select = nullptr;
     ASTViewTargets * targets = nullptr;
     IAST * comment = nullptr;
-    IAST * sql_security = nullptr;
+    ASTPtr sql_security = nullptr;
 
     ASTTableOverrideList * table_overrides = nullptr; /// For CREATE DATABASE with engines that automatically create tables
 

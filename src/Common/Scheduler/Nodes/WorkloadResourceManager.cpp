@@ -5,8 +5,10 @@
 
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/Priority.h>
 
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>

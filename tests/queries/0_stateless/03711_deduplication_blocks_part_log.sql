@@ -1,10 +1,6 @@
--- Tags: no-parallel, no-parallel-replicas, no-async-insert
+-- Tags: no-parallel, no-parallel-replicas
 
 -- no-parallel-replicas -- https://github.com/ClickHouse/ClickHouse/issues/90063
-
--- Tags: deduplication blocks have different values for sync and async inserts,
--- async insert calculates it as a has of data in the block,
--- sync insert uses MergeTreePartWriter's hash which covers only data in the partition.
 
 DROP DATABASE IF EXISTS 03710_database;
 CREATE DATABASE 03710_database;
@@ -17,7 +13,7 @@ CREATE TABLE 03710_database.03711_join_with
 )
 ENGINE = MergeTree()
 ORDER BY id
-SETTINGS non_replicated_deduplication_window = 1000, min_bytes_for_wide_part = 10000, min_rows_for_wide_part = 10000, serialization_info_version = 'basic', string_serialization_version = 'with_size_stream';
+SETTINGS min_bytes_for_wide_part = 10000, min_rows_for_wide_part = 10000, serialization_info_version = 'basic', string_serialization_version = 'with_size_stream';
 
 SYSTEM STOP MERGES 03710_database.03711_join_with;
 
@@ -31,7 +27,7 @@ CREATE TABLE 03710_database.03711_table
 )
 ENGINE = MergeTree()
 ORDER BY id
-SETTINGS non_replicated_deduplication_window = 1000, min_bytes_for_wide_part = 10000, min_rows_for_wide_part = 10000, serialization_info_version = 'basic', string_serialization_version = 'with_size_stream';
+SETTINGS min_bytes_for_wide_part = 10000, min_rows_for_wide_part = 10000, serialization_info_version = 'basic', string_serialization_version = 'with_size_stream';
 
 SYSTEM STOP MERGES 03710_database.03711_table;
 
@@ -43,7 +39,7 @@ CREATE TABLE 03710_database.03711_mv_table_1
 )
 ENGINE = MergeTree()
 ORDER BY id
-SETTINGS non_replicated_deduplication_window = 1000, min_bytes_for_wide_part = 10000, min_rows_for_wide_part = 10000, serialization_info_version = 'basic', string_serialization_version = 'with_size_stream';
+SETTINGS min_bytes_for_wide_part = 10000, min_rows_for_wide_part = 10000, serialization_info_version = 'basic', string_serialization_version = 'with_size_stream';
 
 SYSTEM STOP MERGES 03710_database.03711_mv_table_1;
 
@@ -55,7 +51,7 @@ CREATE TABLE 03710_database.03711_mv_table_2
 )
 ENGINE = MergeTree()
 ORDER BY id
-SETTINGS non_replicated_deduplication_window = 1000, min_bytes_for_wide_part = 10000, min_rows_for_wide_part = 10000, serialization_info_version = 'basic', string_serialization_version = 'with_size_stream';
+SETTINGS min_bytes_for_wide_part = 10000, min_rows_for_wide_part = 10000, serialization_info_version = 'basic', string_serialization_version = 'with_size_stream';
 
 SYSTEM STOP MERGES 03710_database.03711_mv_table_2;
 
@@ -71,6 +67,7 @@ SELECT r.id as id, r.value as value FROM 03710_database.03711_table as l JOIN 03
 
 SET deduplicate_blocks_in_dependent_materialized_views=1;
 
+SET async_insert=0;
 SET max_block_size=1;
 SET max_insert_block_size=1;
 SET min_insert_block_size_rows=0;

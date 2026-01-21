@@ -49,9 +49,7 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
         {"remote_path", std::make_shared<DataTypeString>(), "Path to the remote resource."},
         {"local_path", std::make_shared<DataTypeString>(), "Path to the metadata file on the local system, which references the remote resource."},
         {"data_size", std::make_shared<DataTypeUInt64>(), "Size of the data involved in the upload event."},
-        {"elapsed_microseconds", std::make_shared<DataTypeUInt64>(), "Elapsed time for the operation, in microseconds."},
 
-        {"error_code", std::make_shared<DataTypeInt32>(), "Error code of the operation. 0 if there was no error."},
         {"error", std::make_shared<DataTypeString>(), "Error message associated with the event, if any."},
     };
 }
@@ -74,8 +72,6 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(remote_path);
     columns[i++]->insert(local_path);
     columns[i++]->insert(data_size);
-    columns[i++]->insert(elapsed_microseconds);
-    columns[i++]->insert(error_code);
     columns[i++]->insert(error_message);
 }
 
