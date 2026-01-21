@@ -197,6 +197,13 @@ struct CrossTabAggregateData : CrossTabCountsState
 ///         in the affected row/column (deg(x) = number of distinct (a,b) pairs incident to that value).
 /// getPhiSquared() — O(1)
 /// Suitable for window functions (many getResult()/getPhiSquared() calls between updates).
+/// Window state implementation that maintains φ² (phi-squared) incrementally.
+///
+/// It stores the contingency table as a bipartite graph: distinct `a` and `b` values are nodes, and each observed (a, b)
+/// pair is an edge with its count. This representation allows efficient iteration over all pairs that share the same `a`
+/// (row) or the same `b` (column), which is required to update φ² in add()/merge().
+///
+/// This base is used by window-friendly implementations of `cramersV`, `cramersVBiasCorrected`, and `contingency`.
 ///
 /// Performance characteristics:
 /// - Fast when the joint distribution is sparse (each `a` is seen with only a few `b` values and vice versa),
@@ -218,9 +225,6 @@ struct CrossTabAggregateData : CrossTabCountsState
 /// );
 /// This generates an almost complete 1000×1000 set of (a,b) pairs, so each add() processes ~1000 incident edges,
 /// which will be very slow.
-///
-/// This base is used by window-friendly implementations of `cramersV`, `cramersVBiasCorrected`,
-/// and `contingencyCoefficient`.
 struct CrossTabPhiSquaredWindowData
 {
     static constexpr CrossTabImplementationVariant state_representation = CrossTabImplementationVariant::Window;
