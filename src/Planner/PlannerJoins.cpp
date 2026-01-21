@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
 
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDictionary.h>
@@ -1178,16 +1179,25 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     params.max_size_to_preallocate_for_joins};
                 if (right_side_input_node)
                 {
-                    LOG_DEBUG(getLogger(__func__), "[YES] Using ConcurrentHashJoin with existing right side input JoinStep");
-                    auto * right_side_input_join_node = typeid_cast<JoinStep *>(right_side_input_node->step.get());
-                    return std::make_shared<ConcurrentHashJoin>(
-                        right_side_input_join_node->getJoin(),
-                        table_join,
-                        params.max_threads,
-                        right_table_expression_header,
-                        stats_collecting_params);
+                    LOG_DEBUG(getLogger(__func__), "[YES] Using ConcurrentHashJoin (step : {})", right_side_input_node->step != nullptr ? right_side_input_node->step->getName() : "null");
+                    auto * expr_node = typeid_cast<ExpressionStep *>(right_side_input_node->step.get());
+                    auto * right_side_input_join_node = expr_node ? typeid_cast<JoinStep *>(right_side_input_node->children.front()->step.get()) : nullptr;
+                    if (right_side_input_join_node)
+                    {
+                        LOG_DEBUG(getLogger(__func__), "[YES] JoinPtr: {}", right_side_input_join_node->getJoin().get() != nullptr ? "not null" : "null");
+                        return std::make_shared<ConcurrentHashJoin>(
+                            right_side_input_join_node->getJoin(),
+                            table_join,
+                            params.max_threads,
+                            right_table_expression_header,
+                            stats_collecting_params);
+                    }
+                    else
+                    {
+                        LOG_DEBUG(getLogger(__func__), "[CANCEL] Step is not JoinStep, but {}", right_side_input_node->step != nullptr ? right_side_input_node->step->getName() : "null");
+                    }
                 }
-                LOG_DEBUG(getLogger(__func__), "[NOT] Using ConcurrentHashJoin with existing right side input JoinStep");
+                LOG_DEBUG(getLogger(__func__), "[NOT] Reusing ConcurrentHashJoin");
                 return std::make_shared<ConcurrentHashJoin>(table_join, params.max_threads, right_table_expression_header, stats_collecting_params);
             }
         }

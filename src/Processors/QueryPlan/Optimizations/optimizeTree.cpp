@@ -535,8 +535,13 @@ void optimizeTreeSecondPass(
         {
             if (optimization_settings.enable_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
-            convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+            // convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
+
+    traverseQueryPlan(stack, root, [&](auto & frame_node)
+    {
+        convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+    });
 
     /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible
