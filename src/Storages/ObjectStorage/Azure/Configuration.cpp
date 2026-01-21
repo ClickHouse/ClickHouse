@@ -188,7 +188,7 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     if (collection.has("partition_strategy"))
     {
         const auto partition_strategy_name = collection.get<std::string>("partition_strategy");
-        const auto phttps://github.com/ClickHouse/ClickHouse/pull/94705/conflict?name=src%252FBackups%252FregisterBackupEngineAzureBlobStorage.cpp&ancestor_oid=53c4b331ae13a79d195cba0f32d8c88516b4d043&base_oid=8fd95eb3c76524ed30273d2faed9407dd178b7d8&head_oid=b7e880c90160f6a853b639977e3932f39e6697b1artition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
+        const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
 
         if (!partition_strategy_type_opt)
         {
