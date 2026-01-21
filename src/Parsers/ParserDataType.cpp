@@ -337,6 +337,8 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         tuple_node->name = type_name;
         tuple_node->arguments = std::make_shared<ASTExpressionList>();
 
+        bool has_named_elements = false;
+        Strings element_names_tmp;
         bool first_element = true;
 
         while (true)
@@ -363,8 +365,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 /// Named element: name Type
                 String elem_name;
                 tryGetIdentifierNameInto(identifier_node, elem_name);
-                tuple_node->element_names.push_back(elem_name);
+                element_names_tmp.push_back(elem_name);
                 tuple_node->arguments->children.push_back(type_node);
+                has_named_elements = true;
             }
             else
             {
@@ -372,12 +375,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 pos = element_pos;
                 if (type_parser.parse(pos, type_node, expected))
                 {
-                    tuple_node->element_names.push_back("");  /// empty name for unnamed
+                    element_names_tmp.push_back("");  /// placeholder for unnamed
                     tuple_node->arguments->children.push_back(type_node);
                 }
                 else
                 {
-                    /// Could not parse element, stop
+                    /// Could not parse element
                     break;
                 }
             }
@@ -386,7 +389,12 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (pos->type == TokenType::ClosingRoundBracket && !tuple_node->arguments->children.empty())
         {
             ++pos;
-            tuple_node->element_names.shrink_to_fit();
+            /// Only store element_names if tuple has any named elements
+            if (has_named_elements)
+            {
+                tuple_node->element_names = std::move(element_names_tmp);
+                tuple_node->element_names.shrink_to_fit();
+            }
             tuple_node->arguments->children.shrink_to_fit();
             tuple_node->children.push_back(tuple_node->arguments);
             node = tuple_node;
