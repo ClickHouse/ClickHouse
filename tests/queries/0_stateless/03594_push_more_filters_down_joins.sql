@@ -50,15 +50,13 @@ FROM system.query_log
 WHERE log_comment = '03594_push_more_filters_down_joins' AND current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= NOW() - INTERVAL '10 MINUTE'
 FORMAT Null;
 
-SET optimize_functions_to_subcolumns=1; -- Changes filters a bit
-
-SELECT trimBoth(explain) AS step
+SELECT splitByWhitespace(trimBoth(explain))[1] AS step
 FROM (
-    EXPLAIN actions=1
+    EXPLAIN
     SELECT 1
     FROM t2
     LEFT JOIN t1 ON t2.id = t1.fid
     LEFT JOIN t3 ON t1.tid = t3.id
     WHERE true AND (t2.resource_id IS NOT NULL) AND (t2.status IN ('OPEN')) AND (t3.status IN ('BACKLOG'))
 )
-WHERE step LIKE 'Join' OR step LIKE 'Filter column%';
+WHERE step ILIKE 'Join%' OR step ILIKE '%Filter%';

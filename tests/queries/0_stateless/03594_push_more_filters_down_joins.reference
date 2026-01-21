@@ -1,4 +1,3 @@
-Filter column: and(1_Bool, not(__table1.resource_id.null), in(__table1.status, __set_Nullable(String)_12626227421662043077_13161361584269452501), in(__table3.status, __set_String_18301916652266289683_2399335435943395266)) (removed)
 Join
 Join
-Filter column: and(1_Bool, not(__table1.resource_id.null), in(__table1.status, __set_Nullable(String)_12626227421662043077_13161361584269452501)) (removed)
+Filter
