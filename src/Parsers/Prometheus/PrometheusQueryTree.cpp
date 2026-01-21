@@ -199,7 +199,9 @@ String PrometheusQueryTree::At::dumpNode(size_t indent) const
 
 String PrometheusQueryTree::Function::dumpNode(size_t indent) const
 {
-    String str = fmt::format("{}Function({}):", makeIndent(indent), function_name);
+    const auto & arguments = getArguments();
+    std::string_view maybe_colon = arguments.empty() ? "" : ":";
+    String str = fmt::format("{}Function({}){}", makeIndent(indent), function_name, maybe_colon);
     for (const auto * argument : getArguments())
         str += fmt::format("\n{}", argument->dumpNode(indent + 1));
     return str;
@@ -222,7 +224,7 @@ String PrometheusQueryTree::BinaryOperator::dumpNode(size_t indent) const
         std::string_view on_or_ignoring = on ? "on" : "ignoring";
         String joined_labels;
         if (!labels.empty())
-            joined_labels += fmt::format(" [\"{}\"]", fmt::join(labels, "\", \""));
+            joined_labels += fmt::format(" {}", fmt::join(labels, ", "));
         str += fmt::format("\n{}{}{}", makeIndent(indent + 1), on_or_ignoring, joined_labels);
     }
     if (group_left || group_right)
@@ -230,7 +232,7 @@ String PrometheusQueryTree::BinaryOperator::dumpNode(size_t indent) const
         std::string_view group_left_or_right = group_left ? "group_left" : "group_right";
         String joined_extra_labels;
         if (!extra_labels.empty())
-            joined_extra_labels += fmt::format(" [\"{}\"]", fmt::join(extra_labels, "\", \""));
+            joined_extra_labels += fmt::format(" {}", fmt::join(extra_labels, ", "));
         str += fmt::format("\n{}{}{}", makeIndent(indent + 1), group_left_or_right, joined_extra_labels);
     }
     str += fmt::format("\n{}", getLeftArgument()->dumpNode(indent + 1));
@@ -246,7 +248,7 @@ String PrometheusQueryTree::AggregationOperator::dumpNode(size_t indent) const
         std::string_view by_or_without = by ? "by" : "without";
         String joined_labels;
         if (!labels.empty())
-            joined_labels += fmt::format(" [\"{}\"]", fmt::join(labels, "\", \""));
+            joined_labels += fmt::format(" {}", fmt::join(labels, ", "));
         str += fmt::format("\n{}{}{}", makeIndent(indent + 1), by_or_without, joined_labels);
     }
     for (const auto * argument : getArguments())
