@@ -18,38 +18,23 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
-#include <IO/SharedThreadPools.h>
 #include <Interpreters/ActionLocksManager.h>
-#include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/BackupLog.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/MetricLog.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/ProcessorsProfileLog.h>
-#include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
-#include <Interpreters/TextLog.h>
-#include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/TransactionsInfoLog.h>
-#include <Interpreters/DeltaMetadataLog.h>
-#include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/executeQuery.h>
@@ -73,7 +58,6 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
-#include <Storages/System/StorageSystemFilesystemCache.h>
 #include <base/coverage.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/ActionLock.h>
@@ -81,9 +65,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/FailPoint.h>
 #include <Common/HostResolvePool.h>
-#include <Common/PageCache.h>
 #include <Common/ShellCommand.h>
-#include <Common/SymbolIndex.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
@@ -885,7 +867,11 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
 
-            queue->flush(query.tables);
+            std::vector<StorageID> tables;
+            for (const auto & [database, table]: query.tables)
+                tables.push_back(getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
+
+            queue->flush(tables);
             break;
         }
         case Type::STOP_THREAD_FUZZER:
@@ -921,15 +907,33 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            LOG_TRACE(log, "Waiting for failpoint {}", query.fail_point_name);
-            FailPointInjection::pauseFailPoint(query.fail_point_name);
-            LOG_TRACE(log, "Finished waiting for failpoint {}", query.fail_point_name);
+            if (query.fail_point_action == ASTSystemQuery::FailPointAction::PAUSE)
+            {
+                LOG_TRACE(log, "Waiting for failpoint {} to pause", query.fail_point_name);
+                FailPointInjection::waitForPause(query.fail_point_name);
+                LOG_TRACE(log, "Failpoint {} has paused", query.fail_point_name);
+            }
+            else
+            {
+                LOG_TRACE(log, "Waiting for failpoint {} to resume", query.fail_point_name);
+                FailPointInjection::waitForResume(query.fail_point_name);
+                LOG_TRACE(log, "Failpoint {} has resumed", query.fail_point_name);
+            }
+
+            break;
+        }
+        case Type::NOTIFY_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            LOG_TRACE(log, "Notifying failpoint {}", query.fail_point_name);
+            FailPointInjection::notifyFailPoint(query.fail_point_name);
             break;
         }
 #else // USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support");
 #endif // USE_LIBFIU
         case Type::RESET_COVERAGE:
@@ -982,7 +986,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            auto filename = Jemalloc::flushProfile("/tmp/jemalloc_clickhouse");
+            auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
+            /// TODO: Next step - provide system.jemalloc_profile table, that will provide all the info inside ClickHouse
+            Jemalloc::symbolizeHeapProfile(filename, filename + ".symbolized");
+            filename += ".symbolized";
             auto col = ColumnString::create();
             col->insertData(filename.data(), filename.size());
             Columns columns;
@@ -1813,19 +1820,21 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
             }
             else
             {
-                InstrumentationManager::instance().unpatchFunction(query.instrumentation_point_id.value());
+                InstrumentationManager::instance().unpatchFunction(query.instrumentation_point.value());
             }
         }
     }
     catch (const DB::Exception & e)
     {
         String id;
-        if (query.instrumentation_point_id.has_value())
+        if (query.instrumentation_point.has_value())
         {
-            if (std::holds_alternative<bool>(query.instrumentation_point_id.value()))
+            if (std::holds_alternative<Instrumentation::All>(query.instrumentation_point.value()))
                 id = " and ALL ids";
+            else if (std::holds_alternative<String>(query.instrumentation_point.value()))
+                id = fmt::format(" and ids with function_name containing '{}'", std::get<String>(query.instrumentation_point.value()));
             else
-                id = fmt::format(" and id '{}'", std::get<UInt64>(query.instrumentation_point_id.value()));
+                id = fmt::format(" and id '{}'", std::get<UInt64>(query.instrumentation_point.value()));
         }
 
         throw Exception(
@@ -2299,6 +2308,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
         case Type::UNKNOWN:

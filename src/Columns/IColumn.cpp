@@ -9,7 +9,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnFunction.h>
-#include <Columns/ColumnLazy.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
@@ -294,11 +293,6 @@ bool isColumnNullableOrLowCardinalityNullable(const IColumn & column)
 bool isColumnConst(const IColumn & column)
 {
     return checkColumn<ColumnConst>(column);
-}
-
-bool isColumnLazy(const IColumn & column)
-{
-    return checkColumn<ColumnLazy>(column);
 }
 
 template <typename Derived, typename Parent>

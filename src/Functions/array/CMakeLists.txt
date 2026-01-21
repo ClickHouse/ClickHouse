@@ -21,5 +21,5 @@ if (TARGET ch_contrib::vectorscan)
 endif()
 
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options(clickhouse_functions_array PRIVATE "-g0")
+    target_compile_options(clickhouse_functions_array PRIVATE "-g1")
 endif()
