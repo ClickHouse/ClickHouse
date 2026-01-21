@@ -2113,7 +2113,7 @@ private:
                     time_t value;
                     if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
-                        insertValueIntoNumericVariant<ColumnDateTime, time_t>(variant_info, variant_column, value, "DateTime");
+                        insertValueIntoNumericVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
                         return true;
                     }
                 }
@@ -2123,7 +2123,7 @@ private:
                     DateTime64 value;
                     if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
-                        insertValueIntoNumericVariant<ColumnDateTime64, time_t>(variant_info, variant_column, value, "DateTime64(9)");
+                        insertValueIntoNumericVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
                         return true;
                     }
                 }
