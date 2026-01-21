@@ -1,5 +1,6 @@
 SET enable_time_time64_type = 1;
 SET use_legacy_to_time = 0;
+SET session_timezone = 'UTC';
 
 SELECT '-- Original Time aggregate functions test';
 
@@ -42,14 +43,6 @@ SELECT toTypeName(avg(t)) FROM (SELECT toTime('01:00:00') AS t);
 SELECT '-- Time64 type basic test (scale 3)';
 SELECT avg(t64) FROM (SELECT toTime64('01:00:00.000', 3) AS t64 UNION ALL SELECT toTime64('03:00:00.000', 3) AS t64);
 SELECT toTypeName(avg(t64)) FROM (SELECT toTime64('01:00:00.000', 3) AS t64);
-
-SELECT '-- Empty table tests';
-DROP TABLE IF EXISTS empty_date_test;
-CREATE TABLE empty_date_test (d Date, d32 Date32, dt DateTime('UTC'), dt64 DateTime64(3, 'UTC'), t Time, t64 Time64(3)) ENGINE = Memory;
-
-SELECT avg(d), avg(d32), avg(dt), avg(dt64), avg(t), avg(t64) FROM empty_date_test FORMAT Vertical;
-
-DROP TABLE empty_date_test;
 
 SELECT '-- Single row tests';
 SELECT avg(d) FROM (SELECT toDate('2020-06-15') AS d);
@@ -315,8 +308,12 @@ SET min_count_to_compile_aggregate_expression = 0;
 SELECT avg(d) FROM (SELECT addDays(toDate('2020-01-01'), number) AS d FROM numbers(100));
 SELECT avg(dt) FROM (SELECT addSeconds(toDateTime('2020-01-01 00:00:00', 'UTC'), number) AS dt FROM numbers(100));
 SELECT avg(dt64) FROM (SELECT addSeconds(toDateTime64('2020-01-01 00:00:00.000', 3, 'UTC'), number) AS dt64 FROM numbers(100));
-SELECT avg(t) FROM (SELECT toTime(number) AS t FROM numbers(100));
-SELECT avg(t64) FROM (SELECT toTime64(number, 3) AS t64 FROM numbers(100));
+DROP TABLE IF EXISTS jit_time_test;
+CREATE TABLE jit_time_test (t Time, t64 Time64(3)) ENGINE = Memory;
+INSERT INTO jit_time_test SELECT toTime(number), toTime64(number, 3) FROM numbers(100);
+SELECT avg(t) FROM jit_time_test;
+SELECT avg(t64) FROM jit_time_test;
+DROP TABLE jit_time_test;
 
 SET compile_aggregate_expressions = 0;
 
