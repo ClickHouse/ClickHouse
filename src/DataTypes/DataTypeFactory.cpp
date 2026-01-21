@@ -84,21 +84,23 @@ static DataTypePtr createTupleFromAST(const ASTTupleDataType * tuple_ast)
     for (const auto & child : tuple_ast->arguments->children)
         nested_types.emplace_back(DataTypeFactory::instance().get(child));
 
+    const auto & element_names = tuple_ast->getElementNames();
+
     /// If element_names is empty, it's an unnamed tuple
-    if (tuple_ast->element_names.empty())
+    if (element_names.empty())
         return std::make_shared<DataTypeTuple>(nested_types);
 
     /// Named tuple - validate all elements have names (no mixed named/unnamed)
-    for (const auto & name : tuple_ast->element_names)
+    for (const auto & elem_name : element_names)
     {
-        if (name.empty())
+        if (elem_name.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
     }
 
-    if (tuple_ast->element_names.size() != nested_types.size())
+    if (element_names.size() != nested_types.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
 
-    return std::make_shared<DataTypeTuple>(nested_types, tuple_ast->element_names);
+    return std::make_shared<DataTypeTuple>(nested_types, element_names);
 }
 
 DataTypePtr DataTypeFactory::get(const String & full_name) const

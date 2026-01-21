@@ -375,7 +375,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 pos = element_pos;
                 if (type_parser.parse(pos, type_node, expected))
                 {
-                    element_names_tmp.push_back("");  /// placeholder for unnamed
+                    /// Empty placeholder needed to detect mixed named/unnamed tuples.
+                    /// The factory validates that all names are non-empty when element_names is set.
+                    element_names_tmp.push_back("");
                     tuple_node->arguments->children.push_back(type_node);
                 }
                 else
@@ -392,8 +394,8 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             /// Only store element_names if tuple has any named elements
             if (has_named_elements)
             {
-                tuple_node->element_names = std::move(element_names_tmp);
-                tuple_node->element_names.shrink_to_fit();
+                element_names_tmp.shrink_to_fit();
+                tuple_node->setElementNames(std::move(element_names_tmp));
             }
             tuple_node->arguments->children.shrink_to_fit();
             tuple_node->children.push_back(tuple_node->arguments);
