@@ -1,0 +1,101 @@
+import psycopg2
+import pytest
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+import uuid
+import logging
+import threading
+import time
+
+from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import pg_pass
+from helpers.postgres_utility import get_postgres_conn
+from helpers.test_tools import assert_eq_with_retry
+
+cluster = ClickHouseCluster(__file__)
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/users.xml"],
+    with_postgres=True,
+)
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        conn = get_postgres_conn(cluster.postgres_ip, cluster.postgres_port)
+        cursor = conn.cursor()
+        cursor.execute("DROP DATABASE IF EXISTS postgres_database")
+        cursor.execute("CREATE DATABASE postgres_database")
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def test_kill_infinite_query(started_cluster):
+    # Connect to postgres_database database
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """CREATE OR REPLACE FUNCTION generate_infinite_sequence(start_from INT DEFAULT 1)
+RETURNS SETOF INT AS $$
+DECLARE
+    counter INT := start_from;
+BEGIN
+    LOOP
+        RETURN NEXT counter;
+        counter := counter + 1;
+        PERFORM pg_sleep(0.01);
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;"""
+    )
+    cursor.execute(
+        """CREATE OR REPLACE VIEW infinite_counter AS
+SELECT generate_infinite_sequence() as counter;"""
+    )
+
+    query_id = str(uuid.uuid4())
+
+    postgres_host_with__port = (
+        f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    )
+
+    def execute_query():
+        node1.query(
+            f"""SELECT * FROM postgresql(
+        '{postgres_host_with__port}',
+        'postgres_database',
+        'infinite_counter',
+        'postgres',
+        'ClickHouse_PostgreSQL_P@ssw0rd')""",
+            query_id=query_id,
+        )
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    # TODO decide about waiting period value or replace it with loop verifying that long query is already running
+    time.sleep(1)
+
+    node1.query(f"KILL QUERY WHERE query_id='{query_id}' SYNC")
+
+    query_thread.join()
+
+    # Verify that query was successfully cancelled in ClickHouse server
+    result = node1.query(
+        "SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+    )
+    assert int(result.strip()) == 0
+
+    # Verify that query was successfully cancelled in PostgreSQL server
+    cursor.execute(
+        """SELECT count(*) FROM pg_stat_activity WHERE state = 'active'
+and query = 'COPY (SELECT "counter" FROM "infinite_counter") TO STDOUT';
+        """
+    )
+    assert cursor.fetchall()[0][0] == 0
