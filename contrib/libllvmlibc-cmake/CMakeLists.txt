@@ -347,6 +347,7 @@ set(LLVMLIBC_DEFS
     LIBC_MATH_HAS_NO_ERRNO=1
     LIBC_MATH_HAS_NO_EXCEPT=1
     LIBC_TARGET_CPU_HAS_FMA_DOUBLE=1
+    LIBC_MATH_HAS_SKIP_ACCURATE_PASS=1
 )
 
 if (ARCH_AMD64)
@@ -367,7 +368,8 @@ endif()
 
 if (ENABLE_AVX2)
     list(APPEND LLVMLIBC_DEFS
-        LIBC_TARGET_CPU_HAS_SSE4_2=1
+        LIBC_TARGET_CPU_HAS_AVX=1
+        LIBC_TARGET_CPU_HAS_AVX2=1
     )
 endif()
 
@@ -382,6 +384,28 @@ if (ENABLE_AVX512_VBMI)
     list(APPEND LLVMLIBC_DEFS
         LIBC_TARGET_CPU_HAS_AVX512BW=1
     )
+endif()
+
+# Performance optimization flags for math library
+target_compile_options(libllvmlibc PRIVATE
+    -ffp-contract=fast     # Allow FMA (fused multiply-add) optimizations
+    -fno-math-errno        # Don't set errno for math functions (we set LIBC_MATH_HAS_NO_ERRNO anyway)
+    -fno-trapping-math     # Assume floating-point operations don't trap
+)
+
+if (ARCH_AMD64)
+    target_compile_options(libllvmlibc PRIVATE
+        -mavx2             # Enable AVX2 instructions
+        -mfma              # Enable FMA instructions
+    )
+    # Also update the defines to match
+    list(APPEND LLVMLIBC_DEFS
+        LIBC_TARGET_CPU_HAS_AVX=1
+        LIBC_TARGET_CPU_HAS_AVX2=1
+        LIBC_TARGET_CPU_HAS_FMA=1
+    )
+    # Re-apply definitions after adding AVX2/FMA
+    target_compile_definitions(libllvmlibc PRIVATE ${LLVMLIBC_DEFS})
 endif()
 
 if (ARCH_AARCH64)
