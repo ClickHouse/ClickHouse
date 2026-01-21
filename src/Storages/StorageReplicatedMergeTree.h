@@ -909,7 +909,7 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context) override;
-    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr query_context) override;
+    PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
     void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context) override;
@@ -1011,8 +1011,8 @@ private:
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {
-        explicit DataValidationTasks(DataPartsVector && parts_, std::unique_lock<std::mutex> && parts_check_lock_)
-            : parts_check_lock(std::move(parts_check_lock_)), parts(std::move(parts_)), it(parts.begin())
+        explicit DataValidationTasks(DataPartsVector && parts_, ReplicatedMergeTreePartCheckThread::TemporaryPause && pause_)
+            : pause(std::move(pause_)), parts(std::move(parts_)), it(parts.begin())
         {}
 
         DataPartPtr next()
@@ -1029,7 +1029,9 @@ private:
             return std::distance(it, parts.end());
         }
 
-        std::unique_lock<std::mutex> parts_check_lock;
+        /// Pauses the part check thread while this object exists.
+        /// Safe to destroy from any thread (unlike unique_lock which has thread affinity).
+        ReplicatedMergeTreePartCheckThread::TemporaryPause pause;
 
         mutable std::mutex mutex;
         DataPartsVector parts;
