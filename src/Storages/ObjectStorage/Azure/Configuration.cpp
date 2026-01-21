@@ -105,14 +105,14 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
         /*common_key_prefix*/ "");
 }
 
-static AzureBlobStorage::ConnectionParams getConnectionParams(
+AzureBlobStorage::ConnectionParams getAzureConnectionParams(
     const String & connection_url,
     const String & container_name,
     const std::optional<String> & account_name,
     const std::optional<String> & account_key,
     const std::optional<String> & client_id,
     const std::optional<String> & tenant_id,
-    const ContextPtr & local_context)
+    ContextPtr local_context)
 {
     AzureBlobStorage::ConnectionParams connection_params;
     auto request_settings = AzureBlobStorage::getRequestSettings(local_context->getSettingsRef());
@@ -251,8 +251,7 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
 
     partition_columns_in_data_file = collection.getOrDefault<bool>("partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
 
-    blobs_paths = {blob_path};
-    connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
+    connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
 ASTPtr StorageAzureConfiguration::extractExtraCredentials(ASTs & args)
@@ -655,8 +654,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
     }
 
-    blobs_paths = {blob_path};
-    connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
+    connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
