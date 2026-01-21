@@ -161,7 +161,7 @@ public:
     void activateChild(ITimeSharedNode & child) override
     {
         bool activate_parent = items.empty();
-        items.emplace_back(Item{&static_cast<ITimeSharedNode &>(child), child.info.priority});
+        items.emplace_back(Item{&child, child.info.priority});
         std::push_heap(items.begin(), items.end());
         if (activate_parent && parent)
             castParent().activateChild(*this);
