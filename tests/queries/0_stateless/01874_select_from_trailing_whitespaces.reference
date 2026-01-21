@@ -69,9 +69,9 @@ ARRAY JOIN arr AS row
 # /* oneline */ select * from system.one array join arr as row
 SELECT * FROM system.one ARRAY JOIN arr AS row
 # select 1 in 1
-SELECT 1 IN (1)
+SELECT 1 IN 1
 # /* oneline */ select 1 in 1
-SELECT 1 IN (1)
+SELECT 1 IN 1
 # select 1 in (select 1)
 SELECT 1 IN (
         SELECT 1
