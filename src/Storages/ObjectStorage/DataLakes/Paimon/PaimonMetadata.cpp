@@ -180,8 +180,15 @@ PaimonMetadata::PaimonMetadata(
     auto initial_state = loadLatestState();
     std::atomic_store_explicit(&current_state, initial_state, std::memory_order_release);
 
-    LOG_DEBUG(log, "PaimonMetadata initialized with snapshot_id={}, schema_id={}",
-              initial_state->snapshot_id, initial_state->schema_id);
+    if (initial_state)
+    {
+        LOG_DEBUG(log, "PaimonMetadata initialized with snapshot_id={}, schema_id={}",
+                  initial_state->snapshot_id, initial_state->schema_id);
+    }
+    else
+    {
+        LOG_WARNING(log, "PaimonMetadata initialized without snapshots (no snapshot files found yet)");
+    }
 
     /// Schedule background refresh if enabled
     scheduleBackgroundRefresh();
@@ -215,7 +222,10 @@ PaimonTableStatePtr PaimonMetadata::loadLatestState() const
     /// Get latest snapshot info
     auto snapshot_info_opt = table_client->getLastestTableSnapshotInfo();
     if (!snapshot_info_opt)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon table has no snapshots");
+    {
+        LOG_WARNING(log, "Paimon table has no snapshots yet");
+        return nullptr;
+    }
 
     auto snapshot = table_client->getSnapshot(*snapshot_info_opt);
 
@@ -246,6 +256,11 @@ void PaimonMetadata::update(const ContextPtr & /*local_context*/)
 {
     /// 1. Load new state outside any lock (I/O operations)
     auto new_state = loadLatestState();
+    if (!new_state)
+    {
+        LOG_WARNING(log, "Paimon table has no snapshots yet, skip update");
+        return;
+    }
 
     /// 2. Quick check if update is needed
     auto old_state = getCurrentState();
@@ -282,7 +297,18 @@ StorageInMemoryMetadata PaimonMetadata::getStorageSnapshotMetadata(ContextPtr /*
 {
     auto state = getCurrentState();
     if (!state)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon table state not initialized");
+    {
+        /// No snapshots yet: still allow schema-based metadata (DESC, SHOW).
+        auto schema_info = table_client->getLastestTableSchemaInfo();
+        auto schema_json = table_client->getTableSchemaJSON(schema_info);
+        auto schema = persistent_components.schema_processor->getOrAddSchema(schema_info.first, schema_json);
+        auto columns = persistent_components.schema_processor->getClickHouseSchema(schema->id);
+
+        StorageInMemoryMetadata result;
+        if (columns)
+            result.setColumns(ColumnsDescription{*columns});
+        return result;
+    }
 
     /// Get column definitions from schema processor
     auto columns = persistent_components.schema_processor->getClickHouseSchema(state->schema_id);
@@ -387,12 +413,18 @@ ObjectIterator PaimonMetadata::iterate(
     auto state = extractTableState(storage_metadata);
     if (!state)
     {
-        /// Fall back to current state (for backward compatibility)
+        /// fallback to current, then try lazy load once
         state = getCurrentState();
+        if (!state)
+        {
+            state = loadLatestState();
+            if (state)
+                std::atomic_store_explicit(&current_state, state, std::memory_order_release);
+        }
     }
 
     if (!state)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon table state not available");
+        return createKeysIterator({}, object_storage, callback); /// still no snapshot: return empty
 
     /// 2. Get schema from processor (cached)
     auto schema = persistent_components.schema_processor->getSchemaById(state->schema_id);
@@ -585,22 +617,19 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
     if (!committed_snapshot_id.has_value())
     {
         /// No committed snapshot yet, this is the first read
-        /// For first read, we can either:
-        /// 1. Read all data (full scan) - safer, ensures no data loss
-        /// 2. Read nothing and wait for next snapshot - for true streaming from "now"
-        ///
-        /// We choose option 1 for safety, but only the delta manifest
-        /// because base_manifest contains historical data
-
-        LOG_INFO(log, "No committed snapshot found, performing initial delta read for snapshot_id={}",
+        /// First read should include full snapshot (base + delta) to build the initial watermark.
+        LOG_INFO(log, "No committed snapshot found, performing initial full read (base+delta) for snapshot_id={}",
                  state->snapshot_id);
 
-        /// Only read delta_manifest for initial read to get recent changes
-        if (!state->delta_manifest_list_path.empty())
+        std::unordered_set<String> seen_files;
+        auto collect_manifest_list = [&](const String & manifest_list_path)
         {
-            auto manifest_metas = getManifestList(state->delta_manifest_list_path);
+            if (manifest_list_path.empty())
+                return;
+
+            auto manifest_metas = getManifestList(manifest_list_path);
             for (const auto & meta : manifest_metas)
-        {
+            {
                 auto manifest = getManifest(meta.file_name, state->schema_id);
                 for (const auto & entry : manifest.entries)
                 {
@@ -608,14 +637,19 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
                         continue;
 
                     if (partition_pruner && partition_pruner->canBePruned(entry))
-                continue;
+                        continue;
 
-                    data_files.emplace_back(
-                        std::filesystem::path(persistent_components.table_path)
+                    String file_path = (std::filesystem::path(persistent_components.table_path)
                         / entry.file.bucket_path / entry.file.file_name);
+                    if (!seen_files.emplace(file_path).second)
+                        continue;
+                    data_files.emplace_back(std::move(file_path));
                 }
             }
-        }
+        };
+
+        collect_manifest_list(state->base_manifest_list_path);
+        collect_manifest_list(state->delta_manifest_list_path);
     }
     else if (*committed_snapshot_id >= state->snapshot_id)
     {
