@@ -488,7 +488,7 @@ struct BackupsWorker::BackupStarter
         chassert(!backup);
         backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
 
-        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context, query_context,
+        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context,
                                 on_cluster, cluster);
 
         if (!is_internal_backup)
@@ -640,7 +640,6 @@ void BackupsWorker::doBackup(
     const BackupSettings & backup_settings,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     ContextMutablePtr context,
-    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
