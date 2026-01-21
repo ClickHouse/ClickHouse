@@ -1446,7 +1446,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
         /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
         /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
         ///
-        /// Note: for negative values, we can filter more partitions then needed.
+        /// Note: for negative values, we can filter more partitions than needed.
         expr_name = node.getColumnNameWithModuloLegacy();
 
         if (!info.key_subexpr_names.contains(expr_name))
@@ -1599,7 +1599,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicInjectiveFunctions(
         /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
         /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
         ///
-        /// Note: for negative values, we can filter more partitions then needed.
+        /// Note: for negative values, we can filter more partitions than needed.
         expr_name = node.getColumnNameWithModuloLegacy();
 
         if (!info.key_subexpr_names.contains(expr_name))
@@ -2463,7 +2463,7 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
         /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
         /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
         ///
-        /// Note: for negative values, we can filter more partitions then needed.
+        /// Note: for negative values, we can filter more partitions than needed.
         expr_name = node.getColumnNameWithModuloLegacy();
 
         if (!info.key_subexpr_names.contains(expr_name))
