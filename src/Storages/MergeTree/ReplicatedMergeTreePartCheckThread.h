@@ -71,29 +71,47 @@ public:
 
     /// RAII guard that pauses parts check and reactivates it on destruction.
     /// Safe to destroy from any thread.
-    class TemporaryPause
+    class PausableTask
     {
     public:
-        explicit TemporaryPause(BackgroundSchedulePoolTaskInfoPtr task_);
-        ~TemporaryPause();
+        explicit PausableTask(BackgroundSchedulePoolTaskHolder task_);
 
-        TemporaryPause(const TemporaryPause &) = delete;
-        TemporaryPause & operator=(const TemporaryPause &) = delete;
-        TemporaryPause(TemporaryPause &&) = default;
-        TemporaryPause & operator=(TemporaryPause &&) = default;
+        PausableTask(const PausableTask &) = delete;
+        PausableTask & operator=(const PausableTask &) = delete;
+        PausableTask(PausableTask &&) = delete;
+        PausableTask & operator=(PausableTask &&) = delete;
 
+        BackgroundSchedulePoolTaskHolder & getTask();
+
+        void pause();
+        void resume();
+
+        struct PauseHolder
+        {
+            explicit PauseHolder(PausableTask & task_);
+            ~PauseHolder();
+
+            private:
+                PausableTask & task;
+        };
+
+        using PauseHolderPtr = std::unique_ptr<PauseHolder>;
     private:
-        BackgroundSchedulePoolTaskInfoPtr task;
+        std::mutex pause_mutex;
+        size_t pause_count = 0;
+        BackgroundSchedulePoolTaskHolder task;
     };
 
     /// Pause parts check in a thread-safe way.
     /// The returned guard can be safely destroyed from any thread.
-    TemporaryPause temporaryPause();
+    PausableTask::PauseHolderPtr temporaryPause();
 
     /// Can be called only while holding a TemporaryPause guard.
     void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:
+    BackgroundSchedulePoolTaskHolder & getTask();
+
     void run();
 
     bool onPartIsLostForever(const String & part_name);
@@ -128,7 +146,8 @@ private:
 
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };
-    BackgroundSchedulePoolTaskHolder task;
+
+    PausableTask pausable_task;
 };
 
 }
