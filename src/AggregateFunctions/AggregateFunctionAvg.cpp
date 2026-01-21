@@ -76,7 +76,7 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
     }
     else if (which.isTime())
     {
-        // Preserve Time result type: average over underlying Int32 value, rounded and returned as Time
+        /// Preserve Time result type: average over underlying Int32 value, rounded and returned as Time
         res = std::make_shared<AggregateFunctionAvg<Int32>>(argument_types, data_type);
     }
     else
