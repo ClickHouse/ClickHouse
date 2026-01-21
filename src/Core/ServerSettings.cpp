@@ -1580,7 +1580,7 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
-        String path = setting.getPath();
+        String path {setting.getPath()};
         const String * path_or_name = path.empty() ? &name : &path;
         try
         {
@@ -1768,7 +1768,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        String setting_path = setting.getPath();
+        String setting_path {setting.getPath()};
 
         const auto & changeable_settings_it = changeable_settings.find(setting_name);
         const bool is_changeable = (changeable_settings_it != changeable_settings.end());

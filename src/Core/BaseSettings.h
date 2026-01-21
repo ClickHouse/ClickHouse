@@ -7,6 +7,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 
+#include <string_view>
 #include <unordered_map>
 
 #include <boost/blank.hpp>
@@ -193,10 +194,10 @@ public:
     bool hasCustom(std::string_view name) const;
 
     /// Get the type name of a setting (e.g., "UInt64", "String")
-    const char * getTypeName(std::string_view name) const;
+    std::string_view getTypeName(std::string_view name) const;
 
     /// Get the description of a setting
-    const char * getDescription(std::string_view name) const;
+    std::string_view getDescription(std::string_view name) const;
 
     /// Get the tier (PRODUCTION/BETA/EXPERIMENTAL) of a setting
     SettingsTierType getTier(std::string_view name) const;
@@ -234,14 +235,14 @@ public:
     {
     public:
         const String & getName() const;
-        const char * getPath() const;
+        std::string_view getPath() const;
         Field getValue() const;
         void setValue(const Field & value);
         String getValueString() const;
         String getDefaultValueString() const;
         bool isValueChanged() const;
-        const char * getTypeName() const;
-        const char * getDescription() const;
+        std::string_view getTypeName() const;
+        std::string_view getDescription() const;
         bool isCustom() const;
         SettingsTierType getTier() const;
 
@@ -447,7 +448,7 @@ bool BaseSettings<TTraits>::hasCustom(std::string_view name) const
 }
 
 template <typename TTraits>
-const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
+std::string_view BaseSettings<TTraits>::getTypeName(std::string_view name) const
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
@@ -459,7 +460,7 @@ const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
 }
 
 template <typename TTraits>
-const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
+std::string_view BaseSettings<TTraits>::getDescription(std::string_view name) const
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
@@ -854,7 +855,7 @@ const String & BaseSettings<TTraits>::SettingFieldRef::getName() const
 }
 
 template <typename TTraits>
-const char * BaseSettings<TTraits>::SettingFieldRef::getPath() const
+std::string_view BaseSettings<TTraits>::SettingFieldRef::getPath() const
 {
     if constexpr (Traits::allow_custom_settings)
     {
@@ -921,7 +922,7 @@ bool BaseSettings<TTraits>::SettingFieldRef::isValueChanged() const
 }
 
 template <typename TTraits>
-const char * BaseSettings<TTraits>::SettingFieldRef::getTypeName() const
+std::string_view BaseSettings<TTraits>::SettingFieldRef::getTypeName() const
 {
     if constexpr (Traits::allow_custom_settings)
     {
@@ -932,7 +933,7 @@ const char * BaseSettings<TTraits>::SettingFieldRef::getTypeName() const
 }
 
 template <typename TTraits>
-const char * BaseSettings<TTraits>::SettingFieldRef::getDescription() const
+std::string_view BaseSettings<TTraits>::SettingFieldRef::getDescription() const
 {
     if constexpr (Traits::allow_custom_settings)
     {
@@ -1060,9 +1061,9 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             \
             /* Metadata accessors (by index) */ \
             const String & getName(size_t index) const { return field_infos[index].name; } \
-            const char * getPath(size_t index) const { return field_infos[index].path; } \
-            const char * getTypeName(size_t index) const { return field_infos[index].type; } \
-            const char * getDescription(size_t index) const { return field_infos[index].description; } \
+            std::string_view getPath(size_t index) const { return field_infos[index].path; } \
+            std::string_view getTypeName(size_t index) const { return field_infos[index].type; } \
+            std::string_view getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
             \
@@ -1089,7 +1090,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             /* Direct data access (by index) */ \
             void setValue(Data & data, size_t index, const Field & value) const \
             { \
-                field_infos[index].get_data_function(data)->operator=(value); \
+                *field_infos[index].get_data_function(data) = value; \
             } \
             Field getValue(const Data & data, size_t index) const \
             { \
@@ -1110,7 +1111,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             void resetValueToDefault(Data & data, size_t index) const \
             { \
                 auto p = field_infos[index].create_default_function(); \
-                field_infos[index].get_data_function(*const_cast<Data *>(&data))->operator=(static_cast<Field>(*p)); \
+                *field_infos[index].get_data_function(*const_cast<Data *>(&data)) = static_cast<Field>(*p); \
                 field_infos[index].get_data_function(*const_cast<Data *>(&data))->setChanged(false); \
             } \
             \
@@ -1126,7 +1127,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             \
             /* Default value as string */ \
             String getDefaultValueString(size_t index) const { return field_infos[index].create_default_function()->toString(); } \
-        \
+            \
         private: \
             Accessor(); \
             \
@@ -1134,9 +1135,9 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             struct FieldInfo \
             { \
                 String name; \
-                const char * const path; \
-                const char * const type; \
-                const char * const description; \
+                const std::string_view path; \
+                const std::string_view type; \
+                const std::string_view description; \
                 const UInt64 flags; \
                 SettingFieldBase * (*get_data_function)(Data &);                    /* Get pointer to setting in Data struct */ \
                 std::unique_ptr<SettingFieldBase> (*create_default_function)();     /* Create setting with default value */ \
