@@ -651,7 +651,7 @@ DeltaLakeHistory DeltaLakeMetadata::getHistory(ContextPtr local_context) const
             return history;
 
         /// Sort files to get versions in order (descending to get most recent first)
-        std::sort(metadata_files.begin(), metadata_files.end(), std::greater<String>());
+        std::sort(metadata_files.begin(), metadata_files.end(), std::greater<>());
 
         /// Limit to most recent N files
         if (metadata_files.size() > max_history_records)
