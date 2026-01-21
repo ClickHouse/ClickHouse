@@ -19,24 +19,18 @@ CREATE TABLE ${TABLE}
 )
 ENGINE = MergeTree
 ORDER BY tuple();
-"
 
-${CLICKHOUSE_CLIENT} --query="
 INSERT INTO ${TABLE}
 SELECT mapFromArrays(
     [tuple('kA1','kB1'), tuple('kA2','kB2')],
     ['v1','v2']
 );
-"
 
-${CLICKHOUSE_CLIENT} --query="
 SELECT *
 FROM ${TABLE}
 INTO OUTFILE '${PARQUET_FILE}'
 FORMAT Parquet
-"
 
-${CLICKHOUSE_CLIENT} --query="
 SELECT *
 FROM file('${PARQUET_FILE}', Parquet);
 "
