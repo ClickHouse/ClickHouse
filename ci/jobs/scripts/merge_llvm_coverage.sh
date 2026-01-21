@@ -118,7 +118,7 @@ genhtml "llvm_coverage.info" \
     --num-spaces 4 \
     --sort-tables \
     --hierarchical \
-    --css-file /usr/local/share/css.css \
+    --css-file ./css.css \
     --no-function-coverage \
     --prefix $WORKSPACE_PATH \
     --ignore-errors inconsistent \
