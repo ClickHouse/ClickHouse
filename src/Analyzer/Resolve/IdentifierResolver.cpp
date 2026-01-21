@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -239,6 +240,20 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
 
     if (!expression_type->hasSubcolumn(nested_path.getFullName()))
     {
+        if (auto * column = compound_expression->as<ColumnNode>())
+        {
+            const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
+            if (column_type->getTypeId() == TypeIndex::ObjectDeprecated)
+            {
+                const auto & object_type = checkAndGetDataType<DataTypeObjectDeprecated>(*column_type);
+                if (object_type.getSchemaFormat() == "json" && object_type.hasNullableSubcolumns())
+                {
+                    QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
+                    return constant_node_null;
+                }
+            }
+        }
+
         if (can_be_not_found)
             return {};
 
@@ -1062,27 +1077,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     {
         auto & resolved_column = resolved_identifier_candidate->as<ColumnNode &>();
         auto using_column_node_it = using_column_name_to_column_node.find(resolved_column.getColumnName());
-        if (using_column_node_it == using_column_name_to_column_node.end())
-            return;
-
-        auto current_type = resolved_column.getColumnType();
-        auto result_type = using_column_node_it->second->getColumnType();
-
-        /// If current column is Nullable because it comes from previous OUTER JOIN, keep nullability,
-        /// even if USING column itself is not Nullable (for LEFT/RIGHT JOIN).
-        if (isNullableOrLowCardinalityNullable(current_type) && !isNullableOrLowCardinalityNullable(result_type))
-            result_type = makeNullableOrLowCardinalityNullable(current_type);
-
-        if (!result_type->equals(*current_type))
+        if (using_column_node_it != using_column_name_to_column_node.end() &&
+            !using_column_node_it->second->getColumnType()->equals(*resolved_column.getColumnType()))
         {
+            // std::cerr << "... fixing type for " << resolved_column.dumpTree() << std::endl;
             auto resolved_column_clone = std::static_pointer_cast<ColumnNode>(resolved_column.clone());
-
-            resolved_column_clone->setColumnType(result_type);
+            resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
 
             auto projection_name_it = projection_name_mapping.find(resolved_identifier_candidate);
             if (projection_name_it != projection_name_mapping.end())
             {
                 projection_name_mapping[resolved_column_clone] = projection_name_it->second;
+                // std::cerr << ".. upd name " << projection_name_it->second << " for col " << resolved_column_clone->dumpTree() << std::endl;
             }
 
             resolve_result = std::move(resolved_column_clone);

@@ -25,8 +25,7 @@ namespace DB::Parquet
 
 // TODO [parquet]:
 //  * either multistage PREWHERE or make query optimizer selectively move parts of the condition to prewhere instead of the whole condition
-//  * test on files from https://github.com/apache/parquet-testing and https://www.timestored.com/data/sample/parquet
-//  * look at issues in 00900_long_parquet_load.sh
+//  * test on files from https://github.com/apache/parquet-testing
 //  * check fields for false sharing, add cacheline padding as needed
 //  * make sure userspace page cache read buffer supports readBigAt
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
@@ -61,7 +60,7 @@ namespace DB::Parquet
 //     - no columns to read outside prewhere
 //     - no columns to read, but not trivial count either
 //     - ROW POLICY, with and without prewhere, with old and new reader
-//     - prewhere and other skipping with defaults (it probably doesn't fill them correctly, see MergeTreeRangeReader::executeActionsBeforePrewhere)
+//     - prewhere with defaults (it probably doesn't fill them correctly, see MergeTreeRangeReader::executeActionsBeforePrewhere)
 //     - prewhere on virtual columns (do they end up in additional_columns?)
 //     - prewhere with weird filter type (LowCardinality(UInt8), Nullable(UInt8), const UInt8)
 //     - prewhere involving arrays and tuples
@@ -153,19 +152,19 @@ struct Reader
         size_t column_idx;
         /// Index in parquet `schema` (in FileMetaData).
         size_t schema_idx;
-        /// Index of the top-level column that contains this primitive column.
-        size_t idx_in_output_block = UINT64_MAX;
         String name; // possibly mapped by ColumnMapper (e.g. using iceberg metadata)
         PageDecoderInfo decoder;
 
-        DataTypePtr decoded_type; // what decoder outputs, not Nullable
-        DataTypePtr output_type; // maybe Nullable
+        DataTypePtr raw_decoded_type; // not Nullable
+        DataTypePtr intermediate_type; // maybe Nullable
+        DataTypePtr final_type; // castColumn to this type
         bool output_nullable = false;
         /// TODO [parquet]: Consider also adding output_low_cardinality to allow producing LowCardinality
         ///       column directly from parquet dictionary+indices. This is not straightforward
         ///       because ColumnLowCardinality requires values to be unique and the first value to
         ///       be default. So we'd need to validate uniqueness and add/move default value
         ///       (adjusting indices and dictionary).
+        bool needs_cast = false; // if final_type is different from intermediate_type
 
         /// How to interpret repetition/definition levels.
         std::vector<LevelInfo> levels;
@@ -174,10 +173,10 @@ struct Reader
 
         bool use_bloom_filter = false;
         const KeyCondition * column_index_condition = nullptr;
-        std::unordered_set<size_t> steps_to_calculate;
+        bool use_prewhere = false;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
-        bool used_by_key_condition = false;
+        std::optional<size_t> used_by_key_condition; // index in extended_sample_block
 
         /// If use_bloom_filter, these are the values that we need to find in bloom filter.
         std::vector<UInt64> bloom_filter_hashes;
@@ -193,20 +192,18 @@ struct Reader
         /// Range in primitive_columns.
         size_t primitive_start = 0;
         size_t primitive_end = 0;
-        DataTypePtr input_type; // make a column of this type from the nested columns...
-        DataTypePtr output_type; // ... then castColumn it to this type, if `needs_cast`
+        DataTypePtr type;
         std::optional<size_t> idx_in_output_block;
         std::vector<size_t> nested_columns;
         bool is_primitive = false;
         /// Column not in the file, fill it with default values.
         bool is_missing_column = false;
-        bool needs_cast = false; // if output_type is different from input_type
 
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
         UInt8 rep = 0;
 
-        size_t step_idx = 0;
+        bool use_prewhere = false;
     };
 
     struct RowSet
@@ -361,19 +358,6 @@ struct Reader
         MemoryUsageToken column_and_offsets_memory;
     };
 
-    struct OutputColumnState
-    {
-        std::atomic<size_t> primitive_columns_remaining {};
-
-        /// Created in one of 3 ways:
-        ///  * If it's a normal column that's read from the file, it's created when
-        ///    primitive_columns_remaining reaches zero.
-        ///  * If is_missing_column, it's created lazily either when delivering the block or when
-        ///    running a prewhere expression that has this column as input.
-        ///  * If the column is a prewhere output, it's assigned when running prewhere.
-        ColumnPtr column;
-    };
-
     struct RowSubgroup
     {
         /// Subgroup corresponds to range of rows [start_row_idx, start_row_idx + filter.rows_total)
@@ -390,7 +374,7 @@ struct Reader
         std::vector<ColumnSubchunk> columns;
         BlockMissingValues block_missing_values;
 
-        std::vector<OutputColumnState> output; // parallel to extended_sample_block
+        Columns output; // parallel to extended_sample_block
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
@@ -403,7 +387,6 @@ struct Reader
         size_t row_group_idx; // in parquet file
         size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
-        bool need_to_process = false;
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
         std::vector<ColumnChunk> columns;
@@ -416,20 +399,25 @@ struct Reader
 
 
         /// Fields below are used only by ReadManager.
-        std::vector<std::atomic<size_t>> next_subgroup_for_step;
 
+        /// Indexes of the first subgroup that didn't finish
+        /// {prewhere, reading main columns, delivering final chunk}.
+        /// delivery_ptr <= read_ptr <= prewhere_ptr <= subgroups.size()
+        std::atomic<size_t> prewhere_ptr {0};
+        std::atomic<size_t> read_ptr {0};
         std::atomic<size_t> delivery_ptr {0};
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
     };
 
-    struct Step
+    struct PrewhereStep
     {
         ExpressionActions actions;
-        std::optional<String> filter_column_name {};
-        std::vector<size_t> input_idxs {}; // indices in extended_sample_block
-        std::vector<std::pair<String, size_t>> idxs_in_output_block {};
+        String result_column_name;
+        std::vector<size_t> input_column_idxs {}; // indices in output_columns
+        std::optional<size_t> idx_in_output_block = std::nullopt;
+        bool need_filter = true;
     };
 
     ReadOptions options;
@@ -465,7 +453,7 @@ struct Reader
     /// Maps idx_in_output_block to index in output_columns. I.e.:
     ///     sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
     /// nullopt if the column is produced by PREWHERE expression:
-    ///     prewhere_steps[?].idxs_in_output_block[?].second == i
+    ///     prewhere_steps[?].idx_in_output_block == i
     std::vector<std::optional<size_t>> sample_block_to_output_columns_idx;
 
     /// sample_block with maybe some columns added at the end.
@@ -473,7 +461,7 @@ struct Reader
     /// (Why not just add them to sample_block? To avoid unnecessarily applying filter to them.)
     Block extended_sample_block;
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
-    std::vector<Step> steps;
+    std::vector<PrewhereStep> prewhere_steps;
 
     std::optional<KeyCondition> bloom_filter_condition;
 
@@ -482,7 +470,7 @@ struct Reader
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
 
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
-    void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
+    void prefilterAndInitRowGroups();
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.
@@ -505,7 +493,7 @@ struct Reader
     /// Guess how much memory ColumnSubchunk::{column, arrays_offsets} will use, per row.
     double estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const;
 
-    void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup);
+    void decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, const RowSubgroup & row_subgroup);
 
     /// Returns mutable column because some of the recursive calls require it,
     /// e.g. ColumnArray::create does assumeMutable() on the nested columns.
@@ -513,9 +501,8 @@ struct Reader
     /// The caller is responsible for caching the result (in RowSubGroup::output) to make sure this
     /// is not called again for the moved-out columns.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
-    ColumnPtr & getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block);
 
-    void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
+    void applyPrewhere(RowSubgroup & row_subgroup);
 
 private:
     struct BloomFilterLookup : public KeyCondition::BloomFilter
@@ -534,10 +521,8 @@ private:
     void initializePrefetches();
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
-    /// If row_idx is provided, jump to the start of that row. Otherwise go to the start of next page.
-    void skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
-    std::tuple<parq::PageHeader, std::span<const char>> decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const;
-    bool initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    void skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    bool initializePage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decompressPageIfCompressed(PageState & page);
     void createPageDecoder(PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     bool skipRowsInPage(size_t target_row_idx, PageState & page, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
