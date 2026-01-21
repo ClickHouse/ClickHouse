@@ -288,7 +288,7 @@ FROM VALUES('bucket_upper_bound Float64, cumulative_bucket_value UInt64', (0, 6)
     FunctionDocumentation::Category category_quantilePrometheusHistogram = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_quantilePrometheusHistogram = {description_quantilePrometheusHistogram, syntax_quantilePrometheusHistogram, arguments_quantilePrometheusHistogram, parameters_quantilePrometheusHistogram, returned_value_quantilePrometheusHistogram, examples_quantilePrometheusHistogram, introduced_in_quantilePrometheusHistogram, category_quantilePrometheusHistogram};
 
-    factory.registerFunction(NameQuantilePrometheusHistogram::name, createAggregateFunctionQuantile<FuncQuantilePrometheusHistogram>);
+    factory.registerFunction(NameQuantilePrometheusHistogram::name, {createAggregateFunctionQuantile<FuncQuantilePrometheusHistogram>, {}, documentation_quantilePrometheusHistogram});
     factory.registerFunction(
         NameQuantilesPrometheusHistogram::name, {createAggregateFunctionQuantile<FuncQuantilesPrometheusHistogram>, properties, documentation_quantilePrometheusHistogram});
 }

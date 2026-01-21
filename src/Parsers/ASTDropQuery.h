@@ -62,7 +62,7 @@ public:
     }
 
     /// Convert an AST that deletes multiple tables into multiple ASTs that delete a single table.
-    ASTs getRewrittenASTsOfSingleTable();
+    ASTs getRewrittenASTsOfSingleTable(ASTPtr self) const;
 
     QueryKind getQueryKind() const override { return QueryKind::Drop; }
 

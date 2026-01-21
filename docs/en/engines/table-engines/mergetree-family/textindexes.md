@@ -116,6 +116,24 @@ Examples:
 Also, the preprocessor expression must only reference the column on top of which the text index is defined.
 Using non-deterministic functions is not allowed.
 
+The preprocessor can also be used with [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md) columns.
+In this case, the preprocessor expression transforms the array elements individually.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    col Array(String),
+    INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))
+
+    -- This is not legal:
+    INDEX idx_illegal col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arraySort(col))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
 
 For example,
@@ -311,7 +329,7 @@ SELECT count() FROM tab WHERE has(array, 'clickhouse');
 
 #### `mapContains` {#functions-example-mapcontains}
 
-Function [mapContains](/sql-reference/functions/tuple-map-functions#mapContains) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.
+Function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.
 The behaviour is similar to the `equals` function with a `String` column.
 The text index is only used if it was created on a `mapKeys(map)` expression.
 
@@ -585,7 +603,7 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 ```
 
 In the second EXPLAIN PLAN output, you can see that an additional conjunct (`__text_index_...`) has been added to the filter condition.
-Thanks to the [PREWHERE](docs/sql-reference/statements/select/prewhere) optimization, the filter condition is broken down into three separate conjuncts, which are applied in order of increasing computational complexity.
+Thanks to the [PREWHERE](/sql-reference/statements/select/prewhere) optimization, the filter condition is broken down into three separate conjuncts, which are applied in order of increasing computational complexity.
 For this query, the application order is `__text_index_...`, then `greaterOrEquals(...)`, and finally `like(...)`.
 This ordering enables skipping even more data granules than the granules skipped by the text index and the original filter, before reading the heavy columns used in the query after `WHERE` clause further reducing the amount of data to read.
 
