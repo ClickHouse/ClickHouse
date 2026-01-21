@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <type_traits>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -25,6 +26,28 @@
 
 namespace DB
 {
+
+/// Convert Float64 avg result to target type with rounding
+/// Returns 0 for NaN (empty set case)
+template <typename ValueType>
+ValueType avgResultToValue(Float64 v, UInt32 scale = 0)
+{
+    if (std::isnan(v))
+        return ValueType(0);
+
+    if constexpr (is_decimal<ValueType>)
+    {
+        const auto mult = DecimalUtils::scaleMultiplier<ValueType>(scale);
+        const Float64 scaled = v * static_cast<Float64>(mult);
+        const auto rounded = roundWithMode(scaled, RoundingMode::Round);
+        return ValueType(static_cast<typename ValueType::NativeType>(rounded));
+    }
+    else
+    {
+        const auto rounded = roundWithMode(v, RoundingMode::Round);
+        return static_cast<ValueType>(rounded);
+    }
+}
 
 struct Settings;
 
@@ -146,27 +169,15 @@ public:
 
         Float64 v = compute_avg();
 
-        /// Processing of results with types DateTime64 or Time64
+        /// Processing of results with Date/Time types
         if (callOnBasicType<void, false, false, false, true>(result_which.idx, [&](auto types) -> bool
         {
             using ValueType = typename decltype(types)::RightType;
-            using OutColumn = ColumnVectorOrDecimal<ValueType>;
-
+            auto & col = assert_cast<ColumnVectorOrDecimal<ValueType> &>(to);
             if constexpr (is_decimal<ValueType>)
-            {
-                auto & col = assert_cast<OutColumn &>(to);
-                const UInt32 scale = col.getScale();
-                const auto mult = DecimalUtils::scaleMultiplier<ValueType>(scale);
-                const Float64 scaled = v * static_cast<Float64>(mult);
-                const auto rounded = roundWithMode(scaled, RoundingMode::Round);
-                col.getData().push_back(ValueType(static_cast<typename ValueType::NativeType>(rounded)));
-            }
+                col.getData().push_back(avgResultToValue<ValueType>(v, col.getScale()));
             else
-            {
-                auto & col = assert_cast<OutColumn &>(to);
-                const auto rounded = roundWithMode(v, RoundingMode::Round);
-                col.getData().push_back(static_cast<ValueType>(rounded));
-            }
+                col.getData().push_back(avgResultToValue<ValueType>(v));
             return true;
         }))
             return;

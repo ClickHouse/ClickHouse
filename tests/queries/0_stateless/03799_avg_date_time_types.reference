@@ -20,6 +20,15 @@ Time
 -- Time64 type basic test (scale 3)
 02:00:00.000
 Time64(3)
+-- Empty table tests (NaN -> 0/epoch)
+Row 1:
+──────
+avg(d):    1970-01-01
+avg(d32):  1970-01-01
+avg(dt):   1970-01-01 00:00:00
+avg(dt64): 1970-01-01 00:00:00.000
+avg(t):    00:00:00
+avg(t64):  00:00:00.000
 -- Single row tests
 2020-06-15
 2020-06-15
