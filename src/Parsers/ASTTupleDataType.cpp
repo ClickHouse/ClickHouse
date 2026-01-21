@@ -32,8 +32,9 @@ void ASTTupleDataType::updateTreeHashImpl(SipHash & hash_state, bool ignore_alia
     hash_state.update(name);
 
     /// Hash element names
-    hash_state.update(element_names.size());
-    for (const auto & elem_name : element_names)
+    const auto & names = getElementNames();
+    hash_state.update(names.size());
+    for (const auto & elem_name : names)
     {
         hash_state.update(elem_name.size());
         hash_state.update(elem_name);
@@ -52,10 +53,10 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
     {
         ostr << '(';
 
-        bool has_names = !element_names.empty();
+        const auto & names = getElementNames();
 
         /// Pretty print with newlines for unnamed tuples (same as ASTDataType)
-        if (!settings.one_line && settings.print_pretty_type_names && !has_names)
+        if (!settings.one_line && settings.print_pretty_type_names && names.empty())
         {
             ++frame.indent;
             std::string indent_str = "\n" + std::string(4 * frame.indent, ' ');
@@ -74,11 +75,9 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
                 if (i > 0)
                     ostr << ", ";
 
-                /// Print element name if present and non-empty
-                if (has_names && i < element_names.size() && !element_names[i].empty())
-                {
-                    ostr << element_names[i] << ' ';
-                }
+                /// Print element name if present
+                if (i < names.size())
+                    ostr << names[i] << ' ';
 
                 /// Print the type
                 arguments->children[i]->format(ostr, settings, state, frame);
