@@ -98,7 +98,7 @@ echo "Using workspace path: $WORKSPACE_PATH"
         -object ./unit_tests_dbms   \
         -format=lcov   \
         -path-equivalence=ci/tmp/build,$WORKSPACE_PATH \
-        -ignore-filename-regex='contrib|_gtest_|\.pb\.' \
+        -ignore-filename-regex='contrib|_gtest_|\.pb\.|\.generated\.' \
         -skip-expansions \
         > llvm_coverage.info
 

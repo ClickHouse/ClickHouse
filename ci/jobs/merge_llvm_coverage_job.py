@@ -25,16 +25,12 @@ if __name__ == "__main__":
         # Add index.html first as it's the entry point
         index_file = html_report_dir / "index.html"
         if index_file.exists():
-            files_to_attach.append("llvm_coverage_html_report/index.html")
+            files_to_attach.append(str(index_file))
         
         # Add all other files
         for file_path in html_report_dir.rglob("*"):
             if file_path.is_file() and file_path.name != "index.html":
-                # Get relative path from html_report_dir
-                relative_path = file_path.relative_to(html_report_dir)
-                # Attach with preserved hierarchy: llvm_coverage_html_report/...
-                files_to_attach.append(f"llvm_coverage_html_report/{relative_path}")
-
+                files_to_attach.append(str(file_path))
 
     Result.create_from(
         results=[result],
