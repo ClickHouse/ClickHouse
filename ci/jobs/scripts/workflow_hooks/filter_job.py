@@ -38,7 +38,7 @@ PRELIMINARY_JOBS = [
 
 INTEGRATION_TEST_FLAKY_CHECK_JOBS = [
     "Build (amd_asan)",
-    "Integration tests (amd_asan, flaky)",
+    "Integration tests (amd_asan, flaky check)",
 ]
 
 FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [

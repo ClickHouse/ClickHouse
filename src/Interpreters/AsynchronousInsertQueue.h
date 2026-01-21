@@ -3,12 +3,11 @@
 #include <Core/Block.h>
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Chunk.h>
-#include <Common/Logger.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
-#include <Common/TrackedString.h>
+#include <Common/StrictString.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 #include <Interpreters/StorageID.h>
 
@@ -56,7 +55,7 @@ public:
 
     /// Force flush the whole queue.
     void flushAll();
-    void flush(const std::vector<StorageID> & tables);
+    void flush(const std::vector<std::pair<String, String>> & table_names);
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
     PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context);
@@ -97,9 +96,9 @@ public:
     };
 
 private:
-    struct DataChunk : public std::variant<TrackedString, Block>
+    struct DataChunk : public std::variant<StrictString, Block>
     {
-        using std::variant<TrackedString, Block>::variant;
+        using std::variant<StrictString, Block>::variant;
 
         size_t byteSize() const
         {
@@ -130,7 +129,7 @@ private:
             }, *this);
         }
 
-        const TrackedString * asString() const { return std::get_if<TrackedString>(this); }
+        const StrictString * asString() const { return std::get_if<StrictString>(this); }
         const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 
@@ -165,14 +164,8 @@ private:
             std::atomic_bool finished = false;
         };
 
-        InsertData()
-            : ready_future(ready_promise.get_future().share())
-        { }
-
-        explicit InsertData(Milliseconds timeout_ms_)
-            : ready_future(ready_promise.get_future().share())
-            , timeout_ms(timeout_ms_)
-        { }
+        InsertData() = default;
+        explicit InsertData(Milliseconds timeout_ms_) : timeout_ms(timeout_ms_) { }
 
         ~InsertData()
         {
@@ -185,15 +178,11 @@ private:
                 MemoryTrackerSwitcher switcher((*it)->user_memory_tracker);
                 it = entries.erase(it);
             }
-
-            ready_promise.set_value();
         }
 
         using EntryPtr = std::shared_ptr<Entry>;
 
         std::list<EntryPtr> entries;
-        std::promise<void>  ready_promise;
-        std::shared_future<void> ready_future;
         size_t size_in_bytes = 0;
         Milliseconds timeout_ms = Milliseconds::zero();
     };
@@ -299,7 +288,6 @@ private:
         const InsertDataPtr & data,
         const Block & header,
         const ContextPtr & context_,
-        LoggerPtr logger,
         LogFunc && add_to_async_insert_log);
 
     template <typename E>

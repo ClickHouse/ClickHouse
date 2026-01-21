@@ -7,7 +7,6 @@
 #include <Backups/getBackupDataFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
-#include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>

@@ -588,12 +588,6 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
         request, [this](Model::PutObjectRequest & req) { return PutObject(req); });
 }
 
-Model::PutObjectTaggingOutcome Client::PutObjectTagging(PutObjectTaggingRequest & request) const
-{
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::PutObjectTaggingRequest & req) { return PutObjectTagging(req); });
-}
-
 Model::UploadPartOutcome Client::UploadPart(UploadPartRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
@@ -1213,7 +1207,21 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     credentials_configuration.use_environment_credentials =
         credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
-    auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
+    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider = std::make_shared<S3CredentialsProviderChain>(
+            client_configuration,
+            std::move(credentials),
+            credentials_configuration);
+
+    if (!credentials_configuration.role_arn.empty())
+    {
+        credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
+            credentials_configuration.role_arn,
+            credentials_configuration.role_session_name,
+            credentials_configuration.expiration_window_seconds,
+            std::move(credentials_provider),
+            client_configuration,
+            credentials_configuration.sts_endpoint_override);
+    }
 
     /// Disable per-thread retry loops if global retry coordination is in use.
     if (client_configuration.s3_slow_all_threads_after_retryable_error)

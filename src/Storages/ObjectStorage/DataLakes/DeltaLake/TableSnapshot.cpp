@@ -20,7 +20,6 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
@@ -62,7 +61,7 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
     {
         ReadBufferFromString buffer(value);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT}, {});
+        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT});
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -423,6 +422,8 @@ private:
     /// A thread for async data scanning.
     ThreadFromGlobalPool thread;
 };
+
+static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
 
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,

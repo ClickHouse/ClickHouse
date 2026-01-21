@@ -157,8 +157,6 @@ def setup_cluster(request):
         with_remote_database_disk=False,
         with_zookeeper=True,
         stay_alive=True,
-        mem_limit='12g',
-        cpu_limit='8'
     )
     yield cluster
 

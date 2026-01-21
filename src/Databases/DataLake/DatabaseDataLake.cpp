@@ -7,7 +7,7 @@
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -473,21 +473,18 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
     {
-#if USE_AZURE_BLOB_STORAGE
         auto azure_configuration = std::static_pointer_cast<StorageAzureIcebergConfiguration>(configuration);
         if (!azure_configuration)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not azure type for one lake catalog");
         auto rest_catalog = std::static_pointer_cast<DataLake::RestCatalog>(catalog);
         if (!rest_catalog)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
+
         azure_configuration->setInitializationAsOneLake(
             rest_catalog->getClientId(),
             rest_catalog->getClientSecret(),
             rest_catalog->getTenantId()
         );
-#else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Azure for Iceberg OneLake catalog");
-#endif
     }
 
     /// with_table_structure = false: because there will be
@@ -539,7 +536,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* is_datalake_query*/true,
         /* distributed_processing */can_use_distributed_iterator,
         /* partition_by */nullptr,
-        /* order_by */nullptr,
         /* is_table_function */false,
         /* lazy_init */true);
 }

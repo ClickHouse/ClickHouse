@@ -154,7 +154,6 @@
 
 #if USE_NURAFT
 #    include <Coordination/FourLetterCommand.h>
-#    include <Coordination/KeeperAsynchronousMetrics.h>
 #    include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
@@ -189,7 +188,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
     extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
-    extern const ServerSettingsBool asynchronous_metrics_keeper_metrics_only;
     extern const ServerSettingsBool async_insert_queue_flush_on_shutdown;
     extern const ServerSettingsUInt64 async_insert_threads;
     extern const ServerSettingsBool async_load_databases;
@@ -1374,56 +1372,32 @@ try
         global_context->getPageCache());
 
     /// This object will periodically calculate some metrics.
-    std::unique_ptr<AsynchronousMetrics> async_metrics;
+    ServerAsynchronousMetrics async_metrics(
+        global_context,
+        server_settings[ServerSetting::asynchronous_metrics_update_period_s],
+        server_settings[ServerSetting::asynchronous_metrics_enable_heavy_metrics],
+        server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s],
+        [&]() -> std::vector<ProtocolServerMetrics>
+        {
+            std::vector<ProtocolServerMetrics> metrics;
 
-    DB::AsynchronousMetrics::ProtocolServerMetricsFunc asynchronous_metrics_protocol_server_metrics_func = [&]() -> std::vector<ProtocolServerMetrics>
-    {
-        std::vector<ProtocolServerMetrics> metrics;
+            std::lock_guard lock(servers_lock);
+            metrics.reserve(servers_to_start_before_tables.size() + servers.size());
 
-        std::lock_guard lock(servers_lock);
-        metrics.reserve(servers_to_start_before_tables.size() + servers.size());
+            for (const auto & server : servers_to_start_before_tables)
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
 
-        for (const auto & server : servers_to_start_before_tables)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
-
-        for (const auto & server : servers)
-            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
-        return metrics;
-    };
-    const unsigned async_metrics_update_period_s = server_settings[ServerSetting::asynchronous_metrics_update_period_s];
-    const bool async_metrics_update_jemalloc_epoch = memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc;
-    const bool async_metrics_update_rss = memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None;
-
-#if USE_NURAFT
-    const bool async_metrics_keeper_metrics_only = server_settings[ServerSetting::asynchronous_metrics_keeper_metrics_only];
-    if (async_metrics_keeper_metrics_only)
-    {
-        async_metrics = std::make_unique<KeeperAsynchronousMetrics>(
-            global_context,
-            async_metrics_update_period_s,
-            asynchronous_metrics_protocol_server_metrics_func,
-            async_metrics_update_jemalloc_epoch,
-            async_metrics_update_rss
-        );
-    }
-    else
-#endif
-    {
-        async_metrics = std::make_unique<ServerAsynchronousMetrics>(
-            global_context,
-            async_metrics_update_period_s,
-            server_settings[ServerSetting::asynchronous_metrics_enable_heavy_metrics],
-            server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s],
-            asynchronous_metrics_protocol_server_metrics_func,
-            async_metrics_update_jemalloc_epoch,
-            async_metrics_update_rss
-        );
-    }
+            for (const auto & server : servers)
+                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+            return metrics;
+        },
+        /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
+        /*update_rss_=*/memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None);
 
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
-        async_metrics->stop();
+        async_metrics.stop();
 
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
@@ -1707,7 +1681,7 @@ try
     if (server_settings[ServerSetting::background_schedule_pool_size] > 1)
     {
         auto cancellation_task_holder = global_context->getSchedulePool().createTask(
-            StorageID::createEmpty(), "CancellationChecker",
+            "CancellationChecker",
             [] { CancellationChecker::getInstance().workerFunction(); }
         );
         cancellation_task = std::make_unique<DB::BackgroundSchedulePoolTaskHolder>(std::move(cancellation_task_holder));
@@ -2058,29 +2032,6 @@ try
             extra_paths.emplace_back(key_path);
     }
 
-    /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
-    /// and thus this object must be created after the SCOPE_EXIT object where shared
-    /// context is destroyed.
-    /// In addition this object has to be created before any scenario that requires
-    /// DNS resolution (e.g. the loading of tables and clusters config).
-    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
-    if (server_settings[ServerSetting::disable_internal_dns_cache])
-    {
-        /// Disable DNS caching at all
-        DNSResolver::instance().setDisableCacheFlag();
-        LOG_DEBUG(log, "DNS caching disabled");
-    }
-    else
-    {
-        DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
-        DNSResolver::instance().setFilterSettings(server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
-
-        /// Initialize a watcher periodically updating DNS cache
-        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
-            global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
-        dns_cache_updater->start();
-    }
-
     auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
@@ -2340,7 +2291,7 @@ try
                 if (global_context->isServerCompletelyStarted())
                 {
                     std::lock_guard lock(servers_lock);
-                    updateServers(*config, server_pool, *async_metrics, servers, servers_to_start_before_tables);
+                    updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
                 }
             }
 
@@ -2524,7 +2475,7 @@ try
             interserver_listen_hosts,
             listen_try,
             server_pool,
-            *async_metrics,
+            async_metrics,
             servers_to_start_before_tables,
             /* start_servers= */ false);
     }
@@ -2633,7 +2584,7 @@ try
             listen_hosts,
             listen_try,
             server_pool,
-            *async_metrics,
+            async_metrics,
             servers,
             /* start_servers= */ true,
             server_type);
@@ -2687,6 +2638,29 @@ try
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
+
+    /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
+    /// and thus this object must be created after the SCOPE_EXIT object where shared
+    /// context is destroyed.
+    /// In addition this object has to be created before the loading of the tables.
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (server_settings[ServerSetting::disable_internal_dns_cache])
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+        LOG_DEBUG(log, "DNS caching disabled");
+    }
+    else
+    {
+        DNSResolver::instance().setCacheMaxEntries(server_settings[ServerSetting::dns_cache_max_entries]);
+
+        /// Initialize a watcher periodically updating DNS cache
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(
+            global_context, server_settings[ServerSetting::dns_cache_update_period], server_settings[ServerSetting::dns_max_consecutive_failures]);
+    }
+
+    if (dns_cache_updater)
+        dns_cache_updater->start();
 
     auto replicas_reconnector = ReplicasReconnector::init(global_context);
 
@@ -2804,11 +2778,11 @@ try
 #endif
 
     {
-        attachSystemTablesAsync(global_context, *DatabaseCatalog::instance().getSystemDatabase(), *async_metrics);
+        attachSystemTablesAsync(global_context, *DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         {
             std::lock_guard lock(servers_lock);
-            createServers(config(), listen_hosts, listen_try, server_pool, *async_metrics, servers);
+            createServers(config(), listen_hosts, listen_try, server_pool, async_metrics, servers);
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                                 "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
@@ -2827,8 +2801,8 @@ try
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
-        async_metrics->start();
-        global_context->setAsynchronousMetrics(async_metrics.get());
+        async_metrics.start();
+        global_context->setAsynchronousMetrics(&async_metrics);
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
@@ -3037,7 +3011,7 @@ try
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
-                global_context->getConfigRef(), graphite_key, *async_metrics));
+                global_context->getConfigRef(), graphite_key, async_metrics));
         }
 
         waitForTerminationRequest();
@@ -3087,12 +3061,9 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         if (type == "prometheus")
-        {
-            const std::string handler_name = config.getBool("prometheus.keeper_metrics_only", false) ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
             );
-        }
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
@@ -3467,9 +3438,6 @@ void Server::createServers(
         {
             /// Prometheus (if defined and not setup yet with http_port)
             port_name = "prometheus.port";
-
-            const char * handler_name = config.getBool("prometheus.keeper_metrics_only", false) ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
-
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
@@ -3481,7 +3449,7 @@ void Server::createServers(
                     port_name,
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, handler_name), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
             });
         }
     }

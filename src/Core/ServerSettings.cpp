@@ -166,7 +166,6 @@ namespace DB
     DECLARE(UInt32, asynchronous_metrics_update_period_s, 1, R"(Period in seconds for updating asynchronous metrics.)", 0) \
     DECLARE(Bool, asynchronous_metrics_enable_heavy_metrics, false, R"(Enable the calculation of heavy asynchronous metrics.)", 0) \
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, R"(Period in seconds for updating heavy asynchronous metrics.)", 0) \
-    DECLARE(Bool, asynchronous_metrics_keeper_metrics_only, false, R"(Make asynchronous metrics calculate the keeper-related metrics only.)", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
     DECLARE(String, tmp_policy, "", R"(
     Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
@@ -1086,8 +1085,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
     Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.
     )", 0) \
-    DECLARE(String, license_file, "", "License file contents for ClickHouse Enterprise Edition", 0) \
-    DECLARE(String, license_public_key_for_testing, "", "Licensing demo key, for CI use only", 0) \
+    DECLARE(String, license_key, "", "License key for ClickHouse Enterprise Edition", 0) \
     DECLARE(NonZeroUInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
     DECLARE(UInt64, prefetch_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
     DECLARE(UInt64, load_marks_threadpool_pool_size, 50, R"(Size of background pool for marks loading)", 0) \
@@ -1161,7 +1159,6 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0) \
     DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materizlied view creation delay)", 0) \
     DECLARE(UInt64, os_cpu_busy_time_threshold, 1'000'000, "Threshold of OS CPU busy time in microseconds (OSCPUVirtualTimeMicroseconds metric) to consider CPU doing some useful work, no CPU overload would be considered if busy time was below this value.", 0) \
-    DECLARE(Bool, os_collect_psi_metrics, true, "Enable accounting PSI metrics from /proc/pressure/ files.", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_drop_connection, 0, R"(
     Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider dropping connections. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.
     See [Controlling behavior on server CPU overload](/operations/settings/server-overload) for more details.

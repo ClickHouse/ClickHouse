@@ -5,11 +5,11 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
-#include <IO/WriteHelpers.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
 
 #include <Common/Stopwatch.h>
+#include <Common/Throttler.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -192,11 +192,8 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
     {
         read_all_range_successfully = true;
-        stop_reason = fmt::format(
-            "EOF (read offset: {}/{}, file size: {}, restricted seek: {})",
-            offset.load(), read_until_position.load(),
-            file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
-
+        stop_reason = fmt::format("EOF (read offset: {}/{}, restricted seek: {})",
+                                  offset.load(), read_until_position.load(), restricted_seek);
         release_reason = stop_reason;
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
@@ -217,10 +214,8 @@ bool ReadBufferFromS3::nextImpl()
     if (stream_eof || is_read_until_position)
     {
         release_reason = fmt::format(
-            "{} (read {}/{}, file size: {}, restricted seek: {})",
-            impl->isStreamEof() ? "stream EOF" : "read until position reached",
-            offset.load(), read_until_position.load(),
-            file_size.has_value() ? toString(*file_size) : "Unknown", restricted_seek);
+            "{} ({}/{})", stream_eof ? "stream EOF" : "read until position reached",
+            offset.load(), read_until_position.load());
 
         impl->releaseResult();
     }
@@ -377,13 +372,10 @@ std::optional<size_t> ReadBufferFromS3::tryGetFileSize()
     if (file_size)
         return file_size;
 
-    file_size = getObjectSizeFromS3();
-    return file_size;
-}
+    auto object_size = S3::getObjectSize(*client_ptr, bucket, key, version_id);
 
-size_t ReadBufferFromS3::getObjectSizeFromS3() const
-{
-    return S3::getObjectSize(*client_ptr, bucket, key, version_id);
+    file_size = object_size;
+    return file_size;
 }
 
 off_t ReadBufferFromS3::getPosition()

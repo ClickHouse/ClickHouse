@@ -1,3 +1,5 @@
+<!--- Disable AI PR formatting assistant: false -->
+
 ### Changelog category (leave one):
 - New Feature
 - Experimental Feature

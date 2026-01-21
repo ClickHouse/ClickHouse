@@ -799,7 +799,7 @@ static void formatExplain(IQueryPlanStep::FormatSettings & settings, Pipes pipes
             size_t num_rows = col->size();
 
             for (size_t row = 0; row < num_rows; ++row)
-                settings.out << prefix << col->getDataAt(row) << '\n';
+                settings.out << prefix << col->getDataAt(row).toView() << '\n';
         }
     }
 }

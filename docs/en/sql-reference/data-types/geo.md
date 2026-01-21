@@ -142,7 +142,7 @@ Result:
 
 ## Geometry {#geometry}
 
-`Geometry` is a common type for all the types above. It is equivalent to a Variant of those types. When using the Geometry type, you will need to enable the following setting: `SET allow_suspicious_variant_types = 1`
+`Geometry` is a common type for all the types above. It is equivalent to a Variant of those types.
 
 **Example**
 
@@ -170,7 +170,7 @@ INSERT INTO geo VALUES ('POINT(0 0)', 2);
 INSERT INTO geo VALUES ('MULTIPOLYGON(((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))', 3);
 INSERT INTO geo VALUES ('LINESTRING(1 0,10 0,10 10,0 10,1 0)', 4);
 INSERT INTO geo VALUES ('MULTILINESTRING((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 5);
-INSERT INTO geo_dst SELECT readWKT(geom) FROM geo ORDER BY id;
+INSERT INTO geo_dst SELECT readWkt(geom) FROM geo ORDER BY id;
 
 SELECT * FROM geo_dst;
 ```

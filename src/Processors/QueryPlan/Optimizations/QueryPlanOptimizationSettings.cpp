@@ -36,7 +36,6 @@ namespace Setting
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsBool query_plan_convert_join_to_in;
-    extern const SettingsBool query_plan_remove_unused_columns;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool query_condition_cache_store_conditions_as_plaintext;
     extern const SettingsBool collect_hash_table_stats_during_joins;
@@ -72,22 +71,11 @@ namespace Setting
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
-    extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
-    extern const SettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
-    extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsBool query_plan_direct_read_from_text_index;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_on_data_read;
-    extern const SettingsBool enable_full_text_index;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsBool use_skip_indexes_for_top_k;
-    extern const SettingsBool use_top_k_dynamic_filtering;
-    extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
-    extern const SettingsBool query_plan_read_in_order_through_join;
-    extern const SettingsUInt64 automatic_parallel_replicas_mode;
-    extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
-    extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
 }
 
 namespace ServerSetting
@@ -130,7 +118,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
-    try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
 
     bool use_parallel_replicas = from[Setting::allow_experimental_parallel_reading_from_replicas] && from[Setting::max_parallel_replicas] > 1;
     query_plan_optimize_join_order_limit = use_parallel_replicas ? 0 : from[Setting::query_plan_optimize_join_order_limit];
@@ -143,7 +130,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         ? std::nullopt
         : std::make_optional(from[Setting::query_plan_join_swap_table].base);
     use_join_disjunctions_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::use_join_disjunctions_push_down];
-    remove_unused_columns = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_unused_columns];
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
     read_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_read_in_order] && from[Setting::query_plan_read_in_order];
@@ -154,8 +140,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     query_condition_cache_store_conditions_as_plaintext = from[Setting::query_condition_cache_store_conditions_as_plaintext];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes] && from[Setting::use_skip_indexes_on_data_read];
-    enable_full_text_index = from[Setting::enable_full_text_index];
-    read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
@@ -188,10 +172,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);
     use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
-    use_skip_indexes_for_top_k = from[Setting::use_skip_indexes_for_top_k];
-    use_top_k_dynamic_filtering = from[Setting::use_top_k_dynamic_filtering];
-    max_limit_for_top_k_optimization = from[Setting::query_plan_max_limit_for_top_k_optimization];
-    use_skip_indexes_on_data_read = from[Setting::use_skip_indexes_on_data_read];
     prepared_sets_cache = std::move(prepared_sets_cache_);
 
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class
@@ -209,20 +189,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_exact_values_limit = from[Setting::join_runtime_filter_exact_values_limit];
     join_runtime_bloom_filter_bytes = from[Setting::join_runtime_bloom_filter_bytes];
     join_runtime_bloom_filter_hash_functions = from[Setting::join_runtime_bloom_filter_hash_functions];
-    join_runtime_filter_pass_ratio_threshold_for_disabling = from[Setting::join_runtime_filter_pass_ratio_threshold_for_disabling];
-    join_runtime_filter_blocks_to_skip_before_reenabling = from[Setting::join_runtime_filter_blocks_to_skip_before_reenabling];
-    join_runtime_bloom_filter_max_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_ratio_of_set_bits];
-
-    query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
-    if (query_plan_optimize_join_order_algorithm.empty())
-        query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
 
     max_threads = from[Setting::max_threads];
-
-    parallel_replicas_enabled = from[Setting::allow_experimental_parallel_reading_from_replicas];
-    max_parallel_replicas = from[Setting::max_parallel_replicas];
-    automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
-    automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

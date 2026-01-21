@@ -19,7 +19,6 @@ public:
         Bucket bucket;
         std::string bucket_lock_path;
         std::string processor_info;
-        std::string toString() const;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
 
@@ -104,7 +103,6 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     bool isFinished() const { return finished; }
 
     bool checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
-    std::optional<std::string> getProcessorInfo(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client);
 
     void release();
 

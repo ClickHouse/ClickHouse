@@ -163,9 +163,9 @@ Block NativeReader::read()
         readVarUInt(columns, istr);
         readVarUInt(rows, istr);
 
-        if (columns > DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS)
+        if (columns > 1'000'000uz)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many columns in Native format: {}", columns);
-        if (rows > DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS)
+        if (rows > 1'000'000'000'000uz)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Suspiciously many rows in Native format: {}", rows);
     }
     else
@@ -232,9 +232,7 @@ Block NativeReader::read()
         }
         else if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
-            /// NativeReader must enable all supported serializations (e.g. nullable sparse) here. Since it operates on
-            /// in-memory state, it should be able to handle all possible serialization variants.
-            auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations());
+            auto info = column.type->createSerializationInfo({});
 
             UInt8 has_custom;
             readBinary(has_custom, istr);
