@@ -374,7 +374,7 @@ def test_backup_to_s3_named_collection():
     check_backup_and_restore(cluster, storage_policy, backup_destination)
 
 
-def test_backup_to_s3_named_collection_sql(cluster):
+def test_backup_to_s3_named_collection_sql():
     """Test backup using a named collection created via SQL (not XML config)."""
     node = cluster.instances["node"]
     storage_policy = "default"
@@ -397,7 +397,7 @@ def test_backup_to_s3_named_collection_sql(cluster):
         node.query("DROP NAMED COLLECTION IF EXISTS sql_named_collection_s3_backup")
 
 
-def test_backup_to_s3_named_collection_sql_with_overrides(cluster):
+def test_backup_to_s3_named_collection_sql_with_overrides():
     """Test backup using a SQL named collection with key-value overrides."""
     node = cluster.instances["node"]
     storage_policy = "default"
@@ -423,7 +423,7 @@ def test_backup_to_s3_named_collection_sql_with_overrides(cluster):
         )
 
 
-def test_backup_to_s3_multipart(cluster):
+def test_backup_to_s3_multipart():
     storage_policy = "default"
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', '{minio_secret_key}')"
