@@ -48,6 +48,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_index_analysis_for_non_shared_merge_tree", false, false, "New setting"},
             {"distributed_cache_file_cache_name", "", "", "New setting."},
             {"trace_profile_events_list", "", "", "New setting"},
+            {"query_plan_reuse_storage_ordering_for_window_functions", true, false, "Disable this logic by default."},
+            {"optimize_read_in_window_order", true, false, "Disable this logic by default."},
             {"correlated_subqueries_use_in_memory_buffer", false, true, "Use in-memory buffer for input of correlated subqueries by default."},
             {"allow_experimental_database_paimon_rest_catalog", false, false, "New setting"},
             {"allow_experimental_object_storage_queue_hive_partitioning", false, false, "New setting."},
@@ -69,6 +71,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
             {"use_hash_table_stats_for_join_reordering", true, true, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."},
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
+            {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
             {"reserve_memory", 0, 0, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.12",

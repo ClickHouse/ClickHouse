@@ -1,0 +1,41 @@
+<test>
+
+  <settings>
+    <max_threads>8</max_threads>
+  </settings>
+
+  <create_query>CREATE TABLE t(a UInt32, b UInt32) ENGINE=MergeTree() ORDER BY a</create_query>
+
+  <fill_query>INSERT INTO t SELECT number, number % 12345 FROM numbers_mt(1e7)</fill_query>
+
+  <query>
+    SELECT a, b, ROW_NUMBER() OVER (PARTITION BY a ORDER BY b DESC) AS rn
+    FROM t
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions=0
+    FORMAT Null
+  </query>
+
+  <query>
+    SELECT a, b, ROW_NUMBER() OVER (PARTITION BY a) AS rn
+    FROM t
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions=0
+    FORMAT Null
+  </query>
+
+  <query>
+    SELECT a, b, ROW_NUMBER() OVER (PARTITION BY a ORDER BY b DESC) AS rn
+    FROM t
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions=1
+    FORMAT Null
+  </query>
+
+  <query>
+    SELECT a, b, ROW_NUMBER() OVER (PARTITION BY a) AS rn
+    FROM t
+    SETTINGS query_plan_reuse_storage_ordering_for_window_functions=1
+    FORMAT Null
+  </query>
+
+  <drop_query>DROP TABLE IF EXISTS t</drop_query>
+
+</test>
