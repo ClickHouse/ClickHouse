@@ -76,7 +76,7 @@ namespace
 
         Poco::SHA1Engine::Digest calculated_password_sha1(sha1_size);
         for (size_t i = 0; i < sha1_size; ++i)
-            calculated_password_sha1[i] = scrambled_password[i] ^ digest[i];
+            calculated_password_sha1[i] = static_cast<UInt8>(scrambled_password[i] ^ digest[i]);
 
         auto calculated_password_double_sha1 = Util::encodeSHA1(calculated_password_sha1);
         return calculated_password_double_sha1 == password_double_sha1;

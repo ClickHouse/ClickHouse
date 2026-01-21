@@ -16,7 +16,7 @@ String getRandomASCIIString(size_t length, pcg64 & rng)
     String res;
     res.resize(length);
     for (auto & c : res)
-        c = distribution(rng);
+        c = static_cast<char>(distribution(rng));
     return res;
 }
 

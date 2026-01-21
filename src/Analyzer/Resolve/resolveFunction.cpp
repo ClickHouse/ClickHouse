@@ -705,7 +705,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 evaluateScalarSubqueryIfNeeded(new_exists_argument, scope, true);
                 auto res_col = ColumnUInt8::create();
                 const auto * const_node = new_exists_argument->as<ConstantNode>();
-                res_col->getData().push_back(const_node->getColumn()->isNullAt(0) ? 0 : 1);
+                res_col->getData().push_back(static_cast<UInt8>(const_node->getColumn()->isNullAt(0) ? 0 : 1));
                 ConstantValue const_value(std::move(res_col), std::make_shared<DataTypeUInt8>());
                 auto tme_const_node = std::make_shared<ConstantNode>(std::move(const_value), std::move(node));
                 auto res = tme_const_node->getValueStringRepresentation();
@@ -1076,7 +1076,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function untuple can't have lambda-expressions as arguments");
 
             auto result_type = untuple_argument->getResultType();
-            const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
+            DataTypePtr result_type_without_nullable = removeNullable(result_type);
+            const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type_without_nullable.get());
             if (!tuple_data_type)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "Function 'untuple' argument must have compound type. Actual type {}. In scope {}",
