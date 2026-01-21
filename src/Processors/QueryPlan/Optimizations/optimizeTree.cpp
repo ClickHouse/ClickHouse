@@ -503,7 +503,7 @@ void optimizeTreeSecondPass(
 
         /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
         if (optimization_settings.optimize_prewhere)
-            optimizePrewhere(*frame.node);
+            optimizePrewhere(*frame.node, optimization_settings.remove_unused_columns);
 
         stack.pop_back();
     }
@@ -560,7 +560,7 @@ void optimizeTreeSecondPass(
             [&](auto & frame_node)
             {
                 if (optimization_settings.optimize_prewhere)
-                    optimizePrewhere(frame_node);
+                    optimizePrewhere(frame_node, optimization_settings.remove_unused_columns);
             });
     }
 
