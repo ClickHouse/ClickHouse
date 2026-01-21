@@ -346,7 +346,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     if (engine_args->settings)
-        storage_metadata.settings_changes = engine_args->settings->ptr();
+        storage_metadata.settings_changes = engine_args->getChild(*engine_args->settings);
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
@@ -367,7 +367,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         configuration_->format,
         context_,
         is_attach,
-        is_path_with_hive_partitioning,
         log);
 
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
@@ -381,8 +380,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
-        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size],
-        is_path_with_hive_partitioning);
+        getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
     size_t task_count = (*queue_settings_)[ObjectStorageQueueSetting::parallel_inserts] ? (*queue_settings_)[ObjectStorageQueueSetting::processing_threads_num] : 1;
     for (size_t i = 0; i < task_count; ++i)
@@ -982,19 +980,21 @@ void StorageObjectStorageQueue::commit(
     Coordination::Requests requests;
     StoredObjects successful_objects;
 
-    HiveLastProcessedFileInfoMap last_processed_file_per_hive_partition;
+    PartitionLastProcessedFileInfoMap last_processed_file_per_partition;
     auto created_nodes = std::make_shared<LastProcessedFileInfoMap>();
     for (auto & source : sources)
     {
         source->prepareCommitRequests(
             requests, insert_succeeded, successful_objects,
-            last_processed_file_per_hive_partition, created_nodes, exception_message, error_code);
+            last_processed_file_per_partition, created_nodes, exception_message, error_code);
     }
 
-    if (use_hive_partitioning)
-        ObjectStorageQueueSource::prepareHiveProcessedRequests(requests, last_processed_file_per_hive_partition);
+    // Use partition-based processing for both HIVE and REGEX modes
+    bool has_partitioning = files_metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
+    if (has_partitioning)
+        ObjectStorageQueueSource::preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
     else
-        chassert(last_processed_file_per_hive_partition.empty());
+        chassert(last_processed_file_per_partition.empty());
 
     if (requests.empty())
     {
@@ -1445,7 +1445,7 @@ void StorageObjectStorageQueue::alter(
             else if (change.name == "enable_hash_ring_filtering")
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
             else if (change.name == "after_processing_retries")
-                after_processing_settings.after_processing_retries = change.value.safeGet<UInt32>();
+                after_processing_settings.after_processing_retries = static_cast<UInt32>(change.value.safeGet<UInt32>());
             else if (change.name == "after_processing_move_uri")
                 after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
             else if (change.name == "after_processing_move_prefix")
@@ -1546,9 +1546,9 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
 
     auto cleanup_interval_ms = files_metadata->getCleanupIntervalMS();
-    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = cleanup_interval_ms.first;
-    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = cleanup_interval_ms.second;
-    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = files_metadata->getPersistentProcessingNodeTTLSeconds();
+    settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);
+    settings[ObjectStorageQueueSetting::cleanup_interval_max_ms] = static_cast<UInt32>(cleanup_interval_ms.second);
+    settings[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds] = static_cast<UInt32>(files_metadata->getPersistentProcessingNodeTTLSeconds());
     settings[ObjectStorageQueueSetting::use_persistent_processing_nodes] = files_metadata->usePersistentProcessingNode();
 
     {

@@ -1,5 +1,7 @@
 #pragma once
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
+#include <Core/SettingsEnums.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <filesystem>
@@ -34,7 +36,8 @@ public:
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
         const std::string & zookeeper_name_,
-        bool is_path_with_hive_partitioning,
+        ObjectStorageQueuePartitioningMode partitioning_mode_,
+        const ObjectStorageQueueFilenameParser * parser_,
         LoggerPtr log_);
 
     struct BucketHolder;
@@ -66,7 +69,8 @@ public:
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
         const std::string & zookeeper_name_,
-        bool is_path_with_hive_partitioning,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(Coordination::Requests & requests);
@@ -75,8 +79,8 @@ private:
     const size_t buckets_num;
     const std::string zk_path;
     const BucketInfoPtr bucket_info;
-
-    const bool is_path_with_hive_partitioning = false;
+    const ObjectStorageQueuePartitioningMode partitioning_mode;
+    const ObjectStorageQueueFilenameParser * parser;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 
@@ -126,14 +130,7 @@ private:
         bool ignore_if_exists,
         LastProcessedFileInfoMapPtr created_nodes = nullptr);
 
-    void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & last_processed_file_per_hive_partition) override;
-
-    /// Return hive part of path
-    /// For path `/table/path/date=2025-01-01/city=New_Orlean/data.parquet` returns `date=2025-01-01/city=New_Orlean`
-    static std::string getHivePart(const std::string & file_path);
-    /// Normalize hive part to use as node in zookeeper path
-    /// `date=2025-01-01/city=New_Orlean` changes to `date=2025-01-01_city=New__Orlean`
-    static void normalizeHivePart(std::string & hive_part);
+    void preparePartitionProcessedMap(PartitionLastProcessedFileInfoMap & last_processed_file_per_partition) override;
 };
 
 struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::noncopyable

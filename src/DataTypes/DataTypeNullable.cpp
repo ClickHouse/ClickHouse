@@ -88,7 +88,7 @@ ColumnPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) 
         column->insert(field);
 
     auto null_mask = ColumnUInt8::create();
-    null_mask->getData().push_back(is_null ? 1 : 0);
+    null_mask->getData().push_back(is_null ? static_cast<UInt8>(1) : static_cast<UInt8>(0));
 
     auto res = ColumnNullable::create(std::move(column), std::move(null_mask));
     return ColumnConst::create(std::move(res), size);

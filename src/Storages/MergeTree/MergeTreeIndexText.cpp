@@ -8,6 +8,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -424,7 +425,7 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
     }
 
     PostingList range_posting;
-    range_posting.addRangeClosed(current_range->begin, current_range->end);
+    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
 
     for (const auto & token : query.tokens)
     {
@@ -474,7 +475,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     }
 
     PostingList intersection;
-    intersection.addRangeClosed(current_range->begin, current_range->end);
+    intersection.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
 
     for (const auto & token : query.tokens)
     {
@@ -608,7 +609,7 @@ std::vector<roaring::api::roaring_bitmap_t> splitPostings(const PostingList & po
         roaring::api::roaring_bitmap_t bitmap;
         auto & new_container = bitmap.high_low_container;
 
-        new_container.size = size;
+        new_container.size = static_cast<int32_t>(size);
         new_container.allocation_size = 0;
         new_container.containers = container.containers + begin;
         new_container.typecodes = container.typecodes + begin;
@@ -674,7 +675,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     using enum PostingsSerialization::Flags;
     TokenPostingsInfo info;
     info.header = 0;
-    info.cardinality = postings.size();
+    info.cardinality = static_cast<UInt32>(postings.size());
 
     if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
@@ -1018,7 +1019,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
             tokens_map.emplace(key_holder, it, inserted);
 
             auto & posting_list_builder = it->getMapped();
-            posting_list_builder.add(current_row, posting_lists);
+            posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
             ++num_processed_tokens;
             return false;
         });
@@ -1085,7 +1086,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (*pos >= block.rows())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.",
+            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}",
             *pos, block.rows());
     }
 
@@ -1100,37 +1101,32 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (rows_read == 0)
         return;
 
-    const auto & index_column = block.getByName(index_column_name);
+    const ColumnWithTypeAndName & index_column = block.getByName(index_column_name);
 
-    if (isArray(index_column.type))
+    if (isArray(index_column.type->getTypeId()))
     {
-        size_t offset = *pos;
+        auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-        const auto & column_array = assert_cast<const ColumnArray &>(*index_column.column);
+        const auto & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
         const auto & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
 
-        for (size_t i = 0; i < rows_read; ++i)
+        for (size_t i = offset; i < offset + rows_read; ++i)
         {
-            size_t element_start_row = column_offsets[offset + i - 1];
-            size_t elements_size = column_offsets[offset + i] - element_start_row;
-
-            for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
+            for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
             {
-                auto ref = column_data.getDataAt(element_start_row + element_idx);
+                std::string_view ref = column_data.getDataAt(element_idx);
                 granule_builder.addDocument(ref);
             }
-
             granule_builder.incrementCurrentRow();
         }
     }
     else
     {
-        auto [processed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
-
+        auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
         for (size_t i = 0; i < rows_read; ++i)
         {
-            const std::string_view ref = processed_column->getDataAt(offset + i);
+            std::string_view ref = preprocessed_column->getDataAt(offset + i);
             granule_builder.addDocument(ref);
             granule_builder.incrementCurrentRow();
         }
@@ -1372,9 +1368,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     WhichDataType data_type(index.data_types[0]);
     if (data_type.isArray())
     {
-        if (preprocessor.has_value())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index created on Array columns does not support preprocessor argument yet.");
-
         const auto & array_type = assert_cast<const DataTypeArray &>(*index.data_types[0]);
         data_type = WhichDataType(array_type.getNestedType());
     }

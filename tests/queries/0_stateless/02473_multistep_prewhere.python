@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Tags: long, no-parallel, no-msan, no-asan, no-flaky-check, no-tsan
+# ^ The test is heavy
+
 import os
 import sys
 

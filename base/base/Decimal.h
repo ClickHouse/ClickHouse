@@ -48,7 +48,7 @@ struct Decimal
     constexpr Decimal(const T & value_): value(value_) {} // NOLINT(google-explicit-constructor)
 
     template <typename U>
-    constexpr Decimal(const Decimal<U> & x): value(x.value) {} // NOLINT(google-explicit-constructor)
+    constexpr Decimal(const Decimal<U> & x): value(static_cast<T>(x.value)) {} // NOLINT(google-explicit-constructor)
 
     constexpr Decimal<T> & operator=(Decimal<T> &&) noexcept = default;
     constexpr Decimal<T> & operator = (const Decimal<T> &) = default;
