@@ -114,11 +114,6 @@ bool BackgroundSchedulePoolTaskInfo::activateAndSchedule()
     return scheduleImpl(lock);
 }
 
-std::unique_lock<std::mutex> BackgroundSchedulePoolTaskInfo::getExecLock()
-{
-    return std::unique_lock{exec_mutex};
-}
-
 bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
 {
     CurrentMetrics::Increment metric_increment(pool.tasks_metric);

@@ -77,10 +77,28 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     task->schedule();
 }
 
-std::unique_lock<std::mutex> ReplicatedMergeTreePartCheckThread::pausePartsCheck()
+ReplicatedMergeTreePartCheckThread::TemporaryPause::TemporaryPause(BackgroundSchedulePoolTaskInfoPtr task_)
+    : task(std::move(task_))
 {
-    /// Wait for running tasks to finish and temporarily stop checking
-    return task->getExecLock();
+    /// Note: deactivate() is expected to be called before creating TemporaryPause
+    /// This constructor just stores the task pointer for later reactivation
+}
+
+ReplicatedMergeTreePartCheckThread::TemporaryPause::~TemporaryPause()
+{
+    if (task)
+        task->activateAndSchedule();
+}
+
+ReplicatedMergeTreePartCheckThread::TemporaryPause ReplicatedMergeTreePartCheckThread::temporaryPause()
+{
+    /// deactivate() waits for any running task execution to finish
+    /// and prevents new executions from starting.
+    /// This is safe to call from any thread.
+    task->deactivate();
+
+    /// The TemporaryPause guard will reactivate the task when destroyed from any thread.
+    return TemporaryPause(task.getTaskInfoPtr());
 }
 
 void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
