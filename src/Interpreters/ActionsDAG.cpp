@@ -1078,12 +1078,16 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                     bool has_all_arguments = true;
                     for (size_t i = 0; i < arguments.size(); ++i)
                     {
-                        arguments[i] = node_to_column[node->children[i]];
+                        const auto * child = node->children[i];
+                        if (auto it = node_to_column.find(child); it != node_to_column.end())
+                            arguments[i] = it->second;
+                        else
+                            arguments[i] = ColumnWithTypeAndName{nullptr, child->result_type, child->result_name};
+
                         if (!arguments[i].column)
                             has_all_arguments = false;
                         if (!has_all_arguments && params.throw_on_error)
-                            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                                            "Not found column {}", node->children[i]->result_name);
+                            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {}", child->result_name);
                     }
 
                     if (node->type == ActionsDAG::ActionType::INPUT && params.throw_on_error)

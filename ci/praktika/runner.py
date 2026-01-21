@@ -106,7 +106,6 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_STATUS_DATA={},
             WORKFLOW_CONFIG=workflow_config,
         ).dump()
 
@@ -128,7 +127,13 @@ class Runner:
             os.environ[key] = value
             print(f"Set environment variable {key}.")
 
-        if job.name == Settings.CI_CONFIG_JOB_NAME:
+        if (
+            job.name == Settings.CI_CONFIG_JOB_NAME
+            or _workflow.jobs[0].name != Settings.CI_CONFIG_JOB_NAME
+        ):
+            # Settings.CI_CONFIG_JOB_NAME initializes the workflow environment by reading it
+            # directly from the GitHub context. For workflows without this config job, each
+            # job reads the environment from the GitHub context independently.
             print("Read GH Environment from GH context")
             env = _Environment.from_env()
         else:
@@ -659,7 +664,17 @@ class Runner:
         # Always run report generation at the end to finalize workflow status with latest job result
         if workflow.enable_report:
             print(f"Run html report hook")
-            HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            status_updated = HtmlRunnerHooks.post_run(workflow, job, info_errors)
+            if status_updated:
+                print(f"Update GH commit status [{result.name}]: [{status_updated}]")
+                _GH_Auth(workflow)
+                GH.post_commit_status(
+                    name=workflow.name,
+                    status=GH.convert_to_gh_status(status_updated),
+                    description="",
+                    url=Info().get_report_url(latest=False),
+                )
+
             workflow_result = Result.from_fs(workflow.name)
             if is_final_job and ci_db:
                 # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data

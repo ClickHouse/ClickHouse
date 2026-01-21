@@ -22,11 +22,9 @@ String HashOutputFormat::getName() const
 
 void HashOutputFormat::consume(Chunk chunk)
 {
-    for (const auto & column : chunk.getColumns())
-    {
-        for (size_t i = 0; i < column->size(); ++i)
+    for (size_t i = 0, rows = chunk.getNumRows(); i < rows; ++i)
+        for (const auto & column : chunk.getColumns())
             column->updateHashWithValue(i, hash);
-    }
 }
 
 void HashOutputFormat::finalizeImpl()

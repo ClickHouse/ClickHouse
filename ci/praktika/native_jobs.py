@@ -1,7 +1,9 @@
 import dataclasses
+import json
 import platform
 import sys
 import traceback
+from pathlib import Path
 from typing import Dict
 
 from . import Job, Workflow
@@ -302,6 +304,25 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
         env.dump()
 
+    _GH_Auth(workflow)
+
+    # refresh PR data
+    if env.PR_NUMBER > 0:
+        title, body, labels = GH.get_pr_title_body_labels()
+        print(f"NOTE: PR title: {title}")
+        print(f"NOTE: PR labels: {labels}")
+        if title:
+            if title != env.PR_TITLE:
+                print("PR title has been changed")
+                env.PR_TITLE = title
+            if env.PR_BODY != body:
+                print("PR body has been changed")
+                env.PR_BODY = body
+            if env.PR_LABELS != labels:
+                print("PR labels have been changed")
+                env.PR_LABELS = labels
+            env.dump()
+
     if workflow.enable_report:
         print("Push pending CI report")
         HtmlRunnerHooks.push_pending_ci_report(workflow)
@@ -509,21 +530,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
-    # refresh PR data
-    if env.PR_NUMBER > 0:
-        title, body, labels = GH.get_pr_title_body_labels()
-        if title:
-            if title != env.PR_TITLE:
-                print("PR title has been changed")
-                env.PR_TITLE = title
-            if env.PR_BODY != body:
-                print("PR body has been changed")
-                env.PR_BODY = body
-            if env.PR_LABELS != labels:
-                print("PR labels have been changed")
-                env.PR_LABELS = labels
-            env.dump()
-
     if workflow.enable_slack_feed:
         if env.PR_NUMBER:
             commit_authors = set()
@@ -657,6 +663,16 @@ def _finish_workflow(workflow, job_name):
     env = _Environment.get()
     stop_watch = Utils.Stopwatch()
 
+    workflow_job_data = {}
+    try:
+        if Path(Settings.WORKFLOW_STATUS_FILE).is_file():
+            with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+                workflow_job_data = json.load(f)
+    except Exception as e:
+        print(
+            f"ERROR: failed to read workflow status file [{Settings.WORKFLOW_STATUS_FILE}]: {e}"
+        )
+
     print("Check Actions statuses")
     print(env.get_needs_statuses())
 
@@ -729,17 +745,29 @@ def _finish_workflow(workflow, job_name):
             )
             continue
         if not result.is_completed():
-            print(
-                f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
-            )
-            result.status = Result.Status.ERROR
-            # dump workflow result after update - to have an updated result in post
-            workflow_result.dump()
-            # add error into env - should appear in the report on the main page
-            env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
-            # add error info to job info as well
-            result.set_info(ResultInfo.NOT_FINALIZED)
-            update_final_report = True
+            normalized_name = Utils.normalize_string(result.name)
+            gh_job = workflow_job_data.get(normalized_name, {})
+            gh_job_result = (gh_job.get("result") or "").lower()
+            if gh_job_result in ("cancelled", "canceled"):
+                print(
+                    f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to dropped"
+                )
+                result.status = Result.Status.DROPPED
+                workflow_result.dump()
+                workflow_result.ext["is_cancelled"] = True
+                update_final_report = True
+            else:
+                print(
+                    f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
+                )
+                result.status = Result.Status.ERROR
+                # dump workflow result after update - to have an updated result in post
+                workflow_result.dump()
+                # add error into env - should appear in the report on the main page
+                env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
+                # add error info to job info as well
+                result.set_info(ResultInfo.NOT_FINALIZED)
+                update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:
             print(
