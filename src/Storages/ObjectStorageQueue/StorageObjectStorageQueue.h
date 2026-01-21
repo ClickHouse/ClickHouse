@@ -90,7 +90,10 @@ private:
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
     using ProcessingProgress = ObjectStorageQueueSource::ProcessingProgress;
     using ProcessingProgressPtr = ObjectStorageQueueSource::ProcessingProgressPtr;
+    using LastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMap;
+    using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
     using AfterProcessingSettings = ObjectStorageQueuePostProcessor::AfterProcessingSettings;
+    using PartitionLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::PartitionLastProcessedFileInfoMap;
 
     ObjectStorageType type;
     const std::string engine_name;
@@ -173,6 +176,11 @@ private:
 
     const bool can_be_moved_between_databases;
     const bool keep_data_in_keeper;
+
+    const bool use_hive_partitioning;
+
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList file_columns;
 };
 
 }

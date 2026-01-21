@@ -4,7 +4,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
@@ -172,6 +171,14 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
 
     return res;
+}
+
+void ColumnString::filter(const Filter & filt)
+{
+    if (offsets.empty())
+        return;
+
+    filterArraysImplInPlace<UInt8>(chars, offsets, filt);
 }
 
 void ColumnString::expand(const IColumn::Filter & mask, bool inverted)

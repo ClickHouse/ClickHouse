@@ -6,4 +6,7 @@
     <!-- Definitions to be used by BuzzHouse -->
     <allow_experimental_transactions>1</allow_experimental_transactions>
     <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+    <named_collections>
+        <local />
+    </named_collections>
 </clickhouse>

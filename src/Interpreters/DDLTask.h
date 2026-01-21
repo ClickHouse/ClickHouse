@@ -55,10 +55,7 @@ struct HostID
         return Cluster::Address::toString(host_name, port);
     }
 
-    String readableString() const
-    {
-        return host_name + ":" + DB::toString(port);
-    }
+    String readableString() const;
 
     bool isLocalAddress(UInt16 clickhouse_port) const;
     bool isLoopbackHost() const;

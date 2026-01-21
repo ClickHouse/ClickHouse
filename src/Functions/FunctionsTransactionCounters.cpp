@@ -110,7 +110,7 @@ ROLLBACK;
     };
     FunctionDocumentation::IntroducedIn introduced_in_transactionID = {22, 6};
     FunctionDocumentation::Category category_transactionID = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_transactionID = {description_transactionID, syntax_transactionID, arguments_transactionID, returned_value_transactionID, examples_transactionID, introduced_in_transactionID, category_transactionID};
+    FunctionDocumentation documentation_transactionID = {description_transactionID, syntax_transactionID, arguments_transactionID, {}, returned_value_transactionID, examples_transactionID, introduced_in_transactionID, category_transactionID};
 
     factory.registerFunction<FunctionTransactionID>(documentation_transactionID);
 
@@ -152,7 +152,7 @@ ROLLBACK;
     };
     FunctionDocumentation::IntroducedIn introduced_in_transactionLatestSnapshot = {22, 6};
     FunctionDocumentation::Category category_transactionLatestSnapshot = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_transactionLatestSnapshot = {description_transactionLatestSnapshot, syntax_transactionLatestSnapshot, arguments_transactionLatestSnapshot, returned_value_transactionLatestSnapshot, examples_transactionLatestSnapshot, introduced_in_transactionLatestSnapshot, category_transactionLatestSnapshot};
+    FunctionDocumentation documentation_transactionLatestSnapshot = {description_transactionLatestSnapshot, syntax_transactionLatestSnapshot, arguments_transactionLatestSnapshot, {}, returned_value_transactionLatestSnapshot, examples_transactionLatestSnapshot, introduced_in_transactionLatestSnapshot, category_transactionLatestSnapshot};
 
     factory.registerFunction<FunctionTransactionLatestSnapshot>(documentation_transactionLatestSnapshot);
 
@@ -194,7 +194,7 @@ ROLLBACK;
     };
     FunctionDocumentation::IntroducedIn introduced_in_transactionOldestSnapshot = {22, 6};
     FunctionDocumentation::Category category_transactionOldestSnapshot = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_transactionOldestSnapshot = {description_transactionOldestSnapshot, syntax_transactionOldestSnapshot, arguments_transactionOldestSnapshot, returned_value_transactionOldestSnapshot, examples_transactionOldestSnapshot, introduced_in_transactionOldestSnapshot, category_transactionOldestSnapshot};
+    FunctionDocumentation documentation_transactionOldestSnapshot = {description_transactionOldestSnapshot, syntax_transactionOldestSnapshot, arguments_transactionOldestSnapshot, {}, returned_value_transactionOldestSnapshot, examples_transactionOldestSnapshot, introduced_in_transactionOldestSnapshot, category_transactionOldestSnapshot};
 
     factory.registerFunction<FunctionTransactionOldestSnapshot>(documentation_transactionOldestSnapshot);
 }

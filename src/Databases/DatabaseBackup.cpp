@@ -362,7 +362,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
     for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
         std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-        runner([batch, &process_metadata_file]() mutable
+        runner.enqueueAndKeepTrack([batch, &process_metadata_file]() mutable
             {
                 for (const auto & file : batch)
                     process_metadata_file(file);
@@ -418,10 +418,10 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
     }
 
     return ast;

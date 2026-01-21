@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNothing.h>
 #include <Common/FunctionDocumentation.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -17,7 +18,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_full_text_index;
+    extern const SettingsBool enable_full_text_index;
 }
 
 namespace ErrorCodes
@@ -34,7 +35,7 @@ FunctionPtr FunctionHasAnyAllTokens<HasTokensTraits>::create(ContextPtr context)
 
 template <class HasTokensTraits>
 FunctionHasAnyAllTokens<HasTokensTraits>::FunctionHasAnyAllTokens(ContextPtr context)
-    : allow_experimental_full_text_index(context->getSettingsRef()[Setting::allow_experimental_full_text_index])
+    : enable_full_text_index(context->getSettingsRef()[Setting::enable_full_text_index])
 {
 }
 
@@ -105,19 +106,16 @@ bool isStringOrArrayOfStringType(const IDataType & type)
 TokensWithPosition extractTokensFromString(std::string_view value)
 {
     SplitByNonAlphaTokenExtractor default_token_extractor;
-
-    size_t cur = 0;
-    size_t token_start = 0;
-    size_t token_len = 0;
-    size_t length = value.size();
+    TokensWithPosition tokens;
     size_t pos = 0;
 
-    TokensWithPosition tokens;
-    while (cur < length && default_token_extractor.nextInStringPadded(static_cast<const char *>(value.data()), length, &cur, &token_start, &token_len))
+    forEachTokenPadded(default_token_extractor, value.data(), value.size(), [&](const char * token_start, size_t token_len)
     {
-        tokens.emplace(std::string{value.data() + token_start, token_len}, pos);
+        tokens.emplace(std::string{token_start, token_len}, pos);
         ++pos;
-    }
+        return false;
+    });
+
     return tokens;
 }
 
@@ -126,10 +124,10 @@ TokensWithPosition extractTokensFromString(std::string_view value)
 template <class HasTokensTraits>
 DataTypePtr FunctionHasAnyAllTokens<HasTokensTraits>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
-    if (!allow_experimental_full_text_index)
+    if (!enable_full_text_index)
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Enable the setting 'allow_experimental_full_text_index' to use function {}", getName());
+            "Enable the setting 'enable_full_text_index' to use function {}", getName());
 
     FunctionArgumentDescriptors mandatory_args{
         {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrArrayOfStringOrFixedString), nullptr, "String, FixedString, Array(String) or Array(FixedString)"},
@@ -342,6 +340,16 @@ void execute(
             executeArray<HasTokensTraits>(col_input_array, *input_fixedstring, col_result, token_extractor, tokens);
     }
 }
+
+template <typename ColumnType>
+const ColumnType * getTypedColumn(const IColumn & column)
+{
+    if (const auto * column_const_typed = checkAndGetColumnConstData<ColumnType>(&column))
+        return column_const_typed;
+
+    return checkAndGetColumn<ColumnType>(&column);
+}
+
 }
 
 template <class HasTokensTraits>
@@ -368,36 +376,33 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
         TokensWithPosition search_tokens_from_args;
         const ColumnPtr col_needles = arguments[arg_needles].column;
 
-        if (const ColumnConst * col_needles_str_const = checkAndGetColumnConst<ColumnString>(col_needles.get()))
+        if (const ColumnString * column_needles_string = getTypedColumn<ColumnString>(*col_needles))
         {
-            search_tokens_from_args = extractTokensFromString(col_needles_str_const->getDataAt(0));
+            search_tokens_from_args = extractTokensFromString(column_needles_string->getDataAt(0));
         }
-        else if (const ColumnString * col_needles_str = checkAndGetColumn<ColumnString>(col_needles.get()))
+        else if (const ColumnArray * column_needles_array = getTypedColumn<ColumnArray>(*col_needles))
         {
-            search_tokens_from_args = extractTokensFromString(col_needles_str->getDataAt(0));
-        }
-        else if (const ColumnConst * col_needles_array_const = checkAndGetColumnConst<ColumnArray>(col_needles.get()))
-        {
-            const Array & array = col_needles_array_const->getValue<Array>();
+            const IColumn & array_data = column_needles_array->getData();
 
-            for (size_t i = 0; i < array.size(); ++i)
-                search_tokens_from_args.emplace(array.at(i).safeGet<String>(), i);
-        }
-        else if (const ColumnArray * col_needles_array = checkAndGetColumn<ColumnArray>(col_needles.get()))
-        {
-            const IColumn & array_data = col_needles_array->getData();
-            const ColumnArray::Offsets & array_offsets = col_needles_array->getOffsets();
+            /// Argument has Array(Nothing) type if a constant array is empty.
+            if (checkAndGetColumn<ColumnNothing>(&array_data))
+            {
+                col_result->getData().assign(input_rows_count, UInt8(0));
+                return col_result;
+            }
 
             const ColumnString & needles_data_string = checkAndGetColumn<ColumnString>(array_data);
+            const ColumnArray::Offsets & array_offsets = column_needles_array->getOffsets();
 
             for (size_t i = 0; i < array_offsets[0]; ++i)
                 search_tokens_from_args.emplace(needles_data_string.getDataAt(i), i);
         }
         else
+        {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
+        }
 
         static SplitByNonAlphaTokenExtractor default_token_extractor;
-
         execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, &default_token_extractor, search_tokens_from_args);
     }
     else
@@ -429,7 +434,7 @@ REGISTER_FUNCTION(HasAnyTokens)
 Returns 1, if at least one token in the `needle` string or array matches the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
 :::note
-Column `input` should have a [text index](../../engines/table-engines/mergetree-family/invertedindexes) defined for optimal performance.
+Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 :::
 
@@ -551,7 +556,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
     };
     FunctionDocumentation::IntroducedIn introduced_in_hasAnyTokens = {25, 10};
     FunctionDocumentation::Category category_hasAnyTokens = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_hasAnyTokens = {description_hasAnyTokens, syntax_hasAnyTokens, arguments_hasAnyTokens, returned_value_hasAnyTokens, examples_hasAnyTokens, introduced_in_hasAnyTokens, category_hasAnyTokens};
+    FunctionDocumentation documentation_hasAnyTokens = {description_hasAnyTokens, syntax_hasAnyTokens, arguments_hasAnyTokens, {}, returned_value_hasAnyTokens, examples_hasAnyTokens, introduced_in_hasAnyTokens, category_hasAnyTokens};
 
     factory.registerFunction<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits>>(documentation_hasAnyTokens);
     factory.registerAlias("hasAnyToken", traits::HasAnyTokensTraits::name);
@@ -563,7 +568,7 @@ REGISTER_FUNCTION(HasAllTokens)
 Like [`hasAnyTokens`](#hasAnyTokens), but returns 1, if all tokens in the `needle` string or array match the `input` string, and 0 otherwise. If `input` is a column, returns all rows that satisfy this condition.
 
 :::note
-Column `input` should have a [text index](../../engines/table-engines/mergetree-family/invertedindexes) defined for optimal performance.
+Column `input` should have a [text index](../../engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
 If no text index is defined, the function performs a brute-force column scan which is orders of magnitude slower than an index lookup.
 :::
 
@@ -685,7 +690,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
     };
     FunctionDocumentation::IntroducedIn introduced_in_hasAllTokens = {25, 10};
     FunctionDocumentation::Category category_hasAllTokens = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation_hasAllTokens = {description_hasAllTokens, syntax_hasAllTokens, arguments_hasAllTokens, returned_value_hasAllTokens, examples_hasAllTokens, introduced_in_hasAllTokens, category_hasAllTokens};
+    FunctionDocumentation documentation_hasAllTokens = {description_hasAllTokens, syntax_hasAllTokens, arguments_hasAllTokens, {}, returned_value_hasAllTokens, examples_hasAllTokens, introduced_in_hasAllTokens, category_hasAllTokens};
 
     factory.registerFunction<FunctionHasAnyAllTokens<traits::HasAllTokensTraits>>(documentation_hasAllTokens);
     factory.registerAlias("hasAllToken", traits::HasAllTokensTraits::name);

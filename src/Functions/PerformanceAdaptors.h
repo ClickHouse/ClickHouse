@@ -200,12 +200,15 @@ namespace detail
  * };
  */
 template <typename FunctionInterface>
-class ImplementationSelector : WithContext
+class ImplementationSelector
 {
 public:
     using ImplementationPtr = std::shared_ptr<FunctionInterface>;
 
-    explicit ImplementationSelector(ContextPtr context_) : WithContext(context_) {}
+    explicit ImplementationSelector(ContextPtr context)
+        // TODO(dakovalkov): make this option better.
+        : function_implementation(context->getSettingsRef()[Setting::function_implementation])
+    {}
 
     /* Select the best implementation based on previous runs.
      * If FunctionInterface is IFunction, then "executeImpl" method of the implementation will be called
@@ -254,9 +257,7 @@ public:
     {
         if (isArchSupported(Arch))
         {
-            // TODO(dakovalkov): make this option better.
-            const auto & choose_impl = getContext()->getSettingsRef()[Setting::function_implementation].value;
-            if (choose_impl.empty() || choose_impl == detail::getImplementationTag<FunctionImpl>(Arch))
+            if (function_implementation.empty() || function_implementation == detail::getImplementationTag<FunctionImpl>(Arch))
             {
                 implementations.emplace_back(std::make_shared<FunctionImpl>(std::forward<Args>(args)...));
                 statistics.emplace_back();
@@ -265,6 +266,7 @@ public:
     }
 
 private:
+    const std::string function_implementation;
     std::vector<ImplementationPtr> implementations;
     mutable detail::PerformanceStatistics statistics; /// It is protected by internal mutex.
 };

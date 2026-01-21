@@ -67,6 +67,15 @@ ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/)
     return ColumnConst::create(data, new_size);
 }
 
+void ColumnConst::filter(const Filter & filt)
+{
+    if (s != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
+            filt.size(), toString(s));
+
+    s = countBytesInFilter(filt);
+}
+
 void ColumnConst::expand(const Filter & mask, bool inverted)
 {
     if (mask.size() < s)
@@ -155,7 +164,7 @@ void ColumnConst::compareColumn(
     const IColumn & rhs, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> & compare_results, int, int nan_direction_hint)
     const
 {
-    Int8 res = compareAt(1, 1, rhs, nan_direction_hint);
+    Int8 res = static_cast<Int8>(compareAt(1, 1, rhs, nan_direction_hint));
     std::fill(compare_results.begin(), compare_results.end(), res);
 }
 

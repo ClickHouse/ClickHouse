@@ -13,7 +13,6 @@
 #include <charconv>
 
 
-#include <Common/logger_useful.h>
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -278,7 +277,7 @@ namespace DB
         {
             const auto addr = parseConstantIP(col_addr_const);
             if (!addr.has_value())
-                return ColumnUInt8::create(input_rows_count, 0);
+                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
 
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();
@@ -406,7 +405,7 @@ This function accepts both IPv4 and IPv6 addresses (and networks) represented as
         };
         FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::IPAddress;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
         factory.registerFunction<FunctionIsIPAddressContainedIn>(documentation);
     }

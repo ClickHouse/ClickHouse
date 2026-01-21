@@ -8,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/SettingsChanges.h>
@@ -144,6 +145,7 @@ public:
     size_t getBucketsNum() const { return buckets_num; }
     /// Get bucket by file path in case of bucket-based processing.
     Bucket getBucketForPath(const std::string & path) const;
+    static Bucket getBucketForPath(const std::string & path, size_t buckets_num);
     /// Acquire (take unique ownership of) bucket for processing.
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
 
@@ -152,6 +154,9 @@ public:
 
     /// Set local ref count for metadata.
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
+
+    ObjectStorageQueuePartitioningMode getPartitioningMode() const { return partitioning_mode; }
+    const ObjectStorageQueueFilenameParser * getFilenameParser() const { return filename_parser.get(); }
 
     void updateSettings(const SettingsChanges & changes);
 
@@ -176,8 +181,11 @@ private:
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
+    const ObjectStorageQueuePartitioningMode partitioning_mode;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
+
+    std::unique_ptr<ObjectStorageQueueFilenameParser> filename_parser;
 
     std::atomic<size_t> cleanup_interval_min_ms;
     std::atomic<size_t> cleanup_interval_max_ms;

@@ -72,6 +72,8 @@ public:
 
     bool isContentCached(size_t offset, size_t size) override;
 
+    std::optional<size_t> tryGetFileSize() override;
+
     bool supportsReadAt() override { return true; }
 
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;

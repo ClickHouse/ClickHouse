@@ -67,7 +67,7 @@ Use decimal values between 0 and 1 to select a percentage of rows:
 
 :::note
 - Fractions must be [Float64](../../data-types/float.md) values greater than 0 and less than 1.
-- Fractional row counts are rounded to the nearest whole number.
+- Fractional row counts are rounded to the next whole number.
 :::
 
 ## Combining limit types {#combining-limit-types}
