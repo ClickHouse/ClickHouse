@@ -29,20 +29,14 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int NO_COMMON_TYPE;
+    extern const int NO_COMMON_TYPE;
 }
 
 namespace
 {
 
-String typeToString(const DataTypePtr & type)
-{
-    return type->getName();
-}
-String typeToString(const TypeIndex & type)
-{
-    return String(magic_enum::enum_name(type));
-}
+String typeToString(const DataTypePtr & type) { return type->getName(); }
+String typeToString(const TypeIndex & type) { return String(magic_enum::enum_name(type)); }
 
 template <typename DataTypes>
 String getExceptionMessagePrefix(const DataTypes & types)
@@ -86,7 +80,10 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
     size_t max_bits_of_unsigned_integer = 0;
     size_t max_mantissa_bits_of_floating = 0;
 
-    auto maximize = [](size_t & what, size_t value) { what = std::max(value, what); };
+    auto maximize = [](size_t & what, size_t value)
+    {
+        what = std::max(value, what);
+    };
 
     for (const auto & type : types)
     {
@@ -142,8 +139,7 @@ DataTypePtr getNumericType(const TypeIndexSet & types)
             if (min_bit_width_of_integer != 64)
                 ++min_bit_width_of_integer;
             else
-                return throwOrReturn<on_error>(
-                    types,
+                return throwOrReturn<on_error>(types,
                     "because some of them are signed integers and some are unsigned integers,"
                     " but there is no signed integer type, that can exactly represent all required unsigned integer values",
                     ErrorCodes::NO_COMMON_TYPE);
@@ -241,14 +237,14 @@ void convertUInt64toInt64IfPossible(const DataTypes & types, TypeIndexSet & type
     }
 }
 
-DataTypePtr findSmallestIntervalSuperType(const DataTypes & types, TypeIndexSet & types_set)
+DataTypePtr findSmallestIntervalSuperType(const DataTypes &types, TypeIndexSet &types_set)
 {
     auto min_interval = IntervalKind::Kind::Year;
     DataTypePtr smallest_type;
 
     bool is_higher_interval = false; // For Years, Quarters and Months
 
-    for (const auto & type : types)
+    for (const auto &type : types)
     {
         if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(type.get()))
         {
@@ -264,11 +260,7 @@ DataTypePtr findSmallestIntervalSuperType(const DataTypes & types, TypeIndexSet 
     }
 
     if (is_higher_interval && min_interval <= IntervalKind::Kind::Week)
-        throw Exception(
-            ErrorCodes::NO_COMMON_TYPE,
-            "Cannot compare intervals {} and {} because the number of days in a month is not fixed",
-            types[0]->getName(),
-            types[1]->getName());
+        throw Exception(ErrorCodes::NO_COMMON_TYPE, "Cannot compare intervals {} and {} because the number of days in a month is not fixed", types[0]->getName(), types[1]->getName());
 
     if (smallest_type)
     {
@@ -342,6 +334,7 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
         return std::make_shared<DataTypeTuple>(commont_element_types);
     else
         return std::make_shared<DataTypeTuple>(commont_element_types, element_names);
+
 }
 
 template <LeastSupertypeOnError on_error>
@@ -426,8 +419,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         if (have_array)
         {
             if (!all_arrays)
-                return throwOrReturn<on_error>(
-                    types, "because some of them are Array and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+                return throwOrReturn<on_error>(types, "because some of them are Array and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             auto nested_type = getLeastSupertype<on_error>(nested_types);
             /// When on_error == LeastSupertypeOnError::Null and we cannot get least supertype,
@@ -575,8 +567,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         {
             bool all_compatible_with_string = type_ids.size() == (have_string + have_fixed_string + have_enums);
             if (!all_compatible_with_string)
-                return throwOrReturn<on_error>(
-                    types, "because some of them are String/FixedString/Enum and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+                return throwOrReturn<on_error>(types, "because some of them are String/FixedString/Enum and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             return std::make_shared<DataTypeString>();
         }
@@ -593,8 +584,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         {
             bool all_date_or_datetime = type_ids.size() == (have_date + have_date32 + have_datetime + have_datetime64);
             if (!all_date_or_datetime)
-                return throwOrReturn<on_error>(
-                    types, "because some of them are Date/Date32/DateTime/DateTime64 and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+                return throwOrReturn<on_error>(types,
+                    "because some of them are Date/Date32/DateTime/DateTime64 and some of them are not",
+                    ErrorCodes::NO_COMMON_TYPE);
 
             if (have_datetime64 == 0 && have_date32 == 0)
             {
@@ -654,8 +646,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             bool all_time_or_time64 = type_ids.size() == (have_time + have_time64);
 
             if (!all_time_or_time64)
-                return throwOrReturn<on_error>(
-                    types, "because some of them are Time/Time64 and some of them are not", ErrorCodes::NO_COMMON_TYPE);
+                return throwOrReturn<on_error>(types,
+                    "because some of them are Time/Time64 and some of them are not",
+                    ErrorCodes::NO_COMMON_TYPE);
 
             if (have_time && !have_time64)
             {
@@ -702,15 +695,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         {
             size_t num_supported = have_decimal32 + have_decimal64 + have_decimal128 + have_decimal256;
 
-            std::array<TypeIndex, 8> int_ids
-                = {TypeIndex::Int8,
-                   TypeIndex::UInt8,
-                   TypeIndex::Int16,
-                   TypeIndex::UInt16,
-                   TypeIndex::Int32,
-                   TypeIndex::UInt32,
-                   TypeIndex::Int64,
-                   TypeIndex::UInt64};
+            std::array<TypeIndex, 8> int_ids = {TypeIndex::Int8, TypeIndex::UInt8, TypeIndex::Int16, TypeIndex::UInt16,
+                                                TypeIndex::Int32, TypeIndex::UInt32, TypeIndex::Int64, TypeIndex::UInt64};
 
             TypeIndex max_int = TypeIndex::Nothing;
             for (auto int_id : int_ids)
@@ -728,14 +714,15 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             num_supported += have_float32 + have_float64;
 
             if (num_supported != type_ids.size())
-                return throwOrReturn<on_error>(
-                    types, "because some of them have no lossless conversion to Decimal", ErrorCodes::NO_COMMON_TYPE);
+                return throwOrReturn<on_error>(types, "because some of them have no lossless conversion to Decimal", ErrorCodes::NO_COMMON_TYPE);
 
             UInt32 max_scale = 0;
             for (const auto & type : types)
             {
                 auto type_id = type->getTypeId();
-                if (type_id != TypeIndex::Decimal32 && type_id != TypeIndex::Decimal64 && type_id != TypeIndex::Decimal128
+                if (type_id != TypeIndex::Decimal32
+                    && type_id != TypeIndex::Decimal64
+                    && type_id != TypeIndex::Decimal128
                     && type_id != TypeIndex::Decimal256)
                 {
                     continue;
@@ -761,10 +748,9 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
 
             if (min_precision > DataTypeDecimal<Decimal256>::maxPrecision())
-                return throwOrReturn<on_error>(
-                    types,
-                    "because the least supertype is Decimal(" + toString(min_precision) + ',' + toString(max_scale) + ')',
-                    ErrorCodes::NO_COMMON_TYPE);
+                return throwOrReturn<on_error>(types, "because the least supertype is Decimal("
+                                + toString(min_precision) + ',' + toString(max_scale) + ')',
+                                ErrorCodes::NO_COMMON_TYPE);
 
             if (have_decimal256 || min_precision > DataTypeDecimal<Decimal128>::maxPrecision())
                 return std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), max_scale);
@@ -801,7 +787,7 @@ DataTypePtr getLeastSupertypeOrString(const DataTypes & types)
     return getLeastSupertype<LeastSupertypeOnError::String>(types);
 }
 
-template <>
+template<>
 DataTypePtr getLeastSupertype<LeastSupertypeOnError::Variant>(const DataTypes & types)
 {
     auto common_type = getLeastSupertype<LeastSupertypeOnError::Null>(types);
@@ -850,18 +836,17 @@ DataTypePtr getLeastSupertype(const TypeIndexSet & types)
         if (which.isNothing())
             return std::make_shared<DataTypeNothing>();
 
-#define DISPATCH(TYPE) \
-    if (which.idx == TypeIndex::TYPE) \
-        return std::make_shared<DataTypeNumber<TYPE>>(); /// NOLINT
+    #define DISPATCH(TYPE) \
+        if (which.idx == TypeIndex::TYPE) \
+            return std::make_shared<DataTypeNumber<TYPE>>(); /// NOLINT
 
         FOR_NUMERIC_TYPES(DISPATCH)
-#undef DISPATCH
+    #undef DISPATCH
 
         if (which.isString())
             return std::make_shared<DataTypeString>();
 
-        return throwOrReturn<on_error>(
-            types, "because cannot get common type by type indexes with non-simple types", ErrorCodes::NO_COMMON_TYPE);
+        return throwOrReturn<on_error>(types, "because cannot get common type by type indexes with non-simple types", ErrorCodes::NO_COMMON_TYPE);
     }
 
     if (types.contains(TypeIndex::String))
