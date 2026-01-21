@@ -70,6 +70,8 @@ RUN cd /tmp \
     && cd /tmp \
     && rm -rf lcov-2.4 lcov-2.4.tar.gz
 
+COPY css.css /usr/local/share/css.css
+
 # Install cmake 3.20+ for Rust support
 # Used https://askubuntu.com/a/1157132 as reference
 RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg && \

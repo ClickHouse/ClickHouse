@@ -102,14 +102,14 @@ echo "Using workspace path: $WORKSPACE_PATH"
         -skip-expansions \
         > llvm_coverage.info
 
-sed -i "s|^SF:ci/tmp/build/|SF:|" "llvm_coverage.info"
+sed -i "s|^SF:ci/tmp/build/|SF:$WORKSPACE_PATH/|" "llvm_coverage.info"
 rm -rf ./coverage_html/*
 
 echo "Generating HTML report..."
 genhtml --version
-genhtml --help
 genhtml "llvm_coverage.info" \
     --output-directory "llvm_coverage_html_report" \
+    --verbose \
     --title "ClickHouse Coverage Report" \
     --legend \
     --demangle-cpp \
@@ -118,7 +118,7 @@ genhtml "llvm_coverage.info" \
     --num-spaces 4 \
     --sort-tables \
     --hierarchical \
-    --css-file css.css \
+    --css-file /usr/local/share/css.css \
     --no-function-coverage \
     --prefix $WORKSPACE_PATH \
     --ignore-errors inconsistent \
@@ -126,9 +126,6 @@ genhtml "llvm_coverage.info" \
     --ignore-errors corrupt,corrupt \
     --ignore-errors unsupported,unsupported \
     --ignore-errors source,source \
-    --ignore-errors branch,branch 
+    --ignore-errors branch,branch \
+    --ignore-errors range
 
-
-        # --sort-tables \
-    # --hierarchical \
-    # --verbose \
