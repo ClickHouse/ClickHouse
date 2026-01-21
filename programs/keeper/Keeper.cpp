@@ -61,9 +61,11 @@
 
 #include <Disks/registerDisks.h>
 
-#include <incbin.h>
 /// A minimal file used when the keeper is run without installation
-INCBIN(keeper_resource_embedded_xml, SOURCE_DIR "/programs/keeper/keeper_embedded.xml");
+constexpr unsigned char keeper_resource_embedded_xml[] =
+{
+#embed "keeper_embedded.xml"
+};
 
 extern const char * GIT_HASH;
 
@@ -120,7 +122,7 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
     auto port = config().getInt(port_name);
     try
     {
-        func(port);
+        func(static_cast<UInt16>(port));
     }
     catch (const Poco::Exception &)
     {
@@ -172,7 +174,7 @@ int Keeper::run()
 
 void Keeper::initialize(Poco::Util::Application & self)
 {
-    ConfigProcessor::registerEmbeddedConfig("keeper_config.xml", std::string_view(reinterpret_cast<const char *>(gkeeper_resource_embedded_xmlData), gkeeper_resource_embedded_xmlSize));
+    ConfigProcessor::registerEmbeddedConfig("keeper_config.xml", std::string_view(reinterpret_cast<const char *>(keeper_resource_embedded_xml), std::size(keeper_resource_embedded_xml)));
 
     BaseDaemon::initialize(self);
     logger().information("starting up");

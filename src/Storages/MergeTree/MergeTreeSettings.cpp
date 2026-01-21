@@ -546,6 +546,9 @@ namespace ErrorCodes
     Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
     OPTIMIZE FINAL query.
     )", 0) \
+    DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
+    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
+    or [during INSERTs](/operations/settings/settings.md#materialize_statistics_on_insert))", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
     When enabled, merges build and store skip indices for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
@@ -2016,7 +2019,7 @@ namespace ErrorCodes
 
     Possible values:
     - `rebuild` (default): Rebuilds any secondary indices affected by the column in the `ALTER` command.
-    - `throw`: Prevents any `ALTER` of columns covered by secondary indices by throwing an exception.
+    - `throw`: Prevents any `ALTER` of columns covered by **explicit** secondary indices by throwing an exception. Implicit indices are excluded from this restriction and will be rebuilt.
     - `drop`: Drop the dependent secondary indices. The new parts won't have the indices, requiring `MATERIALIZE INDEX` to recreate them.
     - `compatibility`: Matches the original behaviour: `throw` on `ALTER ... MODIFY COLUMN` and `rebuild` on `ALTER ... UPDATE/DELETE`.
     - `ignore`: Intended for expert usage. It will leave the indices in an inconsistent state, allowing incorrect query results.

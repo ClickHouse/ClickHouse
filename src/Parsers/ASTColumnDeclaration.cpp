@@ -134,14 +134,14 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
 void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
 {
-    auto visit_child = [&f](ASTPtr & member)
+    auto visit_child = [&f, this](ASTPtr & member)
     {
         IAST * new_member_ptr = member.get();
         f(reinterpret_cast<void **>(&new_member_ptr));
         if (new_member_ptr != member.get())
         {
             if (new_member_ptr)
-                member = new_member_ptr->ptr();
+                member = this->getChild(*new_member_ptr);
             else
                 member.reset();
         }

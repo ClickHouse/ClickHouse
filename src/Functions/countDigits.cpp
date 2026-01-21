@@ -134,18 +134,18 @@ private:
             if constexpr (is_decimal<T>)
             {
                 auto value = src_data[i].value;
-                if (unlikely(value < 0))
-                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
+                if (value < 0) [[unlikely]]
+                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(static_cast<NativeT>(-value)));
                 else
-                    dst_data[i] = digits10<NativeT>(value);
+                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
             }
             else
             {
                 auto value = src_data[i];
-                if (unlikely(value < 0))
-                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
+                if (value < 0) [[unlikely]]
+                    dst_data[i] = static_cast<UInt8>(digits10(static_cast<NativeT>(-static_cast<NativeT>(value))));
                 else
-                    dst_data[i] = digits10<NativeT>(value);
+                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
             }
         }
     }
