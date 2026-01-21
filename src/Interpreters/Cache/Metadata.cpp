@@ -867,12 +867,9 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
 
     /// If remote_fs_read_method == 'threadpool',
     /// reader itself never owns/allocates the buffer.
-    if (reader->internalBuffer().empty())
-    {
-        if (!memory)
-            memory.emplace(std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size_to_download));
-        reader->set(memory->data(), memory->size());
-    }
+    if (!memory)
+        memory.emplace(std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), size_to_download));
+    reader->set(memory->data(), memory->size());
 
     const auto reserve_space_lock_wait_timeout_milliseconds =
         Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;

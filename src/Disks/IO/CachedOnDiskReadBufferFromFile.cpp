@@ -696,6 +696,8 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
         /// chassert(state.buf->getFileOffsetOfBufferEnd() == file_segment.getCurrentWriteOffset());
         size_t current_offset = file_segment.getCurrentWriteOffset();
         chassert(static_cast<size_t>(state.buf->getPosition()) == current_offset);
+        chassert(state.buf->getFileOffsetOfBufferEnd() == current_offset);
+        chassert(state.buf->getFileOffsetOfBufferEnd() == offset - state.bytes_to_predownload);
         const auto & current_range = file_segment.range();
 
         char * initial_buffer = state.buf->internalBuffer().begin();
@@ -1104,6 +1106,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
     {
         if (predownloadForFileSegment(file_segment, offset, state, info, log))
         {
+            chassert(state.buf->getFileOffsetOfBufferEnd() == offset);
             //size = state.buf->available();
             //if (size)
             //    chassert(!state.buf->offset());
@@ -1122,6 +1125,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             chassert(offset == static_cast<size_t>(state.buf->getFileOffsetOfBufferEnd()));
         }
     }
+    if (state.read_type != ReadType::CACHED)
+        chassert(state.buf->getFileOffsetOfBufferEnd() == offset);
 
     auto do_download = state.read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE;
     if (do_download != file_segment.isDownloader())
@@ -1522,7 +1527,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     //    resetWorkingBuffer();
 
     first_offset = file_offset_of_buffer_end = new_pos;
-    info.file_segments.reset();
+    info.file_segments = nullptr;
     state.reset();
     info.cache_file_reader.reset();
     info.remote_file_reader.reset();
