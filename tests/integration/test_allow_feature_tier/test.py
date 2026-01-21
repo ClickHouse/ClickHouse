@@ -37,7 +37,7 @@ def test_allow_feature_tier_in_general_settings(start_cluster):
     query_with_experimental_setting = (
         "SELECT 1 SETTINGS allow_experimental_time_series_table=1"
     )
-    query_with_beta_setting = "SELECT 1 SETTINGS enable_parallel_replicas=1"
+    query_with_beta_setting = "SELECT 1 SETTINGS allow_experimental_lightweight_update=1"
 
     assert "0" == get_current_tier_value(instance)
     output, error = instance.query_and_get_answer_with_error(

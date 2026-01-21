@@ -1,21 +1,25 @@
--- Tags: no-debug, long
+-- Tags: no-debug, long, no-distributed-cache
 -- - no-debug - debug build uses S3 and this in combination works very slow
+-- - no-distributed-cache - distributed cache does not support adaptive buffers
 
 -- Note, all tests avoids vertical merges (enable_vertical_merge_algorithm=0), since they write column by column and do not have excessive memory usage.
 
-drop table if exists metric_log;
-drop table if exists metric_log_adaptive;
-
--- Nothing better then production table
-system flush logs system.metric_log;
-
 {% for v in [0, 1] %}
-create table metric_log_{{ v }} as system.metric_log engine=MergeTree order by () settings min_columns_to_activate_adaptive_write_buffer={{ v }}, min_bytes_for_wide_part=1e9, enable_vertical_merge_algorithm=0, auto_statistics_types='';
-insert into metric_log_{{ v }} select * from generateRandom() limit 1 settings max_memory_usage = '100Mi' /* usually few tens of MiB */;
+drop table if exists metric_log_{{ v }};
+
+create table metric_log_{{ v }}
+(
+{% for i in range(300) %}
+    m{{i}} UInt64,
+{% endfor %}
+)
+engine=MergeTree order by () settings min_columns_to_activate_adaptive_write_buffer={{ v }}, min_bytes_for_wide_part=1e9, enable_vertical_merge_algorithm=0, auto_statistics_types='';
+
+insert into metric_log_{{ v }} select * from generateRandom() limit 1 settings max_memory_usage = '50Mi' /* usually few 10MiB */;
 optimize table metric_log_{{ v }} final;
 truncate table metric_log_{{ v }};
 alter table metric_log_{{ v }} modify setting min_bytes_for_wide_part=0;
-insert into metric_log_{{ v }} select * from generateRandom() limit 1 settings max_memory_usage = '{{ 400 if v == 1 else 6000 }}Mi' /* w/o adaptive buffers uses ~3 (for regular) and ~5-6 (for encrypted disks), w/ 100MiB for regular and ~200-400MiB for encrypted disks */;
+insert into metric_log_{{ v }} select * from generateRandom() limit 1 settings max_memory_usage = '{{ 50 if v == 1 else 1500 }}Mi' /* w/o adaptive buffers uses ~3 (for regular) and ~600MiB-1GiB (for encrypted disks), w/ 100MiB for regular and ~200-400MiB for encrypted disks */;
 optimize table metric_log_{{ v }} final;
 drop table metric_log_{{ v }};
 {% endfor %}
@@ -30,9 +34,9 @@ select
     peak_memory_usage,
     multiIf(
       -- see comments for max_memory_usage
-      part_type = 'Compact', 400e6,
-      table = 'metric_log_1', 400e6,
-      table = 'metric_log_0', 6e9,
+      part_type = 'Compact', 200e6,
+      table = 'metric_log_1', 200e6,
+      table = 'metric_log_0', 1.5e9,
       0.
     )
   )

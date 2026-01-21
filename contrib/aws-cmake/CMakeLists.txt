@@ -395,7 +395,7 @@ aws_set_thread_name_method(_aws)
 
 # The library is large - avoid bloat.
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    target_compile_options (_aws PRIVATE -g0)
+    target_compile_options (_aws PRIVATE -g1)
 endif()
 
 add_library(ch_contrib::aws_s3 ALIAS _aws)

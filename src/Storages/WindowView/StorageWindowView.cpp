@@ -276,7 +276,7 @@ namespace
         }
     };
 
-    void extractWindowArgument(const ASTPtr & ast, IntervalKind::Kind & kind, Int64 & num_units, String err_msg)
+    void extractWindowArgument(const IAST * ast, IntervalKind::Kind & kind, Int64 & num_units, String err_msg)
     {
         const auto * arg = ast->as<ASTFunction>();
         if (!arg || !startsWith(arg->name, "toInterval")
@@ -306,19 +306,24 @@ namespace
             case IntervalKind::Kind::Microsecond:
             case IntervalKind::Kind::Millisecond:
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by windows yet");
-#define CASE_WINDOW_KIND(KIND) \
+#define CASE_WINDOW_KIND_ADD_TIME(KIND) \
     case IntervalKind::Kind::KIND: { \
         return AddTime<IntervalKind::Kind::KIND>::execute(time_sec, num_units, time_zone); \
     }
-            CASE_WINDOW_KIND(Second)
-            CASE_WINDOW_KIND(Minute)
-            CASE_WINDOW_KIND(Hour)
-            CASE_WINDOW_KIND(Day)
-            CASE_WINDOW_KIND(Week)
-            CASE_WINDOW_KIND(Month)
-            CASE_WINDOW_KIND(Quarter)
-            CASE_WINDOW_KIND(Year)
-#undef CASE_WINDOW_KIND
+            CASE_WINDOW_KIND_ADD_TIME(Second)
+            CASE_WINDOW_KIND_ADD_TIME(Minute)
+            CASE_WINDOW_KIND_ADD_TIME(Hour)
+            CASE_WINDOW_KIND_ADD_TIME(Day)
+#undef CASE_WINDOW_KIND_ADD_TIME
+#define CASE_WINDOW_KIND_ADD_DATE(KIND) \
+    case IntervalKind::Kind::KIND: { \
+        return AddTime<IntervalKind::Kind::KIND>::execute(static_cast<UInt16>(time_sec), num_units, time_zone); \
+    }
+            CASE_WINDOW_KIND_ADD_DATE(Week)
+            CASE_WINDOW_KIND_ADD_DATE(Month)
+            CASE_WINDOW_KIND_ADD_DATE(Quarter)
+            CASE_WINDOW_KIND_ADD_DATE(Year)
+#undef CASE_WINDOW_KIND_ADD_DATE
         }
     }
 
@@ -923,7 +928,7 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         case IntervalKind::Kind::Microsecond:
         case IntervalKind::Kind::Millisecond:
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by windows yet");
-#define CASE_WINDOW_KIND(KIND) \
+#define CASE_WINDOW_KIND_ADD_TIME(KIND) \
     case IntervalKind::Kind::KIND: \
     { \
         if (is_tumble) \
@@ -932,15 +937,25 @@ UInt32 StorageWindowView::getWindowLowerBound(UInt32 time_sec)
         UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(w_start, hop_num_units, *time_zone);\
         return AddTime<IntervalKind::Kind::KIND>::execute(w_end, -window_num_units, *time_zone);\
     }
-        CASE_WINDOW_KIND(Second)
-        CASE_WINDOW_KIND(Minute)
-        CASE_WINDOW_KIND(Hour)
-        CASE_WINDOW_KIND(Day)
-        CASE_WINDOW_KIND(Week)
-        CASE_WINDOW_KIND(Month)
-        CASE_WINDOW_KIND(Quarter)
-        CASE_WINDOW_KIND(Year)
-#undef CASE_WINDOW_KIND
+        CASE_WINDOW_KIND_ADD_TIME(Second)
+        CASE_WINDOW_KIND_ADD_TIME(Minute)
+        CASE_WINDOW_KIND_ADD_TIME(Hour)
+        CASE_WINDOW_KIND_ADD_TIME(Day)
+#undef CASE_WINDOW_KIND_ADD_TIME
+#define CASE_WINDOW_KIND_ADD_DATE(KIND) \
+    case IntervalKind::Kind::KIND: \
+    { \
+        if (is_tumble) \
+            return ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, window_num_units, *time_zone); \
+        UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, hop_num_units, *time_zone); \
+        UInt32 w_end = AddTime<IntervalKind::Kind::KIND>::execute(static_cast<UInt16>(w_start), hop_num_units, *time_zone);\
+        return AddTime<IntervalKind::Kind::KIND>::execute(static_cast<UInt16>(w_end), -window_num_units, *time_zone);\
+    }
+        CASE_WINDOW_KIND_ADD_DATE(Week)
+        CASE_WINDOW_KIND_ADD_DATE(Month)
+        CASE_WINDOW_KIND_ADD_DATE(Quarter)
+        CASE_WINDOW_KIND_ADD_DATE(Year)
+#undef CASE_WINDOW_KIND_ADD_DATE
     }
 }
 
@@ -953,21 +968,28 @@ UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
         case IntervalKind::Kind::Millisecond:
             throw Exception(ErrorCodes::SYNTAX_ERROR, "Fractional seconds are not supported by window view yet");
 
-#define CASE_WINDOW_KIND(KIND) \
+#define CASE_WINDOW_KIND_ADD_TIME(KIND) \
     case IntervalKind::Kind::KIND: \
     { \
         UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, slide_num_units, *time_zone); \
         return AddTime<IntervalKind::Kind::KIND>::execute(w_start, slide_num_units, *time_zone); \
     }
-        CASE_WINDOW_KIND(Second)
-        CASE_WINDOW_KIND(Minute)
-        CASE_WINDOW_KIND(Hour)
-        CASE_WINDOW_KIND(Day)
-        CASE_WINDOW_KIND(Week)
-        CASE_WINDOW_KIND(Month)
-        CASE_WINDOW_KIND(Quarter)
-        CASE_WINDOW_KIND(Year)
-#undef CASE_WINDOW_KIND
+        CASE_WINDOW_KIND_ADD_TIME(Second)
+        CASE_WINDOW_KIND_ADD_TIME(Minute)
+        CASE_WINDOW_KIND_ADD_TIME(Hour)
+        CASE_WINDOW_KIND_ADD_TIME(Day)
+#undef CASE_WINDOW_KIND_ADD_TIME
+#define CASE_WINDOW_KIND_ADD_DATE(KIND) \
+    case IntervalKind::Kind::KIND: \
+    { \
+        UInt32 w_start = ToStartOfTransform<IntervalKind::Kind::KIND>::execute(time_sec, slide_num_units, *time_zone); \
+        return AddTime<IntervalKind::Kind::KIND>::execute(static_cast<UInt16>(w_start), slide_num_units, *time_zone); \
+    }
+        CASE_WINDOW_KIND_ADD_DATE(Week)
+        CASE_WINDOW_KIND_ADD_DATE(Month)
+        CASE_WINDOW_KIND_ADD_DATE(Quarter)
+        CASE_WINDOW_KIND_ADD_DATE(Year)
+#undef CASE_WINDOW_KIND_ADD_DATE
     }
 }
 
@@ -1297,7 +1319,7 @@ StorageWindowView::StorageWindowView(
             target_create_query->setTable(generateTargetTableName(table_id_));
 
             auto new_columns_list = std::make_shared<ASTColumns>();
-            new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
+            new_columns_list->set(new_columns_list->columns, query.columns_list->getChild(*query.columns_list->columns));
 
             target_create_query->set(target_create_query->columns_list, new_columns_list);
             target_create_query->set(target_create_query->storage, to_table_engine);
@@ -1386,7 +1408,7 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
     if (arguments.size() < required_args)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too few arguments for function {}: expected at least {}, got {}", window_function.name, required_args, arguments.size());
     extractWindowArgument(
-        arguments.at(1), window_kind, window_num_units,
+        arguments.at(1).get(), window_kind, window_num_units,
         "Illegal type of second argument of function " + window_function.name + " should be Interval");
 
     window_id_alias = window_function.alias;
@@ -1405,7 +1427,7 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
         hop_kind = window_kind;
         hop_num_units = window_num_units;
         extractWindowArgument(
-            arguments.at(2), window_kind, window_num_units,
+            arguments.at(2).get(), window_kind, window_num_units,
             "Illegal type of third argument of function " + window_function.name + " should be Interval");
         slice_num_units = std::gcd(hop_num_units, window_num_units);
     }
@@ -1592,33 +1614,6 @@ void StorageWindowView::writeIntoWindowView(
 
     builder = select_block.buildQueryPipeline();
 
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        // Can't move chunk_infos here, that function could be called several times
-        return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), stream_header);
-    });
-
-    bool disable_deduplication_for_children = !local_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
-    if (!disable_deduplication_for_children)
-    {
-        String window_view_id = window_view.getStorageID().hasUUID() ? toString(window_view.getStorageID().uuid) : window_view.getStorageID().getFullNameNotQuoted();
-        builder.addSimpleTransform([&](const SharedHeader & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewIDTransform>(window_view_id, stream_header);
-        });
-        builder.addSimpleTransform([&](const SharedHeader & stream_header)
-        {
-            return std::make_shared<DeduplicationToken::SetViewBlockNumberTransform>(stream_header);
-        });
-    }
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer tmp table before squashing", stream_header);
-    });
-#endif
-
     builder.addSimpleTransform(
         [&](const SharedHeader & current_header)
         {
@@ -1627,6 +1622,22 @@ void StorageWindowView::writeIntoWindowView(
                 local_context->getSettingsRef()[Setting::min_insert_block_size_rows],
                 local_context->getSettingsRef()[Setting::min_insert_block_size_bytes]);
         });
+
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        // Can't move chunk_infos here, that function could be called several times
+        return std::make_shared<RestoreChunkInfosTransform>(chunk_infos.clone(), stream_header);
+    });
+
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        return std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(stream_header);
+    });
+
+    builder.addSimpleTransform([&](const SharedHeader & stream_header)
+    {
+        return std::make_shared<UpdateDeduplicationInfoWithViewIDTransform>(window_view.getStorageID(), stream_header);
+    });
 
     if (!window_view.is_proctime)
     {
@@ -1659,13 +1670,6 @@ void StorageWindowView::writeIntoWindowView(
             lateness_upper_bound);
     });
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Afrer WatermarkTransform", stream_header);
-    });
-#endif
-
     auto inner_table = window_view.getInnerTable();
     auto lock = inner_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
@@ -1684,13 +1688,6 @@ void StorageWindowView::writeIntoWindowView(
 
         builder.addSimpleTransform([&](const SharedHeader & header_) { return std::make_shared<ExpressionTransform>(header_, convert_actions); });
     }
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    builder.addSimpleTransform([&](const SharedHeader & stream_header)
-    {
-        return std::make_shared<DeduplicationToken::CheckTokenTransform>("StorageWindowView: Before out", stream_header);
-    });
-#endif
 
     builder.addChain(Chain(std::move(output)));
     builder.setSinks([&](const SharedHeader & cur_header, Pipe::StreamType)

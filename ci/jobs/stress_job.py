@@ -254,10 +254,13 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 stderr_log=stderr_log if stderr_log.exists() else "",
                 fuzzer_log="",
             )
-            name, description = log_parser.parse_failure()
+            name, description, files = log_parser.parse_failure()
             test_results.append(
                 Result.create_from(
-                    name=name, info=description, status=Result.StatusExtended.FAIL
+                    name=name,
+                    info=description,
+                    status=Result.StatusExtended.FAIL,
+                    files=files,
                 )
             )
 

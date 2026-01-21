@@ -542,8 +542,108 @@ void registerAggregateFunctionsQuantileApprox(AggregateFunctionFactory & factory
     /// For aggregate functions returning array we cannot return NULL on empty set.
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
-    factory.registerFunction(NameQuantileGK::name, createAggregateFunctionQuantile<FuncQuantileGK>);
-    factory.registerFunction(NameQuantilesGK::name, {createAggregateFunctionQuantile<FuncQuantilesGK>, properties});
+    FunctionDocumentation::Description description = R"(
+Computes the [`quantile`](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm.
+
+The Greenwald-Khanna algorithm is an algorithm used to compute quantiles on a stream of data in a highly efficient manner.
+It was introduced by Michael Greenwald and Sanjeev Khanna in 2001.
+It is widely used in databases and big data systems where computing accurate quantiles on a large stream of data in real-time is necessary.
+The algorithm is highly efficient, taking only O(log n) space and O(log log n) time per item (where n is the size of the input).
+It is also highly accurate, providing an approximate quantile value with high probability.
+
+`quantileGK` is different from other quantile functions in ClickHouse, because it enables user to control the accuracy of the approximate quantile result.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+quantileGK(accuracy, level)(expr)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+    };
+    FunctionDocumentation::Parameters parameters = {
+        {"accuracy", "Accuracy of quantile. Constant positive integer. Larger accuracy value means less error. For example, if the accuracy argument is set to 100, the computed quantile will have an error no greater than 1% with high probability. There is a trade-off between the accuracy of the computed quantiles and the computational complexity of the algorithm. A larger accuracy requires more memory and computational resources to compute the quantile accurately, while a smaller accuracy argument allows for a faster and more memory-efficient computation but with a slightly lower accuracy.", {"UInt*"}},
+        {"level", "Optional. Level of quantile. Constant floating-point number from 0 to 1. Default value: 0.5. At `level=0.5` the function calculates median.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the quantile of the specified level and accuracy.", {"Float64", "Date", "DateTime"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Computing quantile with different accuracy levels",
+        R"(
+SELECT quantileGK(1, 0.25)(number + 1) FROM numbers(1000);
+        )",
+        R"(
+┌─quantileGK(1, 0.25)(plus(number, 1))─┐
+│                                    1 │
+└──────────────────────────────────────┘
+        )"
+    },
+    {
+        "Higher accuracy quantile",
+        R"(
+SELECT quantileGK(100, 0.25)(number + 1) FROM numbers(1000);
+        )",
+        R"(
+┌─quantileGK(100, 0.25)(plus(number, 1))─┐
+│                                    251 │
+└────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction(NameQuantileGK::name, {createAggregateFunctionQuantile<FuncQuantileGK>, {}, documentation});
+
+    FunctionDocumentation::Description description_quantiles = R"(
+Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously using the [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf) algorithm.
+
+This function works similarly with [`quantileGK`](/sql-reference/aggregate-functions/reference/quantilegk) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+
+The Greenwald-Khanna algorithm is an algorithm used to compute quantiles on a stream of data in a highly efficient manner.
+It was introduced by Michael Greenwald and Sanjeev Khanna in 2001.
+The algorithm is highly efficient, taking only O(log n) space and O(log log n) time per item (where n is the size of the input).
+It is also highly accurate, providing approximate quantile values with controllable accuracy.
+    )";
+    FunctionDocumentation::Syntax syntax_quantiles = R"(
+quantilesGK(accuracy, level1, level2, ...)(expr)
+    )";
+    FunctionDocumentation::Arguments arguments_quantiles = {
+        {"expr", "Expression over the column values resulting in numeric data types, Date or DateTime.", {"(U)Int*", "Float*", "Decimal*", "Date", "DateTime"}}
+    };
+    FunctionDocumentation::Parameters parameters_quantiles = {
+        {"accuracy", "Accuracy of quantiles. Constant positive integer. Larger accuracy value means less error. For example, if the accuracy argument is set to 100, the computed quantiles will have an error no greater than 1% with high probability. There is a trade-off between the accuracy of the computed quantiles and the computational complexity of the algorithm.", {"UInt*"}},
+        {"level", "Levels of quantiles. One or more constant floating-point numbers from 0 to 1.", {"Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_quantiles = {"Array of quantiles of the specified levels in the same order as the levels were specified.", {"Array(Float64)", "Array(Date)", "Array(DateTime)"}};
+    FunctionDocumentation::Examples examples_quantiles = {
+    {
+        "Computing multiple quantiles with GK algorithm",
+        R"(
+SELECT quantilesGK(1, 0.25, 0.5, 0.75)(number + 1) FROM numbers(1000);
+        )",
+        R"(
+┌─quantilesGK(1, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [1, 1, 1]                                        │
+└──────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Higher accuracy quantiles",
+        R"(
+SELECT quantilesGK(100, 0.25, 0.5, 0.75)(number + 1) FROM numbers(1000);
+        )",
+        R"(
+┌─quantilesGK(100, 0.25, 0.5, 0.75)(plus(number, 1))─┐
+│ [251, 498, 741]                                    │
+└────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_quantiles = {23, 4};
+    FunctionDocumentation::Category category_quantiles = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_quantiles = {description_quantiles, syntax_quantiles, arguments_quantiles, parameters_quantiles, returned_value_quantiles, examples_quantiles, introduced_in_quantiles, category_quantiles};
+
+    factory.registerFunction(NameQuantilesGK::name, {createAggregateFunctionQuantile<FuncQuantilesGK>, properties, documentation_quantiles});
 
     /// 'median' is an alias for 'quantile'
     factory.registerAlias("medianGK", NameQuantileGK::name);

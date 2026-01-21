@@ -1,11 +1,12 @@
 -- Tags: stateful, long
 
-SET optimize_read_in_order=0, query_plan_read_in_order=0, local_filesystem_read_prefetch=0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0, local_filesystem_read_method='pread_threadpool', use_uncompressed_cache=0;
+SET local_filesystem_read_prefetch=0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0, local_filesystem_read_method='pread_threadpool', use_uncompressed_cache=0;
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
-SET max_threads=8, use_hedged_requests=0, max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
+-- Reading of aggregation states from disk will affect `ReadCompressedBytes`
+SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
@@ -29,6 +30,12 @@ SELECT * FROM test.hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10 FO
 SELECT REGEXP_REPLACE(Referer, '^https?://(?:www\.)?([^/]+)/.*$', '\1') AS k, AVG(length(Referer)) AS l, COUNT(*) AS c, MIN(Referer) FROM test.hits WHERE Referer <> '' GROUP BY k HAVING COUNT(*) > 100000 ORDER BY l DESC LIMIT 25 FORMAT Null SETTINGS log_comment='query_28';
 
 SELECT 1, URL, COUNT(*) AS c FROM test.hits GROUP BY 1, URL ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_34';
+
+-- For some reason, with smaller block sizes `ReadCompressedBytes` shows twice the size of `CounterID` column for query_43
+SET max_block_size=65409;
+
+-- Just checking that statistics are collected with read in order
+SELECT CounterID from test.hits ORDER BY CounterID DESC FORMAT Null SETTINGS optimize_read_in_order=1, query_plan_read_in_order=1, log_comment='query_43';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 

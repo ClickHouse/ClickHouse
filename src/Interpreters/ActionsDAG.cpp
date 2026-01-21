@@ -934,7 +934,7 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         case ActionsDAG::ActionType::COLUMN:
         {
             auto column = node->column;
-            if (input_rows_count < column->size())
+            if (input_rows_count != column->size())
                 column = column->cloneResized(input_rows_count);
 
             res_column.column = column;
@@ -1078,12 +1078,16 @@ ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
                     bool has_all_arguments = true;
                     for (size_t i = 0; i < arguments.size(); ++i)
                     {
-                        arguments[i] = node_to_column[node->children[i]];
+                        const auto * child = node->children[i];
+                        if (auto it = node_to_column.find(child); it != node_to_column.end())
+                            arguments[i] = it->second;
+                        else
+                            arguments[i] = ColumnWithTypeAndName{nullptr, child->result_type, child->result_name};
+
                         if (!arguments[i].column)
                             has_all_arguments = false;
                         if (!has_all_arguments && params.throw_on_error)
-                            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
-                                            "Not found column {}", node->children[i]->result_name);
+                            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {}", child->result_name);
                     }
 
                     if (node->type == ActionsDAG::ActionType::INPUT && params.throw_on_error)
@@ -1707,7 +1711,8 @@ ActionsDAG ActionsDAG::makeConvertingActions(
     ContextPtr context,
     bool ignore_constant_values,
     bool add_cast_columns,
-    NameToNameMap * new_names)
+    NameToNameMap * new_names,
+    NameSet * columns_contain_compiled_function)
 {
     size_t num_input_columns = source.size();
     size_t num_result_columns = result.size();
@@ -1779,6 +1784,15 @@ ActionsDAG ActionsDAG::makeConvertingActions(
                         ErrorCodes::ILLEGAL_COLUMN,
                         "Cannot convert column `{}` because it is constant but values of constants are different in source and result",
                         res_elem.name);
+            }
+            else if (columns_contain_compiled_function && columns_contain_compiled_function->contains(res_elem.name))
+            {
+                /// It may happen when JIT compilation is enabled that source column is constant and destination column is not constant.
+                /// e.g. expression "and(equals(materialize(null::Nullable(UInt64)), null::Nullable(UInt64)), equals(null::Nullable(UInt64), null::Nullable(UInt64)))"
+                /// compiled expression is "and(equals(input: Nullable(UInt64), null), null). Partial evaluation of the compiled expression isn't able to infer that the result column is constant.
+                /// It causes inconsistency between pipeline header(source column is not constant) and output header of ExpressionStep(destination column is constant).
+                /// So we need to convert non-constant column to constant column under this condition.
+                dst_node = &actions_dag.addColumn(res_elem);
             }
             else
                 throw Exception(
@@ -2462,7 +2476,7 @@ bool ActionsDAG::isFilterAlwaysFalseForDefaultValueInputs(const std::string & fi
     if (value.isNull())
         return true;
 
-    UInt8 predicate_value = value.safeGet<UInt8>();
+    auto predicate_value = value.safeGet<UInt8>();
     return predicate_value == 0;
 }
 

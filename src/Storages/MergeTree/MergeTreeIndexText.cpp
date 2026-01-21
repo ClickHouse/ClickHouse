@@ -8,6 +8,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -43,10 +44,11 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int CORRUPTED_DATA;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
@@ -423,7 +425,7 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
     }
 
     PostingList range_posting;
-    range_posting.addRangeClosed(current_range->begin, current_range->end);
+    range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
 
     for (const auto & token : query.tokens)
     {
@@ -473,7 +475,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     }
 
     PostingList intersection;
-    intersection.addRangeClosed(current_range->begin, current_range->end);
+    intersection.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
 
     for (const auto & token : query.tokens)
     {
@@ -607,7 +609,7 @@ std::vector<roaring::api::roaring_bitmap_t> splitPostings(const PostingList & po
         roaring::api::roaring_bitmap_t bitmap;
         auto & new_container = bitmap.high_low_container;
 
-        new_container.size = size;
+        new_container.size = static_cast<int32_t>(size);
         new_container.allocation_size = 0;
         new_container.containers = container.containers + begin;
         new_container.typecodes = container.typecodes + begin;
@@ -673,7 +675,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     using enum PostingsSerialization::Flags;
     TokenPostingsInfo info;
     info.header = 0;
-    info.cardinality = postings.size();
+    info.cardinality = static_cast<UInt32>(postings.size());
 
     if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
@@ -1017,12 +1019,16 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
             tokens_map.emplace(key_holder, it, inserted);
 
             auto & posting_list_builder = it->getMapped();
-            posting_list_builder.add(current_row, posting_lists);
+            posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
             ++num_processed_tokens;
             return false;
         });
+}
 
-    ++num_processed_documents;
+void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
+{
+    is_empty = false;
+    ++current_row;
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
@@ -1047,6 +1053,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
 void MergeTreeIndexTextGranuleBuilder::reset()
 {
+    is_empty = true;
     current_row = 0;
     num_processed_tokens = 0;
     tokens_map = {};
@@ -1079,45 +1086,47 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (*pos >= block.rows())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}.",
+            "The provided position is not less than the number of block rows. Position: {}, Block rows: {}",
             *pos, block.rows());
+    }
+
+    if (*pos + limit > std::numeric_limits<UInt32>::max())
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot build text index in part with {} rows. Materialization of text index is not supported for parts with more than {} rows",
+            *pos + limit, std::numeric_limits<UInt32>::max());
     }
 
     const size_t rows_read = std::min(limit, block.rows() - *pos);
     if (rows_read == 0)
         return;
 
-    const auto & index_column = block.getByName(index_column_name);
+    const ColumnWithTypeAndName & index_column = block.getByName(index_column_name);
 
-    if (isArray(index_column.type))
+    if (isArray(index_column.type->getTypeId()))
     {
-        size_t offset = *pos;
+        auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-        const auto & column_array = assert_cast<const ColumnArray &>(*index_column.column);
+        const auto & column_array = assert_cast<const ColumnArray &>(*preprocessed_column);
         const auto & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
 
-        for (size_t i = 0; i < rows_read; ++i)
+        for (size_t i = offset; i < offset + rows_read; ++i)
         {
-            size_t element_start_row = column_offsets[offset + i - 1];
-            size_t elements_size = column_offsets[offset + i] - element_start_row;
-
-            for (size_t element_idx = 0; element_idx < elements_size; ++element_idx)
+            for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
             {
-                auto ref = column_data.getDataAt(element_start_row + element_idx);
+                std::string_view ref = column_data.getDataAt(element_idx);
                 granule_builder.addDocument(ref);
             }
-
             granule_builder.incrementCurrentRow();
         }
     }
     else
     {
-        auto [processed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
-
+        auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
         for (size_t i = 0; i < rows_read; ++i)
         {
-            const std::string_view ref = processed_column->getDataAt(offset + i);
+            std::string_view ref = preprocessed_column->getDataAt(offset + i);
             granule_builder.addDocument(ref);
             granule_builder.incrementCurrentRow();
         }
@@ -1193,7 +1202,7 @@ Type castAs(const Field & field, std::string_view argument_name)
     if (!result.has_value())
     {
         throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
+            ErrorCodes::BAD_ARGUMENTS,
             "Text index argument '{}' expected to be {}, but got {}",
             argument_name, fieldTypeToString(Field::TypeToEnum<Type>::value), field.getTypeName());
     }
@@ -1233,13 +1242,13 @@ std::unordered_map<String, Field> convertArgumentsToOptionsMap(const FieldVector
     for (const Field & argument : arguments)
     {
         if (argument.getType() != Field::Types::Tuple)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Arguments of text index must be key-value pair (identifier = literal)");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arguments of text index must be key-value pair (identifier = literal)");
 
         Tuple tuple = argument.safeGet<Tuple>();
         String key = tuple[0].safeGet<String>();
 
         if (options.contains(key))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index '{}' argument is specified more than once", key);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index '{}' argument is specified more than once", key);
 
         options[key] = tuple[1];
     }
@@ -1255,7 +1264,7 @@ std::pair<String, std::vector<Field>> extractTokenizer(std::unordered_map<String
 {
     /// Check that tokenizer is present
     if (!options.contains(ARGUMENT_TOKENIZER))
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index must have an '{}' argument", ARGUMENT_TOKENIZER);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index must have an '{}' argument", ARGUMENT_TOKENIZER);
 
     /// Tokenizer is provided as Literal or Identifier.
     if (auto tokenizer_str = extractOption<String>(options, ARGUMENT_TOKENIZER, false); tokenizer_str)
@@ -1271,7 +1280,7 @@ std::pair<String, std::vector<Field>> extractTokenizer(std::unordered_map<String
         if (function_name.getType() != Field::Types::Which::String)
         {
             throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
+                ErrorCodes::BAD_ARGUMENTS,
                 "Text index argument '{}': function name expected to be String, but got {}",
                 ARGUMENT_TOKENIZER,
                 function_name.getTypeName());
@@ -1282,7 +1291,7 @@ std::pair<String, std::vector<Field>> extractTokenizer(std::unordered_map<String
     }
 
     throw Exception(
-        ErrorCodes::INCORRECT_QUERY,
+        ErrorCodes::BAD_ARGUMENTS,
         "Text index argument '{}' expected to be either String or Function, but got {}",
         ARGUMENT_TOKENIZER,
         options.at(ARGUMENT_TOKENIZER).getTypeName());
@@ -1295,7 +1304,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
     const auto [tokenizer, params] = extractTokenizer(options);
 
-    std::vector<String> allowed_tokenizers
+    static std::vector<String> allowed_tokenizers
         = {NgramsTokenExtractor::getExternalName(),
            SplitByNonAlphaTokenExtractor::getExternalName(),
            SplitByStringTokenExtractor::getExternalName(),
@@ -1316,7 +1325,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
         preprocessor};
 
     if (!options.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
 
     return std::make_shared<MergeTreeIndexText>(index, index_params, std::move(token_extractor));
 }
@@ -1326,7 +1335,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     std::unordered_map<String, Field> options = convertArgumentsToOptionsMap(index.arguments);
     const auto [tokenizer, params] = extractTokenizer(options);
 
-    std::vector<String> allowed_tokenizers
+    static std::vector<String> allowed_tokenizers
         = {NgramsTokenExtractor::getExternalName(),
            SplitByNonAlphaTokenExtractor::getExternalName(),
            SplitByStringTokenExtractor::getExternalName(),
@@ -1337,20 +1346,20 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     UInt64 dictionary_block_size = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE).value_or(DEFAULT_DICTIONARY_BLOCK_SIZE);
     if (dictionary_block_size == 0)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_DICTIONARY_BLOCK_SIZE, dictionary_block_size);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_DICTIONARY_BLOCK_SIZE, dictionary_block_size);
 
     UInt64 dictionary_block_use_fc_compression = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
     if (dictionary_block_use_fc_compression > 1)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION, dictionary_block_use_fc_compression);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION, dictionary_block_use_fc_compression);
 
     UInt64 posting_list_block_size = extractOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE).value_or(DEFAULT_POSTING_LIST_BLOCK_SIZE);
     if (posting_list_block_size == 0)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_POSTING_LIST_BLOCK_SIZE, posting_list_block_size);
 
     auto preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
 
     if (!options.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
 
     /// Check that the index is created on a single column
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
@@ -1359,9 +1368,6 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     WhichDataType data_type(index.data_types[0]);
     if (data_type.isArray())
     {
-        if (preprocessor.has_value())
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index created on Array columns does not support preprocessor argument yet.");
-
         const auto & array_type = assert_cast<const DataTypeArray &>(*index.data_types[0]);
         data_type = WhichDataType(array_type.getNestedType());
     }
@@ -1374,7 +1380,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     if (!data_type.isString() && !data_type.isFixedString())
     {
         throw Exception(
-            ErrorCodes::INCORRECT_QUERY,
+            ErrorCodes::BAD_ARGUMENTS,
             "Text index must be created on columns of type `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
 
@@ -1404,7 +1410,7 @@ static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
     if (ast_equal_function == nullptr
         || ast_equal_function->name != "equals"
         || ast_equal_function->arguments->children.size() != 2)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot mix key-value pair and single argument as text index arguments");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot mix key-value pair and single argument as text index arguments");
 
     Tuple result;
 
@@ -1413,7 +1419,7 @@ static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
     {
         const auto * identifier = arguments->children[0]->as<ASTIdentifier>();
         if (identifier == nullptr)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter name: Expected identifier");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index parameter name: Expected identifier");
 
         result.emplace_back(identifier->name());
     }
@@ -1422,7 +1428,7 @@ static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
     {
         const ASTFunction * preprocessor_function = arguments->children[1]->as<ASTFunction>();
         if (preprocessor_function == nullptr)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index preprocessor argument must be an expression");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index preprocessor argument must be an expression");
 
         /// preprocessor_function->getColumnName() returns the string representation for the expression. That string will be parsed again on
         /// index recreation but can also be stored in the index metadata as is.
@@ -1447,7 +1453,7 @@ static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
             {
                 const auto * arg_literal = subargument->as<ASTLiteral>();
                 if (arg_literal == nullptr)
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index function argument: Expected literal");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index function argument: Expected literal");
 
                 tuple.emplace_back(arg_literal->value);
             }
@@ -1455,7 +1461,7 @@ static Tuple parseNamedArgumentFromAST(const ASTFunction * ast_equal_function)
         }
         else
         {
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index parameter value: Expected literal, identifier or function");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index parameter value: Expected literal, identifier or function");
         }
     }
 
