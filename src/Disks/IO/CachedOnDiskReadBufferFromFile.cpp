@@ -246,14 +246,14 @@ std::shared_ptr<ReadBufferFromFileBase> getCacheReadBuffer(
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CachedReadBufferCreateBufferMicroseconds);
 
     auto path = file_segment.getPath();
-    if (info.cache_file_reader)
-    {
-        chassert(info.cache_file_reader->getFileName() == path);
-        if (info.cache_file_reader->getFileName() == path)
-            return info.cache_file_reader;
+    //if (info.cache_file_reader)
+    //{
+    //    chassert(info.cache_file_reader->getFileName() == path);
+    //    if (info.cache_file_reader->getFileName() == path)
+    //        return info.cache_file_reader;
 
-        info.cache_file_reader.reset();
-    }
+    //    info.cache_file_reader.reset();
+    //}
 
     ReadSettings local_read_settings{info.settings};
     local_read_settings.local_fs_method = LocalFSReadMethod::pread;
@@ -755,6 +755,7 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                         state.buf->eof(),
                         state.buf->internalBuffer().size());
 
+                chassert(!state.buf->hasPendingData());
                 auto result = state.buf->hasPendingData();
                 if (result)
                 {
@@ -1036,21 +1037,21 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     {
         /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
         /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
-        //if (info.settings.local_fs_buffer_size && info.settings.local_fs_buffer_size < internal_buffer.size())
-        //    internal_buffer.resize(info.settings.local_fs_buffer_size);
+        if (info.settings.local_fs_buffer_size && info.settings.local_fs_buffer_size < internal_buffer.size())
+            internal_buffer.resize(info.settings.local_fs_buffer_size);
 
         /// It would make sense to reduce buffer size to what is left to read
         /// (when we read the last segment) regardless of the read_type.
         /// But we have to use big enough buffers when we [pre]download segments
         /// to amortize netw and FileCache overhead (space reservation and relevant locks).
-        //if (info.file_segments->size() == 1)
-        //{
-        //    const size_t remaining_size_to_read
-        //        = std::min(current_read_range.right, info.read_until_position - 1) - file_offset_of_buffer_end + 1;
-        //    const size_t new_buf_size = std::min(internal_buffer.size(), remaining_size_to_read);
-        //    chassert((internal_buffer.size() >= nextimpl_working_buffer_offset + new_buf_size) && (new_buf_size > 0));
-        //    internal_buffer.resize(nextimpl_working_buffer_offset + new_buf_size);
-        //}
+        if (info.file_segments->size() == 1)
+        {
+            const size_t remaining_size_to_read
+                = std::min(current_read_range.right, info.read_until_position - 1) - file_offset_of_buffer_end + 1;
+            const size_t new_buf_size = std::min(internal_buffer.size(), remaining_size_to_read);
+            chassert((internal_buffer.size() >= nextimpl_working_buffer_offset + new_buf_size) && (new_buf_size > 0));
+            internal_buffer.resize(nextimpl_working_buffer_offset + new_buf_size);
+        }
     }
 
     state->buf->set(internal_buffer.begin(), internal_buffer.size());
@@ -1107,6 +1108,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         if (predownloadForFileSegment(file_segment, offset, state, info, log))
         {
             chassert(state.buf->getFileOffsetOfBufferEnd() == offset);
+            chassert(static_cast<size_t>(state.buf->getPosition()) == offset);
+            chassert(state.buf->available() == 0);
             //size = state.buf->available();
             //if (size)
             //    chassert(!state.buf->offset());
@@ -1180,8 +1183,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 
         if (result)
         {
-            //size = state.buf->buffer().size();
-            size = state.buf->available();
+            size = state.buf->buffer().size();
         }
 
         if (state.read_type == ReadType::CACHED)
@@ -1267,8 +1269,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             if (size > remaining_size_to_read)
             {
                 size = remaining_size_to_read;
-                chassert(state.buf->buffer().size() >= state.buf->offset() + size);
-                state.buf->buffer().resize(state.buf->offset() + size);
+                chassert(state.buf->buffer().size() >= size);
+                state.buf->buffer().resize(size);
             }
         }
 
