@@ -312,26 +312,33 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
     expected_ids = list(range(0, 50)) + list(range(60, 150)) + list(range(160, 250)) + list(range(260, 300))
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_metadata_log_level = 'manifest_file_entry'")) == expected_ids
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_metadata_log_level = 'manifest_file_entry'", query_id=query_id)) == expected_ids
 
     #  Parse position delete logs to extract bounds info.
     skipping_logs = instance.grep_in_log("Skipping position delete file")
     processing_logs = instance.grep_in_log("Processing position delete file")
 
     parsed_log_entries: list[LogEntry] = []
-    assert skipping_logs, "No skipping logs found"
-    assert processing_logs, "No processing logs found"
+    has_skipping_logs: bool = False
+    has_processing_logs: bool = False
     for log_line in skipping_logs.splitlines():
-        parsed_log_entries.append(parse_log_entry(log_line))
+        if query_id in log_line:
+            parsed_log_entries.append(parse_log_entry(log_line))
+            has_skipping_logs = True
     for log_line in processing_logs.splitlines():
-        parsed_log_entries.append(parse_log_entry(log_line))
+        if query_id in log_line:
+            parsed_log_entries.append(parse_log_entry(log_line))
+            has_processing_logs = True
+
+    assert has_skipping_logs, "No skipping logs found"
+    assert has_processing_logs, "No processing logs found"
 
     #  Parse manifest file entries from system.iceberg_metadata_log.
     instance.query("SYSTEM FLUSH LOGS")
-    metadata_log_query = """
+    metadata_log_query = f"""
         SELECT DISTINCT content
         FROM system.iceberg_metadata_log 
-        WHERE content != '' AND content IS NOT NULL AND content_type = 'ManifestFileEntry'
+        WHERE content != '' AND content IS NOT NULL AND content_type = 'ManifestFileEntry' AND query_id = '{query_id}'
     """
     metadata_log_result = instance.query(metadata_log_query)
 
@@ -352,6 +359,7 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
     #  Verify that bounds from logs match bounds from manifest entries.
     for log_entry in parsed_log_entries:
         delete_file_name = log_entry.position_delete_file.split('/')[-1]
+
         
         assert delete_file_name in delete_files_from_manifest, \
             f"Delete file {delete_file_name} from logs not found in manifest entries"
