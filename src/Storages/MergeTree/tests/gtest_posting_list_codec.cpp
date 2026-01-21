@@ -657,7 +657,8 @@ TEST(PostingListCodecTest, EncodeBytesMatchSSEvsPortable)
             ASSERT_EQ(used_port, expected_bytes);
 
             ASSERT_EQ(enc_port.size(), enc_sse.size());
-            ASSERT_EQ(0, std::memcmp(enc_port.data(), enc_sse.data(), expected_bytes))
+            if (expected_bytes > 0)
+                ASSERT_EQ(0, std::memcmp(enc_port.data(), enc_sse.data(), expected_bytes))
                     << "Encoded byte stream differs (n=" << n << ", bit=" << bit << ")";
         }
     }
@@ -746,7 +747,8 @@ TEST(PostingListCodecTest, SpecialPatterns)
             ASSERT_EQ(enc_port.size(), expected_bytes);
             ASSERT_EQ(enc_sse.size(), expected_bytes);
 
-            ASSERT_EQ(0, std::memcmp(enc_port.data(), enc_sse.data(), expected_bytes))
+            if (expected_bytes > 0)
+                ASSERT_EQ(0, std::memcmp(enc_port.data(), enc_sse.data(), expected_bytes))
                     << "Pattern differs (pattern=" << pat << ", n=" << c.n << ", bit=" << c.bit << ")";
         }
     }
