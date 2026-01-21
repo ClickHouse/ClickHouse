@@ -962,7 +962,7 @@ namespace
             Node * node = anyToNodePtr(aggregate);
             Node * next_node = anyToNodePtr(next_result);
             if (node && next_node)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't aggregate\n{}and\n{}", node->dumpTree(1), next_node->dumpTree(1));
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't aggregate\n{}and\n{}", node->dumpNode(1), next_node->dumpNode(1));
             if (node)
                 return node;
             else
