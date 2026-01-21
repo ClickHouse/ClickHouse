@@ -213,7 +213,7 @@ NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
 {
     std::unordered_set<String> existing_names; /// set of existing top-level column names to avoid inferring conflicting Nested parents
     existing_names.reserve(names_and_types.size());
-    for (const auto & nt : names_and_types) 
+    for (const auto & nt : names_and_types)
         existing_names.emplace(nt.name);
 
     std::unordered_map<String, NamesAndTypesList> nested;
