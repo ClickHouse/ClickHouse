@@ -405,10 +405,7 @@ protected:
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
     bool written_first_block = false;
-    /// How many rows have been read or written. `processed_rows_from_blocks` does not increment when data does not flow through client,
-    /// like with `INSERT ... SELECT`. We can use progress reports by server in that case to track processed rows.
-    size_t processed_rows_from_blocks = 0;
-    size_t processed_rows_from_progress = 0;
+    size_t processed_rows = 0; /// How many rows have been read or written.
 
     bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the

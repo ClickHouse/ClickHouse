@@ -1,6 +1,7 @@
 #include <Poco/Net/NetException.h>
 
 #include <base/scope_guard.h>
+#include <Common/scope_guard_safe.h>
 
 #include <IO/WriteBufferFromPocoSocket.h>
 
@@ -47,7 +48,7 @@ ssize_t WriteBufferFromPocoSocket::socketSendBytesImpl(const char * ptr, size_t 
     {
         socket.setBlocking(false);
         /// Set socket to blocking mode at the end.
-        SCOPE_EXIT(socket.setBlocking(true));
+        SCOPE_EXIT_SAFE(socket.setBlocking(true));
         bool secure = socket.secure();
         res = socket.impl()->sendBytes(ptr, static_cast<int>(size));
 

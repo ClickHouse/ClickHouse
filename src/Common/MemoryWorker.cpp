@@ -316,7 +316,7 @@ uint64_t MemoryWorker::getMemoryUsage()
 
 void MemoryWorker::backgroundThread()
 {
-    DB::setThreadName(ThreadName::MEMORY_WORKER);
+    setThreadName("MemoryWorker");
 
     std::chrono::milliseconds chrono_period_ms{period_ms};
     [[maybe_unused]] bool first_run = true;

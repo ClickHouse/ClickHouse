@@ -38,7 +38,6 @@ public:
 
     std::string getName() const override { return "YTsaurus"; }
     bool isRemote() const override { return true; }
-    bool isExternalDatabase() const override { return true; }
 
     Pipe read(
         const Names & column_names,

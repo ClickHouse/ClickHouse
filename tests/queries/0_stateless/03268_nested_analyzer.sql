@@ -1,5 +1,4 @@
 set enable_analyzer=1;
-set output_format_pretty_named_tuples_as_json = 0;
 -- {echoOn }
 
 SELECT nested(['a', 'b'], [1, 2], [3, 4]);

@@ -179,9 +179,12 @@ When reading Parquet files, skip whole row groups based on the WHERE expressions
     DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
 When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_use_native_reader_v3, true, R"(
-Use Parquet reader v3.
+    DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
+Use native parquet reader v1. It's relatively fast but unfinished. Deprecated.
 )", 0) \
+    DECLARE(Bool, input_format_parquet_use_native_reader_v3, false, R"(
+Use Parquet reader v3. Experimental.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, input_format_parquet_memory_low_watermark, 2ul << 20, R"(
 Schedule prefetches more aggressively if memory usage is below than threshold. Potentially useful e.g. if there are many small bloom filters to read over network.
 )", 0) \
@@ -193,12 +196,6 @@ Skip pages using min/max values from column index.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
-)", 0) \
-    DECLARE(Bool, input_format_parquet_verify_checksums, true, R"(
-Verify page checksums when reading parquet files.
-)", 0) \
-    DECLARE(Bool, input_format_parquet_local_time_as_utc, true, R"(
-Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time.
 )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.
@@ -560,16 +557,6 @@ Possible values:
 + 0 — Disable.
 + 1 — Enable.
 )", 0) \
-    DECLARE(Bool, type_json_skip_invalid_typed_paths, false, R"(
-When enabled, fields with values that cannot be coerced to their declared type in JSON type columns with typed paths are skipped instead of throwing an error. Skipped fields are treated as missing and will use default/null values based on the typed path definition.
-
-This setting only applies to JSON type columns (e.g., JSON(a Int64, b String)) where specific paths have declared types. It does not apply to regular JSON input formats like JSONEachRow when inserting into regular typed columns.
-
-Possible values:
-
-+ 0 — Disable (throw error on type mismatch).
-+ 1 — Enable (skip field on type mismatch).
-)", 0) \
     DECLARE(Bool, input_format_try_infer_integers, true, R"(
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
 
@@ -657,7 +644,7 @@ Possible values:
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
-- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parseDateTimeBestEffortUS)
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
 
 - `'basic'` — Use basic parser.
 
@@ -755,12 +742,6 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 )", 0) \
     DECLARE(UInt64, format_binary_max_array_size, 1_GiB, R"(
 The maximum allowed size for Array in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
-)", 0) \
-    DECLARE(UInt64, input_format_binary_max_type_complexity, 1000, R"(
-Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Protects against malicious inputs. 0 = unlimited.
-)", 0) \
-    DECLARE(UInt64, format_binary_max_object_size, 100000, R"(
-The maximum allowed number of paths in a single Object for JSON type RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \
     DECLARE(Bool, input_format_binary_decode_types_in_binary_format, false, R"(
 Read data types in binary format instead of type names in RowBinaryWithNamesAndTypes input format
@@ -1096,7 +1077,7 @@ Target row group size in bytes, before compression.
 Use Parquet String type instead of Binary for String columns.
 )", 0) \
     DECLARE(Bool, output_format_parquet_fixed_string_as_fixed_byte_array, true, R"(
-Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.
+Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary for FixedString columns.
 )", 0) \
     DECLARE(ParquetVersion, output_format_parquet_version, "2.latest", R"(
 Parquet format version for output format. Supported versions: 1.0, 2.4, 2.6 and 2.latest (default)
@@ -1150,9 +1131,6 @@ If dictionary size grows bigger than this many bytes, switch to encoding without
 )", 0) \
     DECLARE(Bool, output_format_parquet_enum_as_byte_array, true, R"(
 Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
-)", 0) \
-    DECLARE(Bool, output_format_parquet_write_checksums, true, R"(
-Put crc32 checksums in parquet page headers.
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
@@ -1316,9 +1294,6 @@ The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`
     DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_columns, 5, R"(
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
 )", 0) \
-    DECLARE(Bool, output_format_pretty_named_tuples_as_json, true, R"(
-        Controls whether named tuples in Pretty format are output as pretty-printed JSON objects.
-)", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](/engines/table-engines/special/distributed) table when there is no distributed key.
 
@@ -1384,9 +1359,6 @@ How to map ClickHouse Enum and CapnProto Enum
     \
     DECLARE(Bool, format_capn_proto_use_autogenerated_schema, true, R"(
 Use autogenerated CapnProto schema when format_schema is not set
-)", 0) \
-    DECLARE(UInt64, format_capn_proto_max_message_size, 1_GiB, R"(
-Maximum size of a single CapnProto message in bytes. This protects against malformed or corrupted data causing excessive memory allocation. Default is 1 GiB.
 )", 0) \
     DECLARE(Bool, format_protobuf_use_autogenerated_schema, true, R"(
 Use autogenerated Protobuf when format_schema is not set
@@ -1493,9 +1465,6 @@ Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/Mult
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0) \
-    DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
-Automatically create parent directories when using INTO OUTFILE if they do not already exists.
-)", 0) \
 
 
 // End of FORMAT_FACTORY_SETTINGS
@@ -1506,7 +1475,6 @@ Automatically create parent directories when using INTO OUTFILE if they do not a
     MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
-    MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader, false) \
 
 #endif // __CLION_IDE__
 

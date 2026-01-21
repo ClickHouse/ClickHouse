@@ -6,9 +6,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
 
-#include <mutex>
 #include <shared_mutex>
-#include <unordered_set>
 
 namespace DB::ErrorCodes
 {
@@ -43,18 +41,11 @@ std::optional<size_t> AtomicBitSet::findFirst()
     return std::nullopt;
 }
 
-void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
+void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_)
 {
     parser_shared_resources = parser_shared_resources_;
     reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
-
-    if (buckets_to_read_)
-    {
-        row_groups_to_read = std::unordered_set<UInt64>{};
-        for (auto rg : *buckets_to_read_)
-            row_groups_to_read->insert(rg);
-    }
-    reader.prefilterAndInitRowGroups(row_groups_to_read);
+    reader.prefilterAndInitRowGroups();
     reader.preparePrewhere();
 
     ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, reader.row_groups.size());
@@ -245,7 +236,7 @@ void ReadManager::setTasksToSchedule(size_t row_group_idx, ReadStage stage, std:
     auto & tasks = stage_state.row_group_tasks_to_schedule.at(row_group_idx);
     chassert(tasks.empty());
     tasks = std::move(add_tasks);
-    bool changed = stage_state.schedulable_row_groups.set(row_group_idx, std::memory_order_release);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    bool changed = stage_state.schedulable_row_groups.set(row_group_idx, std::memory_order_release);
     chassert(changed);
     diff.scheduleStage(stage);
 }
@@ -308,7 +299,7 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                 .row_subgroup_idx = row_subgroup_idx,
                 .column_idx = UINT64_MAX});
 
-        ReadStage prev_stage = row_subgroup.stage.exchange(stage, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+        ReadStage prev_stage = row_subgroup.stage.exchange(stage, std::memory_order_relaxed);
         chassert(prev_stage <= stage);
         row_subgroup.stage_tasks_remaining.store(add_tasks.size(), std::memory_order_relaxed);
         setTasksToSchedule(row_group_idx, stage, std::move(add_tasks), diff);
@@ -346,8 +337,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         case ReadStage::PrewhereData:
         {
             chassert(!reader.prewhere_steps.empty());
-            reader.applyPrewhere(row_subgroup, row_group);
-            size_t prev = row_group.prewhere_ptr.exchange(row_subgroup_idx + 1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+            reader.applyPrewhere(row_subgroup);
+            size_t prev = row_group.prewhere_ptr.exchange(row_subgroup_idx + 1);
             chassert(prev == row_subgroup_idx);
             if (row_subgroup_idx + 1 < row_group.subgroups.size())
             {
@@ -422,7 +413,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
 
         /// Skip subgroup that was filtered out by prewhere.
 
-        size_t prev = row_group.read_ptr.exchange(read_ptr + 1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+        size_t prev = row_group.read_ptr.exchange(read_ptr + 1);
         chassert(prev == read_ptr);
         read_ptr += 1;
         advanced_read_ptr = read_ptr;
@@ -748,7 +739,7 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
             case ReadStage::BloomFilterBlocksOrDictionary:
                 if (column.use_dictionary_filter)
                 {
-                    bool ok = reader.decodeDictionaryPage(column, column_info);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+                    bool ok = reader.decodeDictionaryPage(column, column_info);
                     chassert(ok);
                 }
                 break;
@@ -794,7 +785,7 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
     if (last_in_batch)
     {
         /// Decrement it before scheduling more tasks.
-        size_t prev_batches_in_progress = stages.at(size_t(task.stage)).batches_in_progress.fetch_sub(1, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+        size_t prev_batches_in_progress = stages.at(size_t(task.stage)).batches_in_progress.fetch_sub(1, std::memory_order_relaxed);
         chassert(prev_batches_in_progress > 0);
         diff.scheduleStage(task.stage);
     }
@@ -855,7 +846,7 @@ ReadManager::ReadResult ReadManager::read()
             bool thread_pool_was_idle = parser_shared_resources->parsing_runner.isIdle();
 
             if (exception)
-                std::rethrow_exception(copyMutableException(exception));
+                std::rethrow_exception(exception);
 
             /// If `preserve_order`, only deliver chunks from `first_incomplete_row_group`.
             /// This ensures that row groups are delivered in order. Within a row group, row

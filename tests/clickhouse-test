@@ -1170,10 +1170,6 @@ class SettingsRandomizer:
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
-        # Use the new reader most of the time.
-        "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
-        "enable_lazy_columns_replication": lambda: random.randint(0, 1),
-        "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
@@ -1259,8 +1255,6 @@ class MergeTreeSettingsRandomizer:
         "auto_statistics_types": auto_statistics_generator(),
         "serialization_info_version": lambda: random.choice(["basic", "with_types"]),
         "string_serialization_version": lambda: random.choice(["single_stream", "with_size_stream"]),
-        "nullable_serialization_version": lambda: random.choice(["basic", "allow_sparse"]),
-        "enable_shared_storage_snapshot_in_query": lambda: random.randint(0, 1),
     }
 
     @staticmethod
@@ -1518,9 +1512,6 @@ class TestCase:
             )
         elif client_options:
             client_options += " --allow_repeated_settings"
-            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
-                self.base_client_options + client_options + " "
-            )
 
         return client_options + new_options
 
@@ -1540,12 +1531,10 @@ class TestCase:
         for setting in random_settings:
             if setting in self.random_settings_limits:
                 min_value = self.random_settings_limits[setting][0]
-                # min_value can be 0
-                if min_value != None and random_settings[setting] < min_value:
+                if min_value and random_settings[setting] < min_value:
                     random_settings[setting] = min_value
                 max_value = self.random_settings_limits[setting][1]
-                # max_value can be 0
-                if max_value != None and random_settings[setting] > max_value:
+                if max_value and random_settings[setting] > max_value:
                     random_settings[setting] = max_value
 
     def __init__(self, suite: "TestSuite", case: str, args, is_concurrent: bool):
@@ -1747,9 +1736,7 @@ class TestCase:
         ):
             return FailureReason.SKIP
 
-        if "no-flaky-check" in tags and args.flaky_check:
-            # skip for flaky and targeted check
-            #  main reason for using this tag - a test is not compatible with the thread fuzzer which is used in both jobs
+        if "no-flaky-check" in tags and args.test_runs > 1:
             return FailureReason.SKIP
         if "stateful" in tags and args.no_stateful:
             return FailureReason.NO_STATEFUL
@@ -1763,9 +1750,8 @@ class TestCase:
 
         if tags:
             for build_flag in args.build_flags:
-                # We ignore no-buildflag for flaky check (args.flaky_check and args.test_runs > 1)
-                # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
-                if "no-" + build_flag in tags and not (args.flaky_check and args.test_runs > 1):
+                # We ignore no-buildflag for flaky tests
+                if "no-" + build_flag in tags and args.test_runs == 1:
                     return FailureReason.BUILD
             for tag in tags:
                 tag = tag.replace("-", "_")
@@ -1907,7 +1893,6 @@ class TestCase:
         if (
             re.search(r"(^|\W)(Net|Errno|)Exception(\W|$)", stdout)
             and "X-ClickHouse-Exception-Code" not in stdout
-            and "X-ClickHouse-Exception-Tag" not in stdout
         ):
             description += "\n{}\n".format(trim_for_log(stdout, 100))
             if debug_log:
@@ -1956,6 +1941,7 @@ class TestCase:
                     self.stdout_file,
                 ],
                 stdout=PIPE,
+                universal_newlines=True,
             ) as diff_proc:
                 if self.show_whitespaces_in_diff:
                     with Popen(
@@ -1963,10 +1949,11 @@ class TestCase:
                         stdin=diff_proc.stdout,
                         stdout=PIPE,
                     ) as sed_proc:
-                        diff = sed_proc.communicate()[0]
+                        diff = sed_proc.communicate()[0].decode(
+                            "utf-8", errors="ignore"
+                        )
                 else:
                     diff = diff_proc.communicate()[0]
-            diff = diff.decode("utf-8", errors="ignore")
 
             if diff.startswith("Binary files "):
                 diff += "Content of stdout:\n===================\n"
@@ -1987,7 +1974,6 @@ class TestCase:
 
         if (
             self.testcase_args.test_runs > 1
-            and self.testcase_args.flaky_check
             and total_time > TEST_MAX_RUN_TIME_IN_SECONDS
             and "long" not in self.tags
         ):
@@ -2033,17 +2019,11 @@ class TestCase:
             try:
                 clickhouse_execute(
                     args,
-                    f"INSERT INTO system.coverage_log "
-                    f"WITH arrayDistinct(arrayFilter(x -> x != 0, coverageCurrent())) AS coverage_distinct "
-                    f"SELECT DISTINCT now(), '{self.case}', coverage_distinct, "
-                    f"arrayMap(x -> demangle(addressToSymbol(x)), coverage_distinct) ",
+                    f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', coverageCurrent()",
                     retry_error_codes=True,
                 )
             except Exception as e:
                 print("Cannot insert coverage data: ", str(e))
-                traceback.print_exc()
-                sys.exit(1)
-
 
             # Check for dumped coverage files
 
@@ -2057,17 +2037,12 @@ class TestCase:
                             args,
                             "INSERT INTO system.coverage_log "
                             "SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_min_ms=200, async_insert_busy_timeout_max_ms=1000 "
-                            f"WITH arrayDistinct(groupArray(data)) AS coverage_distinct "
-                            f"SELECT now(), '{self.case}', coverage_distinct, "
-                            f"arrayMap(x -> demangle(addressToSymbol(x)), coverage_distinct) "
-                            f"FROM input('data UInt64') FORMAT RowBinary",
+                            f"SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
                             body=body,
                             retry_error_codes=True,
                         )
                     except Exception as e:
                         print("Cannot insert coverage data: ", str(e))
-                        traceback.print_exc()
-                        sys.exit(1)
 
                     # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
                     try:
@@ -2754,7 +2729,6 @@ class TestSuite:
                 continue
             if USE_JINJA and test_name.endswith(".gen.sql"):
                 continue
-
             if not filter_func(test_name):
                 continue
             test_name = self.render_test_template(j2env, self.suite_path, test_name)
@@ -3548,7 +3522,6 @@ def main(args):
     runner_process_killed = multiprocessing.Event()
     multiprocessing_manager = multiprocessing.Manager()
     restarted_tests = multiprocessing_manager.list()
-    tests_start_time = time()
 
     if not check_server_started(args):
         msg = "Server is not responding. Cannot execute 'SELECT 1' query."
@@ -3636,8 +3609,7 @@ def main(args):
                 (
                     time DateTime,
                     test_name String,
-                    coverage Array(UInt64),
-                    symbol Array(String)
+                    coverage Array(UInt64)
                 ) ENGINE = MergeTree ORDER BY test_name
                 COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster';
             """,
@@ -3646,10 +3618,7 @@ def main(args):
         # Coverage collected at the system startup before running any tests:
         clickhouse_execute(
             args,
-            "INSERT INTO system.coverage_log "
-            "WITH arrayDistinct(arrayFilter(x -> x != 0, coverageCurrent())) AS coverage_distinct "
-            "SELECT DISTINCT now(), '', coverage_distinct, "
-            "arrayMap(x -> demangle(addressToSymbol(x)), coverage_distinct) ",
+            "INSERT INTO system.coverage_log SELECT now(), '', coverageCurrent()",
         )
 
     total_tests_run = 0
@@ -3769,37 +3738,9 @@ def main(args):
     else:
         print("All tests have finished.")
 
-    try:
-        clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
-
-        unchecked_memory = int(clickhouse_execute(args, f"""
-        SELECT sum(size) FROM system.trace_log
-        WHERE
-            trace_type = 'MemoryAllocatedWithoutCheck'
-            AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
-            AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-        """))
-        if unchecked_memory > 1e9:
-            print(f"""
-            Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.
-            Take a look at:
-
-            SELECT arrayStringConcat(symbols, '\\n'), sum(size)
-            FROM system.trace_log
-            WHERE trace_type = 'MemoryAllocatedWithoutCheck'
-                AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
-                AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-            GROUP BY 1
-            ORDER BY 2
-            LIMIT -10
-            FORMAT Vertical
-
-            See also at
-            - MemoryTrackerDebugBlockerInThread
-            - AllocatorWithMemoryTracking
-            """)
-    except Exception as e:
-        print(f"Failed get MemoryAllocatedWithoutCheck events from trace_log: {e}")
+    unchecked_memory = int(clickhouse_execute(args, "SELECT sum(value) FROM system.events WHERE event = 'MemoryAllocatedWithoutCheckBytes'"))
+    if unchecked_memory > 1e9:
+        print(f"Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB")
 
     if args.report_logs_stats:
         try:
@@ -4178,11 +4119,6 @@ def parse_args():
         action="store_true",
         help="Run tests for further server upgrade testing by ignoring all"
         "drop queries in tests for collecting data from new version of server",
-    )
-    parser.add_argument(
-        "--flaky-check",
-        action="store_true",
-        help="Enables CI flakiness detection by running new tests multiple times. This mode adds specific checks for the flaky-check job and requires the --test-runs argument.",
     )
     parser.add_argument(
         "--secure",

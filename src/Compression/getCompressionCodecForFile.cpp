@@ -6,8 +6,6 @@
 #include <Common/PODArray.h>
 #include <Common/logger_useful.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <base/unaligned.h>
-
 
 namespace DB
 {

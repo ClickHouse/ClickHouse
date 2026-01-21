@@ -48,14 +48,6 @@ namespace
     }
 }
 
-std::string ObjectStorageQueueOrderedFileMetadata::BucketInfo::toString() const
-{
-    WriteBufferFromOwnString wb;
-    wb << "bucket " << bucket << ", ";
-    wb << "processor info " << processor_info;
-    return wb.str();
-}
-
 ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     const Bucket & bucket_,
     const std::string & bucket_lock_path_,
@@ -77,24 +69,16 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
 
 bool ObjectStorageQueueOrderedFileMetadata::BucketHolder::checkBucketOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client)
 {
-    auto processor_info = getProcessorInfo(zk_client);
-    if (!processor_info.has_value())
+    std::string data;
+    /// No retries, because they must be done on a higher level.
+    if (!zk_client->tryGet(bucket_info->bucket_lock_path, data))
         return false;
 
     LOG_TEST(
         log, "Bucket lock node {} has owner: {}, current owner: {}",
-        bucket_info->bucket_lock_path, processor_info.value(), bucket_info->processor_info);
+        bucket_info->bucket_lock_path, data, bucket_info->processor_info);
 
-    return processor_info.value() == bucket_info->processor_info;
-}
-
-std::optional<std::string> ObjectStorageQueueOrderedFileMetadata::BucketHolder::getProcessorInfo(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client)
-{
-    std::string data;
-    /// No retries, because they must be done on a higher level.
-    if (zk_client->tryGet(bucket_info->bucket_lock_path, data))
-        return data;
-    return std::nullopt;
+    return data == bucket_info->processor_info;
 }
 
 void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
@@ -312,7 +296,6 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         std::optional<NodeMetadata> processed_node;
         Coordination::Stat processed_node_stat;
         std::optional<std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State>> result;
-        zk_retry.resetFailures();
         zk_retry.retryLoop([&]
         {
             bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
@@ -335,7 +318,8 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                     LOG_TEST(log, "File {} is Failed", path);
                     result = {false, FileStatus::State::Failed};
                 }
-                else if (responses[0].error == Coordination::Error::ZOK)
+
+                if (responses[0].error == Coordination::Error::ZOK)
                 {
                     if (!responses[0].data.empty())
                     {
@@ -363,16 +347,14 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                         LOG_TEST(log, "File {} is Failed", path);
                         result = {false, FileStatus::State::Failed};
                     }
-                    else
-                    {
-                        processed_node.emplace(node_metadata);
-                        LOG_TEST(log, "Current max processed file {} from path: {}",
-                                processed_node->file_path, processed_node_path);
 
-                        if (!processed_node->file_path.empty() && path <= processed_node->file_path)
-                        {
-                            result = {false, FileStatus::State::Processed};
-                        }
+                    processed_node.emplace(node_metadata);
+                    LOG_TEST(log, "Current max processed file {} from path: {}",
+                            processed_node->file_path, processed_node_path);
+
+                    if (!processed_node->file_path.empty() && path <= processed_node->file_path)
+                    {
+                        result = {false, FileStatus::State::Processed};
                     }
                 }
             }

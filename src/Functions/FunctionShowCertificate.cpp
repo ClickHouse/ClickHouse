@@ -145,7 +145,7 @@ REGISTER_FUNCTION(ShowCertificate)
 {
     FunctionDocumentation::Description description = R"(
 Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured.
-See [Configuring TLS](/guides/sre/tls/configuring-tls) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
+See [Configuring SSL-TLS](/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
     )";
     FunctionDocumentation::Syntax syntax = "showCertificate()";
     FunctionDocumentation::Arguments arguments = {};
@@ -161,7 +161,7 @@ SELECT showCertificate() FORMAT LineAsString;
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionShowCertificate>(documentation);
 }

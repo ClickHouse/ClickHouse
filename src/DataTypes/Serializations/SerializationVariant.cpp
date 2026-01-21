@@ -483,9 +483,6 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     if (!col.hasGlobalVariantsOrder())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to deserialize data into Variant column with not global variants order");
 
-    if (col.getNumVariants() != variant_serializations.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of variants in column doesn't match number of variant serializations: {} != {}", col.getNumVariants(), variant_serializations.size());
-
     /// First, deserialize discriminators.
     settings.path.push_back(Substream::VariantDiscriminators);
 
@@ -605,13 +602,9 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i != variant_serializations.size(); ++i)
     {
-        auto & variant_column = col.getVariantPtrByLocalDiscriminator(i);
-        if (!variant_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column for variant {} is invalid", variant_names[i]);
-
         addVariantElementToPath(settings.path, i);
         variant_serializations[i]->deserializeBinaryBulkWithMultipleStreams(
-            variant_column, variant_rows_offsets[i], variant_limits[i],
+            col.getVariantPtrByLocalDiscriminator(i), variant_rows_offsets[i], variant_limits[i],
             settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
 
@@ -826,15 +819,6 @@ void SerializationVariant::deserializeBinary(IColumn & column, ReadBuffer & istr
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot read value of {}: unexpected discriminator {}", variant_name, UInt64(global_discr));
     }
-}
-
-void SerializationVariant::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
-    auto global_discr = col.globalDiscriminatorAt(row_num);
-    writeBinaryLittleEndian(global_discr, ostr);
-    if (global_discr != ColumnVariant::NULL_DISCRIMINATOR)
-        variant_serializations[global_discr]->serializeForHashCalculation(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr);
 }
 
 namespace

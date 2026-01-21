@@ -435,7 +435,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         && CrashWriter::initialized())
     {
         LOG_DEBUG(&logger(), "Sending logical errors is enabled");
-        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::Trace & trace)
+        Exception::callback = [](std::string_view format_string, int code, bool remote, const Exception::FramePointers & trace)
         {
             if (!remote && code == ErrorCodes::LOGICAL_ERROR)
             {
@@ -625,7 +625,7 @@ void BaseDaemon::setupWatchdog()
         notify_sync.close();
 
         /// Change short thread name and process name.
-        DB::setThreadName(ThreadName::CLICKHOUSE_WATCH);
+        setThreadName("clckhouse-watch");   /// 15 characters
 
         if (argv0)
         {
