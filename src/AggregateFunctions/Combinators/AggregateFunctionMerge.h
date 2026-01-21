@@ -10,11 +10,6 @@ namespace DB
 {
 struct Settings;
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
 
 /** Not an aggregate function, but an adapter of aggregate functions,
   * Aggregate functions with the `Merge` suffix accept `DataTypeAggregateFunction` as an argument
