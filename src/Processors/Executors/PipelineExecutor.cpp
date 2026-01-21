@@ -75,7 +75,7 @@ struct WorkloadResources
 
     WorkloadResources(WorkloadResources && other) = default;
 
-    bool isCpuLeaseRenewNeeded()
+    bool isCPULeaseRenewNeeded()
     {
         if (!lease)
             return false;
@@ -86,13 +86,13 @@ struct WorkloadResources
         return true;
     }
 
-    bool renewCpuLease() const
+    bool renewCPULease() const
     {
         chassert(lease);
         return lease->renew();
     }
 
-    size_t cpuSlotId() const
+    size_t getCPULeaseSlotId() const
     {
         chassert(lease);
         return lease->slot_id;
@@ -425,22 +425,22 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
             }
 
             /// Preemption and downscaling.
-            if (resources.isCpuLeaseRenewNeeded()) // Check if preemption is enabled (see `cpu_slot_preemption` server setting)
+            if (resources.isCPULeaseRenewNeeded()) // Check if preemption is enabled (see `cpu_slot_preemption` server setting)
             {
                 try
                 {
                     // Preemption point. Renewal could block execution due to CPU overload.
                     // It may trigger callbacks to tasks.preempt() and tasks.resume()
-                    if (!resources.renewCpuLease())
+                    if (!resources.renewCPULease())
                     {
-                        tasks.downscale(resources.cpuSlotId());
+                        tasks.downscale(resources.getCPULeaseSlotId());
                         yield = true;
                         break; // Downscaling. Unable to renew the lease - thread should stop (but could be rerun later).
                     }
                 }
                 catch (...)
                 {
-                    /// renewCpuLease() can throw an exception, for example RESOURCE_ACCESS_DENIED.
+                    /// renewCPULease() can throw an exception, for example RESOURCE_ACCESS_DENIED.
                     /// We should cancel execution properly before rethrow.
                     cancel(ExecutionStatus::Exception);
                     throw;
