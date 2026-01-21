@@ -638,7 +638,8 @@ void ReplicatedMergeTreePartCheckThread::run()
             if (recheck_after.has_value())
             {
                 LOG_TRACE(log, "Will recheck part {} after after {}s", selected.name, *recheck_after);
-                selected.time = std::chrono::steady_clock::now() + std::chrono::seconds(*recheck_after);
+                chassert(parts_set.contains(selected.name));
+                selected_it->time = std::chrono::steady_clock::now() + std::chrono::seconds(*recheck_after);
             }
             else
             {
