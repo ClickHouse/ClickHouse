@@ -160,6 +160,8 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         {
             have_more_addresses_to_connect = it != std::prev(addresses.end());
 
+            LOG_TRACE(log_wrapper.get(), "Connecting to {}:{}, address: {}, have_more_addresses_to_connect: {}", host, port, it->toString(), have_more_addresses_to_connect);
+
             if (isConnected())
                 disconnect();
 
@@ -218,22 +220,26 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 }
 
                 current_resolved_address = *it;
+                have_more_addresses_to_connect = false;
                 break;
             }
-            catch (DB::NetException &)
+            catch (DB::NetException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
-            catch (Poco::Net::NetException &)
+            catch (Poco::Net::NetException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
             }
-            catch (Poco::TimeoutException &)
+            catch (Poco::TimeoutException & e)
             {
+                LOG_TRACE(log_wrapper.get(), "Failed to connect to {}:{}, address: {}, error: {}", host, port, it->toString(), e.displayText());
                 if (++it == addresses.end())
                     throw;
                 continue;
