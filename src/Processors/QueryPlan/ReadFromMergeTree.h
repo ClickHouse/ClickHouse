@@ -281,6 +281,8 @@ public:
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
             , use_skip_indexes_for_disjunctions(false)
+            , use_skip_indexes_if_final_exact_mode(false)
+            , use_skip_indexes_on_data_read(false)
         {}
 
         KeyCondition key_condition;
@@ -292,6 +294,7 @@ public:
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
+        bool use_skip_indexes_if_final_exact_mode;
         bool use_skip_indexes_on_data_read;
         std::optional<std::unordered_set<String>> part_values;
     };
@@ -315,6 +318,8 @@ public:
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,
         bool supports_skip_indexes_on_data_read);
+
+    static bool areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes, bool any_one);
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 

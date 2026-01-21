@@ -59,6 +59,7 @@ workflow = Workflow.Config(
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/set_parent_pr_number.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],
