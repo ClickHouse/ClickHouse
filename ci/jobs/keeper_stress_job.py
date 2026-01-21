@@ -59,12 +59,6 @@ def set_default_env():
         "KEEPER_DURATION": "1200",
         "KEEPER_MATRIX_BACKENDS": "default,rocks",
         # Adaptive bench tuning
-        "KEEPER_BENCH_ADAPTIVE": "1",
-        "KEEPER_ADAPT_TARGET_P99_MS": "1200",
-        "KEEPER_ADAPT_MAX_ERROR": "0.01",
-        "KEEPER_ADAPT_STAGE_S": "15",
-        "KEEPER_ADAPT_MIN_CLIENTS": "8",
-        "KEEPER_ADAPT_MAX_CLIENTS": "192",
         # Gate defaults
         "KEEPER_DEFAULT_P99_MS": "1000",
         "KEEPER_DEFAULT_ERROR_RATE": "0.01",

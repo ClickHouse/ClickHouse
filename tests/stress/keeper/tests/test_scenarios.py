@@ -10,7 +10,6 @@ import pytest
 import yaml
 from keeper.faults import apply_step as apply_step_dispatcher
 from keeper.framework.core.preflight import ensure_environment
-from keeper.framework.core.registry import fault_registry
 from keeper.framework.core.settings import (
     CLIENT_PORT,
     DEFAULT_ERROR_RATE,
@@ -18,7 +17,6 @@ from keeper.framework.core.settings import (
     parse_bool,
 )
 from keeper.framework.core.util import sh, ts_ms
-from keeper.framework.fuzz import _EXCLUDE as _FUZZ_EXCLUDE
 from keeper.framework.fuzz import generate_fuzz_scenario
 from keeper.framework.io.probes import (
     ch_async_metrics,
@@ -39,6 +37,9 @@ from keeper.gates.base import apply_gate, single_leader
 from keeper.workloads.adapter import servers_arg
 
 WORKDIR = pathlib.Path(__file__).parents[1]
+
+HARD_DEFAULT_TIMEOUT = 120
+DEFAULT_RANDOM_FAULT_POOL_SIZE = 12
 
 
 def _tail_file(path, max_lines=200):
@@ -218,21 +219,15 @@ def _cleanup_ctx_resources(ctx):
                 pass
 
 
-def resolve_duration(scenario, hard_default=120):
+def resolve_duration(scenario):
     """Resolve duration from scenario loader output."""
     try:
-        v = (scenario or {}).get("_duration_s")
+        v = scenario.get("duration")
         if v:
             return int(v)
     except Exception:
-        pass
-    try:
-        v = (scenario or {}).get("duration")
-        if v:
-            return int(v)
-    except Exception:
-        pass
-    return int(hard_default)
+        print(f"[keeper] using hard default duration={HARD_DEFAULT_TIMEOUT} for {scenario}")
+    return int(HARD_DEFAULT_TIMEOUT)
 
 
 def build_bench_step(wl, eff_dur):
@@ -296,55 +291,26 @@ def ensure_default_gates(scenario):
     scenario["gates"] = gs
 
 
-def _resolve_faults_mode(request):
+def _generate_default_fault_pool(scenario, seed_val):
     try:
-        return request.config.getoption("--faults")
-    except Exception:
-        return os.environ.get("KEEPER_FAULTS", "on")
-
-
-def _resolve_random_faults(request, scenario, rnd_count, seed_val):
-    try:
-        dur_default = int(resolve_duration(scenario, 120))
+        dur = int(resolve_duration(scenario))
     except (ValueError, TypeError):
-        dur_default = 120
-    if seed_val <= 0:
+        dur = 120
+    if seed_val is None:
         seed_val = int.from_bytes(os.urandom(4), "big")
     try:
-        inc_raw = _get_option(
-            request, "--random-faults-include", "KEEPER_RANDOM_FAULTS_INCLUDE", ""
-        )
-        exc_raw = _get_option(
-            request, "--random-faults-exclude", "KEEPER_RANDOM_FAULTS_EXCLUDE", ""
-        )
-        inc = {x.strip() for x in (inc_raw or "").split(",") if x.strip()}
-        exc = {x.strip() for x in (exc_raw or "").split(",") if x.strip()}
-        cands = [
-            k
-            for k in list(getattr(fault_registry, "keys", lambda: [])())
-            if k not in _FUZZ_EXCLUDE
-        ]
-        if not cands and isinstance(fault_registry, dict):
-            cands = [k for k in fault_registry.keys() if k not in _FUZZ_EXCLUDE]
-        weights = {}
-        if inc:
-            for k in cands:
-                weights[k] = 1 if k in inc else 0
-        else:
-            for k in cands:
-                weights[k] = 0 if k in exc else 1
         fz = generate_fuzz_scenario(
-            seed_val, max(1, rnd_count), dur_default, weights=weights
+            seed_val,
+            max(1, int(DEFAULT_RANDOM_FAULT_POOL_SIZE)),
+            dur,
         )
         rnd_faults = fz.get("faults", []) or []
         return rnd_faults, seed_val
     except Exception:
-        return None, seed_val
+        return [], seed_val
 
 
 def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx):
-    if parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
-        return fs_effective, False
     bench_injected = False
     wc_env = os.environ.get("KEEPER_WORKLOAD_CONFIG", "").strip()
     if "workload" in scenario:
@@ -356,7 +322,7 @@ def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx):
         if wc_env:
             wl = dict(wl or {})
             wl["config"] = wc_env
-        eff_dur = resolve_duration(scenario, 120)
+        eff_dur = resolve_duration(scenario)
         rb = build_bench_step(wl, eff_dur)
         ctx["workload"] = wl
         ctx["bench_node"] = nodes[0]
@@ -366,7 +332,7 @@ def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx):
         bench_injected = True
         ensure_default_gates(scenario)
     if not bench_injected:
-        eff_dur_fb = resolve_duration(scenario, 120)
+        eff_dur_fb = resolve_duration(scenario)
         cfg_name = wc_env or "workloads/prod_mix.yaml"
         wl_fb = {"config": cfg_name}
         rb = build_bench_step(wl_fb, eff_dur_fb)
@@ -378,16 +344,10 @@ def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx):
 
 
 def _ensure_clickhouse_binary_for_bench():
-    if parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
-        return
-    env_bin = str(os.environ.get("CLICKHOUSE_BINARY", "")).strip()
-    if not env_bin:
+    env_bin = os.environ.get("CLICKHOUSE_BINARY", "").strip()
+    if not env_bin or not os.path.isfile(env_bin) or not os.access(env_bin, os.X_OK):
         raise AssertionError(
-            "keeper-bench must run on host: env var CLICKHOUSE_BINARY must point to clickhouse binary"
-        )
-    if not os.path.exists(env_bin) or not os.access(env_bin, os.X_OK):
-        raise AssertionError(
-            f"keeper-bench must run on host: CLICKHOUSE_BINARY is not an executable file: {env_bin}"
+            f"keeper-bench must run on host: CLICKHOUSE_BINARY must be an executable file (got: {env_bin or '<unset>'})"
         )
 
 
@@ -1061,26 +1021,20 @@ def _print_manual_znode_counts(nodes):
 
 def test_scenario(scenario, cluster_factory, request, run_meta):
     topo = scenario.get("topology", 3)
-    backend = scenario.get("backend") or request.config.getoption("--keeper-backend")
+    backend = scenario.get("backend") or "default"
     _ensure_clickhouse_binary_for_bench()
     # Effective run_meta per test with the scenario-selected backend
-    run_meta_eff = dict(run_meta or {})
+    run_meta_eff = run_meta
     run_meta_eff["backend"] = backend
     opts = scenario.get("opts", {}) or {}
-    faults_mode = _resolve_faults_mode(request)
-    rnd_count = _get_int_option(
-        request, "--random-faults-count", "KEEPER_RANDOM_FAULTS_COUNT", 1
-    )
-    seed_val = _get_int_option(request, "--seed", "", 0)
+    faults_mode = request.config.getoption("--faults")
+    seed_val = _get_option(request, "--seed", "KEEPER_SEED", None, int)
     fs_original = scenario.get("faults", []) or []
     fs_effective = fs_original
     if faults_mode == "off":
         fs_effective = []
-    elif faults_mode == "random":
-        resolved, seed_val = _resolve_random_faults(
-            request, scenario, rnd_count, seed_val
-        )
-        fs_effective = resolved if resolved is not None else fs_original
+    elif not fs_effective:
+        fs_effective, seed_val = _generate_default_fault_pool(scenario, seed_val)
     uses_dm = any(f.get("kind") in ("dm_delay", "dm_error") for f in fs_effective)
     if uses_dm:
         os.environ.setdefault("KEEPER_PRIVILEGED", "1")
@@ -1095,6 +1049,11 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     sink_url = "ci" if has_ci_sink() else ""
     summary = {}
     ctx = {"cluster": cluster, "faults_mode": faults_mode, "seed": seed_val}
+    if seed_val is not None:
+        try:
+            print(f"[keeper] seed={int(seed_val)}")
+        except Exception:
+            pass
     if sink_url:
         try:
             gcount = len(scenario.get("gates") or [])
@@ -1134,7 +1093,19 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     bench_injected = False
     try:
         scenario_for_env = copy.deepcopy(scenario)
-        scenario_for_env["faults"] = fs_effective
+        # Preflight expects a fault structure to determine required tools; we will
+        # execute faults via a background scheduler (one-at-a-time) for the whole
+        # scenario duration.
+        if fs_effective:
+            scenario_for_env["faults"] = [
+                {
+                    "kind": "background_schedule",
+                    "duration_s": resolve_duration(scenario),
+                    "steps": fs_effective,
+                }
+            ]
+        else:
+            scenario_for_env["faults"] = []
         ensure_environment(nodes, scenario_for_env)
         single_leader(nodes)
         leader = next(n for n in nodes if is_leader(n))
@@ -1170,11 +1141,40 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             sampler.start()
         for step in scenario.get("pre", []) or []:
             _apply_step(step, nodes, leader, ctx)
-        fs_effective, bench_injected = _inject_workload_bench(
-            request, scenario, nodes, fs_effective, ctx
+        eff_dur = resolve_duration(scenario)
+
+        # Build workload step (always runs).
+        fs_for_bench, bench_injected = _inject_workload_bench(
+            request, scenario, nodes, [], ctx
         )
-        for action in fs_effective:
-            _apply_step(action, nodes, leader, ctx)
+
+        # Build fault runner (optional). If scenario defines faults, use them as
+        # candidates; otherwise use a generated default pool.
+        fault_candidates = fs_effective
+        fault_runner = None
+        if fault_candidates and faults_mode != "off":
+            fault_runner = {
+                "kind": "background_schedule",
+                "duration_s": eff_dur,
+                "steps": fault_candidates,
+            }
+
+        # Run bench in parallel with fault scheduler (if enabled).
+        if fault_runner and fs_for_bench:
+            _apply_step(
+                {
+                    "kind": "parallel",
+                    "steps": [fs_for_bench[0], fault_runner],
+                },
+                nodes,
+                leader,
+                ctx,
+            )
+        elif fault_runner:
+            _apply_step(fault_runner, nodes, leader, ctx)
+        else:
+            for action in fs_for_bench:
+                _apply_step(action, nodes, leader, ctx)
         summary = ctx.get("bench_summary") or {}
         try:
             leader = next(n for n in nodes if is_leader(n))

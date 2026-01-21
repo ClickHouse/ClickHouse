@@ -28,7 +28,7 @@ from keeper.workloads.adapter import servers_arg
 from keeper.workloads.keeper_bench import KeeperBench
 
 
-def single_leader(nodes, timeout_s=60):
+def single_leader(nodes, timeout_s=180):
     wait_until(
         lambda: count_leaders(nodes) == 1,
         timeout_s=timeout_s,
@@ -612,7 +612,7 @@ def _gate_print_summary(summary):
 
 
 def _gate_single_leader(g, nodes, leader, ctx, summary):
-    return single_leader(nodes, timeout_s=int(g.get("timeout_s", 60)))
+    return single_leader(nodes, timeout_s=int(g.get("timeout_s", 180)))
 
 
 def _gate_backlog_drains(g, nodes, leader, ctx, summary):

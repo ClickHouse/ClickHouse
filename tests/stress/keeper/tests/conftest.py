@@ -20,11 +20,6 @@ def pytest_configure(config):
 
 def pytest_addoption(parser):
     pa = parser.addoption
-    pa(
-        "--keeper-backend",
-        action="store",
-        default=os.environ.get("KEEPER_BACKEND", "default"),
-    )
     pa("--commit-sha", action="store", default=os.environ.get("COMMIT_SHA", "local"))
     # Sink URL is resolved via CI ClickHouse helper; no explicit option needed
     pa("--duration", type=int, default=None)
@@ -38,7 +33,11 @@ def pytest_addoption(parser):
         action="store",
         default=os.environ.get("KEEPER_MATRIX_TOPOLOGIES", ""),
     )
-    pa("--seed", type=int, default=int(os.environ.get("KEEPER_SEED", "0")))
+    pa(
+        "--seed",
+        type=int,
+        default=(int(os.environ["KEEPER_SEED"]) if os.environ.get("KEEPER_SEED") else None),
+    )
     pa(
         "--keep-containers-on-fail",
         action="store_true",
@@ -46,23 +45,8 @@ def pytest_addoption(parser):
     )
     pa(
         "--faults",
-        choices=("on", "off", "random"),
+        choices=("on", "off"),
         default=os.environ.get("KEEPER_FAULTS", "on"),
-    )
-    pa(
-        "--random-faults-count",
-        type=int,
-        default=int(os.environ.get("KEEPER_RANDOM_FAULTS_COUNT", "1")),
-    )
-    pa(
-        "--random-faults-include",
-        action="store",
-        default=os.environ.get("KEEPER_RANDOM_FAULTS_INCLUDE", ""),
-    )
-    pa(
-        "--random-faults-exclude",
-        action="store",
-        default=os.environ.get("KEEPER_RANDOM_FAULTS_EXCLUDE", ""),
     )
     pa(
         "--keeper-include-ids",
@@ -80,7 +64,6 @@ def pytest_addoption(parser):
 def run_meta(request):
     return {
         "commit_sha": request.config.getoption("--commit-sha"),
-        "backend": request.config.getoption("--keeper-backend"),
     }
 
 

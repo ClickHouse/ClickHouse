@@ -22,12 +22,21 @@ _TOOL_TO_PACKAGE = {
 
 def _fault_kinds(faults):
     kinds = set()
-    for f in faults or []:
-        if not isinstance(f, dict):
-            continue
-        k = str(f.get("kind", "") or "").strip().lower()
-        if k:
-            kinds.add(k)
+
+    def _walk(obj):
+        if isinstance(obj, dict):
+            k = str(obj.get("kind", "") or "").strip().lower()
+            if k:
+                kinds.add(k)
+            subs = obj.get("steps")
+            if isinstance(subs, list):
+                for s in subs:
+                    _walk(s)
+        elif isinstance(obj, list):
+            for it in obj:
+                _walk(it)
+
+    _walk(faults or [])
     return kinds
 
 
@@ -119,9 +128,6 @@ def _ensure_replay_if_requested(node0, scenario):
 
 
 def _ensure_bench(nodes, scenario):
-    if parse_bool(os.environ.get("KEEPER_DISABLE_WORKLOAD")):
-        return
-
     # keeper-bench runs on host; validate CLICKHOUSE_BINARY early.
     env_bin = str(os.environ.get("CLICKHOUSE_BINARY", "")).strip()
     if not env_bin:

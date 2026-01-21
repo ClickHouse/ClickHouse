@@ -1,3 +1,4 @@
+import copy
 import os
 import random
 import sys
@@ -89,7 +90,9 @@ def _step_parallel(step, nodes, leader, ctx):
         if d > 0:
             durs.append(d)
     exp = max(durs) if durs else DEFAULT_FAULT_DURATION_S
-    slack = 60
+    # Bench and some faults use nested timeouts (e.g. `timeout -k` + Python timeouts).
+    # Keep a generous but still bounded slack to avoid false positives.
+    slack = 120
     deadline = time.time() + exp + slack
 
     threads = []
@@ -162,21 +165,47 @@ def _step_sequence(step, nodes, leader, ctx):
 def _step_background_schedule(step, nodes, leader, ctx):
     """Execute random sub-steps on a schedule until duration expires."""
     dur = _get_duration(step)
-    pmin = float(step.get("min_period_s", 5.0))
-    pmax = float(step.get("max_period_s", max(pmin, 20.0)))
     subs = step.get("steps") or []
     if not subs:
         return
 
+    seed = None
+    try:
+        seed = (ctx or {}).get("seed")
+    except Exception:
+        seed = None
+    try:
+        seed = int(seed) if seed is not None else None
+    except Exception:
+        seed = None
+    rnd = random.Random(seed) if seed is not None else random
+
     deadline = time.time() + dur
     while time.time() < deadline:
-        sub = random.choice(subs)
-        apply_step(sub, nodes, leader, ctx)
-        now = time.time()
-        if now >= deadline:
+        remaining = deadline - time.time()
+        if remaining <= 0:
             break
-        sleep_s = pmin + random.random() * (pmax - pmin)
-        time.sleep(min(sleep_s, deadline - now))
+
+        budget = int(max(1, min(float(DEFAULT_FAULT_DURATION_S), float(remaining))))
+        sub = rnd.choice(subs)
+
+        # Ignore any per-fault duration in YAML and cap each fault slot to remaining time.
+        sub_eff = copy.deepcopy(sub) if isinstance(sub, (dict, list)) else sub
+        if isinstance(sub_eff, dict):
+            sub_eff.pop("duration_s", None)
+            sub_eff.pop("seconds", None)
+            sub_eff["duration_s"] = budget
+            sub_eff["seconds"] = budget
+
+        t0 = time.time()
+        apply_step(sub_eff, nodes, leader, ctx)
+        elapsed = time.time() - t0
+
+        # If the fault implementation returns quickly (e.g. kill), don't busy-loop.
+        # Fill the rest of the fault slot with sleep so total fault time ~= scenario duration.
+        slack = float(budget) - float(elapsed)
+        if slack > 0:
+            time.sleep(min(slack, max(0.0, deadline - time.time())))
 
 
 def _step_ensure_paths(step, nodes, leader, ctx):
@@ -335,7 +364,9 @@ def _step_run_bench(step, nodes, leader, ctx):
     for t in threads:
         t.start()
 
-    slack = 60
+    # KeeperBench.run uses a hard cap of (duration + 60) and host-side execution
+    # may add a bit of extra time (e.g. timeout wrapper + cleanup).
+    slack = 120
     deadline = time.time() + float(duration) + float(slack)
     for t in threads:
         t.join(timeout=max(0.0, deadline - time.time()))

@@ -7,12 +7,9 @@ from pathlib import Path
 import yaml
 from keeper.framework.core.settings import (
     CLIENT_PORT,
-    DEFAULT_ERROR_RATE,
-    DEFAULT_P99_MS,
     parse_bool,
 )
 from keeper.framework.core.util import (
-    env_float,
     env_int,
     host_has_bin,
     host_sh,
@@ -570,14 +567,6 @@ def _host_timeout_prefix(cap):
     """Return timeout prefix for host execution if available."""
     return f"timeout -k 20 -s SIGINT {int(cap)}" if host_has_bin("timeout") else ""
 
-
-def _stage_paths(obj):
-    suffix = f"{os.getpid()}_{(id(obj) & 0xffff):x}"
-    out_path = f"/tmp/keeper_bench_out_stage_{suffix}.json"
-    cfg_path = f"/tmp/keeper_bench_stage_{suffix}.yaml"
-    return out_path, cfg_path
-
-
 def _apply_output_path(cfg, out_path):
     _normalize_output(cfg)
     try:
@@ -588,30 +577,6 @@ def _apply_output_path(cfg, out_path):
             "file": {"path": out_path, "with_timestamp": False},
             "stdout": True,
         }
-
-
-def _empty_stage_stats(dur):
-    return {
-        "ops": 0,
-        "errors": 0,
-        "duration_s": int(dur),
-        "has_latency": False,
-        "reads": 0,
-        "writes": 0,
-        "read_ratio": 0.0,
-        "write_ratio": 0.0,
-        "read_rps": 0.0,
-        "read_bps": 0.0,
-        "write_rps": 0.0,
-        "write_bps": 0.0,
-        "read_p50_ms": 0.0,
-        "read_p95_ms": 0.0,
-        "read_p99_ms": 0.0,
-        "write_p50_ms": 0.0,
-        "write_p95_ms": 0.0,
-        "write_p99_ms": 0.0,
-    }
-
 
 def _precreate_paths(node, ysrc):
     """Pre-create base paths referenced by workload config."""
@@ -946,152 +911,6 @@ class KeeperBench:
             pass
         return s
 
-    def _run_stage_host(self, base_cfg, clients, dur):
-        """Run a single benchmark stage on host."""
-        import copy as _copy
-
-        st_cfg = _copy.deepcopy(base_cfg)
-        st_cfg["concurrency"] = int(clients)
-        out_path, host_stage_cfg = _stage_paths(self)
-        _apply_output_path(st_cfg, out_path)
-        try:
-            with open(host_stage_cfg, "w", encoding="utf-8") as f:
-                f.write(yaml.safe_dump(st_cfg, sort_keys=False))
-        except Exception:
-            pass
-        hard_cap = max(5, int(dur) + 30)
-        prefix = _host_timeout_prefix(hard_cap)
-        stdout_path = out_path + ".stdout"
-        stderr_path = out_path + ".stderr"
-        cmd = f"{prefix} {self._bench_cmd_host()} --config {host_stage_cfg} -t {int(dur)} > {shlex.quote(stdout_path)} 2> {shlex.quote(stderr_path)}".strip()
-        host_sh(cmd, timeout=hard_cap + 5)
-        out = host_sh(f"cat {shlex.quote(stdout_path)} 2>/dev/null || true", timeout=5)
-        if not str(out.get("out", "") or "").strip():
-            out = host_sh(
-                f"cat {out_path} 2>/dev/null || cat /tmp/keeper_bench_out.json 2>/dev/null || true",
-                timeout=5,
-            )
-        st = _empty_stage_stats(dur)
-        st.update(self._parse_output_json(out.get("out", "")))
-        return st
-
-    def _run_adaptive(self, bench_cfg, env_clients, summary):
-        """Run adaptive benchmark that adjusts client count based on performance."""
-        summary["duration_s"] = 0
-        target_p99 = env_int("KEEPER_ADAPT_TARGET_P99_MS", int(DEFAULT_P99_MS))
-        max_err = env_float("KEEPER_ADAPT_MAX_ERROR", float(DEFAULT_ERROR_RATE))
-        stage_s = env_int("KEEPER_ADAPT_STAGE_S", 15)
-        cmin = env_int("KEEPER_ADAPT_MIN_CLIENTS", 8)
-        env_clients_int = int(env_clients) if env_clients else 128
-        cmax = env_int("KEEPER_ADAPT_MAX_CLIENTS", env_clients_int)
-        ccur = int(env_clients) if env_clients else 64
-        if self.clients is not None:
-            ccur = int(self.clients)
-        ccur = max(cmin, min(cmax, max(1, ccur)))
-
-        remaining = int(self.duration_s)
-        adapt_log = None
-        if parse_bool(os.environ.get("KEEPER_DEBUG")):
-            odir = Path(__file__).parents[4] / "tests" / "stress" / "keeper" / "tests"
-            odir.mkdir(parents=True, exist_ok=True)
-            adapt_log = odir / "keeper_adapt_stages.jsonl"
-
-        read_bytes_total = 0.0
-        write_bytes_total = 0.0
-
-        while remaining > 0:
-            dur = min(stage_s, remaining)
-            st = self._run_stage_host(bench_cfg, ccur, dur)
-            summary["ops"] += int(st.get("ops") or 0)
-            summary["errors"] += int(st.get("errors") or 0)
-            summary["duration_s"] += int(st.get("duration_s") or 0)
-            summary["reads"] += int(st.get("reads") or 0)
-            summary["writes"] += int(st.get("writes") or 0)
-            sd = float(st.get("duration_s") or 0)
-            if sd > 0:
-                read_bytes_total += float(st.get("read_bps") or 0.0) * sd
-                write_bytes_total += float(st.get("write_bps") or 0.0) * sd
-
-            summary["read_p50_ms"] = max(
-                float(summary.get("read_p50_ms") or 0.0),
-                float(st.get("read_p50_ms") or 0.0),
-            )
-            summary["read_p95_ms"] = max(
-                float(summary.get("read_p95_ms") or 0.0),
-                float(st.get("read_p95_ms") or 0.0),
-            )
-            summary["read_p99_ms"] = max(
-                float(summary.get("read_p99_ms") or 0.0),
-                float(st.get("read_p99_ms") or 0.0),
-            )
-            summary["write_p50_ms"] = max(
-                float(summary.get("write_p50_ms") or 0.0),
-                float(st.get("write_p50_ms") or 0.0),
-            )
-            summary["write_p95_ms"] = max(
-                float(summary.get("write_p95_ms") or 0.0),
-                float(st.get("write_p95_ms") or 0.0),
-            )
-            summary["write_p99_ms"] = max(
-                float(summary.get("write_p99_ms") or 0.0),
-                float(st.get("write_p99_ms") or 0.0),
-            )
-            try:
-                if "read_percentiles_ms" not in summary or not isinstance(
-                    summary.get("read_percentiles_ms"), dict
-                ):
-                    summary["read_percentiles_ms"] = {}
-                if "write_percentiles_ms" not in summary or not isinstance(
-                    summary.get("write_percentiles_ms"), dict
-                ):
-                    summary["write_percentiles_ms"] = {}
-                _merge_percentiles_max(
-                    summary["read_percentiles_ms"], st.get("read_percentiles_ms")
-                )
-                _merge_percentiles_max(
-                    summary["write_percentiles_ms"], st.get("write_percentiles_ms")
-                )
-            except Exception:
-                pass
-            summary["has_latency"] = summary.get("has_latency") or bool(
-                st.get("has_latency")
-            )
-            if adapt_log is not None:
-                try:
-                    with open(adapt_log, "a", encoding="utf-8") as f:
-                        f.write(json.dumps({"clients": ccur, **st}) + "\n")
-                except Exception:
-                    pass
-            remaining -= dur
-            ops = float(st.get("ops") or 0)
-            errs = float(st.get("errors") or 0)
-            rp99 = float(st.get("read_p99_ms") or 0.0)
-            wp99 = float(st.get("write_p99_ms") or 0.0)
-            p99 = max(rp99, wp99)
-            err_ratio = (errs / ops) if ops > 0 else 0.0
-            # Adjust client count based on performance
-            if ops <= 0:
-                ccur = min(cmax, max(cmin, int(ccur * 1.1) + 1))
-            elif err_ratio > max_err or p99 > target_p99:
-                ccur = max(cmin, int(max(ccur - 1, ccur * 0.7)))
-            elif p99 < 0.5 * target_p99:
-                ccur = min(cmax, int(ccur * 1.3) + 1)
-            else:
-                ccur = min(cmax, int(ccur * 1.1) + 1)
-
-        tot = float(summary.get("reads") or 0) + float(summary.get("writes") or 0)
-        if tot > 0:
-            summary["read_ratio"] = float(summary.get("reads") or 0) / tot
-            summary["write_ratio"] = float(summary.get("writes") or 0) / tot
-
-        d = float(summary.get("duration_s") or 0)
-        if d > 0:
-            summary["read_rps"] = float(summary.get("reads") or 0) / d
-            summary["write_rps"] = float(summary.get("writes") or 0) / d
-            summary["read_bps"] = read_bytes_total / d
-            summary["write_bps"] = write_bytes_total / d
-        return summary
-
     def run(self):
         cfg_text = ""
         clients = 64
@@ -1153,6 +972,10 @@ class KeeperBench:
         # Write config file at the chosen location
         host_cfg_path = f"/tmp/keeper_bench_{os.getpid()}_{id(self) & 0xffff:x}.yaml"
         self._write_cfg(host_cfg_path, cfg_dump)
+        try:
+            self.last_config_path = host_cfg_path
+        except Exception:
+            pass
         w = env_int("KEEPER_BENCH_WARMUP_S", 0)
         if w > 0:
             wp = _host_timeout_prefix(w + 5)
@@ -1184,9 +1007,6 @@ class KeeperBench:
             "read_percentiles_ms": {},
             "write_percentiles_ms": {},
         }
-        adapt_env = os.environ.get("KEEPER_BENCH_ADAPTIVE")
-        if str(adapt_env or "").strip().lower() in ("1", "true", "yes", "on"):
-            return self._run_adaptive(bench_cfg, clients, summary)
         # Execute the bench tool (replay mode or generator mode)
         # Hard-cap execution: duration + 30s
         hard_cap = max(5, int(self.duration_s) + 60)
