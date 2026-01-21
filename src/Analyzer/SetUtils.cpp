@@ -431,9 +431,8 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
                 continue;
             }
 
-            MutableColumnPtr merged = destination[i].column->cloneEmpty();
+            MutableColumnPtr merged = IColumn::mutate(std::move(destination[i].column));
             merged->reserve(destination[i].column->size() + source[i].column->size());
-            merged->insertRangeFrom(*destination[i].column, 0, destination[i].column->size());
             merged->insertRangeFrom(*source[i].column, 0, source[i].column->size());
             destination[i].column = std::move(merged);
         }
