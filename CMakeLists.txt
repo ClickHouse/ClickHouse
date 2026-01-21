@@ -390,6 +390,8 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+elseif (OS_SUNOS)
+    include(cmake/sunos/default_libs.cmake)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
@@ -509,7 +511,7 @@ macro (clickhouse_add_executable target)
     # to inject memory tracking mechanism into them.
     # Sanitizers have their own way of intercepting the
     # allocations and deallocations, so we skip this step for them.
-    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD))
+    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD OR OS_SUNOS))
         target_link_options(${target} PRIVATE
             "LINKER:--wrap=malloc"
             "LINKER:--wrap=free"
