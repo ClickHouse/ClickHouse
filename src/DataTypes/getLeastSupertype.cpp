@@ -707,12 +707,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     max_int = int_id;
             }
 
-            /// Allow Float32 and Float64 types to be compatible with Decimals
-            /// This enables float literals (e.g., 0., 1.0) to work with Decimal types in if() function
-            size_t have_float32 = type_ids.count(TypeIndex::Float32);
-            size_t have_float64 = type_ids.count(TypeIndex::Float64);
-            num_supported += have_float32 + have_float64;
-
             if (num_supported != type_ids.size())
                 return throwOrReturn<on_error>(types, "because some of them have no lossless conversion to Decimal", ErrorCodes::NO_COMMON_TYPE);
 
@@ -732,11 +726,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             }
 
             UInt32 min_precision = max_scale + leastDecimalPrecisionFor(max_int);
-
-            /// For Float types, we don't increase precision requirements.
-            /// The Float value will be converted to Decimal, potentially with loss of precision.
-            /// This allows float literals (e.g., 0., 1.0) to work with Decimal types in if() function.
-            /// The actual conversion is handled by convertFloatToDecimalType().
 
             /// special cases Int32 -> Dec32, Int64 -> Dec64
             if (max_scale == 0)
