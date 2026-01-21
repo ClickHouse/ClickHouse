@@ -366,6 +366,9 @@ public:
     /// Function should implement this method if its result type doesn't depend on the arguments types.
     virtual DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const { return nullptr; }
 
+    /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
+    virtual bool allowsOmittingParentheses() const { return false; }
+
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
 protected:
@@ -535,6 +538,9 @@ public:
 
     virtual bool hasInformationAboutMonotonicity() const { return false; }
     virtual bool hasInformationAboutPreimage() const { return false; }
+
+    /// Whether this function allows omitting parentheses in SQL (e.g., NOW, CURRENT_TIMESTAMP)
+    virtual bool allowsOmittingParentheses() const { return false; }
 
     using Monotonicity = IFunctionBase::Monotonicity;
     virtual Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const;

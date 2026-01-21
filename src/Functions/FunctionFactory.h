@@ -67,18 +67,6 @@ public:
 
     FunctionDocumentation getDocumentation(const std::string & name) const;
 
-    /// Check if a function allows omitting parentheses (e.g., NOW, CURRENT_TIMESTAMP)
-    bool allowsOmittingParentheses(const std::string & name) const;
-
-    template <typename Function>
-    void registerFunctionAllowingOmittedParentheses(FunctionDocumentation doc = {}, Case case_sensitiveness = Case::Sensitive)
-    {
-        registerFunction<Function>(Function::name, std::move(doc), case_sensitiveness);
-        functions_allowing_omitted_parentheses.insert(Function::name);
-        if (case_sensitiveness == Case::Insensitive)
-            functions_allowing_omitted_parentheses.insert(Poco::toLower(std::string(Function::name)));
-    }
-
 private:
     using Functions = std::unordered_map<std::string, Value>;
 
@@ -96,8 +84,6 @@ private:
     {
         registerFunction(name, &Function::create, std::move(doc), case_sensitiveness);
     }
-
-    std::unordered_set<String> functions_allowing_omitted_parentheses;
 };
 
 const String & getFunctionCanonicalNameIfAny(const String & name);

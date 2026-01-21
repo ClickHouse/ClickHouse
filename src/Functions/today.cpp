@@ -67,6 +67,8 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    bool allowsOmittingParentheses() const override { return true; }
+
     size_t getNumberOfArguments() const override { return 0; }
 
     static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<TodayOverloadResolver>(); }
@@ -114,7 +116,7 @@ SELECT TODAY, CURDATE,CURRENT_DATE
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
-    factory.registerFunctionAllowingOmittedParentheses<TodayOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<TodayOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }

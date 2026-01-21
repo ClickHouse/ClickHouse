@@ -1391,6 +1391,25 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier_lookup.identifier, scope.context);
     }
 
+    /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
+    if (!resolve_result.resolved_identifier && identifier_lookup.isExpressionLookup())
+    {
+        const auto & function_factory = FunctionFactory::instance();
+        auto identifier_name = identifier_lookup.identifier.getFullName();
+
+        if (function_factory.has(identifier_name))
+        {
+            auto function_resolver = function_factory.get(identifier_name, scope.context);
+            if (function_resolver->allowsOmittingParentheses())
+            {
+                QueryTreeNodePtr function_node = std::make_shared<FunctionNode>(identifier_name);
+                resolveFunction(function_node, scope);
+                resolve_result.resolved_identifier = std::move(function_node);
+                resolve_result.resolve_place = IdentifierResolvePlace::ALIASES;
+            }
+        }
+    }
+
     it->second.count--;
     if (it->second.count == 0)
     {
@@ -2804,25 +2823,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if (!resolved_identifier_node)
             {
-                /// Check if identifier is a function that allows omitting parentheses (e.g., NOW, CURRENT_TIMESTAMP)
-                const auto & function_factory = FunctionFactory::instance();
-                auto identifier_name = unresolved_identifier.getFullName();
-                
-                if (function_factory.has(identifier_name) && function_factory.allowsOmittingParentheses(identifier_name))
-                {
-                    /// Transform identifier into function call with zero arguments
-                    auto function_node = std::make_shared<FunctionNode>(identifier_name);
-                    node = function_node;
-                    
-                    /// Resolve the function
-                    resolveFunction(node, scope);
-                    
-                    if (result_projection_names.empty())
-                        result_projection_names.push_back(identifier_name);
-                    
-                    break;
-                }
-
                 std::string message_clarification;
                 if (allow_lambda_expression)
                     message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::FUNCTION);

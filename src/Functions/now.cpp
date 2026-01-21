@@ -93,6 +93,8 @@ public:
 
     bool isVariadic() const override { return true; }
 
+    bool allowsOmittingParentheses() const override { return true; }
+
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<NowOverloadResolver>(context); }
     explicit NowOverloadResolver(ContextPtr context)
@@ -188,7 +190,7 @@ SELECT NOW, CURRENT_TIMESTAMP
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunctionAllowingOmittedParentheses<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<NowOverloadResolver>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 
