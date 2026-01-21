@@ -300,7 +300,7 @@ function check_server_start()
         >> /test_output/test_results.tsv)
 
     # Remove file application_errors.txt if it's empty
-    [ -s /test_output/application_errors.txt ] || rm /test_output/application_errors.txt
+    [ -s /test_output/application_errors.txt ] || rm -f /test_output/application_errors.txt
 }
 
 function check_logs_for_critical_errors()
@@ -320,10 +320,10 @@ function check_logs_for_critical_errors()
         || echo -e "No SharedMergeTree lost forever in clickhouse-server.log$OK" >> /test_output/test_results.tsv
 
     # Remove file no_such_key_errors.txt if it's empty
-    [ -s /test_output/no_such_key_errors.txt ] || rm /test_output/no_such_key_errors.txt
+    [ -s /test_output/no_such_key_errors.txt ] || rm -f /test_output/no_such_key_errors.txt
 
     # Remove file fatal_messages.txt if it's empty
-    [ -s /test_output/fatal_messages.txt ] || rm /test_output/fatal_messages.txt
+    [ -s /test_output/fatal_messages.txt ] || rm -f /test_output/fatal_messages.txt
 
     dmesg -T > /test_output/dmesg.log
 }

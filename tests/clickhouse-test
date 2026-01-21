@@ -4249,8 +4249,8 @@ def main(args):
     try:
         if args.database and args.database != "test":
             create_common_database(args, args.database)
-
-        create_common_database(args, "test")
+        else:
+            create_common_database(args, "test")
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
         server_died.set()

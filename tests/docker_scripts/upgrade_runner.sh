@@ -265,7 +265,7 @@ fi
 
 # Just in case previous version left some garbage in zk
 sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml \
-rm /etc/clickhouse-server/config.d/filesystem_caches_path.xml
+rm -f /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 # Set compatibility setting to previous version, so we won't fail due to known backward incompatible changes.
 echo "<clickhouse>
@@ -285,7 +285,7 @@ clickhouse-client --query "SELECT 'Server successfully started', 'OK', NULL, ''"
     >> /test_output/test_results.tsv)
 
 # Remove file application_errors.txt if it's empty
-[ -s /test_output/application_errors.txt ] || rm /test_output/application_errors.txt
+[ -s /test_output/application_errors.txt ] || rm -f /test_output/application_errors.txt
 
 clickhouse-client --query="SELECT 'Server version: ', version()"
 
@@ -351,7 +351,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     || echo -e "No Error messages after server upgrade$OK" >> /test_output/test_results.tsv
 
 # Remove file upgrade_error_messages.txt if it's empty
-[ -s /test_output/upgrade_error_messages.txt ] || rm /test_output/upgrade_error_messages.txt
+[ -s /test_output/upgrade_error_messages.txt ] || rm -f /test_output/upgrade_error_messages.txt
 
 # Grep logs for sanitizer asserts, crashes and other critical errors
 check_logs_for_critical_errors
