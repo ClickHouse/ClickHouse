@@ -456,7 +456,7 @@ private:
                 break;
 
             const char * sample_pos = source + sample_start_index * sizeof(T);
-            const UInt16 sample_float_count = std::min<UInt16>(ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS, float_count - sample_start_index);
+            const UInt32 sample_float_count = std::min<UInt32>(ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS, float_count - sample_start_index);
 
             for (UInt32 j = 0; j < sample_float_count; ++j, sample_pos += sizeof(T))
                 sample[j] = unalignedLoadLittleEndian<T>(sample_pos);
@@ -479,7 +479,7 @@ private:
                 }
             }
 
-            const UInt16 key = (static_cast<UInt16>(best_estimation.params.exponent) << 8) | static_cast<UInt16>(best_estimation.params.fraction);
+            const UInt16 key = static_cast<UInt16>((best_estimation.params.exponent << 8) | best_estimation.params.fraction);
             auto it = estimations_map.find(key);
             if (it != estimations_map.end())
                 ++(it->second.occurred_times);
@@ -568,14 +568,14 @@ public:
 
         while (source < source_end)
         {
-            const UInt16 block_float_count = std::min<UInt16>(ALP_BLOCK_MAX_FLOAT_COUNT, (dest_end - dest) / sizeof(T));
+            const UInt16 block_float_count = static_cast<UInt16>(std::min<UInt32>(ALP_BLOCK_MAX_FLOAT_COUNT, (dest_end - dest) / sizeof(T)));
             decodeBlock(source, source_end, dest, dest_end, block_float_count);
         }
 
         if (source != source_end || dest != dest_end)
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data. Stream size mismatch");
 
-        return dest - dest_start;
+        return static_cast<UInt32>(dest - dest_start);
     }
 
 private:
@@ -634,7 +634,7 @@ private:
 
         // Write decoded values to output buffer
         char * dest_start = dest;
-        for (UInt32 i = 0; i < float_count; ++i, dest += sizeof(T))
+        for (UInt16 i = 0; i < float_count; ++i, dest += sizeof(T))
         {
             const T decoded_value = ALPFloatUtils<T>::decodeValue(block.encoded[i], exponent, fraction);
             unalignedStoreLittleEndian<T>(dest, decoded_value);
@@ -795,7 +795,7 @@ void registerCodecALP(CompressionCodecFactory & factory)
                     "Codec ALP is not applicable for {} because the data type is not Float*",
                     column_type->getName());
 
-            float_width = column_type->getSizeOfValueInMemory();
+            float_width = static_cast<UInt8>(column_type->getSizeOfValueInMemory());
         }
         return std::make_shared<CompressionCodecALP>(float_width);
     };
