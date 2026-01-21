@@ -1,5 +1,7 @@
 #include <cstddef>
+#include <string>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Core/Field.h>
 #include <Core/TypeId.h>
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
@@ -38,6 +40,7 @@
 #include <Interpreters/Context.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 #include <Common/intExp10.h>
 #include <Common/randomSeed.h>
 
@@ -202,11 +205,100 @@ size_t estimateValueSize(
 
 }
 
+
+// Helper function for random Json generation
+static Object generateRandomObject(
+    pcg64 & rng,
+    UInt64 depth,
+    UInt64 max_json_depth,
+    UInt64 max_json_keys,
+    UInt64 max_array_length,
+    UInt64 max_string_length,
+    double null_ratio)
+{
+    Object obj;
+    UInt64 keys = 1 + (rng() % max_json_keys);
+
+    for (UInt64 k = 0; k < keys; ++k)
+    {
+        if ((rng() % 100) < static_cast<UInt64>(null_ratio * 100))
+            continue;
+
+        String key = "key_" + std::to_string(depth) + "_" + std::to_string(k);
+        UInt64 choice = rng() % 10;
+
+        if (choice < 5)
+        {
+            if (rng() % 2 == 0)
+            {
+                obj[key] = Field(static_cast<Int64>(rng()));
+            }
+            else
+            {
+                size_t len = rng() % (max_string_length + 1);
+                String s(len, ' ');
+                for (size_t i = 0; i < len; ++i)
+                    s[i] = static_cast<char>(32 + (rng() % 95));
+                obj[key] = Field(std::move(s));
+            }
+        }
+
+        else if (choice < 8)
+        {
+            Array arr;
+            UInt64 len = rng() % (max_array_length + 1);
+
+            for (UInt64 i = 0; i < len; ++i)
+            {
+                if (rng() % 2 == 0)
+                {
+                    arr.push_back(Field(static_cast<Int64>(rng())));
+                }
+                else
+                {
+                    size_t str_len = rng() % (max_string_length + 1);
+                    String s(str_len, ' ');
+                    for (size_t j = 0; j < str_len; ++j)
+                        s[j] = static_cast<char>(32 + (rng() % 95));
+                    arr.push_back(Field(std::move(s)));
+                }
+            }
+
+            obj[key] = Field(std::move(arr));
+        }
+
+        else
+        {
+            if (depth < max_json_depth)
+            {
+                obj[key] = Field(
+                    generateRandomObject(
+                        rng,
+                        depth + 1,
+                        max_json_depth,
+                        std::max<UInt64>(1, max_json_keys / 2),
+                        max_array_length,
+                        max_string_length,
+                        null_ratio));
+            }
+            else
+            {
+                obj[key] = Field(static_cast<Int64>(rng()));
+            }
+        }
+    }
+
+    return obj;
+}
+
 ColumnPtr fillColumnWithRandomData(
     DataTypePtr type,
     UInt64 limit,
     UInt64 max_array_length,
     UInt64 max_string_length,
+    UInt64 max_json_keys,
+    UInt64 max_json_depth,
+    double null_ratio,
     pcg64 & rng,
     ContextPtr context)
 {
@@ -311,7 +403,7 @@ ColumnPtr fillColumnWithRandomData(
             }
 
             /// This division by two makes the size growth subexponential on depth.
-            auto data_column = fillColumnWithRandomData(nested_type, offset, max_array_length / 2, max_string_length, rng, context);
+            auto data_column = fillColumnWithRandomData(nested_type, offset, max_array_length / 2, max_string_length, max_json_keys, max_json_depth, null_ratio, rng, context);
 
             return ColumnArray::create(data_column, std::move(offsets_column));
         }
@@ -319,8 +411,31 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Map:
         {
             const DataTypePtr & nested_type = typeid_cast<const DataTypeMap &>(*type).getNestedType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length / 2, max_string_length, rng, context);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length / 2, max_string_length, max_json_keys, max_json_depth, null_ratio, rng, context);
             return ColumnMap::create(nested_column);
+        }
+
+        case TypeIndex::Object:
+        {
+            const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+            auto column = object_type.createColumn();
+            auto & column_object = assert_cast<ColumnObject &>(*column);
+
+            for (UInt64 row = 0; row < limit; ++row)
+            {
+                Object obj = generateRandomObject(
+                    rng,
+                    0,
+                    max_json_depth,
+                    max_json_keys,
+                    max_array_length,
+                    max_string_length,
+                    null_ratio);
+
+                column_object.insert(obj);
+            }
+
+            return column;
         }
 
         case TypeIndex::Tuple:
@@ -333,7 +448,7 @@ ColumnPtr fillColumnWithRandomData(
             Columns tuple_columns(tuple_size);
 
             for (size_t i = 0; i < tuple_size; ++i)
-                tuple_columns[i] = fillColumnWithRandomData(elements[i], limit, max_array_length, max_string_length, rng, context);
+                tuple_columns[i] = fillColumnWithRandomData(elements[i], limit, max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio, rng, context);
 
             return ColumnTuple::create(std::move(tuple_columns));
         }
@@ -341,7 +456,7 @@ ColumnPtr fillColumnWithRandomData(
         case TypeIndex::Nullable:
         {
             auto nested_type = typeid_cast<const DataTypeNullable &>(*type).getNestedType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio, rng, context);
 
             auto null_map_column = ColumnUInt8::create();
             auto & null_map = null_map_column->getData();
@@ -560,7 +675,7 @@ ColumnPtr fillColumnWithRandomData(
             /// but it's ok for testing purposes, because the LowCardinality data type supports high cardinality data as well.
 
             auto nested_type = typeid_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();
-            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, rng, context);
+            auto nested_column = fillColumnWithRandomData(nested_type, limit, max_array_length, max_string_length, max_json_keys, max_json_depth, null_ratio, rng, context);
 
             auto column = type->createColumn();
             typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*nested_column, 0, limit);
