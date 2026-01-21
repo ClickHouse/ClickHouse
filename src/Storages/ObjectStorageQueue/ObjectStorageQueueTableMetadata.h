@@ -115,6 +115,9 @@ struct ObjectStorageQueueTableMetadata
             return buckets;
         return processing_threads_num;
     }
+
+    bool hasTrackedFilesLimit() const { return tracked_files_limit || tracked_files_ttl_sec; }
+
 private:
     void checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 };

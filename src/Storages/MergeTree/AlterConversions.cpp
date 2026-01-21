@@ -104,7 +104,6 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
 
-    mutation_command->ast = alter_command;
     return *mutation_command;
 }
 

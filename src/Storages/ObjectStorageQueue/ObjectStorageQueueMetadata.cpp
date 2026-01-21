@@ -130,6 +130,11 @@ private:
     }
 };
 
+static bool isUnordered(ObjectStorageQueueMode mode)
+{
+    return mode == ObjectStorageQueueMode::UNORDERED;
+}
+
 ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     ObjectStorageType storage_type_,
     const fs::path & zookeeper_path_,
@@ -145,6 +150,9 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , partitioning_mode(table_metadata.getPartitioningMode())
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
+    , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
+    , cleanup_failed_files(table_metadata.hasTrackedFilesLimit())
+    , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
@@ -174,9 +182,12 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     }
 
     LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}, use persistent processing nodes: {}",
+        log, "Mode: {}, buckets: {}, processing threads: {}, "
+        "result buckets num: {}, use persistent processing nodes: {}, "
+        "cleanup processing files: {}, cleanup processed files: {}, cleanup failed files: {}",
         table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), buckets_num, use_persistent_processing_nodes.load());
+        table_metadata.processing_threads_num.load(), buckets_num,
+        use_persistent_processing_nodes.load(), cleanup_processing_files, cleanup_processed_files, cleanup_failed_files);
 }
 
 ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
@@ -219,21 +230,15 @@ void ObjectStorageQueueMetadata::startup()
     if (startup_called.exchange(true))
          return;
 
-    bool need_cleanup_for_unordered = mode == ObjectStorageQueueMode::UNORDERED
-        && (table_metadata.tracked_files_limit
-            || table_metadata.tracked_files_ttl_sec
-            || (use_persistent_processing_nodes && persistent_processing_node_ttl_seconds));
-    bool need_cleanup_for_ordered = mode == ObjectStorageQueueMode::ORDERED
-        && use_persistent_processing_nodes && persistent_processing_node_ttl_seconds;
-
-    if (!task && (need_cleanup_for_unordered || need_cleanup_for_ordered))
+    if (!cleanup_task
+        && (cleanup_processed_files || cleanup_failed_files || cleanup_processing_files))
     {
-        task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
+        cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
             StorageID::createEmpty(), "ObjectStorageQueueCleanupFunc",
             [this] { cleanupThreadFunc(); });
 
-        task->activate();
-        task->scheduleAfter(
+        cleanup_task->activate();
+        cleanup_task->scheduleAfter(
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
@@ -244,8 +249,8 @@ void ObjectStorageQueueMetadata::startup()
 void ObjectStorageQueueMetadata::shutdown()
 {
     shutdown_called = true;
-    if (task)
-        task->deactivate();
+    if (cleanup_task)
+        cleanup_task->deactivate();
     if (update_registry_thread && update_registry_thread->joinable())
         update_registry_thread->join();
 }
@@ -1161,7 +1166,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFunc()
     if (shutdown_called)
         return;
 
-    task->scheduleAfter(
+    cleanup_task->scheduleAfter(
         generateRescheduleInterval(
             cleanup_interval_min_ms, cleanup_interval_max_ms));
 }
@@ -1172,75 +1177,74 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
     const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
     const auto zk_client = getZooKeeper(log);
-    auto zk_retries = getKeeperRetriesControl(log);
 
     /// Create a lock so that with distributed processing
     /// multiple nodes do not execute cleanup in parallel.
-    auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(zookeeper_cleanup_lock_path, *zk_client->getKeeper(), toString(getCurrentTime()));
+    auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), toString(getCurrentTime()));
+
     if (!ephemeral_node)
     {
         LOG_TEST(log, "Cleanup is already being executed by another node");
         return;
     }
-    /// TODO because of this lock we might not update local file statuses on time on one of the nodes.
 
-    cleanupPersistentProcessingNodes();
-    if (mode == ObjectStorageQueueMode::ORDERED)
-        return;
+    if (cleanup_processing_files)
+        cleanupPersistentProcessingNodes();
 
-    const fs::path zookeeper_processed_path = zookeeper_path / "processed";
-    const fs::path zookeeper_failed_path = zookeeper_path / "failed";
+    if (table_metadata.hasTrackedFilesLimit())
+    {
+        if (cleanup_processed_files)
+            cleanupTrackedNodes(zookeeper_path / "processed", "processed");
 
-    Strings processed_nodes;
+        if (cleanup_failed_files)
+            cleanupTrackedNodes(zookeeper_path / "failed", "failed");
+    }
+
+    LOG_TRACE(log, "Node limits check finished");
+}
+
+void ObjectStorageQueueMetadata::cleanupTrackedNodes(
+    const std::string & nodes_path,
+    std::string_view description)
+{
+    LOG_TEST(log, "Checking {} nodes for tracking limits", description);
+
+    Strings nodes;
     Coordination::Error code;
+    auto zk_retries = getKeeperRetriesControl(log);
     zk_retries.retryLoop([&]
     {
-        code = getZooKeeper(log)->tryGetChildren(zookeeper_processed_path, processed_nodes);
+        code = getZooKeeper(log)->tryGetChildren(nodes_path, nodes);
     });
     if (code != Coordination::Error::ZOK)
     {
         if (code == Coordination::Error::ZNONODE)
         {
-            LOG_TEST(log, "Path {} does not exist", zookeeper_processed_path.string());
+            LOG_TEST(log, "Path {} does not exist", nodes_path);
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
     }
 
-    Strings failed_nodes;
-    zk_retries.resetFailures();
-    zk_retries.retryLoop([&]
+    if (nodes.empty())
     {
-        code = getZooKeeper(log)->tryGetChildren(zookeeper_failed_path, failed_nodes);
-    });
-    if (code != Coordination::Error::ZOK)
-    {
-        if (code == Coordination::Error::ZNONODE)
-            LOG_TEST(log, "Path {} does not exist", zookeeper_failed_path.string());
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
-    }
-
-    const size_t nodes_num = processed_nodes.size() + failed_nodes.size();
-    if (!nodes_num)
-    {
-        LOG_TEST(log, "There are neither processed nor failed nodes (in {} and in {})",
-                 zookeeper_processed_path.string(), zookeeper_failed_path.string());
+        LOG_TEST(log, "There are no {} nodes at path {}", description, nodes_path);
         return;
     }
 
-    chassert(table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec);
     const bool check_nodes_limit = table_metadata.tracked_files_limit > 0;
     const bool check_nodes_ttl = table_metadata.tracked_files_ttl_sec > 0;
+    chassert(check_nodes_limit || check_nodes_ttl);
 
-    const bool nodes_limit_exceeded = nodes_num > table_metadata.tracked_files_limit;
+    const bool nodes_limit_exceeded = nodes.size() > table_metadata.tracked_files_limit;
     if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
     {
         LOG_TEST(log, "No limit exceeded");
         return;
     }
 
-    LOG_TRACE(log, "Will check limits for {} nodes", nodes_num);
+    LOG_TRACE(log, "Will check limits for {} {} nodes", nodes.size(), description);
 
     struct Node
     {
@@ -1257,51 +1261,42 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     std::set<Node, decltype(node_cmp)> sorted_nodes(node_cmp);
 
     std::vector<std::string> paths;
-    auto fetch_nodes = [&](const Strings & nodes, const fs::path & base_path)
+    auto get_paths = [&]
     {
-        auto get_paths = [&]
+        LOG_TEST(log, "Fetching info for {} paths", paths.size());
+
+        zkutil::ZooKeeper::MultiTryGetResponse response;
+        zk_retries.resetFailures();
+        zk_retries.retryLoop([&]
         {
-            LOG_TEST(log, "Fetching info for {} paths", paths.size());
+            response = getZooKeeper(log)->tryGet(paths);
+        });
 
-            zkutil::ZooKeeper::MultiTryGetResponse response;
-            zk_retries.resetFailures();
-            zk_retries.retryLoop([&]
+        for (size_t i = 0; i < response.size(); ++i)
+        {
+            if (response[i].error == Coordination::Error::ZNONODE)
             {
-                response = getZooKeeper(log)->tryGet(paths);
-            });
-
-            for (size_t i = 0; i < response.size(); ++i)
-            {
-                if (response[i].error == Coordination::Error::ZNONODE)
-                {
-                    LOG_ERROR(log, "Failed to fetch node metadata {}", paths[i]);
-                    continue;
-                }
-
-                chassert(response[i].error == Coordination::Error::ZOK);
-                sorted_nodes.emplace(paths[i], ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[i].data));
-                LOG_TEST(log, "Fetched metadata for node {}", paths[i]);
+                LOG_ERROR(log, "Failed to fetch node metadata {}", paths[i]);
+                continue;
             }
-            paths.clear();
-        };
 
-        for (const auto & node : nodes)
-        {
-            paths.push_back(base_path / node);
-            if (paths.size() == keeper_multiread_batch_size)
-                get_paths();
+            chassert(response[i].error == Coordination::Error::ZOK);
+            sorted_nodes.emplace(paths[i], ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[i].data));
+            LOG_TEST(log, "Fetched metadata for node {}", paths[i]);
         }
-
-        if (!paths.empty())
-            get_paths();
+        paths.clear();
     };
 
-    LOG_TRACE(
-        log, "Processed nodes to remove: {}, failed nodes to remove: {}, multiread batch size: {}",
-        processed_nodes.size(), failed_nodes.size(), keeper_multiread_batch_size);
+    std::filesystem::path nodes_fs_path(nodes_path);
+    for (const auto & node : nodes)
+    {
+        paths.push_back(nodes_fs_path / node);
+        if (paths.size() == keeper_multiread_batch_size)
+            get_paths();
+    }
 
-    fetch_nodes(processed_nodes, zookeeper_processed_path);
-    fetch_nodes(failed_nodes, zookeeper_failed_path);
+    if (!paths.empty())
+        get_paths();
 
     auto get_nodes_str = [&]()
     {
@@ -1311,8 +1306,11 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         return wb.str();
     };
 
-    LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}",
-             table_metadata.tracked_files_limit.load(), table_metadata.tracked_files_ttl_sec.load(), get_nodes_str());
+    LOG_TEST(
+        log, "Checking node limits (max size: {}, max age: {}) for {}",
+        table_metadata.tracked_files_limit.load(),
+        table_metadata.tracked_files_ttl_sec.load(),
+        get_nodes_str());
 
     static constexpr size_t keeper_multi_batch_size = 100;
     Coordination::Requests remove_requests;
@@ -1320,7 +1318,9 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     remove_requests.reserve(keeper_multi_batch_size);
     remove_responses.reserve(keeper_multi_batch_size);
 
-    size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded ? nodes_num - table_metadata.tracked_files_limit : 0;
+    size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded
+        ? nodes.size() - table_metadata.tracked_files_limit
+        : 0;
 
     const auto remove_nodes = [&](bool node_limit)
     {
@@ -1414,8 +1414,6 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
     if (!remove_requests.empty())
         remove_nodes(/*node_limit=*/false);
-
-    LOG_TRACE(log, "Node limits check finished");
 }
 
 void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)

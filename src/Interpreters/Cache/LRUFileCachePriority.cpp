@@ -18,6 +18,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheEvictionSkippedFileSegments;
     extern const Event FilesystemCacheEvictionTries;
     extern const Event FilesystemCacheEvictionSkippedEvictingFileSegments;
+    extern const Event FilesystemCacheEvictionSkippedMovingFileSegments;
     extern const Event FilesystemCacheEvictionReusedIterator;
 }
 
@@ -112,9 +113,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
 #ifndef NDEBUG
     for (const auto & queue_entry : queue)
     {
-        /// entry.size == 0 means entry was invalidated.
-        if (!queue_entry->invalidated
-            && !queue_entry->isEvictingUnlocked()
+        if (queue_entry->getState() == Entry::State::Active
             && queue_entry->key == entry->key && queue_entry->offset == entry->offset)
         {
             throw Exception(
@@ -220,31 +219,55 @@ LRUFileCachePriority::iterateImpl(
 
         //LOG_TEST(log, "Entry: {}", entry.toString());
 
-        if (entry.invalidated)
+        auto is_evictable_state = [&](Entry::State entry_state) -> bool
         {
-            /// entry.size == 0 means that queue entry was invalidated,
-            /// valid (active) queue entries always have size > 0,
-            /// so we can safely remove it.
-            stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Invalidated);
-            invalidated_entries.emplace_back(*it, std::make_shared<LRUIterator>(this, it));
-            ++it;
-            continue;
-        }
+            switch (entry_state)
+            {
+                case Entry::State::Active:
+                {
+                    return true;
+                }
+                case Entry::State::Invalidated:
+                {
+                    stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Invalidated);
+                    invalidated_entries.emplace_back(*it, std::make_shared<LRUIterator>(this, it));
+                    return false;
+                }
+                case Entry::State::Evicting:
+                {
+                    /// Skip queue entries which are in evicting state.
+                    /// We threat them the same way as deleted entries.
+                    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
+                    stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Evicting);
+                    return false;
+                }
+                case Entry::State::Moving:
+                {
+                    ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedMovingFileSegments);
+                    stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Moving);
+                    return false;
+                }
+                case Entry::State::Removed:
+                {
+                    /// As we iterate under priority read lock and removed flag is
+                    /// set under priority write lock right before it is removed from queue,
+                    /// then the entry must have been removed from queue
+                    /// before we acquired read lock.
+                    chassert(false, "Entry should have been removed from queue: " + entry.toString());
+                    return false;
+                }
+            }
+        };
 
-        /// Check Unlocked version of setEvicting before taking
-        /// key_metadata lock as an optimization.
-        if (entry.isEvictingUnlocked())
+        /// Check state without locked key as an optimization.
+        if (!is_evictable_state(entry.getState()))
         {
-            /// Skip queue entries which are in evicting state.
-            /// We threat them the same way as deleted entries.
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
-            stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Evicting);
             ++it;
             continue;
         }
 
         auto locked_key = entry.key_metadata->tryLock();
-        if (!locked_key || entry.invalidated)
+        if (!locked_key)
         {
             /// locked_key == nullptr means that the cache key of
             /// the file segment of this queue entry no longer exists.
@@ -255,12 +278,9 @@ LRUFileCachePriority::iterateImpl(
             continue;
         }
 
-        if (entry.isEvicting(*locked_key))
+        /// Reread entry state under locked key.
+        if (!is_evictable_state(entry.getState()))
         {
-            /// Skip queue entries which are in evicting state.
-            /// We treat them the same way as deleted entries.
-            ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
-            stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Evicting);
             ++it;
             continue;
         }
@@ -268,28 +288,10 @@ LRUFileCachePriority::iterateImpl(
         auto metadata = locked_key->tryGetByOffset(entry.offset);
         if (!metadata)
         {
-            /// Same as explained in comment above, metadata == nullptr,
-            /// if file segment was removed from cache metadata,
-            /// but queue entry still exists because it is lazily removed.
             stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Invalidated);
             ++it;
-            continue;
-        }
-
-        if (metadata->isEvictingOrRemoved(*locked_key))
-        {
-            if (metadata->isRemoved(*locked_key))
-            {
-                stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Invalidated);
-            }
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedEvictingFileSegments);
-                stat.update(entry.size, FileSegmentKind::Regular, FileCacheReserveStat::State::Evicting);
-            }
-            /// Skip queue entries which are in evicting state.
-            /// We threat them the same way as deleted entries.
-            ++it;
+            /// We should have quit earlier in is_evictable_state under locked key.
+            chassert(false);
             continue;
         }
 
@@ -566,7 +568,7 @@ bool LRUFileCachePriority::tryIncreasePriority(
 {
     auto lock = queue_guard.writeLock();
     const auto & entry = iterator.getEntry();
-    chassert(!entry->isEvictingUnlocked());
+    chassert(entry->getState() == Entry::State::Active);
     entry->hits += 1;
 
     auto it = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator).get();
@@ -603,11 +605,12 @@ void LRUFileCachePriority::LRUIterator::invalidate()
         cache_priority->state->sub(entry->size, 1);
         entry->size = 0;
     }
-    entry->invalidated = true;
 
     LOG_TEST(cache_priority->log,
-             "Invalidated entry in LRU queue {}: {}",
+             "Invalidating entry in LRU queue {}: {}",
              entry->toString(), cache_priority->getApproxStateInfoForLog());
+
+    entry->setInvalidatedFlag();
 }
 
 void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CacheStateGuard::Lock & lock)

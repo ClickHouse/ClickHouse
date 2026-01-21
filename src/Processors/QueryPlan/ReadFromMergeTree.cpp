@@ -1958,6 +1958,12 @@ void ReadFromMergeTree::buildIndexes(
     indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
                                                     && skip_indexes.useful_indices.size() > 1
                                                     && !indexes->key_condition_rpn_template->hasOnlyConjunctions();
+
+    indexes->use_skip_indexes_if_final_exact_mode = indexes->use_skip_indexes && !skip_indexes.empty()
+                                                        && query_info_.isFinal()
+                                                        && settings[Setting::use_skip_indexes_if_final_exact_mode]
+                                                        && !areSkipIndexColumnsInPrimaryKey(primary_key_column_names, skip_indexes,
+                                                                indexes->key_condition_rpn_template->hasOnlyConjunctions());
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
@@ -2231,7 +2237,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     {
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
-        bool final_second_pass = indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal() && settings[Setting::use_skip_indexes_if_final_exact_mode];
+        bool final_second_pass = indexes->use_skip_indexes_if_final_exact_mode;
         /// Note, use_skip_indexes_if_final_exact_mode requires complete PK, so we cannot apply distributed_index_analysis with it
         bool distributed_index_analysis_enabled = settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
@@ -3861,6 +3867,25 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
             return true;
     }
     return false;
+}
+
+/// Check if any/all columns with the given skip indexes are also part of the primary key
+bool ReadFromMergeTree::areSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const UsefulSkipIndexes & skip_indexes, bool any_one)
+{
+    NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
+
+    for (const auto & skip_index : skip_indexes.useful_indices)
+    {
+        for (const auto & column : skip_index.index->index.column_names)
+        {
+            if (primary_key_columns_set.contains(column) && any_one)
+                return true;
+            else if (!primary_key_columns_set.contains(column) && !any_one)
+                return false;
+        }
+    }
+
+    return !any_one;
 }
 
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
