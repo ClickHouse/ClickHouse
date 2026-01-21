@@ -173,7 +173,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-    ASTPtr command_list_ptr = alter.command_list->ptr();
+    ASTPtr command_list_ptr = alter.getChild(*alter.command_list);
     visitor.visit(command_list_ptr);
 
     AlterCommands alter_commands;
@@ -191,8 +191,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         {
             partition_commands.emplace_back(std::move(*partition_command));
         }
-        else if (auto mut_command = MutationCommand::parse(command_ast))
+        else if (auto mut_command = MutationCommand::parse(*command_ast))
         {
+            mut_command->ast = child;
             if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
             {
                 /// TODO: add a check for result query size.
@@ -200,11 +201,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 if (rewritten_command_ast)
                 {
                     auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
-                    mut_command = MutationCommand::parse(new_alter_command);
+                    mut_command = MutationCommand::parse(*new_alter_command);
                     if (!mut_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
                             command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
+                    mut_command->ast = rewritten_command_ast;
                 }
             }
 

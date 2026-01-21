@@ -174,7 +174,7 @@ struct Reader
 
         bool use_bloom_filter = false;
         const KeyCondition * column_index_condition = nullptr;
-        bool use_prewhere = false;
+        std::unordered_set<size_t> steps_to_calculate;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
@@ -206,7 +206,7 @@ struct Reader
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
         UInt8 rep = 0;
 
-        bool use_prewhere = false;
+        size_t step_idx = 0;
     };
 
     struct RowSet
@@ -416,25 +416,20 @@ struct Reader
 
 
         /// Fields below are used only by ReadManager.
+        std::vector<std::atomic<size_t>> next_subgroup_for_step;
 
-        /// Indexes of the first subgroup that didn't finish
-        /// {prewhere, reading main columns, delivering final chunk}.
-        /// delivery_ptr <= read_ptr <= prewhere_ptr <= subgroups.size()
-        std::atomic<size_t> prewhere_ptr {0};
-        std::atomic<size_t> read_ptr {0};
         std::atomic<size_t> delivery_ptr {0};
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
     };
 
-    struct PrewhereStep
+    struct Step
     {
         ExpressionActions actions;
-        String result_column_name;
+        std::optional<String> filter_column_name {};
         std::vector<size_t> input_idxs {}; // indices in extended_sample_block
-        std::optional<size_t> idx_in_output_block = std::nullopt;
-        bool need_filter = true;
+        std::vector<std::pair<String, size_t>> idxs_in_output_block {};
     };
 
     ReadOptions options;
@@ -470,7 +465,7 @@ struct Reader
     /// Maps idx_in_output_block to index in output_columns. I.e.:
     ///     sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
     /// nullopt if the column is produced by PREWHERE expression:
-    ///     prewhere_steps[?].idx_in_output_block == i
+    ///     prewhere_steps[?].idxs_in_output_block[?].second == i
     std::vector<std::optional<size_t>> sample_block_to_output_columns_idx;
 
     /// sample_block with maybe some columns added at the end.
@@ -478,7 +473,7 @@ struct Reader
     /// (Why not just add them to sample_block? To avoid unnecessarily applying filter to them.)
     Block extended_sample_block;
     DataTypes extended_sample_block_data_types; // = extended_sample_block.getDataTypes()
-    std::vector<PrewhereStep> prewhere_steps;
+    std::vector<Step> steps;
 
     std::optional<KeyCondition> bloom_filter_condition;
 
@@ -520,7 +515,7 @@ struct Reader
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
     ColumnPtr & getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block);
 
-    void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group);
+    void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 
 private:
     struct BloomFilterLookup : public KeyCondition::BloomFilter
@@ -539,7 +534,8 @@ private:
     void initializePrefetches();
     double estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const;
     void decodeDictionaryPageImpl(const parq::PageHeader & header, std::span<const char> data, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
-    void skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
+    /// If row_idx is provided, jump to the start of that row. Otherwise go to the start of next page.
+    void skipToRowOrNextPage(std::optional<size_t> row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     std::tuple<parq::PageHeader, std::span<const char>> decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const;
     bool initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info);
     void decompressPageIfCompressed(PageState & page);
