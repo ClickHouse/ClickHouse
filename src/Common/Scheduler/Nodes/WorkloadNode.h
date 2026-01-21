@@ -330,9 +330,11 @@ protected:
             {
                 // Remove fair if the only child has left
                 chassert(root);
+                auto remaining_child = children.begin()->second;
+                detach(remaining_child); // Detach remaining child from root before destroying it
                 detach(root);
                 root.reset();
-                return children.begin()->second; // The last child is a new root now
+                return remaining_child; // The last child is a new root now
             }
             else if (children.empty())
                 return {}; // We have detached the last child
@@ -414,9 +416,11 @@ protected:
                 {
                     // Remove priority node if the only child-branch has left
                     chassert(root);
+                    auto remaining_branch_root = branches.begin()->second.getRoot();
+                    detach(remaining_branch_root); // Detach remaining branch from root before destroying it
                     detach(root);
                     root.reset();
-                    return branches.begin()->second.getRoot(); // The last child-branch is a new root now
+                    return remaining_branch_root; // The last child-branch is a new root now
                 }
                 else if (branches.empty())
                     return {}; // We have detached the last child
