@@ -1559,7 +1559,7 @@ void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
 
     file_offset_of_buffer_end = getPosition();
     //resetWorkingBuffer();
-    info.file_segments.reset();
+    info.file_segments = nullptr;
     state.reset();
     initialized = false;
     info.cache_file_reader.reset();
