@@ -568,7 +568,7 @@ public:
 
         while (source < source_end)
         {
-            const UInt16 block_float_count = static_cast<UInt16>(std::min<UInt32>(ALP_BLOCK_MAX_FLOAT_COUNT, (dest_end - dest) / sizeof(T)));
+            const UInt16 block_float_count = static_cast<UInt16>(std::min<size_t>(ALP_BLOCK_MAX_FLOAT_COUNT, (dest_end - dest) / sizeof(T)));
             decodeBlock(source, source_end, dest, dest_end, block_float_count);
         }
 
