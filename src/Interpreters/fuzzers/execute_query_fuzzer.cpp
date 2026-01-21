@@ -47,7 +47,7 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     /// Initialize default database
     {
         const std::string default_database = "default";
-        DatabasePtr database = std::make_shared<DatabaseMemory>(default_database, context);
+        DatabasePtr database = std::make_shared<DatabaseMemory>(default_database, false, context);
         if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
             DatabaseCatalog::instance().addUUIDMapping(uuid);
         DatabaseCatalog::instance().attachDatabase(default_database, database);
