@@ -4,6 +4,8 @@
 
 #if USE_PARQUET
 
+#    include <map>
+#    include <optional>
 #    include <Core/Types.h>
 #    include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #    include <Interpreters/Context_fwd.h>
@@ -23,6 +25,18 @@ struct DeltaLakePartitionColumn
 
     bool operator==(const DeltaLakePartitionColumn & other) const = default;
 };
+
+/// History record for Delta Lake version tracking
+struct DeltaLakeHistoryRecord
+{
+    UInt64 version;
+    std::optional<DateTime64> timestamp;
+    String operation;
+    std::map<String, String> operation_parameters;
+    bool is_current;
+};
+
+using DeltaLakeHistory = std::vector<DeltaLakeHistoryRecord>;
 
 /// Data file -> partition columns
 using DeltaLakePartitionColumns = std::unordered_map<std::string, std::vector<DeltaLakePartitionColumn>>;
@@ -45,6 +59,9 @@ public:
 
     /// Get the table path for this Delta Lake table
     String getTablePath() const;
+
+    /// Get history of Delta Lake table versions
+    DeltaLakeHistory getHistory(ContextPtr local_context) const;
 
     bool operator==(const IDataLakeMetadata & other) const override
     {
