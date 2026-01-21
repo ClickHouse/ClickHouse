@@ -26,6 +26,10 @@ public:
     BackgroundSchedulePoolTaskInfo * operator->();
     const BackgroundSchedulePoolTaskInfo * operator->() const;
 
+    /// Get the shared pointer to the task info.
+    /// Useful when you need to extend the lifetime of the task.
+    BackgroundSchedulePoolTaskInfoPtr getTaskInfoPtr() const;
+
 private:
     BackgroundSchedulePoolTaskInfoPtr task_info;
 };

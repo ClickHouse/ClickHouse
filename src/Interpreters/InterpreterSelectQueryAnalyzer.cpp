@@ -75,8 +75,8 @@ ASTPtr normalizeAndValidateQuery(const ASTPtr & query, const Names & column_name
         result_query = subquery->children[0];
     else
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Expected ASTSelectWithUnionQuery, ASTSelectQuery or ASTSubquery. Actual {}",
-            query->formatForErrorMessage());
+            "Expected ASTSelectWithUnionQuery, ASTSelectQuery or ASTSubquery. Actual {} ({})",
+            query->formatForErrorMessage(), query->getID());
 
     if (column_names.empty())
         return result_query;

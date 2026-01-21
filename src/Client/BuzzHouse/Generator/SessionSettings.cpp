@@ -63,7 +63,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"allow_push_predicate_when_subquery_contains_with", trueOrFalseSetting},
        {"allow_reorder_prewhere_conditions", trueOrFalseSetting},
        {"allow_simdjson", trueOrFalseSetting},
-       {"allow_statistics_optimize", trueOrFalseSetting},
        {"cluster_function_process_archive_on_multiple_nodes", trueOrFalseSetting},
        {"compile_aggregate_expressions", trueOrFalseSetting},
        {"compile_expressions", trueOrFalseSetting},
@@ -270,6 +269,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_skip_indexes_for_top_k", trueOrFalseSetting},
        {"use_skip_indexes_if_final", trueOrFalseSetting},
        {"use_skip_indexes_on_data_read", trueOrFalseSetting},
+       {"use_statistics", trueOrFalseSetting},
        {"use_statistics_cache", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
        {"use_uncompressed_cache", trueOrFalseSetting}};

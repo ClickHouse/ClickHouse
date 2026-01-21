@@ -14,6 +14,7 @@ from pyspark.sql.types import (
     StringType,
 )
 from pyspark.sql.window import Window
+from pyspark.sql.functions import expr
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.s3_tools import (
@@ -181,6 +182,30 @@ def generate_data(spark, start, end):
     )
 
     df = a.join(b, on=["row_index"]).drop("row_index")
+    return df
+
+def generate_data_complex(spark, start, end, div):
+    a = spark.range(start, end, 1).toDF("a")
+    b = spark.range(start + 1, end + 1, 1).toDF("b")
+    c = spark.range(start + end, end + end, 1).toDF("c")
+
+    a = a.withColumn("a", expr(f"a div {div}"))
+    b = b.withColumn("b", expr(f"b div {div}"))
+    c = c.withColumn("c", expr(f"c div {div}"))
+
+    b = b.withColumn("b", b["b"].cast(StringType()))
+
+    a = a.withColumn(
+        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
+    )
+    b = b.withColumn(
+        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
+    )
+    c = c.withColumn(
+        "row_index", row_number().over(Window.orderBy(monotonically_increasing_id()))
+    )
+
+    df = a.join(b, on=["row_index"]).join(c, on=["row_index"]).drop("row_index")
     return df
 
 

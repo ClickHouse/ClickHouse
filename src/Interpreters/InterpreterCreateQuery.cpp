@@ -167,6 +167,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE;
     extern const int PATH_ACCESS_DENIED;
+    extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_STORAGE;
@@ -944,7 +945,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), getContext());
+            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+                getContext(),
+                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
         }
         else
         {
@@ -957,7 +960,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.as_table_function)
     {
         /// Table function without columns list.
-        auto table_function_ast = create.as_table_function->ptr();
+        auto table_function_ast = create.getChild(*create.as_table_function);
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
         properties.columns = table_function->getActualTableStructure(getContext(), /*is_insert_query*/ true);
     }
@@ -969,7 +972,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Evaluate expressions (like currentDatabase() or tcpPort()) in dictionary source definition.
         NormalizeAndEvaluateConstantsVisitor::Data visitor_data{getContext()};
         NormalizeAndEvaluateConstantsVisitor visitor(visitor_data);
-        visitor.visit(create.dictionary->source->ptr());
+        visitor.visit(create.dictionary->getChild(*create.dictionary->source));
 
         return {};
     }
@@ -1099,7 +1102,9 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
                 context->setQueryKindInitial();
-                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(), context, SelectQueryOptions{}.analyze().createView());
+                input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+                    context,
+                    SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
             }
             else
             {
@@ -1108,8 +1113,11 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                     SelectQueryOptions().analyze()).getSampleBlock();
             }
         }
-        catch (Exception &)
+        catch (Exception & e)
         {
+            if (e.code() == ErrorCodes::ACCESS_DENIED)
+                throw;
+
             if (!getContext()->getSettingsRef()[Setting::allow_materialized_view_with_bad_select])
                 throw;
             check_columns = false;
@@ -1354,7 +1362,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
         else if (as_create.as_table_function)
         {
-            create.set(create.as_table_function, as_create.as_table_function->ptr());
+            create.set(create.as_table_function, as_create.getChild(*as_create.as_table_function));
             return;
         }
         else if (as_create.storage)
@@ -1959,7 +1967,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
-        auto table_function_ast = create.as_table_function->ptr();
+        auto table_function_ast = create.getChild(*create.as_table_function);
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
         if (!table_function->canBeUsedToCreateTable())
