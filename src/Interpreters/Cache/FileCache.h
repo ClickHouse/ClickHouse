@@ -39,20 +39,34 @@ struct FileCacheReserveStat
         size_t non_releasable_size = 0;
         size_t non_releasable_count = 0;
 
+        size_t evicting_count = 0;
+        size_t invalidated_count = 0;
+
         Stat & operator +=(const Stat & other)
         {
             releasable_size += other.releasable_size;
             releasable_count += other.releasable_count;
             non_releasable_size += other.non_releasable_size;
             non_releasable_count += other.non_releasable_count;
+            evicting_count += other.evicting_count;
+            invalidated_count += other.invalidated_count;
             return *this;
         }
+
+        std::string toString() const;
     };
 
     Stat total_stat;
     std::unordered_map<FileSegmentKind, Stat> stat_by_kind;
 
-    void update(size_t size, FileSegmentKind kind, bool releasable);
+    enum class State
+    {
+        Releasable,
+        NonReleasable,
+        Evicting,
+        Invalidated,
+    };
+    void update(size_t size, FileSegmentKind kind, State state);
 
     FileCacheReserveStat & operator +=(const FileCacheReserveStat & other)
     {
@@ -187,10 +201,11 @@ public:
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
 
+    bool tryIncreasePriority(FileSegment & file_segment);
+
     std::vector<FileSegment::Info> getFileSegmentInfos(const UserID & user_id);
 
     std::vector<FileSegment::Info> getFileSegmentInfos(const Key & key, const UserID & user_id);
-
 
     IFileCachePriority::PriorityDumpPtr dumpQueue();
 
@@ -201,8 +216,7 @@ public:
 
     void deactivateBackgroundOperations();
 
-    CachePriorityGuard::Lock lockCache() const;
-    CachePriorityGuard::Lock tryLockCache(std::optional<std::chrono::milliseconds> acquire_timeout = std::nullopt) const;
+    CachePriorityGuard::WriteLock lockCache() const;
 
     std::vector<FileSegment::Info> sync();
 
@@ -259,6 +273,8 @@ private:
 
     FileCachePriorityPtr main_priority;
     mutable CachePriorityGuard cache_guard;
+    mutable CachePriorityGuard queue_guard;
+    mutable CacheStateGuard cache_state_guard;
 
     /// Random checks for cache correctness.
     /// They are heavy, so cannot be done on each cache access.
@@ -290,7 +306,7 @@ private:
 
     void loadMetadata();
     void loadMetadataImpl();
-    void loadMetadataForKeys(const std::filesystem::path & keys_dir);
+    void loadMetadataForKeys(const std::filesystem::path & keys_dir, const UserInfo & user);
 
     /// Get all file segments from cache which intersect with `range`.
     /// If `file_segments_limit` > 0, return no more than first file_segments_limit
@@ -329,16 +345,36 @@ private:
 
     struct SizeLimits
     {
-        size_t max_size;
-        size_t max_elements;
-        double slru_size_ratio;
+        size_t max_size = 0;
+        size_t max_elements = 0;
+        double slru_size_ratio = 0;
     };
-    SizeLimits doDynamicResize(const SizeLimits & current_limits, const SizeLimits & desired_limits);
+    SizeLimits doDynamicResize(const SizeLimits & prev_limits, const SizeLimits & desired_limits);
     bool doDynamicResizeImpl(
-        const SizeLimits & current_limits,
+        const SizeLimits & prev_limits,
         const SizeLimits & desired_limits,
         SizeLimits & result_limits,
-        CachePriorityGuard::Lock &);
+        CacheStateGuard::Lock &);
+
+    bool doTryReserve(
+        FileSegment & file_segment,
+        size_t size,
+        FileCacheReserveStat & stat,
+        const UserInfo & user,
+        size_t lock_wait_timeout_milliseconds,
+        std::string & failure_reason);
+
+    bool doEviction(
+        const EvictionInfo & main_eviction_info,
+        const EvictionInfo * query_eviction_info,
+        FileSegment & file_segment,
+        const UserInfo & user,
+        const IFileCachePriority::IteratorPtr & main_priority_iterator,
+        FileCacheReserveStat & reserve_stat,
+        EvictionCandidates & eviction_candidates,
+        IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
+        Priority * query_priority,
+        std::string & failure_reason);
 };
 
 }

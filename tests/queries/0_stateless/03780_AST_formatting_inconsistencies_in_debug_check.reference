@@ -6,3 +6,10 @@ Test repeated alias for statement which is not a literal:
 Test repeated alias for negated col:
 Test that large max_query_size doesnt cause overflow:
 test
+Test repeated alias in subquery after IN:
+[1,2,3]	0
+Test repeated alias in subquery after NOT:
+1	0
+Test repeated alias for tuple after IN:
+(1,'a')	1
+Test repeated alias for tuple after NOT fails cleanly:

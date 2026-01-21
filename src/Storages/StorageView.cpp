@@ -125,13 +125,9 @@ StorageView::StorageView(
     : IStorage(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
-    if (!is_parameterized_view_)
-    {
-        /// If CREATE query is to create parameterized view, then we dont want to set columns
-        if (!query.isParameterizedView())
-            storage_metadata.setColumns(columns_);
-    }
-    else
+    // Set columns if provided (regardless of whether view is parameterized)
+    // For parameterized views without explicit columns, columns_ will be empty
+    if (!columns_.empty())
         storage_metadata.setColumns(columns_);
 
     storage_metadata.setComment(comment);
@@ -145,7 +141,7 @@ StorageView::StorageView(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
     SelectQueryDescription description;
 
-    description.inner_query = query.select->ptr();
+    description.inner_query = query.getChild(*query.select);
 
     NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
     NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);

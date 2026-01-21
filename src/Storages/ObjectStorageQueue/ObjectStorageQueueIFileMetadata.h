@@ -55,20 +55,21 @@ public:
     using FileStatusPtr = std::shared_ptr<FileStatus>;
 
     /// Helper structure for storing the flag of presence or absence of a node in the keeper.
-    struct HiveLastProcessedFileInfo
+    struct PartitionLastProcessedFileInfo
     {
         /// Flag if node exists. For existing node need to call `set`, for non-existing - `create`.
         bool exists;
-        /// Last processed path for some hive partition.
+        /// Last processed path for this partition.
         std::string file_path;
     };
 
-    /// An auxiliary structure to properly create or rewrite node in keeper.
-    /// Instead, a more current value replaces the previously saved one in the `request` list.
-    /// Needed when queue processed in several threads, some threads can process different files
-    /// with the same hive partition.
-    /// Key is a path in keeper.
-    using HiveLastProcessedFileInfoMap = std::unordered_map<std::string, HiveLastProcessedFileInfo>;
+    /// Used only in Ordered mode with partitioning (HIVE or REGEX mode).
+    /// Key: <processed_node_path>/<partition_key>
+    /// Value: last processed file info
+    /// Explanation:
+    ///    Used to collect `requests` list via preparePartitionProcessedRequests
+    ///    to set values for each <processed_node_path>/<partition_key>.
+    using PartitionLastProcessedFileInfoMap = std::unordered_map<std::string, PartitionLastProcessedFileInfo>;
 
     struct LastProcessedFileInfo
     {
@@ -80,9 +81,12 @@ public:
         size_t index;
     };
 
-    /// An auxiliary structure to avoid rewriting the same node in Keeper several times with different values.
-    /// Instead, a more current value replaces the previously saved one in the `request` list.
-    /// Key is a path in keeper.
+    /// Used only in Ordered mode.
+    /// Key: <processed_node_path> (without <hive_part>)
+    /// Value: last processed file info
+    /// Explanation:
+    ///    Used to collect `requests` list via prepareProcessedRequests
+    ///    to set values for each <processed_node_path>.
     using LastProcessedFileInfoMap = std::unordered_map<std::string, LastProcessedFileInfo>;
     using LastProcessedFileInfoMapPtr = std::shared_ptr<LastProcessedFileInfoMap>;
 
@@ -135,8 +139,8 @@ public:
         const std::string & exception_message,
         bool reduce_retry_count);
 
-    /// Prepare keeper requests to save hive last processed files.
-    virtual void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & /* file_map */) {}
+    /// Prepare keeper requests to save partition last processed files (for HIVE or REGEX partitioning modes).
+    virtual void preparePartitionProcessedMap(PartitionLastProcessedFileInfoMap & /* file_map */) {}
 
     struct SetProcessingResponseIndexes
     {

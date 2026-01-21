@@ -4,10 +4,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsRandom.h>
-#include <Functions/PerformanceAdaptors.h>
-#include <pcg_random.hpp>
-#include <Common/randomSeed.h>
-#include <base/unaligned.h>
 
 
 namespace DB
@@ -23,8 +19,7 @@ namespace
 {
 
 /* Generate random string of specified length with fully random bytes (including zero). */
-template <typename RandImpl>
-class FunctionRandomStringImpl : public IFunction
+class FunctionRandomString : public IFunction
 {
 public:
     static constexpr auto name = "randomString";
@@ -91,34 +86,8 @@ public:
         RandImpl::execute(reinterpret_cast<char *>(data_to.data()), data_to.size());
         return col_to;
     }
-};
 
-class FunctionRandomString : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
-{
-public:
-    explicit FunctionRandomString(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2,
-            FunctionRandomStringImpl<TargetSpecific::AVX2::RandImpl>>();
-    #endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionRandomString>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandomString>(); }
 };
 
 }
