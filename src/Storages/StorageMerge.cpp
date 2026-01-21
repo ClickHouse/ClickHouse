@@ -228,9 +228,11 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         if (!t)
             return false;
 
-        if (auto id = t->getStorageID(); !access->isGranted(AccessType::SHOW_TABLES, id.database_name, id.table_name))
+        const auto storage_id = t->getStorageID();
+        if (!access->isGranted(AccessType::SHOW_TABLES, storage_id.database_name, storage_id.table_name))
             return false;
 
+        access->checkAccess(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name);
         auto structure = t->getInMemoryMetadataPtr()->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
@@ -459,7 +461,8 @@ void StorageMerge::read(
     /// What will be result structure depending on query processed stage in source tables?
     auto common_header = getHeaderForProcessingStage(column_names, storage_snapshot, query_info, local_context, processed_stage);
 
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer] && processed_stage == QueryProcessingStage::Complete)
+    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+        && processed_stage != QueryProcessingStage::FetchColumns)
     {
         auto block = *common_header;
         /// Remove constants.
@@ -511,6 +514,25 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
             &filter.actions,
             filter.column_name,
             filter.do_remove_column));
+
+    if (child_plans)
+    {
+        /// Propagate new filter to all child plans if they are already present
+        for (auto & child : *child_plans)
+        {
+            auto filter_step = std::make_unique<FilterStep>(
+                child.plan.getCurrentHeader(),
+                filter.actions.clone(),
+                filter.column_name,
+                filter.do_remove_column);
+
+            child.plan.addStep(std::move(filter_step));
+
+            /// Push down this newly added filter if possible
+            child.plan.optimize(QueryPlanOptimizationSettings(context));
+        }
+    }
+
     pushed_down_filters.push_back(std::move(filter));
 }
 
@@ -1567,13 +1589,24 @@ void ReadFromMerge::convertAndFilterSourceStream(
     ColumnsWithTypeAndName converted_columns;
     size_t size = current_step_columns.size();
     converted_columns.reserve(current_step_columns.size());
+    auto materializeIfSourceIsNotConst = [](const ColumnWithTypeAndName & expected, const ColumnWithTypeAndName & source)
+    {
+        if (expected.column && isColumnConst(*expected.column) && (!source.column || !isColumnConst(*source.column)))
+        {
+            ColumnWithTypeAndName materialized = expected;
+            materialized.column = expected.column->convertToFullColumnIfConst();
+            return materialized;
+        }
+        return expected;
+    };
+
     String smallest_column_name = ExpressionActions::getSmallestColumn(snapshot->metadata->getColumns().getAllPhysical()).name;
     for (size_t i = 0; i < size; ++i)
     {
         const auto & source_elem = current_step_columns[i];
         if (header.has(source_elem.name))
         {
-            converted_columns.push_back(header.getByName(source_elem.name));
+            converted_columns.push_back(materializeIfSourceIsNotConst(header.getByName(source_elem.name), source_elem));
         }
         else if (is_smallest_column_requested && smallest_column_name == source_elem.name)
         {
@@ -1583,7 +1616,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
         else if (header.columns() == current_step_columns.size())
         {
             /// Virtual columns and columns read from Distributed tables (having different name but matched by position).
-            converted_columns.push_back(header.getByPosition(i));
+            converted_columns.push_back(materializeIfSourceIsNotConst(header.getByPosition(i), source_elem));
         }
         else
         {

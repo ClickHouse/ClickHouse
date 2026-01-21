@@ -80,7 +80,8 @@ struct ManifestFileEntry : public boost::noncopyable
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
     std::optional<Int32> sort_order_id;
 
-    // Constructor
+    String dumpDeletesMatchingInfo() const;
+
     ManifestFileEntry(
         const String& file_path_key_,
         const String& file_path_,
@@ -88,7 +89,7 @@ struct ManifestFileEntry : public boost::noncopyable
         ManifestEntryStatus status_,
         Int64 added_sequence_number_,
         Int64 snapshot_id_,
-        Int64 schema_id_,
+        Int32 schema_id_,
         DB::Row& partition_key_value_,
         PartitionSpecification& common_partition_specification_,
         std::unordered_map<Int32, ColumnInfo>& columns_infos_,

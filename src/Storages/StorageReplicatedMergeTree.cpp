@@ -32,6 +32,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/SingleDiskVolume.h>
 
+#include <base/sleep.h>
 #include <base/sort.h>
 
 #include <Storages/buildQueryTreeForShard.h>
@@ -118,9 +119,10 @@
 #include <Common/scope_guard_safe.h>
 #include <IO/SharedThreadPools.h>
 
+#include <base/types.h>
+#include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <boost/algorithm/string.hpp>
 
 #include <algorithm>
 #include <ctime>
@@ -241,6 +243,7 @@ namespace FailPoints
     extern const char zero_copy_unlock_zk_fail_after_op[];
     extern const char rmt_lightweight_update_sleep_after_block_allocation[];
     extern const char rmt_merge_selecting_task_pause_when_scheduled[];
+    extern const char rmt_delay_execute_drop_range[];
 }
 
 namespace ErrorCodes
@@ -1952,9 +1955,9 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
     bool insane = uncovered_unexpected_parts_rows > total_rows_on_filesystem * (*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts];
 
     constexpr auto sanity_report_fmt = "The local set of parts of table {} doesn't look like the set of parts in ZooKeeper: "
-                                               "{} rows of {} total rows in filesystem are suspicious. "
-                                               "There are {} uncovered unexpected parts with {} rows ({} of them is not just-written with {} rows), "
-                                               "{} missing parts (with {} blocks), {} covered unexpected parts (with {} rows).";
+        "{} rows of {} total rows in filesystem are suspicious. "
+        "There are {} uncovered unexpected parts with {} rows ({} of them is not just-written with {} rows), "
+        "{} missing parts (with {} blocks), {} covered unexpected parts (with {} rows).";
 
     constexpr auto sanity_report_debug_fmt = "Uncovered unexpected parts: {}. Restorable unexpected parts: {}. Missing parts: {}. Covered unexpected parts: {}. Expected parts: {}.";
 
@@ -2276,7 +2279,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     for (auto & detached_part_info : detached_parts)
     {
         chassert(rename_parts.old_and_new_names.empty());
-        rename_parts.addPart(detached_part_info.dir_name, "attaching_" + detached_part_info.dir_name, detached_part_info.disk);
+        rename_parts.addPart(detached_part_info.getPartNameV1(), detached_part_info.dir_name, "attaching_" + detached_part_info.dir_name, detached_part_info.disk);
 
         try
         {
@@ -2290,7 +2293,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
         }
 
         const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
-        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_name, getReadSettings())
+        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_dir, getReadSettings())
             .withPartFormatFromDisk()
             .build();
 
@@ -2312,7 +2315,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
                 try
                 {
                     part->renameToDetached("broken", /* ignore_error*/ false);
-                    rename_parts.old_and_new_names.front().old_name.clear();
+                    rename_parts.old_and_new_names.front().old_dir.clear();
                 }
                 catch (...)
                 {
@@ -2399,7 +2402,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
 
             chassert(renamed_parts.renamed && renamed_parts.old_and_new_names.size() == 1);
-            renamed_parts.old_and_new_names.front().old_name.clear();
+            renamed_parts.old_and_new_names.front().old_dir.clear();
 
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
                 part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr,
@@ -2719,6 +2722,8 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     LOG_TRACE(log, "Executing DROP_RANGE {}", entry.new_part_name);
 
+    fiu_do_on(FailPoints::rmt_delay_execute_drop_range, { sleepForSeconds(10); });
+
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
 
     /// Wait for loading of outdated parts because DROP_RANGE
@@ -2727,7 +2732,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 
     getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.getPartitionId(), drop_range_info.max_block);
     {
-        auto pause_checking_parts = part_check_thread.pausePartsCheck();
+        auto pause_checking_parts = part_check_thread.temporaryPause();
         queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
         part_check_thread.cancelRemovedPartsCheck(drop_range_info);
     }
@@ -2799,7 +2804,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
     if (replace)
     {
         getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.getPartitionId(), drop_range.max_block);
-        auto pause_checking_parts = part_check_thread.pausePartsCheck();
+        auto pause_checking_parts = part_check_thread.temporaryPause();
         queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
         part_check_thread.cancelRemovedPartsCheck(drop_range);
     }
@@ -6773,8 +6778,8 @@ String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const 
         /// The date range is all month long.
         const auto & lut = DateLUT::serverTimezoneInstance();
         time_t start_time = lut.YYYYMMDDToDate(parse<UInt32>(part_info.getPartitionId() + "01"));
-        DayNum left_date = DayNum(lut.toDayNum(start_time).toUnderType());
-        DayNum right_date = DayNum(static_cast<size_t>(left_date) + lut.daysInMonth(start_time) - 1);
+        DayNum left_date = DayNum(static_cast<DayNum::UnderlyingType>(lut.toDayNum(start_time)));
+        DayNum right_date = DayNum(left_date.toUnderType() + lut.daysInMonth(start_time) - 1);
         return part_info.getPartNameV0(left_date, right_date);
     }
 
@@ -6889,9 +6894,18 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
 
     has_metadata_in_zookeeper = true;
 
+    PartitionCommand command;
+    command.part = true;
+    command.type = PartitionCommand::ATTACH_PARTITION;
+
     if (is_first_replica)
-        for (const String& part_name : active_parts_names)
-            attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
+    {
+        for (const auto & part_name : active_parts_names)
+        {
+            command.partition = std::make_shared<ASTLiteral>(part_name);
+            attachPartition(command, metadata_snapshot, getContext());
+        }
+    }
 
     if (!is_called_during_attach)
     {
@@ -6988,10 +7002,7 @@ void StorageReplicatedMergeTree::truncate(
 
 
 PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
-    const ASTPtr & partition,
-    const StorageMetadataPtr & metadata_snapshot,
-    bool attach_part,
-    ContextPtr query_context)
+    const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context)
 {
     /// Allow ATTACH PARTITION on readonly replica when restoring it.
     if (!are_restoring_replica)
@@ -6999,7 +7010,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
 
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
-    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
+    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
     ReplicatedMergeTreeSink output(
@@ -7023,7 +7034,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
 
         output.writeExistingPart(loaded_parts[i]);
 
-        renamed_parts.old_and_new_names[i].old_name.clear();
+        renamed_parts.old_and_new_names[i].old_dir.clear();
 
         LOG_DEBUG(log, "Attached part {} as {}", old_name, loaded_parts[i]->name);
 
@@ -8487,12 +8498,13 @@ void StorageReplicatedMergeTree::clearLockedBlockNumbersInPartition(
                 LOG_WARNING(log, new_version_warning, paths_to_get[i], result.data);
 
             Stopwatch time_waiting;
-            const auto & stop_waiting = [this, &time_waiting]()
-            {
-                auto timeout = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].value.seconds();
-                return partial_shutdown_called || (timeout < time_waiting.elapsedSeconds());
-            };
-            zookeeper.waitForDisappear(paths_to_get[i], stop_waiting);
+            const Int64 timeout = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].value.totalSeconds();
+            const auto & stop_waiting
+                = [this, &time_waiting, &timeout]() { return partial_shutdown_called || (timeout < Int64(time_waiting.elapsedSeconds())); };
+
+            if (!zookeeper.waitForDisappear(paths_to_get[i], stop_waiting))
+                throw Exception(
+                    ErrorCodes::TIMEOUT_EXCEEDED, "Path {} does not disappear, timed out after {} seconds", paths_to_get[i], timeout);
         }
     }
 }
@@ -8703,7 +8715,7 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.getPartitionId(), drop_range.max_block);
             queue.waitForCurrentlyExecutingOpsInRange(drop_range);
             {
-                auto pause_checking_parts = part_check_thread.pausePartsCheck();
+                auto pause_checking_parts = part_check_thread.temporaryPause();
                 part_check_thread.cancelRemovedPartsCheck(drop_range);
             }
         }
@@ -8962,7 +8974,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
         queue.waitForCurrentlyExecutingOpsInRange(drop_range);
         {
-            auto pause_checking_parts = part_check_thread.pausePartsCheck();
+            auto pause_checking_parts = part_check_thread.temporaryPause();
             part_check_thread.cancelRemovedPartsCheck(drop_range);
         }
 
@@ -9757,8 +9769,8 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(
     else
         data_parts = getVisibleDataPartsVector(local_context);
 
-    auto part_check_lock = part_check_thread.pausePartsCheck();
-    return std::make_unique<DataValidationTasks>(std::move(data_parts), std::move(part_check_lock));
+    auto pause = part_check_thread.temporaryPause();
+    return std::make_unique<DataValidationTasks>(std::move(data_parts), std::move(pause));
 }
 
 std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)

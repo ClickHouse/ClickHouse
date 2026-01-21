@@ -116,8 +116,14 @@ struct TimeSlotsImpl
     Adjusting different scales can cause overflow -- it is OK for us. Don't use scales that differ a lot :)
     */
     static NO_SANITIZE_UNDEFINED void vectorVector(
-        const PaddedPODArray<DateTime64> & starts, const PaddedPODArray<Decimal64> & durations, Decimal64 time_slot_size,
-        PaddedPODArray<DateTime64> & result_values, ColumnArray::Offsets & result_offsets, UInt16 dt_scale, UInt16 duration_scale, UInt16 time_slot_scale,
+        const PaddedPODArray<DateTime64> & starts,
+        const PaddedPODArray<Decimal64> & durations,
+        Decimal64 time_slot_size,
+        PaddedPODArray<DateTime64> & result_values,
+        ColumnArray::Offsets & result_offsets,
+        UInt16 dt_scale,
+        UInt16 duration_scale,
+        UInt16 time_slot_scale,
         size_t input_rows_count)
     {
         result_offsets.resize(input_rows_count);
@@ -338,7 +344,7 @@ public:
 
                 if (time_slot_size = time_slot_column->getValue<Decimal64>(); time_slot_size <= 0)
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Third argument for function {} must be greater than zero", getName());
-                time_slot_scale = assert_cast<const DataTypeDecimal64 *>(arguments[2].type.get())->getScale();
+                time_slot_scale = static_cast<UInt16>(assert_cast<const DataTypeDecimal64 *>(arguments[2].type.get())->getScale());
             }
 
             const auto * starts = checkAndGetColumn<ColumnDateTime64>(arguments[0].column.get());
@@ -355,8 +361,16 @@ public:
 
             if (starts && durations)
             {
-                TimeSlotsImpl::vectorVector(starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets(),
-                    start_time_scale, duration_scale, time_slot_scale, input_rows_count);
+                TimeSlotsImpl::vectorVector(
+                    starts->getData(),
+                    durations->getData(),
+                    time_slot_size,
+                    res_values,
+                    res->getOffsets(),
+                    static_cast<UInt16>(start_time_scale),
+                    static_cast<UInt16>(duration_scale),
+                    time_slot_scale,
+                    input_rows_count);
                 return res;
             }
             if (starts && const_durations)
@@ -367,8 +381,8 @@ public:
                     time_slot_size,
                     res_values,
                     res->getOffsets(),
-                    start_time_scale,
-                    duration_scale,
+                    static_cast<UInt16>(start_time_scale),
+                    static_cast<UInt16>(duration_scale),
                     time_slot_scale,
                     input_rows_count);
                 return res;
@@ -381,8 +395,8 @@ public:
                     time_slot_size,
                     res_values,
                     res->getOffsets(),
-                    start_time_scale,
-                    duration_scale,
+                    static_cast<UInt16>(start_time_scale),
+                    static_cast<UInt16>(duration_scale),
                     time_slot_scale,
                     input_rows_count);
                 return res;

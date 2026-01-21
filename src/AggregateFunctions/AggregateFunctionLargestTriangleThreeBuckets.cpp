@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 
-#include <numeric>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/StatCommon.h>
 #include <Columns/ColumnArray.h>
@@ -9,9 +8,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsDateTime.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
@@ -19,7 +16,6 @@
 #include <Common/iota.h>
 #include <base/types.h>
 
-#include <boost/math/distributions/normal.hpp>
 
 namespace DB
 {

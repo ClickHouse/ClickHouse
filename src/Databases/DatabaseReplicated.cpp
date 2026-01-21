@@ -1,6 +1,8 @@
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <atomic>
+#include <tuple>
 #include <utility>
 
 #include <Backups/IRestoreCoordination.h>
@@ -111,6 +113,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ASYNC_LOAD_CANCELED;
     extern const int KEEPER_EXCEPTION;
+    extern const int SYNTAX_ERROR;
     }
 namespace FailPoints
 {
@@ -135,6 +138,21 @@ static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, 
     return Cluster::Address::toString(host_port.first, port) + ':' + toString(db_uuid);
 }
 
+// Return <address, port, uuid>
+static inline std::tuple<String, UInt16, UUID> parseHostID(const String & content)
+{
+    auto pos = content.find_last_of(':');
+    if (pos == std::string::npos || pos + 1 >= content.size())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid host ID '{}'", content);
+
+    auto [address, port] = Cluster::Address::fromString(content.substr(0, pos));
+    UUID db_uuid;
+    if (!tryParse(db_uuid, content.substr(pos + 1)))
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Invalid host ID '{}'", content);
+
+    return {address, port, db_uuid};
+}
+
 static inline UInt64 getMetadataHash(const String & table_name, const String & metadata)
 {
     SipHash hash;
@@ -144,6 +162,28 @@ static inline UInt64 getMetadataHash(const String & table_name, const String & m
 }
 
 DatabaseReplicated::~DatabaseReplicated() = default;
+
+namespace
+{
+    String normalizeZooKeeperPath(const String & path) noexcept
+    {
+        if (path.empty())
+            return path;
+
+        if (path == "/")
+            return path;
+
+        String normalized_path = path;
+
+        if (!normalized_path.starts_with("/"))
+            normalized_path = '/'+ normalized_path;
+
+        if (normalized_path.ends_with("/"))
+            normalized_path.pop_back();
+
+        return normalized_path;
+    }
+}
 
 DatabaseReplicated::DatabaseReplicated(
     const String & name_,
@@ -155,9 +195,10 @@ DatabaseReplicated::DatabaseReplicated(
     DatabaseReplicatedSettings db_settings_,
     ContextPtr context_)
     : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_)
-    , zookeeper_path(zookeeper_path_)
+    , zookeeper_path(normalizeZooKeeperPath(zookeeper_path_))
     , shard_name(shard_name_)
     , replica_name(replica_name_)
+    , replica_path(fs::path(zookeeper_path) / "replicas" / getFullReplicaName(shard_name, replica_name))
     , db_settings(std::move(db_settings_))
     , tables_metadata_digest(0)
 {
@@ -169,13 +210,6 @@ DatabaseReplicated::DatabaseReplicated(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '/'");
     if (shard_name.contains('|') || replica_name.contains('|'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
-
-    if (zookeeper_path.back() == '/')
-        zookeeper_path.resize(zookeeper_path.size() - 1);
-
-    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
-    if (zookeeper_path.front() != '/')
-        zookeeper_path = "/" + zookeeper_path;
 
     if (!db_settings[DatabaseReplicatedSetting::collection_name].value.empty())
         fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value, context_->getConfigRef());
@@ -548,7 +582,6 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             createDatabaseNodesInZooKeeper(current_zookeeper);
         }
 
-        replica_path = fs::path(zookeeper_path) / "replicas" / getFullReplicaName();
         bool is_create_query = mode == LoadingStrictnessLevel::CREATE;
 
         String replica_host_id;
@@ -571,10 +604,39 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
 
             if (replica_host_id != host_id && replica_host_id != host_id_default)
             {
-                throw Exception(
-                    ErrorCodes::REPLICA_ALREADY_EXISTS,
-                    "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
-                    replica_name, shard_name, zookeeper_path, replica_host_id, host_id);
+                UUID uuid_in_keeper = UUIDHelpers::Nil;
+                try
+                {
+                    uuid_in_keeper = std::get<2>(parseHostID(replica_host_id));
+                }
+                catch (const Exception & e)
+                {
+                    LOG_WARNING(log, "Failed to parse host_id {} in zookeeper, error {}", replica_host_id, e.what());
+                }
+
+                if (uuid_in_keeper != db_uuid)
+                    throw Exception(
+                        ErrorCodes::REPLICA_ALREADY_EXISTS,
+                        "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
+                        replica_name,
+                        shard_name,
+                        zookeeper_path,
+                        replica_host_id,
+                        host_id);
+
+                // After restarting, InterserverIOAddress might change (e.g: config updated, `getFQDNOrHostName` returns a different one)
+                // If the UUID in the keeper is the same as the current server UUID, we will update the host_id in keeper
+                LOG_INFO(
+                    log,
+                    "Replicated database replica: {}, shard {}, zk_path: {} already exists with the same UUID, replica host ID: '{}', "
+                    "current host ID: '{}', will set the host_id to the current host ID",
+                    replica_name,
+                    shard_name,
+                    zookeeper_path,
+                    replica_host_id,
+                    host_id);
+                current_zookeeper->set(replica_path, host_id, -1);
+                createEmptyLogEntry(current_zookeeper);
             }
 
             /// Before 24.6 we always created host_id with insecure port, even if cluster_auth_info.cluster_secure_connection was true.
