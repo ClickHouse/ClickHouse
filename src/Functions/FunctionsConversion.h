@@ -152,7 +152,7 @@ struct FunctionConvertSettings
         , input_format_ipv6_default_on_conversion_error(context && context->getSettingsRef()[Setting::input_format_ipv6_default_on_conversion_error])
         , check_conversion_from_numbers_to_enum(context && context->getSettingsRef()[Setting::check_conversion_from_numbers_to_enum])
         , date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands(context && context->getSettingsRef()[Setting::date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands])
-        , allow_named_tuple_conversion_with_extra_source_fields(context && context->getSettingsRef()[Setting::allow_named_tuple_conversion_with_extra_source_fields])
+        , allow_named_tuple_conversion_with_extra_source_fields(!context || context->getSettingsRef()[Setting::allow_named_tuple_conversion_with_extra_source_fields])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
