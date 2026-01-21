@@ -312,6 +312,9 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
 
     expected_ids = list(range(0, 50)) + list(range(60, 150)) + list(range(160, 250)) + list(range(260, 300))
+
+    query_id = TABLE_NAME + "_query_id"
+
     assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id SETTINGS iceberg_metadata_log_level = 'manifest_file_entry'", query_id=query_id)) == expected_ids
 
     #  Parse position delete logs to extract bounds info.
