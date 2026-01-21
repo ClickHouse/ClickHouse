@@ -242,7 +242,7 @@ struct Keccak256Impl
 
     static void apply(const char * begin, size_t size, unsigned char * out_char_data)
     {
-        sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, begin, size, out_char_data, Keccak256Impl::length);
+        sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, begin, static_cast<unsigned>(size), out_char_data, static_cast<unsigned>(Keccak256Impl::length));
     }
 };
 #endif
@@ -270,6 +270,10 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    /// Disable default Variant implementation for compatibility.
+    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
+    bool useDefaultImplementationForVariant() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {

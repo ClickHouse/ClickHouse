@@ -235,6 +235,8 @@ public:
          */
         return rpn_stack.front() != Internal::RPNEvaluationIndexUsefulnessState::TRUE;
     }
+
+    virtual std::string getDescription() const = 0;
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
@@ -296,7 +298,6 @@ struct IMergeTreeIndex
 
     /// A more optimal filtering method
     virtual bool supportsBulkFiltering() const { return false; }
-    virtual bool supportsReadingOnParallelReplicas() const { return false; }
 
     virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const
     {
