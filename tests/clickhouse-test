@@ -1864,6 +1864,13 @@ class TestCase:
                 # and do not ignore for targeted check (args.flaky_check and args.test_runs == 1)
                 if "no-" + build_flag in tags and not (args.flaky_check and args.test_runs > 1):
                     return FailureReason.BUILD
+            if "no-sanitizers" in tags and not (args.flaky_check and args.test_runs > 1):
+                if any(
+                    flag in args.build_flags
+                    for flag in BuildFlags.SANITIZERS
+                ):
+                    return FailureReason.BUILD
+
             for tag in tags:
                 tag = tag.replace("-", "_")
                 if tag.startswith("use_") and tag not in args.build_flags:
@@ -3207,8 +3214,9 @@ class BuildFlags:
     ADDRESS = "asan"
     UNDEFINED = "ubsan"
     MEMORY = "msan"
-    DEBUG = "debug"
     SANITIZE_COVERAGE = "sanitize-coverage"
+    SANITIZERS = [THREAD, ADDRESS, UNDEFINED, MEMORY, SANITIZE_COVERAGE]
+    DEBUG = "debug"
     RELEASE = "release"
     ORDINARY_DATABASE = "ordinary-database"
     POLYMORPHIC_PARTS = "polymorphic-parts"
