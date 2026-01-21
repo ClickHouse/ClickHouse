@@ -417,15 +417,8 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
-        DataTypePtr & out_type);
-
-    bool canConstantBeWrappedByDeterministicInjectiveFunctions(
-        const RPNBuilderTreeNode & node,
-        const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type);
+        DataTypePtr & out_type,
+        bool & out_is_injective);
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and
@@ -437,17 +430,8 @@ private:
         const BuildInfo & info,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
-        DeterministicKeyTransformDag & out_transform) const;
-
-    /// Same as canSetValuesBeWrappedByDeterministicFunctions(), but requires
-    /// the transformation DAG to be injective (so it doesn't relax the
-    /// condition).
-    bool canSetValuesBeWrappedByDeterministicInjectiveFunctions(
-        const RPNBuilderTreeNode & node,
-        const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_res_column_type,
-        DeterministicKeyTransformDag & out_transform) const;
+        DeterministicKeyTransformDag & out_transform,
+        bool & out_is_injective) const;
 
     /// If it's possible to make an RPNElement
     /// that will filter values (possibly tuples) by the content of 'prepared_set',

@@ -1426,69 +1426,6 @@ bool applyDeterministicDagToColumn(
     return normalize_output();
 }
 
-bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
-    const RPNBuilderTreeNode & node,
-    const BuildInfo & info,
-    size_t & out_key_column_num,
-    DataTypePtr & out_key_column_type,
-    Field & out_value,
-    DataTypePtr & out_type)
-{
-    String expr_name = node.getColumnName();
-
-    if (!info.key_subexpr_names.contains(expr_name))
-    {
-        /// Let's check another one case.
-        /// If our storage was created with moduloLegacy in partition key,
-        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
-        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
-        ///
-        /// We do not check this in canConstantBeWrappedByMonotonicFunctions.
-        /// The case `f(modulo(...))` for totally monotonic `f ` is considered to be rare.
-        ///
-        /// Note: for negative values, we can filter more partitions than needed.
-        expr_name = node.getColumnNameWithModuloLegacy();
-
-        if (!info.key_subexpr_names.contains(expr_name))
-            return false;
-    }
-
-    if (out_value.isNull())
-        return false;
-
-    /// NaN should not be present here because it is handled earlier by caller.
-    chassert(!out_value.isNaN());
-
-    DeterministicKeyTransformDag dag;
-    auto can_transform_constant = extractDeterministicFunctionsDagFromKey(
-        expr_name,
-        info,
-        out_key_column_num,
-        out_key_column_type,
-        dag);
-
-    if (!can_transform_constant)
-        return false;
-
-    auto const_column = out_type->createColumnConst(1, out_value);
-
-    ColumnPtr transformed_const_column;
-    DataTypePtr transformed_const_type;
-    bool constant_transformed = applyDeterministicDagToColumn(
-        const_column,
-        out_type,
-        expr_name,
-        dag,
-        transformed_const_column,
-        transformed_const_type);
-
-    if (!constant_transformed)
-        return false;
-
-    out_value = (*transformed_const_column)[0];
-    out_type = transformed_const_type;
-    return true;
-}
 
 /// Returns true if `output_name` depends on `input_name` and the whole sub-DAG is injective w.r.t. that input
 /// Assumes this sub-DAG depends only on `input_name` (checked by the caller)
@@ -1579,14 +1516,17 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
-bool KeyCondition::canConstantBeWrappedByDeterministicInjectiveFunctions(
+bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
     size_t & out_key_column_num,
     DataTypePtr & out_key_column_type,
     Field & out_value,
-    DataTypePtr & out_type)
+    DataTypePtr & out_type,
+    bool & out_is_injective)
 {
+    out_is_injective = false;
+
     String expr_name = node.getColumnName();
 
     if (!info.key_subexpr_names.contains(expr_name))
@@ -1613,18 +1553,11 @@ bool KeyCondition::canConstantBeWrappedByDeterministicInjectiveFunctions(
     chassert(!out_value.isNaN());
 
     DeterministicKeyTransformDag dag;
-    auto can_transform_constant = extractDeterministicFunctionsDagFromKey(
-        expr_name,
-        info,
-        out_key_column_num,
-        out_key_column_type,
-        dag);
 
-    if (!can_transform_constant)
+    if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_column_type, dag))
         return false;
 
-    if (!isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name))
-        return false;
+    out_is_injective = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name);
 
     auto const_column = out_type->createColumnConst(1, out_value);
 
@@ -1670,18 +1603,18 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
             data_types.push_back(data_type);
             set_transforming_dags.push_back(std::nullopt);
         }
-        else if (canSetValuesBeWrappedByDeterministicInjectiveFunctions(node, info, index_mapping.key_index, data_type, set_transforming_dag))
+        else
         {
-            indexes_mapping.push_back(index_mapping);
-            data_types.push_back(data_type);
-            set_transforming_dags.push_back(std::move(set_transforming_dag));
-        }
-        else if (canSetValuesBeWrappedByDeterministicFunctions(node, info, index_mapping.key_index, data_type, set_transforming_dag))
-        {
-            indexes_mapping.push_back(index_mapping);
-            data_types.push_back(data_type);
-            set_transforming_dags.push_back(std::move(set_transforming_dag));
-            out_relaxed = true;
+            bool is_injective = false;
+            if (canSetValuesBeWrappedByDeterministicFunctions(
+                    node, info, index_mapping.key_index, data_type, set_transforming_dag, is_injective))
+            {
+                indexes_mapping.push_back(index_mapping);
+                data_types.push_back(data_type);
+                set_transforming_dags.push_back(std::move(set_transforming_dag));
+                if (!is_injective)
+                    out_relaxed = true;
+            }
         }
     };
 
@@ -2448,8 +2381,11 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
     const BuildInfo & info,
     size_t & out_key_column_num,
     DataTypePtr & out_key_res_column_type,
-    DeterministicKeyTransformDag & out_transform) const
+    DeterministicKeyTransformDag & out_transform,
+    bool & out_is_injective) const
 {
+    out_is_injective = false;
+
     // Checking if column name matches any of key subexpressions
     String expr_name = node.getColumnName();
 
@@ -2470,24 +2406,10 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
             return false;
     }
 
-    return extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_res_column_type, out_transform);
-}
-
-bool KeyCondition::canSetValuesBeWrappedByDeterministicInjectiveFunctions(
-    const RPNBuilderTreeNode & node,
-    const BuildInfo & info,
-    size_t & out_key_column_num,
-    DataTypePtr & out_key_res_column_type,
-    DeterministicKeyTransformDag & out_transform) const
-{
-    DeterministicKeyTransformDag dag;
-    if (!canSetValuesBeWrappedByDeterministicFunctions(node, info, out_key_column_num, out_key_res_column_type, dag))
+    if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_res_column_type, out_transform))
         return false;
 
-    if (!isDeterministicTransformInjective(dag.actions->getActionsDAG(), dag.input_name, dag.output_name))
-        return false;
-
-    out_transform = std::move(dag);
+    out_is_injective = isDeterministicTransformInjective(out_transform.actions->getActionsDAG(), out_transform.input_name, out_transform.output_name);
     return true;
 }
 
@@ -2730,17 +2652,14 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             {
                 condition_is_relaxed = true;
             }
-            else if (
-                (func_name == "equals" || func_name == "notEquals")
-                && canConstantBeWrappedByDeterministicInjectiveFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
+            else if (func_name == "equals" || func_name == "notEquals")
             {
+                bool is_injective = false;
+                if (!canConstantBeWrappedByDeterministicFunctions(
+                        key_arg, info, key_column_num, key_expr_type, const_value, const_type, is_injective))
+                    return false;
 
-            }
-            else if (
-                (func_name == "equals" || func_name == "notEquals")
-                && canConstantBeWrappedByDeterministicFunctions(key_arg, info, key_column_num, key_expr_type, const_value, const_type))
-            {
-                condition_is_relaxed = true;
+                condition_is_relaxed = !is_injective;
             }
             else
                 return false;
