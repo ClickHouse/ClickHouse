@@ -6,7 +6,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <base/defines.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -24,9 +23,8 @@ class ObjectStorageQueueSource : public ISource, WithContext
 public:
     using Storage = StorageObjectStorage;
     using Source = StorageObjectStorageSource;
-    using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
-    using BucketHolders = std::vector<BucketHolderPtr>;
+    using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
 
     struct ObjectStorageQueueObjectInfo : public ObjectInfo
@@ -83,37 +81,36 @@ public:
         const ObjectStorageQueueMode mode;
         const bool enable_hash_ring_filtering;
         const StorageID storage_id;
-        size_t buckets_num = 0;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
         ExpressionActionsPtr filter_expr;
         bool recursive{false};
 
-        ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
+        Source::ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
         std::vector<FileMetadataPtr> file_metadatas;
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
-        void filterProcessableFiles(ObjectInfos & objects);
-        void filterOutProcessedAndFailed(ObjectInfos & objects);
+        void filterProcessableFiles(Source::ObjectInfos & objects);
+        void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
         LoggerPtr log;
 
-        struct BucketInfo
+        struct ListedKeys
         {
             std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> keys;
-            std::optional<size_t> processor;
+            std::optional<Processor> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
-        std::unordered_map<Bucket, std::unique_ptr<BucketInfo>> keys_cache_per_bucket TSA_GUARDED_BY(mutex);
+        std::unordered_map<Bucket, ListedKeys> listed_keys_cache TSA_GUARDED_BY(mutex);
 
         /// We store a vector of holders, because we cannot release them until processed files are committed.
-        std::unordered_map<size_t, std::shared_ptr<BucketHolders>> bucket_holders TSA_GUARDED_BY(mutex);
+        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders TSA_GUARDED_BY(mutex);
 
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
@@ -128,12 +125,7 @@ public:
             ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
         };
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
-        std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
-        BucketHolderPtr tryAcquireBucket(
-            size_t bucket,
-            BucketInfo & bucket_info,
-            BucketHolders & acquired_buckets,
-            size_t processor) const TSA_REQUIRES(mutex);
+        bool hasKeysForProcessor(const Processor & processor) const;
     };
 
     struct CommitSettings
@@ -152,7 +144,6 @@ public:
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
     };
     using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
-    using AfterProcessingSettings = ObjectStorageQueuePostProcessor::AfterProcessingSettings;
 
     ObjectStorageQueueSource(
         String name_,
@@ -165,7 +156,6 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         const CommitSettings & commit_settings_,
-        const AfterProcessingSettings & after_processing_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
         size_t max_block_size_,
@@ -225,7 +215,6 @@ private:
     const std::optional<FormatSettings> format_settings;
     FormatParserSharedResourcesPtr parser_shared_resources;
     const CommitSettings commit_settings;
-    const AfterProcessingSettings after_processing_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
     const ObjectStorageQueueMode mode;

@@ -558,15 +558,16 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
     return ast;
 }
 
-ASTPtr DatabaseOnDisk::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
     auto default_db_disk = getContext()->getDatabaseDisk();
     ASTPtr ast;
 
     const auto & settings = getContext()->getSettingsRef();
     {
-        auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
-        ast = parseQueryFromMetadata(log, getContext(), default_db_disk, metadata_file_path, true);
+        std::lock_guard lock(mutex);
+        auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
+        ast = parseQueryFromMetadata(log, getContext(), default_db_disk, database_metadata_path, true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
         ast_create_query.setDatabase(database_name);
@@ -575,16 +576,16 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQueryImpl() const
     {
         /// Handle databases (such as default) for which there are no database.sql files.
         /// If database.sql doesn't exist, then engine is Ordinary
-        String query = "CREATE DATABASE " + backQuoteIfNeed(database_name) + " ENGINE = Ordinary";
+        String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
         ast = parseQuery(
             parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
 
-    if (!comment.empty())
+    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
     }
 
     return ast;
@@ -595,10 +596,7 @@ void DatabaseOnDisk::drop(ContextPtr local_context)
     waitDatabaseStarted();
 
     auto db_disk = getDisk();
-    {
-        std::lock_guard lock(mutex);
-        assert(tables.empty());
-    }
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
     if (local_context->getSettingsRef()[Setting::force_remove_data_recursively_on_drop])
     {
         db_disk->removeRecursive(data_path);
@@ -701,12 +699,6 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
             /// There are files that we tried to delete previously
             metadata_files.emplace_back(file_name, false);
         }
-        else if (endsWith(file_name, ".tmp_move_from") || endsWith(file_name, ".tmp_move_to"))
-        {
-            /// There are temp files generated in MetadataStorageFromPlainObjectStorageMoveFileOperation
-            LOG_INFO(log, "Removing file {}", sub_path.string());
-            db_disk->removeFileIfExists(sub_path);
-        }
         else if (endsWith(file_name, ".sql.tmp"))
         {
             /// There are files .sql.tmp - delete
@@ -734,7 +726,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         pool.scheduleOrThrow(
             [batch, &process_metadata_file, &process_tmp_drop_metadata_file]() mutable
             {
-                DB::setThreadName(ThreadName::DATABASE_ON_DISK);
+                setThreadName("DatabaseOnDisk");
                 for (const auto & file : batch)
                     if (file.second)
                         process_metadata_file(file.first);
@@ -912,17 +904,23 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
-    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name));   /// FIXME
-    auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(TSA_SUPPRESS_WARNING_FOR_READ(database_name));
+    String database_name_escaped = escapeForFileName(TSA_SUPPRESS_WARNING_FOR_READ(database_name));   /// FIXME
+    fs::path metadata_file_tmp_path = fs::path("metadata") / (database_name_escaped + ".sql.tmp");
+    fs::path metadata_file_path = fs::path("metadata") / (database_name_escaped + ".sql");
 
     auto default_db_disk = getContext()->getDatabaseDisk();
     writeMetadataFile(
         default_db_disk,
-        /*file_path=*/metadata_tmp_file_path,
+        /*file_path=*/metadata_file_tmp_path,
         /*content=*/statement,
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
-    default_db_disk->replaceFile(metadata_tmp_file_path, metadata_file_path);
+    default_db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
+}
+
+void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
+{
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const

@@ -150,10 +150,10 @@ ColumnsDescription getColumnsDescription()
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_NAME, std::make_shared<DataTypeDateTime>()));
     result.push_back(NameAndTypePair(TransposedMetricLog::EVENT_TIME_MICROSECONDS_NAME, std::make_shared<DataTypeDateTime64>(6)));
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + std::string(ProfileEvents::getName(ProfileEvents::Event(i))), std::make_shared<DataTypeUInt64>()));
+        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + ProfileEvents::getName(ProfileEvents::Event(i)), std::make_shared<DataTypeUInt64>()));
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::CURRENT_METRIC_PREFIX} + std::string(CurrentMetrics::getName(CurrentMetrics::Metric(i))), std::make_shared<DataTypeInt64>()));
+        result.push_back(NameAndTypePair(std::string{TransposedMetricLog::CURRENT_METRIC_PREFIX} + CurrentMetrics::getName(CurrentMetrics::Metric(i)), std::make_shared<DataTypeInt64>()));
 
     return ColumnsDescription{result};
 }
@@ -255,7 +255,7 @@ public:
 
         if (column_for_set->empty())
         {
-            additional_name.emplace(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + std::string(ProfileEvents::getName(ProfileEvents::Event(0))));
+            additional_name.emplace(std::string{TransposedMetricLog::PROFILE_EVENT_PREFIX} + ProfileEvents::getName(ProfileEvents::Event(0)));
             column_for_set->insertData(additional_name->data(), additional_name->size());
         }
 
@@ -345,7 +345,9 @@ ColumnsDescription TransposedMetricLogElement::getColumnsDescription()
 
 void TransposedMetricLog::stepFunction(TimePoint current_time)
 {
-    std::lock_guard lock(previous_profile_events_mutex);
+    /// Static lazy initialization to avoid polluting the header with implementation details
+    /// For differentiation of ProfileEvents counters.
+    static std::vector<ProfileEvents::Count> prev_profile_events(ProfileEvents::end());
 
     TransposedMetricLogElement elem;
     elem.event_time = std::chrono::system_clock::to_time_t(current_time);
@@ -355,7 +357,7 @@ void TransposedMetricLog::stepFunction(TimePoint current_time)
     for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
     {
         const ProfileEvents::Count new_value = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
-        auto & old_value = previous_profile_events[i];
+        auto & old_value = prev_profile_events[i];
 
         /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
         /// So, since in the future the counter should always have a bigger value than in the past, we skip this event.

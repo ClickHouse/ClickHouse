@@ -1,5 +1,6 @@
 #include <string_view>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -154,7 +155,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 
     if (!original_checksums_content)
     {
-        auto in = storage_from_detached->readFile("checksums.txt", /* settings */ {}, /* read_hint */ {});
+        auto in = storage_from_detached->readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
         original_checksums_content.emplace();
         readStringUntilEOF(*original_checksums_content, *in);
     }
@@ -164,7 +165,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 
     String detached_checksums_content;
     {
-        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {});
+        auto in = readFile("checksums.txt", /* settings */ {}, /* read_hint */ {}, /* file_size */ {});
         readStringUntilEOF(detached_checksums_content, *in);
     }
 
@@ -234,7 +235,7 @@ std::string DataPartStorageOnDiskBase::getDiskName() const
 
 std::string DataPartStorageOnDiskBase::getDiskType() const
 {
-    return volume->getDisk()->getDataSourceDescription().name();
+    return volume->getDisk()->getDataSourceDescription().toString();
 }
 
 bool DataPartStorageOnDiskBase::isStoredOnRemoteDisk() const
@@ -307,7 +308,7 @@ DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_na
         file_desc.file_size = file_size;
         file_desc.input_buffer_getter = [disk, path, file_size, read_settings]
         {
-            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size);
+            return disk->readFile(path, read_settings.adjustBufferSize(file_size), file_size, file_size);
         };
     }
 
@@ -747,7 +748,9 @@ void DataPartStorageOnDiskBase::remove(
         try
         {
             disk->moveDirectory(from, to);
-            part_dir = part_dir_without_slash;
+            /// NOTE: we intentionally don't update part_dir here because it would cause a data race
+            /// with concurrent readers (e.g. system.parts table queries calling getFullPath()).
+            /// The part is being removed anyway, so the path doesn't need to be updated.
         }
         catch (const Exception & e)
         {
@@ -824,7 +827,7 @@ void DataPartStorageOnDiskBase::remove(
                 try
                 {
                     MergeTreeDataPartChecksums tmp_checksums;
-                    auto in = projection_storage->readFile(checksums_name, {}, {});
+                    auto in = projection_storage->readFile(checksums_name, {}, {}, {});
                     tmp_checksums.read(*in);
 
                     clearDirectory(fs::path(to) / name, *can_remove_description, tmp_checksums, is_temp, log);
@@ -874,7 +877,12 @@ void DataPartStorageOnDiskBase::clearDirectory(
         /// Remove each expected file in directory, then remove directory itself.
         RemoveBatchRequest request;
         for (const auto & file : names_to_remove)
+        {
+            if (isGinFile(file) && (!disk->existsFile(fs::path(dir) / file)))
+                continue;
+
             request.emplace_back(fs::path(dir) / file);
+        }
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME, true);

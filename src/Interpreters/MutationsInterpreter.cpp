@@ -69,7 +69,6 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
-    extern const MergeTreeSettingsAlterColumnSecondaryIndexMode alter_column_secondary_index_mode;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
@@ -101,7 +100,9 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     auto select = std::make_shared<ASTSelectQuery>();
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-    auto count_func = makeASTFunction("count");
+    auto count_func = std::make_shared<ASTFunction>();
+    count_func->name = "count";
+    count_func->arguments = std::make_shared<ASTExpressionList>();
     select->select()->children.push_back(count_func);
 
     ASTs conditions;
@@ -113,7 +114,7 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
 
     if (conditions.size() > 1)
     {
-        auto coalesced_predicates = makeASTOperator("or");
+        auto coalesced_predicates = makeASTFunction("or");
         coalesced_predicates->arguments->children = std::move(conditions);
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(coalesced_predicates));
     }
@@ -174,8 +175,7 @@ IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextPtr context,
-    std::function<void(const Progress & value)> check_operation_is_not_cancelled)
+    ContextPtr context)
 {
     static constexpr IsStorageTouched no_rows = {.any_rows_affected = false, .all_rows_affected = false};
     static constexpr IsStorageTouched all_rows = {.any_rows_affected = true, .all_rows_affected = true};
@@ -245,8 +245,6 @@ IsStorageTouched isStorageTouchedByMutations(
 
     PullingAsyncPipelineExecutor executor(io.pipeline);
     io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
-    /// It's actually not a progress callback, but a cancellation check.
-    io.pipeline.setProgressCallback(check_operation_is_not_cancelled);
 
     Block block;
     while (block.rows() == 0 && executor.pull(block));
@@ -288,14 +286,14 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
 
-        partition_predicate_as_ast_func = makeASTOperator("equals",
+        partition_predicate_as_ast_func = makeASTFunction("equals",
                     std::make_shared<ASTIdentifier>("_partition_id"),
                     std::make_shared<ASTLiteral>(partition_id)
         );
     }
 
     if (command.predicate && command.partition)
-        return makeASTOperator("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
+        return makeASTFunction("and", command.predicate->clone(), std::move(partition_predicate_as_ast_func));
     return command.predicate ? command.predicate->clone() : partition_predicate_as_ast_func;
 }
 
@@ -648,7 +646,6 @@ void MutationsInterpreter::prepare(bool dry_run)
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();
     bool has_lightweight_delete_materialization = false;
-    bool has_rewrite_parts = false;
 
     for (const auto & command : commands)
     {
@@ -657,9 +654,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         if (command.type == MutationCommand::APPLY_DELETED_MASK)
             has_lightweight_delete_materialization = true;
-
-        if (command.type == MutationCommand::REWRITE_PARTS)
-            has_rewrite_parts = true;
 
         for (const auto & [name, _] : command.column_to_update_expression)
         {
@@ -711,11 +705,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         dependencies = getAllColumnDependencies(metadata_snapshot, updated_columns, has_dependency);
 
     bool need_rebuild_indexes = false;
-    bool need_rebuild_indexes_for_update_delete = false;
     bool need_rebuild_projections = false;
     std::vector<String> read_columns;
 
-    if (has_lightweight_delete_materialization || has_rewrite_parts)
+    if (has_lightweight_delete_materialization)
     {
         auto & stage = stages.emplace_back(context);
         stage.affects_all_columns = true;
@@ -752,10 +745,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         stage.filters.push_back(std::move(filter));
     }
 
-    const auto index_mode = source.getMergeTreeData()
-        ? (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::alter_column_secondary_index_mode]
-        : AlterColumnSecondaryIndexMode::REBUILD;
-
     /// First, break a sequence of commands into stages.
     for (const auto & command : commands)
     {
@@ -773,8 +762,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
 
             /// ALTER DELETE can changes number of rows in the part, so we need to rebuild indexes and projection
+            need_rebuild_indexes = true;
             need_rebuild_projections = true;
-            need_rebuild_indexes_for_update_delete = true;
         }
         else if (command.type == MutationCommand::UPDATE)
         {
@@ -833,14 +822,18 @@ void MutationsInterpreter::prepare(bool dry_run)
                             condition,
                             update_expr->clone(),
                             std::make_shared<ASTIdentifier>(column_name));
-                        condition = makeASTOperator("and", condition, function);
+                        condition = makeASTFunction("and", condition, function);
                     }
                     else if (nested_update_exprs->size() > 1)
                     {
-                        function = makeASTFunction("validateNestedArraySizes", condition);
+                        function = std::make_shared<ASTFunction>();
+                        function->name = "validateNestedArraySizes";
+                        function->arguments = std::make_shared<ASTExpressionList>();
+                        function->children.push_back(function->arguments);
+                        function->arguments->children.push_back(condition);
                         for (const auto & it : *nested_update_exprs)
                             function->arguments->children.push_back(it->clone());
-                        condition = makeASTOperator("and", condition, function);
+                        condition = makeASTFunction("and", condition, function);
                     }
                 }
 
@@ -935,23 +928,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
-            /// if we execute `ALTER TABLE ... MATERIALIZE STATISTICS ALL`, we materalize all the statistics in this table.
-            if (command.statistics_columns.empty())
-            {
-                for (const auto & column_desc : columns_desc)
-                {
-                    if (!column_desc.statistics.empty())
-                    {
-                        dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
-                        materialized_statistics.emplace(column_desc.name);
-                    }
-                }
-            }
             for (const auto & stat_column_name: command.statistics_columns)
             {
                 if (!columns_desc.has(stat_column_name) || columns_desc.get(stat_column_name).statistics.empty())
                     throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Unknown statistics column: {}", stat_column_name);
-
                 dependencies.emplace(stat_column_name, ColumnDependency::STATISTICS);
                 materialized_statistics.emplace(stat_column_name);
             }
@@ -975,20 +955,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
-
-            if (command.clear && command.statistics_columns.empty())
-            {
-                for (const auto & column_desc : columns_desc)
-                {
-                    if (!column_desc.statistics.empty())
-                        materialized_statistics.erase(column_desc.name);
-                }
-            }
-            else
-            {
-                for (const auto & stat_column_name: command.statistics_columns)
-                    materialized_statistics.erase(stat_column_name);
-            }
+            for (const auto & stat_column_name: command.statistics_columns)
+                materialized_statistics.erase(stat_column_name);
         }
         else if (command.type == MutationCommand::DROP_PROJECTION)
         {
@@ -1063,10 +1031,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             read_columns.emplace_back(command.column_name);
-            materialized_statistics.insert(command.column_name);
-
-            /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
-            /// that depend on it. We should rebuild such projections and indices
+            /// Check if the type of this column is changed and there are projections that
+            /// have this column in the primary key. We should rebuild such projections.
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
                 const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
@@ -1082,39 +1048,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                             materialized_projections.insert(projection.name);
                         }
                     }
-
-                    for (const auto & index : metadata_snapshot->getSecondaryIndices())
-                    {
-                        const auto & index_cols = index.expression->getRequiredColumns();
-                        if (std::ranges::find(index_cols, command.column_name) != index_cols.end())
-                        {
-                            switch (index_mode)
-                            {
-                                case AlterColumnSecondaryIndexMode::THROW:
-                                case AlterColumnSecondaryIndexMode::COMPATIBILITY:
-                                    /// The only way to reach this would be if the ALTER was created and then the table setting changed
-                                    throw Exception(
-                                        ErrorCodes::BAD_ARGUMENTS,
-                                        "Cannot ALTER column `{}` because index `{}` depends on it", command.column_name, index.name);
-                                case AlterColumnSecondaryIndexMode::REBUILD:
-                                {
-                                    for (const auto & col : index_cols)
-                                        dependencies.emplace(col, ColumnDependency::SKIP_INDEX);
-                                    materialized_indices.insert(index.name);
-                                    break;
-                                }
-                                case AlterColumnSecondaryIndexMode::DROP:
-                                    dropped_indices.insert(index.name);
-                            }
-                        }
-                    }
                 }
             }
         }
-        /// The following mutations handled separately:
-        else if (command.type == MutationCommand::APPLY_DELETED_MASK
-              || command.type == MutationCommand::APPLY_PATCHES
-              || command.type == MutationCommand::REWRITE_PARTS)
+        /// Lightweight mutations materialization is handled separately.
+        else if (command.type == MutationCommand::APPLY_DELETED_MASK || command.type == MutationCommand::APPLY_PATCHES)
         {
             continue;
         }
@@ -1186,15 +1124,12 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
-        if (!source.hasSecondaryIndex(index.name) || dropped_indices.contains(index.name))
+        if (!source.hasSecondaryIndex(index.name))
             continue;
 
-        if (need_rebuild_indexes_for_update_delete || need_rebuild_indexes)
+        if (need_rebuild_indexes)
         {
-            if (index_mode == AlterColumnSecondaryIndexMode::DROP)
-                dropped_indices.insert(index.name);
-            else
-                materialized_indices.insert(index.name);
+            materialized_indices.insert(index.name);
             continue;
         }
 
@@ -1205,12 +1140,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             [&](const auto & col) { return updated_columns.contains(col) || changed_columns.contains(col); });
 
         if (changed)
-        {
-            if (index_mode == AlterColumnSecondaryIndexMode::DROP)
-                dropped_indices.insert(index.name);
-            else
-                materialized_indices.insert(index.name);
-        }
+            materialized_indices.insert(index.name);
     }
 
     for (const auto & projection : metadata_snapshot->getProjections())
@@ -1242,15 +1172,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             materialized_projections.insert(projection.name);
     }
 
-    for (const auto & column : metadata_snapshot->getColumns())
-    {
-        if (column.statistics.empty())
-            continue;
-
-        if (updated_columns.contains(column.name) || changed_columns.contains(column.name))
-            materialized_statistics.insert(column.name);
-    }
-
     /// Stages might be empty when we materialize skip indices or projections which don't add any
     /// column dependencies.
     if (stages.empty())
@@ -1279,7 +1200,7 @@ void MutationsInterpreter::addStageIfNeeded(std::optional<UInt64> mutation_versi
 void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context, settings.can_execute);
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects().withVirtuals();
 
     auto all_columns = storage_snapshot->getColumnsByNames(options, available_columns);
 
