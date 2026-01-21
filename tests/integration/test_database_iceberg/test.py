@@ -700,5 +700,4 @@ def test_require_metadata_access(started_cluster):
     assert full_table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
 
     with started_cluster.pause_container("minio"):
-        with pytest.raises(QueryRuntimeException):
-            node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+        assert "Timeout." in node.query_and_get_error(f"SHOW TABLES FROM {CATALOG_NAME}")
