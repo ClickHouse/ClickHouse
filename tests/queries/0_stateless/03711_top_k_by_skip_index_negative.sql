@@ -1,5 +1,5 @@
--- Tags: no-parallel
--- no-parallel - optimization not supported yet
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas - optimization not supported yet
 
 DROP TABLE IF EXISTS tab1;
 
