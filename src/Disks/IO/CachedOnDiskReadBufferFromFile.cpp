@@ -118,7 +118,7 @@ std::optional<size_t> CachedOnDiskReadBufferFromFile::tryGetFileSize()
     if (file_size.has_value())
         return file_size;
 
-    file_size = implementation_buffer_creator()->tryGetFileSize();
+    file_size = info.implementation_buffer_creator()->tryGetFileSize();
     return file_size;
 }
 
@@ -186,7 +186,7 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
     {
         const auto object_size = tryGetFileSize();
         if (!object_size.has_value())
-            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", source_file_path);
+            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", info.source_file_path);
 
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
         info.file_segments = cache->getOrSet(
