@@ -43,7 +43,6 @@ class _Environment(MetaClasses.Serializable):
     JOB_CONFIG: Optional[Job.Config] = None
     TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_JOB_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
-    WORKFLOW_STATUS_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     JOB_KV_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     COMMIT_AUTHORS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_CONFIG: Optional[Dict[str, Any]] = None
@@ -72,17 +71,14 @@ class _Environment(MetaClasses.Serializable):
         EVENT_TIME = ""
         COMMIT_MESSAGE = ""
 
-        assert Path(
-            Settings.WORKFLOW_JOB_FILE
-        ).is_file(), f"File not found: {Settings.WORKFLOW_JOB_FILE}"
-        with open(Settings.WORKFLOW_JOB_FILE, "r", encoding="utf8") as f:
-            WORKFLOW_JOB_DATA = json.load(f)
-
-        assert Path(
-            Settings.WORKFLOW_STATUS_FILE
-        ).is_file(), f"File not found: {Settings.WORKFLOW_STATUS_FILE}"
-        with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
-            WORKFLOW_STATUS_DATA = json.load(f)
+        if Path(Settings.WORKFLOW_JOB_FILE).is_file():
+            with open(Settings.WORKFLOW_JOB_FILE, "r", encoding="utf8") as f:
+                WORKFLOW_JOB_DATA = json.load(f)
+        else:
+            print(
+                f"NOTE: Workflow job file [{Settings.WORKFLOW_JOB_FILE}] does not exist"
+            )
+            WORKFLOW_JOB_DATA = {}
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
@@ -238,7 +234,6 @@ class _Environment(MetaClasses.Serializable):
                 "parent_pr_number": LINKED_PR_NUMBER,
             },
             WORKFLOW_JOB_DATA=WORKFLOW_JOB_DATA,
-            WORKFLOW_STATUS_DATA=WORKFLOW_STATUS_DATA,
             WORKFLOW_CONFIG=None,
         )
 
@@ -281,9 +276,18 @@ class _Environment(MetaClasses.Serializable):
         if Path(cls.file_name_static()).is_file():
             return cls.from_fs("environment")
         else:
-            env = cls.from_workflow_data()
-            env.dump()
-            return env
+            try:
+                env = cls.from_workflow_data()
+                env.dump()
+                return env
+            except FileNotFoundError as e:
+                # For workflows without Config job
+                print(
+                    f"NOTE: Workflow context file [{Settings.WORKFLOW_STATUS_FILE}] does not exist - read context from GH event"
+                )
+                env = cls.from_env()
+                env.dump()
+                return env
 
     def set_job_name(self, job_name):
         self.JOB_NAME = job_name
