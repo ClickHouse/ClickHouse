@@ -655,17 +655,13 @@ void BackupsWorker::doBackup(
 
     bool is_internal_backup = backup_settings.internal;
 
-    /// Checks access rights if this is not ON CLUSTER query.
-    /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
-    auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
-    if (!on_cluster)
-        query_context->checkAccess(required_access);
-
     maybeSleepForTesting();
 
     /// Write the backup.
     if (on_cluster && !is_internal_backup)
     {
+        auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
+
         /// Send the BACKUP query to other hosts.
         backup_settings.copySettingsToQuery(*backup_query);
         sendQueryToOtherHosts(*backup_query, cluster, backup_settings.shard_num, backup_settings.replica_num,
