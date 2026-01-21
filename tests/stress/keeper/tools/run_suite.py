@@ -68,7 +68,7 @@ def main():
     seq.append(base + ["--faults=on"])
     seeds = [s.strip() for s in (args.seeds or "").split(",") if s.strip()]
     for s in seeds:
-        seq.append(base + ["--faults=random", f"--seed={s}"])
+        seq.append(base + ["--faults=on", f"--seed={s}"])
     rc = 0
     for cmd in seq:
         p = subprocess.run(cmd, cwd=str(repo), env=env)

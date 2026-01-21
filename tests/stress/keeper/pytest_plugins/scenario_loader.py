@@ -34,89 +34,6 @@ _PREFIX_TAGS = {
 }
 from keeper.framework import presets as _presets
 
-
-def _cap_duration(obj, cap_s):
-    if cap_s is None:
-        return
-    try:
-        cap_i = int(cap_s)
-    except (ValueError, TypeError):
-        return
-    if cap_i <= 0:
-        return
-    if isinstance(obj, dict):
-        if "duration_s" in obj:
-            try:
-                cur = int(obj.get("duration_s") or 0)
-                if cur > 0:
-                    obj["duration_s"] = min(cur, cap_i)
-            except (ValueError, TypeError):
-                pass
-        for v in obj.values():
-            _cap_duration(v, cap_i)
-    elif isinstance(obj, list):
-        for it in obj:
-            _cap_duration(it, cap_i)
-
-
-def _scale_duration_s(obj, base_s, target_s):
-    if base_s is None or target_s is None:
-        return
-    try:
-        base_i = int(base_s)
-        target_i = int(target_s)
-    except (ValueError, TypeError):
-        return
-    if base_i <= 0 or target_i <= 0:
-        return
-    if isinstance(obj, dict):
-        if "duration_s" in obj:
-            try:
-                cur = int(obj.get("duration_s") or 0)
-                if cur > 0 and cur >= base_i:
-                    obj["duration_s"] = target_i
-            except (ValueError, TypeError):
-                pass
-        for v in obj.values():
-            _scale_duration_s(v, base_i, target_i)
-    elif isinstance(obj, list):
-        for it in obj:
-            _scale_duration_s(it, base_i, target_i)
-
-
-def _parallelize_long_steps(step_list, base_s, dur_s):
-    if not isinstance(step_list, list) or len(step_list) <= 1:
-        return
-    try:
-        base_i = int(base_s)
-        dur_i = int(dur_s)
-    except (ValueError, TypeError):
-        return
-    if base_i <= 0 or dur_i <= 0:
-        return
-
-    long_steps = []
-    for st in step_list:
-        if not isinstance(st, dict):
-            return
-        kind = str(st.get("kind") or "").lower()
-        if kind in ("parallel", "sequence"):
-            return
-        if "duration_s" not in st:
-            return
-        try:
-            cur = int(st.get("duration_s") or 0)
-        except (ValueError, TypeError):
-            return
-        if not (cur > 0 and cur >= base_i):
-            return
-        long_steps.append(st)
-
-    if len(long_steps) <= 1:
-        return
-    step_list[:] = [{"kind": "parallel", "steps": long_steps}]
-
-
 def _effective_duration(s, defaults, cli_duration=None):
     if cli_duration is not None:
         return cli_duration
@@ -171,32 +88,23 @@ def normalize_scenario_durations(s, defaults=None, cli_duration=None):
     if not isinstance(s, dict):
         return s
     out = copy.deepcopy(s)
-    base_dur = _effective_duration(out, defaults or {}, cli_duration=None)
     eff_dur = _effective_duration(out, defaults or {}, cli_duration=cli_duration)
     if eff_dur is None:
         return out
     try:
-        out["_duration_s"] = int(eff_dur)
+        eff_i = int(eff_dur)
+    except (ValueError, TypeError):
+        return out
+    if eff_i <= 0:
+        return out
+    try:
+        out["_duration_s"] = int(eff_i)
     except (ValueError, TypeError):
         pass
     try:
-        out["duration"] = int(eff_dur)
+        out["duration"] = int(eff_i)
     except (ValueError, TypeError):
         pass
-    if (
-        cli_duration is not None
-        and base_dur is not None
-        and int(base_dur) > 0
-        and int(eff_dur) > 0
-        and int(eff_dur) != int(base_dur)
-    ):
-        for k in ("pre", "faults", "post", "gates"):
-            if isinstance(out.get(k), list):
-                _scale_duration_s(out.get(k), base_dur, eff_dur)
-        if isinstance(out.get("faults"), list):
-            _parallelize_long_steps(out.get("faults"), base_dur, eff_dur)
-    if isinstance(out.get("faults"), list):
-        _cap_duration(out.get("faults"), eff_dur)
     return out
 
 
@@ -231,37 +139,9 @@ def _inject_gate_macros(s):
     This reduces duplication without altering the YAML file directly.
     The injection is idempotent: existing gates are preserved.
     """
-    sid = s.get("id", "")
-    # Reconfiguration scenarios: ensure converge + member count + single_leader + backlog drain
-    if isinstance(sid, str) and sid.startswith("RCFG-"):
-        if not _has_gate(s, "single_leader"):
-            _append_gate(s, {"type": "single_leader"})
-        if not _has_gate(s, "config_converged"):
-            _append_gate(s, {"type": "config_converged", "timeout_s": 30})
-        if not _has_gate(s, "config_members_len_eq"):
-            exp = (s.get("opts") or {}).get("expected_members")
-            if exp is None:
-                exp = (
-                    2 if sid == "RCFG-02" else int(s.get("topology", 3))
-                )  # RCFG-02: member removal
-            _append_gate(s, {"type": "config_members_len_eq", "expected": int(exp)})
-        if not _has_gate(s, "backlog_drains"):
-            _append_gate(s, {"type": "backlog_drains"})
-    # INT scenarios: ensure backlog drains after count gate
-    if isinstance(sid, str) and sid.startswith("INT-"):
-        if not _has_gate(s, "backlog_drains"):
-            _append_gate(s, {"type": "backlog_drains"})
     # Default: inject health_precheck to validate baseline config early
     if not _has_gate(s, "health_precheck"):
         _append_gate(s, {"type": "health_precheck"})
-    # Add generic SLO guards for scenarios with workload
-    if s.get("workload"):
-        if not _has_gate(s, "error_rate_le"):
-            _append_gate(
-                s, {"type": "error_rate_le", "max_ratio": float(DEFAULT_ERROR_RATE)}
-            )
-        if not _has_gate(s, "p99_le"):
-            _append_gate(s, {"type": "p99_le", "max_ms": int(DEFAULT_P99_MS)})
     # Always append log_sanity_ok as a last guard (non-intrusive if logs empty)
     if not _has_gate(s, "log_sanity_ok"):
         _append_gate(s, {"type": "log_sanity_ok"})
@@ -345,8 +225,7 @@ def _resolve_matrix_backends(cfg):
     mb_raw = _getopt(cfg, "--matrix-backends", "KEEPER_MATRIX_BACKENDS", "") or ""
     if mb := [x.strip() for x in mb_raw.split(",") if x.strip()]:
         return mb
-    cli_backend = _getopt(cfg, "--keeper-backend", "KEEPER_BACKEND", "")
-    return [cli_backend] if cli_backend else []
+    return []
 
 
 def _resolve_matrix_topologies(cfg):

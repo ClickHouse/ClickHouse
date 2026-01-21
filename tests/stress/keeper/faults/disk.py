@@ -222,13 +222,16 @@ def dm_delay(node, ms=3):
             pass
         sh_root(
             node,
-            f"sync || true; "
-            f"umount /var/lib/clickhouse/coordination || true; "
-            f"mkdir -p /var/lib/clickhouse/coordination || true; "
-            f"cp -a /mnt/{dm_name}/. /var/lib/clickhouse/coordination/ 2>/dev/null || true; "
-            f"sync || true; "
-            f"umount /mnt/{dm_name} || true; "
-            f"dmsetup remove --retry -f {dm_name} || true",
+            (
+                f"sync || true; "
+                f"umount /var/lib/clickhouse/coordination 2>/dev/null || umount -l /var/lib/clickhouse/coordination 2>/dev/null || true; "
+                f"mountpoint -q /var/lib/clickhouse/coordination && umount -l /var/lib/clickhouse/coordination 2>/dev/null || true; "
+                f"mkdir -p /var/lib/clickhouse/coordination || true; "
+                f"cp -a /mnt/{dm_name}/. /var/lib/clickhouse/coordination/ 2>/dev/null || true; "
+                f"sync || true; "
+                f"umount /mnt/{dm_name} 2>/dev/null || umount -l /mnt/{dm_name} 2>/dev/null || true; "
+                f"dmsetup remove --retry -f {dm_name} || true"
+            ),
             timeout=180,
         )
         try:
@@ -349,6 +352,17 @@ def _f_dm_delay(ctx, nodes, leader, step):
         except Exception:
             return False
 
+    def _coord_mounted(node):
+        try:
+            r = sh_root(
+                node,
+                "mountpoint -q /var/lib/clickhouse/coordination >/dev/null 2>&1; echo $?",
+                timeout=10,
+            )
+            return str((r or {}).get("out", "")).strip().endswith("0")
+        except Exception:
+            return False
+
     def _run_one(t):
         dm_name = _dm_name("kdelay", t)
         t0 = _time.time()
@@ -376,6 +390,9 @@ def _f_dm_delay(ctx, nodes, leader, step):
         if _dm_present(t, dm_name):
             _emit(t, "cleanup_verify_failed")
             raise AssertionError("dm_delay cleanup verify failed")
+        if _coord_mounted(t):
+            _emit(t, "cleanup_verify_failed", {"reason": "coordination_still_mounted"})
+            raise AssertionError("dm_delay cleanup verify failed: coordination still mounted")
         _emit(t, "cleanup_ok", {"elapsed_s": _time.time() - t0})
 
     for_each_target(step, nodes, leader, _run_one)

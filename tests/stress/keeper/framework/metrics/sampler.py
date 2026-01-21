@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 
@@ -212,12 +213,12 @@ class MetricsSampler:
             self._th = None
 
     def flush(self):
-        if not self._metrics_ts_rows:
+        rows = self._metrics_ts_rows
+        if not rows:
             return
-        print("[keeper][push-metrics] begin")
-        for r in self._metrics_ts_rows:
-            if os.environ.get("KEEPER_PRINT_METRICS", False):
-                print(json.dumps(r, ensure_ascii=False))
-        print("[keeper][push-metrics] end")
-        sink_clickhouse(self.sink_url or "ci", "keeper_metrics_ts", self._metrics_ts_rows)
         self._metrics_ts_rows = []
+        print(f"[keeper][push-metrics] flushing {len(rows)} rows")
+        if os.environ.get("KEEPER_PRINT_METRICS"):
+            for r in rows:
+                print(json.dumps(r, ensure_ascii=False))
+        sink_clickhouse(self.sink_url or "ci", "keeper_metrics_ts", rows)
