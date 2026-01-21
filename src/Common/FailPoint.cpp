@@ -64,6 +64,7 @@ static struct InitFiu
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(distributed_cache_fail_continue_request) \
+    REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(object_storage_queue_fail_commit) \
@@ -115,6 +116,7 @@ static struct InitFiu
     REGULAR(output_format_sleep_on_progress) \
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
+    ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
     ONCE(backup_add_empty_memory_table) \
@@ -131,8 +133,10 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_merge_selecting_task_pause_when_scheduled) \
     ONCE(shared_set_full_update_fails_when_initializing) \
     PAUSEABLE(after_kill_part_pause) \
-    ONCE(parallel_replicas_reading_response_timeout)
-
+    ONCE(parallel_replicas_reading_response_timeout) \
+    ONCE(database_iceberg_gcs) \
+    REGULAR(rmt_delay_execute_drop_range) \
+    REGULAR(rmt_delay_commit_part)
 
 namespace FailPoints
 {

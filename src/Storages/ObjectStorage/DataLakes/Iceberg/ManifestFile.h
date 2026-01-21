@@ -90,7 +90,7 @@ struct ManifestFileEntry : public boost::noncopyable
         ManifestEntryStatus status_,
         Int64 added_sequence_number_,
         Int64 snapshot_id_,
-        Int64 schema_id_,
+        Int32 schema_id_,
         DB::Row& partition_key_value_,
         PartitionSpecification& common_partition_specification_,
         std::unordered_map<Int32, ColumnInfo>& columns_infos_,

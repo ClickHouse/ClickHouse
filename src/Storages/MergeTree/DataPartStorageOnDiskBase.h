@@ -112,6 +112,8 @@ public:
     SyncGuardPtr getDirectorySyncGuard() const override;
     bool hasActiveTransaction() const override;
 
+    bool isCaseInsensitive() const override;
+
 protected:
     DiskPtr getDisk() const;
 

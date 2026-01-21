@@ -141,7 +141,7 @@ public:
                         day_num = days_since_epoch;
                 }
 
-                result_data[i] = day_num;
+                result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
             }
         }
         else
@@ -164,7 +164,7 @@ public:
                         day_num = days_since_epoch;
                 }
 
-                result_data[i] = day_num;
+                result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
             }
         }
 
@@ -233,7 +233,7 @@ public:
                     day_num = days_since_epoch;
             }
 
-            result_data[i] = day_num;
+            result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
         }
 
         return res_column;
