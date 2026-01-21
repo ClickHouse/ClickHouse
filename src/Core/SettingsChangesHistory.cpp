@@ -48,6 +48,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_index_analysis_for_non_shared_merge_tree", false, false, "New setting"},
             {"distributed_cache_file_cache_name", "", "", "New setting."},
             {"trace_profile_events_list", "", "", "New setting"},
+            {"query_plan_reuse_storage_ordering_for_window_functions", true, false, "Disable this logic by default."},
+            {"optimize_read_in_window_order", true, false, "Disable this logic by default."},
             {"correlated_subqueries_use_in_memory_buffer", false, true, "Use in-memory buffer for input of correlated subqueries by default."},
             {"allow_experimental_database_paimon_rest_catalog", false, false, "New setting"},
             {"allow_experimental_object_storage_queue_hive_partitioning", false, false, "New setting."},

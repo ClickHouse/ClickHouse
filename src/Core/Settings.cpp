@@ -3745,9 +3745,6 @@ Possible values:
     DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
 Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
 )", 0) \
-    DECLARE(Bool, optimize_read_in_window_order, true, R"(
-Enable ORDER BY optimization in window clause for reading data in corresponding order in MergeTree tables.
-)", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -5715,7 +5712,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_reuse_storage_ordering_for_window_functions, true, R"(
+    DECLARE_WITH_ALIAS(Bool, query_plan_reuse_storage_ordering_for_window_functions, false, R"(
 Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
 
@@ -5727,7 +5724,7 @@ Possible values:
 
 - 0 - Disable
 - 1 - Enable
-)", 0) \
+)", 0, optimize_read_in_window_order) \
     DECLARE(Bool, query_plan_lift_up_union, true, R"(
 Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
