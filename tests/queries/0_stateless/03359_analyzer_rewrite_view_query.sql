@@ -1,5 +1,3 @@
-set enable_analyzer=1;
-
 CREATE TABLE mydestination
 (
     `object` String
