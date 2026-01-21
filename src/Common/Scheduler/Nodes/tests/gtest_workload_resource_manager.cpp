@@ -1981,7 +1981,7 @@ struct TestAllocationArray
     {
         for (size_t i = 0; i < count; i++)
         {
-            String workload = workloads[i];
+            const String & workload = workloads[i];
             ClassifierPtr c = t.manager->acquire(workload);
             ResourceLink link = c->get(resource);
             classifiers.push_back(c);
