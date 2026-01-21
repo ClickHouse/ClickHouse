@@ -17,6 +17,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 backup_name="${CLICKHOUSE_DATABASE}_03799_backup_security"
 user_name="test_03799_user_${CLICKHOUSE_DATABASE}"
 
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_backup_security"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_restored"
+    $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $user_name"
+}
+trap cleanup EXIT
+
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS test_backup_security;
 CREATE TABLE test_backup_security (id Int32) ENGINE=MergeTree() ORDER BY id;
@@ -54,7 +62,3 @@ $CLICKHOUSE_CLIENT --user=$user_name -m -q "
 BACKUP TABLE test_backup_security TO S3('http://localhost:11111/test/backups/${CLICKHOUSE_DATABASE}/no_permission_backup', 'INVALID_ACCESS_KEY', 'INVALID_SECRET') SETTINGS backup_restore_s3_retry_attempts=0; -- { serverError ACCESS_DENIED }
 "
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $user_name"
-
-# Cleanup
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_backup_security"
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_restored"
