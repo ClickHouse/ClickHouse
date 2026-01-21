@@ -32,8 +32,6 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
-#include <set>
-
 namespace DB
 {
 
@@ -327,16 +325,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         result.type = ProjectionDescription::Type::Aggregate;
         if (const auto & group_expression_list = query_select.groupBy())
         {
-            /// Check for duplicate columns in GROUP BY
-            std::set<String> group_by_columns;
-            for (const auto & child : group_expression_list->children)
-            {
-                String column_name = child->getColumnName();
-                if (!group_by_columns.insert(column_name).second)
-                    throw Exception(ErrorCodes::ILLEGAL_PROJECTION,
-                        "Duplicate column '{}' in GROUP BY clause of projection", column_name);
-            }
-
             ASTPtr order_expression;
             if (group_expression_list->children.size() == 1)
             {
