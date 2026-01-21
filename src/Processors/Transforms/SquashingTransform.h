@@ -13,7 +13,8 @@ class SquashingTransform : public ExceptionKeepingTransform
 {
 public:
     explicit SquashingTransform(
-        SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes);
+        SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes,
+        size_t max_block_size_rows = 0, size_t max_block_size_bytes = 0, bool squash_with_strict_limits = false);
 
     String getName() const override { return "SquashingTransform"; }
 
@@ -22,6 +23,7 @@ public:
 protected:
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override;
+    bool canGenerate() override;
     void onFinish() override;
 
 private:

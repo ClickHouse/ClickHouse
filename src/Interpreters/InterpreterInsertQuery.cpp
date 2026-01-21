@@ -64,6 +64,9 @@ namespace Setting
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
+    extern const SettingsBool use_strict_insert_block_limits;
+    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 preferred_block_size_bytes;
@@ -478,14 +481,20 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
         async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
         context);
 
-    pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+    const auto & settings = context->getSettingsRef();
+    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits];
+
+    if (!squash_with_strict_limits)
     {
-        return std::make_shared<AddDeduplicationInfoTransform>(
-            insert_dependencies,
-            insert_dependencies->getRootViewID(),
-            context->getSettingsRef()[Setting::insert_deduplication_token].value,
-            in_header);
-    });
+        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        {
+            return std::make_shared<AddDeduplicationInfoTransform>(
+                insert_dependencies,
+                insert_dependencies->getRootViewID(),
+                settings[Setting::insert_deduplication_token].value,
+                in_header);
+        });
+    }
 
     bool should_squash = shouldAddSquashingForStorage(table, getContext()) && !no_squash;
     if (should_squash)
@@ -495,8 +504,10 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             {
                 return std::make_shared<PlanSquashingTransform>(
                     in_header,
-                    table->prefersLargeBlocks() ? context->getSettingsRef()[Setting::min_insert_block_size_rows] : context->getSettingsRef()[Setting::max_block_size],
-                    table->prefersLargeBlocks() ? context->getSettingsRef()[Setting::min_insert_block_size_bytes] : 0ULL);
+                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
+                    table->prefersLargeBlocks() ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
+                    settings[Setting::max_insert_block_size], settings[Setting::max_insert_block_size_bytes],
+                    squash_with_strict_limits);
             });
     }
 
@@ -511,6 +522,18 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
             {
                 return std::make_shared<ApplySquashingTransform>(in_header);
             });
+    }
+
+    if (squash_with_strict_limits)
+    {
+        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        {
+            return std::make_shared<AddDeduplicationInfoTransform>(
+                insert_dependencies,
+                insert_dependencies->getRootViewID(),
+                settings[Setting::insert_deduplication_token].value,
+                in_header);
+        });
     }
 
     for (auto & chain : sink_chains)
@@ -752,6 +775,17 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     auto chains = insert_dependencies->createChainWithDependenciesForAllStreams();
     chassert(chains.size() == 1);
     auto chain = std::move(chains.front());
+    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits];
+
+    if (squash_with_strict_limits)
+    {
+        chain.addSource(
+            std::make_shared<AddDeduplicationInfoTransform>(
+                insert_dependencies,
+                insert_dependencies->getRootViewID(),
+                settings[Setting::insert_deduplication_token].value,
+                chain.getInputSharedHeader()));
+    }
 
     if (shouldAddSquashingForStorage(table, context) && !no_squash)
     {
@@ -765,16 +799,21 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         auto planing = std::make_shared<PlanSquashingTransform>(
             chain.getInputSharedHeader(),
             table_prefers_large_blocks ? settings[Setting::min_insert_block_size_rows] : settings[Setting::max_block_size],
-            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL);
+            table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL,
+            settings[Setting::max_insert_block_size], settings[Setting::max_insert_block_size_bytes],
+            squash_with_strict_limits);
         chain.addSource(std::move(planing));
     }
 
-    chain.addSource(
-        std::make_shared<AddDeduplicationInfoTransform>(
-            insert_dependencies,
-            insert_dependencies->getRootViewID(),
-            settings[Setting::insert_deduplication_token].value,
-            chain.getInputSharedHeader()));
+    if (!squash_with_strict_limits)
+    {
+        chain.addSource(
+            std::make_shared<AddDeduplicationInfoTransform>(
+                insert_dependencies,
+                insert_dependencies->getRootViewID(),
+                settings[Setting::insert_deduplication_token].value,
+                chain.getInputSharedHeader()));
+    }
 
     auto counting = std::make_shared<CountingTransform>(chain.getInputSharedHeader(), context->getQuota());
     counting->setProcessListElement(context->getProcessListElement());

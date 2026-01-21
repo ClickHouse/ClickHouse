@@ -40,7 +40,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size;
     extern const SettingsMilliseconds stream_poll_timeout_ms;
     extern const SettingsBool use_concurrency_control;
 }
