@@ -847,17 +847,11 @@ namespace
         switch (settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTime64Text(date_time, 9, buf,time_zone, /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof())
-                    return true;
-                return false;
+                return tryReadDateTime64Text(date_time, 9, buf,time_zone, /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof();
             case FormatSettings::DateTimeInputFormat::BestEffort:
-                if (tryParseDateTime64BestEffortStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof())
-                    return true;
-                return false;
+                return tryParseDateTime64BestEffortStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
             case FormatSettings::DateTimeInputFormat::BestEffortUS:
-                if (tryParseDateTime64BestEffortUSStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof())
-                    return true;
-                return false;
+                return tryParseDateTime64BestEffortUSStrict(date_time, 9, buf,time_zone, utc_time_zone, /*allowed_date_delimiters=*/"-/:") && buf.eof();
         }
     }
 

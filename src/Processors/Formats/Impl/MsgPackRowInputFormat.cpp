@@ -439,7 +439,7 @@ bool MsgPackVisitor::end_array_item() // NOLINT
     return true;
 }
 
-bool MsgPackVisitor::start_map(uint32_t size) // NOLINTC
+bool MsgPackVisitor::start_map(uint32_t size) // NOLINT
 {
     if (!isMap(info_stack.top().type))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert MessagePack map into column with type {}.", info_stack.top().type->getName());

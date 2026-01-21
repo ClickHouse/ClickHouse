@@ -155,9 +155,6 @@ Chunk IRowInputFormat::read()
 
             try
             {
-                // for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
-                    // columns[column_idx]->updateCheckpoint(*checkpoints[column_idx]);
-
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);
 
