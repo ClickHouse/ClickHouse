@@ -22,7 +22,7 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
     const std::optional<String> & tenant_id,
     ContextPtr context);
 
-struct AzureStorageParsedArguments : private StorageParsedArguments
+class StorageAzureConfiguration : public StorageObjectStorageConfiguration
 {
     friend class BackupReaderAzureBlobStorage;
     friend class BackupWriterAzureBlobStorage;
