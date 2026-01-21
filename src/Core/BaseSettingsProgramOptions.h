@@ -21,7 +21,7 @@ void addProgramOptionAsMultitoken(T &cmd_settings, boost::program_options::optio
                     ->composing()
                     ->implicit_value(std::vector<std::string>{"1"}, "1")
                     ->notifier(on_program_option),
-                field.getDescription().data())));
+                field.getDescription().data()))); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     }
     else
     {
@@ -29,7 +29,7 @@ void addProgramOptionAsMultitoken(T &cmd_settings, boost::program_options::optio
             boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
                 name.data(), /// NOLINT(bugprone-suspicious-stringview-data-usage)
                 boost::program_options::value<Strings>()->multitoken()->composing()->notifier(on_program_option),
-                field.getDescription().data())));
+                field.getDescription().data()))); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     }
 }
 
