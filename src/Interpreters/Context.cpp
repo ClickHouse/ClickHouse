@@ -28,6 +28,7 @@
 #include <Common/ConcurrencyControl.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/DatabaseReplicatedSettings.h>
@@ -61,6 +62,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/PartialAggregateCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
@@ -528,6 +530,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
+    mutable PartialAggregateCachePtr partial_aggregate_cache TSA_GUARDED_BY(mutex);   /// Cache of partial aggregation results per MergeTree part.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
@@ -4116,6 +4119,41 @@ void Context::clearQueryConditionCache() const
 
     if (shared->query_condition_cache)
         shared->query_condition_cache->clear();
+}
+
+void Context::setPartialAggregateCache(size_t max_size_in_bytes, size_t max_entries)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->partial_aggregate_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Partial aggregate cache has been already created.");
+
+    shared->partial_aggregate_cache = std::make_shared<PartialAggregateCache>(max_size_in_bytes, max_entries);
+}
+
+PartialAggregateCachePtr Context::getPartialAggregateCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->partial_aggregate_cache;
+}
+
+void Context::updatePartialAggregateCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->partial_aggregate_cache)
+        return; /// Cache was not created, nothing to update
+
+    size_t max_size_in_bytes = config.getUInt64("partial_aggregate_cache_size", DEFAULT_PARTIAL_AGGREGATE_CACHE_MAX_SIZE);
+    shared->partial_aggregate_cache->setMaxSizeInBytes(max_size_in_bytes);
+}
+
+void Context::clearPartialAggregateCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->partial_aggregate_cache)
+        shared->partial_aggregate_cache->clear();
 }
 
 

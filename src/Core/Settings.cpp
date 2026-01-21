@@ -5255,6 +5255,16 @@ Possible values:
 
 - Any string
 )", 0) \
+    DECLARE(Bool, use_partial_aggregate_cache, false, R"(
+If turned on, partial aggregation results are cached at the MergeTree part level. This is useful for time-series queries
+where historical parts produce the same partial aggregates on every execution. Only the partial aggregates for new parts
+need to be computed, and they are merged with the cached results.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \

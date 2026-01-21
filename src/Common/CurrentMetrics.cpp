@@ -353,6 +353,8 @@
     M(QueryCacheEntries, "Total number of entries in the query cache") \
     M(QueryConditionCacheBytes, "Total size of the query condition cache in bytes") \
     M(QueryConditionCacheEntries, "Total number of entries in the query condition cache") \
+    M(PartialAggregateCacheBytes, "Total size of the partial aggregate cache in bytes") \
+    M(PartialAggregateCacheEntries, "Total number of entries in the partial aggregate cache") \
     M(CompiledExpressionCacheBytes, "Total bytes used for the cache of JIT-compiled code") \
     M(CompiledExpressionCacheCount, "Total entries in the cache of JIT-compiled code") \
     M(MergeJoinBlocksCacheBytes, "Total bytes used for cached blocks in MergeJoin") \
