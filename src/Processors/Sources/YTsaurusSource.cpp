@@ -45,7 +45,18 @@ YTsaurusTableSourceDynamicTable::YTsaurusTableSourceDynamicTable(
     , format_settings({.skip_unknown_fields = source_options.settings[YTsaurusSetting::skip_unknown_columns]})
     , use_lookups(!source_options.settings[YTsaurusSetting::force_read_table] && source_options.lookup_input_block)
 {
-    read_buffer = (use_lookups) ? client->lookupRows(source_options.cypress_path, *source_options.lookup_input_block) : client->selectRows(source_options.cypress_path);
+    if (use_lookups)
+    {
+        read_buffer = client->lookupRows(source_options.cypress_path, *source_options.lookup_input_block);
+    }
+    else
+    {
+        if (source_options.select_rows_columns)
+            read_buffer = client->selectRows(source_options.cypress_path, *source_options.select_rows_columns);
+        else
+            read_buffer = client->selectRows(source_options.cypress_path, sample_block->getColumnsWithTypeAndName());
+    }
+
     format_settings.json.read_map_as_array_of_tuples = true;
     json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
         *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size_rows = max_block_size}), format_settings, false);

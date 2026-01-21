@@ -96,6 +96,7 @@ public:
     ~IcebergIterator() override;
 
 private:
+    LoggerPtr logger;
     std::unique_ptr<ActionsDAG> filter_dag;
     ObjectStoragePtr object_storage;
     const Iceberg::TableStateSnapshotPtr table_state_snapshot;

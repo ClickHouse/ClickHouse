@@ -163,6 +163,7 @@ private:
             return temp;
         };
 
+        using ElementType = Result::Container::value_type;
         for (size_t row = 0; row < columns[0]->size(); row++)
         {
             const size_t m = from_offsets[row] - prev_from_offset;
@@ -171,7 +172,7 @@ private:
             const std::vector<std::string_view> to = extract_array(to_data, prev_to_offset, n);
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
-            res_values[row] = levenshteinDistance<std::string_view>(from, to);
+            res_values[row] = static_cast<ElementType>(levenshteinDistance<std::string_view>(from, to));
         }
         return true;
     }
@@ -221,6 +222,7 @@ private:
         const ColumnArray::Offsets & to_offsets = columns[1]->getOffsets();
         ColumnArray::Offset prev_to_offset = 0;
 
+        using ElementType = Result::Container::value_type;
         for (size_t row = 0; row < columns[0]->size(); row++)
         {
             std::span<const N> from(column_from->getData().begin() + prev_from_offset, from_offsets[row] - prev_from_offset);
@@ -228,7 +230,7 @@ private:
             std::span<const N> to(column_to->getData().begin() + prev_to_offset, to_offsets[row] - prev_to_offset);
             prev_to_offset = to_offsets[row];
 
-            res_values[row] = levenshteinDistance<N>(from, to);
+            res_values[row] = static_cast<ElementType>(levenshteinDistance<N>(from, to));
         }
         return true;
     }
@@ -269,12 +271,13 @@ private:
 
         const ColumnArray * column_from = columns[0];
         const ColumnArray * column_to = columns[1];
+        using ElementType = Result::Container::value_type;
         for (size_t row = 0; row < column_from->size(); row++)
         {
             // Effective Levenshtein realization from Common/levenshteinDistance
             Array from = (*column_from)[row].safeGet<Array>();
             Array to = (*column_to)[row].safeGet<Array>();
-            res_values[row] = levenshteinDistance<Field>(from, to);
+            res_values[row] = static_cast<ElementType>(levenshteinDistance<Field>(from, to));
         }
     }
 
@@ -402,22 +405,45 @@ private:
         return true;
     }
 
+    template <typename ResultColumn, typename... Types>
+    bool tryLevenshteinNumber(std::vector<const ColumnArray *> columns, ResultColumn::Container & res_values) const
+    {
+        return (levenshteinNumber<Types, ResultColumn>(columns, res_values) || ...);
+    }
+
+    template <typename ResultColumn, typename... Types>
+    bool tryLevenshteinString(std::vector<const ColumnArray *> columns, ResultColumn::Container & res_values) const
+    {
+        return (levenshteinString<Types, ResultColumn>(columns, res_values) || ...);
+    }
+
     ColumnPtr levenshteinImpl(std::vector<const ColumnArray *> columns) const
     {
         auto res = ColumnUInt32::create();
         ColumnUInt32::Container & res_values = res->getData();
         res_values.resize(columns[0]->size());
-        if (levenshteinNumber<UInt8, ColumnUInt32>(columns, res_values) || levenshteinNumber<UInt16, ColumnUInt32>(columns, res_values)
-            || levenshteinNumber<UInt32, ColumnUInt32>(columns, res_values) || levenshteinNumber<UInt64, ColumnUInt32>(columns, res_values)
-            || levenshteinNumber<UInt128, ColumnUInt32>(columns, res_values) || levenshteinNumber<UInt256, ColumnUInt32>(columns, res_values)
-            || levenshteinNumber<Int8, ColumnUInt32>(columns, res_values) || levenshteinNumber<Int16, ColumnUInt32>(columns, res_values)
-            || levenshteinNumber<Int32, ColumnUInt32>(columns, res_values) || levenshteinNumber<Int64, ColumnUInt32>(columns, res_values)
-            || levenshteinNumber<Int128, ColumnUInt32>(columns, res_values) || levenshteinNumber<Int256, ColumnUInt32>(columns, res_values)
-            || levenshteinNumber<Float32, ColumnUInt32>(columns, res_values) || levenshteinNumber<Float64, ColumnUInt32>(columns, res_values)
-            || levenshteinNumber<Decimal32, ColumnUInt32>(columns, res_values) || levenshteinNumber<Decimal64, ColumnUInt32>(columns, res_values)
-            || levenshteinNumber<Decimal128, ColumnUInt32>(columns, res_values) || levenshteinNumber<Decimal256, ColumnUInt32>(columns, res_values)
-            || levenshteinNumber<DateTime64, ColumnUInt32>(columns, res_values)
-            || levenshteinString<ColumnString, ColumnUInt32>(columns, res_values) || levenshteinString<ColumnFixedString, ColumnUInt32>(columns, res_values))
+        if (tryLevenshteinNumber<
+                ColumnUInt32,
+                UInt8,
+                UInt16,
+                UInt32,
+                UInt64,
+                UInt128,
+                UInt256,
+                Int8,
+                Int16,
+                Int32,
+                Int64,
+                Int128,
+                Int256,
+                Float32,
+                Float64,
+                Decimal32,
+                Decimal64,
+                Decimal128,
+                Decimal256,
+                DateTime64>(columns, res_values)
+            || tryLevenshteinString<ColumnUInt32, ColumnString, ColumnFixedString>(columns, res_values))
             return res;
         levenshteinGeneric<ColumnUInt32>(columns, res_values);
         return res;
@@ -449,17 +475,28 @@ private:
         auto res = ColumnFloat64::create();
         ColumnFloat64::Container & res_values = res->getData();
         res_values.resize(columns[0]->size());
-        if (levenshteinNumber<UInt8, ColumnFloat64>(columns, res_values) || levenshteinNumber<UInt16, ColumnFloat64>(columns, res_values)
-            || levenshteinNumber<UInt32, ColumnFloat64>(columns, res_values) || levenshteinNumber<UInt64, ColumnFloat64>(columns, res_values)
-            || levenshteinNumber<UInt128, ColumnFloat64>(columns, res_values) || levenshteinNumber<UInt256, ColumnFloat64>(columns, res_values)
-            || levenshteinNumber<Int8, ColumnFloat64>(columns, res_values) || levenshteinNumber<Int16, ColumnFloat64>(columns, res_values)
-            || levenshteinNumber<Int32, ColumnFloat64>(columns, res_values) || levenshteinNumber<Int64, ColumnFloat64>(columns, res_values)
-            || levenshteinNumber<Int128, ColumnFloat64>(columns, res_values) || levenshteinNumber<Int256, ColumnFloat64>(columns, res_values)
-            || levenshteinNumber<Float32, ColumnFloat64>(columns, res_values) || levenshteinNumber<Float64, ColumnFloat64>(columns, res_values)
-            || levenshteinNumber<Decimal32, ColumnFloat64>(columns, res_values) || levenshteinNumber<Decimal64, ColumnFloat64>(columns, res_values)
-            || levenshteinNumber<Decimal128, ColumnFloat64>(columns, res_values) || levenshteinNumber<Decimal256, ColumnFloat64>(columns, res_values)
-            || levenshteinNumber<DateTime64, ColumnFloat64>(columns, res_values)
-            || levenshteinString<ColumnString, ColumnFloat64>(columns, res_values) || levenshteinString<ColumnFixedString, ColumnFloat64>(columns, res_values))
+        if (tryLevenshteinNumber<
+                ColumnFloat64,
+                UInt8,
+                UInt16,
+                UInt32,
+                UInt64,
+                UInt128,
+                UInt256,
+                Int8,
+                Int16,
+                Int32,
+                Int64,
+                Int128,
+                Int256,
+                Float32,
+                Float64,
+                Decimal32,
+                Decimal64,
+                Decimal128,
+                Decimal256,
+                DateTime64>(columns, res_values)
+            || tryLevenshteinString<ColumnFloat64, ColumnString, ColumnFixedString>(columns, res_values))
             return res;
         levenshteinGeneric<ColumnFloat64>(columns, res_values);
         return res;

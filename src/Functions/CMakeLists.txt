@@ -9,6 +9,7 @@ set(DBMS_FUNCTIONS
     IFunction.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
     IFunctionAdaptors.cpp # FunctionToFunctionBaseAdaptor (Used by FunctionFactory.cpp)
     FunctionDynamicAdaptor.cpp # IFunctionOverloadResolver::getLambdaArgumentTypes, IExecutableFunction::execute... (Many AST visitors, analyzer passes, some storages...)
+    FunctionVariantAdaptor.cpp # IFunctionOverloadResolver::build, IExecutableFunction::execute... (For Variant type support)
     FunctionFactory.cpp # FunctionFactory::instance() (Many AST visitors, analyzer passes, some storages...)
     FunctionHelpers.cpp # convertConstTupleToConstantElements, checkAndGetColumnConstStringOrFixedString, checkAndGetNestedArrayOffset ...)
     FunctionsLogical.cpp # createInternalFunctionAndOverloadResolve / createInternalFunctionOrOverloadResolver ... (Multiple)

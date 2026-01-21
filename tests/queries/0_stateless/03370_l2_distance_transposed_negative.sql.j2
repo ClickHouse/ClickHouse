@@ -1,5 +1,5 @@
 -- Tests for too large/small p, and type mismatches for vec and reference_vec
-SET allow_experimental_qbit_type = 1;
+SET enable_qbit_type = 1;
 
 
 {% for i in range(0, 2) -%}
@@ -17,7 +17,6 @@ INSERT INTO qbit VALUES (3, [2,3,4]);
 WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
 WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 17), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
 WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 
@@ -31,7 +30,6 @@ INSERT INTO qbit VALUES (3, [2,3,4]);
 WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
 WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 33), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
 WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 
@@ -44,7 +42,6 @@ INSERT INTO qbit VALUES (3, [2,3,4]);
 
 WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
 WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 65), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
-WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
 WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 

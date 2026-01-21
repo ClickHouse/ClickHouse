@@ -10,6 +10,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Coordination/KeeperConstants.h>
 
+#include <functional>
 #include <future>
 #include <memory>
 #include <string>
@@ -193,6 +194,8 @@ class ZooKeeper
     /// Allows to keep info about availability zones when starting a new session
     ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_, std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_, Strings availability_zones_, std::unique_ptr<Coordination::IKeeper> existing_impl);
 
+    explicit ZooKeeper(std::unique_ptr<Coordination::IKeeper> existing_impl);
+
     /// See addCheckSessionOp
     void initSession();
 
@@ -209,6 +212,10 @@ public:
     static Ptr create(ZooKeeperArgs args_,
                       std::shared_ptr<DB::ZooKeeperLog> zk_log_,
                       std::shared_ptr<DB::AggregatedZooKeeperLog> aggregated_zookeeper_log_);
+
+    /// Creates ZooKeeper from a custom IKeeper implementation using a factory.
+    /// The factory is stored and used by startNewSession() for reconnection.
+    static Ptr create_from_impl(std::function<std::unique_ptr<Coordination::IKeeper>()> factory);
 
     template <typename... Args>
     static Ptr createWithoutKillingPreviousSessions(Args &&... args)
@@ -663,6 +670,9 @@ private:
 
     std::unique_ptr<Coordination::IKeeper> impl;
     mutable std::unique_ptr<Coordination::IKeeper> optimal_impl;
+
+    /// Factory to create new IKeeper instances for reconnection (used by create_from_impl)
+    std::function<std::unique_ptr<Coordination::IKeeper>()> impl_factory;
 
     ZooKeeperArgs args;
 
