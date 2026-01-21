@@ -645,7 +645,7 @@ void ReplicatedMergeTreePartCheckThread::run()
             {
                 /// we rely on the fact that parts_set and parts_queue are in sync
                 if (!parts_set.erase(selected.name))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Someone erased checking part {} from parts_set. This is a bug.", selected.name);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Someone erased part to check {} from parts_set. This is a bug.", selected.name);
                 parts_queue.erase(selected_it);
             }
         }
