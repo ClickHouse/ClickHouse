@@ -33,6 +33,30 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
 String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool throw_if_client_key_empty) const
 {
     const auto & params = enabled.params;
+    auto mask_address = [this](const Poco::Net::IPAddress & addr) -> String
+    {
+        using Family = Poco::Net::IPAddress::Family;
+        const auto fam = addr.family();
+        if (fam == Family::IPv4)
+        {
+            if (quota->ipv4_prefix_bits && *quota->ipv4_prefix_bits > 0)
+            {
+                Poco::Net::IPAddress mask(static_cast<unsigned>(*quota->ipv4_prefix_bits), Family::IPv4);
+                Poco::Net::IPAddress masked = addr & mask;
+                return masked.toString();
+            }
+        }
+        else
+        {
+            if (quota->ipv6_prefix_bits && *quota->ipv6_prefix_bits > 0)
+            {
+                Poco::Net::IPAddress mask(static_cast<unsigned>(*quota->ipv6_prefix_bits), Family::IPv6);
+                Poco::Net::IPAddress masked = addr & mask;
+                return masked.toString();
+            }
+        }
+        return addr.toString();
+    };
     switch (quota->key_type)
     {
         case QuotaKeyType::NONE:
@@ -45,10 +69,22 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         }
         case QuotaKeyType::IP_ADDRESS:
         {
-            return params.client_address.toString();
+            return mask_address(params.client_address);
         }
         case QuotaKeyType::FORWARDED_IP_ADDRESS:
         {
+            if (!params.forwarded_address.empty())
+            {
+                try
+                {
+                    Poco::Net::IPAddress forwarded_ip(params.forwarded_address);
+                    return mask_address(forwarded_ip);
+                }
+                catch (...)
+                {
+                    return params.forwarded_address;
+                }
+            }
             return params.forwarded_address;
         }
         case QuotaKeyType::CLIENT_KEY:
@@ -74,7 +110,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         {
             if (!params.client_key.empty())
                 return params.client_key;
-            return params.client_address.toString();
+            return mask_address(params.client_address);
         }
         case QuotaKeyType::MAX: break;
     }

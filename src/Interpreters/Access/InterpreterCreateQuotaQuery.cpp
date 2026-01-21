@@ -40,6 +40,12 @@ namespace
         if (query.key_type)
             quota.key_type = *query.key_type;
 
+        if (query.ipv4_prefix_bits)
+            quota.ipv4_prefix_bits = query.ipv4_prefix_bits;
+
+        if (query.ipv6_prefix_bits)
+            quota.ipv6_prefix_bits = query.ipv6_prefix_bits;
+
         auto & quota_all_limits = quota.all_limits;
         for (const auto & query_limits : query.all_limits)
         {

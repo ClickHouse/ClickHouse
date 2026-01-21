@@ -4,6 +4,7 @@
 #include <Access/Common/QuotaDefs.h>
 #include <Access/RolesOrUsersSet.h>
 #include <chrono>
+#include <optional>
 
 
 namespace DB
@@ -37,6 +38,9 @@ struct Quota : public IAccessEntity
     /// Key to share quota consumption.
     /// Users with the same key share the same amount of resource.
     QuotaKeyType key_type = QuotaKeyType::NONE;
+
+    std::optional<MaskBits> ipv4_prefix_bits = 0;
+    std::optional<MaskBits> ipv6_prefix_bits = 0;
 
     /// Which roles or users should use this quota.
     RolesOrUsersSet to_roles;

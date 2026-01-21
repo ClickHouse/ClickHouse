@@ -1,0 +1,9 @@
+--- Test with quota with prefix bits ---
+10
+exceeded
+exceeded
+--- Test the masked quota key for immediate IP ---
+1
+::
+--- Test the masked quota key for forwarded IP ---
+1.2.0.0

@@ -21,6 +21,8 @@ Columns:
   - `['client_key']` — Connections with the same key share the same quota. A key must be explicitly provided by a client. When using [clickhouse-client](../../interfaces/cli.md), pass a key value in the `--quota_key` parameter, or use the `quota_key` parameter in the client configuration file. When using HTTP interface, use the `X-ClickHouse-Quota` header.
   - `['user_name', 'client_key']` — Connections with the same `client_key` share the same quota. If a key isn't provided by a client, the quota is tracked for `user_name`.
   - `['client_key', 'ip_address']` — Connections with the same `client_key` share the same quota. If a key isn't provided by a client, the quota is tracked for `ip_address`.
+- `ipv4_prefix_bits` - Connections with the same ipv4 subnet mask (created by masking the user ip address with `ipv4_prefix_bits`) share the same quota. Considered only when `key` is `ip_address` or `forwarded_ip_address`.
+- `ipv6_prefix_bits` - Connections with the same ipv6 subnet mask (created by masking the user ip address with `ipv6_prefix_bits`) share the same quota. Considered only when key is `ip_address` or `forwarded_ip_address`.
 - `durations` ([Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Time interval lengths in seconds.
 - `apply_to_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Logical value. It shows which users the quota is applied to. Values:
   - `0` — The quota applies to users specify in the `apply_to_list`.

@@ -15,6 +15,8 @@ Syntax:
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [IN access_storage_type]
     [KEYED BY {user_name | ip_address | client_key | client_key,user_name | client_key,ip_address} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
     [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
         {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | written_bytes | execution_time | failed_sequential_authentications} = number } [,...] |
          NO LIMITS | TRACKING ONLY} [,...]]
@@ -22,6 +24,8 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
 ```
 
 Keys `user_name`, `ip_address`, `client_key`, `client_key, user_name` and `client_key, ip_address` correspond to the fields in the [system.quotas](../../../operations/system-tables/quotas.md) table.
+
+`IPV4_PREFIX_BITS` and `IPV6_PREFIX_BITS` options can only be used when `KEYED BY` is `ip_address` or `forwarded_ip_address`. They correspond to the field in the [system.quotas](../../../operations/system-tables/quotas.md) table.
 
 Parameters `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `written_bytes`, `execution_time`, `failed_sequential_authentications` correspond to the fields in the [system.quotas_usage](../../../operations/system-tables/quotas_usage.md) table.
 
