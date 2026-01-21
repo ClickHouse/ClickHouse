@@ -11,15 +11,24 @@ namespace DB
 namespace
 {
 
+struct TheilsUWindowData;
+
 /// add() — O(1) with low constant factor
 /// getResult() — O(|count_a| + |count_b| + |count_ab|)
 /// Suitable to be used in GROUP BY
-struct TheilsUData : CrossTabData
+struct TheilsUData : CrossTabAggregateData
 {
     static const char * getName()
     {
         return "theilsU";
     }
+
+    using WindowData = TheilsUWindowData;
+
+    using CrossTabAggregateData::merge;
+
+    /// Merge window state into aggregation state. Window-specific cached fields are intentionally ignored.
+    void merge(const TheilsUWindowData & other);
 
     /// Based on https://en.wikipedia.org/wiki/Uncertainty_coefficient.
     Float64 getResult() const
@@ -57,18 +66,19 @@ struct TheilsUData : CrossTabData
 /// getResult() - amortized O(1), independent of row/column degree
 /// Suitable to be used in window functions (SELECT ... OVER(...) FROM ...)
 
-/// Unlike others (e.g. cramersV, contingency), this class does not inherit from CrossTabWindowPhiSquaredData
+/// Unlike others (e.g. cramersV, contingency), this class does not inherit from CrossTabPhiSquaredWindowData
 /// because Theil's U incremental update can be done more efficiently without maintaining edges. Additionally,
-/// CrossTabWindowPhiSquaredData suffers when there are high-degree rows/columns (graph is dense), leading to O(n) add()
+/// CrossTabPhiSquaredWindowData suffers when there are high-degree rows/columns (graph is dense), leading to O(n) add()
 /// complexity in worst case.
 /// This implementation ensures add() is always O(1) regardless of data distribution.
-struct TheilsUWindowData
+struct TheilsUWindowData : CrossTabCountsState
 {
-    static const char * getName() {
+    static const char * getName()
+    {
         return TheilsUData::getName();
     }
 
-    static constexpr CrossTabStateRepresentation state_representation = CrossTabStateRepresentation::Window;
+    static constexpr CrossTabImplementationVariant state_representation = CrossTabImplementationVariant::Window;
 
     void add(UInt64 hash1, UInt64 hash2)
     {
@@ -104,7 +114,38 @@ struct TheilsUWindowData
             addToCountAndSum(count_ab, key, add_value, sum_ab_nlogn);
     }
 
-    /// Keep the same serialization format as CrossTabData
+    void merge(const CrossTabAggregateData & other)
+    {
+        if (other.count == 0)
+            return;
+
+        if (count == 0)
+        {
+            count = other.count;
+            count_a = other.count_a;
+            count_b = other.count_b;
+            count_ab = other.count_ab;
+
+            /// Restore cached Σ n logn sums
+            sum_a_nlogn = recomputeNLogNSum(count_a);
+            sum_b_nlogn = recomputeNLogNSum(count_b);
+            sum_ab_nlogn = recomputeNLogNSum(count_ab);
+            return;
+        }
+
+        count += other.count;
+
+        for (const auto & [key, add_value] : other.count_a)
+            addToCountAndSum(count_a, key, add_value, sum_a_nlogn);
+
+        for (const auto & [key, add_value] : other.count_b)
+            addToCountAndSum(count_b, key, add_value, sum_b_nlogn);
+
+        for (const auto & [key, add_value] : other.count_ab)
+            addToCountAndSum(count_ab, key, add_value, sum_ab_nlogn);
+    }
+
+    /// Keep the same serialization format as CrossTabAggregateData
     void serialize(WriteBuffer & buf) const
     {
         writeBinary(count, buf);
@@ -163,12 +204,6 @@ struct TheilsUWindowData
     }
 
 private:
-    UInt64 count = 0;
-
-    HashMapWithStackMemory<UInt64, UInt64, TrivialHash, 4> count_a;
-    HashMapWithStackMemory<UInt64, UInt64, TrivialHash, 4> count_b;
-    HashMapWithStackMemory<UInt128, UInt64, UInt128Hash, 4> count_ab;
-
     /// Σ n_a log n_a
     Float64 sum_a_nlogn = 0.0;
 
@@ -225,6 +260,11 @@ private:
         return sum;
     }
 };
+
+void TheilsUData::merge(const TheilsUWindowData & other)
+{
+    CrossTabCountsState::merge(static_cast<const CrossTabCountsState &>(other));
+}
 }
 
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory)

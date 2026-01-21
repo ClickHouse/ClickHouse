@@ -26,18 +26,12 @@ class AggregateFunctionMerge final : public IAggregateFunctionHelper<AggregateFu
 {
 private:
     AggregateFunctionPtr nested_func;
+    AggregateFunctionPtr argument_func;
+    const IAggregateFunction * nested_base_for_variant_merge = nullptr;
+    const IAggregateFunction * argument_base_for_variant_merge = nullptr;
 
 public:
-    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionMerge>({argument}, params_, createResultType(nested_))
-        , nested_func(nested_)
-    {
-        const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
-
-        if (!data_type || !nested_func->haveSameStateRepresentation(*data_type->getFunction()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
-                            "expected {} or equivalent type", argument->getName(), getName(), getStateType()->getName());
-    }
+    AggregateFunctionMerge(const AggregateFunctionPtr & nested_, const DataTypePtr & argument, const Array & params_);
 
     String getName() const override
     {

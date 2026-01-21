@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-struct ContingencyData : CrossTabData
+struct ContingencyData : CrossTabAggregateData
 {
     static const char * getName()
     {
@@ -44,7 +44,7 @@ struct ContingencyData : CrossTabData
 };
 
 
-struct ContingencyWindowData : CrossTabWindowPhiSquaredData
+struct ContingencyWindowData : CrossTabPhiSquaredWindowData
 {
     static const char * getName()
     {

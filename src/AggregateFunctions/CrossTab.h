@@ -6,6 +6,8 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/assert_cast.h>
 
+#include <type_traits>
+
 
 /** Aggregate function that calculates statistics on top of cross-tab:
   * - histogram of every argument and every pair of elements.
@@ -19,26 +21,19 @@
 namespace DB
 {
 
-enum class CrossTabStateRepresentation : UInt8
+enum class CrossTabImplementationVariant : UInt8
 {
     Aggregation,
     Window
 };
 
-class ICrossTabAggregateFunction
-{
-public:
-    virtual ~ICrossTabAggregateFunction() = default;
-    virtual CrossTabStateRepresentation getCrossTabStateRepresentation() const = 0;
-};
+struct CrossTabPhiSquaredWindowData;
 
-/// add() — O(1) with low constant factor
-/// getResult() — O(|count_a| + |count_b| + |count_ab|)
-/// Suitable to be used in GROUP BY
-struct CrossTabData
+/// Common (count + maps) state layout.
+/// It is used as the aggregation state (`CrossTabAggregateData`) and also as a prefix for some window states
+/// that keep the same base layout but add extra cached fields (e.g. Theil's U).
+struct CrossTabCountsState
 {
-    static constexpr CrossTabStateRepresentation state_representation = CrossTabStateRepresentation::Aggregation;
-
     /// Total count.
     UInt64 count = 0;
 
@@ -61,7 +56,7 @@ struct CrossTabData
         ++count_ab[hash_pair];
     }
 
-    void merge(const CrossTabData & other)
+    void merge(const CrossTabCountsState & other)
     {
         count += other.count;
         for (const auto & [key, value] : other.count_a)
@@ -87,6 +82,18 @@ struct CrossTabData
         count_b.read(buf);
         count_ab.read(buf);
     }
+};
+
+struct CrossTabAggregateData : CrossTabCountsState
+{
+    static constexpr CrossTabImplementationVariant state_representation = CrossTabImplementationVariant::Aggregation;
+
+    using CrossTabCountsState::add;
+    using CrossTabCountsState::deserialize;
+    using CrossTabCountsState::merge;
+    using CrossTabCountsState::serialize;
+
+    void merge(const CrossTabPhiSquaredWindowData & other);
 
     /** See https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V
       *
@@ -214,9 +221,9 @@ struct CrossTabData
 ///
 /// This base is used by window-friendly implementations of `cramersV`, `cramersVBiasCorrected`,
 /// and `contingencyCoefficient`.
-struct CrossTabWindowPhiSquaredData
+struct CrossTabPhiSquaredWindowData
 {
-    static constexpr CrossTabStateRepresentation state_representation = CrossTabStateRepresentation::Window;
+    static constexpr CrossTabImplementationVariant state_representation = CrossTabImplementationVariant::Window;
 
     struct Edge
     {
@@ -323,16 +330,10 @@ struct CrossTabWindowPhiSquaredData
         applyColumnPhiDelta(b_idx, static_cast<Float64>(b_marginal_count[b_idx]), +1.0, edge_idx);
     }
 
-    void merge(const CrossTabWindowPhiSquaredData & other)
+    void merge(const CrossTabPhiSquaredWindowData & other)
     {
         if (other.count == 0)
             return;
-
-        if (count == 0)
-        {
-            *this = other;
-            return;
-        }
 
         /// Remap other indices -> our indices
         std::vector<UInt32> map_a(other.a_hash_by_index.size());
@@ -356,27 +357,9 @@ struct CrossTabWindowPhiSquaredData
         }
 
         const UInt32 cur_epoch = epoch;
-        for (UInt32 a_idx : affected_a)
-            a_epoch_mark[a_idx] = cur_epoch;
+        prepareMerge(affected_a, affected_b, cur_epoch);
 
-        /// 1) Remove old contributions for affected rows (all edges in those rows)
-        for (UInt32 a_idx : affected_a)
-        {
-            const UInt64 old_a = a_marginal_count[a_idx];
-            if (old_a)
-                applyRowPhiDelta(a_idx, static_cast<Float64>(old_a), -1.0);
-        }
-
-        /// 2) Remove old contributions for affected columns, but only edges whose 'a' is NOT affected.
-        ///    Otherwise, we would double-subtract those edges
-        for (UInt32 b_idx : affected_b)
-        {
-            const UInt64 old_b = b_marginal_count[b_idx];
-            if (old_b)
-                adjustColumnPhiSkipMarkedA(b_idx, static_cast<Float64>(old_b), -1.0, cur_epoch);
-        }
-
-        /// 3) Apply count changes
+        /// Apply count changes
         count += other.count;
 
         for (size_t i = 0; i < other.a_marginal_count.size(); ++i)
@@ -386,7 +369,7 @@ struct CrossTabWindowPhiSquaredData
             b_marginal_count[map_b[i]] += other.b_marginal_count[i];
 
 
-        /// 4) Merge edges (joint counts)
+        /// Merge edges (joint counts)
         for (const auto & edge : other.ab_edges)
         {
             const UInt64 hash_a = other.a_hash_by_index[edge.a];
@@ -411,30 +394,64 @@ struct CrossTabWindowPhiSquaredData
             }
         }
 
-        /// 5) Add new contributions back for affected rows
-        for (UInt32 a_idx : affected_a)
-        {
-            const UInt64 new_a = a_marginal_count[a_idx];
-            if (new_a)
-                applyRowPhiDelta(a_idx, static_cast<Float64>(new_a), +1.0);
-        }
-
-        /// 6) Add new contributions back for affected columns, skipping edges whose 'a' is affected.
-        ///    Otherwise, we would double-add those edges
-        for (UInt32 b_idx : affected_b)
-        {
-            const UInt64 new_b = b_marginal_count[b_idx];
-            if (new_b)
-                adjustColumnPhiSkipMarkedA(b_idx, static_cast<Float64>(new_b), +1.0, cur_epoch);
-        }
-
-        ++epoch;
-
-        /// For theoretical correctness, we should now handle the case epoch == 0 by resetting all marks to 0 and setting epoch = 1.
-        /// This will require UINT32_MAX merges which is impossible in practice, so we skip for simplicity.
+        finalizeMerge(affected_a, affected_b, cur_epoch);
     }
 
-    /// Keep the same serialization format as CrossTabData
+    /// Merge a CrossTabAggregateData (GROUP BY) state into the window-optimized representation.
+    /// This is used to support merging "aggregate" states in OVER()
+    void merge(const CrossTabAggregateData & other)
+    {
+        if (other.count == 0)
+            return;
+
+        std::vector<UInt32> affected_a;
+        affected_a.reserve(other.count_a.size());
+        for (const auto & [hash, _] : other.count_a)
+            affected_a.push_back(getOrCreateIndexA(hash));
+
+        std::vector<UInt32> affected_b;
+        affected_b.reserve(other.count_b.size());
+        for (const auto & [hash, _] : other.count_b)
+            affected_b.push_back(getOrCreateIndexB(hash));
+
+        const UInt32 cur_epoch = epoch;
+        prepareMerge(affected_a, affected_b, cur_epoch);
+
+        /// Apply count changes
+        count += other.count;
+        for (const auto & [hash, cnt] : other.count_a)
+            a_marginal_count[a_index_by_hash.at(hash)] += cnt;
+        for (const auto & [hash, cnt] : other.count_b)
+            b_marginal_count[b_index_by_hash.at(hash)] += cnt;
+
+        /// Merge edges (joint counts)
+        for (const auto & [pair_key, cnt_ab] : other.count_ab)
+        {
+            const UInt64 hash_a = pair_key.items[UInt128::_impl::little(0)];
+            const UInt64 hash_b = pair_key.items[UInt128::_impl::little(1)];
+
+            const UInt32 a_idx = a_index_by_hash.at(hash_a);
+            const UInt32 b_idx = b_index_by_hash.at(hash_b);
+
+            auto * it = ab_edge_index_by_pair.find(pair_key);
+            if (it != ab_edge_index_by_pair.end())
+            {
+                ab_edges[it->getMapped()].count += cnt_ab;
+            }
+            else
+            {
+                const UInt32 edge_idx = static_cast<UInt32>(ab_edges.size());
+                ab_edges.push_back(Edge{a_idx, b_idx, cnt_ab});
+                ab_edge_index_by_pair[pair_key] = edge_idx;
+                a_incident_edges[a_idx].push_back(edge_idx);
+                b_incident_edges[b_idx].push_back(edge_idx);
+            }
+        }
+
+        finalizeMerge(affected_a, affected_b, cur_epoch);
+    }
+
+    /// Keep the same serialization format as CrossTabAggregateData
     void serialize(WriteBuffer & buf) const
     {
         writeBinary(count, buf);
@@ -557,6 +574,54 @@ struct CrossTabWindowPhiSquaredData
 private:
     static constexpr UInt32 INVALID_EDGE_IDX = UInt32(-1);
 
+    void prepareMerge(const std::vector<UInt32> & affected_a, const std::vector<UInt32> & affected_b, UInt32 cur_epoch)
+    {
+        for (UInt32 a_idx : affected_a)
+            a_epoch_mark[a_idx] = cur_epoch;
+
+        /// Remove old contributions for affected rows (all edges in those rows)
+        for (UInt32 a_idx : affected_a)
+        {
+            const UInt64 old_a = a_marginal_count[a_idx];
+            if (old_a)
+                applyRowPhiDelta(a_idx, static_cast<Float64>(old_a), -1.0);
+        }
+
+        /// Remove old contributions for affected columns, but only edges whose 'a' is NOT affected.
+        ///    Otherwise, we would double-subtract those edges
+        for (UInt32 b_idx : affected_b)
+        {
+            const UInt64 old_b = b_marginal_count[b_idx];
+            if (old_b)
+                adjustColumnPhiSkipMarkedA(b_idx, static_cast<Float64>(old_b), -1.0, cur_epoch);
+        }
+    }
+
+    void finalizeMerge(const std::vector<UInt32> & affected_a, const std::vector<UInt32> & affected_b, UInt32 cur_epoch)
+    {
+        /// Add new contributions back for affected rows
+        for (UInt32 a_idx : affected_a)
+        {
+            const UInt64 new_a = a_marginal_count[a_idx];
+            if (new_a)
+                applyRowPhiDelta(a_idx, static_cast<Float64>(new_a), +1.0);
+        }
+
+        /// Add new contributions back for affected columns, skipping edges whose 'a' is affected.
+        ///  Otherwise, we would double-add those edges
+        for (UInt32 b_idx : affected_b)
+        {
+            const UInt64 new_b = b_marginal_count[b_idx];
+            if (new_b)
+                adjustColumnPhiSkipMarkedA(b_idx, static_cast<Float64>(new_b), +1.0, cur_epoch);
+        }
+
+        ++epoch;
+
+        /// For theoretical correctness, we should now handle the case epoch == 0 by resetting all marks to 0 and setting epoch = 1.
+        /// This will require UINT32_MAX merges which is impossible in practice, so we skip for simplicity.
+    }
+
     void clear()
     {
         count = 0;
@@ -652,13 +717,48 @@ private:
             phi_term_sum += sign * phiTerm(edge.count, a, b);
         }
     }
-
 };
+
+inline void CrossTabAggregateData::merge(const CrossTabPhiSquaredWindowData & other)
+{
+    if (other.count == 0)
+        return;
+
+    count += other.count;
+
+    for (size_t i = 0; i < other.a_hash_by_index.size(); ++i)
+        count_a[other.a_hash_by_index[i]] += other.a_marginal_count[i];
+
+    for (size_t i = 0; i < other.b_hash_by_index.size(); ++i)
+        count_b[other.b_hash_by_index[i]] += other.b_marginal_count[i];
+
+    for (const auto & edge : other.ab_edges)
+    {
+        const UInt128 pair_key{other.a_hash_by_index[edge.a], other.b_hash_by_index[edge.b]};
+        count_ab[pair_key] += edge.count;
+    }
+}
 
 
 template <typename Data>
-class AggregateFunctionCrossTab final : public IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>, public ICrossTabAggregateFunction
+class AggregateFunctionCrossTab final : public IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>
 {
+    static_assert(
+        Data::state_representation != CrossTabImplementationVariant::Window
+            || std::is_base_of_v<CrossTabPhiSquaredWindowData, Data> || std::is_base_of_v<CrossTabCountsState, Data>,
+        "CrossTab window state must either derive from CrossTabPhiSquaredWindowData or keep CrossTabCountsState prefix (derive from "
+        "CrossTabCountsState).");
+
+    static_assert(
+        Data::state_representation != CrossTabImplementationVariant::Window
+            || !std::is_base_of_v<CrossTabPhiSquaredWindowData, Data> || sizeof(Data) == sizeof(CrossTabPhiSquaredWindowData),
+        "CrossTab window state derived from CrossTabPhiSquaredWindowData must not add data members; it is merged as "
+        "CrossTabPhiSquaredWindowData.");
+
+    static_assert(
+        Data::state_representation != CrossTabImplementationVariant::Aggregation || std::is_base_of_v<CrossTabAggregateData, Data>,
+        "CrossTab aggregation state must derive from CrossTabAggregateData.");
+
 public:
     explicit AggregateFunctionCrossTab(const DataTypes & arguments)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionCrossTab<Data>>({arguments}, {}, createResultType())
@@ -694,21 +794,90 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    CrossTabStateRepresentation getCrossTabStateRepresentation() const override
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
-        return Data::state_representation;
+        if (rhs.getName() != getName())
+            return false;
+
+        if (rhs.getStateVariant() == getStateVariant())
+            return false;
+
+        if constexpr (Data::state_representation == CrossTabImplementationVariant::Window)
+        {
+            /// Merge aggregation states into the window representation.
+            /// The aggregation representation for this family is CrossTabAggregateData.
+            if (rhs.getStateVariant() != AggregateFunctionStateVariant::Aggregation)
+                return false;
+
+            return true;
+        }
+        else if constexpr (Data::state_representation == CrossTabImplementationVariant::Aggregation)
+        {
+            /// Merge window states into the aggregation representation.
+            ///
+            /// There are multiple window representations:
+            ///  - CrossTabPhiSquaredWindowData based (cramersV, cramersVBiasCorrected, contingency).
+            ///  - CrossTabCountsState prefix based (window states that keep the same (count, maps) layout and may add cached fields).
+            if (rhs.getStateVariant() != AggregateFunctionStateVariant::Window)
+                return false;
+
+            return true;
+        }
+        else
+        {
+            return false;
+        }
     }
 
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena *) const override
     {
-        if (!IAggregateFunction::haveSameStateRepresentationImpl(rhs))
-            return false;
+        chassert(canMergeStateFromDifferentVariant(rhs));
 
-        const auto * rhs_crosstab = dynamic_cast<const ICrossTabAggregateFunction *>(&rhs);
-        if (!rhs_crosstab)
-            return false;
+        if constexpr (Data::state_representation == CrossTabImplementationVariant::Window)
+        {
+            auto & dst = this->data(place);
+            const auto & src = *reinterpret_cast<const CrossTabAggregateData *>(rhs_place);
+            dst.merge(src);
+        }
+        else if constexpr (Data::state_representation == CrossTabImplementationVariant::Aggregation)
+        {
+            auto & dst = this->data(place);
 
-        return rhs_crosstab->getCrossTabStateRepresentation() == getCrossTabStateRepresentation();
+            /// By default, window state for this family is CrossTabPhiSquaredWindowData-based.
+            /// If a specific aggregate function has a different window state layout, it can declare:
+            ///   using WindowData = <its window state type>;
+            ///   void merge(const WindowData &);
+            if constexpr (requires { typename Data::WindowData; }) /// Only TheilsUData declares it
+            {
+                using WindowData = typename Data::WindowData;
+                static_assert(
+                    std::is_base_of_v<CrossTabCountsState, WindowData>,
+                    "CrossTab custom window state must keep CrossTabCountsState prefix (derive from CrossTabCountsState).");
+                static_assert(requires(Data & data, const WindowData & other) { data.merge(other); });
+
+                const auto & src = *reinterpret_cast<const WindowData *>(rhs_place);
+                dst.merge(src);
+            }
+            else
+            {
+                const auto & src = *reinterpret_cast<const CrossTabPhiSquaredWindowData *>(rhs_place);
+                dst.merge(src);
+            }
+        }
+        else
+        {
+            static_assert(
+                std::is_same_v<Data, void>,
+                "AggregateFunctionCrossTab::mergeStateFromDifferentVariant is implemented only for Data types with state_representation");
+        }
+    }
+
+    AggregateFunctionStateVariant getStateVariant() const override
+    {
+        if constexpr (Data::state_representation == CrossTabImplementationVariant::Window)
+            return AggregateFunctionStateVariant::Window;
+        return AggregateFunctionStateVariant::Aggregation;
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

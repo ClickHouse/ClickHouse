@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-struct CramersVData : CrossTabData
+struct CramersVData : CrossTabAggregateData
 {
     static const char * getName()
     {
@@ -32,7 +32,7 @@ struct CramersVData : CrossTabData
     }
 };
 
-struct CramersVWindowData : CrossTabWindowPhiSquaredData
+struct CramersVWindowData : CrossTabPhiSquaredWindowData
 {
     static const char * getName()
     {
