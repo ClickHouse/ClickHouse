@@ -29,7 +29,7 @@ SELECT mapFromArrays(
 SELECT *
 FROM ${TABLE}
 INTO OUTFILE '${PARQUET_FILE}'
-FORMAT Parquet
+FORMAT Parquet;
 
 SELECT *
 FROM file('${PARQUET_FILE}', Parquet);
