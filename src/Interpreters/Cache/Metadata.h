@@ -76,7 +76,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
         const auto & entry = iterator->getEntry();
         chassert(size() == entry->size);
-        entry->resetEvictingFlag();
+        entry->resetFlag(Priority::Entry::State::Evicting);
     }
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }

@@ -93,10 +93,12 @@ public:
                 printUnexpectedState(prev, "Active or Evicting", "Invalidated"));
         }
 
-        void resetEvictingFlag()
+        void resetFlag(State from_state, State to_state = State::Active)
         {
-            [[maybe_unused]] auto prev = state.exchange(State::Active, std::memory_order_relaxed);
-            chassert(prev == State::Evicting, toString("Evicting flag is not set for "));
+            [[maybe_unused]] auto prev = state.exchange(to_state, std::memory_order_relaxed);
+            chassert(
+                prev == from_state,
+                printUnexpectedState(prev, magic_enum::enum_name(from_state), fmt::format("{}", magic_enum::enum_name(to_state))));
         }
 
     private:
