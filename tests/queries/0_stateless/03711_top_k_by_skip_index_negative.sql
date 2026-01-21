@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- no-parallel - optimization not supported yet
+
 DROP TABLE IF EXISTS tab1;
 
 CREATE TABLE tab1

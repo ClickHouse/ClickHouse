@@ -267,7 +267,7 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
         serialization->deserializeBinary(value, istr, format_settings);
     }
     /// If index granularity is not 1, we insert the same value as the min
-    /// or max for all the corresponding granules. For our top-K purpose,this
+    /// or max for all the corresponding granules. For our top-K purpose, this
     /// is safe and maybe lead to false positives, but never wrong results.
     for (size_t i = 0; i < index_granularity; ++i)
     {
@@ -326,9 +326,9 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(size_t n, std::vector<MinMax
     }
     else
     {
-        auto min_granules = n * index_granularity;
+        auto min_granules_to_select = n * index_granularity;
         auto threshold = queue.top();
-        for (size_t i = 0; i < min_granules && !queue.empty(); ++i)
+        for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {
             threshold = queue.top();
             result.push_back({queue.top().granule_num, queue.top().min_or_max_value});
@@ -396,9 +396,9 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
     }
     else
     {
-        auto min_granules = n * index_granularity;
+        auto min_granules_to_select = n * index_granularity;
         auto threshold = queue.top();
-        for (size_t i = 0; i < min_granules && !queue.empty(); ++i)
+        for (size_t i = 0; i < min_granules_to_select && !queue.empty(); ++i)
         {
             const auto & item = queue.top();
             threshold = queue.top();
