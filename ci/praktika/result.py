@@ -355,6 +355,7 @@ class Result(MetaClasses.Serializable):
         if not self.ext.get("labels", None):
             return
         self.ext["labels"] = [l for l in self.ext["labels"] if l != label]
+        return self
 
     def get_labels(self):
         return self.ext.get("labels", [])

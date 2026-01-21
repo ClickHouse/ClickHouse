@@ -15,13 +15,8 @@ if __name__ == "__main__":
         name="Merge LLVM Coverage",
         command=["bash ci/jobs/scripts/merge_llvm_coverage.sh"],
     )
-    # Compress coverage artifacts
-    # Change to temp_dir so archive doesn't include full path
-    subprocess.run(
-        f"cd {temp_dir} && tar -czf llvm_coverage_html_report.tar.gz merged.profdata llvm_coverage_html_report",
-        shell=True,
-        check=True
-    )
+
+    Utils.compress_gz(f"{temp_dir}/llvm_coverage_html_report",f"{temp_dir}/llvm_coverage_html_report.tar.gz")
     
     files_to_attach = []
     # Attach all HTML report files preserving directory structure

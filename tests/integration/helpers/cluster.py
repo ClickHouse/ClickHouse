@@ -4476,7 +4476,6 @@ class ClickHouseInstance:
         with_coverage = self.query(
             "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
         )
-        print("in is_built_with_llvm_coverage: ", with_coverage)
         return "ON" in with_coverage.upper()
 
     def is_built_with_thread_sanitizer(self):
@@ -4819,7 +4818,7 @@ class ClickHouseInstance:
                 return False
 
             self.exec_in_container(
-                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-TERM")],
+                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-15")],
                 user="root",
             )
 

@@ -13,7 +13,7 @@ command -v llvm-cov || echo "llvm-cov: not found"
 
 # Auto-detect available LLVM tools
 if [ -z "$LLVM_PROFDATA" ]; then
-  for ver in 21 20 18 19 17 16 ""; do
+  for ver in 21 20 19 18 17 16 ""; do
     if command -v "llvm-profdata${ver:+-$ver}" &> /dev/null; then
       LLVM_PROFDATA="llvm-profdata${ver:+-$ver}"
       break
@@ -22,7 +22,7 @@ if [ -z "$LLVM_PROFDATA" ]; then
 fi
 
 if [ -z "$LLVM_COV" ]; then
-  for ver in 21 20 18 19 17 16 ""; do
+  for ver in 21 20 19 18 17 16 ""; do
     if command -v "llvm-cov${ver:+-$ver}" &> /dev/null; then
       LLVM_COV="llvm-cov${ver:+-$ver}"
       break
@@ -122,10 +122,10 @@ genhtml "llvm_coverage.info" \
     --no-function-coverage \
     --prefix $WORKSPACE_PATH \
     --ignore-errors inconsistent \
-    --ignore-errors category,category,category \
-    --ignore-errors corrupt,corrupt \
-    --ignore-errors unsupported,unsupported \
-    --ignore-errors source,source \
-    --ignore-errors branch,branch \
+    --ignore-errors category \
+    --ignore-errors corrupt \
+    --ignore-errors unsupported \
+    --ignore-errors source \
+    --ignore-errors branch \
     --ignore-errors range
 
