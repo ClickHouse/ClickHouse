@@ -357,6 +357,11 @@ if (TARGET ch_contrib::llvm)
     target_link_libraries (clickhouse_compression PUBLIC ch_contrib::llvm)
 endif ()
 
+if (TARGET ch_contrib::fsst)
+    target_link_libraries(dbms PRIVATE ch_contrib::fsst)
+    target_link_libraries(clickhouse_compression PRIVATE ch_contrib::fsst)
+endif()
+
 # Otherwise it will slow down stack traces printing too much.
 if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
     set_source_files_properties(
@@ -426,6 +431,10 @@ if (TARGET ch_contrib::crc32-vpmsum)
 
 if (TARGET ch_contrib::jwt-cpp)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
+endif()
+
+if (TARGET ch_contrib::fsst)
+    target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::fsst)
 endif()
 
 if (TARGET ch_contrib::ssh)

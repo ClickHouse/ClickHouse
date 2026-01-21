@@ -1,13 +1,17 @@
 #include <cstddef>
+#include <memory>
+
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnFSST.h>
 
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
+#include "DataTypes/Serializations/ISerialization.h"
 
 #include <IO/WriteHelpers.h>
 
@@ -17,6 +21,7 @@
 #include <DataTypes/Serializations/SerializationSparse.h>
 #include <DataTypes/Serializations/SerializationReplicated.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/SerializationStringFsst.h>
 
 #include <DataTypes/Serializations/SerializationDetached.h>
 
@@ -93,6 +98,8 @@ MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) c
     {
         if (kind == ISerialization::Kind::SPARSE)
             column = ColumnSparse::create(std::move(column));
+        else if(kind == ISerialization::Kind::FSST)
+            column = ColumnFSST::create(std::move(column))->assumeMutable();
         else if (kind == ISerialization::Kind::REPLICATED)
             column = ColumnReplicated::create(std::move(column), ColumnUInt8::create());
     }
@@ -332,6 +339,8 @@ SerializationPtr IDataType::getSerialization(
     {
         if (settings.canUseSparseSerialization(*this) && kind == ISerialization::Kind::SPARSE)
             serialization = std::make_shared<SerializationSparse>(serialization);
+        else if(kind == ISerialization::Kind::FSST)
+            serialization = std::make_shared<SerializationStringFsst>(serialization);
         else if (kind == ISerialization::Kind::DETACHED)
             serialization = std::make_shared<SerializationDetached>(serialization);
         else if (kind == ISerialization::Kind::REPLICATED)

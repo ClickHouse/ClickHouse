@@ -1,25 +1,25 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
-#include <Core/Types_fwd.h>
 #include <Core/SettingsEnums.h>
-#include <base/demangle.h>
-#include <Common/typeid_cast.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Core/Types_fwd.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <base/demangle.h>
+#include <Common/ThreadPool_fwd.h>
+#include <Common/typeid_cast.h>
 
-#include <boost/noncopyable.hpp>
-#include <unordered_map>
 #include <memory>
 #include <set>
+#include <unordered_map>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 class IDataType;
@@ -67,6 +67,7 @@ public:
         SPARSE = 1,
         DETACHED = 2,
         REPLICATED = 3,
+        FSST = 4,
     };
 
     /// We can have multiple serialization kinds created over each other.
@@ -187,6 +188,10 @@ public:
             ArrayElements,
             ArraySizes,
 
+            Fsst,
+            FsstOffsets,
+            FsstCompressed,
+
             StringSizes,
             InlinedStringSizes,
 
@@ -272,7 +277,10 @@ public:
         mutable bool visited = false;
 
         Substream() = default;
-        Substream(Type type_) : type(type_) {} /// NOLINT
+        Substream(Type type_)
+            : type(type_)
+        {
+        } /// NOLINT
         String toString() const;
     };
 
@@ -317,33 +325,25 @@ public:
         /// Serialization version that should be used for Object column.
         MergeTreeObjectSerializationVersion object_serialization_version = MergeTreeObjectSerializationVersion::V2;
         /// Serialization version that should be used for shared data inside Object column.
-        MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
+        MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version
+            = MergeTreeObjectSharedDataSerializationVersion::MAP;
         /// Number of buckets that should be used for Object shared data serialization.
         size_t object_shared_data_buckets = 1;
         /// Type of MergeTree data part we serialize/deserialize data from if any.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
     };
 
-    virtual void enumerateStreams(
-        EnumerateStreamsSettings & settings,
-        const StreamCallback & callback,
-        const SubstreamData & data) const;
+    virtual void enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const;
 
     /// Enumerate streams with default settings.
-    void enumerateStreams(
-        const StreamCallback & callback,
-        const DataTypePtr & type = nullptr,
-        const ColumnPtr & column = nullptr) const;
+    void enumerateStreams(const StreamCallback & callback, const DataTypePtr & type = nullptr, const ColumnPtr & column = nullptr) const;
 
     /// Similar to enumerateStreams, but also includes virtual substreams.
     /// For example, DataTypeString has a virtual `.size` substream, which is included here.
-    void enumerateAllStreams(
-        const StreamCallback & callback,
-        const DataTypePtr & type = nullptr,
-        const ColumnPtr & column = nullptr) const;
+    void enumerateAllStreams(const StreamCallback & callback, const DataTypePtr & type = nullptr, const ColumnPtr & column = nullptr) const;
 
-    using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
-    using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
+    using OutputStreamGetter = std::function<WriteBuffer *(const SubstreamPath &)>;
+    using InputStreamGetter = std::function<ReadBuffer *(const SubstreamPath &)>;
     using StreamMarkGetter = std::function<MarkInCompressedFile(const SubstreamPath &)>;
 
     struct SerializeBinaryBulkSettings
@@ -360,7 +360,7 @@ public:
 
         enum class ObjectAndDynamicStatisticsMode
         {
-            NONE,   /// Don't write statistics.
+            NONE, /// Don't write statistics.
             PREFIX, /// Write statistics in prefix.
             PREFIX_EMPTY, /// Write empty statistics in prefix.
             SUFFIX, /// Write statistics in suffix.
@@ -371,7 +371,8 @@ public:
         MergeTreeDynamicSerializationVersion dynamic_serialization_version = MergeTreeDynamicSerializationVersion::V2;
         MergeTreeObjectSerializationVersion object_serialization_version = MergeTreeObjectSerializationVersion::V2;
         /// Serialization version that should be used for shared data inside Object column.
-        MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version = MergeTreeObjectSharedDataSerializationVersion::MAP;
+        MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version
+            = MergeTreeObjectSharedDataSerializationVersion::MAP;
 
         /// Number of buckets to use in Object shared data serialization if corresponding version supports it.
         size_t object_shared_data_buckets = 1;
@@ -455,14 +456,14 @@ public:
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
     /// Column may be used only to retrieve the structure.
     virtual void serializeBinaryBulkStatePrefix(
-        const IColumn & /*column*/,
-        SerializeBinaryBulkSettings & /*settings*/,
-        SerializeBinaryBulkStatePtr & /*state*/) const {}
+        const IColumn & /*column*/, SerializeBinaryBulkSettings & /*settings*/, SerializeBinaryBulkStatePtr & /*state*/) const
+    {
+    }
 
     /// Call after serializeBinaryBulkWithMultipleStreams chain to finish serialization.
-    virtual void serializeBinaryBulkStateSuffix(
-        SerializeBinaryBulkSettings & /*settings*/,
-        SerializeBinaryBulkStatePtr & /*state*/) const {}
+    virtual void serializeBinaryBulkStateSuffix(SerializeBinaryBulkSettings & /*settings*/, SerializeBinaryBulkStatePtr & /*state*/) const
+    {
+    }
 
     using SubstreamsDeserializeStatesCache = std::unordered_map<String, DeserializeBinaryBulkStatePtr>;
 
@@ -470,7 +471,9 @@ public:
     virtual void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & /*settings*/,
         DeserializeBinaryBulkStatePtr & /*state*/,
-        SubstreamsDeserializeStatesCache * /*cache*/) const {}
+        SubstreamsDeserializeStatesCache * /*cache*/) const
+    {
+    }
 
     /** 'offset' and 'limit' are used to specify range.
       * limit = 0 - means no limit.
@@ -499,12 +502,8 @@ public:
       */
     virtual void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const;
     /// If rows_offset is not 0, the deserialization process will skip the first rows_offset rows.
-    virtual void deserializeBinaryBulk(
-        IColumn & column,
-        ReadBuffer & istr,
-        size_t rows_offset,
-        size_t limit,
-        double avg_value_size_hint) const;
+    virtual void
+    deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t rows_offset, size_t limit, double avg_value_size_hint) const;
 
     /** Serialization/deserialization of individual values.
       *
@@ -572,7 +571,8 @@ public:
     virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
     virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
     virtual bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
-    virtual void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t /*indent*/) const
+    virtual void serializeTextJSONPretty(
+        const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t /*indent*/) const
     {
         serializeTextJSON(column, row_num, ostr, settings);
     }
@@ -612,13 +612,18 @@ public:
     static String getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream = false);
     static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream = false);
 
-    static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
-    static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
-    static void addElementToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element);
+    static void
+    addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
+    static std::optional<std::pair<ColumnPtr, size_t>>
+    getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
+    static void
+    addElementToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element);
     static ISubstreamsCacheElement * getElementFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
-    static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state);
-    static DeserializeBinaryBulkStatePtr getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path);
+    static void addToSubstreamsDeserializeStatesCache(
+        SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state);
+    static DeserializeBinaryBulkStatePtr
+    getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path);
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 
@@ -649,7 +654,8 @@ public:
 
     /// If we have data in substreams cache for substream path from settings insert it
     /// into resulting column and return true, otherwise do nothing and return false.
-    static bool insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column);
+    static bool
+    insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column);
     /// Perform insertion from column found in substreams cache.
     static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert = false);
 
@@ -662,7 +668,8 @@ protected:
     template <typename State, typename StatePtr>
     static State * checkAndGetState(const StatePtr & state, const ISerialization * serialization);
 
-    [[noreturn]] void throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
+    [[noreturn]] void
+    throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
@@ -680,18 +687,18 @@ template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state, const ISerialization * serialization)
 {
     if (!state)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Got empty state for {}", demangle(typeid(*serialization).name()));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty state for {}", demangle(typeid(*serialization).name()));
 
     auto * state_concrete = typeid_cast<State *>(state.get());
     if (!state_concrete)
     {
         auto & state_ref = *state;
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
             "Invalid State for {}. Expected: {}, got {}",
-                demangle(typeid(*serialization).name()),
-                demangle(typeid(State).name()),
-                demangle(typeid(state_ref).name()));
+            demangle(typeid(*serialization).name()),
+            demangle(typeid(State).name()),
+            demangle(typeid(state_ref).name()));
     }
 
     return state_concrete;

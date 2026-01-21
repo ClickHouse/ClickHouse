@@ -30,6 +30,7 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Interpreters/RowRefs.h>
 #include <Common/SipHash.h>
+#include "Columns/ColumnFSST.h"
 
 using Hash = CityHash_v1_0_2::uint128;
 using HashState = SipHash;
@@ -883,6 +884,7 @@ template class IColumnHelper<ColumnDecimal<Time64>, ColumnFixedSizeHelper>;
 
 template class IColumnHelper<ColumnFixedString, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnString, IColumn>;
+template class IColumnHelper<ColumnFSST, IColumn>;
 
 template class IColumnHelper<ColumnLowCardinality, IColumn>;
 template class IColumnHelper<ColumnNullable, IColumn>;

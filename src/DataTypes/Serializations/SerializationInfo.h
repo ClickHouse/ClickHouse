@@ -36,6 +36,7 @@ public:
     {
         size_t num_rows = 0;
         size_t num_defaults = 0;
+        bool is_string_column = false;
 
         void add(const IColumn & column);
         void add(const Data & other);
