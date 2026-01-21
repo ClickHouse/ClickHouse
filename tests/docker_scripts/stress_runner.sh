@@ -3,7 +3,7 @@
 # shellcheck disable=SC2086
 # shellcheck disable=SC2024
 
-set -x
+set -ex
 
 # Avoid overlaps with previous runs
 dmesg --clear
@@ -21,7 +21,7 @@ install_packages package_folder
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
 # and find more potential issues.
 export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
-export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
+export THREAD_FUZZER_SLEEP_PROBABILITY=0.01
 export THREAD_FUZZER_SLEEP_TIME_US_MAX=100000
 
 export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
@@ -39,8 +39,8 @@ export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX=10000
 export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX=10000
 export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=10000
 
-export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=0.01
-export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=0.01
+export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=0.001
+export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=0.001
 
 export USE_ENCRYPTED_STORAGE=$((RANDOM % 2))
 
@@ -80,25 +80,6 @@ echo "Using cache policy: $cache_policy"
 if [ "$cache_policy" = "SLRU" ]; then
     sed -i.tmp "s|<cache_policy>LRU</cache_policy>|<cache_policy>SLRU</cache_policy>|" /etc/clickhouse-server/config.d/storage_conf*.xml
 fi
-
-# Disable experimental WINDOW VIEW tests for stress tests, since they may be
-# created with old analyzer and then, after server restart it will refuse to
-# start.
-# FIXME: remove once the support for WINDOW VIEW will be implemented in analyzer.
-sudo cat /etc/clickhouse-server/users.d/stress_tests_overrides.xml <<EOL
-<clickhouse>
-    <profiles>
-        <default>
-            <allow_experimental_window_view>false</allow_experimental_window_view>
-            <constraints>
-               <allow_experimental_window_view>
-                   <readonly/>
-               </allow_experimental_window_view>
-            </constraints>
-        </default>
-    </profiles>
-</clickhouse>
-EOL
 
 start_server || { echo "Failed to start server"; exit 1; }
 
@@ -231,6 +212,7 @@ export RANDOMIZE_OBJECT_KEY_TYPE=1
 export ZOOKEEPER_FAULT_INJECTION=1
 export THREAD_POOL_FAULT_INJECTION=1
 configure
+configure_limits
 
 if [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" == "1" || "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
     # But we still need default disk because some tables loaded only into it

@@ -4226,6 +4226,7 @@ def main(args):
 
     def create_common_database(args, db_name):
         create_database_retries = 0
+        last_err = None
         while create_database_retries < MAX_RETRIES:
             start_time = datetime.now()
             try:
@@ -4235,13 +4236,16 @@ def main(args):
                     f"{get_db_engine(args, db_name)}",
                     settings=get_create_database_settings(args, None),
                 )
-                break
+                return
             except HTTPError as e:
+                last_err = e
                 total_time = (datetime.now() - start_time).total_seconds()
                 if not need_retry(args, e.message, e.message, total_time):
                     break
             create_database_retries += 1
 
+        if last_err:
+            raise RuntimeError(f"Failed to create database {db_name} after {MAX_RETRIES} attempts") from last_err
     try:
         if args.database and args.database != "test":
             create_common_database(args, args.database)
@@ -4250,6 +4254,7 @@ def main(args):
     except Exception as e:
         print(f"Failed to create databases for tests: {e}")
         server_died.set()
+        raise
 
     if (
         args.collect_per_test_coverage
