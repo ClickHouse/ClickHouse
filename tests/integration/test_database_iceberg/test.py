@@ -33,6 +33,8 @@ from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
 from helpers.config_cluster import minio_secret_key
+from helpers.network import PartitionManager
+from helpers.client import QueryRuntimeException
 
 BASE_URL = "http://rest:8181/v1"
 BASE_URL_LOCAL = "http://localhost:8182/v1"
@@ -679,3 +681,24 @@ def test_not_specified_catalog_type(started_cluster):
     )
     with pytest.raises(Exception):
         node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+
+def test_require_metadata_access(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_require_metadata_access_{uuid.uuid4()}"
+    namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    full_table_name = f"{namespace}.{table_name}"
+    assert full_table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+
+    with started_cluster.pause_container("minio"):
+        with pytest.raises(QueryRuntimeException):
+            node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
