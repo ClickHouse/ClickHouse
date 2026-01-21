@@ -605,11 +605,12 @@ void LRUFileCachePriority::LRUIterator::invalidate()
         cache_priority->state->sub(entry->size, 1);
         entry->size = 0;
     }
-    entry->setInvalidatedFlag();
 
     LOG_TEST(cache_priority->log,
-             "Invalidated entry in LRU queue {}: {}",
+             "Invalidating entry in LRU queue {}: {}",
              entry->toString(), cache_priority->getApproxStateInfoForLog());
+
+    entry->setInvalidatedFlag();
 }
 
 void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CacheStateGuard::Lock & lock)
