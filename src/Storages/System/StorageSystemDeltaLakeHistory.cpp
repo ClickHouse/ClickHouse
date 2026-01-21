@@ -1,5 +1,6 @@
 #include <mutex>
 #include <Access/ContextAccess.h>
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
