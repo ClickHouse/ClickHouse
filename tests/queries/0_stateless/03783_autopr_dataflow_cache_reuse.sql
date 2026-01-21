@@ -1,3 +1,5 @@
+-- Tags: no-sanitizers
+
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128;
