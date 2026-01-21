@@ -10,6 +10,7 @@ set query_plan_join_swap_table = 0;
 set enable_analyzer = 1; -- Optimization requires LogicalJoinStep
 set enable_parallel_replicas = 0; -- Optimization requires LogicalJoinStep
 set parallel_hash_join_threshold = 0;
+SET enable_join_runtime_filters = 0;
 
 -- { echoOn }
 

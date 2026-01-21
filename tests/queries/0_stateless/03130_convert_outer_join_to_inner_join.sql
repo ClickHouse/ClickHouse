@@ -1,5 +1,6 @@
 SET enable_analyzer = 1;
 SET join_algorithm = 'hash';
+SET enable_join_runtime_filters = 0;
 
 DROP TABLE IF EXISTS test_table_1;
 CREATE TABLE test_table_1
