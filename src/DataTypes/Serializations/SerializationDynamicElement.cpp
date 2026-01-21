@@ -235,7 +235,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
                 }
                 else if (is_null_map_subcolumn)
                 {
-                    null_map->push_back(1);
+                    null_map->push_back(static_cast<UInt8>(1));
                 }
                 else
                 {
@@ -244,7 +244,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             }
             else if (is_null_map_subcolumn)
             {
-                null_map->push_back(1);
+                null_map->push_back(static_cast<UInt8>(1));
             }
             else
             {
