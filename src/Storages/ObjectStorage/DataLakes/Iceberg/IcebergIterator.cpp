@@ -373,10 +373,10 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             const auto & data_file_path = object_info->info.data_object_file_path_key;
             const auto & lower = position_delete->lower_reference_data_file_path;
             const auto & upper = position_delete->upper_reference_data_file_path;
-            bool is_within_bounds
+            bool can_contain_data_file_deletes
                 = (!lower.has_value() || lower.value() <= data_file_path) && (!upper.has_value() || upper.value() >= data_file_path);
             /// Skip position deletes that do not match the data file path.
-            if (!is_within_bounds)
+            if (!can_contain_data_file_deletes)
             {
                 LOG_DEBUG(
                     logger,
