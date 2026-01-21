@@ -395,6 +395,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 tuple_node->element_names = std::move(element_names_tmp);
                 tuple_node->element_names.shrink_to_fit();
             }
+            tuple_node->arguments->children.shrink_to_fit();
             tuple_node->children.push_back(tuple_node->arguments);
             node = tuple_node;
             return true;

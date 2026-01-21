@@ -54,19 +54,35 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
         bool has_names = !element_names.empty();
 
-        for (size_t i = 0; i < arguments->children.size(); ++i)
+        /// Pretty print with newlines for unnamed tuples (same as ASTDataType)
+        if (!settings.one_line && settings.print_pretty_type_names && !has_names)
         {
-            if (i > 0)
-                ostr << ", ";
-
-            /// Print element name if present and non-empty
-            if (has_names && i < element_names.size() && !element_names[i].empty())
+            ++frame.indent;
+            std::string indent_str = "\n" + std::string(4 * frame.indent, ' ');
+            for (size_t i = 0; i < arguments->children.size(); ++i)
             {
-                ostr << element_names[i] << ' ';
+                if (i != 0)
+                    ostr << ',';
+                ostr << indent_str;
+                arguments->children[i]->format(ostr, settings, state, frame);
             }
+        }
+        else
+        {
+            for (size_t i = 0; i < arguments->children.size(); ++i)
+            {
+                if (i > 0)
+                    ostr << ", ";
 
-            /// Print the type
-            arguments->children[i]->format(ostr, settings, state, frame);
+                /// Print element name if present and non-empty
+                if (has_names && i < element_names.size() && !element_names[i].empty())
+                {
+                    ostr << element_names[i] << ' ';
+                }
+
+                /// Print the type
+                arguments->children[i]->format(ostr, settings, state, frame);
+            }
         }
 
         ostr << ')';
