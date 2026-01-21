@@ -7,6 +7,7 @@
                 <access_key_id>clickhouse</access_key_id>
                 <secret_access_key>clickhouse</secret_access_key>
                 <key_compatibility_prefix>test</key_compatibility_prefix>
+                <!--key_template should not be used without enabled storage_metadata_write_full_object_key-->
                 <key_template>[a-z]{3}-first-random-part/new-style-prefix/[a-z]{3}/[a-z]{29}</key_template>
             </s3>
             <cached_s3>

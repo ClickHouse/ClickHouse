@@ -303,7 +303,7 @@ void ASTViewTargets::forEachPointerToChild(std::function<void(void**)> f)
             if (new_inner_engine != target.inner_engine.get())
             {
                 if (new_inner_engine)
-                    target.inner_engine = typeid_cast<std::shared_ptr<ASTStorage>>(getChild(*new_inner_engine));
+                    target.inner_engine = typeid_cast<std::shared_ptr<ASTStorage>>(new_inner_engine->ptr());
                 else
                     target.inner_engine.reset();
             }
@@ -311,40 +311,4 @@ void ASTViewTargets::forEachPointerToChild(std::function<void(void**)> f)
     }
 }
 
-void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, const ASTPtr & table_)
-{
-    for (auto & target : targets)
-    {
-        if (target.kind == kind)
-        {
-            target.table_ast = table_;
-            return;
-        }
-    }
-    if (table_)
-        targets.emplace_back(kind).table_ast = table_;
-}
-
-bool ASTViewTargets::hasTableASTWithQueryParams(ViewTarget::Kind kind) const
-{
-    for (const auto & target : targets)
-        if (target.kind == kind)
-            return target.table_ast != nullptr;
-    return false;
-}
-
-ASTPtr ASTViewTargets::getTableASTWithQueryParams(ViewTarget::Kind kind)
-{
-    for (const auto & target : targets)
-        if (target.kind == kind)
-            return target.table_ast;
-    return nullptr;
-}
-
-void ASTViewTargets::resetTableASTWithQueryParams(ViewTarget::Kind kind)
-{
-    for (auto & target : targets)
-        if (target.kind == kind)
-            target.table_ast.reset();
-}
 }
