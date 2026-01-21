@@ -57,9 +57,9 @@ struct BitpackingBlockCodecImpl<true>
         /// from the returned end pointer (in units of 16-byte vectors).
         __m128i * m128_out = reinterpret_cast<__m128i *>(out.data());
         __m128i * m128_out_end = simdpack_length(in.data(), in.size(), m128_out, max_bits);
-        size_t used = static_cast<size_t>(m128_out_end - m128_out) * sizeof(__m128i);
-        out = out.subspan(used);
-        return used;
+        size_t written_bytes = static_cast<size_t>(m128_out_end - m128_out) * sizeof(__m128i);
+        out = out.subspan(written_bytes);
+        return written_bytes;
     }
 
     static size_t decode(std::span<const std::byte> & in, size_t n, uint32_t max_bits, std::span<uint32_t> & out)
@@ -70,9 +70,9 @@ struct BitpackingBlockCodecImpl<true>
         /// from the returned end pointer (in units of 16-byte vectors).
         const __m128i * m128i_in = reinterpret_cast<const __m128i *>(in.data());
         const __m128i * m128i_in_end = simdunpack_length(m128i_in, n, out.data(), max_bits);
-        size_t used = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(__m128);
-        in = in.subspan(used);
-        return used;
+        size_t read_bytes = static_cast<size_t>(m128i_in_end - m128i_in) * sizeof(__m128);
+        in = in.subspan(read_bytes);
+        return read_bytes;
     }
 };
 #else
@@ -81,8 +81,8 @@ static constexpr bool has_simdcomp = false;
 
 #endif
 
-/// Generic implementation on non-x86/SSE platforms (simdcomp sadly requires SSE2 and provides no fallback on its own).
-/// It aims to be 100% bit-compatible to simdcomp's output.
+/// Generic implementation for non-x86/SSE platforms (simdcomp sadly requires SSE2 and provides no fallback on its own).
+/// It aims to produce a 100% binary-compatible output as simdcomp.
 template<>
 struct BitpackingBlockCodecImpl<false>
 {
@@ -150,9 +150,9 @@ struct BitpackingBlockCodecImpl<false>
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
         char * data_out = out.data();
         char * data_out_end = packingLength(in.data(), in.size(), data_out, max_bits);
-        size_t used = static_cast<size_t>(data_out_end - data_out);
-        out = out.subspan(used);
-        return used;
+        size_t written_bytes = static_cast<size_t>(data_out_end - data_out);
+        out = out.subspan(written_bytes);
+        return written_bytes;
     }
 
     /// Decodes (unpacks) a SIMDComp-compatible bitpacked byte stream back into 32-bit integers.
@@ -169,9 +169,9 @@ struct BitpackingBlockCodecImpl<false>
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid bit width {} bits must be in [0, 32].", max_bits);
         const char * data_in = reinterpret_cast<const char *>(in.data());
         const char * data_in_end = unpackingLength(data_in, n, out.data(), max_bits);
-        size_t used = static_cast<size_t>(data_in_end - data_in);
-        in = in.subspan(used);
-        return used;
+        size_t read_bytes = static_cast<size_t>(data_in_end - data_in);
+        in = in.subspan(read_bytes);
+        return read_bytes;
     }
 
     [[maybe_unused]] static uint32_t maskForBits(size_t bits) noexcept

@@ -1,18 +1,18 @@
--- Tags: no-random-mergetree-settings, no-random-settings 
+-- Tags: no-random-mergetree-settings, no-random-settings
+-- ^^ Prevent the data sizes from varying with random parameters.
 
--- This test case is intended to validate the data size in two scenarios: with posting list compression enabled and with it disabled.
--- Disable the randomized settings to prevent the data size from varying with random parameters, which could otherwise cause the test to fail.
+-- This test validates the storage size of the text index without and with posting list compression.
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
-SET max_insert_threads=1;
+SET max_insert_threads = 1;
 SET max_block_size = 65536;
 SET min_insert_block_size_rows = 0;
 SET min_insert_block_size_bytes = 0;
 
 DROP TABLE IF EXISTS tab_bitpacking;
-DROP TABLE IF EXISTS table_uncompressed;
+DROP TABLE IF EXISTS tab_uncompressed;
 
 CREATE TABLE tab_bitpacking
 (
@@ -27,7 +27,7 @@ ENGINE = MergeTree
 ORDER BY ts
 SETTINGS
    min_rows_for_wide_part = 0,
-   min_bytes_for_wide_part= 0,
+   min_bytes_for_wide_part = 0,
    index_granularity = 8192,
    index_granularity_bytes = 0,
    enable_block_offset_column = 0,
@@ -41,7 +41,7 @@ SETTINGS
    serialization_info_version = 'basic',
    auto_statistics_types = 'minmax';
 
-CREATE TABLE table_uncompressed
+CREATE TABLE tab_uncompressed
 (
     ts DateTime CODEC(LZ4),
     str String CODEC(LZ4),
@@ -53,7 +53,7 @@ ENGINE = MergeTree
 ORDER BY ts
 SETTINGS
    min_rows_for_wide_part = 0,
-   min_bytes_for_wide_part= 0,
+   min_bytes_for_wide_part = 0,
    index_granularity = 8192,
    index_granularity_bytes = 0,
    enable_block_offset_column = 0,
@@ -75,7 +75,7 @@ SELECT
             'cc') AS str
 FROM numbers(1024000);
 
-INSERT INTO table_uncompressed
+INSERT INTO tab_uncompressed
 SELECT
     '2026-01-09 11:00:00',
     multiIf(number % 3 = 0, 'aa',
@@ -91,7 +91,7 @@ SELECT
             'noise') AS str
 FROM numbers(512);
 
-INSERT INTO table_uncompressed
+INSERT INTO tab_uncompressed
 SELECT
     '2026-01-09 13:00:00',
     multiIf(number < 129, 'tail129',
@@ -105,7 +105,7 @@ SELECT
     if(number < 1003, 'mid1003', 'noise') AS str
 FROM numbers(1500);
 
-INSERT INTO table_uncompressed
+INSERT INTO tab_uncompressed
 SELECT
     '2026-01-09 15:00:00',
     if(number < 1003, 'mid1003', 'noise') AS str
@@ -119,7 +119,7 @@ SELECT
             'noise') AS str
 FROM numbers(2000);
 
-INSERT INTO table_uncompressed
+INSERT INTO tab_uncompressed
 SELECT
     '2026-01-09 17:00:00',
     multiIf(number IN (0, 777), 'rare2',
@@ -128,17 +128,16 @@ SELECT
 FROM numbers(2000);
 
 OPTIMIZE TABLE tab_bitpacking FINAL;
-OPTIMIZE TABLE table_uncompressed FINAL;
+OPTIMIZE TABLE tab_uncompressed FINAL;
 
--- Compare the size of the inverted index for the same dataset with compression enabled versus disabled.
-
+-- Compare the size of the text index for the same dataset with vs. without compression.
 SELECT
-    `table`,
-    sum(rows) AS `rows-count`,
-    sum(secondary_indices_compressed_bytes) AS `text-index-bytes`
+    'table',
+    sum(rows),
+    sum(secondary_indices_compressed_bytes)
 FROM system.parts
-WHERE database = currentDatabase() AND active AND table IN ('tab_bitpacking','table_uncompressed')
-GROUP BY `table`;
+WHERE database = currentDatabase() AND active AND table IN ('tab_bitpacking','tab_uncompressed')
+GROUP BY table;
 
 DROP TABLE tab_bitpacking;
-DROP TABLE table_uncompressed;
+DROP TABLE tab_uncompressed;

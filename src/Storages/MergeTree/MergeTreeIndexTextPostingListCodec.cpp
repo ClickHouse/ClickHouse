@@ -125,13 +125,13 @@ void PostingListCodecBitpackingImpl::serializeTo(WriteBuffer & out, TokenPosting
 
 namespace
 {
-void encodeU8(uint8_t x, std::span<char> & out)
+void writeByte(uint8_t x, std::span<char> & out)
 {
     out[0] = static_cast<char>(x);
     out = out.subspan(1);
 }
 
-uint8_t decodeU8(std::span<const std::byte> & in)
+uint8_t readByte(std::span<const std::byte> & in)
 {
     auto v = static_cast<uint8_t>(in[0]);
     in = in.subspan(1);
@@ -157,7 +157,7 @@ void PostingListCodecBitpackingImpl::encodeBlock(std::span<uint32_t> segment)
     size_t offset = compressed_data.size();
     compressed_data.resize(compressed_data.size() + needed_bytes_with_header);
     std::span<char> compressed_data_span(compressed_data.data() + offset, needed_bytes_with_header);
-    encodeU8(static_cast<uint8_t>(max_bits), compressed_data_span);
+    writeByte(static_cast<uint8_t>(max_bits), compressed_data_span);
     auto used_memory = BitpackingBlockCodec::encode(segment, max_bits, compressed_data_span);
 
     if (used_memory != needed_bytes_without_header || !compressed_data_span.empty())
@@ -182,7 +182,7 @@ void PostingListCodecBitpackingImpl::decodeBlock(
     if (in.empty())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
 
-    uint8_t bits = decodeU8(in);
+    uint8_t bits = readByte(in);
     if (bits > 32)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
     current_segment.resize(count);

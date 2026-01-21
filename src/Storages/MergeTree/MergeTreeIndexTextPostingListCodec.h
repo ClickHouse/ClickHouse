@@ -44,6 +44,7 @@ class PostingListCodecBitpackingImpl
 
         void write(WriteBuffer & out) const
         {
+            /// At the moment, bitpacking is the only supported codec, could add more codecs in future
             writeVarUInt(static_cast<uint8_t>(IPostingListCodec::Type::Bitpacking), out);
             writeVarUInt(payload_bytes, out);
             writeVarUInt(cardinality, out);
@@ -131,13 +132,13 @@ public:
     void decode(ReadBuffer & in, PostingList & postings);
 
 private:
-    void clear()
+    void reset()
     {
-        resetCurrentSegment();
-
         total_row_ids = 0;
         compressed_data.clear();
         segment_descriptors.clear();
+
+        resetCurrentSegment();
     }
 
     void resetCurrentSegment()

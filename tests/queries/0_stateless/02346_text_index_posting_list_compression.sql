@@ -9,12 +9,12 @@
 -- and uncompressed tables return identical counts (and matches expected exact counts for key tokens),
 -- ensuring correctness across full blocks, tail blocks, and small-N cases.
 
-SET allow_experimental_full_text_index = 1;
+SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS tab_bitpacking;
-DROP TABLE IF EXISTS table_uncompressed;
+DROP TABLE IF EXISTS tab_uncompressed;
 
 CREATE TABLE tab_bitpacking
 (
@@ -28,7 +28,7 @@ CREATE TABLE tab_bitpacking
 ENGINE = MergeTree
 ORDER BY ts;
 
-CREATE TABLE table_uncompressed
+CREATE TABLE tab_uncompressed
 (
     ts DateTime,
     str String,
@@ -47,7 +47,7 @@ SELECT
             'cc') AS str
 FROM numbers(1024000);
 
-INSERT INTO table_uncompressed
+INSERT INTO tab_uncompressed
 SELECT
     '2026-01-09 11:00:00',
     multiIf(number % 3 = 0, 'aa',
@@ -63,7 +63,7 @@ SELECT
             'noise') AS str
 FROM numbers(512);
 
-INSERT INTO table_uncompressed
+INSERT INTO tab_uncompressed
 SELECT
     '2026-01-09 13:00:00',
     multiIf(number < 129, 'tail129',
@@ -77,7 +77,7 @@ SELECT
     if(number < 1003, 'mid1003', 'noise') AS str
 FROM numbers(1500);
 
-INSERT INTO table_uncompressed
+INSERT INTO tab_uncompressed
 SELECT
     '2026-01-09 15:00:00',
     if(number < 1003, 'mid1003', 'noise') AS str
@@ -91,7 +91,7 @@ SELECT
             'noise') AS str
 FROM numbers(2000);
 
-INSERT INTO table_uncompressed
+INSERT INTO tab_uncompressed
 SELECT
     '2026-01-09 17:00:00',
     multiIf(number IN (0, 777), 'rare2',
@@ -100,12 +100,12 @@ SELECT
 FROM numbers(2000);
 
 OPTIMIZE TABLE tab_bitpacking FINAL;
-OPTIMIZE TABLE table_uncompressed FINAL;
+OPTIMIZE TABLE tab_uncompressed FINAL;
 
 -- Validates that a very large/high-frequency posting list is decoded correctly by checking the count in the compressed table matches the uncompressed baseline.
 
 SELECT
-    (SELECT count() FROM table_uncompressed WHERE hasToken(str, 'aa')) AS count_uncompressed,
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'aa')) AS count_uncompressed,
     (SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'aa')) AS count_bitpacking,
     (count_bitpacking = count_uncompressed) AS ok_aa;
 
@@ -113,7 +113,7 @@ SELECT
 
 SELECT
     (SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'tail129')) AS count_bitpacking,
-    (SELECT count() FROM table_uncompressed WHERE hasToken(str, 'tail129')) AS count_uncompressed,
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'tail129')) AS count_uncompressed,
     count_bitpacking, count_uncompressed,
     (count_bitpacking = 129) AS ok_tail129,
     (count_bitpacking = count_uncompressed) AS ok_tail129_eq;
@@ -122,7 +122,7 @@ SELECT
 
 SELECT
     (SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'mid1003')) AS count_bitpacking,
-    (SELECT count() FROM table_uncompressed WHERE hasToken(str, 'mid1003')) AS count_uncompressed,
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'mid1003')) AS count_uncompressed,
     (count_bitpacking = 1003) AS ok_mid1003,
     (count_bitpacking = count_uncompressed) AS ok_mid1003_eq;
 
@@ -130,7 +130,7 @@ SELECT
 
 SELECT
     (SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'single')) AS count_bitpacking,
-    (SELECT count() FROM table_uncompressed WHERE hasToken(str, 'single')) AS count_uncompressed,
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'single')) AS count_uncompressed,
     (count_bitpacking = 1) AS ok_single,
     (count_bitpacking = count_uncompressed) AS ok_single_eq;
 
@@ -138,7 +138,7 @@ SELECT
 
 SELECT
     (SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'rare2')) AS count_bitpacking,
-    (SELECT count() FROM table_uncompressed WHERE hasToken(str, 'rare2')) AS count_uncompressed,
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'rare2')) AS count_uncompressed,
     (count_bitpacking = 2) AS ok_rare2,
     (count_bitpacking = count_uncompressed) AS ok_rare2_eq;
 
@@ -146,9 +146,9 @@ SELECT
 
 SELECT
     (SELECT count() FROM tab_bitpacking WHERE hasToken(str, 'rare5')) AS count_bitpacking,
-    (SELECT count() FROM table_uncompressed WHERE hasToken(str, 'rare5')) AS count_uncompressec,
+    (SELECT count() FROM tab_uncompressed WHERE hasToken(str, 'rare5')) AS count_uncompressec,
     (count_bitpacking = 5) AS ok_rare5,
     (count_bitpacking = count_uncompressec) AS ok_rare5_eq;
 
 DROP TABLE tab_bitpacking;
-DROP TABLE table_uncompressed;
+DROP TABLE tab_uncompressed;
