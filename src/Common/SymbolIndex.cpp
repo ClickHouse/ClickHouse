@@ -1,13 +1,15 @@
-#include <base/defines.h>
+#if defined(__ELF__) && !defined(OS_FREEBSD)
 
-#include <base/MemorySanitizer.h>
-#include <base/hex.h>
-#include <base/sort.h>
-#include <Common/MemoryTrackerDebugBlockerInThread.h>
-#include <Common/SymbolIndex.h>
+#    include <base/MemorySanitizer.h>
+#    include <base/hex.h>
+#    include <base/sort.h>
+#    include <Common/SymbolIndex.h>
 
 #include <algorithm>
 #include <optional>
+#include <cassert>
+
+#include <link.h>
 
 #include <filesystem>
 
@@ -54,22 +56,6 @@ Otherwise you will get only exported symbols from program headers.
 
 */
 
-extern "C" struct dl_phdr_info
-{
-    uint64_t addr;
-    const char * name;
-    const ElfProgramHeader * phdr;
-    uint16_t phnum;
-    uint64_t adds;
-    uint64_t subs;
-    size_t tls_modid;
-    void * tls_data;
-};
-
-using DynamicLinkingProgramHeaderInfo = dl_phdr_info;
-
-extern "C" int dl_iterate_phdr(int (*)(DynamicLinkingProgramHeaderInfo *, size_t, void *), void *);
-
 
 namespace DB
 {
@@ -93,85 +79,86 @@ namespace
 /// It does not extract all the symbols (but only public - exported and used for dynamic linking),
 /// but will work if we cannot find or parse ELF files.
 void collectSymbolsFromProgramHeaders(
-    DynamicLinkingProgramHeaderInfo * info,
+    dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols)
 {
     /* Iterate over all headers of the current shared lib
      * (first call is for the executable itself)
      */
-    __msan_unpoison(&info->addr, sizeof(info->addr));
-    __msan_unpoison(&info->phnum, sizeof(info->phnum));
-    __msan_unpoison(&info->phdr, sizeof(info->phdr));
-    for (size_t header_index = 0; header_index < info->phnum; ++header_index)
+    __msan_unpoison(&info->dlpi_phnum, sizeof(info->dlpi_phnum));
+    __msan_unpoison(&info->dlpi_phdr, sizeof(info->dlpi_phdr));
+    for (size_t header_index = 0; header_index < info->dlpi_phnum; ++header_index)
     {
         /* Further processing is only needed if the dynamic section is reached
          */
-        __msan_unpoison(&info->phdr[header_index], sizeof(info->phdr[header_index]));
-        if (info->phdr[header_index].type != ProgramHeaderType::DYNAMIC)
+        __msan_unpoison(&info->dlpi_phdr[header_index], sizeof(info->dlpi_phdr[header_index]));
+        if (info->dlpi_phdr[header_index].p_type != PT_DYNAMIC)
             continue;
 
         /* Get a pointer to the first entry of the dynamic section.
          * It's address is the shared lib's address + the virtual address
          */
-        const ElfDyn * dyn_begin = reinterpret_cast<const ElfDyn *>(info->addr + info->phdr[header_index].vaddr);
+        const ElfW(Dyn) * dyn_begin = reinterpret_cast<const ElfW(Dyn) *>(info->dlpi_addr + info->dlpi_phdr[header_index].p_vaddr);
         __msan_unpoison(&dyn_begin, sizeof(dyn_begin));
 
         /// For unknown reason, addresses are sometimes relative sometimes absolute.
-        auto correct_address = [](uint64_t base, uint64_t ptr)
+        auto correct_address = [](ElfW(Addr) base, ElfW(Addr) ptr)
         {
             return ptr > base ? ptr : base + ptr;
         };
 
         /* Iterate over all entries of the dynamic section until the
          * end of the symbol table is reached. This is indicated by
-         * an entry with d_tag == ProgramHeaderType::Null.
+         * an entry with d_tag == DT_NULL.
          */
 
         size_t sym_cnt = 0;
         {
-            for (const auto * it = dyn_begin; ; ++it)
+            const auto * it = dyn_begin;
+            while (true)
             {
                 __msan_unpoison(it, sizeof(*it));
-
-                if (it->tag == DynamicTableTag::Null)
+                if (it->d_tag != DT_NULL)
                     break;
 
-                if (it->tag != DynamicTableTag::GNU_HASH)
-                    continue;
+                ElfW(Addr) base_address = correct_address(info->dlpi_addr, it->d_un.d_ptr);
 
-                uint64_t base_address = correct_address(info->addr, it->ptr);
-
-                /// This code based on Musl-libc.
-
-                const uint32_t * buckets = nullptr;
-                const uint32_t * hashval = nullptr;
-
-                const uint32_t * hash = reinterpret_cast<const uint32_t *>(base_address);
-
-                /// Unpoison the GNU hash table header (4 uint32_t values: nbuckets, symoffset, bloom_size, maskwords)
-                __msan_unpoison(hash, 4 * sizeof(uint32_t));
-
-                buckets = hash + 4 + (hash[2] * sizeof(size_t) / 4);
-
-                __msan_unpoison(buckets, hash[0] * sizeof(buckets[0]));
-
-                for (uint32_t i = 0; i < hash[0]; ++i)
-                    sym_cnt = std::max<size_t>(sym_cnt, buckets[i]);
-
-                if (sym_cnt)
+                if (it->d_tag == DT_GNU_HASH)
                 {
-                    sym_cnt -= hash[1];
-                    hashval = buckets + hash[0] + sym_cnt;
+                    /// This code based on Musl-libc.
 
-                    do
+                    const uint32_t * buckets = nullptr;
+                    const uint32_t * hashval = nullptr;
+
+                    const ElfW(Word) * hash = reinterpret_cast<const ElfW(Word) *>(base_address);
+
+                    __msan_unpoison(&hash[0], sizeof(*hash));
+                    __msan_unpoison(&hash[1], sizeof(*hash));
+                    __msan_unpoison(&hash[2], sizeof(*hash));
+
+                    buckets = hash + 4 + (hash[2] * sizeof(size_t) / 4);
+
+                    __msan_unpoison(buckets, hash[0] * sizeof(buckets[0]));
+
+                    for (ElfW(Word) i = 0; i < hash[0]; ++i)
+                        sym_cnt = std::max<size_t>(sym_cnt, buckets[i]);
+
+                    if (sym_cnt)
                     {
-                        __msan_unpoison(hashval, sizeof(*hashval));
-                        ++sym_cnt;
+                        sym_cnt -= hash[1];
+                        hashval = buckets + hash[0] + sym_cnt;
+                        __msan_unpoison(&hashval, sizeof(hashval));
+                        do
+                        {
+                            ++sym_cnt;
+                        }
+                        while (!(*hashval++ & 1));
                     }
-                    while (!(*hashval++ & 1));
+
+                    break;
                 }
 
-                break;
+                ++it;
             }
         }
 
@@ -179,11 +166,11 @@ void collectSymbolsFromProgramHeaders(
             continue;
 
         const char * strtab = nullptr;
-        for (const auto * it = dyn_begin; it->tag != DynamicTableTag::Null; ++it)
+        for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
-            uint64_t base_address = correct_address(info->addr, it->ptr);
+            ElfW(Addr) base_address = correct_address(info->dlpi_addr, it->d_un.d_ptr);
 
-            if (it->tag == DynamicTableTag::STRTAB)
+            if (it->d_tag == DT_STRTAB)
             {
                 strtab = reinterpret_cast<const char *>(base_address);
                 break;
@@ -193,38 +180,38 @@ void collectSymbolsFromProgramHeaders(
         if (!strtab)
             continue;
 
-        for (const auto * it = dyn_begin; it->tag != DynamicTableTag::Null; ++it)
+        for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
-            uint64_t base_address = correct_address(info->addr, it->ptr);
+            ElfW(Addr) base_address = correct_address(info->dlpi_addr, it->d_un.d_ptr);
 
-            if (it->tag == DynamicTableTag::SYMTAB)
+            if (it->d_tag == DT_SYMTAB)
             {
                 /* Get the pointer to the first entry of the symbol table */
-                const ElfSymbol * elf_sym = reinterpret_cast<const ElfSymbol *>(base_address);
+                const ElfW(Sym) * elf_sym = reinterpret_cast<const ElfW(Sym) *>(base_address);
 
                 __msan_unpoison(elf_sym, sym_cnt * sizeof(*elf_sym));
 
                 /* Iterate over the symbol table */
-                for (uint32_t sym_index = 0; sym_index < uint32_t(sym_cnt); ++sym_index)
+                for (ElfW(Word) sym_index = 0; sym_index < ElfW(Word)(sym_cnt); ++sym_index)
                 {
                     /* Get the name of the sym_index-th symbol.
                      * This is located at the address of st_name relative to the beginning of the string table.
                      */
-                    const char * sym_name = &strtab[elf_sym[sym_index].name];
+                    const char * sym_name = &strtab[elf_sym[sym_index].st_name];
                     __msan_unpoison_string(sym_name);
 
                     if (!sym_name)
                         continue;
 
                     SymbolIndex::Symbol symbol;
-                    symbol.offset_begin = reinterpret_cast<const void *>(
-                        elf_sym[sym_index].value);
-                    symbol.offset_end = reinterpret_cast<const void *>(
-                        elf_sym[sym_index].value + elf_sym[sym_index].size);
+                    symbol.address_begin = reinterpret_cast<const void *>(
+                        info->dlpi_addr + elf_sym[sym_index].st_value);
+                    symbol.address_end = reinterpret_cast<const void *>(
+                        info->dlpi_addr + elf_sym[sym_index].st_value + elf_sym[sym_index].st_size);
                     symbol.name = sym_name;
 
                     /// We are not interested in empty symbols.
-                    if (elf_sym[sym_index].size)
+                    if (elf_sym[sym_index].st_size)
                         symbols.push_back(symbol);
                 }
 
@@ -236,23 +223,20 @@ void collectSymbolsFromProgramHeaders(
 
 
 #if !defined USE_MUSL
-String getBuildIDFromProgramHeaders(DynamicLinkingProgramHeaderInfo * info)
+String getBuildIDFromProgramHeaders(dl_phdr_info * info)
 {
-    __msan_unpoison(&info->addr, sizeof(info->addr));
-    __msan_unpoison(&info->phnum, sizeof(info->phnum));
-    __msan_unpoison(&info->phdr, sizeof(info->phdr));
-    for (size_t header_index = 0; header_index < info->phnum; ++header_index)
+    __msan_unpoison(&info->dlpi_phnum, sizeof(info->dlpi_phnum));
+    __msan_unpoison(&info->dlpi_phdr, sizeof(info->dlpi_phdr));
+    for (size_t header_index = 0; header_index < info->dlpi_phnum; ++header_index)
     {
-        const ElfProgramHeader & phdr = info->phdr[header_index];
+        const ElfPhdr & phdr = info->dlpi_phdr[header_index];
         __msan_unpoison(&phdr, sizeof(phdr));
-        if (phdr.type != ProgramHeaderType::NOTE)
+        if (phdr.p_type != PT_NOTE)
             continue;
 
-        std::string_view view(reinterpret_cast<const char *>(info->addr + phdr.vaddr), phdr.memsz);
+        std::string_view view(reinterpret_cast<const char *>(info->dlpi_addr + phdr.p_vaddr), phdr.p_memsz);
         __msan_unpoison(view.data(), view.size());
-        String build_id = Elf::getBuildID(view.data(), view.size());
-        if (!build_id.empty()) // there may be multiple PT_NOTE segments
-            return build_id;
+        return Elf::getBuildID(view.data(), view.size());
     }
     return {};
 }
@@ -260,46 +244,48 @@ String getBuildIDFromProgramHeaders(DynamicLinkingProgramHeaderInfo * info)
 
 
 void collectSymbolsFromELFSymbolTable(
+    dl_phdr_info * info,
     const Elf & elf,
     const Elf::Section & symbol_table,
     const Elf::Section & string_table,
     std::vector<SymbolIndex::Symbol> & symbols)
 {
     /// Iterate symbol table.
-    const ElfSymbol * symbol_table_entry = reinterpret_cast<const ElfSymbol *>(symbol_table.begin());
-    const ElfSymbol * symbol_table_end = reinterpret_cast<const ElfSymbol *>(symbol_table.end());
+    const ElfSym * symbol_table_entry = reinterpret_cast<const ElfSym *>(symbol_table.begin());
+    const ElfSym * symbol_table_end = reinterpret_cast<const ElfSym *>(symbol_table.end());
 
     const char * strings = string_table.begin();
 
     for (; symbol_table_entry < symbol_table_end; ++symbol_table_entry)
     {
-        if (!symbol_table_entry->name
-            || !symbol_table_entry->value
-            || strings + symbol_table_entry->name >= elf.end())
+        if (!symbol_table_entry->st_name
+            || !symbol_table_entry->st_value
+            || strings + symbol_table_entry->st_name >= elf.end())
             continue;
 
         /// Find the name in strings table.
-        const char * symbol_name = strings + symbol_table_entry->name;
+        const char * symbol_name = strings + symbol_table_entry->st_name;
 
         if (!symbol_name)
             continue;
 
         SymbolIndex::Symbol symbol;
-        symbol.offset_begin = reinterpret_cast<const void *>(
-            symbol_table_entry->value);
-        symbol.offset_end = reinterpret_cast<const void *>(
-            symbol_table_entry->value + symbol_table_entry->size);
+        symbol.address_begin = reinterpret_cast<const void *>(
+            info->dlpi_addr + symbol_table_entry->st_value);
+        symbol.address_end = reinterpret_cast<const void *>(
+            info->dlpi_addr + symbol_table_entry->st_value + symbol_table_entry->st_size);
         symbol.name = symbol_name;
 
-        if (symbol_table_entry->size)
+        if (symbol_table_entry->st_size)
             symbols.push_back(symbol);
     }
 }
 
 
 bool searchAndCollectSymbolsFromELFSymbolTable(
+    dl_phdr_info * info,
     const Elf & elf,
-    SectionHeaderType section_header_type,
+    unsigned section_header_type,
     const char * string_table_name,
     std::vector<SymbolIndex::Symbol> & symbols)
 {
@@ -308,9 +294,9 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
 
     if (!elf.iterateSections([&](const Elf::Section & section, size_t)
         {
-            if (section.header.type == section_header_type)
+            if (section.header.sh_type == section_header_type)
                 symbol_table.emplace(section);
-            else if (section.header.type == SectionHeaderType::STRTAB && 0 == strcmp(section.name(), string_table_name))
+            else if (section.header.sh_type == SHT_STRTAB && 0 == strcmp(section.name(), string_table_name))
                 string_table.emplace(section);
 
             return (symbol_table && string_table);
@@ -319,31 +305,31 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
         return false;
     }
 
-    collectSymbolsFromELFSymbolTable(elf, *symbol_table, *string_table, symbols);
+    collectSymbolsFromELFSymbolTable(info, elf, *symbol_table, *string_table, symbols);
     return true;
 }
 
 
 void collectSymbolsFromELF(
-    DynamicLinkingProgramHeaderInfo * info,
+    dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols,
     std::vector<SymbolIndex::Object> & objects,
-    String & self_build_id)
+    String & build_id)
 {
     String object_name;
-    String build_id;
+    String our_build_id;
 
 #if defined (USE_MUSL)
     object_name = "/proc/self/exe";
-    build_id = Elf(object_name).getBuildID();
-    self_build_id = build_id;
+    our_build_id = Elf(object_name).getBuildID();
+    build_id = our_build_id;
 #else
     /// MSan does not know that the program segments in memory are initialized.
     __msan_unpoison(info, sizeof(*info));
-    __msan_unpoison_string(info->name);
+    __msan_unpoison_string(info->dlpi_name);
 
-    object_name = info->name;
-    build_id = getBuildIDFromProgramHeaders(info);
+    object_name = info->dlpi_name;
+    our_build_id = getBuildIDFromProgramHeaders(info);
 
     /// If the name is empty and there is a non-empty build-id - it's main executable.
     /// Find a elf file for the main executable and set the build-id.
@@ -351,15 +337,14 @@ void collectSymbolsFromELF(
     {
         object_name = "/proc/self/exe";
 
-        if (build_id.empty())
-            build_id = Elf(object_name).getBuildID();
+        if (our_build_id.empty())
+            our_build_id = Elf(object_name).getBuildID();
 
-        if (self_build_id.empty())
-            self_build_id = build_id;
+        if (build_id.empty())
+            build_id = our_build_id;
     }
 #endif
 
-    /// Note: we load ELF from file; this doesn't work for vdso because it's only present in memory.
     std::error_code ec;
     std::filesystem::path canonical_path = std::filesystem::canonical(object_name, ec);
 
@@ -418,10 +403,9 @@ void collectSymbolsFromELF(
 
     String file_build_id = object.elf->getBuildID();
 
-    if (build_id != file_build_id)
+    if (our_build_id != file_build_id)
     {
-        /// If the separate debuginfo binary doesn't correspond to the loaded binary, fallback to
-        /// the info in the loaded binary.
+        /// If debug info doesn't correspond to our binary, fallback to the info in our binary.
         if (object_name != canonical_path)
         {
             object_name = canonical_path;
@@ -429,23 +413,23 @@ void collectSymbolsFromELF(
 
             /// But it can still be outdated, for example, if executable file was deleted from filesystem and replaced by another file.
             file_build_id = object.elf->getBuildID();
-            if (build_id != file_build_id)
+            if (our_build_id != file_build_id)
                 return;
         }
         else
             return;
     }
 
-    object.address_begin = reinterpret_cast<const void *>(info->addr);
-    object.address_end = reinterpret_cast<const void *>(info->addr + object.elf->size());
+    object.address_begin = reinterpret_cast<const void *>(info->dlpi_addr);
+    object.address_end = reinterpret_cast<const void *>(info->dlpi_addr + object.elf->size());
     object.name = object_name;
     objects.push_back(std::move(object));
 
-    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(*objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols);
 #endif
 }
 
@@ -454,40 +438,25 @@ void collectSymbolsFromELF(
  * Is called by dl_iterate_phdr for every loaded shared lib until something
  * else than 0 is returned by one call of this function.
  */
-int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * data_ptr)
+int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
 {
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
     collectSymbolsFromProgramHeaders(info, data.symbols);
-    collectSymbolsFromELF(info, data.symbols, data.objects, data.self_build_id);
+    collectSymbolsFromELF(info, data.symbols, data.objects, data.build_id);
 
     /* Continue iterations */
     return 0;
 }
 
 
-const SymbolIndex::Symbol * find(const void * offset, const std::vector<SymbolIndex::Symbol> & vec)
-{
-    /// First range that has left boundary greater than address.
-
-    auto it = std::lower_bound(vec.begin(), vec.end(), offset,
-        [](const SymbolIndex::Symbol & symbol, const void * addr) { return symbol.offset_begin <= addr; });
-
-    if (it == vec.begin())
-        return nullptr;
-    --it; /// Last range that has left boundary less or equals than address.
-
-    if (offset >= it->offset_begin && offset < it->offset_end)
-        return &*it;
-    return nullptr;
-}
-
-const SymbolIndex::Object * find(const void * address, const std::vector<SymbolIndex::Object> & vec)
+template <typename T>
+const T * find(const void * address, const std::vector<T> & vec)
 {
     /// First range that has left boundary greater than address.
 
     auto it = std::lower_bound(vec.begin(), vec.end(), address,
-        [](const SymbolIndex::Object & object, const void * addr) { return object.address_begin <= addr; });
+        [](const T & symbol, const void * addr) { return symbol.address_begin <= addr; });
 
     if (it == vec.begin())
         return nullptr;
@@ -506,37 +475,18 @@ void SymbolIndex::load()
     dl_iterate_phdr(collectSymbols, &data);
 
     ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
-    ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.offset_begin < b.offset_begin; });
+    ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.address_begin < b.address_begin; });
 
     /// We found symbols both from loaded program headers and from ELF symbol tables.
     data.symbols.erase(std::unique(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b)
     {
-        return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end;
+        return a.address_begin == b.address_begin && a.address_end == b.address_end;
     }), data.symbols.end());
 }
 
 const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
 {
-    /// Symbols are stored as file offsets.
-    /// Callers may pass either absolute runtime addresses OR file offsets.
-    /// - Coverage  pass absolute addresses
-    /// - system.stack_trace (after PR #82809) already stores file offsets
-    ///
-    /// Strategy: Try to find containing object. If found, input is absolute address → convert.
-    /// If not found, assume input is already a file offset → use directly.
-
-    const Object * object = findObject(address);
-    const void * offset = address;
-
-    if (object)
-    {
-        /// Input is an absolute address, convert to file offset
-        offset = reinterpret_cast<const void *>(
-            reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(object->address_begin));
-    }
-    /// else: input is likely already a file offset, use it directly
-
-    return find(offset, data.symbols);
+    return find(address, data.symbols);
 }
 
 const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
@@ -544,18 +494,13 @@ const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
     return find(address, data.objects);
 }
 
-const SymbolIndex::Object * SymbolIndex::thisObject() const
-{
-    return findObject(reinterpret_cast<const void *>(+[]{}));
-}
-
 String SymbolIndex::getBuildIDHex() const
 {
     String build_id_hex;
-    build_id_hex.resize(data.self_build_id.size() * 2);
+    build_id_hex.resize(data.build_id.size() * 2);
 
     char * pos = build_id_hex.data();
-    for (auto c : data.self_build_id)
+    for (auto c : data.build_id)
     {
         writeHexByteUppercase(c, pos);
         pos += 2;
@@ -566,23 +511,10 @@ String SymbolIndex::getBuildIDHex() const
 
 const SymbolIndex & SymbolIndex::instance()
 {
-    /// To avoid recursive initialization of SymbolIndex we need to block debug
-    /// checks in MemoryTracker.
-    ///
-    /// Those debug checks capture the stacktrace for collecting big
-    /// allocation (> 16MiB), while SymbolIndex will do
-    /// ~25MiB, and so if exception will be thrown before SymbolIndex
-    /// initialized (this is the case for client/local, and no, we do not want
-    /// to initialize it explicitly, since this will increase startup time for
-    /// the client) and later during SymbolIndex initialization it will try to
-    /// initialize it one more time, and in debug build you will get pretty
-    /// nice error:
-    ///
-    ///   __cxa_guard_acquire detected recursive initialization: do you have a function-local static variable whose initialization depends on that function
-    ///
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     static SymbolIndex instance;
     return instance;
 }
 
 }
+
+#endif

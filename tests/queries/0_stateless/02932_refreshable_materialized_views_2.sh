@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine
+# Tags: atomic-database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -191,8 +191,8 @@ $CLICKHOUSE_CLIENT -q "
     drop table mid;"
 
 # Failing to create inner table.
-$CLICKHOUSE_CLIENT --create_table_empty_primary_key_by_default 0 -q "
-    create materialized view n refresh every 1 second (x Int64) engine MergeTree as select 1 as x from numbers(2); -- { serverError BAD_ARGUMENTS }"
+$CLICKHOUSE_CLIENT -q "
+    create materialized view n refresh every 1 second (x Int64) engine MergeTree as select 1 as x from numbers(2); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}"
 $CLICKHOUSE_CLIENT -q "
     create materialized view n refresh every 1 second (x Int64) engine MergeTree order by x as select 1 as x from numbers(2);
     drop table n;"

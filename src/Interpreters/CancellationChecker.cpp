@@ -70,7 +70,7 @@ bool CancellationChecker::removeQueryFromSet(QueryStatusPtr query)
     if (it == query_set.end())
         return false;
 
-    LOG_TEST(log, "Removing query {} from done tasks", query->getClientInfo().current_query_id);
+    LOG_TEST(log, "Removing query {} from done tasks", query->getInfo().query);
     query_set.erase(it);
     return true;
 }
@@ -79,7 +79,7 @@ void CancellationChecker::appendTask(const QueryStatusPtr & query, const Int64 t
 {
     if (timeout <= 0) // Avoid cases when the timeout is less or equal zero
     {
-        LOG_TEST(log, "Did not add the task because the timeout is 0, query_id: {}", query->getClientInfo().current_query_id);
+        LOG_TEST(log, "Did not add the task because the timeout is 0. Query: {}", query->getInfo().query);
         return;
     }
     std::unique_lock<std::mutex> lock(m);
@@ -125,7 +125,7 @@ void CancellationChecker::workerFunction()
                     log,
                     "Cancelling the task because of the timeout: {} ms, query_id: {}",
                     next_task_it->timeout,
-                    next_task_it->query->getClientInfo().current_query_id);
+                    next_task_it->query->getInfo().query);
 
                 tasks_to_cancel.push_back(*next_task_it);
                 query_set.erase(next_task_it);

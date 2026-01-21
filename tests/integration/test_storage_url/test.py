@@ -1,5 +1,4 @@
 import pytest
-import time
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -70,13 +69,13 @@ def test_url_cluster_with_named_collection():
 def test_table_function_url_access_rights():
     node1.query("CREATE USER OR REPLACE u1")
 
-    expected_error = "necessary to have the grant READ ON URL"
+    expected_error = "necessary to have the grant CREATE TEMPORARY TABLE, URL ON *.*"
     assert expected_error in node1.query_and_get_error(
         f"SELECT * FROM url('http://nginx:80/test_1', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')",
         user="u1",
     )
 
-    expected_error = "necessary to have the grant READ ON URL"
+    expected_error = "necessary to have the grant CREATE TEMPORARY TABLE, URL ON *.*"
     assert expected_error in node1.query_and_get_error(
         f"SELECT * FROM url('http://nginx:80/test_1', 'TSV')", user="u1"
     )
@@ -91,12 +90,12 @@ def test_table_function_url_access_rights():
         user="u1",
     ) == TSV([["column1", "UInt32"], ["column2", "UInt32"], ["column3", "UInt32"]])
 
-    expected_error = "necessary to have the grant READ ON URL"
+    expected_error = "necessary to have the grant URL ON *.*"
     assert expected_error in node1.query_and_get_error(
         f"DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')", user="u1"
     )
 
-    node1.query("GRANT READ ON URL TO u1")
+    node1.query("GRANT URL ON *.* TO u1")
     assert node1.query(
         f"DESCRIBE TABLE url('http://nginx:80/test_1', 'TSV')",
         user="u1",
@@ -111,11 +110,7 @@ def test_table_function_url_access_rights():
 
 @pytest.mark.parametrize("file_format", ["Parquet", "CSV", "TSV", "JSONEachRow"])
 def test_file_formats(file_format):
-    # Generate random URL with timestamp to make test idempotent
-    # Note: we could have just deleted a file using requests.delete(url)
-    # But it seems we can do it only from inside the container (this is not reliable)
-    timestamp = int(time.time() * 1000000)
-    url = f"http://nginx:80/{file_format}_file_{timestamp}"
+    url = f"http://nginx:80/{file_format}_file"
 
     values = ", ".join([f"({i}, {i + 1}, {i + 2})" for i in range(100)])
     node1.query(

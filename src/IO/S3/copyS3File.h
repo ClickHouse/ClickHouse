@@ -31,7 +31,7 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 ///
 /// read_settings - is used for throttling in case of native copy is not possible
 void copyS3File(
-    std::shared_ptr<const S3::Client> src_s3_client,
+    const std::shared_ptr<const S3::Client> & src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
