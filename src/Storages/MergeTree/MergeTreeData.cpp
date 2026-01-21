@@ -21,14 +21,12 @@
 #include <Common/escapeForFileName.h>
 #include <Common/noexcept_scope.h>
 #include <Common/quoteString.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
@@ -38,7 +36,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/hasNullable.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
@@ -61,7 +58,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTHelpers.h>
@@ -69,9 +65,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -82,11 +75,9 @@
 #include <Storages/Freeze.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
@@ -116,11 +107,9 @@
 
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
-#include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
-#include <azure/core/http/http.hpp>
 #endif
 
 
@@ -188,7 +177,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
-    extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool allow_suspicious_indices;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
@@ -209,6 +197,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsUInt64 max_table_size_to_drop;
+    extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
 }
 
@@ -825,7 +814,7 @@ std::map<std::string, DiskPtr> MergeTreeData::getDistinctDisksForParts(const Dat
 ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator(
     const RangesInDataParts & parts, ContextPtr local_context) const
 {
-    if (!local_context->getSettingsRef()[Setting::allow_statistics_optimize])
+    if (!local_context->getSettingsRef()[Setting::use_statistics])
         return nullptr;
 
     if (parts.empty())
@@ -4324,8 +4313,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 {
                     throw Exception(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree setting "
-                        "'alter_column_secondary_index_mode' to change this behaviour",
+                        "The ALTER of the column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree "
+                        "setting 'alter_column_secondary_index_mode' to change this behaviour",
                         backQuoteIfNeed(command.column_name),
                         it->second);
                 }
@@ -4357,13 +4346,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     boost::join(column_to_subcolumns_used_in_keys[command.column_name], ", "));
             }
 
-            /// Don't check columns in indices or projections here. If required columns of indices
-            /// or projections get dropped, it will be checked later in AlterCommands::apply. This
-            /// allows projections with * to drop columns. One example can be found in
-            /// 02691_drop_column_with_projections_replicated.sql.
-
             if (!command.clear)
             {
+                /// Don't check columns in indices or projections here. If required columns of indices
+                /// or projections get dropped, it will be checked later in AlterCommands::apply. This
+                /// allows projections with * to drop columns. One example can be found in
+                /// 02691_drop_column_with_projections_replicated.sql.
                 if (!name_deps)
                     name_deps = getDependentViewsByColumn(local_context);
                 const auto & deps_mv = name_deps.value()[command.column_name];
@@ -4372,6 +4360,24 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                         "Trying to ALTER DROP column {} which is referenced by materialized view {}",
                         backQuoteIfNeed(command.column_name), toString(deps_mv));
+                }
+            }
+            else
+            {
+                /// In the case of CLEAR we want to respect `alter_column_secondary_index_mode` and we will throw if the setting is
+                /// set to `THROW` or `COMPATIBILITY` (since before this would have failed in the mutation) and
+                /// we will clear the index files (as we do with the column files) in any other case
+                if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
+                {
+                    if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+                    {
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "The ALTER CLEAR of the column '{}' is forbidden because it is used by the index '{}'. Check the "
+                            "MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
+                            backQuoteIfNeed(command.column_name),
+                            it->second);
+                    }
                 }
             }
 
@@ -4737,9 +4743,9 @@ std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const Stora
     return std::make_pair(new_statistics_types.safeGet<String>(), true);
 }
 
-void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name, const DiskPtr & disk)
+void MergeTreeData::PartsTemporaryRename::addPart(const String & part_name, const String & old_dir, const String & new_dir, const DiskPtr & disk)
 {
-    old_and_new_names.push_back({old_name, new_name, disk});
+    old_and_new_names.push_back({part_name, old_dir, new_dir, disk});
 }
 
 void MergeTreeData::PartsTemporaryRename::tryRenameAll()
@@ -4749,11 +4755,11 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
     {
         try
         {
-            const auto & [old_name, new_name, disk] = old_and_new_names[i];
-            if (old_name.empty() || new_name.empty())
+            const auto & [_, old_dir, new_dir, disk] = old_and_new_names[i];
+            if (old_dir.empty() || new_dir.empty())
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Empty part name. Most likely it's a bug.");
             const auto full_path = fs::path(storage.relative_data_path) / source_dir;
-            disk->moveDirectory(fs::path(full_path) / old_name, fs::path(full_path) / new_name);
+            disk->moveDirectory(fs::path(full_path) / old_dir, fs::path(full_path) / new_dir);
         }
         catch (...)
         {
@@ -4772,15 +4778,15 @@ void MergeTreeData::PartsTemporaryRename::rollBackAll()
 
     std::exception_ptr first_exception;
 
-    for (const auto & [old_name, new_name, disk] : old_and_new_names)
+    for (const auto & [_, old_dir, new_dir, disk] : old_and_new_names)
     {
-        if (old_name.empty())
+        if (old_dir.empty())
             continue;
 
         try
         {
             const String full_path = fs::path(storage.relative_data_path) / source_dir;
-            disk->moveFile(fs::path(full_path) / new_name, fs::path(full_path) / old_name);
+            disk->moveFile(fs::path(full_path) / new_dir, fs::path(full_path) / old_dir);
         }
         catch (...)
         {
@@ -6453,7 +6459,7 @@ Pipe MergeTreeData::alterPartition(
                 break;
 
             case PartitionCommand::ATTACH_PARTITION:
-                current_command_results = attachPartition(command.partition, metadata_snapshot, command.part, query_context);
+                current_command_results = attachPartition(command, metadata_snapshot, query_context);
                 break;
             case PartitionCommand::MOVE_PARTITION:
             {
@@ -6504,7 +6510,7 @@ Pipe MergeTreeData::alterPartition(
             break;
 
             case PartitionCommand::FETCH_PARTITION:
-                fetchPartition(command.partition, metadata_snapshot, command.from_zookeeper_path, command.part, query_context);
+                fetchPartition(command.partition, metadata_snapshot, command.from_path, command.part, query_context);
                 break;
 
             case PartitionCommand::FREEZE_PARTITION:
@@ -7524,7 +7530,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
         String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
         validateDetachedPartName(part_name);
         auto disk = getDiskForDetachedPart(part_name);
-        renamed_parts.addPart(part_name, "deleting_" + part_name, disk);
+        renamed_parts.addPart(part_name, part_name, "deleting_" + part_name, disk);
     }
     else
     {
@@ -7536,52 +7542,52 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
         for (const auto & part_info : detached_parts)
             if (part_info.valid_name && (all || part_info.getPartitionId() == partition_id)
                 && part_info.prefix != "attaching" && part_info.prefix != "deleting")
-                renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name, part_info.disk);
+                renamed_parts.addPart(part_info.dir_name, part_info.dir_name, "deleting_" + part_info.dir_name, part_info.disk);
     }
 
     LOG_DEBUG(log, "Will drop {} detached parts.", renamed_parts.old_and_new_names.size());
 
     renamed_parts.tryRenameAll();
 
-    for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
+    for (auto & [_, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
-        bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / new_name / "", old_name);
-        LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_name, keep_shared);
-        old_name.clear();
+        bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / new_dir / "", old_dir);
+        LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_dir, keep_shared);
+        old_dir.clear();
     }
 }
 
-MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
-        ContextPtr local_context, PartsTemporaryRename & renamed_parts)
+MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr local_context, PartsTemporaryRename & renamed_parts)
 {
     const fs::path source_dir = DETACHED_DIR_NAME;
 
     /// Let's compose a list of parts that should be added.
-    if (attach_part)
+    if (command.part)
     {
-        const String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-        validateDetachedPartName(part_id);
-        if (temporary_parts.contains(source_dir / part_id))
+        const String part_name = command.partition->as<ASTLiteral &>().value.safeGet<String>();
+        const String part_directory = command.from_path.empty() ? part_name : command.from_path;
+        validateDetachedPartName(part_name);
+
+        if (temporary_parts.contains(source_dir / part_directory))
         {
-            LOG_WARNING(log, "Will not try to attach part {} because its directory is temporary, "
-                             "probably it's being detached right now", part_id);
+            LOG_WARNING(log, "Will not try to attach part {} (from directory {}) because its directory is temporary, "
+                             "probably it's being detached right now", part_name, part_directory);
+            return {};
         }
-        else
-        {
-            auto disk = getDiskForDetachedPart(part_id);
-            renamed_parts.addPart(part_id, "attaching_" + part_id, disk);
-        }
+
+        auto disk = getDiskForDetachedPart(part_directory);
+        renamed_parts.addPart(part_name, part_directory, "attaching_" + part_name, disk);
     }
     else
     {
         String partition_id;
-        if (partition->as<ASTPartition>()->all)
+        if (command.partition->as<ASTPartition>()->all)
         {
             LOG_DEBUG(log, "Looking for parts for all partitions in {}", source_dir);
         }
         else
         {
-            partition_id = getPartitionIDFromQuery(partition, local_context);
+            partition_id = getPartitionIDFromQuery(command.partition, local_context);
             LOG_DEBUG(log, "Looking for parts for partition {} in {}", partition_id, source_dir);
         }
 
@@ -7634,7 +7640,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
                 part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
                     fs::path(relative_data_path) / source_dir / ("inactive_" + part_info.dir_name));
             else
-                renamed_parts.addPart(part_info.dir_name, "attaching_" + part_info.dir_name, part_info.disk);
+                renamed_parts.addPart(part_info.dir_name, part_info.dir_name, "attaching_" + part_info.dir_name, part_info.disk);
         }
     }
 
@@ -7646,12 +7652,12 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
 
-    for (const auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
+    for (const auto & [part_name, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
-        LOG_DEBUG(log, "Checking part {}", new_name);
+        LOG_DEBUG(log, "Checking part {}", new_dir);
 
-        auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + old_name, disk);
-        auto part = getDataPartBuilder(old_name, single_disk_volume, source_dir / new_name, getReadSettings())
+        auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
+        auto part = getDataPartBuilder(part_name, single_disk_volume, source_dir / new_dir, getReadSettings())
             .withPartFormatFromDisk()
             .build();
 
@@ -8065,7 +8071,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock & lock)
         buf << ".";
         if (!detached_precommitted_parts.empty())
         {
-            buf << " Rollbacking parts state to temporary and removing from working set:";
+            buf << " Rolling back parts state to temporary and removing from working set:";
             for (const auto & part : detached_precommitted_parts)
                 buf << " " << part->getDataPartStorage().getPartDirectory();
             buf << ".";
@@ -8605,14 +8611,8 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
 
         auto callback = [&](const auto & substream_path)
         {
-            String stream_name;
             auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
-
-            if (settings[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_name.size() > settings[MergeTreeSetting::max_file_name_length])
-                stream_name = sipHash128String(full_stream_name);
-            else
-                stream_name = full_stream_name;
-
+            String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
             column_streams.emplace(stream_name, full_stream_name);
         };
 
@@ -10532,5 +10532,14 @@ void decrementMutationsCounters(MutationCounters & mutation_counters, const Muta
 {
     updateMutationsCounters(mutation_counters, commands, -1);
 }
+
+String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSettings & storage_settings, const IDataPartStorage * data_part_storage)
+{
+    if ((data_part_storage && data_part_storage->isCaseInsensitive()) || (storage_settings[MergeTreeSetting::replace_long_file_name_to_hash] && file_name.size() > storage_settings[MergeTreeSetting::max_file_name_length]))
+        return sipHash128String(file_name);
+
+    return file_name;
+}
+
 
 }

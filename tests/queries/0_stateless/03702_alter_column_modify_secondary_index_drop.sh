@@ -1,6 +1,7 @@
 #!/bin/bash
 # Tags: no-parallel-replicas
 # no-parallel-replicas: The EXPLAIN output is completely different
+# add_minmax_index_for_numeric_columns=0: Changes the plan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,9 +21,8 @@ wait_for_mutations() {
 
 client() {
     # SET enable_analyzer=1; -- Different EXPLAIN output
-    # SET use_skip_indexes_on_data_read = 0; -- Need it for proper explain
     # SET use_query_condition_cache = 0; -- Need it because we rerun some queries (with different settings) and we want to execute the full analysis
-    $CLICKHOUSE_CLIENT --echo --enable-analyzer=1 --use_skip_indexes_on_data_read=0 --use_query_condition_cache=0 --mutations_sync=2 --alter_sync=2 -q "$1"
+    $CLICKHOUSE_CLIENT --echo --enable-analyzer=1 --use_query_condition_cache=0 --mutations_sync=2 --alter_sync=2 -q "$1"
 }
 
 declare -a table_settings=("min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0" "min_bytes_for_full_part_storage ='1G'")
@@ -46,7 +46,7 @@ do
     ENGINE = MergeTree()
     ORDER BY id
     PARTITION BY id
-    SETTINGS alter_column_secondary_index_mode = 'drop', ${part_type_setting};
+    SETTINGS alter_column_secondary_index_mode = 'drop', add_minmax_index_for_numeric_columns=0, ${part_type_setting};
 
     INSERT INTO test_table VALUES (1, '10', '127.0.0.1'), (2, '20', '127.0.0.2'), (3, '300', '127.0.0.3');
 

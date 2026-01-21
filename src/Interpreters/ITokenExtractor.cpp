@@ -178,13 +178,15 @@ std::tuple<UInt64, UInt64, std::optional<UInt64>> TokenizerFactory::extractSpars
 
 void TokenizerFactory::isAllowedTokenizer(std::string_view tokenizer, const std::vector<String> & allowed_tokenizers, std::string_view caller_name)
 {
+    chassert(!allowed_tokenizers.empty());
+
     if (std::ranges::find(allowed_tokenizers, tokenizer) == allowed_tokenizers.end())
     {
         WriteBufferFromOwnString buf;
         for (size_t i = 0; i < allowed_tokenizers.size(); ++i)
         {
             if (i < allowed_tokenizers.size() - 1)
-                buf << "'" << allowed_tokenizers[0] << "', "; /// asserted not empty in constructor
+                buf << "'" << allowed_tokenizers[i] << "', ";
             else
                 buf << "and '" << allowed_tokenizers[i] << "'";
         }
