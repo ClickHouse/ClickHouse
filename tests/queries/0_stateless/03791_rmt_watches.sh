@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
+# Tags: long, no-parallel, no-shared-merge-tree
+# - SMT/MinIO cannot handle this amount of parts in reasonable time
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
-
-# Tags: long, no-parallel
 
 # Regression test for too many watches registered for the same path in ZK during waiting for log entries (on TRUNCATE in this test)
 
