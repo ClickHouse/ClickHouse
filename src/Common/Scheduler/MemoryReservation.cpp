@@ -1,8 +1,27 @@
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/Scheduler/IAllocationQueue.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <base/defines.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event MemoryReservationAdmitMicroseconds;
+    extern const Event MemoryReservationIncreaseMicroseconds;
+    extern const Event MemoryReservationIncreases;
+    extern const Event MemoryReservationDecreases;
+    extern const Event MemoryReservationKilled;
+    extern const Event MemoryReservationFailed;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryReservationApproved;
+    extern const Metric MemoryReservationDemand;
+}
 
 namespace DB
 {
@@ -16,13 +35,21 @@ namespace ErrorCodes
 MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_)
     : ResourceAllocation(*link.allocation_queue, id_)
     , reserved_size(reserved_size_)
+    , approved_increment(CurrentMetrics::MemoryReservationApproved, 0)
+    , demand_increment(CurrentMetrics::MemoryReservationDemand, 0)
 {
     std::unique_lock lock(mutex);
     chassert(link.allocation_queue);
     actual_size = reserved_size;
     queue.insertAllocation(*this, reserved_size);
     if (reserved_size > 0)
+    {
         increase_enqueued = true;
+        demand_increment.add(reserved_size);
+        auto admit_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationAdmitMicroseconds);
+        cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size; });
+        throwIfNeeded();
+    }
 }
 
 MemoryReservation::~MemoryReservation()
@@ -67,7 +94,11 @@ void MemoryReservation::syncWithMemoryTracker(const MemoryTracker * memory_track
         syncWithScheduler();
 
         // Do not wait on decrease, but wait on increase to make sure memory is reserved when requested
-        cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size; });
+        if (actual_size > allocated_size)
+        {
+            auto increase_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationIncreaseMicroseconds);
+            cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size; });
+        }
         throwIfNeeded();
     }
 }
@@ -85,8 +116,10 @@ void MemoryReservation::syncWithScheduler()
     if (!fail_reason && actual_size > allocated_size && !increase_enqueued)
     {
         chassert(!removed);
-        queue.increaseAllocation(*this, actual_size - allocated_size);
+        ResourceCost increase_size = actual_size - allocated_size;
+        queue.increaseAllocation(*this, increase_size);
         increase_enqueued = true;
+        demand_increment.add(increase_size);
     }
     else if (!fail_reason && actual_size < allocated_size && !decrease_enqueued)
     {
@@ -102,6 +135,7 @@ void MemoryReservation::syncWithScheduler()
 
 void MemoryReservation::killAllocation(const std::exception_ptr & reason)
 {
+    ProfileEvents::increment(ProfileEvents::MemoryReservationKilled);
     std::unique_lock lock(mutex);
     kill_reason = reason;
     cv.notify_all(); // notify syncWithMemoryTracker
@@ -109,17 +143,22 @@ void MemoryReservation::killAllocation(const std::exception_ptr & reason)
 
 void MemoryReservation::increaseApproved(const IncreaseRequest & increase)
 {
+    ProfileEvents::increment(ProfileEvents::MemoryReservationIncreases);
     std::unique_lock lock(mutex);
     allocated_size += increase.size;
+    approved_increment.add(increase.size);
+    demand_increment.sub(increase.size);
     increase_enqueued = false;
     syncWithScheduler();
 }
 
 void MemoryReservation::decreaseApproved(const DecreaseRequest & decrease)
 {
+    ProfileEvents::increment(ProfileEvents::MemoryReservationDecreases);
     std::unique_lock lock(mutex);
     chassert(allocated_size >= decrease.size);
     allocated_size -= decrease.size;
+    approved_increment.sub(decrease.size);
     decrease_enqueued = false;
     if (decrease.removing_allocation)
         removed = true;
@@ -128,9 +167,13 @@ void MemoryReservation::decreaseApproved(const DecreaseRequest & decrease)
 
 void MemoryReservation::allocationFailed(const std::exception_ptr & reason)
 {
+    ProfileEvents::increment(ProfileEvents::MemoryReservationFailed);
     std::unique_lock lock(mutex);
     fail_reason = reason;
     removed = true; // failed allocation are auto-removed by the scheduler
+    if (increase_enqueued)
+        demand_increment.sub(actual_size - allocated_size);
+    approved_increment.sub(allocated_size);
     allocated_size = 0;
     cv.notify_all(); // notify dtor (e.g. for removal of pending allocation or queue purge) or syncWithMemoryTracker
 }

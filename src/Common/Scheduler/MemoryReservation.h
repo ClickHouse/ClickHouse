@@ -2,6 +2,7 @@
 
 #include <Common/Scheduler/ResourceAllocation.h>
 #include <Common/Scheduler/ResourceLink.h>
+#include <Common/CurrentMetrics.h>
 
 #include <memory>
 #include <mutex>
@@ -54,6 +55,10 @@ private:
     bool removed = false;
     ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
     ResourceCost actual_size = 0; // real size of the resource used by the allocation
+
+    /// Introspection
+    CurrentMetrics::Increment approved_increment;
+    CurrentMetrics::Increment demand_increment;
 };
 
 using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
