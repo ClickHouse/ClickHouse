@@ -1,17 +1,22 @@
-Test Data integrity
-0
-0
+Test Data integrity (Positive and Exception numbers)
+f64 errors:	0
+f32 errors:	0
+alp64	1.9444
+alp32	1.2333
+Test Data integrity (Positive and Negative numbers)
+f64 errors:	0
+f32 errors:	0
+alp64	2.3015
+alp32	1.3417
+Test Special Float Values (NaN, Inf, Zeros, Subnormals, Boundary)
+f64 errors:	0
+f32 errors:	0
+alp64	2.3923
+alp32	1.503
 Compare compression ratio with Gorilla codec (higher is better)
-alp64	51214	100000	1.9526
-alp32	55218	60000	1.0866
-gorilla64	102563	100000	0.975
-gorilla32	62559	60000	0.9591
-Test incompressible data compression ratio
-0
-0
-alp32	20184	60000	2.9727
-base64	100050	100000	0.9995
-alp64	100064	100000	0.9994
-base32	60050	60000	0.9992
+alp64	1.9526
+alp32	1.0866
+gorilla64	0.975
+gorilla32	0.9591
 Test different precisions in one data series compression ratio
-alp64	44538	81920	1.8393
+alp64	1.8393

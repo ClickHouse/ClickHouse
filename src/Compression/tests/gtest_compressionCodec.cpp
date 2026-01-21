@@ -1438,28 +1438,135 @@ TEST(T64Test, TranscodeRawInput)
     }
 }
 
-auto SequentialALPGenerator = []<typename T>()
+auto ALPSequentialGenerator = []<typename T>(T base = T{0}, T exception = T{0}, double exception_probability = 0)
 {
-    return [=](auto i)
+    std::default_random_engine random_engine(17); /// NOLINT
+    std::uniform_real_distribution<> random_distribution(0.0, 1.0);
+
+    return [=](auto i) mutable
     {
-        T trend = static_cast<T>(0.1) * static_cast<T>(i);
+        auto random_value = random_distribution(random_engine);
+        if (random_value < exception_probability)
+            return exception;
+
+        T trend = base + static_cast<T>(0.1) * static_cast<T>(i);
         T oscillation = std::sin(trend);
         T spike = i % 10 == 0 ? static_cast<T>(M_PI) : static_cast<T>(0);
         T value = trend + oscillation + spike;
         value = std::ceil(value * static_cast<T>(100.0)) / static_cast<T>(100.0);
+
         return value;
     };
 };
 
-INSTANTIATE_TEST_SUITE_P(SequentialALP,
+INSTANTIATE_TEST_SUITE_P(ALPSequentialPyramid,
     CodecTest,
     ::testing::Combine(
         ::testing::Values(
             Codec("ALP")
         ),
         ::testing::ValuesIn(
-              generatePyramidOfSequences<Float32>(1035, G(SequentialALPGenerator.template operator()<Float32>()))
-            + generatePyramidOfSequences<Float64>(1034, G(SequentialALPGenerator.template operator()<Float64>()))
+              generatePyramidOfSequences<Float64>(2049, G(ALPSequentialGenerator.template operator()<Float64>()))
+            + generatePyramidOfSequences<Float32>(2049, G(ALPSequentialGenerator.template operator()<Float32>()))
+            + generatePyramidOfSequences<Float64>(2049, G(ALPSequentialGenerator.template operator()<Float64>(-2.0)))
+            + generatePyramidOfSequences<Float32>(2049, G(ALPSequentialGenerator.template operator()<Float32>(-2.0f)))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPFloat64CompressionRatio,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("ALP", 0.3)
+        ),
+        ::testing::Values(
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 1024),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 1025),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 2048),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 2049)
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPFloat32CompressionRatio,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("ALP", 0.5)
+        ),
+        ::testing::Values(
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 1024),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 1025),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 2048),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 2049)
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPSpecialFloats,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("ALP", 0.9)
+        ),
+        ::testing::Values(
+            // Test positive infinity
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::infinity(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::infinity(), 0.1))),
+
+            // Test negative infinity
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -std::numeric_limits<Float64>::infinity(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -std::numeric_limits<Float32>::infinity(), 0.1))),
+
+            // Test NaN
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.1))),
+
+            // Test negative zero
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::bit_cast<Float64>(0x8000000000000000ULL), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::bit_cast<Float32>(0x80000000U), 0.1))),
+
+            // Test max float
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::max(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::max(), 0.1))),
+
+            // Test min float
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::min(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::min(), 0.1))),
+
+            // Test ALP upper
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 922337203685477478.0, 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 922337203685477478.0f, 0.1))),
+
+            // Test ALP lower
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -922337203685477478.0, 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -922337203685477478.0f, 0.1)))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPSameValues,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(
+            Codec("ALP")
+        ),
+        ::testing::Values(
+            generateSeq<Float64>(G(SameValueGenerator(2.2))),
+            generateSeq<Float32>(G(SameValueGenerator(2.2f))),
+
+            generateSeq<Float64>(G(SameValueGenerator(-2.2))),
+            generateSeq<Float32>(G(SameValueGenerator(-2.2f))),
+
+            generateSeq<Float64>(G(SameValueGenerator(0.0))),
+            generateSeq<Float32>(G(SameValueGenerator(0.0f))),
+
+            generateSeq<Float64>(G(SameValueGenerator(M_PIf64))),
+            generateSeq<Float32>(G(SameValueGenerator(M_PIf32))),
+
+            generateSeq<Float64>(G(SameValueGenerator(std::numeric_limits<Float64>::quiet_NaN()))),
+            generateSeq<Float32>(G(SameValueGenerator(std::numeric_limits<Float32>::quiet_NaN())))
         )
     )
 );
