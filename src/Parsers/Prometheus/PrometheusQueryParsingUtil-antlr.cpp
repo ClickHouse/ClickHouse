@@ -715,7 +715,7 @@ namespace
         /// Returns the result type of a function.
         ResultType getFunctionResultType(std::string_view function_name)
         {
-            if (function_name == "scalar")
+            if (function_name == "scalar" || function_name == "time" || function_name == "pi")
                 return ResultType::SCALAR;
             else
                 return ResultType::INSTANT_VECTOR;
