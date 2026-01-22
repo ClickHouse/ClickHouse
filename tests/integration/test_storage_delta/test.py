@@ -364,17 +364,37 @@ def default_upload_directory(
 
 
 def create_initial_data_file(
-    cluster, node, query, table_name, compression_method="none", node_name="node1"
+    cluster,
+    node,
+    query,
+    table_name,
+    compression_method="none",
+    node_name="node1",
+    settings=None,
 ):
+    settings = settings or {}
+
+    merged_settings = {
+        "output_format_parquet_compression_method": compression_method,
+        "s3_truncate_on_insert": 1,
+        **settings,
+    }
+
+    settings_sql = ",\n            ".join(
+        f"{k}='{v}'" if isinstance(v, str) else f"{k}={v}"
+        for k, v in merged_settings.items()
+    )
+
     node.query(
         f"""
         INSERT INTO TABLE FUNCTION
             file('{table_name}.parquet')
         SETTINGS
-            output_format_parquet_compression_method='{compression_method}',
-            s3_truncate_on_insert=1 {query}
+            {settings_sql}
+        {query}
         FORMAT Parquet"""
     )
+
     user_files_path = os.path.join(
         os.path.join(os.path.dirname(os.path.realpath(__file__))),
         f"{cluster.instances_dir_name}/{node_name}/database/user_files",
@@ -1220,7 +1240,7 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
         instance,
         "SELECT toUInt64(number), toString(number) FROM numbers(100)",
         TABLE_NAME,
-        node_name=instance.name,
+        node_name=instance.name
     )
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
@@ -1254,7 +1274,15 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
 
     instance.query("SYSTEM FLUSH LOGS")
 
-    assert count == int(
+    # Parquet reader v3 reads very small files suboptimally when readBigAt is enabled
+    # (it reads last 64kb for parquet metadata unconditionally
+    # assuming most of it will be metadata, see Reader::readFileMetaData)
+    # So we end up reading the same data two times here with parquet reader v3.
+    # We cannot disable input_format_parquet_use_native_reader_v3 because
+    # this setting is deprecated.
+    # So we cannot check count == CachedReadBufferReadFromCacheBytes,
+    # but instead check that CachedReadBufferReadFromCacheBytes is no more than 2 times more :(
+    assert count * 2 > int(
         instance.query(
             f"SELECT ProfileEvents['CachedReadBufferReadFromCacheBytes'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
