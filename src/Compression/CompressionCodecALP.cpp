@@ -647,6 +647,11 @@ private:
             const T exception_value = unalignedLoadLittleEndian<T>(source + sizeof(UInt16));
             source += sizeof(UInt16) + sizeof(T);
 
+            if (unlikely(exception_index >= float_count))
+                throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                    "Cannot decompress ALP-encoded data. Invalid exception index. Index: {}, float count: {}.",
+                    exception_index, float_count);
+
             const UInt32 dest_offset = exception_index * sizeof(T);
             unalignedStoreLittleEndian<T>(dest_start + dest_offset, exception_value);
         }

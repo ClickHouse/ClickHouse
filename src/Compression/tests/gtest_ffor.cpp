@@ -15,7 +15,7 @@ template <typename T>
 T calculateMaxValue(T min, UInt8 bits)
 {
     constexpr UInt8 max_bits = sizeof(T) * 8;
-    return bits == max_bits ? ~T{0} : (T{1} << bits) - T{1} + min;
+    return bits == max_bits ? ~T{0} : static_cast<T>((T{1} << bits) - T{1} + min);
 }
 
 template <typename T, UInt16 values = Compression::FFOR::DEFAULT_VALUES>
