@@ -54,9 +54,9 @@ public:
 
         // Calculate Mean
         Float64 sum = 0.0;
-        for (size_t i = 0; i < size; ++i) 
+        for (size_t i = 0; i < size; ++i)
             sum += static_cast<Float64>(src[i]);
-        
+
         Float64 mean = sum / size;
 
         // Calculate Variance
@@ -90,7 +90,7 @@ public:
     {
         const IColumn & col_data_raw = col_array.getData();
         const auto * col_data_specific = checkAndGetColumn<ColumnVector<Element>>(&col_data_raw);
-        const PaddedPODArray<Element> & data = col_data_specific->getData(); 
+        const PaddedPODArray<Element> & data = col_data_specific->getData();
         const ColumnArray::Offsets & offsets = col_array.getOffsets();
 
         auto res_data_col = ColumnFloat64::create();
@@ -154,10 +154,10 @@ The result is an array of Float64 where the i-th element is the correlation coef
         {"Linear", "SELECT arrayAutocorrelation([1, 2, 3, 4, 5]);", "[1, 0.4, -0.1, -0.4, -0.4]"},
         {"Symmetric", "SELECT arrayAutocorrelation([10, 20, 10]);", "[1, 0.5, -1]"}
     };
-    
+
     FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    
+
     FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayAutocorrelation>(documentation);
