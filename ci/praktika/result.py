@@ -1060,7 +1060,8 @@ class _ResultS3:
     def upload_result_files_to_s3(
         cls, result: Result, s3_subprefix="", _uploaded_file_link=None
     ):
-        s3_subprefix = "/".join([s3_subprefix, Utils.normalize_string(result.name)])
+        parts = [s3_subprefix.strip("/"), Utils.normalize_string(result.name).strip("/")]
+        s3_subprefix = "/".join([p for p in parts if p])
         if not _uploaded_file_link:
             _uploaded_file_link = {}
 
@@ -1118,6 +1119,8 @@ class _ResultS3:
                 env = _Environment.get()
                 base_s3_prefix = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{s3_subprefix}".replace("//", "/")
 
+                print(f"INFO: Uploading {len(asset_paths)} assets to {base_s3_prefix} in parallel")
+                print(asset_paths)
                 with ThreadPoolExecutor(max_workers=10) as executor:
                     for asset in asset_paths:
                         rel_path = asset.relative_to(common_root)
