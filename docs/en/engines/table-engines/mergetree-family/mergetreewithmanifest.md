@@ -14,7 +14,6 @@ The `MergeTreeWithManifest` engine inherits from [MergeTree](/engines/table-engi
 ## Key features
 
 - **Fast startup**: Avoids filesystem scans by using manifest storage to track part metadata
-- **Part UUID support**: Automatically enables `assign_part_uuids` setting to ensure each part has a unique identifier
 - **Crash recovery**: Supports redo logic for incomplete operations (PreCommit, PreRemove, PreDetach states)
 - **Full MergeTree compatibility**: Inherits all features and capabilities from the base `MergeTree` engine
 
@@ -52,7 +51,7 @@ The manifest storage is created in a dedicated directory under the server's main
 When creating a `MergeTreeWithManifest` table, the same [clauses](/engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) are required as when creating a `MergeTree` table.
 
 :::note
-The `assign_part_uuids` setting is automatically enabled when using `MergeTreeWithManifest`. This ensures that each data part has a unique UUID, which is required for manifest tracking.
+The `assign_part_uuids` setting is automatically enabled when using `MergeTreeWithManifest`. This is required because the manifest storage uses part UUIDs as keys to track part metadata. The `assign_part_uuids` setting is a standard MergeTree setting that can also be enabled manually for regular MergeTree tables.
 :::
 
 ## Usage example {#usage-example}
@@ -120,7 +119,7 @@ On restart, these states are automatically resolved by either completing the ope
 ## Limitations {#limitations}
 
 - Requires RocksDB to be available in the build (manifest storage type `'rocksdb'`)
-- All parts must have UUIDs assigned (automatically handled by the engine)
+- The `assign_part_uuids` setting is automatically enabled (required for manifest tracking)
 - Manifest storage must be accessible and properly initialized
 
 ## See also {#see-also}

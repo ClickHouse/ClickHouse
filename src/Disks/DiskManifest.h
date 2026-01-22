@@ -169,4 +169,4 @@ private:
     DataSourceDescription data_source_description;
 };
 
-} // namespace DB
+}

@@ -97,4 +97,4 @@ inline void throwIfNotOKOrNotFound(ManifestStatus status, const String & operati
     }
 }
 
-} // namespace DB
+}

@@ -12,6 +12,20 @@ node = cluster.add_instance("node", stay_alive=True)
 def started_cluster():
     try:
         cluster.start()
+        try:
+            node.query("DROP TABLE IF EXISTS __test_rocksdb_check SYNC")
+            node.query("""
+                CREATE TABLE __test_rocksdb_check (
+                    id UInt32
+                ) ENGINE = MergeTreeWithManifest('rocksdb')
+                ORDER BY id
+            """)
+            node.query("DROP TABLE __test_rocksdb_check SYNC")
+        except Exception as e:
+            error_msg = str(e)
+            if "NOT_IMPLEMENTED" in error_msg or "without RocksDB" in error_msg or "USE_ROCKSDB" in error_msg:
+                pytest.skip("RocksDB is not available in this build")
+            raise
         yield cluster
     finally:
         cluster.shutdown()

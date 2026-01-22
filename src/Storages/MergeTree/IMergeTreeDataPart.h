@@ -361,6 +361,7 @@ public:
 
         [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
         [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
+
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
         static void appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage);

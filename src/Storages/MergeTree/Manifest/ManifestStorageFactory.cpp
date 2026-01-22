@@ -24,12 +24,12 @@ ManifestStoragePtr ManifestStorageFactory::create(const String & type_str, const
 #if USE_ROCKSDB
         return ManifestStorageRocksDB::create(dir);
 #else
-        (void)dir; // Suppress unused parameter warning
+        (void)dir;
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "RocksDB support is not compiled. Rebuild with USE_ROCKSDB=1");
 #endif
     }
 
-    (void)dir; // Suppress unused parameter warning when type is not rocksdb
+    (void)dir;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported manifest storage type: {}.", type_str);
 }
 
@@ -55,4 +55,4 @@ std::vector<String> ManifestStorageFactory::getSupportedTypes()
     return types;
 }
 
-} // namespace DB
+}

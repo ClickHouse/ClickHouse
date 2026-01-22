@@ -5,7 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <IO/WriteBufferFromOwnString.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {

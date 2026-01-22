@@ -10,7 +10,6 @@
 #include <rocksdb/iterator.h>
 #include <rocksdb/options.h>
 #include <memory>
-#include <mutex>
 #include <atomic>
 
 namespace DB
@@ -32,24 +31,11 @@ private:
     std::unique_ptr<rocksdb::Iterator> it_;
 };
 
-/**
- * RocksDB implementation of IManifestStorage.
- * 
- * Uses only the default ColumnFamily, ignoring other CFs.
- * Key format: {uuid} (e.g., "550e8400-e29b-41d4-a716-446655440000")
- */
 class ManifestStorageRocksDB : public IManifestStorage
 {
 public:
-    /**
-     * Create a RocksDB manifest storage instance
-     * @param dir - directory path for RocksDB
-     * @return manifest storage instance
-     * @throws Exception if RocksDB initialization fails
-     */
     static ManifestStoragePtr create(const String & dir);
 
-    // IManifestStorage interface
     ManifestStatus put(const String & key, const String & value) override;
     ManifestStatus get(const String & key, String & value) const override;
     ManifestStatus del(const String & key) override;
@@ -86,9 +72,9 @@ private:
     std::unique_ptr<rocksdb::DB> rocksdb_;
     rocksdb::ColumnFamilyHandle * default_cf_handle_;
     std::atomic<bool> shutdown_called_{false};
-    String db_dir_;  // Store the database directory path for drop()
+    String db_dir_;
 };
 
-} // namespace DB
+}
 
-#endif // USE_ROCKSDB
+#endif
