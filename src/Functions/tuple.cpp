@@ -1,5 +1,5 @@
 #include <Functions/tuple.h>
-#include <Interpreters/Context.h>
+
 #include <Core/Settings.h>
 
 namespace DB
@@ -26,7 +26,7 @@ Tuples are normally used as intermediate values for an argument of IN operators,
 The function implements the operator `(x, y, ...)`.
 )",
         .examples{{"typical", "SELECT tuple(1, 2)", "(1,2)"}},
-        .category = FunctionDocumentation::Category::Tuple});
+        .category{"Tuples"}});
 }
 
 }

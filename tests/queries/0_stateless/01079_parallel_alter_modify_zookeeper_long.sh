@@ -35,9 +35,8 @@ INITIAL_SUM=$($CLICKHOUSE_CLIENT --query "SELECT SUM(value1) FROM concurrent_alt
 # between each other, so can be executed concurrently.
 function correct_alter_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
     TYPES=(Float64 String UInt8 UInt32)
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         TYPE=${TYPES[$RANDOM % ${#TYPES[@]} ]}
         $CLICKHOUSE_CLIENT --query "ALTER TABLE concurrent_alter_mt_$REPLICA MODIFY COLUMN value1 $TYPE SETTINGS replication_alter_partitions_sync=0"; # additionaly we don't wait anything for more heavy concurrency
@@ -50,12 +49,12 @@ function correct_alter_thread()
 # insert queries will fail sometime because of wrong types.
 function insert_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
+
     VALUES=(7.0 7 '7')
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 5 + 1))
         VALUE=${VALUES[$RANDOM % ${#VALUES[@]} ]}
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "INSERT INTO concurrent_alter_mt_$REPLICA VALUES($RANDOM, $VALUE, $VALUE)"
+        $CLICKHOUSE_CLIENT --query "INSERT INTO concurrent_alter_mt_$REPLICA VALUES($RANDOM, $VALUE, $VALUE)"
         sleep 0.$RANDOM
     done
 }
@@ -63,40 +62,43 @@ function insert_thread()
 # Some select load, to be sure, that our selects work in concurrent execution with alters
 function select_thread()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]; do
+    while true; do
         REPLICA=$(($RANDOM % 5 + 1))
-        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT SUM(toUInt64(value1)) FROM concurrent_alter_mt_$REPLICA" 1>/dev/null
+        $CLICKHOUSE_CLIENT --query "SELECT SUM(toUInt64(value1)) FROM concurrent_alter_mt_$REPLICA" 1>/dev/null
         sleep 0.$RANDOM
     done
 }
 
 
 echo "Starting alters"
+export -f correct_alter_thread;
+export -f insert_thread;
+export -f select_thread;
+
 
 TIMEOUT=20
 
 
 # Selects should run successfully
-select_thread &
-select_thread &
-select_thread &
+timeout $TIMEOUT bash -c select_thread &
+timeout $TIMEOUT bash -c select_thread &
+timeout $TIMEOUT bash -c select_thread &
 
 
-correct_alter_thread 2> /dev/null &
-correct_alter_thread 2> /dev/null &
-correct_alter_thread 2> /dev/null &
+timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
+timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
+timeout $TIMEOUT bash -c correct_alter_thread 2> /dev/null &
 
 
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
-insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
+timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
 
 wait
 

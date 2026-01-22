@@ -11,7 +11,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Core/Field.h>
-#include <Common/SipHash.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -43,11 +42,6 @@ String DataTypeDynamic::doGetName() const
     if (max_dynamic_types == DEFAULT_MAX_DYNAMIC_TYPES)
         return "Dynamic";
     return "Dynamic(max_types=" + toString(max_dynamic_types) + ")";
-}
-
-void DataTypeDynamic::updateHashImpl(SipHash & hash) const
-{
-    hash.update(max_dynamic_types);
 }
 
 Field DataTypeDynamic::getDefault() const
@@ -134,7 +128,7 @@ std::pair<std::string_view, std::string_view> splitSubcolumnName(std::string_vie
     if (pos == end)
         return {subcolumn_name, {}};
 
-    return {std::string_view(subcolumn_name.data(), pos), std::string_view(pos + 1, end)}; /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    return {std::string_view(subcolumn_name.data(), pos), std::string_view(pos + 1, end)};  /// NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
 }
@@ -187,21 +181,21 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                 if (local_discriminators[i] == shared_variant_local_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value);
+                    ReadBufferFromMemory buf(value.data, value.size);
                     auto type = decodeDataType(buf);
                     if (type->getName() == subcolumn_type_name)
                     {
                         subcolumn_type->getDefaultSerialization()->deserializeBinary(*subcolumn, buf, format_settings);
-                        null_map.push_back(static_cast<UInt8>(0));
+                        null_map.push_back(0);
                     }
                     else
                     {
-                        null_map.push_back(static_cast<UInt8>(1));
+                        null_map.push_back(1);
                     }
                 }
                 else
                 {
-                    null_map.push_back(static_cast<UInt8>(1));
+                    null_map.push_back(1);
                 }
             }
 
@@ -215,8 +209,6 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     bool is_null_map_subcolumn = subcolumn_nested_name == "null";
     if (is_null_map_subcolumn)
     {
-        if (!subcolumn_type->canBeInsideNullable())
-            return nullptr;
         res->type = std::make_shared<DataTypeUInt8>();
     }
     else if (!subcolumn_nested_name.empty())
@@ -287,15 +279,6 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     }
 
     return res;
-}
-
-bool hasDynamicType(const DataTypePtr & type)
-{
-    bool result = false;
-    auto check = [&](const IDataType & t) { result |= isDynamic(t); };
-    check(*type);
-    type->forEachChild(check);
-    return result;
 }
 
 }

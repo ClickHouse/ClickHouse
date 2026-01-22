@@ -17,6 +17,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -30,7 +31,7 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::use_variant_as_common_type]);
+        return std::make_shared<FunctionArray>(context->getSettingsRef()[Setting::allow_experimental_variant_type] && context->getSettingsRef()[Setting::use_variant_as_common_type]);
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -181,9 +182,11 @@ private:
             const size_t base = row_i * columns.size();
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
-                memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data(), ref.size());
-                cur_out_offset += ref.size();
+                StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
+                memcpySmallAllowReadWriteOverflow15(&out_chars[cur_out_offset], ref.data, ref.size);
+                out_chars[cur_out_offset + ref.size] = 0;
+
+                cur_out_offset += ref.size + 1;
                 out_offsets[base + col_i] = cur_out_offset;
             }
         }
@@ -214,8 +217,8 @@ private:
         {
             for (size_t col_i = 0; col_i < columns.size(); ++col_i)
             {
-                std::string_view ref = concrete_columns[col_i]->getDataAt(row_i);
-                memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data(), n);
+                StringRef ref = concrete_columns[col_i]->getDataAt(row_i);
+                memcpySmallAllowReadWriteOverflow15(&out_chars[curr_out_offset], ref.data, n);
                 curr_out_offset += n;
             }
         }
@@ -253,8 +256,7 @@ private:
         const size_t tuple_size = concrete_out_data->tupleSize();
         if (tuple_size == 0)
         {
-            /// Tuple() has no subcolumns to fill. Create `columns.size()` elements per row to match array offsets
-            out_data.insertManyDefaults(columns.size() * input_rows_count);
+            out_data.insertManyDefaults(columns.size());
         }
         else
         {
@@ -292,42 +294,7 @@ private:
 
 REGISTER_FUNCTION(Array)
 {
-    FunctionDocumentation::Description description = R"(
-Creates an array from the function arguments.
-
-The arguments should be constants and have types that share a common supertype.
-At least one argument must be passed, because otherwise it isn't clear which type of array to create.
-This means that you can't use this function to create an empty array. To do so, use the `emptyArray*` function.
-
-Use the `[ ]` operator for the same functionality.
-    )";
-    FunctionDocumentation::Syntax syntax = "array(x1 [, x2, ..., xN])";
-    FunctionDocumentation::Arguments arguments = {
-        {"x1", "Constant value of any type T. If only this argument is provided, the array will be of type T."},
-        {"[, x2, ..., xN]", "Additional N constant values sharing a common supertype with `x1`"},
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array, where 'T' is the smallest common type out of the passed arguments.", {"Array(T)"}};
-    FunctionDocumentation::Examples examples = {{"Valid usage", R"(
-SELECT array(toInt32(1), toUInt16(2), toInt8(3)) AS a, toTypeName(a)
-    )",
-    R"(
-┌─a───────┬─toTypeName(a)─┐
-│ [1,2,3] │ Array(Int32)  │
-└─────────┴───────────────┘
-    )"},
-    {"Invalid usage", R"(
-SELECT array(toInt32(5), toDateTime('1998-06-16'), toInt8(5)) AS a, toTypeName(a)
-    )",
-R"(
-Received exception from server (version 25.4.3):
-Code: 386. DB::Exception: Received from localhost:9000. DB::Exception:
-There is no supertype for types Int32, DateTime, Int8 ...
-    )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionArray>(documentation);
+    factory.registerFunction<FunctionArray>();
 }
 
 }

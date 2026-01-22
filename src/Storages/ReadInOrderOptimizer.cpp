@@ -7,9 +7,8 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/TreeCNFConverter.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -72,7 +71,7 @@ NameSet getFixedSortingColumns(
 {
     ASTPtr condition;
     if (query.where() && query.prewhere())
-        condition = makeASTOperator("and", query.where(), query.prewhere());
+        condition = makeASTFunction("and", query.where(), query.prewhere());
     else if (query.where())
         condition = query.where();
     else if (query.prewhere())
@@ -82,7 +81,7 @@ NameSet getFixedSortingColumns(
         return {};
 
     /// Convert condition to CNF for more convenient analysis.
-    auto cnf = TreeCNFConverter::tryConvertToCNF(condition.get());
+    auto cnf = TreeCNFConverter::tryConvertToCNF(condition);
     if (!cnf)
         return {};
 

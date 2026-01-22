@@ -97,10 +97,6 @@ def test_ttl_columns(started_cluster):
         expected
     )
 
-    # Cleanup
-    for node in [node1, node2]:
-        node.query(f"DROP TABLE {table_name} SYNC")
-
 
 def test_merge_with_ttl_timeout(started_cluster):
     table = f"test_merge_with_ttl_timeout_{node1.name}_{node2.name}"
@@ -152,10 +148,6 @@ def test_merge_with_ttl_timeout(started_cluster):
         node2, "SELECT countIf(a = 0) FROM {table}".format(table=table), "3\n"
     )
 
-    # Cleanup
-    for node in [node1, node2]:
-        node.query(f"DROP TABLE {table} SYNC")
-
 
 def test_ttl_many_columns(started_cluster):
     table = f"test_ttl_2{node1.name}_{node2.name}"
@@ -206,10 +198,6 @@ def test_ttl_many_columns(started_cluster):
         node2.query(f"SELECT id, a, _idx, _offset, _partition FROM {table} ORDER BY id")
     ) == TSV(expected)
 
-    # Cleanup
-    for node in [node1, node2]:
-        node.query(f"DROP TABLE {table} SYNC")
-
 
 @pytest.mark.parametrize(
     "delete_suffix",
@@ -239,10 +227,6 @@ def test_ttl_table(started_cluster, delete_suffix):
 
     assert TSV(node1.query(f"SELECT * FROM {table}")) == TSV("")
     assert TSV(node2.query(f"SELECT * FROM {table}")) == TSV("")
-
-    # Cleanup
-    for node in [node1, node2]:
-        node.query(f"DROP TABLE {table} SYNC")
 
 
 def test_modify_ttl(started_cluster):
@@ -278,10 +262,6 @@ def test_modify_ttl(started_cluster):
     )
     assert node2.query(f"SELECT id FROM {table}") == ""
 
-    # Cleanup
-    for node in [node1, node2]:
-        node.query(f"DROP TABLE {table} SYNC")
-
 
 def test_modify_column_ttl(started_cluster):
     table = f"test_modify_column_ttl_{node1.name}_{node2.name}"
@@ -315,10 +295,6 @@ def test_modify_column_ttl(started_cluster):
         f"ALTER TABLE {table} MODIFY COLUMN id UInt32 TTL d + INTERVAL 30 MINUTE SETTINGS replication_alter_partitions_sync = 2"
     )
     assert node2.query(f"SELECT id FROM {table}") == "42\n42\n42\n"
-
-    # Cleanup
-    for node in [node1, node2]:
-        node.query(f"DROP TABLE {table} SYNC")
 
 
 def test_ttl_double_delete_rule_returns_error(started_cluster):
@@ -436,9 +412,6 @@ def test_ttl_alter_delete(started_cluster, name, engine):
     ).splitlines()
     assert r == ["\t0", "\t0", "hello2\t2"]
 
-    # Cleanup
-    node1.query(f"DROP TABLE {name} SYNC")
-
 
 def test_ttl_empty_parts(started_cluster):
     for node in [node1, node2]:
@@ -527,30 +500,20 @@ def test_ttl_empty_parts(started_cluster):
     assert not node1.contains_in_log(error_msg)
     assert not node2.contains_in_log(error_msg)
 
-    # Cleanup
-    for node in [node1, node2]:
-        node.query("DROP TABLE test_ttl_empty_parts SYNC")
-
 
 @pytest.mark.parametrize(
     ("node_left", "node_right", "num_run"),
     [(node1, node2, 0), (node3, node4, 1), (node5, node6, 2)],
 )
 def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
-    # The test times out for sanitizer builds, so we increase the timeout.
-    timeout = 20
-    if node_left.is_built_with_sanitizer() or node_right.is_built_with_sanitizer():
-        timeout = 300
-
     table = f"test_ttl_compatibility_{node_left.name}_{node_right.name}_{num_run}"
     for node in [node_left, node_right]:
         node.query(
             """
-                DROP TABLE IF EXISTS {table}_delete SYNC;
                 CREATE TABLE {table}_delete(date DateTime, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}_delete', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                TTL date + INTERVAL 3 SECOND;
+                TTL date + INTERVAL 3 SECOND
             """.format(
                 table=table, replica=node.name
             )
@@ -558,11 +521,10 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
 
         node.query(
             """
-                DROP TABLE IF EXISTS {table}_group_by SYNC;
                 CREATE TABLE {table}_group_by(date DateTime, id UInt32, val UInt64)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}_group_by', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                TTL date + INTERVAL 3 SECOND GROUP BY id SET val = sum(val);
+                TTL date + INTERVAL 3 SECOND GROUP BY id SET val = sum(val)
             """.format(
                 table=table, replica=node.name
             )
@@ -570,11 +532,10 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
 
         node.query(
             """
-                DROP TABLE IF EXISTS {table}_where SYNC;
                 CREATE TABLE {table}_where(date DateTime, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/{table}_where', '{replica}')
                 ORDER BY id PARTITION BY toDayOfMonth(date)
-                TTL date + INTERVAL 3 SECOND DELETE WHERE id % 2 = 1;
+                TTL date + INTERVAL 3 SECOND DELETE WHERE id % 2 = 1
             """.format(
                 table=table, replica=node.name
             )
@@ -613,8 +574,8 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     node_right.query(f"OPTIMIZE TABLE {table}_where FINAL")
 
     exec_query_with_retry(node_left, f"OPTIMIZE TABLE {table}_delete FINAL")
-    node_left.query(f"OPTIMIZE TABLE {table}_group_by FINAL", timeout=timeout)
-    node_left.query(f"OPTIMIZE TABLE {table}_where FINAL", timeout=timeout)
+    node_left.query(f"OPTIMIZE TABLE {table}_group_by FINAL", timeout=20)
+    node_left.query(f"OPTIMIZE TABLE {table}_where FINAL", timeout=20)
 
     # After OPTIMIZE TABLE, it is not guaranteed that everything is merged.
     # Possible scenario (for test_ttl_group_by):
@@ -625,14 +586,13 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
     # 4. OPTIMIZE FINAL does nothing, cause there is an entry for 0_3
     #
     # So, let's also sync replicas for node_right (for now).
-
     exec_query_with_retry(node_right, f"SYSTEM SYNC REPLICA {table}_delete")
-    node_right.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=timeout)
-    node_right.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=timeout)
+    node_right.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=20)
+    node_right.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=20)
 
     exec_query_with_retry(node_left, f"SYSTEM SYNC REPLICA {table}_delete")
-    node_left.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=timeout)
-    node_left.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=timeout)
+    node_left.query(f"SYSTEM SYNC REPLICA {table}_group_by", timeout=20)
+    node_left.query(f"SYSTEM SYNC REPLICA {table}_where", timeout=20)
 
     assert node_left.query(f"SELECT id FROM {table}_delete ORDER BY id") == "2\n4\n"
     assert node_right.query(f"SELECT id FROM {table}_delete ORDER BY id") == "2\n4\n"
@@ -642,9 +602,3 @@ def test_ttl_compatibility(started_cluster, node_left, node_right, num_run):
 
     assert node_left.query(f"SELECT id FROM {table}_where ORDER BY id") == "2\n4\n"
     assert node_right.query(f"SELECT id FROM {table}_where ORDER BY id") == "2\n4\n"
-
-    # Cleanup
-    for node in [node_left, node_right]:
-        node.query(f"DROP TABLE {table}_delete SYNC")
-        node.query(f"DROP TABLE {table}_group_by SYNC")
-        node.query(f"DROP TABLE {table}_where SYNC")

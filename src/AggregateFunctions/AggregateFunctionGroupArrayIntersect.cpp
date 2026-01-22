@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeString.h>
 
 #include <Columns/ColumnArray.h>
 
@@ -20,7 +21,6 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/KeyHolderHelpers.h>
 
 #include <memory>
 
@@ -182,7 +182,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionGroupArrayIntersectGenericData
 {
-    using Set = HashSet<std::string_view>;
+    using Set = HashSet<StringRef>;
 
     Set value;
     UInt64 version = 0;
@@ -196,7 +196,7 @@ class AggregateFunctionGroupArrayIntersectGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData,
         AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>
 {
-    const DataTypePtr input_data_type;
+    const DataTypePtr & input_data_type;
 
     using State = AggregateFunctionGroupArrayIntersectGenericData;
 
@@ -235,9 +235,8 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    auto settings = IColumn::SerializationSettings::createForAggregationState();
-                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
-                    chassert(!serialized.empty());
+                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
+                    chassert(serialized.data != nullptr);
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
             }
@@ -256,9 +255,8 @@ public:
                 else
                 {
                     const char * begin = nullptr;
-                    auto settings = IColumn::SerializationSettings::createForAggregationState();
-                    auto serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin, &settings);
-                    chassert(!serialized.empty());
+                    StringRef serialized = data_column->serializeValueIntoArena(offset + i, *arena, begin);
+                    chassert(serialized.data != nullptr);
                     it = set.find(serialized);
 
                     if (it != nullptr)
@@ -343,7 +341,10 @@ public:
 
         for (auto & elem : set)
         {
-            deserializeAndInsert<is_plain_column>(elem.getValue(), data_to);
+            if constexpr (is_plain_column)
+                data_to.insertData(elem.getValue().data, elem.getValue().size);
+            else
+                std::ignore = data_to.deserializeAndInsertFromArena(elem.getValue().data);
         }
     }
 };
@@ -433,46 +434,9 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayIntersect(
 
 void registerAggregateFunctionGroupArrayIntersect(AggregateFunctionFactory & factory)
 {
-    FunctionDocumentation::Description description = R"(
-Return an intersection of given arrays (Return all items of arrays, that are in all given arrays).
-    )";
-    FunctionDocumentation::Syntax syntax = "groupArrayIntersect(x)";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "Argument (column name or expression).", {"Any"}}
-    };
-    FunctionDocumentation::Parameters parameters = {};
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array that contains elements that are in all arrays.", {"Array"}};
-    FunctionDocumentation::Examples examples = {
-        {
-            "Usage example",
-            R"(
--- Create table with Memory engine
-CREATE TABLE numbers (
-    a Array(Int32)
-) ENGINE = Memory;
-
--- Insert sample data
-INSERT INTO numbers VALUES
-    ([1,2,4]),
-    ([1,5,2,8,-1,0]),
-    ([1,5,7,5,8,2]);
-
-SELECT groupArrayIntersect(a) AS intersection FROM numbers;
-            )",
-            R"(
-┌─intersection──────┐
-│ [1, 2]            │
-└───────────────────┘
-            )"
-        }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {24, 2};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
-    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
 
-    factory.registerFunction("groupArrayIntersect", {createAggregateFunctionGroupArrayIntersect, properties, documentation});
+    factory.registerFunction("groupArrayIntersect", { createAggregateFunctionGroupArrayIntersect, properties });
 }
 
 }

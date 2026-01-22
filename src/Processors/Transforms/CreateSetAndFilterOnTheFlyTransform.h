@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Common/Logger.h>
-#include <Processors/ISimpleTransform.h>
-
 #include <vector>
+#include <Processors/ISimpleTransform.h>
 
 namespace DB
 {
@@ -20,7 +18,7 @@ using SetWithStatePtr = std::shared_ptr<SetWithState>;
 class CreatingSetsOnTheFlyTransform : public ISimpleTransform
 {
 public:
-    CreatingSetsOnTheFlyTransform(SharedHeader header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_);
+    CreatingSetsOnTheFlyTransform(const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_);
 
     String getName() const override { return "CreatingSetsOnTheFlyTransform"; }
 
@@ -47,7 +45,7 @@ private:
 class FilterBySetOnTheFlyTransform : public ISimpleTransform
 {
 public:
-    FilterBySetOnTheFlyTransform(SharedHeader header_, const Names & column_names_, SetWithStatePtr set_);
+    FilterBySetOnTheFlyTransform(const Block & header_, const Names & column_names_, SetWithStatePtr set_);
 
     String getName() const override { return "FilterBySetOnTheFlyTransform"; }
 

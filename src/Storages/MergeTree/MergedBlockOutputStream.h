@@ -16,7 +16,6 @@ class MergedBlockOutputStream final : public IMergedBlockOutputStream
 public:
     MergedBlockOutputStream(
         const MergeTreeMutableDataPartPtr & data_part,
-        MergeTreeSettingsPtr data_settings,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
@@ -65,14 +64,14 @@ public:
         bool sync,
         const NamesAndTypesList * total_columns_list = nullptr,
         MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
-        ColumnsSubstreams * additional_columns_substreams = nullptr);
+        ColumnsWithTypeAndName * additional_columns_samples = nullptr);
 
     void finalizePart(
         const MergeTreeMutableDataPartPtr & new_part,
         bool sync,
         const NamesAndTypesList * total_columns_list = nullptr,
         MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
-        ColumnsSubstreams * additional_columns_substreams = nullptr);
+        ColumnsWithTypeAndName * additional_columns_samples = nullptr);
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.
@@ -83,8 +82,7 @@ private:
     using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
     WrittenFiles finalizePartOnDisk(
         const MergeTreeMutableDataPartPtr & new_part,
-        MergeTreeData::DataPart::Checksums & checksums,
-        ColumnsSubstreams * additional_columns_substreams = nullptr);
+        MergeTreeData::DataPart::Checksums & checksums);
 
     NamesAndTypesList columns_list;
     IMergeTreeDataPart::MinMaxIndex minmax_idx;

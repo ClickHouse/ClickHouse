@@ -2,9 +2,9 @@
 description: 'It is an alias for any but it was introduced for compatibility with
   Window Functions, where sometimes it is necessary to process `NULL` values (by default
   all ClickHouse aggregate functions ignore NULL values).'
+sidebar_position: 137
 slug: /sql-reference/aggregate-functions/reference/first_value
 title: 'first_value'
-doc_type: 'reference'
 ---
 
 # first_value
@@ -26,13 +26,13 @@ CREATE TABLE test_data
 )
 ENGINE = Memory;
 
-INSERT INTO test_data (a, b) VALUES (1,null), (2,3), (4, 5), (6,null);
+INSERT INTO test_data (a, b) Values (1,null), (2,3), (4, 5), (6,null);
 ```
 
-### Example 1 {#example1}
+### example1 {#example1}
 By default, the NULL value is ignored.
 ```sql
-SELECT first_value(b) FROM test_data;
+select first_value(b) from test_data;
 ```
 
 ```text
@@ -41,10 +41,10 @@ SELECT first_value(b) FROM test_data;
 └────────┘
 ```
 
-### Example 2 {#example2}
+### example2 {#example2}
 The NULL value is ignored.
 ```sql
-SELECT first_value(b) ignore nulls FROM test_data
+select first_value(b) ignore nulls from test_data
 ```
 
 ```text
@@ -53,10 +53,10 @@ SELECT first_value(b) ignore nulls FROM test_data
 └──────────────────────┘
 ```
 
-### Example 3 {#example3}
+### example3 {#example3}
 The NULL value is accepted.
 ```sql
-SELECT first_value(b) respect nulls FROM test_data
+select first_value(b) respect nulls from test_data
 ```
 
 ```text
@@ -65,7 +65,7 @@ SELECT first_value(b) respect nulls FROM test_data
 └───────────────────────┘
 ```
 
-### Example 4 {#example4}
+### example4 {#example4}
 Stabilized result using the sub-query with `ORDER BY`.
 ```sql
 SELECT
@@ -84,3 +84,4 @@ FROM
 │                 ᴺᵁᴸᴸ │      3 │
 └──────────────────────┴────────┘
 ```
+
