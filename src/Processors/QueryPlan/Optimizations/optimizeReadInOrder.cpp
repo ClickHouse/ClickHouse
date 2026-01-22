@@ -42,7 +42,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool optimize_read_in_order;
-    extern const SettingsBool optimize_read_in_window_order;
+    extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
 }
 }
 
@@ -682,6 +682,7 @@ InputOrder buildInputOrderFromUnorderedKeys(
     /// For every column in PK find any match from GROUP BY key.
     using ReverseMatches = std::unordered_map<const ActionsDAG::Node *, MatchedTrees::Matches::const_iterator>;
     ReverseMatches reverse_matches;
+    std::unordered_set<std::string_view> not_matched_keys(unordered_keys.begin(), unordered_keys.end());
 
     if (dag)
     {
@@ -704,6 +705,12 @@ InputOrder buildInputOrderFromUnorderedKeys(
             const MatchedTrees::Match * match = &it->second;
             if (match->node)
             {
+                // ensure that output is in aggregation keys (not_matched_keys at this point just a set of aggregation keys)
+                // the output can be removed for filters, so it'll not be present in corresponding header,
+                // and parent aggregation step will have no such column/expr in keys
+                if (!not_matched_keys.contains(output->result_name))
+                    continue;
+
                 auto [jt, inserted] = reverse_matches.emplace(match->node, it);
                 if (!inserted)
                 {
@@ -732,7 +739,6 @@ InputOrder buildInputOrderFromUnorderedKeys(
     /// So far, 0 means any direction is possible. It is ok for constant prefix.
     int read_direction = 0;
     size_t next_sort_key = 0;
-    std::unordered_set<std::string_view> not_matched_keys(unordered_keys.begin(), unordered_keys.end());
 
     SortDescription sort_description;
     sort_description.reserve(unordered_keys.size());
@@ -1329,6 +1335,9 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     if (sorting->getType() != SortingStep::Type::Full)
         return;
 
+    if (sorting->hasPartitions() && !optimization_settings.reuse_storage_ordering_for_window_functions)
+        return;
+
     bool apply_virtual_row = false;
 
     if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
@@ -1509,7 +1518,8 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     auto context = read_from_merge_tree->getContext();
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::optimize_read_in_window_order] || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
+    if (!settings[Setting::query_plan_reuse_storage_ordering_for_window_functions]
+        || (settings[Setting::optimize_read_in_order] && settings[Setting::query_plan_read_in_order])
         || context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         return 0;
