@@ -139,7 +139,7 @@ private:
         /// Read buffer which either reads from local file (from cache)
         /// or from remote object storage.
         std::shared_ptr<ReadBufferFromFileBase> buf;
-        /// "Predownload" bytes, e.g. the extra amound of bytes
+        /// "Predownload" bytes, e.g. the extra amount of bytes
         /// which we need to read before our current read offset
         /// either because of offset alignment
         /// or because of file segment, that we need, is partially downloaded.
