@@ -8,6 +8,7 @@ import random
 import sys
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
@@ -71,6 +72,7 @@ class Result(MetaClasses.Serializable):
     duration: Optional[float] = None
     results: List["Result"] = dataclasses.field(default_factory=list)
     files: List[Union[str, Path]] = dataclasses.field(default_factory=list)
+    assets: List[Union[str, Path]] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
     ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -82,6 +84,7 @@ class Result(MetaClasses.Serializable):
         stopwatch: Utils.Stopwatch = None,
         status="",
         files=None,
+        assets=None,
         info: Union[List[str], str] = "",
         with_info_from_results=False,
         links=None,
@@ -156,6 +159,7 @@ class Result(MetaClasses.Serializable):
             duration=duration,
             info="\n".join(infos) if infos else "",
             results=results or [],
+            assets=assets or [],
             files=files or [],
             links=links or [],
         ).set_label(labels or [])
@@ -1057,7 +1061,6 @@ class _ResultS3:
         cls, result: Result, s3_subprefix="", _uploaded_file_link=None
     ):
         s3_subprefix = "/".join([s3_subprefix, Utils.normalize_string(result.name)])
-
         if not _uploaded_file_link:
             _uploaded_file_link = {}
 
@@ -1106,6 +1109,21 @@ class _ResultS3:
                 )
                 result.set_info(f"ERROR: Failed to upload file [{file}]: {e}")
         result.files = []
+
+        # Upload assets in parallel (preserving relative paths for HTML interlinking)
+        if result.assets:
+            asset_paths = [Path(a).resolve() for a in result.assets if Path(a).is_file()]
+            if asset_paths:
+                common_root = os.path.commonpath([p.parent for p in asset_paths])
+                env = _Environment.get()
+                base_s3_prefix = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{s3_subprefix}".replace("//", "/")
+
+                with ThreadPoolExecutor(max_workers=10) as executor:
+                    for asset in asset_paths:
+                        rel_path = asset.relative_to(common_root)
+                        s3_path = f"{base_s3_prefix}/{rel_path}"
+                        executor.submit(S3.upload_asset_streaming, asset, s3_path)
+        result.assets = []
 
         if result.results:
             for result_ in result.results:
