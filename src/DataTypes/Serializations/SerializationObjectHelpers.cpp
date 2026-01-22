@@ -226,6 +226,9 @@ void deserializeIndexesAndCollectPathsImpl(ColumnString & paths_column, ReadBuff
         T index;
         readBinaryLittleEndian(index, istr);
 
+        if (index >= paths.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object path index is out of range: {} >= {}", static_cast<UInt64>(index), paths.size());
+
         const String & path = paths[index];
         offset += path.size();
         offsets.push_back(offset);
@@ -282,7 +285,6 @@ void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column type of paths indexes: {}", indexes_type->getName());
     }
-
 }
 
 }
