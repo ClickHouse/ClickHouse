@@ -588,7 +588,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             columns,
             ConstraintsDescription{},
             nullptr,
-            context_);
+            context_,
+            /// Use is_table_function = true,
+            /// because this table is actually stateless like a table function.
+            /* is_table_function */true);
 
         storage_cluster->startup();
         return storage_cluster;
@@ -614,7 +617,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* distributed_processing */can_use_distributed_iterator,
         /* partition_by */nullptr,
         /* order_by */nullptr,
-        /* is_table_function */false,
+        /// Use is_table_function = true,
+        /// because this table is actually stateless like a table function.
+        /* is_table_function */true,
         /* lazy_init */true);
 }
 

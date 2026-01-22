@@ -382,6 +382,15 @@ enum class ObjectStorageQueueAction : uint8_t
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueAction)
 
+enum class ObjectStorageQueuePartitioningMode : uint8_t
+{
+    NONE,   /// No per-partition tracking (default)
+    HIVE,   /// Extract partition from path structure (key=value pairs)
+    REGEX,  /// Extract partition from filename using regex
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageQueuePartitioningMode)
+
 DECLARE_SETTING_ENUM(ExternalCommandStderrReaction)
 
 DECLARE_SETTING_ENUM(SchemaInferenceMode)
@@ -534,5 +543,15 @@ enum class ArrowFlightDescriptorType : uint8_t
 };
 
 DECLARE_SETTING_ENUM(ArrowFlightDescriptorType)
+
+enum class DeduplicateInsertSelectMode : uint8_t
+{
+    DISABLE = 0,
+    FORCE_ENABLE,
+    ENABLE_WHEN_PROSSIBLE,
+    ENABLE_EVEN_FOR_BAD_QUERIES
+};
+
+DECLARE_SETTING_ENUM(DeduplicateInsertSelectMode)
 
 }
