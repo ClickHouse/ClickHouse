@@ -242,6 +242,9 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
         readBinaryLittleEndian(mode, *discriminators_stream);
         discriminators_state = std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(mode);
         addToSubstreamsDeserializeStatesCache(cache, settings.path, discriminators_state);
+
+        if (settings.release_all_prefixes_streams && settings.release_stream_callback)
+            settings.release_stream_callback(settings.path);
     }
 
     settings.path.pop_back();

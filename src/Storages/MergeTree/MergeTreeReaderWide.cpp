@@ -412,6 +412,13 @@ void MergeTreeReaderWide::deserializePrefix(
             if (stream_name && !streams.contains(*stream_name))
                 addStream(substream_path, *stream_name);
         };
+        deserialize_settings.release_stream_callback = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            if (stream_name)
+                streams.erase(*stream_name);
+        };
+        deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
     }
 }
