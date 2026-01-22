@@ -199,7 +199,7 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     }
 
     partition_columns_in_data_file = collection.getOrDefault<bool>("partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
-
+    blobs_paths = {blob_path};
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
@@ -537,6 +537,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
     }
 
+    blobs_paths = {blob_path};
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
