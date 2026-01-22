@@ -208,18 +208,18 @@ def parse_log_entry(log_line: str) -> LogEntry:
     
     assert False, "Failed to parse log entry: " + log_line
 
-def get_matching_info_from_profile_events(instance, query_id: str) -> (int, int):
+def get_matching_info_from_profile_events(instance, query_id: str) -> tuple[int, int]:
     instance.query("SYSTEM FLUSH LOGS")
 
     accepted_pairs = int(
         instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataMinMaxAcceptedDataFilePositionDeleteFilePairs'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            f"SELECT ProfileEvents['IcebergMinMaxNonPrunedDeleteFiles'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
 
     rejected_pairs = int(
         instance.query(
-            f"SELECT ProfileEvents['IcebergMetadataMinMaxRejectedDataFilePositionDeleteFilePairs'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+            f"SELECT ProfileEvents['IcebergMinMaxPrunedDeleteFiles'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
     )
 
