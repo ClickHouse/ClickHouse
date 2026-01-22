@@ -1825,8 +1825,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         }
 
         const bool is_vertical_merge = (global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical);
-        /// If merge is vertical we cannot calculate it
-        ctx->blocks_are_granules_size = is_vertical_merge;
 
         if (global_ctx->cleanup && !(*merge_tree_settings)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
@@ -1841,7 +1839,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             (is_vertical_merge ? RowsSourcesTemporaryFile::FILE_ID : ""), /// rows_sources' temporary file is used only for vertical merge
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
-            ctx->blocks_are_granules_size,
+            is_vertical_merge,
             cleanup,
             global_ctx->time_of_merge);
         merge_step->setStepDescription("Merge sorted parts");
