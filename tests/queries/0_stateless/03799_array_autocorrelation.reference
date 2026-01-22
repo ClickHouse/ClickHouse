@@ -1,0 +1,10 @@
+--- Basic Floats ---
+[1,0,-0.5]
+--- Integers (Auto-converted) ---
+[1,0.4,-0.1,-0.4,-0.4]
+--- Constant Arrays ---
+[0,0,0]
+--- Tiny Arrays (Edge Case) ---
+[1]
+[1]
+--- Input Validation (Should Fail) ---
