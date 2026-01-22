@@ -980,6 +980,7 @@ class FailureReason(enum.Enum):
     BUILD = "not running for current build"
     NO_PARALLEL_REPLICAS = "smth in not supported with parallel replicas"
     NO_ASYNC_INSERT = "test is not supported with async inserts enabled"
+    NO_LLVM_COVERAGE = "test is not supported with llvm coverage enabled"
     SHARED_MERGE_TREE = "no-shared-merge-tree"
     REQUIRE_REPLICATED_TO_SHARED_MERGE_TREE_REPLACEMENT = "Test with shared_merge_tree in name require option --replace-replicated-with-shared for clickhouse-test"
     SHARED_CATALOG = "no-shared-catalog"
@@ -1805,7 +1806,15 @@ class TestCase:
         ):
             # Tests for races and deadlocks usually are run in a loop for a significant amount of time
             return FailureReason.NO_LONG
-
+        
+        if (
+            tags
+            and ("no-llvm-coverage" in tags)
+            and args.llvm_coverage
+        ):
+            # Skip tests that are incompatible with LLVM coverage
+            return FailureReason.NO_LLVM_COVERAGE
+        
         if tags and ("no-replicated-database" in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
@@ -4244,6 +4253,12 @@ def parse_args():
         action="store_true",
         default=False,
         help="Disable MergeTree settings randomization",
+    )
+    parser.add_argument(
+        "--llvm-coverage",
+        action="store_true",
+        default=False,
+        help="This run will be used to collect code coverage with llvm-cov",
     )
     # Explicit, non-random settings (copy-paste friendly)
     parser.add_argument(
