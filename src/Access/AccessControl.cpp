@@ -618,7 +618,7 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         int error_code = ErrorCodes::AUTHENTICATION_FAILED;
 
         WriteBufferFromOwnString message;
-        message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
+        message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name";
 
         /// Better exception message for usability.
         /// It is typical when users install ClickHouse, type some password and instantly forget it.

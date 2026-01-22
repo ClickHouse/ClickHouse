@@ -1,6 +1,12 @@
 #pragma once
 
 #include "config.h"
+#include <Access/Common/AuthenticationType.h>
+#include <Access/Common/HTTPAuthenticationScheme.h>
+#include <Access/Common/OneTimePassword.h>
+#include <Common/SSHWrapper.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 
 #include <vector>
 #include <base/types.h>
@@ -35,6 +41,9 @@ public:
 
     /// Returns the password. Allowed to use only for Type::PLAINTEXT_PASSWORD.
     String getPassword() const;
+
+    void setOneTimePassword(const String & password_, OneTimePasswordParams config, bool validate);
+    const OneTimePasswordSecret & getOneTimePassword() const { return otp_secret.value(); }
 
     /// Sets the password as a string of hexadecimal digits.
     void setPasswordHashHex(const String & hash, bool validate);
@@ -102,6 +111,7 @@ public:
 private:
     AuthenticationType type = AuthenticationType::NO_PASSWORD;
     Digest password_hash;
+    std::optional<OneTimePasswordSecret> otp_secret;
     String ldap_server_name;
     String kerberos_realm;
 #if USE_SSL
