@@ -6,7 +6,7 @@
 # Avoid overlaps with previous runs
 dmesg --clear
 
-set -x
+set -ex
 
 # we mount tests folder from repo to /usr/share
 ln -s /repo/ci/jobs/scripts/stress/stress.py /usr/bin/stress
@@ -264,7 +264,7 @@ then
 fi
 
 # Just in case previous version left some garbage in zk
-sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml \
+sudo sed -i "s|>1<|>0<|g" /etc/clickhouse-server/config.d/lost_forever_check.xml
 rm -f /etc/clickhouse-server/config.d/filesystem_caches_path.xml
 
 # Set compatibility setting to previous version, so we won't fail due to known backward incompatible changes.
@@ -294,6 +294,7 @@ sleep 60
 
 stop_server || (echo "Failed to stop server" && exit 1)
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.upgrade.log
+cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickhouse-server.upgrade.log
 
 # Error messages (we should ignore some errors)
 # FIXME https://github.com/ClickHouse/ClickHouse/issues/38643 ("Unknown index: idx.")
@@ -343,12 +344,15 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot flush" \
            -e "Container already exists" \
            -e "doesn't have metadata version on disk" \
-    clickhouse-server.upgrade.log \
+    /test_output/clickhouse-server.upgrade.log \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
-    | zgrep -Fa "<Error>" > /test_output/upgrade_error_messages.txt \
-    && echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/upgrade_error_messages.txt)" \
-        >> /test_output/test_results.tsv \
-    || echo -e "No Error messages after server upgrade$OK" >> /test_output/test_results.tsv
+    | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
+
+if [ -s /test_output/upgrade_error_messages.txt ]; then
+    echo -e "Error message in clickhouse-server.log (see upgrade_error_messages.txt)$FAIL$(head_escaped /test_output/upgrade_error_messages.txt)" >> /test_output/test_results.tsv
+else
+    echo -e "No Error messages after server upgrade$OK" >> /test_output/test_results.tsv
+fi
 
 # Remove file upgrade_error_messages.txt if it's empty
 [ -s /test_output/upgrade_error_messages.txt ] || rm -f /test_output/upgrade_error_messages.txt
