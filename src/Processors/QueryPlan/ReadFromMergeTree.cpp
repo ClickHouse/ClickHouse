@@ -128,6 +128,7 @@ bool restorePrewhereInputs(FilterDAGInfo * row_level_filter, PrewhereInfo * info
 
 namespace ProfileEvents
 {
+    extern const Event IndexAnalysisRounds;
     extern const Event SelectedParts;
     extern const Event SelectedPartsTotal;
     extern const Event SelectedRanges;
@@ -2056,6 +2057,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool is_parallel_reading_from_replicas_,
     bool allow_query_condition_cache_)
 {
+    ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
+
     AnalysisResult result;
     RangesInDataParts res_parts;
     const auto & settings = context_->getSettingsRef();
