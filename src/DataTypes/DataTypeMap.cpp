@@ -13,7 +13,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/IAST.h>
 #include <Common/SipHash.h>
-#include "Serializations/SerializationInfoSettings.h"
+#include <DataTypes/>Serializations/SerializationInfoSettings.h"
 
 
 namespace DB
