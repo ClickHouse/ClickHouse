@@ -755,10 +755,23 @@ Deserialization of IPV6 will use default values instead of throwing exception on
 
 Disabled by default.
 )", 0) \
-    DECLARE(Bool, check_conversion_from_numbers_to_enum, false, R"(
+    DECLARE(Bool, check_conversion_from_numbers_to_enum, true, R"(
 Throw an exception during Numbers to Enum conversion if the value does not exist in Enum.
 
-Disabled by default.
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+**Example**
+
+```text
+CREATE TABLE tab (
+  val Enum('first' = 1, 'second' = 2, 'third' = 3)
+) ENGINE = Memory;
+
+INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -- returns an error
+```
 )", 0) \
     DECLARE(String, bool_true_representation, "true", R"(
 Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.
@@ -1089,7 +1102,7 @@ If the data rendered in Pretty formats arrived in multiple chunks, even after a 
 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
 )", 0) \
     DECLARE(String, output_format_pretty_grid_charset, "UTF-8", R"(
-Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default one).
+Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default).
 )", 0) \
     DECLARE(UInt64, output_format_pretty_display_footer_column_names, true, R"(
 Display column names in the footer if there are many table rows.

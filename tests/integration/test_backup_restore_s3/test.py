@@ -385,6 +385,55 @@ def test_backup_to_s3_named_collection(cluster):
     check_backup_and_restore(cluster, storage_policy, backup_destination)
 
 
+def test_backup_to_s3_named_collection_sql(cluster):
+    """Test backup using a named collection created via SQL (not XML config)."""
+    node = cluster.instances["node"]
+    storage_policy = "default"
+    backup_name = new_backup_name()
+
+    # Create a named collection via SQL
+    node.query(
+        f"""
+        CREATE NAMED COLLECTION IF NOT EXISTS sql_named_collection_s3_backup AS
+            url = 'http://minio1:9001/root/data/backups',
+            access_key_id = 'minio',
+            secret_access_key = '{minio_secret_key}'
+        """
+    )
+
+    try:
+        backup_destination = f"S3(sql_named_collection_s3_backup, '{backup_name}')"
+        check_backup_and_restore(cluster, storage_policy, backup_destination)
+    finally:
+        node.query("DROP NAMED COLLECTION IF EXISTS sql_named_collection_s3_backup")
+
+
+def test_backup_to_s3_named_collection_sql_with_overrides(cluster):
+    """Test backup using a SQL named collection with key-value overrides."""
+    node = cluster.instances["node"]
+    storage_policy = "default"
+    backup_name = new_backup_name()
+
+    # Create a named collection via SQL with a placeholder URL
+    node.query(
+        f"""
+        CREATE NAMED COLLECTION IF NOT EXISTS sql_named_collection_s3_backup_override AS
+            url = 'http://minio1:9001/root/data/placeholder',
+            access_key_id = 'minio',
+            secret_access_key = '{minio_secret_key}'
+        """
+    )
+
+    try:
+        # Override the URL via key-value argument
+        backup_destination = f"S3(sql_named_collection_s3_backup_override, url='http://minio1:9001/root/data/backups/{backup_name}')"
+        check_backup_and_restore(cluster, storage_policy, backup_destination)
+    finally:
+        node.query(
+            "DROP NAMED COLLECTION IF EXISTS sql_named_collection_s3_backup_override"
+        )
+
+
 def test_backup_to_s3_multipart(cluster):
     storage_policy = "default"
     backup_name = new_backup_name()

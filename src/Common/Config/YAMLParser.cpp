@@ -4,12 +4,9 @@
 #if USE_YAML_CPP
 
 
-#include <vector>
-
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/NodeList.h>
 #include <Poco/DOM/Element.h>
-#include <Poco/DOM/AutoPtr.h>
 #include <Poco/DOM/NamedNodeMap.h>
 #include <Poco/DOM/Text.h>
 #include <Common/Exception.h>
