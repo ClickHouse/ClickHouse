@@ -184,6 +184,9 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_cte)
         buffer << ", is_cte: " << is_cte;
 
+    if (is_materialized)
+        buffer << ", is_materialized: " << is_materialized;
+
     if (is_recursive_with)
         buffer << ", is_recursive_with: " << is_recursive_with;
 
@@ -347,7 +350,7 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
     const auto & rhs_typed = assert_cast<const QueryNode &>(rhs);
 
     return is_subquery == rhs_typed.is_subquery &&
-        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name)) &&
+        (options.ignore_cte || (is_cte == rhs_typed.is_cte && cte_name == rhs_typed.cte_name && is_materialized == rhs_typed.is_materialized)) &&
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
@@ -394,6 +397,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(projection_alias);
     }
 
+    state.update(is_materialized);
     state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);
@@ -424,6 +428,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 
     result_query_node->is_subquery = is_subquery;
     result_query_node->is_cte = is_cte;
+    result_query_node->is_materialized = is_materialized;
     result_query_node->is_recursive_with = is_recursive_with;
     result_query_node->is_distinct = is_distinct;
     result_query_node->is_limit_with_ties = is_limit_with_ties;
@@ -486,6 +491,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             with_element_ast->name = with_node_cte_name;
             with_element_ast->subquery = std::move(with_node_ast);
             with_element_ast->children.push_back(with_element_ast->subquery);
+            with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
 
             expression_list_ast->children.back() = std::move(with_element_ast);
         }
