@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Storages/Statistics/Statistics.h>
+#include <Core/Names.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/Statistics/Statistics.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -13,10 +15,7 @@ namespace DB
 class StatisticsPartPruner
 {
 public:
-    StatisticsPartPruner(
-        const StorageMetadataPtr & metadata,
-        const ActionsDAG::Node * filter_node,
-        ContextPtr context);
+    StatisticsPartPruner(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter_node, ContextPtr context);
 
     /// Check if the part can potentially match the filter condition based on statistics.
     /// Returns BoolMask indicating whether the condition can be true/false for this part.
@@ -26,13 +25,32 @@ public:
     bool isUseless() const { return useless; }
 
     /// Get the list of column names used in the filter condition that have statistics.
-    const std::vector<String> & getUsedColumns() const { return used_column_names; }
+    std::vector<std::string> getUsedColumns() const { return used_column_names; }
 
 private:
-    std::optional<KeyCondition> key_condition;
+    /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.
+    KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types) const;
+
+    struct ColumnNamesHash
+    {
+        size_t operator()(const std::vector<String> & column_names) const
+        {
+            SipHash hash;
+            hash.update(column_names.size());
+            for (const auto & name : column_names)
+                hash.update(name);
+            return hash.get64();
+        }
+    };
+
+    /// Cache key_condition by column names to avoid recreating them for each part.
+    mutable std::unordered_map<std::vector<String>, std::unique_ptr<KeyCondition>, ColumnNamesHash> key_condition_cache;
+
+    const ActionsDAGWithInversionPushDown filter_dag;
+    ContextPtr context;
     std::map<String, DataTypePtr> stats_column_name_to_type_map;
-    std::vector<String> used_column_names;
-    bool useless = true;
+    mutable std::vector<std::string> used_column_names;
+    mutable bool useless = true;
 };
 
 }

@@ -15,9 +15,9 @@ Expression ((Project names + Projection))
             Granules: 4/4
           Statistics
             Keys:
-              version
-              value
               id
+              value
+              version
             Parts: 1/4
             Granules: 1/4
           PrimaryKey
@@ -46,8 +46,8 @@ Expression ((Project names + Projection))
             Granules: 4/4
           Statistics
             Keys:
-              version
               id
+              version
             Parts: 2/4
             Granules: 2/4
           PrimaryKey
@@ -124,8 +124,8 @@ Expression ((Project names + Projection))
             Granules: 1/1
           Statistics
             Keys:
-              value
               dt
+              value
             Parts: 0/1
             Granules: 0/1
           PrimaryKey
@@ -152,13 +152,13 @@ Expression ((Project names + Projection))
           Statistics
             Keys:
               value_nullable
-            Parts: 1/4
-            Granules: 1/4
+            Parts: 3/4
+            Granules: 3/4
           PrimaryKey
             Condition: true
-            Parts: 1/1
-            Granules: 1/1
-          Ranges: 1
+            Parts: 3/3
+            Granules: 3/3
+          Ranges: 3
 51
 -- FINAL query should NOT use Statistics pruning
 Expression ((Project names + Projection))
