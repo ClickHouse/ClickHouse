@@ -8598,7 +8598,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(
 {
     auto startsWith = [](const String & s, const String & pfx) -> bool
     {
-        return s.size() >= pfx.size() && s.compare(0, pfx.size(), pfx) == 0;
+    return s.starts_with(pfx);
     };
 
     auto isDigit = [](char c) -> bool
