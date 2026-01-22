@@ -1641,4 +1641,22 @@ INSTANTIATE_TEST_SUITE_P(ALPSameValuesF32,
     )
 );
 
+TEST(CodecTest, ALPUnsupportedTypes)
+{
+    std::vector<DataTypePtr> unsupported_types = {
+        std::make_shared<DataTypeInt8>(),
+        std::make_shared<DataTypeInt16>(),
+        std::make_shared<DataTypeInt32>(),
+        std::make_shared<DataTypeInt64>(),
+        std::make_shared<DataTypeUInt8>(),
+        std::make_shared<DataTypeUInt16>(),
+        std::make_shared<DataTypeUInt32>(),
+        std::make_shared<DataTypeUInt64>(),
+        std::make_shared<DataTypeBFloat16>()
+    };
+
+    for (const auto & type : unsupported_types)
+        ASSERT_THROW(makeCodec("ALP", type), Exception) << "ALP codec should reject " << type->getName();
+}
+
 }

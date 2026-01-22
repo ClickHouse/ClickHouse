@@ -2,9 +2,10 @@ DROP TABLE IF EXISTS base32; CREATE TABLE base32 (i UInt32 CODEC(NONE), f Float3
 DROP TABLE IF EXISTS base64; CREATE TABLE base64 (i UInt32 CODEC(NONE), f Float64 CODEC(NONE)) Engine = MergeTree ORDER BY i;
 DROP TABLE IF EXISTS alp32; CREATE TABLE alp32 (i UInt32 CODEC(NONE), f Float32 CODEC(ALP)) Engine = MergeTree ORDER BY i;
 DROP TABLE IF EXISTS alp64; CREATE TABLE alp64 (i UInt32 CODEC(NONE), f Float64 CODEC(ALP)) Engine = MergeTree ORDER BY i;
+DROP TABLE IF EXISTS alp64_granule2048; CREATE TABLE alp64_granule2048 (i UInt64 CODEC(NONE), f Float64 CODEC(ALP)) Engine = MergeTree ORDER BY i SETTINGS index_granularity = 2048;
 
 
-SELECT 'Positive Numbers';
+SELECT '# Positive Numbers';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, round(number * 0.1 + sin(number), 2) FROM numbers(3000);
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
 TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;;
@@ -13,7 +14,7 @@ SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
 
 
-SELECT 'Positive and Negative Numbers';
+SELECT '# Positive and Negative Numbers';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, round(number * 0.1 + sin(number), 2) * if(number % 5 == 0, -1.0, 1.0) FROM numbers(3000);
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
 TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;;
@@ -22,7 +23,7 @@ SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
 
 
-SELECT 'Negative Numbers';
+SELECT '# Negative Numbers';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, -round(number * 0.1 + sin(number), 2) FROM numbers(3000);
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
 TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;;
@@ -31,7 +32,7 @@ SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
 
 
-SELECT 'Same Numbers Repeatedly (All Values Same)';
+SELECT '# Same Numbers Repeatedly (All Values Same)';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, 3.14 FROM numbers(3000);
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
 TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;
@@ -40,7 +41,7 @@ SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
 
 
-SELECT 'Mix Rational and Irrational Numbers';
+SELECT '# Mix Rational and Irrational Numbers';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, if(number % 10 = 3, number / 20 + sin(number), round(number / 20 + sin(number), 2)) FROM numbers(3000);
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
 TRUNCATE TABLE base32; INSERT INTO base32 SELECT i, toFloat32(f) FROM base64;
@@ -49,7 +50,7 @@ SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
 
 
-SELECT 'Special Values: NaN, Inf, Zeros, Subnormals, Clamp Bounds';
+SELECT '# Special Values: NaN, Inf, Zeros, Subnormals, Clamp Bounds';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number,
     CASE number % 50
         -- Multiple NaN patterns
@@ -131,18 +132,22 @@ TRUNCATE TABLE base32; INSERT INTO base32 SELECT number,
         -- Regular decimal values (compressible)
         ELSE toFloat32(round(number * 0.1 + sin(number), 2))
     END
-FROM numbers(3600);
+FROM numbers(4000);
 TRUNCATE TABLE alp32; INSERT INTO alp32 SELECT * FROM base32;
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
 
 
-SELECT 'Block Size Tests (Float64)';
+SELECT '# Block Size Tests (Float64)';
 TRUNCATE TABLE base64; TRUNCATE TABLE alp64;
 SELECT 'Size 0', count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a USING i;
 
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT 0, 3.14;
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
 SELECT 'Size 1', count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a USING i;
+
+TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, round(number * 0.1 + sin(number), 2) FROM numbers(2);
+TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
+SELECT 'Size 2', count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a USING i;
 
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, round(number * 0.1 + sin(number), 2) FROM numbers(1023);
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
@@ -168,7 +173,7 @@ TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, round(number * 0.1 + si
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
 SELECT 'Size 2049', count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a USING i;
 
-SELECT 'Block Size Tests (Float32)';
+SELECT '# Block Size Tests (Float32)';
 TRUNCATE TABLE base32; INSERT INTO base32 SELECT number, toFloat32(round(number * 0.1 + sin(number), 2)) FROM numbers(1023);
 TRUNCATE TABLE alp32; INSERT INTO alp32 SELECT i, f FROM base32;
 SELECT 'Size 1023', count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
@@ -178,7 +183,7 @@ TRUNCATE TABLE alp32; INSERT INTO alp32 SELECT i, f FROM base32;
 SELECT 'Size 1025', count(), sum(bin(a.f) <> bin(b.f)) FROM base32 AS b INNER JOIN alp32 AS a USING i;
 
 
-SELECT 'All Not Rational Float Test';
+SELECT '# All Not Rational Float Test';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, sin(number) + cos(number) * log(toFloat64(number + 1)) FROM numbers(1000);
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
 SELECT 'Irrational', count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a USING i;
@@ -188,7 +193,7 @@ TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
 SELECT 'NaN/Infinite', count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a USING i;
 
 
-SELECT 'Mixed Blocks Test (per-block parameters)';
+SELECT '# Mixed Blocks Test (per-block parameters)';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number,
     if((number / 1024) % 2 = 0,
         round(number * 0.1 + sin(number), 2),
@@ -199,7 +204,7 @@ TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
 SELECT count(), sum(bin(a.f) <> bin(b.f)) FROM base64 AS b INNER JOIN alp64 AS a USING i;
 
 
-SELECT 'Aggregations Test';
+SELECT '# Aggregations Test';
 TRUNCATE TABLE base64; INSERT INTO base64 SELECT number, round(number * 0.1 + sin(number), 2) FROM numbers(5000);
 TRUNCATE TABLE alp64; INSERT INTO alp64 SELECT i, f FROM base64;
 SELECT
@@ -208,7 +213,8 @@ SELECT
     abs(avg(b.f) - avg(a.f)) < 0.0001,
     min(b.f) = min(a.f),
     max(b.f) = max(a.f)
-FROM base64 AS b INNER JOIN alp64 AS a USING i;
+FROM base64 AS b INNER JOIN alp64 AS a USING i
+WHERE a.i BETWEEN 1500 AND 3000;
 
 TRUNCATE TABLE base32; INSERT INTO base32 SELECT number, toFloat32(round(number * 0.1 + sin(number), 2)) FROM numbers(5000);
 TRUNCATE TABLE alp32; INSERT INTO alp32 SELECT i, f FROM base32;
@@ -218,7 +224,20 @@ SELECT
     abs(avg(b.f) - avg(a.f)) < 0.0001,
     min(b.f) = min(a.f),
     max(b.f) = max(a.f)
-FROM base32 AS b INNER JOIN alp32 AS a USING i;
+FROM base32 AS b INNER JOIN alp32 AS a USING i
+WHERE a.i BETWEEN 1500 AND 3000;
 
 
-DROP TABLE base32; DROP TABLE base64; DROP TABLE alp32; DROP TABLE alp64;
+SELECT '# Granule Test';
+
+TRUNCATE TABLE alp64_granule2048;
+INSERT INTO alp64_granule2048 SELECT number, round(number * 0.1 + sin(number), 2) FROM numbers(6000);
+OPTIMIZE TABLE alp64_granule2048 FINAL;
+
+SELECT 'First Granule', count(), sum(bin(f) <> bin(round(i * 0.1 + sin(i), 2))) FROM alp64_granule2048 WHERE i < 2048;
+SELECT 'Middle granules', count(), sum(bin(f) <> bin(round(i * 0.1 + sin(i), 2))) FROM alp64_granule2048 WHERE i >= 2048 AND i < 4096;
+SELECT 'Last granule', count(), sum(bin(f) <> bin(round(i * 0.1 + sin(i), 2))) FROM alp64_granule2048 WHERE i >= 4096;
+SELECT 'Sparse read', count(), sum(bin(f) <> bin(round(i * 0.1 + sin(i), 2))) FROM alp64_granule2048 WHERE i % 1500 = 0;
+
+
+DROP TABLE base32; DROP TABLE base64; DROP TABLE alp32; DROP TABLE alp64; DROP TABLE alp64_granule2048;
