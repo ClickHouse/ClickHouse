@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationObjectSharedData.h>
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/DataTypeObject.h>
@@ -8,8 +9,8 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Core/NamesAndTypes.h>
-#include <IO/ReadHelpers.h>
 #include <ranges>
 
 namespace DB
@@ -286,9 +287,6 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             data_serialization_settings.object_and_dynamic_write_statistics = ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::NONE;
             data_serialization_settings.stream_mark_getter = [&](const SubstreamPath &) -> MarkInCompressedFile { return settings.stream_mark_getter(settings.path); };
 
-            StreamFileNameSettings stream_file_name_settings;
-            stream_file_name_settings.escape_variant_substreams = false;
-
             for (const auto & [path, path_column] : flattened_paths)
             {
                 paths_substreams.emplace_back();
@@ -296,7 +294,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 data_serialization_settings.getter = [&](const SubstreamPath & substream_path) -> WriteBuffer *
                 {
                     /// Add new substream and its mark for current path.
-                    paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings));
+                    paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path));
                     paths_substreams_marks.back().push_back(settings.stream_mark_getter(settings.path));
                     return data_stream;
                 };
@@ -947,9 +945,6 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
         settings.seek_stream_to_mark_callback(settings.path, mark);
     };
 
-    StreamFileNameSettings stream_file_name_settings;
-    stream_file_name_settings.escape_variant_substreams = false;
-
     for (size_t granule = 0; granule != structure_granules.size(); ++granule)
     {
         const auto & structure_granule = structure_granules[granule];
@@ -983,7 +978,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
 
                 deserialization_settings.seek_stream_to_current_mark_callback = [&](const SubstreamPath & substream_path)
                 {
-                    auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings);
+                    auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path);
 
                     auto it = path_info.substream_to_mark.find(stream_name);
                     if (it == path_info.substream_to_mark.end())
@@ -1016,7 +1011,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                     EnumerateStreamsSettings enumerate_settings;
                     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
                     enumerate_settings.use_specialized_prefixes_and_suffixes_substreams = true;
-                    order = getSubcolumnsDeserializationOrder("", subcolumns_substream_data, path_info.substreams, enumerate_settings, stream_file_name_settings);
+                    order = getSubcolumnsDeserializationOrder("", subcolumns_substream_data, path_info.substreams, enumerate_settings);
                 }
 
                 /// Finally, deserialize data of subcolumns in determined order.

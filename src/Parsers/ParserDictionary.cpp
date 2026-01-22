@@ -8,7 +8,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserDictionaryAttributeDeclaration.h>
 
+#include <Poco/String.h>
 
 #include <Parsers/ParserSetQuery.h>
 
