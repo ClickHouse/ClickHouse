@@ -2119,17 +2119,17 @@ void IMergeTreeDataPart::remove()
 {
     chassert(assertHasValidVersionMetadata());
 
-    try 
+    try
     {
         storage.commitToManifest(shared_from_this(), ManifestOpType::PreRemove);
-    } 
-    catch (const std::bad_weak_ptr & e) 
+    }
+    catch (const std::bad_weak_ptr & e)
     {
         /// In destructor, this may be called when object is being destroyed.
         /// Skip manifest update in this case.
         (void)e;
     }
-    
+
     part_is_probably_removed_from_disk = true;
 
     auto can_remove_callback = [this] ()
