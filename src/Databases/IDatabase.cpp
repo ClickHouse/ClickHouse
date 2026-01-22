@@ -9,6 +9,7 @@
 #include <Common/NamePrompter.h>
 #include <Common/quoteString.h>
 #include <Common/AsyncLoader.h>
+#include <Poco/String.h>
 
 
 namespace CurrentMetrics
@@ -21,13 +22,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int CANNOT_BACKUP_TABLE;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TABLE;
-
 }
 
 StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
@@ -48,6 +49,26 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
         backQuoteIfNeed(name),
         backQuoteIfNeed(hint.first),
         backQuoteIfNeed(hint.second));
+}
+
+String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, ContextPtr context) const
+{
+    /// then try case-insensitive match
+    String found_name;
+    for (auto table_it = getTablesIterator(context); table_it->isValid(); table_it->next())
+    {
+        if (Poco::icompare(table_it->name(), name) == 0)
+        {
+            if (!found_name.empty())
+            {
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "Table name '{}' is ambiguous: matches multiple tables with different cases: '{}' and '{}'",
+                    name, found_name, table_it->name());
+            }
+            found_name = table_it->name();
+        }
+    }
+    return found_name;
 }
 
 IDatabase::IDatabase(String database_name_) : database_name(std::move(database_name_))

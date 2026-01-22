@@ -261,6 +261,8 @@ public:
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
+    virtual String tryResolveTableNameCaseInsensitive(const String & name, ContextPtr context) const;
+
     using FilterByNameFunction = std::function<bool(const String &)>;
 
     /// Get an iterator that allows you to pass through all the tables.

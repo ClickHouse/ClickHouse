@@ -142,6 +142,9 @@ struct IdentifierResolveScope
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
+    /// used for case-insensitive expression argument lookup
+    std::unordered_map<std::string, std::vector<std::string>> lowercase_expression_arg_to_names;
+
     ScopeAliases aliases;
 
     /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.
@@ -210,6 +213,13 @@ struct IdentifierResolveScope
     void pushExpressionNode(const QueryTreeNodePtr & node);
 
     void popExpressionNode();
+
+    /// Add an expression argument *with case-insensitive index*
+    void addExpressionArgument(const std::string & name, QueryTreeNodePtr node);
+
+    /// can do optional case-insensitive lookup, in this case throws exception if multiple matches exist
+    std::unordered_map<std::string, QueryTreeNodePtr>::iterator
+    findExpressionArgument(const std::string & name, bool case_insensitive);
 
     /// Dump identifier resolve scope
     [[maybe_unused]] void dump(WriteBuffer & buffer) const;

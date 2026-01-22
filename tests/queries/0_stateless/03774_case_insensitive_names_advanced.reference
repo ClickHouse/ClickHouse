@@ -1,0 +1,100 @@
+--- Column ambiguity ---
+--- Mixed ambiguity ---
+Test
+Test
+--- JOIN basic ---
+10	100
+20	200
+10	100
+20	200
+--- Self-join ---
+--- JOIN USING ---
+1	10	100
+2	20	200
+1	10	100
+2	20	200
+1
+2
+--- Subqueries ---
+10
+20
+30
+10
+20
+30
+10
+20
+30
+--- CTE ---
+10
+20
+30
+10
+20
+30
+10
+20
+30
+10
+20
+30
+--- Column aliases ---
+10
+30
+10
+30
+20	21
+60	61
+30
+--- Table aliases ---
+10
+30
+10
+30
+10	30
+--- Nested columns (Tuple subcolumns) ---
+Alice
+Alice
+Alice
+25
+--- Nested subcolumns ---
+['a','b']
+['a','b']
+[1,2]
+[1,2]
+--- HAVING with aliases ---
+A	30
+B	40
+A	30
+B	40
+--- Empty table ambiguity ---
+--- Lambda expressions ---
+[2,4,6]
+[8,10,12]
+[2,4,6]
+[8,10,12]
+--- ARRAY JOIN ---
+1
+2
+3
+1
+2
+3
+--- CTE collision ---
+--- Default mode JOIN ---
+10	100
+20	200
+--- Default mode CTE ---
+1
+--- Window function aliases ---
+A	30
+A	30
+B	15
+A	30
+A	30
+B	15
+--- Distributed queries ---
+1	Alice
+2	Bob
+1	Alice
+2	Bob

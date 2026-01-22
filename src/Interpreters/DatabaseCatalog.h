@@ -190,6 +190,8 @@ public:
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(std::string_view database_name) const;
+
+    String tryResolveDatabaseNameCaseInsensitive(std::string_view database_name) const;
     /// Datalake catalogs are implement at IDatabase level in ClickHouse.
     /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
     /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
@@ -347,6 +349,9 @@ private:
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
     Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
+    /// Map from lowercase database name to set of original database names
+    /// Multiple entries indicate case-ambiguity
+    std::unordered_map<String, std::unordered_set<String>> lowercase_db_to_original_names TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"

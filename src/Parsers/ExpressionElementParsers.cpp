@@ -6,6 +6,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
+#include <Common/Exception.h>
 #include <Common/BinStringDecodeHelper.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
@@ -184,29 +185,42 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// The case of Unicode quotes. No escaping is supported. Assuming UTF-8.
         if (*pos->begin == '\xE2' && pos->size() > 6) /// Empty identifiers are not allowed.
         {
-            node = std::make_shared<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
+            auto identifier = std::make_shared<ASTIdentifier>(String(pos->begin + 3, pos->end - 3));
+            identifier->setQuoteStyle(IdentifierQuoteStyle::DoubleQuote); /// treat Unicode quotes as double quotes
+            node = std::move(identifier);
             ++pos;
             return true;
         }
 
         ReadBufferFromMemory buf(pos->begin, pos->size());
         String s;
+        IdentifierQuoteStyle quote_style;
 
         if (*pos->begin == '`')
+        {
             readBackQuotedStringWithSQLStyle(s, buf);
+            quote_style = IdentifierQuoteStyle::Backtick;
+        }
         else
+        {
             readDoubleQuotedStringWithSQLStyle(s, buf);
+            quote_style = IdentifierQuoteStyle::DoubleQuote;
+        }
 
         if (s.empty())    /// Identifiers "empty string" are not allowed.
             return false;
 
-        node = std::make_shared<ASTIdentifier>(s);
+        auto identifier = std::make_shared<ASTIdentifier>(s);
+        identifier->setQuoteStyle(quote_style);
+        node = std::move(identifier);
         ++pos;
         return true;
     }
     if (pos->type == TokenType::BareWord)
     {
-        node = std::make_shared<ASTIdentifier>(String(pos->begin, pos->end));
+        auto identifier = std::make_shared<ASTIdentifier>(String(pos->begin, pos->end));
+        identifier->setQuoteStyle(IdentifierQuoteStyle::None);
+        node = std::move(identifier);
         ++pos;
         return true;
     }
@@ -340,6 +354,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ParserArrayOfJSONIdentifierAddition array_of_json_identifier_addition;
 
     std::vector<String> parts;
+    std::vector<IdentifierQuoteStyle> quote_styles;  /// Track quote style for each identifier part
     SpecialDelimiter last_special_delimiter = SpecialDelimiter::NONE;
     ASTs params;
 
@@ -355,6 +370,9 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             pos = begin;
             break;
         }
+
+        /// Capture quote style for each identifier part
+        quote_styles.push_back(element->as<ASTIdentifier>()->getQuoteStyleAt(0));
 
         if (last_special_delimiter != SpecialDelimiter::NONE)
         {
@@ -412,9 +430,14 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         if (parts.size() == 1) node = std::make_shared<ASTTableIdentifier>(parts[0], std::move(params));
         else node = std::make_shared<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
+        node->as<ASTTableIdentifier>()->setQuoteStyles(std::move(quote_styles));
     }
     else
-        node = std::make_shared<ASTIdentifier>(std::move(parts), false, std::move(params));
+    {
+        auto identifier = std::make_shared<ASTIdentifier>(std::move(parts), false, std::move(params));
+        identifier->setQuoteStyles(std::move(quote_styles));
+        node = std::move(identifier);
+    }
 
     return true;
 }

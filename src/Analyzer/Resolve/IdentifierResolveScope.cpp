@@ -4,6 +4,8 @@
 #include <Analyzer/UnionNode.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Poco/String.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -15,6 +17,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_IDENTIFIER;
     extern const int LOGICAL_ERROR;
 }
 
@@ -119,6 +122,34 @@ void IdentifierResolveScope::pushExpressionNode(const QueryTreeNodePtr & node)
 void IdentifierResolveScope::popExpressionNode()
 {
     expressions_in_resolve_process_stack.pop();
+}
+
+void IdentifierResolveScope::addExpressionArgument(const std::string & name, QueryTreeNodePtr node)
+{
+    expression_argument_name_to_node.emplace(name, std::move(node));
+    lowercase_expression_arg_to_names[Poco::toLower(name)].push_back(name);
+}
+
+std::unordered_map<std::string, QueryTreeNodePtr>::iterator
+IdentifierResolveScope::findExpressionArgument(const std::string & name, bool case_insensitive)
+{
+    if (!case_insensitive)
+        return expression_argument_name_to_node.find(name);
+
+    /// O(1) lookup - map is precomputed
+    auto lowercase_it = lowercase_expression_arg_to_names.find(Poco::toLower(name));
+    if (lowercase_it == lowercase_expression_arg_to_names.end())
+        return expression_argument_name_to_node.end();
+
+    const auto & original_names = lowercase_it->second;
+    if (original_names.size() > 1)
+    {
+        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+            "Identifier '{}' is ambiguous: matches multiple arguments with different cases: '{}' and '{}'. In scope {}",
+            name, original_names[0], original_names[1], scope_node->formatASTForErrorMessage());
+    }
+
+    return expression_argument_name_to_node.find(original_names.front());
 }
 
 namespace

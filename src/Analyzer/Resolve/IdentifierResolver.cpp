@@ -31,6 +31,7 @@
 #include <Core/Settings.h>
 #include <fmt/ranges.h>
 #include <Core/Joins.h>
+#include <Poco/String.h>
 #include <iostream>
 #include <ranges>
 
@@ -42,6 +43,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool single_join_prefer_left_table;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
+    extern const SettingsCaseInsensitiveNames case_insensitive_names;
 }
 
 namespace ErrorCodes
@@ -149,7 +151,11 @@ QueryTreeNodePtr IdentifierResolver::wrapExpressionNodeInTupleElement(QueryTreeN
 /// Resolve identifier functions implementation
 
 /// Try resolve table identifier from database catalog
-std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    bool database_name_case_insensitive,
+    bool table_name_case_insensitive)
 {
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1 || parts_size > 2)
@@ -168,6 +174,27 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     else
     {
         table_name = table_identifier[0];
+    }
+
+    /// Case-insensitive resolution for database name (if not double-quoted and under setting)
+    if (database_name_case_insensitive && !database_name.empty())
+    {
+        String resolved_db = DatabaseCatalog::instance().tryResolveDatabaseNameCaseInsensitive(database_name);
+        if (!resolved_db.empty())
+            database_name = resolved_db;
+    }
+
+    /// Case-insensitive resolution for table name (if not double-quoted and under setting)
+    if (table_name_case_insensitive)
+    {
+        String effective_db = database_name.empty() ? context->getCurrentDatabase() : database_name;
+        auto database = DatabaseCatalog::instance().tryGetDatabase(effective_db);
+        if (database)
+        {
+            String resolved_table = database->tryResolveTableNameCaseInsensitive(table_name, context);
+            if (!resolved_table.empty())
+                table_name = resolved_table;
+        }
     }
 
     StorageID storage_id(database_name, table_name);
@@ -211,9 +238,13 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     return result;
 }
 
-IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
+IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+    const Identifier & table_identifier,
+    const ContextPtr & context,
+    bool database_name_case_insensitive,
+    bool table_name_case_insensitive)
 {
-    if (auto result = tryResolveTableIdentifier(table_identifier, context))
+    if (auto result = tryResolveTableIdentifier(table_identifier, context, database_name_case_insensitive, table_name_case_insensitive))
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
 
     return {};
@@ -290,14 +321,18 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
   */
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionArguments(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope)
 {
-    auto it = scope.expression_argument_name_to_node.find(identifier_lookup.identifier.getFullName());
+    const bool use_case_insensitive = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
+        && !identifier_lookup.isLastPartDoubleQuoted();
+
+    auto it = scope.findExpressionArgument(identifier_lookup.identifier.getFullName(), use_case_insensitive);
     bool resolve_full_identifier = it != scope.expression_argument_name_to_node.end();
 
     if (!resolve_full_identifier)
     {
         const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
-        it = scope.expression_argument_name_to_node.find(identifier_bind_part);
+        it = scope.findExpressionArgument(identifier_bind_part, use_case_insensitive);
         if (it == scope.expression_argument_name_to_node.end())
             return {};
     }
@@ -322,18 +357,37 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 
 bool IdentifierResolver::tryBindIdentifierToAliases(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
+    const bool use_case_insensitive = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
+        && !identifier_lookup.isLastPartDoubleQuoted();
+
+    if (use_case_insensitive)
+        return scope.aliases.findCaseInsensitive(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
+
     return scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
 }
 
 bool IdentifierResolver::tryBindIdentifierToJoinUsingColumn(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
+    const bool use_case_insensitive = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
+        && !identifier_lookup.isLastPartDoubleQuoted();
+
+    const auto & identifier_name = identifier_lookup.identifier.getFullName();
+
     for (const auto * join_using : scope.join_using_columns)
     {
         for (const auto & [using_column_name, _] : *join_using)
         {
-            // std::cerr << identifier_lookup.identifier.getFullName() << " <===========> " << using_column_name << std::endl;
-            if (identifier_lookup.identifier.getFullName() == using_column_name)
+            if (use_case_insensitive)
+            {
+                if (Poco::icompare(identifier_name, using_column_name) == 0)
+                    return true;
+            }
+            else if (identifier_name == using_column_name)
+            {
                 return true;
+            }
         }
     }
 
@@ -357,14 +411,32 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     if (!scope.table_expression_data_for_alias_resolution || !identifier_lookup.isExpressionLookup())
         return {};
 
+    const bool use_case_insensitive = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
+        && !identifier_lookup.isLastPartDoubleQuoted();
+
     const auto & identifier = identifier_lookup.identifier;
     auto identifier_full_name = identifier.getFullName();
-    auto it = scope.table_expression_data_for_alias_resolution->column_name_to_column_node.find(identifier_full_name);
-    if (it != scope.table_expression_data_for_alias_resolution->column_name_to_column_node.end())
-        return it->second;
+
+    auto & column_name_to_column_node = scope.table_expression_data_for_alias_resolution->column_name_to_column_node;
+
+    if (use_case_insensitive)
+    {
+        auto it = scope.table_expression_data_for_alias_resolution->findColumnCaseInsensitive(
+            identifier_full_name, scope.scope_node->formatASTForErrorMessage());
+        if (it != column_name_to_column_node.end())
+            return it->second;
+    }
+    else
+    {
+        auto it = column_name_to_column_node.find(identifier_full_name);
+        if (it != column_name_to_column_node.end())
+            return it->second;
+    }
 
     /// Check if it's a subcolumn
-    if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(identifier_full_name))
+    if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(
+            identifier_full_name, use_case_insensitive, scope.scope_node->formatASTForErrorMessage()))
     {
         if (scope.table_expression_data_for_alias_resolution->supports_subcolumns)
             return std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
@@ -398,6 +470,15 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
+    const bool use_case_insensitive = table_expression_data.standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+
+    auto strings_equal = [use_case_insensitive](const std::string & a, const std::string & b)
+    {
+        if (use_case_insensitive)
+            return Poco::icompare(a, b) == 0;
+        return a == b;
+    };
+
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
@@ -407,26 +488,27 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
                 identifier_lookup.identifier.getFullName(),
                 table_expression_node->formatASTForErrorMessage());
 
-        if (parts_size == 1 && path_start == table_name)
+        if (parts_size == 1 && strings_equal(path_start, table_name))
             return true;
-        if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
+        if (parts_size == 2 && strings_equal(path_start, database_name) && strings_equal(identifier[1], table_name))
             return true;
         return false;
     }
 
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)) || table_expression_data.canBindIdentifier(IdentifierView(identifier)))
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive)
+        || table_expression_data.canBindIdentifier(IdentifierView(identifier), use_case_insensitive))
         return true;
 
     if (identifier.getPartsSize() == 1)
         return false;
 
-    if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+    if ((!table_name.empty() && strings_equal(path_start, table_name)) || (table_expression_node->hasAlias() && strings_equal(path_start, table_expression_node->getAlias())))
         return true;
 
     if (identifier.getPartsSize() == 2)
         return false;
 
-    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
+    if (!database_name.empty() && strings_equal(path_start, database_name) && strings_equal(identifier[1], table_name))
         return true;
 
     return false;
@@ -453,7 +535,9 @@ bool IdentifierResolver::tryBindIdentifierToTableExpressions(const IdentifierLoo
 
 bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const IdentifierLookup & identifier_lookup, const IdentifierResolveScope & scope)
 {
-    bool result = false;
+    const bool use_case_insensitive = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
+        && !identifier_lookup.isLastPartDoubleQuoted();
 
     for (const auto & table_expression : scope.registered_table_expression_nodes)
     {
@@ -463,13 +547,20 @@ bool IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(const Identifie
 
         for (const auto & array_join_expression : array_join_node->getJoinExpressions())
         {
-            auto array_join_expression_alias = array_join_expression->getAlias();
-            if (identifier_lookup.identifier.front() == array_join_expression_alias)
+            const auto & array_join_expression_alias = array_join_expression->getAlias();
+            if (use_case_insensitive)
+            {
+                if (Poco::icompare(identifier_lookup.identifier.front(), array_join_expression_alias) == 0)
+                    return true;
+            }
+            else if (identifier_lookup.identifier.front() == array_join_expression_alias)
+            {
                 return true;
+            }
         }
     }
 
-    return result;
+    return false;
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
@@ -498,14 +589,26 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     const auto & identifier_full_name = identifier_without_column_qualifier.getFullName();
 
-    if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
+    /// In SQL standard mode, use case-insensitive lookup for non-double-quoted-identifiers
+    const bool use_case_insensitive = table_expression_data.standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+
+    if (use_case_insensitive)
+    {
+        String scope_description = scope.scope_node ? scope.scope_node->formatASTForErrorMessage() : "";
+        auto it = table_expression_data.findColumnCaseInsensitive(identifier_full_name, scope_description);
+        if (it != table_expression_data.column_name_to_column_node.end())
+            result_expression = it->second;
+    }
+    else if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
     {
         result_expression = it->second;
     }
+
     /// Check if it's a subcolumn
-    else
+    if (!result_expression)
     {
-        if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(identifier_full_name))
+        if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(
+                identifier_full_name, use_case_insensitive, scope.scope_node->formatASTForErrorMessage()))
         {
             if (table_expression_data.supports_subcolumns)
                 result_expression = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, subcolumn_info->subcolumn_type}, subcolumn_info->column_node->getColumnSource());
@@ -708,16 +811,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return {};
     }
 
+    const bool use_case_insensitive = table_expression_data.standard_mode && !identifier_lookup.isLastPartDoubleQuoted();
+
      /** If identifier first part binds to some column start or table has full identifier name. Then we can try to find whole identifier in table.
        * 1. Try to bind identifier first part to column in table, if true get full identifier from table or throw exception.
        * 2. Try to bind identifier first part to table name or storage alias, if true remove first part and try to get full identifier from table or throw exception.
        * Storage alias works for subquery, table function as well.
        * 3. Try to bind identifier first parts to database name and table name, if true remove first two parts and try to get full identifier from table or throw exception.
        */
-    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier)))
+    if (table_expression_data.hasFullIdentifierName(IdentifierView(identifier), use_case_insensitive))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 0 /*identifier_column_qualifier_parts*/);
 
-    if (table_expression_data.canBindIdentifier(IdentifierView(identifier)))
+    if (table_expression_data.canBindIdentifier(IdentifierView(identifier), use_case_insensitive))
     {
         /** This check is insufficient to determine whether and identifier can be resolved from table expression.
           * A further check will be performed in `tryResolveIdentifierFromStorage` to see if we have such a subcolumn.
@@ -735,14 +840,23 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return {};
 
     const auto & table_name = table_expression_data.table_name;
-    if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+    const auto & table_alias = table_expression_node->hasAlias() ? table_expression_node->getAlias() : "";
+
+    auto strings_equal = [use_case_insensitive](const std::string & a, const std::string & b)
+    {
+        if (use_case_insensitive)
+            return Poco::icompare(a, b) == 0;
+        return a == b;
+    };
+
+    if ((!table_name.empty() && strings_equal(path_start, table_name)) || (!table_alias.empty() && strings_equal(path_start, table_alias)))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (identifier.getPartsSize() == 2)
         return {};
 
     const auto & database_name = table_expression_data.database_name;
-    if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
+    if (!database_name.empty() && strings_equal(path_start, database_name) && strings_equal(identifier[1], table_name))
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
     return {};
@@ -1357,7 +1471,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
 namespace
 {
 
-std::optional<size_t> getCompoundIdentifierPrefixSize(const Identifier & identifier, const String & name)
+std::optional<size_t> getCompoundIdentifierPrefixSize(const Identifier & identifier, const String & name, bool use_case_insensitive = false)
 {
     IdentifierView identifier_view(identifier);
     while (identifier_view.getLength() > name.length())
@@ -1365,8 +1479,19 @@ std::optional<size_t> getCompoundIdentifierPrefixSize(const Identifier & identif
         identifier_view.popLast();
     }
 
-    if (identifier_view.getLength() != name.length() || identifier_view.getFullName() != name)
+    if (identifier_view.getLength() != name.length())
         return std::nullopt;
+
+    String identifier_full_name(identifier_view.getFullName());
+    if (use_case_insensitive)
+    {
+        if (Poco::icompare(identifier_full_name, name) != 0)
+            return std::nullopt;
+    }
+    else if (identifier_full_name != name)
+    {
+        return std::nullopt;
+    }
     return identifier_view.getPartsSize();
 }
 
@@ -1381,6 +1506,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 
     if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
         return resolve_result;
+
+    const bool use_case_insensitive = scope.context
+        && scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard
+        && !identifier_lookup.isLastPartDoubleQuoted();
 
     const auto & array_join_column_expressions = from_array_join_node.getJoinExpressions();
     const auto & array_join_column_expressions_nodes = array_join_column_expressions.getNodes();
@@ -1400,7 +1529,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
             ? array_join_column_expression_typed.getAlias()
             : array_join_column_expression_typed.getColumnName();
 
-        if (auto prefix_size = getCompoundIdentifierPrefixSize(identifier_lookup.identifier, alias_or_name))
+        if (auto prefix_size = getCompoundIdentifierPrefixSize(identifier_lookup.identifier, alias_or_name, use_case_insensitive))
             identifier_view.popFirst(*prefix_size);
         else
             continue;

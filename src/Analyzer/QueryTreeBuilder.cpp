@@ -599,12 +599,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildExpression(const ASTPtr & expression, co
     if (const auto * ast_identifier = expression->as<ASTIdentifier>())
     {
         auto identifier = Identifier(ast_identifier->name_parts);
-        result = std::make_shared<IdentifierNode>(std::move(identifier));
+        result = std::make_shared<IdentifierNode>(std::move(identifier), ast_identifier->getQuoteStyles());
     }
     else if (const auto * table_identifier = expression->as<ASTTableIdentifier>())
     {
         auto identifier = Identifier(table_identifier->name_parts);
-        result = std::make_shared<IdentifierNode>(std::move(identifier));
+        result = std::make_shared<IdentifierNode>(std::move(identifier), table_identifier->getQuoteStyles());
     }
     else if (const auto * asterisk = expression->as<ASTAsterisk>())
     {
@@ -912,12 +912,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             {
                 auto & table_identifier_typed = table_expression.database_and_table_name->as<ASTTableIdentifier &>();
                 auto storage_identifier = Identifier(table_identifier_typed.name_parts);
-                QueryTreeNodePtr table_identifier_node;
+                std::shared_ptr<IdentifierNode> table_identifier_node;
 
                 if (table_expression_modifiers)
                     table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier, *table_expression_modifiers);
                 else
                     table_identifier_node = std::make_shared<IdentifierNode>(storage_identifier);
+
+                table_identifier_node->setQuoteStyles(table_identifier_typed.getQuoteStyles());
 
                 table_identifier_node->setAlias(table_identifier_typed.tryGetAlias());
                 table_identifier_node->setOriginalAST(table_element.table_expression);

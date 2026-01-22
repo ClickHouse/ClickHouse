@@ -69,11 +69,15 @@ public:
 
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool database_name_case_insensitive = false,
+        bool table_name_case_insensitive = false);
 
     static IdentifierResolveResult tryResolveTableIdentifierFromDatabaseCatalog(
         const Identifier & table_identifier,
-        const ContextPtr & context);
+        const ContextPtr & context,
+        bool database_name_case_insensitive = false,
+        bool table_name_case_insensitive = false);
 
     QueryTreeNodePtr tryResolveIdentifierFromCompoundExpression(
         const Identifier & expression_identifier,

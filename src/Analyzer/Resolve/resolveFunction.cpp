@@ -61,6 +61,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsCaseInsensitiveNames case_insensitive_names;
     extern const SettingsBool execute_exists_as_scalar_subquery;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsBool transform_null_in;
@@ -430,7 +431,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
             else
             {
-                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, scope.context).resolved_identifier;
+                const bool standard_mode = scope.context->getSettingsRef()[Setting::case_insensitive_names] == CaseInsensitiveNames::Standard;
+                /// For joinGet function, we don't have quote style info, so apply case-insensitivity to both parts
+                auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+                    identifier, scope.context, standard_mode, standard_mode).resolved_identifier;
                 if (!table_node)
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Function {} first argument expected table identifier '{}'. In scope {}",

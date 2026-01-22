@@ -16,6 +16,12 @@ IdentifierNode::IdentifierNode(Identifier identifier_)
     , identifier(std::move(identifier_))
 {}
 
+IdentifierNode::IdentifierNode(Identifier identifier_, std::vector<IdentifierQuoteStyle> quote_styles_)
+    : IQueryTreeNode(children_size)
+    , identifier(std::move(identifier_))
+    , quote_styles(std::move(quote_styles_))
+{}
+
 IdentifierNode::IdentifierNode(Identifier identifier_, TableExpressionModifiers table_expression_modifiers_)
     : IQueryTreeNode(children_size)
     , identifier(std::move(identifier_))
@@ -41,7 +47,9 @@ void IdentifierNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_sta
 bool IdentifierNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const IdentifierNode &>(rhs);
-    return identifier == rhs_typed.identifier && table_expression_modifiers == rhs_typed.table_expression_modifiers;
+    return identifier == rhs_typed.identifier
+        && table_expression_modifiers == rhs_typed.table_expression_modifiers
+        && quote_styles == rhs_typed.quote_styles;
 }
 
 void IdentifierNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -58,13 +66,17 @@ QueryTreeNodePtr IdentifierNode::cloneImpl() const
 {
     auto clone_identifier_node = std::make_shared<IdentifierNode>(identifier);
     clone_identifier_node->table_expression_modifiers = table_expression_modifiers;
+    clone_identifier_node->quote_styles = quote_styles;
     return clone_identifier_node;
 }
 
 ASTPtr IdentifierNode::toASTImpl(const ConvertToASTOptions & /* options */) const
 {
     auto identifier_parts = identifier.getParts();
-    return std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+    auto ast_identifier = std::make_shared<ASTIdentifier>(std::move(identifier_parts));
+    if (!quote_styles.empty())
+        ast_identifier->setQuoteStyles(quote_styles);
+    return ast_identifier;
 }
 
 }

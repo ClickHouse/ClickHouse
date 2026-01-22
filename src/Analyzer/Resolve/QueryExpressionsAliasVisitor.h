@@ -34,8 +34,9 @@ namespace DB
 class QueryExpressionsAliasVisitor : public InDepthQueryTreeVisitor<QueryExpressionsAliasVisitor>
 {
 public:
-    explicit QueryExpressionsAliasVisitor(ScopeAliases & aliases_)
+    explicit QueryExpressionsAliasVisitor(ScopeAliases & aliases_, bool standard_mode_ = false)
         : aliases(aliases_)
+        , standard_mode(standard_mode_)
     {}
 
     void visitImpl(QueryTreeNodePtr & node)
@@ -96,6 +97,8 @@ private:
                 auto [_, inserted] = aliases.alias_name_to_lambda_node.emplace(alias, cloned_alias_node);
                 if (!inserted || aliases.alias_name_to_expression_node.contains(alias))
                     addDuplicatingAlias(cloned_alias_node);
+                if (standard_mode)
+                    aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::FUNCTION);
                 break;
             }
         case QueryTreeNodeType::IDENTIFIER:
@@ -111,10 +114,17 @@ private:
                 {
                     inserted_lambda = aliases.alias_name_to_lambda_node.emplace(alias, cloned_alias_node).second;
                     inserted_table_expression = aliases.alias_name_to_table_expression_node.emplace(alias, cloned_alias_node).second;
+                    if (standard_mode)
+                    {
+                        aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::FUNCTION);
+                        aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::TABLE_EXPRESSION);
+                    }
                 }
 
                 if (!inserted_expression || !inserted_lambda || !inserted_table_expression)
                     addDuplicatingAlias(cloned_alias_node);
+                if (standard_mode)
+                    aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::EXPRESSION);
                 break;
             }
         default:
@@ -122,12 +132,15 @@ private:
                 auto [_, inserted] = aliases.alias_name_to_expression_node.emplace(alias, cloned_alias_node);
                 if (!inserted || aliases.alias_name_to_lambda_node.contains(alias))
                     addDuplicatingAlias(cloned_alias_node);
+                if (standard_mode)
+                    aliases.registerAliasCaseInsensitive(alias, IdentifierLookupContext::EXPRESSION);
                 break;
             }
         }
     }
 
     ScopeAliases & aliases;
+    bool standard_mode;
 };
 
 }

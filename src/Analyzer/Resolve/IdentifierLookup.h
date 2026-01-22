@@ -5,6 +5,7 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <base/defines.h>
 
 namespace DB
 {
@@ -25,6 +26,7 @@ inline const char * toString(IdentifierLookupContext identifier_lookup_context)
         case IdentifierLookupContext::FUNCTION: return "FUNCTION";
         case IdentifierLookupContext::TABLE_EXPRESSION: return "TABLE_EXPRESSION";
     }
+    UNREACHABLE();
 }
 
 inline const char * toStringLowercase(IdentifierLookupContext identifier_lookup_context)
@@ -35,6 +37,7 @@ inline const char * toStringLowercase(IdentifierLookupContext identifier_lookup_
         case IdentifierLookupContext::FUNCTION: return "function";
         case IdentifierLookupContext::TABLE_EXPRESSION: return "table expression";
     }
+    UNREACHABLE();
 }
 
 /** Structure that represent identifier lookup during query analysis.
@@ -45,6 +48,11 @@ struct IdentifierLookup
     Identifier identifier;
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
+    /// Per-part double-quote tracking for compound identifiers like "db".table
+    std::vector<bool> is_part_double_quoted = {};
+
+    IdentifierLookup(Identifier identifier_, IdentifierLookupContext lookup_context_)
+        : identifier(std::move(identifier_)), lookup_context(lookup_context_) {}
 
     bool isExpressionLookup() const
     {
@@ -59,6 +67,22 @@ struct IdentifierLookup
     bool isTableExpressionLookup() const
     {
         return lookup_context == IdentifierLookupContext::TABLE_EXPRESSION;
+    }
+
+    bool isPartDoubleQuoted(size_t index) const
+    {
+        if (index < is_part_double_quoted.size())
+            return is_part_double_quoted[index];
+        return false;
+    }
+
+    /// used for expression lookups (table.column), the last part is the column name that
+    /// looked up in the column map, so its quote style determines case sensitivity
+    bool isLastPartDoubleQuoted() const
+    {
+        if (is_part_double_quoted.empty())
+            return false;
+        return is_part_double_quoted.back();
     }
 
     String dump() const
@@ -108,6 +132,7 @@ inline const char * toString(IdentifierResolvePlace resolved_identifier_place)
         case IdentifierResolvePlace::CTE: return "CTE";
         case IdentifierResolvePlace::DATABASE_CATALOG: return "DATABASE_CATALOG";
     }
+    UNREACHABLE();
 }
 
 struct IdentifierResolveScope;
