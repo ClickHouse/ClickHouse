@@ -8596,14 +8596,14 @@ void MergeTreeData::checkColumnFilenamesForCollision(
     const MergeTreeSettings & settings,
     bool throw_on_error) const
 {
-    auto startsWith = [](const String & s, const String & prefix) -> bool
+    auto startsWith = [](const String & s, const String & pfx) -> bool
     {
-        return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
+        return s.size() >= pfx.size() && s.compare(0, pfx.size(), pfx) == 0;
     };
 
     auto isDigit = [](char c) -> bool
     {
-        return s.starts_with(prefix);
+        return c >= '0' && c <= '9';
     };
 
     /// Some stream files are intentionally shared across "nested-like" columns.
@@ -8625,10 +8625,10 @@ void MergeTreeData::checkColumnFilenamesForCollision(
             if (!isDigit(full_stream_name[i]))
                 return false;
 
-        const String prefix = full_stream_name.substr(0, pos);
-        const String prefix_dot = prefix + ".";
+        const String stream_prefix = full_stream_name.substr(0, pos);
+        const String stream_prefix_dot = stream_prefix + ".";
 
-        return startsWith(col_a, prefix_dot) && startsWith(col_b, prefix_dot);
+        return startsWith(col_a, stream_prefix_dot) && startsWith(col_b, stream_prefix_dot);
     };
 
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
@@ -8738,6 +8738,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(
         }
     }
 }
+
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
