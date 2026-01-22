@@ -1474,6 +1474,7 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
         case Coordination::OpNum::CreateIfNotExists:
             return function(static_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
+        case Coordination::OpNum::TryRemove:
             return function(static_cast<const Coordination::ZooKeeperRemoveRequest &>(zk_request));
         case Coordination::OpNum::RemoveRecursive:
             return function(static_cast<const Coordination::ZooKeeperRemoveRecursiveRequest &>(zk_request));
@@ -1964,17 +1965,31 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
     if (!node)
     {
+        if (zk_request.try_remove)
+            return {};
+
         if (zk_request.restored_from_zookeeper_log)
         {
             update_parent_pzxid();
             add_parent_update_delta();
         }
+
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
     if (zk_request.version != -1 && zk_request.version != node->stats.version)
+    {
+        if (zk_request.try_remove)
+            return {};
+
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
+    }
     if (node->stats.numChildren() != 0)
+    {
+        if (zk_request.try_remove)
+            return {};
+
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOTEMPTY}};
+    }
 
     if (zk_request.restored_from_zookeeper_log)
         update_parent_pzxid();
@@ -2000,9 +2015,20 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-process(const Coordination::ZooKeeperRemoveRequest & /*zk_request*/, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t /*session_id*/)
+process(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t /*session_id*/)
 {
-    auto response = std::make_shared<Coordination::ZooKeeperRemoveResponse>();
+    std::shared_ptr<Coordination::ZooKeeperRemoveResponse> response;
+    if (zk_request.try_remove)
+        response = std::make_shared<Coordination::ZooKeeperTryRemoveResponse>();
+    else
+        response = std::make_shared<Coordination::ZooKeeperRemoveResponse>();
+
+    if (deltas.empty())
+    {
+        chassert(zk_request.try_remove);
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
 
     response->error = storage.commit(std::move(deltas));
     return response;
@@ -3855,7 +3881,7 @@ void KeeperStorage<Container>::rollbackRequest(int64_t rollback_zxid, bool allow
     }
 
     // if an exception occurs during rollback, the best option is to terminate because we can end up in an inconsistent state
-    // we block memory tracking so we can avoid terminating if we're rollbacking because of memory limit
+    // we block memory tracking so we can avoid terminating if we're rolling back because of memory limit
     LockMemoryExceptionInThread blocker{VariableContext::Global};
     try
     {

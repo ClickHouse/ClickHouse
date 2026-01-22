@@ -1,5 +1,7 @@
 #pragma once
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
+#include <Core/SettingsEnums.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <filesystem>
@@ -33,7 +35,9 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
-        bool is_path_with_hive_partitioning,
+        ObjectStorageQueueBucketingMode bucketing_mode_,
+        ObjectStorageQueuePartitioningMode partitioning_mode_,
+        const ObjectStorageQueueFilenameParser * parser_,
         LoggerPtr log_);
 
     struct BucketHolder;
@@ -48,7 +52,12 @@ public:
         bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
-    static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num);
+    static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(
+        const std::string & path,
+        size_t buckets_num,
+        ObjectStorageQueueBucketingMode bucketing_mode,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser);
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
@@ -59,7 +68,9 @@ public:
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
-        bool is_path_with_hive_partitioning,
+        ObjectStorageQueueBucketingMode bucketing_mode,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser,
         LoggerPtr log);
 
     void prepareProcessedAtStartRequests(Coordination::Requests & requests);
@@ -68,8 +79,8 @@ private:
     const size_t buckets_num;
     const std::string zk_path;
     const BucketInfoPtr bucket_info;
-
-    const bool is_path_with_hive_partitioning = false;
+    const ObjectStorageQueuePartitioningMode partitioning_mode;
+    const ObjectStorageQueueFilenameParser * parser;
 
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
 
@@ -82,19 +93,23 @@ private:
         const std::string & processed_node_path_,
         LoggerPtr log_);
 
-    struct LastProcessedInfo
+    struct ProcessingStateFromKeeper
     {
-        std::optional<std::string> file_path;
-        bool is_failed = false;
+        explicit ProcessingStateFromKeeper(bool is_failed_) : is_failed(is_failed_) {}
+        ProcessingStateFromKeeper(const std::string & path, const std::string & last_processed_path_, bool is_failed_);
+
+        const std::optional<std::string> last_processed_path = std::nullopt;
+        const bool is_failed = false;
+        const bool is_processed = false;
     };
 
-    LastProcessedInfo getLastProcessedFile(
-        Coordination::Stat * stat,
+    ProcessingStateFromKeeper getProcessingStateFromKeeper(
+        Coordination::Stat * processed_node_stat,
         bool check_failed = false,
         LoggerPtr log_ = nullptr);
 
-    static LastProcessedInfo getLastProcessedFile(
-        Coordination::Stat * stat,
+    static ProcessingStateFromKeeper getProcessingStateFromKeeper(
+        Coordination::Stat * processed_node_stat,
         const std::string & processed_node_path_,
         const std::string & file_path,
         std::optional<std::string> processed_node_hive_partitioning_path = std::nullopt,
@@ -102,7 +117,7 @@ private:
         LoggerPtr log_ = nullptr);
 
     static bool getMaxProcessedFilesByHivePartition(
-        std::unordered_map<std::string, std::string> & max_processed_files,
+        std::unordered_map<std::string, std::string> & last_processed_path_per_hive_partition,
         const std::string & processed_node_path_,
         LoggerPtr log_);
 
@@ -112,14 +127,7 @@ private:
         bool ignore_if_exists,
         LastProcessedFileInfoMapPtr created_nodes = nullptr);
 
-    void prepareHiveProcessedMap(HiveLastProcessedFileInfoMap & file_map) override;
-
-    /// Return hive part of path
-    /// For path `/table/path/date=2025-01-01/city=New_Orlean/data.parquet` returns `date=2025-01-01/city=New_Orlean`
-    static std::string getHivePart(const std::string & file_path);
-    /// Normalize hive part to use as node in zookeeper path
-    /// `date=2025-01-01/city=New_Orlean` changes to `date=2025-01-01_city=New__Orlean`
-    static void normalizeHivePart(std::string & hive_part);
+    void preparePartitionProcessedMap(PartitionLastProcessedFileInfoMap & last_processed_file_per_partition) override;
 };
 
 struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::noncopyable
