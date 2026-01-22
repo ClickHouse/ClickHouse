@@ -19,6 +19,9 @@ class ServerDied(Exception):
 def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     options = []
     client_options = []
+    # allow constraint
+    client_options.append(f"enable_analyzer=1")
+
     if i > 0:
         options.append("--order=random")
 
@@ -109,8 +112,6 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
 
     if random.random() < 0.2:
         client_options.append(f"compatibility='{random.randint(20, 26)}.{random.randint(1, 12)}'")
-        # allow constraint
-        client_options.append(f"enable_analyzer=1")
 
     # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
     # That is why we use it with fallback to 'greedy'.
@@ -161,8 +162,8 @@ def run_func_test(
         except subprocess.CalledProcessError as e:
             logging.info(e.stdout)
 
-            # Ignore fault injects, but most of the tests should complete succesffully
-            ignored_errors = ["CANNOT_SCHEDULE_TASK", "Fault injection"]
+            # Ignore fault injects, but most of the time tests should complete successfully
+            ignored_errors = ["CANNOT_SCHEDULE_TASK", "Fault injection", "Query memory tracker: fault injected"]
             if any(err in e.stdout or err in e.stderr for err in ignored_errors):
                 logging.warning(f"Detected known transient error, ignoring: {ignored_errors}")
                 continue
