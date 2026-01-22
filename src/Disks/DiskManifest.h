@@ -4,9 +4,15 @@
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/Manifest/IManifestStorage.h>
 #include <Storages/MergeTree/Manifest/BaseManifestEntry.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
 
 class DiskManifest;
 using DiskManifestPtr = std::shared_ptr<DiskManifest>;
@@ -42,37 +48,37 @@ public:
     std::optional<UInt64> getTotalSpace() const override { return 0; }
     std::optional<UInt64> getAvailableSpace() const override { return 0; }
     std::optional<UInt64> getUnreservedSpace() const override { return 0; }
-    
+
     bool existsFile(const String &) const override { return false; }
     bool existsDirectory(const String &) const override { return false; }
     bool existsFileOrDirectory(const String &) const override { return false; }
-    size_t getFileSize(const String &) const override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    size_t getFileSize(const String &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void createDirectory(const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void createDirectory(const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void createDirectories(const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void createDirectories(const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void moveDirectory(const String &, const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void moveDirectory(const String &, const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void createFile(const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void createFile(const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void moveFile(const String &, const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void moveFile(const String &, const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void replaceFile(const String &, const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void replaceFile(const String &, const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
     void listFiles(const String &, std::vector<String> &) const override
     {
@@ -83,77 +89,77 @@ public:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    std::unique_ptr<WriteBufferFromFileBase> 
+    std::unique_ptr<WriteBufferFromFileBase>
     writeFile(const String &, size_t, WriteMode, const WriteSettings &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    Strings getBlobPath(const String &) const override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    Strings getBlobPath(const String &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
     bool areBlobPathsRandom() const override { return false; }
     void writeFileUsingBlobWritingFunction(const String &, WriteMode, WriteBlobFunction &&) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void removeFile(const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void removeFile(const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void removeFileIfExists(const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void removeFileIfExists(const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void removeDirectory(const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void removeDirectory(const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void removeRecursive(const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void removeRecursive(const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
     void setLastModified(const String &, const Poco::Timestamp &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    Poco::Timestamp getLastModified(const String &) const override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    Poco::Timestamp getLastModified(const String &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    time_t getLastChanged(const String &) const override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    time_t getLastChanged(const String &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void setReadOnly(const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void setReadOnly(const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void createHardLink(const String &, const String &) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void createHardLink(const String &, const String &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    void truncateFile(const String &, size_t) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    void truncateFile(const String &, size_t) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    DataSourceDescription getDataSourceDescription() const override 
-    { 
-        return data_source_description; 
+    DataSourceDescription getDataSourceDescription() const override
+    {
+        return data_source_description;
     }
     bool isRemote() const override { return false; }
     bool supportZeroCopyReplication() const override { return false; }
-    SyncGuardPtr getDirectorySyncGuard(const String &) const override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    SyncGuardPtr getDirectorySyncGuard(const String &) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
     void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
-    ReservationPtr reserve(UInt64 /* bytes */) override 
-    { 
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented"); 
+    ReservationPtr reserve(UInt64 /* bytes */) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
     }
     bool isBroken() const override { return false; }
     bool isReadOnly() const override { return true; }

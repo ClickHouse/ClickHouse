@@ -55,7 +55,6 @@ private:
     ManifestStoragePtr manifest_storage;
     String manifest_storage_path;
     DiskManifestPtr manifest_disk;
-    ContextPtr context_ptr;
 };
 
 }

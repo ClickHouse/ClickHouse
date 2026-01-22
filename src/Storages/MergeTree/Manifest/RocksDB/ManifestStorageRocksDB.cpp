@@ -50,7 +50,7 @@ ManifestStoragePtr ManifestStorageRocksDB::create(const String & dir)
     options.compression = rocksdb::CompressionType::kLZ4Compression;
     options.compaction_style = rocksdb::CompactionStyle::kCompactionStyleUniversal;
     options.info_log_level = rocksdb::ERROR_LEVEL;
-    
+
     table_options.no_block_cache = true;
     table_options.cache_index_and_filter_blocks = false;
     options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
@@ -64,7 +64,7 @@ ManifestStoragePtr ManifestStorageRocksDB::create(const String & dir)
 
     std::vector<rocksdb::ColumnFamilyHandle *> cf_handles;
     rocksdb::Status status = rocksdb::DB::Open(options, dir, column_families, &cf_handles, &db);
-    
+
     if (!status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to open rocksdb path at: {} status:{}", dir, status.ToString());
 
@@ -114,7 +114,7 @@ ManifestStatus ManifestStorageRocksDB::put(const String & key, const String & va
     rocksdb::WriteOptions options;
     options.sync = false;
     options.disableWAL = false;
-    
+
     auto status = rocksdb_->Put(options, default_cf_handle_, key, value);
     return convertStatus(status);
 }
@@ -133,7 +133,7 @@ ManifestStatus ManifestStorageRocksDB::del(const String & key)
     rocksdb::WriteOptions options;
     options.sync = false;
     options.disableWAL = false;
-    
+
     auto status = rocksdb_->Delete(options, default_cf_handle_, key);
     return convertStatus(status);
 }
@@ -146,7 +146,7 @@ ManifestStatus ManifestStorageRocksDB::delRange(const String & start_key, const 
     rocksdb::WriteOptions options;
     options.sync = false;
     options.disableWAL = false;
-    
+
     auto status = rocksdb_->DeleteRange(options, default_cf_handle_, start_key, end_key);
     return convertStatus(status);
 }
@@ -262,7 +262,7 @@ void ManifestStorageRocksDB::flush()
 
     auto status = rocksdb_->Flush(flush_options, default_cf_handle_);
     if (!status.ok())
-        LOG_WARNING(&Poco::Logger::get("ManifestStorageRocksDB"), 
+        LOG_WARNING(&Poco::Logger::get("ManifestStorageRocksDB"),
                     "Failed to flush: {}", status.ToString());
 }
 

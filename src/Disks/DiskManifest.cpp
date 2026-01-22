@@ -101,7 +101,7 @@ DirectoryIteratorPtr DiskManifest::iterateDirectory(const String & /* path */) c
         {
             const String & disk_path = entry.disk_path;
             std::filesystem::path from_path = std::filesystem::path(disk_path) / relative_data_path / uuid;
-            
+
             if (std::filesystem::exists(from_path))
             {
                 std::filesystem::path detached_dir = std::filesystem::path(disk_path) / relative_data_path
@@ -109,7 +109,7 @@ DirectoryIteratorPtr DiskManifest::iterateDirectory(const String & /* path */) c
                 if (!std::filesystem::exists(detached_dir))
                     std::filesystem::create_directories(detached_dir);
                 std::filesystem::path to_path = detached_dir / uuid;
-                
+
                 try
                 {
                     std::filesystem::rename(from_path, to_path);

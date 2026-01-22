@@ -656,13 +656,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "MergeTreeWithManifest engine argument must be a string (e.g., MergeTreeWithManifest('rocksdb'))");
             }
         }
         else
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "MergeTreeWithManifest engine argument must be a string literal (e.g., MergeTreeWithManifest('rocksdb'))");
         }
     }
