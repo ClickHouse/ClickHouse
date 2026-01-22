@@ -271,7 +271,7 @@ public:
         }
 
         /// We set max_free_threads = 0 because we don't want to keep any threads if there is no BACKUP or RESTORE query running right now.
-        (max_threads != 0);
+        chassert(max_threads != 0);
         size_t max_free_threads = 0;
         size_t queue_size = use_queue ? 0 : max_threads;
         auto thread_pool = std::make_unique<ThreadPool>(metric_threads, metric_active_threads, metric_scheduled_threads, max_threads, max_free_threads, queue_size);
@@ -453,7 +453,7 @@ struct BackupsWorker::BackupStarter
 
     void doBackup()
     {
-        (!backup_coordination);
+        chassert(!backup_coordination);
         if (on_cluster && !is_internal_backup)
         {
             backup_query->cluster = backup_context->getMacros()->expand(backup_query->cluster);
@@ -471,6 +471,7 @@ struct BackupsWorker::BackupStarter
             query_context->checkAccess(required_access);
         }
 
+        chassert(backup_settings.data_file_name_prefix_length);
         backup_coordination = backups_worker.makeBackupCoordination(on_cluster, backup_settings, backup_context);
         backup_coordination->startup();
 
@@ -668,9 +669,9 @@ void BackupsWorker::doBackup(
         }
 
         /// Write the backup entries to the backup.
-        (backup);
-        (backup_coordination);
-        (context);
+        chassert(backup);
+        chassert(backup_coordination);
+        chassert(context);
         buildFileInfosForBackupEntries(backup, backup_entries, read_settings, backup_coordination, context->getProcessListElement());
         writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, is_internal_backup, context->getProcessListElement());
 
@@ -894,7 +895,7 @@ struct BackupsWorker::RestoreStarter
 
     void doRestore()
     {
-        (!restore_coordination);
+        chassert(!restore_coordination);
         if (on_cluster && !is_internal_restore)
         {
             restore_query->cluster = restore_context->getMacros()->expand(restore_query->cluster);
@@ -1094,7 +1095,7 @@ void BackupsWorker::sendQueryToOtherHosts(const ASTBackupQuery & backup_or_resto
     size_t only_shard_num, size_t only_replica_num, ContextMutablePtr context, const AccessRightsElements & access_to_check,
     const ZooKeeperRetriesInfo & retries_info) const
 {
-    (cluster);
+    chassert(cluster);
 
     DDLQueryOnClusterParams params;
     params.cluster = cluster;
