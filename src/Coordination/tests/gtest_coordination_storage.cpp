@@ -741,13 +741,30 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveAcls)
         EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to create " << path;
     };
 
+    const auto exists = [&](const String & path)
+    {
+        int new_zxid = ++zxid;
+
+        const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
+        exists_request->path = path;
+
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(exists_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Coordination::Error::ZOK;
+    };
+
     /// Add nodes with only Create ACL
     create("/A");
     create("/A/B");
     create("/A/C");
     create("/A/B/D");
 
+
     {
+        SCOPED_TRACE("Single Operation Auth Error");
+
         int new_zxid = ++zxid;
 
         auto remove_request = std::make_shared<ZooKeeperRemoveRecursiveRequest>();
@@ -759,6 +776,44 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveAcls)
 
         EXPECT_EQ(responses.size(), 1);
         EXPECT_EQ(responses[0].response->error, Coordination::Error::ZNOAUTH);
+        ASSERT_TRUE(exists("/A"));
+        ASSERT_TRUE(exists("/A/B"));
+        ASSERT_TRUE(exists("/A/C"));
+        ASSERT_TRUE(exists("/A/B/D"));
+    }
+
+    {
+        SCOPED_TRACE("Regular Multi Operation Auth Error");
+
+        int new_zxid = ++zxid;
+
+        auto multi_request = std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+            zkutil::makeRemoveRequest("/A/B/D", -1),
+        }, ACLs{});
+        storage.preprocessRequest(multi_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(multi_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZNOAUTH);
+        ASSERT_TRUE(exists("/A/B/D"));
+    }
+
+    {
+        SCOPED_TRACE("NonAtomic Multi Operation Auth Error");
+
+        int new_zxid = ++zxid;
+
+        auto multi_request = std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+            zkutil::makeRemoveRequest("/A/B/D", -1),
+        }, ACLs{});
+        multi_request->atomic = false;
+
+        storage.preprocessRequest(multi_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(multi_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZNOAUTH);
+        ASSERT_TRUE(exists("/A/B/D"));
     }
 }
 

@@ -3084,7 +3084,10 @@ std::list<KeeperStorageBase::Delta> preprocess(
                     response_errors.push_back(Coordination::Error::ZRUNTIMEINCONSISTENCY);
 
                 chassert(response_errors.size() == subrequests.size());
-                return {KeeperStorageBase::Delta{zxid, FailedMultiDelta{multi_nesting, std::move(response_errors), error}}};
+                if (multi_nesting > 1)
+                    return {KeeperStorageBase::Delta{zxid, FailedMultiDelta{multi_nesting, std::move(response_errors), error}}};
+                else
+                    return {KeeperStorageBase::Delta{zxid, FailedMultiDelta{multi_nesting, std::move(response_errors)}}};
             }
             else if (zk_request.getOpNum() == Coordination::OpNum::NonAtomicMulti)
             {
@@ -3165,7 +3168,6 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
     if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation); failed_multi && failed_multi->multi_nesting == multi_nesting)
     {
         chassert(deltas.size() == 1);
-        chassert(zk_request.atomic);
         chassert(failed_multi->error_codes.size() == subrequests.size());
 
         for (size_t i = 0; i < subrequests.size(); ++i)
@@ -3173,6 +3175,10 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
             response->responses.push_back(std::make_shared<Coordination::ZooKeeperErrorResponse>());
             response->responses[i]->error = failed_multi->error_codes[i];
         }
+
+        /// This is needed to properly pass NOAUTH error to the client
+        if (multi_nesting == 1)
+            response->error = failed_multi->global_error;
 
         return response;
     }
