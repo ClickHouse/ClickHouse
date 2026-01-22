@@ -7,12 +7,14 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ErrorLog.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 
 #include <vector>
+
 
 namespace DB
 {
@@ -90,7 +92,7 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
             },
         {
                 "log_marker",
-                std::make_shared<DataTypeString>(),
+                std::make_shared<DataTypeUUID>(),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Optional unique marker for log entries that were flushed together."
             }

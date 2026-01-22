@@ -57,7 +57,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Columns/ColumnsNumber.h>
+
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
