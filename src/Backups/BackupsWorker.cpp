@@ -54,12 +54,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 readonly;
-    extern const SettingsBool s3_disable_checksum;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsBool shutdown_wait_backups_and_restores;
 }
 
 namespace ErrorCodes
