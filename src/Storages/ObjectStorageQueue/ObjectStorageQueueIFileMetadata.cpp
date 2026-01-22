@@ -144,10 +144,6 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     , node_metadata(createNodeMetadata(path))
     , log(log_)
 {
-    LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
-             "processed_path: {}, processing_path: {}, failed_path: {}",
-             path, node_name, max_loading_retries,
-             processed_node_path, processing_node_path, failed_node_path);
 }
 
 ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
@@ -366,7 +362,7 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
         chassert(!created_processing_node);
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
 
-        if (file_state.has_value())
+        if (file_state.has_value() && file_state.value() != FileStatus::State::None)
         {
             LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state.value());
             file_status->updateState(file_state.value());
@@ -377,6 +373,9 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
 void ObjectStorageQueueIFileMetadata::resetProcessing()
 {
     chassert(created_processing_node);
+    SCOPE_EXIT({
+        created_processing_node = false;
+    });
 
     auto state = file_status->state.load();
     if (state != FileStatus::State::Processing)
@@ -441,13 +440,14 @@ void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordinatio
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 }
 
-void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests)
+void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests,
+    LastProcessedFileInfoMapPtr created_nodes)
 {
     LOG_TRACE(log, "Setting file {} as processed (keeper path: {})", path, processed_node_path);
 
     try
     {
-        prepareProcessedRequestsImpl(requests);
+        prepareProcessedRequestsImpl(requests, created_nodes);
     }
     catch (...)
     {
@@ -541,11 +541,6 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
         chassert(
             !zk_client->exists(processing_node_path),
             fmt::format("Expected path {} not to exist while finalizing {}", processing_node_path, path));
-
-        if (!useBucketsForProcessing())
-            chassert(
-                !zk_client->exists(processed_node_path),
-                fmt::format("Expected path {} not to exist while finalizing {}", processed_node_path, path));
 
         chassert(
             zk_client->exists(failed_node_path) || zk_client->exists(failed_node_path + ".retriable"),

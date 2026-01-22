@@ -1,6 +1,6 @@
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
-SET allow_statistic_optimize = 1;
+SET use_statistics = 1;
 SET query_plan_join_swap_table='auto';
 
 -- R1: Small dimension table (Demo size: 10)
@@ -130,3 +130,15 @@ WHERE
     AND T1.A_Description = 'Type H'
     AND T4.D_LookupCode = 'Lookup S'
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize';
+
+
+SELECT '===========================================';
+SELECT 'Fallback to greedy';
+
+SELECT 1 FROM (SELECT 1 c0) t0 LEFT JOIN (SELECT 1 c0) t1 ON t0.c0 = t1.c0
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize', enable_parallel_replicas=0; --{serverError EXPERIMENTAL_FEATURE_ERROR}
+
+SELECT 1 FROM (SELECT 1 c0) t0 LEFT JOIN (SELECT 1 c0) t1 ON t0.c0 = t1.c0
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize,greedy', enable_parallel_replicas=0;
+
+

@@ -830,6 +830,151 @@ def test_backup_to_s3():
     node.query("DROP TABLE IF EXISTS temptbl2")
 
 
+def test_backup_table_s3_named_collection():
+    """Test that secrets in S3 named collection backups are masked in system.backups and logs."""
+    password = new_password()
+
+    setup_queries = [
+        "CREATE TABLE backup_test_s3_nc (x int) ENGINE = MergeTree ORDER BY x",
+        "INSERT INTO backup_test_s3_nc SELECT * FROM numbers(10)",
+    ]
+
+    for query in setup_queries:
+        node.query_and_get_answer_with_error(query)
+
+    # Create named collection for S3 backup
+    node.query(
+        f"CREATE NAMED COLLECTION IF NOT EXISTS s3_backup_nc AS "
+        f"url = 'http://minio1:9001/root/data/backups/nc_backup_test_base', "
+        f"access_key_id = 'minio', "
+        f"secret_access_key = '{password}'"
+    )
+
+    # Test 1: Using named collection directly
+    base_backup = "S3(s3_backup_nc)"
+    inc_backup = "S3(s3_backup_nc, 'nc_backup_test_incremental')"
+
+    node.query_and_get_answer_with_error(f"BACKUP TABLE backup_test_s3_nc TO {base_backup} ASYNC")[0]
+
+    inc_backup_query_output = node.query_and_get_answer_with_error(
+        f"BACKUP TABLE backup_test_s3_nc TO {inc_backup} SETTINGS async=1, base_backup={base_backup}"
+    )[0]
+    inc_backup_id = TSV.toMat(inc_backup_query_output)[0][0]
+    names_in_system_backups_output, _ = node.query_and_get_answer_with_error(
+        f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id}'"
+    )
+
+    base_backup_name, name = TSV.toMat(names_in_system_backups_output)[0]
+
+    assert password not in base_backup_name
+    assert password not in name
+
+    # Test 2: Using named collection with secret_access_key override
+    password2 = new_password()
+    base_backup2 = f"S3(s3_backup_nc, 'nc_backup_test_base2', secret_access_key = '{password2}')"
+    inc_backup2 = f"S3(s3_backup_nc, 'nc_backup_test_incremental2', secret_access_key = '{password2}')"
+
+    node.query_and_get_answer_with_error(f"BACKUP TABLE backup_test_s3_nc TO {base_backup2} ASYNC")[0]
+
+    inc_backup_query_output2 = node.query_and_get_answer_with_error(
+        f"BACKUP TABLE backup_test_s3_nc TO {inc_backup2} SETTINGS async=1, base_backup={base_backup2}"
+    )[0]
+    inc_backup_id2 = TSV.toMat(inc_backup_query_output2)[0][0]
+    names_in_system_backups_output2, _ = node.query_and_get_answer_with_error(
+        f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id2}'"
+    )
+
+    base_backup_name2, name2 = TSV.toMat(names_in_system_backups_output2)[0]
+
+    assert password2 not in base_backup_name2
+    assert password2 not in name2
+
+    # Check logs don't contain secrets and key-value args are masked
+    check_logs(
+        must_contain=[
+            "BACKUP TABLE backup_test_s3_nc TO S3(s3_backup_nc, 'nc_backup_test_base2', secret_access_key = '[HIDDEN]')",
+        ],
+        must_not_contain=[password, password2],
+    )
+
+    node.query("DROP TABLE IF EXISTS backup_test_s3_nc")
+    node.query("DROP NAMED COLLECTION IF EXISTS s3_backup_nc")
+
+
+def test_backup_table_azure_named_collection():
+    """Test that secrets in Azure named collection backups are masked in system.backups and logs."""
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_account_name = "devstoreaccount1"
+    azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    setup_queries = [
+        "CREATE TABLE backup_test_az_nc (x int) ENGINE = MergeTree ORDER BY x",
+        "INSERT INTO backup_test_az_nc SELECT * FROM numbers(10)",
+    ]
+
+    for query in setup_queries:
+        node.query_and_get_answer_with_error(query)
+
+    # Create named collection for Azure backup (using storage_account_url variant)
+    node.query(
+        f"CREATE NAMED COLLECTION IF NOT EXISTS azure_backup_nc AS "
+        f"storage_account_url = '{azure_storage_account_url}', "
+        f"container = 'cont', "
+        f"account_name = '{azure_account_name}', "
+        f"account_key = '{azure_account_key}'"
+    )
+
+    # Test 1: Using named collection directly
+    base_backup = "AzureBlobStorage(azure_backup_nc, 'az_nc_backup_test_base')"
+    inc_backup = "AzureBlobStorage(azure_backup_nc, 'az_nc_backup_test_incremental')"
+
+    node.query_and_get_answer_with_error(f"BACKUP TABLE backup_test_az_nc TO {base_backup} ASYNC")[0]
+
+    inc_backup_query_output = node.query_and_get_answer_with_error(
+        f"BACKUP TABLE backup_test_az_nc TO {inc_backup} SETTINGS async=1, base_backup={base_backup}"
+    )[0]
+    inc_backup_id = TSV.toMat(inc_backup_query_output)[0][0]
+    names_in_system_backups_output, _ = node.query_and_get_answer_with_error(
+        f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id}'"
+    )
+
+    base_backup_name, name = TSV.toMat(names_in_system_backups_output)[0]
+
+    assert azure_account_key not in base_backup_name
+    assert azure_account_key not in name
+
+    # Test 2: Using named collection with account_key override
+    password2 = new_password()
+    base_backup2 = f"AzureBlobStorage(azure_backup_nc, 'az_nc_backup_test_base2', account_key = '{password2}')"
+    inc_backup2 = f"AzureBlobStorage(azure_backup_nc, 'az_nc_backup_test_incremental2', account_key = '{password2}')"
+
+    node.query_and_get_answer_with_error(f"BACKUP TABLE backup_test_az_nc TO {base_backup2} ASYNC")[0]
+
+    inc_backup_query_output2 = node.query_and_get_answer_with_error(
+        f"BACKUP TABLE backup_test_az_nc TO {inc_backup2} SETTINGS async=1, base_backup={base_backup2}"
+    )[0]
+    inc_backup_id2 = TSV.toMat(inc_backup_query_output2)[0][0]
+    names_in_system_backups_output2, _ = node.query_and_get_answer_with_error(
+        f"SELECT base_backup_name, name FROM system.backups where id = '{inc_backup_id2}'"
+    )
+
+    base_backup_name2, name2 = TSV.toMat(names_in_system_backups_output2)[0]
+
+    assert password2 not in base_backup_name2
+    assert password2 not in name2
+
+    # Check logs don't contain secrets and key-value args are masked
+    check_logs(
+        must_contain=[
+            "BACKUP TABLE backup_test_az_nc TO AzureBlobStorage(azure_backup_nc, 'az_nc_backup_test_base2', account_key = '[HIDDEN]')",
+        ],
+        must_not_contain=[azure_account_key, password2],
+    )
+
+    node.query("DROP TABLE IF EXISTS backup_test_az_nc")
+    node.query("DROP NAMED COLLECTION IF EXISTS azure_backup_nc")
+
+
 def test_on_cluster():
     password = new_password()
 

@@ -33,13 +33,14 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
 DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows)
     : relations()
     , cost(0.0)
     , estimated_rows(rows)
-    , relation_id(id)
+    , relation_id(static_cast<int>(id))
 {
     relations.set(id);
 }
@@ -223,6 +224,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
                 break;
             case JoinOrderAlgorithm::GREEDY:
                 best_plan = solveGreedy();
+                if (!best_plan)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order with greedy algorithm");
                 break;
         }
 
@@ -231,7 +234,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     }
 
     if (!best_plan)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
+        throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR,
+            "Failed to find a valid join order, try adding 'greedy' algorithm as fallback to query_plan_optimize_join_order_algorithm setting.");
 
     LOG_TRACE(log, "Optimized join order in {:.2f} ms, best plan cost: {}, estimated cardinality: {}",
         watch.elapsed() / 1000.0, best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown");

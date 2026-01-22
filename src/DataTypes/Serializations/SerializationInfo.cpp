@@ -145,7 +145,7 @@ std::shared_ptr<SerializationInfo> SerializationInfo::createWithType(
     for (auto kind : kind_stack)
     {
         if (kind == ISerialization::Kind::SPARSE
-            && (!new_type.supportsSparseSerialization() || !preserveDefaultsAfterConversion(old_type, new_type)))
+            && (!new_settings.canUseSparseSerialization(new_type) || !preserveDefaultsAfterConversion(old_type, new_type)))
             continue;
         new_kind_stack.push_back(kind);
     }
@@ -278,18 +278,9 @@ ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, 
 SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settings & settings_)
     : settings(settings_)
 {
-    /// Downgrade to BASIC version if `string_serialization_version` is SINGLE_STREAM.
-    ///
-    /// Rationale:
-    /// - `BASIC` means old serialization format (no per-type specialization).
-    /// - `WITH_TYPES` means new format that supports per-type serialization versions,
-    ///   where `string_serialization_version` is currently the only one specialization.
-    ///
-    /// If `string_serialization_version` is SINGLE_STREAM, there is no effective type specialization
-    /// in use, so writing `WITH_TYPES` would add no benefit but reduce compatibility.
-    /// Falling back to `BASIC` keeps the output fully compatible with older servers.
-    if (settings.string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
-        settings.version = MergeTreeSerializationInfoVersion::BASIC;
+    /// If all type-specific versions remain at their defaults, downgrade to BASIC to avoid emitting a WITH_TYPES format
+    /// unnecessarily. This prevents an avoidable version bump and preserves maximum compatibility with older servers.
+    settings.tryDowngradeToBasic();
 }
 
 SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings_)
@@ -300,12 +291,8 @@ SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & colum
 
     for (const auto & column : columns)
     {
-        if (column.type->supportsSparseSerialization())
-        {
-            if (column.type->isNullable() && settings.nullable_serialization_version == MergeTreeNullableSerializationVersion::BASIC)
-                continue;
+        if (settings.canUseSparseSerialization(*column.type))
             emplace(column.name, column.type->createSerializationInfo(settings));
-        }
     }
 }
 
@@ -437,7 +424,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
     {
-        size_t version_value = object->getValue<size_t>(KEY_VERSION);
+        auto version_value = static_cast<std::underlying_type_t<MergeTreeSerializationInfoVersion>>(object->getValue<size_t>(KEY_VERSION));
         auto maybe_enum = magic_enum::enum_cast<MergeTreeSerializationInfoVersion>(version_value);
         if (!maybe_enum)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown version of serialization infos ({})", version_value);
@@ -480,7 +467,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
         for (const auto & [type_name, value] : *type_versions_obj)
         {
-            size_t version_value = value.convert<size_t>();
+            auto version_value = static_cast<std::underlying_type_t<MergeTreeStringSerializationVersion>>(value.convert<size_t>());
             if (type_name == KEY_STRING_SERIALIZATION_VERSION)
             {
                 auto maybe_enum = magic_enum::enum_cast<MergeTreeStringSerializationVersion>(version_value);

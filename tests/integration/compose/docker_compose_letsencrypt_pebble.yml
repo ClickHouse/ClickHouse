@@ -11,6 +11,7 @@ services:
     networks:
       default:
         ipv4_address: 10.5.11.2
+    cpus: 3
   challtestsrv:
     image: ghcr.io/letsencrypt/pebble-challtestsrv:latest
     command: -defaultIPv6 "" -defaultIPv4 10.5.11.3
@@ -20,3 +21,4 @@ services:
     networks:
       default:
         ipv4_address: 10.5.11.3
+    cpus: 3

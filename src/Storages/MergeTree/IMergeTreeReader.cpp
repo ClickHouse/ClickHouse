@@ -55,6 +55,10 @@ IMergeTreeReader::IMergeTreeReader(
     , converted_requested_columns(Nested::convertToSubcolumns(columns_))
     , virtual_fields(virtual_fields_)
 {
+    /// Check the memory consumption before doing all the heavy-lifting such as
+    /// initializing buffers, reading marks, etc. Maybe that's not needed?
+    CurrentMemoryTracker::check();
+
     columns_to_read.reserve(getColumns().size());
     serializations.reserve(getColumns().size());
 
@@ -361,7 +365,9 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         if (copy_block.empty())
             return;
 
-        DB::performRequiredConversions(copy_block, getColumns(), data_part_info_for_read->getContext());
+        DB::performRequiredConversions(copy_block, getColumns(),
+            data_part_info_for_read->getContext(),
+            storage_snapshot->metadata->getColumns().getDefaults());
 
         /// Move columns from block.
         name_and_type = getColumns().begin();

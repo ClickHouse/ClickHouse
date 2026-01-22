@@ -46,3 +46,6 @@ Expression ((Project names + (Projection + )))
               Expression ((WHERE + Change column names to column identifiers))
                 ReadFromMergeTree (default.R4)
 5684007341784604324
+===========================================
+Fallback to greedy
+1

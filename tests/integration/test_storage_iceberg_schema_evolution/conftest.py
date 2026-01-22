@@ -14,7 +14,7 @@ from helpers.s3_tools import (
 
 def get_spark():
     builder = (
-        pyspark.sql.SparkSession.builder.appName("spark_test")
+        pyspark.sql.SparkSession.builder.appName("test_storage_iceberg_schema_evolution")
         .config(
             "spark.sql.catalog.spark_catalog",
             "org.apache.iceberg.spark.SparkSessionCatalog",
@@ -28,7 +28,7 @@ def get_spark():
         )
         .master("local")
     )
-    return builder.master("local").getOrCreate()
+    return builder.getOrCreate()
 
 @pytest.fixture(scope="package")
 def started_cluster_iceberg_schema_evolution():

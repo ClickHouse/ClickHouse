@@ -39,7 +39,7 @@ Encodes a string using [Base64](https://en.wikipedia.org/wiki/Base64) representa
     };
     FunctionDocumentation::IntroducedIn introduced_in = {18, 16};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionBase64Encode>(documentation);
 

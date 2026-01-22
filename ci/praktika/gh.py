@@ -27,14 +27,21 @@ class GH:
         updated_at: str
         created_at: str
         number: int
+        is_closed: bool = False
 
         @property
         def html_url(self):
             """Alias for url field for compatibility"""
             return self.url
 
+        @property
+        def state(self):
+            """Backwards compatibility property for state field"""
+            return "closed" if self.is_closed else "open"
+
         @classmethod
         def from_gh_json(cls, json_data):
+            state_str = json_data.get("state", "open").lower()
             return cls(
                 title=json_data["title"],
                 body=json_data["body"],
@@ -44,6 +51,7 @@ class GH:
                 updated_at=json_data["updatedAt"],
                 created_at=json_data["createdAt"],
                 number=json_data["number"],
+                is_closed=(state_str == "closed"),
             )
 
     @dataclasses.dataclass
@@ -486,80 +494,14 @@ class GH:
         return output == "CONFLICTING"
 
     @classmethod
-    def find_issue(
-        cls, title, labels: List[str] = None, repo="", verbose=False
-    ) -> Optional["GH.GHIssue"]:
-        if not repo:
-            repo = _Environment.get().REPOSITORY
-        if labels is None:
-            labels = []
-        label_cmd = "".join([f" --label '{label}'" for label in labels])
-
-        # GitHub search doesn't handle special characters well, so sanitize the search query
-        # Remove quotes and other problematic characters that break GitHub's search parser
-        search_query = (
-            title.replace("'", "").replace('"', "").replace("(", "").replace(")", "")
-        )
-        # Limit search query length to avoid issues
-        if len(search_query) > 100:
-            search_query = search_query[:100]
-
-        # Construct the full search query with 'in:title' qualifier
-        full_search_query = f"in:title {search_query}"
-        safe_search_query = shlex.quote(full_search_query)
-        cmd = f"gh issue list --json title,body,labels,author,url,updatedAt,createdAt,number --repo {repo} --search {safe_search_query} {label_cmd}"
-        output = Shell.get_output(cmd, verbose=verbose)
-        try:
-            issues = json.loads(output)
-            if not issues:
-                return None
-
-            # Convert to GHIssue objects
-            gh_issues = [cls.GHIssue.from_gh_json(issue) for issue in issues]
-
-            # If multiple issues found, filter to find the best match
-            # by checking if the sanitized title closely matches the issue title
-            if len(gh_issues) > 1:
-                # Try to find exact match on sanitized titles first
-                best_matches = []
-                for gh_issue in gh_issues:
-                    # Sanitize the issue title the same way
-                    sanitized_issue_title = (
-                        gh_issue.title.replace("'", "")
-                        .replace('"', "")
-                        .replace("(", "")
-                        .replace(")", "")
-                    )
-
-                    # Check for exact match (case-insensitive)
-                    if sanitized_issue_title.lower() == search_query.lower():
-                        return [gh_issue]
-
-                    # Check if the issue title starts with most of the search query (more than 80% match)
-                    if len(search_query) > 20:
-                        # For longer queries, check if at least the first 20 chars match
-                        if sanitized_issue_title.lower().startswith(
-                            search_query.lower()[:20]
-                        ):
-                            best_matches.append(gh_issue)
-
-                if len(best_matches) == 1:
-                    return best_matches
-                elif len(best_matches) > 1:
-                    # Return the most recently updated one
-                    return sorted(
-                        best_matches, key=lambda x: x.updated_at, reverse=True
-                    )[:1]
-
-            return gh_issues
-        except Exception:
-            print("ERROR: Failed to get issue data")
-            traceback.print_exc()
-            return None
-
-    @classmethod
     def create_issue(
-        cls, title, body, labels: List[str] = None, repo="", verbose=False
+        cls,
+        title,
+        body,
+        labels: List[str] = None,
+        repo="",
+        verbose=False,
+        no_strict=False,
     ) -> Optional[str]:
         """
         Create a GitHub issue and return its URL.
@@ -581,19 +523,27 @@ class GH:
                 temp_file.write(body)
                 temp_file_path = temp_file.name
 
-            label_cmd = "".join([f" --label {shlex.quote(label)}" for label in labels])
+            safe_repo = shlex.quote(repo)
             safe_title = shlex.quote(title)
-            cmd = f"gh issue create --repo {repo} --title {safe_title} --body-file {temp_file_path} {label_cmd}"
-            issue_url = Shell.get_output(cmd, verbose=verbose)
-            return issue_url.strip() if issue_url else None
+            safe_body_file = shlex.quote(temp_file_path)
+            label_cmd = "".join(f" --label {shlex.quote(label)}" for label in labels)
+            cmd = (
+                f"gh issue create --repo {safe_repo} --title {safe_title} "
+                f"--body-file {safe_body_file}{label_cmd}"
+            )
+            issue_url = Shell.get_output_or_raise(cmd, verbose=verbose)
+            assert issue_url, "Failed to create issue"
+            return issue_url
         except Exception:
             if verbose:
                 print("ERROR: Failed to create issue")
                 traceback.print_exc()
-            return None
+            if not no_strict:
+                assert False, "Failed to create issue"
         finally:
             if temp_file_path and os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
+        return None
 
     @classmethod
     def convert_to_gh_status(cls, status):
@@ -606,6 +556,8 @@ class GH:
             return status
         if status in Result.Status.RUNNING:
             return Result.Status.PENDING
+        elif status in Result.Status.DROPPED:
+            return Result.Status.ERROR
         else:
             assert (
                 False
@@ -730,6 +682,10 @@ class GH:
             return summary
 
         def to_markdown(self, pr_number=0, sha="", workflow_name="", branch=""):
+            def escape_pipes(text):
+                """Escape pipe characters for markdown tables"""
+                return str(text).replace("|", "\\|")
+
             if self.status == Result.Status.SUCCESS:
                 symbol = "✅"  # Green check mark
             elif self.status == Result.Status.FAILED:
@@ -773,7 +729,8 @@ class GH:
                         for sub_failed_result in failed_result.failed_results:
                             body += "|{}|{}|{}|{}|{}|\n".format(
                                 "",
-                                sub_failed_result.name,
+                                # Logical erros might have | that break comment formatting
+                                escape_pipes(sub_failed_result.name),
                                 sub_failed_result.status,
                                 sub_failed_result.info or "",
                                 sub_failed_result.comment or "",

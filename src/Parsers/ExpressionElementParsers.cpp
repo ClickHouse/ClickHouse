@@ -13,7 +13,6 @@
 #include <Common/typeid_cast.h>
 
 #include <Parsers/CommonParsers.h>
-#include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTCollation.h>
 #include <Parsers/ASTColumnsTransformers.h>
@@ -37,7 +36,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IAST_erase.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -696,8 +694,8 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 {
     auto result = std::make_shared<ASTWindowDefinition>();
 
-    ParserToken parser_openging_bracket(TokenType::OpeningRoundBracket);
-    if (!parser_openging_bracket.ignore(pos, expected))
+    ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
+    if (!parser_opening_bracket.ignore(pos, expected))
     {
         return false;
     }

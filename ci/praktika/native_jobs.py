@@ -1,7 +1,9 @@
 import dataclasses
+import json
 import platform
 import sys
 import traceback
+from pathlib import Path
 from typing import Dict
 
 from . import Job, Workflow
@@ -274,14 +276,57 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             info=info,
         )
 
+    print(f"Start [{job_name}], workflow [{workflow.name}]")
+    files = []
+    env = _Environment.get()
+
+    # Ensure the local repository has full history (not a shallow clone).
+    # Some Praktika features require complete git metadata, such as:
+    # - all authors who contributed to the PR
+    # - the original commit messages before GitHub's ephemeral merge commit
+    commands = [
+        f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin HEAD ||:",
+    ]
+    if env.BASE_BRANCH and env.PR_NUMBER:
+        commands.append(
+            f"git fetch --prune --no-recurse-submodules --filter=tree:0 origin {env.BASE_BRANCH} ||:"
+        )
+    results = [
+        Result.from_commands_run(
+            name="repo unshallow",
+            command=commands,
+        ),
+    ]
+
+    if not env.COMMIT_MESSAGE:
+        env.COMMIT_MESSAGE = Shell.get_output(
+            f"git log -1 --pretty=%s {env.SHA}", verbose=True
+        )
+        env.dump()
+
+    _GH_Auth(workflow)
+
+    # refresh PR data
+    if env.PR_NUMBER > 0:
+        title, body, labels = GH.get_pr_title_body_labels()
+        print(f"NOTE: PR title: {title}")
+        print(f"NOTE: PR labels: {labels}")
+        if title:
+            if title != env.PR_TITLE:
+                print("PR title has been changed")
+                env.PR_TITLE = title
+            if env.PR_BODY != body:
+                print("PR body has been changed")
+                env.PR_BODY = body
+            if env.PR_LABELS != labels:
+                print("PR labels have been changed")
+                env.PR_LABELS = labels
+            env.dump()
+
     if workflow.enable_report:
         print("Push pending CI report")
         HtmlRunnerHooks.push_pending_ci_report(workflow)
 
-    print(f"Start [{job_name}], workflow [{workflow.name}]")
-    results = []
-    files = []
-    env = _Environment.get()
     _ = RunConfig(
         name=workflow.name,
         digest_jobs={},
@@ -294,21 +339,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         filtered_jobs={},
         custom_data={},
     ).dump()
-
-    if env.PR_NUMBER > 0:
-        # refresh PR data
-        title, body, labels = GH.get_pr_title_body_labels()
-        if title:
-            if title != env.PR_TITLE:
-                print("PR title has been changed")
-                env.PR_TITLE = title
-            if env.PR_BODY != body:
-                print("PR body has been changed")
-                env.PR_BODY = body
-            if env.PR_LABELS != labels:
-                print("PR labels have been changed")
-                env.PR_LABELS = labels
-            env.dump()
 
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
@@ -500,9 +530,80 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
+    if workflow.enable_slack_feed:
+        if env.PR_NUMBER:
+            commit_authors = set()
+            try:
+                # Find the first merge commit (going backwards from SHA) that has no parent from BASE_BRANCH
+                # This indicates a merge from outside the base branch, where we should stop (support complex git scenarious with forks syncronization)
+                stop_commit = ""
+                merge_commits = Shell.get_output(
+                    f"git rev-list --merges origin/{env.BASE_BRANCH}..{env.SHA}",
+                    verbose=True,
+                ).strip()
+
+                if merge_commits:
+                    for merge_commit in reversed(merge_commits.split("\n")):
+                        if not merge_commit:
+                            continue
+                        # Get parents of this merge commit
+                        parents = Shell.get_output(
+                            f"git rev-parse {merge_commit}^@", verbose=False
+                        ).strip()
+
+                        # Check if any parent is reachable from BASE_BRANCH
+                        has_base_parent = False
+                        for parent in parents.split("\n"):
+                            if not parent:
+                                continue
+                            # Check if parent is ancestor of BASE_BRANCH or BASE_BRANCH is ancestor of parent
+                            try:
+                                Shell.check(
+                                    f"git merge-base --is-ancestor {parent} origin/{env.BASE_BRANCH}",
+                                    verbose=False,
+                                )
+                                has_base_parent = True
+                                break
+                            except:
+                                pass
+
+                        if not has_base_parent:
+                            # Found a merge with no parent from BASE_BRANCH - stop here
+                            stop_commit = merge_commit
+                            print(
+                                f"Found merge commit without BASE_BRANCH parent: {merge_commit[:8]}"
+                            )
+                            break
+
+                # Get commit author emails, excluding merge commits, up to stop point
+                if stop_commit:
+                    end_ref = f"{stop_commit}^"
+                else:
+                    end_ref = env.SHA
+
+                commits_emails = Shell.get_output(
+                    f"git log --format='%ae' --no-merges origin/{env.BASE_BRANCH}..{end_ref}",
+                    verbose=True,
+                ).strip()
+
+                if commits_emails:
+                    # Validate emails contain @ symbol
+                    commit_authors = set(
+                        email
+                        for email in commits_emails.split("\n")
+                        if email and "@" in email and "+" not in email
+                    )
+            except Exception as e:
+                print(f"WARNING: Failed to extract commit authors from git: {e}")
+            print(f"Found {len(commit_authors)} commit authors")
+            if commit_authors:
+                env.COMMIT_AUTHORS = list(commit_authors)
+                env.JOB_KV_DATA["commit_authors"] = list(commit_authors)
+                env.dump()
+
     print(f"WorkflowRuntimeConfig: [{workflow_config.to_json(pretty=True)}]")
     workflow_config.dump()
-    env.JOB_KV_DATA["workflow_config"] = dataclasses.asdict(workflow_config)
+    env.WORKFLOW_CONFIG = dataclasses.asdict(workflow_config)
     env.dump()
 
     if results[-1].is_ok() and workflow.enable_report:
@@ -522,87 +623,55 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     return Result.create_from(name=job_name, results=results, files=files)
 
 
-def _check_and_mark_flaky_tests(workflow_result: Result):
+def _check_and_link_open_issues(result: Result, job_name: str) -> bool:
     """
-    Downloads flaky test catalog from S3 and marks matching test results as flaky.
+    Downloads flaky test catalog from S3 and marks matching test results as flaky
+    or infrastructure issues. Can be called on a single job result.
 
     Args:
-        workflow_result: The workflow result object containing all test results
+        result: The result object to check and mark
+        job_name: The job name for infrastructure job pattern matching
+
+    Returns:
+        True if successful, False if catalog download failed
     """
-    from .dataclasses import TestCaseIssueCatalog
+    from .issue import TestCaseIssueCatalog
 
-    if workflow_result.is_ok():
-        print("Workflow succeeded, no flaky test check needed.")
-        return
+    if result.is_ok():
+        print("Result succeeded, no flaky test check needed.")
+        return True
 
-    print("Checking for flaky tests...")
+    print("Checking for flaky tests and infrastructure issues...")
 
     # Download catalog from S3
-    catalog_name = TestCaseIssueCatalog.name
-    s3_catalog_path = f"{Settings.HTML_S3_PATH}/statistics/{catalog_name}.json.gz"
-    local_catalog_gz = TestCaseIssueCatalog.file_name_static(name=catalog_name) + ".gz"
-    local_catalog_json = TestCaseIssueCatalog.file_name_static(name=catalog_name)
+    issue_catalog = TestCaseIssueCatalog.from_s3()
+    if not issue_catalog:
+        print("ERROR: Could not load issue catalog")
+        return False
+    print(f"Loaded {len(issue_catalog.active_test_issues)} active issues")
 
-    if not S3.copy_file_from_s3(s3_catalog_path, local_catalog_gz, no_strict=True):
-        print("  WARNING: Could not download flaky test catalog from S3")
-        return
-
-    if not Utils.decompress_file(local_catalog_gz, local_catalog_json):
-        print("  WARNING: Could not decompress flaky test catalog")
-        return
-
-    flaky_catalog = TestCaseIssueCatalog.from_fs(name=catalog_name)
-
-    # Build a lookup map: test_name -> issue (for fast matching)
-    flaky_tests_map = {
-        issue.test_name: issue
-        for issue in flaky_catalog.active_test_issues
-        if issue.test_name and issue.test_name != "unknown"
-    }
-    print(f"  Loaded {len(flaky_tests_map)} flaky test patterns")
-
-    # Walk the result tree and flag flaky leaves
-    def check_and_mark_flaky(result: Result):
-        if result.is_ok():
-            return
-
-        if result.results:
-            for sub_result in result.results:
-                check_and_mark_flaky(sub_result)
-        else:
-            for test_name, issue in flaky_tests_map.items():
-                name_in_report = result.name
-
-                # Normalize pytest parameterized names.
-                # If the issue already includes parameters (e.g. "test_x[param]"),
-                # do exact matching later. Otherwise, strip the "[param]" suffix
-                # from the reported test name so we can match the base test name.
-                if "[" in test_name:
-                    # Issue mentions a specific parametrization: keep full name for exact match
-                    pass
-                elif "[" in name_in_report:
-                    # Issue mentions only the base test: compare against the base part
-                    name_in_report = name_in_report.split("[")[0]
-
-                if name_in_report.endswith(
-                    test_name
-                ):  # TODO: Replace suffix match with a canonical test id matcher (e.g. full nodeid/path)
-                    print(
-                        f"  Marking '{result.name}' as flaky (matched: {test_name}, issue: #{issue.issue})"
-                    )
-                    result.set_clickable_label(label="issue", link=issue.issue_url)
-                    break
-
-    # Check all workflow results
-    check_and_mark_flaky(workflow_result)
-    workflow_result.dump()
-    print("Flaky test check completed and results updated")
+    # Check all issues against the result tree
+    for issue in issue_catalog.active_test_issues:
+        issue.check_result(result, job_name)
+    result.dump()
+    print("Flaky test check and infrastructure issue check completed")
+    return True
 
 
 def _finish_workflow(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     env = _Environment.get()
     stop_watch = Utils.Stopwatch()
+
+    workflow_job_data = {}
+    try:
+        if Path(Settings.WORKFLOW_STATUS_FILE).is_file():
+            with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+                workflow_job_data = json.load(f)
+    except Exception as e:
+        print(
+            f"ERROR: failed to read workflow status file [{Settings.WORKFLOW_STATUS_FILE}]: {e}"
+        )
 
     print("Check Actions statuses")
     print(env.get_needs_statuses())
@@ -645,23 +714,6 @@ def _finish_workflow(workflow, job_name):
     if results and any(not result.is_ok() for result in results):
         failed_results.append("Workflow Post Hook")
 
-    if workflow.enable_open_issues_check:
-
-        def do():
-            try:
-                _check_and_mark_flaky_tests(workflow_result)
-            except Exception as e:
-                print(f"ERROR: failed to check open issues: {e}")
-                traceback.print_exc()
-                env.add_info("Open issues check failed")
-            return True  # make it always success for now
-
-        results.append(
-            Result.from_commands_run(
-                name="Open issues check", command=do, with_info=True
-            )
-        )
-
     for result in workflow_result.results:
         if result.name == job_name:
             continue
@@ -672,18 +724,50 @@ def _finish_workflow(workflow, job_name):
         if result.status == Result.Status.DROPPED:
             dropped_results.append(result.name)
             continue
-        if not result.is_completed():
-            print(
-                f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
+        if workflow.enable_open_issues_check and (
+            (
+                result.has_label(Result.Label.ISSUE)
+                and not result.has_label(Result.Label.BLOCKER)
             )
-            result.status = Result.Status.ERROR
-            # dump workflow result after update - to have an updated result in post
-            workflow_result.dump()
-            # add error into env - should appear in the report on the main page
-            env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
-            # add error info to job info as well
-            result.set_info(ResultInfo.NOT_FINALIZED)
-            update_final_report = True
+            or (
+                result.results
+                and all(
+                    (
+                        sub_result.has_label(Result.Label.ISSUE)
+                        and not sub_result.has_label(Result.Label.BLOCKER)
+                    )
+                    for sub_result in result.results
+                )
+            )
+        ):
+            print(
+                f"NOTE: All failures are known and have open issues - do not block merge by [{result.name}]"
+            )
+            continue
+        if not result.is_completed():
+            normalized_name = Utils.normalize_string(result.name)
+            gh_job = workflow_job_data.get(normalized_name, {})
+            gh_job_result = (gh_job.get("result") or "").lower()
+            if gh_job_result in ("cancelled", "canceled"):
+                print(
+                    f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to dropped"
+                )
+                result.status = Result.Status.DROPPED
+                workflow_result.dump()
+                workflow_result.ext["is_cancelled"] = True
+                update_final_report = True
+            else:
+                print(
+                    f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
+                )
+                result.status = Result.Status.ERROR
+                # dump workflow result after update - to have an updated result in post
+                workflow_result.dump()
+                # add error into env - should appear in the report on the main page
+                env.add_info(f"{result.name}: {ResultInfo.NOT_FINALIZED}")
+                # add error info to job info as well
+                result.set_info(ResultInfo.NOT_FINALIZED)
+                update_final_report = True
         job = workflow.get_job(result.name)
         if not job or not job.allow_merge_on_failure:
             print(

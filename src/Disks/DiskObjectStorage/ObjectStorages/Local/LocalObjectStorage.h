@@ -15,11 +15,12 @@ namespace DB
 
 struct LocalObjectStorageSettings
 {
-    LocalObjectStorageSettings(String key_prefix_, bool read_only_)
-        : key_prefix(key_prefix_), read_only(read_only_)
+    LocalObjectStorageSettings(String disk_name_, String key_prefix_, bool read_only_)
+        : disk_name(disk_name_), key_prefix(key_prefix_), read_only(read_only_)
     {
     }
 
+    String disk_name;
     String key_prefix;
     bool read_only = false;
 };
@@ -30,7 +31,9 @@ class LocalObjectStorage : public IObjectStorage
 public:
     explicit LocalObjectStorage(LocalObjectStorageSettings settings_);
 
-    std::string getName() const override { return "LocalObjectStorage"; }
+    std::string getName() const override { return "Local"; }
+
+    std::string getDiskName() const override { return settings.disk_name; }
 
     ObjectStorageType getType() const override { return ObjectStorageType::Local; }
 

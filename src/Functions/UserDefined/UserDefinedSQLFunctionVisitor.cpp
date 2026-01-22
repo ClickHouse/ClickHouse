@@ -37,14 +37,6 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 {
     chassert(ast);
 
-    if (const auto * function = ast->template as<ASTFunction>())
-    {
-        std::unordered_set<std::string> udf_in_replace_process;
-        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
-        if (replace_result)
-            ast = replace_result;
-    }
-
     for (auto & child : ast->children)
     {
         if (!child)
@@ -67,15 +59,6 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
         if (replace_result)
             ast = replace_result;
     }
-}
-
-void UserDefinedSQLFunctionVisitor::visit(IAST * ast, ContextPtr context_)
-{
-    if (!ast)
-        return;
-
-    for (auto & child : ast->children)
-        visit(child, context_);
 }
 
 namespace

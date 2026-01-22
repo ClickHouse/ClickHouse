@@ -368,7 +368,7 @@ s3_with_keeper_properties = {
 }
 
 metadata_cleanup_properties = {
-    "enabled": lambda: random.randint(0, 9) < 9,
+    "enabled": lambda: 1 if random.randint(0, 9) < 9 else 0,
     "deleted_objects_delay_sec": threshold_generator(0.2, 0.2, 0, 60),
     "old_transactions_delay_sec": threshold_generator(0.2, 0.2, 0, 60),
     "interval_sec": threshold_generator(0.2, 0.2, 1, 60),
@@ -384,6 +384,7 @@ cache_storage_properties = {
     "background_download_threads": threads_lambda,
     "boundary_alignment": threshold_generator(0.2, 0.2, 0, 128),
     "cache_on_write_operations": true_false_lambda,
+    "check_cache_probability": threshold_generator(0.2, 0.2, 0.0, 1.0),
     "enable_bypass_cache_with_threshold": true_false_lambda,
     "enable_filesystem_query_cache_limit": true_false_lambda,
     "keep_free_space_elements_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
@@ -414,7 +415,7 @@ all_disks_properties = {
     "keep_free_space_bytes": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "min_bytes_for_seek": threshold_generator(0.2, 0.2, 0, 10 * 1024 * 1024),
     "perform_ttl_move_on_insert": true_false_lambda,
-    "readonly": lambda: random.randint(0, 9) < 2,
+    "readonly": lambda: 1 if random.randint(0, 9) < 2 else 0,
     "skip_access_check": true_false_lambda,
 }
 

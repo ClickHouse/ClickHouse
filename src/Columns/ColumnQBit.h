@@ -102,12 +102,13 @@ public:
 #endif
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t, size_t, const IColumn &, int) const override
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #else
-    int doCompareAt(size_t, size_t, const IColumn &, int) const override
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #endif
     {
-        return 0;
+        const auto & rhs = assert_cast<const ColumnQBit &>(rhs_);
+        return tuple->compareAt(n, m, rhs.getTupleColumn(), nan_direction_hint);
     }
 
     void insertDefault() override { tuple->insertDefault(); }
@@ -131,6 +132,7 @@ public:
 
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;

@@ -70,7 +70,7 @@ BlockIO InterpreterDropQuery::execute()
 {
     BlockIO res;
     auto & drop = query_ptr->as<ASTDropQuery &>();
-    ASTs drops = drop.getRewrittenASTsOfSingleTable();
+    ASTs drops = drop.getRewrittenASTsOfSingleTable(query_ptr);
     for (const auto & drop_query_ptr : drops)
     {
         current_query_ptr = drop_query_ptr;
@@ -501,7 +501,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                     StorageID storage_id = table_ptr->getStorageID();
                     if (storage_id.hasUUID())
                         prepared_tables.insert(storage_id.uuid);
-                    runner([my_table_ptr = std::move(table_ptr)]()
+                    runner.enqueueAndKeepTrack([my_table_ptr = std::move(table_ptr)]()
                     {
                         my_table_ptr->flushAndPrepareForShutdown();
                     });
@@ -580,7 +580,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         for (const auto & table_id : tables_to_truncate)
         {
-            runner([&, table_id]()
+            runner.enqueueAndKeepTrack([&, table_id]()
             {
                 // Create a proper AST for a single-table TRUNCATE query.
                 auto sub_query_ptr = std::make_shared<ASTDropQuery>();

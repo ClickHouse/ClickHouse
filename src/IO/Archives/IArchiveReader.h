@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include <Poco/Timestamp.h>
 

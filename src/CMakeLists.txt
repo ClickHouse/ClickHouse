@@ -90,7 +90,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
         Functions/GatherUtils/createArraySink.cpp
         Functions/GatherUtils/resizeConstantSize.cpp
         Functions/GatherUtils/resizeDynamicSize.cpp
-        PROPERTIES COMPILE_FLAGS -g0)
+        PROPERTIES COMPILE_FLAGS -g1)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
@@ -220,6 +220,12 @@ else()
     target_compile_definitions(clickhouse_common_io PUBLIC ENABLE_DISTRIBUTED_CACHE=0)
 endif()
 
+# Settings dumpToMap is too slow with MSAN
+if (SANITIZE STREQUAL "memory")
+    set_source_files_properties(Core/Settings.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer -fno-sanitize-memory-track-origins")
+else ()
+    set_source_files_properties(Core/Settings.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
+endif ()
 
 set_source_files_properties(Common/ThreadFuzzer.cpp PROPERTIES COMPILE_FLAGS "-fomit-frame-pointer -momit-leaf-frame-pointer")
 
@@ -238,7 +244,7 @@ if (TARGET ch_contrib::azure_sdk)
     target_link_libraries(clickhouse_storages_system PRIVATE ch_contrib::azure_sdk)
 endif()
 
-target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash ch_contrib::incbin)
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::sparsehash)
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::stringzilla)
 if (TARGET ch_contrib::consistent_hashing)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::consistent_hashing)
@@ -287,6 +293,7 @@ add_object_library(clickhouse_storages_mergetree_compaction_merge_selectors Stor
 add_object_library(clickhouse_storages_mergetree_compaction_parts_collectors Storages/MergeTree/Compaction/PartsCollectors)
 add_object_library(clickhouse_storages_mergetree_compaction_parts_finders Storages/MergeTree/Compaction/PartsFinders)
 add_object_library(clickhouse_storages_mergetree_patch_parts Storages/MergeTree/PatchParts)
+add_object_library(clickhouse_storages_mergetree_projection_index Storages/MergeTree/ProjectionIndex)
 add_object_library(clickhouse_storages_statistics Storages/Statistics)
 add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_storages_s3queue Storages/ObjectStorageQueue)
@@ -394,12 +401,6 @@ set_source_files_properties(
         Columns/ColumnString.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
-if (ENABLE_QPL)
-    set_source_files_properties(
-            Compression/CompressionCodecDeflateQpl.cpp
-            PROPERTIES COMPILE_FLAGS "-mwaitpkg")
-endif ()
-
 target_link_libraries(clickhouse_common_io
         PUBLIC
             boost::program_options
@@ -482,6 +483,10 @@ target_link_libraries(
         clickhouse_common_io
         Poco::Redis
 )
+
+if (TARGET ch_contrib::jwt-cpp)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::jwt-cpp)
+endif()
 
 if (TARGET ch_contrib::mongocxx)
     target_link_libraries(
@@ -638,18 +643,6 @@ endif ()
 
 target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
-if (TARGET ch_contrib::qpl)
-    target_link_libraries(dbms PUBLIC ch_contrib::qpl)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::qpl)
-    target_link_libraries (clickhouse_compression PUBLIC ch_contrib::accel-config)
-endif ()
-
-if (TARGET ch_contrib::accel-config AND TARGET ch_contrib::qatzstd_plugin)
-    target_link_libraries(dbms PUBLIC ch_contrib::qatzstd_plugin)
-    target_link_libraries(dbms PUBLIC ch_contrib::accel-config)
-    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::qatzstd_plugin)
-endif ()
-
 target_link_libraries(clickhouse_common_io PUBLIC boost::context)
 target_link_libraries(dbms PUBLIC boost::context)
 
@@ -772,3 +765,7 @@ if (ENABLE_TESTS)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::parquet)
     endif()
 endif ()
+
+if (TARGET ch_contrib::jwt-cpp)
+    add_object_library(clickhouse_client_jwt Client/jwt)
+endif()
