@@ -182,7 +182,7 @@ struct ToDateTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
+            d = static_cast<UInt16>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
     }
@@ -244,28 +244,28 @@ struct ToTimeImpl
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
+            d = static_cast<UInt16>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
-        return static_cast<Int32>(time_zone.fromDayNum(DayNum(time_zone.toTime(d))));
+        return static_cast<Int32>(time_zone.fromDayNum(DayNum(static_cast<UInt16>(time_zone.toTime(d)))));
     }
 
     static Int32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
+            d = static_cast<Int32>(std::min<time_t>(d, MAX_DATETIME_DAY_NUM));
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (d > MAX_DATETIME_DAY_NUM) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", d);
         }
-        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(time_zone.toTime(d))));
+        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(time_zone.toTime(d)))));
     }
 
     static Int32 execute(UInt32 dt, const DateLUTImpl & time_zone)
     {
-        return static_cast<Int32>(time_zone.fromDayNum((ExtendedDayNum(time_zone.toTime(static_cast<Int32>(dt))))));
+        return static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<Int32>(time_zone.toTime(static_cast<Int32>(dt))))));
     }
 
     static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
@@ -322,7 +322,7 @@ struct ToDateTransformFromSecondsOrDays
         /// otherwise treat it as unix timestamp. This is a bit weird, but we leave this behavior.
         if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_DAY_NUM)
             if (from > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
-                return time_zone.toDayNum(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+                return static_cast<UInt16>(time_zone.toDayNum(std::min(static_cast<time_t>(from), MAX_DATETIME_TIMESTAMP)));
 
         return static_cast<UInt16>(from);
     }
@@ -2787,8 +2787,7 @@ public:
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
     }
 
-    using DefaultReturnTypeGetter = std::function<DataTypePtr(const ColumnsWithTypeAndName &)>;
-    static DataTypePtr getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments, const DefaultReturnTypeGetter & getter)
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         NullPresence null_presence = getNullPresense(arguments);
 
@@ -2799,20 +2798,11 @@ public:
         if (null_presence.has_nullable)
         {
             auto nested_columns = Block(createBlockWithNestedColumns(arguments));
-            auto return_type = getter(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
+            auto return_type = getReturnTypeImplRemovedNullable(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
             return makeNullable(return_type);
         }
 
-        return getter(arguments);
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        auto getter = [&] (const auto & args) { return getReturnTypeImplRemovedNullable(args); };
-        auto res = getReturnTypeDefaultImplementationForNulls(arguments, getter);
-        to_nullable = res->isNullable();
-        checked_return_type = true;
-        return res;
+        return getReturnTypeImplRemovedNullable(arguments);
     }
 
     DataTypePtr getReturnTypeImplRemovedNullable(const ColumnsWithTypeAndName & arguments) const
@@ -2907,31 +2897,79 @@ public:
         }
     }
 
-    /// Function actually uses default implementation for nulls,
-    /// but we need to know if return type is Nullable or not,
-    /// so we use checked_return_type only to intercept the first call to getReturnTypeImpl(...).
-    bool useDefaultImplementationForNulls() const override
-    {
-        bool to_nullable_string = to_nullable && std::is_same_v<ToDataType, DataTypeString>;
-        return checked_return_type && !to_nullable_string;
-    }
-
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeString>)
             return {};
-        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-            return {2};
+        /// Note: If ToDataType is DateTime, return type may be either DateTime or DateTime64, determined at runtime.
+        ///       Then why is ToDataType == DataTypeDateTime64 allowed, instead of always using DateTime? I don't know.
+        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeDateTime>)
+            return {1, 2};
         return {1};
     }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & weird_result_type, size_t input_rows_count) const override
     {
+        /// FunctionCast does something complicated and sometimes ends up calling FunctionConvert::executeImpl
+        /// with `result_type` argument that doesn't come from a corresponding getReturnTypeImpl call.
+        /// In particular, with non-nullable result_type when arguments are nullable; it then expects
+        /// executeImpl to return a ColumnNullable anyway.
+        /// Maybe it's a bug, or maybe there's some logic behind it that I couldn't comprehend.
+        /// For now, here's a workaround.
+        DataTypePtr result_type = weird_result_type;
+        if (getNullPresense(arguments).has_nullable && !isNullableOrLowCardinalityNullable(result_type))
+            result_type = std::make_shared<DataTypeNullable>(std::move(result_type));
+
         try
         {
-            return executeInternal(arguments, result_type, input_rows_count);
+            /// Do something like IExecutableFunction::defaultImplementationForNulls.
+            /// We can't just enable default implementation for nulls because we need to know
+            /// whether the result is nullable (`to_nullable`).
+            if (result_type->isNullable() && !std::is_same_v<ToDataType, DataTypeString>)
+            {
+                if (result_type->onlyNull())
+                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+                ColumnPtr result_null_map;
+                for (const auto & arg : arguments)
+                {
+                    if (!arg.type->isNullable())
+                        continue;
+                    if (isColumnConst(*arg.column))
+                    {
+                        if (arg.column->onlyNull())
+                            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+                        else
+                            continue;
+                    }
+                    if (result_null_map)
+                    {
+                        MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                        auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                        for (size_t i = 0; i < input_rows_count; ++i)
+                            result_null_map_data[i] |= null_map[i];
+                        result_null_map = std::move(mut);
+                    }
+                    else
+                    {
+                        result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                    }
+                }
+
+                ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(arguments);
+                auto temporary_result_type = removeNullable(result_type);
+                ColumnPtr res = executeInternal(temporary_columns, temporary_result_type, input_rows_count, /*to_nullable=*/ true);
+
+                return wrapInNullable(res, std::move(result_null_map));
+            }
+            else
+            {
+                return executeInternal(arguments, result_type, input_rows_count, result_type->isNullable());
+            }
         }
         catch (Exception & e)
         {
@@ -2988,10 +3026,7 @@ public:
 private:
     const FunctionConvertSettings settings;
 
-    mutable bool checked_return_type = false;
-    mutable bool to_nullable = false;
-
-    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool to_nullable) const
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());
@@ -3006,7 +3041,7 @@ private:
         {
             auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
             {
-                return executeInternal(args, to_type, args[0].column->size());
+                return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
             };
 
             return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
@@ -5196,14 +5231,14 @@ private:
         const auto & new_variants = to_variant.getVariants();
         std::unordered_map<String, ColumnVariant::Discriminator> new_variant_types_to_new_global_discriminator;
         new_variant_types_to_new_global_discriminator.reserve(new_variants.size());
-        for (size_t i = 0; i != new_variants.size(); ++i)
+        for (ColumnVariant::Discriminator i = 0; i != new_variants.size(); ++i)
             new_variant_types_to_new_global_discriminator[new_variants[i]->getName()] = i;
 
         /// Create set of old variant types.
         const auto & old_variants = from_variant.getVariants();
         std::unordered_map<String, ColumnVariant::Discriminator> old_variant_types_to_old_global_discriminator;
         old_variant_types_to_old_global_discriminator.reserve(old_variants.size());
-        for (size_t i = 0; i != old_variants.size(); ++i)
+        for (ColumnVariant::Discriminator i = 0; i != old_variants.size(); ++i)
             old_variant_types_to_old_global_discriminator[old_variants[i]->getName()] = i;
 
         /// Check that the set of old variants types is a subset of new variant types and collect new global discriminator for each old global discriminator.
@@ -5238,7 +5273,7 @@ private:
             new_variant_columns.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
             std::vector<ColumnVariant::Discriminator> new_local_to_global_discriminators;
             new_local_to_global_discriminators.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
-            for (size_t i = 0; i != num_old_variants; ++i)
+            for (ColumnVariant::Discriminator i = 0; i != num_old_variants; ++i)
             {
                 new_variant_columns.push_back(column_variant.getVariantPtrByLocalDiscriminator(i));
                 new_local_to_global_discriminators.push_back(old_global_discriminator_to_new.at(column_variant.globalDiscriminatorByLocal(i)));
@@ -5415,12 +5450,12 @@ private:
                     if (null_map[i])
                     {
                         discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                        filter.push_back(0);
+                        filter.push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
                         discriminators_data.push_back(variant_discr);
-                        filter.push_back(1);
+                        filter.push_back(static_cast<UInt8>(1));
                         ++variant_size_hint;
                     }
                 }
@@ -5454,12 +5489,12 @@ private:
                     if (indexes.getUInt(i) == null_index)
                     {
                         discriminators_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
-                        filter.push_back(0);
+                        filter.push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
                         discriminators_data.push_back(variant_discr);
-                        filter.push_back(1);
+                        filter.push_back(static_cast<UInt8>(1));
                         ++variant_size_hint;
                     }
                 }

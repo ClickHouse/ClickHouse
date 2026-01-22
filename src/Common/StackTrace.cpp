@@ -337,7 +337,7 @@ void StackTrace::forEachFrame(
         current_frame.virtual_addr = frame_pointers[i];
         current_frame.physical_addr = frame_pointers[i];
         current_frame.object = split[1];
-        current_frame.symbol = split[3];
+        current_frame.symbol = demangle(split[3].c_str());
         callback(current_frame);
     }
 #else
