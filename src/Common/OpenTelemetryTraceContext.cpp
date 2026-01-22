@@ -137,6 +137,12 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
     current_trace_context->span_id = this->span_id;
 }
 
+SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind, std::vector<SpanAttribute> _attributes)
+    : SpanHolder(_operation_name, _kind)
+{
+    attributes = std::move(_attributes);
+}
+
 void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
 {
     if (!this->isTraceEnabled())

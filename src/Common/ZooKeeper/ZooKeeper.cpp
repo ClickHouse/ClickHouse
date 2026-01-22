@@ -355,7 +355,7 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
         maybe_span.emplace(
             "zookeeper.list",
             DB::OpenTelemetry::SpanKind::CLIENT,
-            std::unordered_map<String, String>{
+            std::vector<DB::OpenTelemetry::SpanAttribute>{
                 {"zk.path", path},
             }
         );
@@ -432,9 +432,9 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
         maybe_span.emplace(
             "zookeeper.create",
             DB::OpenTelemetry::SpanKind::CLIENT,
-            std::unordered_map<String, String>{
+            std::vector<DB::OpenTelemetry::SpanAttribute>{
                 {"zk.path", path},
-                {"zk.data.size_bytes", std::to_string(data.size())},
+                {"zk.data.size_bytes", data.size()},
             }
         );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
@@ -595,7 +595,7 @@ Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t vers
         maybe_span.emplace(
             "zookeeper.remove",
             DB::OpenTelemetry::SpanKind::CLIENT,
-            std::unordered_map<String, String>{
+            std::vector<DB::OpenTelemetry::SpanAttribute>{
                 {"zk.path", path},
             }
         );
@@ -643,7 +643,7 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
         maybe_span.emplace(
             "zookeeper.exists",
             DB::OpenTelemetry::SpanKind::CLIENT,
-            std::unordered_map<String, String>{
+            std::vector<DB::OpenTelemetry::SpanAttribute>{
                 {"zk.path", path},
             }
         );
@@ -703,7 +703,7 @@ Coordination::Error ZooKeeper::getImpl(
         maybe_span.emplace(
             "zookeeper.get",
             DB::OpenTelemetry::SpanKind::CLIENT,
-            std::unordered_map<String, String>{
+            std::vector<DB::OpenTelemetry::SpanAttribute>{
                 {"zk.path", path},
             }
         );
@@ -788,9 +788,9 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
         maybe_span.emplace(
             "zookeeper.set",
             DB::OpenTelemetry::SpanKind::CLIENT,
-            std::unordered_map<String, String>{
+            std::vector<DB::OpenTelemetry::SpanAttribute>{
                 {"zk.path", path},
-                {"zk.data.size_bytes", std::to_string(data.size())},
+                {"zk.data.size_bytes", data.size()},
             }
         );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
@@ -860,9 +860,9 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
         maybe_span.emplace(
             "zookeeper.multi",
             DB::OpenTelemetry::SpanKind::CLIENT,
-            std::unordered_map<String, String>{
-                {"zk.subrequests.size", std::to_string(requests.size())},
-                {"zk.subrequests.size_bytes", std::to_string(total_size)},
+            std::vector<DB::OpenTelemetry::SpanAttribute>{
+                {"zk.subrequests.size", requests.size()},
+                {"zk.subrequests.size_bytes", total_size},
             }
         );
         DB::OpenTelemetry::SetTraceFlagInCurrentContext(DB::OpenTelemetry::TRACE_FLAG_KEEPER_SPANS, true);
@@ -957,7 +957,7 @@ Coordination::Error ZooKeeper::syncImpl(const std::string & path, std::string & 
         maybe_span.emplace(
             "zookeeper.sync",
             DB::OpenTelemetry::SpanKind::CLIENT,
-            std::unordered_map<String, String>{
+            std::vector<DB::OpenTelemetry::SpanAttribute>{
                 {"zk.path", path},
             }
         );
@@ -1138,7 +1138,7 @@ Coordination::Error ZooKeeper::tryRemoveRecursive(const std::string & path, uint
         maybe_span.emplace(
             "zookeeper.remove_recursive",
             DB::OpenTelemetry::SpanKind::CLIENT,
-            std::unordered_map<String, String>{
+            std::vector<DB::OpenTelemetry::SpanAttribute>{
                 {"zk.path", path},
             }
         );
@@ -1181,7 +1181,7 @@ Coordination::Error ZooKeeper::getACLImpl(const std::string & path, Coordination
         maybe_span.emplace(
             "zookeeper.get_acl",
             DB::OpenTelemetry::SpanKind::CLIENT,
-            std::unordered_map<String, String>{
+            std::vector<DB::OpenTelemetry::SpanAttribute>{
                 {"zk.path", path},
             }
         );

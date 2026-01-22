@@ -22,6 +22,22 @@ struct ExecutionStatus;
 namespace OpenTelemetry
 {
 
+struct SpanAttribute
+{
+    String key;
+    String value;
+
+    template <typename K, typename V>
+    requires std::is_convertible_v<V, String>
+    SpanAttribute(K && k, V && v)
+        : key(std::forward<K>(k)), value(std::forward<V>(v)) {}
+
+    template <typename K, typename V>
+    requires (!std::is_convertible_v<V, String>)
+    SpanAttribute(K && k, V && v)
+        : key(std::forward<K>(k)), value(toString(std::forward<V>(v))) {}
+};
+
 /// See https://opentelemetry.io/docs/reference/specification/trace/api/#spankind
 enum class SpanKind : uint8_t
 {
@@ -63,7 +79,7 @@ struct Span
     SpanKind kind = SpanKind::INTERNAL;
     SpanStatus status_code = SpanStatus::UNSET;
     String status_message = {};
-    std::vector<std::pair<String, String>> attributes = {};
+    std::vector<SpanAttribute> attributes = {};
 
     /// Following methods are declared as noexcept to make sure they're exception safe.
     /// This is because sometimes they will be called in exception handlers/dtor.
@@ -100,10 +116,7 @@ private:
     {
         try
         {
-            if constexpr (std::is_same_v<T, std::string_view> || std::is_same_v<T, String> || std::is_same_v<T, const char *>)
-                attributes.emplace_back(std::pair{String(name), String(value)});
-            else
-                attributes.emplace_back(std::pair{String(name), toString(value)});
+            attributes.emplace_back(name, value);
         }
         catch (...)
         {
@@ -199,6 +212,7 @@ using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 struct SpanHolder : public Span
 {
     explicit SpanHolder(std::string_view, SpanKind _kind = SpanKind::INTERNAL);
+    SpanHolder(std::string_view, SpanKind _kind, std::vector<SpanAttribute> _attributes);
     ~SpanHolder();
 
     /// Finish a span explicitly if needed.

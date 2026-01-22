@@ -71,7 +71,7 @@ struct ZooKeeperOpentelemetrySpans
 
     static void maybeFinalize(
         MaybeSpan & maybe_span,
-        std::unordered_map<std::string, std::string> && extra_attributes = {},
+        std::vector<OpenTelemetry::SpanAttribute> extra_attributes = {},
         OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
         const String & error_message = {},
         UInt64 finish_time_us = now());

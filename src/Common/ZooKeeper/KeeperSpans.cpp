@@ -54,7 +54,7 @@ void ZooKeeperOpentelemetrySpans::maybeInitialize(
         .trace_id = parent_context->trace_id,
         .span_id = thread_local_rng(),
         .parent_span_id = parent_context->span_id,
-        .operation_name = maybe_span.operation_name,
+        .operation_name = String(maybe_span.operation_name),
         .start_time_us = start_time_us,
         .kind = maybe_span.kind,
     });
@@ -62,7 +62,7 @@ void ZooKeeperOpentelemetrySpans::maybeInitialize(
 
 void ZooKeeperOpentelemetrySpans::maybeFinalize(
     MaybeSpan & maybe_span,
-    std::unordered_map<std::string, std::string> && extra_attributes,
+    std::vector<OpenTelemetry::SpanAttribute> extra_attributes,
     OpenTelemetry::SpanStatus status,
     const String & error_message,
     UInt64 finish_time_us)
@@ -91,9 +91,12 @@ void ZooKeeperOpentelemetrySpans::maybeFinalize(
 
     static const auto keeper_dispatcher = getKeeperDispatcher();
     if (keeper_dispatcher)
-        extra_attributes["raft.role"] = keeper_dispatcher->getRoleString();
+        extra_attributes.emplace_back("raft.role", keeper_dispatcher->getRoleString());
 
-    maybe_span.span->attributes.merge(extra_attributes);
+    maybe_span.span->attributes.insert(
+        maybe_span.span->attributes.end(),
+        std::make_move_iterator(extra_attributes.begin()),
+        std::make_move_iterator(extra_attributes.end()));
 
     span_log->add(OpenTelemetrySpanLogElement(std::move(*maybe_span.span)));
     maybe_span.span.reset();
