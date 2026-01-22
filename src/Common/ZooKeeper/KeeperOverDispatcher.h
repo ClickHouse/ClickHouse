@@ -92,10 +92,12 @@ public:
 
     void multi(
         std::span<const RequestPtr> requests,
+        bool atomic,
         MultiCallback callback) override;
 
     void multi(
         const Requests & requests,
+        bool atomic,
         MultiCallback callback) override;
 
     void finalize(const String & reason) override;

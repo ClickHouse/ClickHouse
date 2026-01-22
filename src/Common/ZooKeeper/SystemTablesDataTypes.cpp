@@ -63,6 +63,7 @@ DB::DataTypePtr SystemTablesDataTypes::operationEnum()
             {"Check",               static_cast<Int16>(OpNum::Check)},
             {"Multi",               static_cast<Int16>(OpNum::Multi)},
             {"MultiRead",           static_cast<Int16>(OpNum::MultiRead)},
+            {"NonAtomicMulti",      static_cast<Int16>(OpNum::NonAtomicMulti)},
             {"Auth",                static_cast<Int16>(OpNum::Auth)},
             {"SessionID",           static_cast<Int16>(OpNum::SessionID)},
             {"FilteredList",        static_cast<Int16>(OpNum::FilteredList)},

@@ -358,6 +358,7 @@ public:
 
         DeltaIterator begin() const;
         DeltaIterator end() const;
+        size_t size() const;
         bool empty() const;
         const KeeperStorageBase::Delta & front() const;
     };
@@ -517,7 +518,7 @@ public:
         void addDeltas(std::list<Delta> new_deltas);
         void cleanup(int64_t commit_zxid);
         void rollback(int64_t rollback_zxid);
-        void rollback(std::list<Delta> rollback_deltas);
+        void rollback(std::list<Delta> rollback_deltas, bool need_cleanup_nodes);
 
         std::shared_ptr<Node> getNode(std::string_view path, bool should_lock_storage = true) const;
 

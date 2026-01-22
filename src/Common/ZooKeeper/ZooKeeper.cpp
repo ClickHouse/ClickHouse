@@ -429,7 +429,7 @@ void ZooKeeper::createAncestors(const std::string & path)
         }
 
         Coordination::Responses responses;
-        const auto & [code, failure_reason] = multiImpl(create_ops, responses, /*check_session_valid*/ false);
+        const auto & [code, failure_reason] = multiImpl(create_ops, responses, /*check_session_valid*/ false, /*atomic=*/ true);
 
         if (code == Coordination::Error::ZOK)
             return;
@@ -688,7 +688,7 @@ Coordination::Error ZooKeeper::trySet(const std::string & path, const std::strin
 
 
 std::pair<Coordination::Error, std::string>
-ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid)
+ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid, bool atomic)
 {
     if (requests.empty())
         return {Coordination::Error::ZOK, ""};
@@ -699,11 +699,11 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
     {
         requests_with_check_session = requests;
         addCheckSessionOp(requests_with_check_session);
-        future_result = asyncTryMultiNoThrow(requests_with_check_session);
+        future_result = asyncTryMultiNoThrow(requests_with_check_session, atomic);
     }
     else
     {
-        future_result = asyncTryMultiNoThrow(requests);
+        future_result = asyncTryMultiNoThrow(requests, atomic);
     }
 
     if (future_result.wait_for(std::chrono::milliseconds(args.operation_timeout_ms)) != std::future_status::ready)
@@ -743,10 +743,10 @@ ZooKeeper::multiImpl(const Coordination::Requests & requests, Coordination::Resp
     return {code, std::move(reason)};
 }
 
-Coordination::Responses ZooKeeper::multi(const Coordination::Requests & requests, bool check_session_valid)
+Coordination::Responses ZooKeeper::multi(const Coordination::Requests & requests, bool check_session_valid, bool atomic)
 {
     Coordination::Responses responses;
-    const auto & [code, failure_reason] = multiImpl(requests, responses, check_session_valid);
+    const auto & [code, failure_reason] = multiImpl(requests, responses, check_session_valid, atomic);
     if (!failure_reason.empty())
         throw KeeperException::fromMessage(code, failure_reason);
 
@@ -754,9 +754,9 @@ Coordination::Responses ZooKeeper::multi(const Coordination::Requests & requests
     return responses;
 }
 
-Coordination::Error ZooKeeper::tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid)
+Coordination::Error ZooKeeper::tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid, bool atomic)
 {
-    const auto & [code, failure_reason] = multiImpl(requests, responses, check_session_valid);
+    const auto & [code, failure_reason] = multiImpl(requests, responses, check_session_valid, atomic);
 
     if (code != Coordination::Error::ZOK && !Coordination::isUserError(code))
     {
@@ -1440,12 +1440,12 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemoveNoThrow(const
     return future;
 }
 
-std::future<Coordination::MultiResponse> ZooKeeper::asyncTryMultiNoThrow(const Coordination::Requests & ops)
+std::future<Coordination::MultiResponse> ZooKeeper::asyncTryMultiNoThrow(const Coordination::Requests & ops, bool atomic)
 {
-    return asyncTryMultiNoThrow(std::span(ops));
+    return asyncTryMultiNoThrow(std::span(ops), atomic);
 }
 
-std::future<Coordination::MultiResponse> ZooKeeper::asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops)
+std::future<Coordination::MultiResponse> ZooKeeper::asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops, bool atomic)
 {
     auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
     auto future = promise->get_future();
@@ -1455,11 +1455,16 @@ std::future<Coordination::MultiResponse> ZooKeeper::asyncTryMultiNoThrow(std::sp
         promise->set_value(response);
     };
 
-    impl->multi(ops, std::move(callback));
+    impl->multi(ops, atomic, std::move(callback));
     return future;
 }
 
-std::future<Coordination::MultiResponse> ZooKeeper::asyncMulti(const Coordination::Requests & ops)
+std::future<Coordination::MultiResponse> ZooKeeper::asyncMulti(const Coordination::Requests & ops, bool atomic)
+{
+    return asyncMulti(std::span(ops), atomic);
+}
+
+std::future<Coordination::MultiResponse> ZooKeeper::asyncMulti(std::span<const Coordination::RequestPtr> ops, bool atomic)
 {
     auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
     auto future = promise->get_future();
@@ -1472,15 +1477,15 @@ std::future<Coordination::MultiResponse> ZooKeeper::asyncMulti(const Coordinatio
             promise->set_value(response);
     };
 
-    impl->multi(ops, std::move(callback));
+    impl->multi(ops, atomic, std::move(callback));
     return future;
 }
 
-Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid)
+Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid, bool atomic)
 {
     try
     {
-        return multiImpl(requests, responses, check_session_valid).first;
+        return multiImpl(requests, responses, check_session_valid, atomic).first;
     }
     catch (const Coordination::Exception & e)
     {

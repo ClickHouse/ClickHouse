@@ -602,6 +602,7 @@ struct ReconfigResponse : virtual Response
 template <typename T>
 struct MultiRequest : virtual Request
 {
+    bool atomic = true;
     std::vector<T> requests;
 
     void addRootPath(const String & root_path) override
@@ -798,10 +799,12 @@ public:
 
     virtual void multi(
         std::span<const RequestPtr> requests,
+        bool atomic,
         MultiCallback callback) = 0;
 
     virtual void multi(
         const Requests & requests,
+        bool atomic,
         MultiCallback callback) = 0;
 
     virtual void getACL(const String & path, GetACLCallback  callback) = 0;

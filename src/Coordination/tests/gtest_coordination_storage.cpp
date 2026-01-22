@@ -741,13 +741,30 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveAcls)
         EXPECT_EQ(responses[0].response->error, Coordination::Error::ZOK) << "Failed to create " << path;
     };
 
+    const auto exists = [&](const String & path)
+    {
+        int new_zxid = ++zxid;
+
+        const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
+        exists_request->path = path;
+
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(exists_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Coordination::Error::ZOK;
+    };
+
     /// Add nodes with only Create ACL
     create("/A");
     create("/A/B");
     create("/A/C");
     create("/A/B/D");
 
+
     {
+        SCOPED_TRACE("Single Operation Auth Error");
+
         int new_zxid = ++zxid;
 
         auto remove_request = std::make_shared<ZooKeeperRemoveRecursiveRequest>();
@@ -759,6 +776,44 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveAcls)
 
         EXPECT_EQ(responses.size(), 1);
         EXPECT_EQ(responses[0].response->error, Coordination::Error::ZNOAUTH);
+        ASSERT_TRUE(exists("/A"));
+        ASSERT_TRUE(exists("/A/B"));
+        ASSERT_TRUE(exists("/A/C"));
+        ASSERT_TRUE(exists("/A/B/D"));
+    }
+
+    {
+        SCOPED_TRACE("Regular Multi Operation Auth Error");
+
+        int new_zxid = ++zxid;
+
+        auto multi_request = std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+            zkutil::makeRemoveRequest("/A/B/D", -1),
+        }, ACLs{});
+        storage.preprocessRequest(multi_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(multi_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZNOAUTH);
+        ASSERT_TRUE(exists("/A/B/D"));
+    }
+
+    {
+        SCOPED_TRACE("NonAtomic Multi Operation Auth Error");
+
+        int new_zxid = ++zxid;
+
+        auto multi_request = std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+            zkutil::makeRemoveRequest("/A/B/D", -1),
+        }, ACLs{});
+        multi_request->atomic = false;
+
+        storage.preprocessRequest(multi_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(multi_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        EXPECT_EQ(responses[0].response->error, Coordination::Error::ZNOAUTH);
+        ASSERT_TRUE(exists("/A/B/D"));
     }
 }
 
@@ -1228,6 +1283,558 @@ TYPED_TEST(CoordinationTest, TestCheckStat)
         stat.mzxid = node_stat.mzxid;
         stat.version = 2;
         ASSERT_EQ(run_check_request(OpNum::CheckStat, "/A1", /*version=*/1, /*not_exists=*/false, /*stat_to_check=*/stat)->error, Error::ZBADVERSION);
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestNestedMulti)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int32_t zxid = 0;
+
+    const auto exists = [&](const String & path)
+    {
+        int new_zxid = ++zxid;
+
+        const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
+        exists_request->path = path;
+
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(exists_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Coordination::Error::ZOK;
+    };
+
+    {
+        SCOPED_TRACE("Nested Multi Simple Case");
+
+        const Coordination::Requests create_ops{
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s1", "", zkutil::CreateMode::Persistent),
+                zkutil::makeCreateRequest("/s1/A1", "", zkutil::CreateMode::Persistent),
+                zkutil::makeCreateRequest("/s1/A2", "", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+        };
+        const auto nested_multi = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(nested_multi, 1, 0, create_zxid);
+        auto responses = storage.processRequest(nested_multi, 1, create_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = nested_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        for (const auto & op_response : multi_response->responses)
+            ASSERT_EQ(op_response->error, Coordination::Error::ZOK);
+
+        ASSERT_TRUE(exists("/s1/A1"));
+        ASSERT_TRUE(exists("/s1/A2"));
+    }
+
+    {
+        SCOPED_TRACE("Nested Multi Combination");
+
+        const Coordination::Requests create_ops{
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s2", "", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s2/A1", "", zkutil::CreateMode::Persistent),
+                zkutil::makeCreateRequest("/s2/A2", "", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeRemoveRequest("/s2/A2", -1),
+                zkutil::makeCreateRequest("/s2/B1", "", zkutil::CreateMode::Persistent),
+                zkutil::makeCreateRequest("/s2/B2", "", zkutil::CreateMode::Persistent),
+                zkutil::makeSetRequest("/s2/A1", "update", 0),
+            }, ACLs{}),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeSetRequest("/s2/A1", "update_2", 1),
+            }, ACLs{}),
+        };
+        const auto nested_multi = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(nested_multi, 1, 0, create_zxid);
+        auto responses = storage.processRequest(nested_multi, 1, create_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = nested_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        for (const auto & op_response : multi_response->responses)
+            ASSERT_EQ(op_response->error, Coordination::Error::ZOK);
+
+        ASSERT_TRUE(exists("/s2/A1"));
+        ASSERT_FALSE(exists("/s2/A2"));
+    }
+
+    {
+        SCOPED_TRACE("Nested Multi Errors");
+
+        const Coordination::Requests create_ops{
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s3", "", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s3/A1", "", zkutil::CreateMode::Persistent),
+                zkutil::makeRemoveRequest("/s3/non-existing", -1),
+            }, ACLs{}),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s3/A2", "", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+        };
+        const auto nested_multi = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(nested_multi, 1, 0, create_zxid);
+        auto responses = storage.processRequest(nested_multi, 1, create_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = nested_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        ASSERT_EQ(multi_response->responses[0]->error, Error::ZOK);
+        ASSERT_EQ(multi_response->responses[1]->error, Error::ZNONODE);
+        ASSERT_EQ(multi_response->responses[2]->error, Error::ZRUNTIMEINCONSISTENCY);
+
+        ASSERT_FALSE(exists("/s3/A1"));
+        ASSERT_FALSE(exists("/s3/A2"));
+    }
+
+    {
+        SCOPED_TRACE("Nested Multi Deep Nesting Serialization");
+
+        const Coordination::Requests create_ops{
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s4", "", zkutil::CreateMode::Persistent),
+                std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                    zkutil::makeCreateRequest("/s4/A1", "", zkutil::CreateMode::Persistent),
+                    zkutil::makeCreateRequest("/s4/A2", "", zkutil::CreateMode::Persistent),
+                    std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                        zkutil::makeRemoveRequest("/s4/A2", -1),
+                        zkutil::makeCreateRequest("/s4/B1", "", zkutil::CreateMode::Persistent),
+                        zkutil::makeCreateRequest("/s4/B2", "", zkutil::CreateMode::Persistent),
+                        zkutil::makeSetRequest("/s4/A1", "update", 0),
+                        std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                            zkutil::makeSetRequest("/s4/A1", "update_2", 1),
+                        }, ACLs{}),
+                    }, ACLs{}),
+                }, ACLs{}),
+            }, ACLs{}),
+        };
+        auto nested_multi = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+
+        WriteBufferFromOwnString req_out;
+        nested_multi->write(req_out, /*use_xid_64=*/false);
+
+        ReadBufferFromOwnString req_in(req_out.str());
+        auto request = Coordination::ZooKeeperMultiRequest::read(req_in);
+
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(request, 1, 0, create_zxid);
+        auto responses = storage.processRequest(request, 1, create_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        WriteBufferFromOwnString resp_out;
+        responses[0].response->writeImpl(resp_out);
+
+        ReadBufferFromOwnString resp_in(resp_out.str());
+        auto read_response = nested_multi->makeResponse();
+        read_response->readImpl(resp_in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        for (const auto & op_response : multi_response->responses)
+            ASSERT_EQ(op_response->error, Coordination::Error::ZOK);
+
+        ASSERT_TRUE(exists("/s4/A1"));
+        ASSERT_FALSE(exists("/s4/A2"));
+        ASSERT_TRUE(exists("/s4/B1"));
+        ASSERT_TRUE(exists("/s4/B2"));
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestNonAtomicMulti)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int32_t zxid = 0;
+
+    const auto exists = [&](const String & path)
+    {
+        int new_zxid = ++zxid;
+
+        const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
+        exists_request->path = path;
+
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(exists_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Coordination::Error::ZOK;
+    };
+
+    {
+        SCOPED_TRACE("NonAtomicMulti Simple Case");
+
+        const Coordination::Requests create_ops{
+            zkutil::makeCreateRequest("/s1", "", zkutil::CreateMode::Persistent),
+            zkutil::makeSetRequest("/s1/non-existing", "", -1),
+            zkutil::makeCreateRequest("/s1/A1", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/s1/A2", "", zkutil::CreateMode::Persistent),
+        };
+        const auto non_atomic_multi = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+        non_atomic_multi->atomic = false;
+
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(non_atomic_multi, 1, 0, create_zxid);
+        auto responses = storage.processRequest(non_atomic_multi, 1, create_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = non_atomic_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        ASSERT_EQ(multi_response->responses.size(), 4);
+        ASSERT_EQ(multi_response->responses[0]->error, Coordination::Error::ZOK);
+        ASSERT_EQ(multi_response->responses[1]->error, Coordination::Error::ZNONODE);
+        ASSERT_EQ(multi_response->responses[2]->error, Coordination::Error::ZOK);
+        ASSERT_EQ(multi_response->responses[3]->error, Coordination::Error::ZOK);
+
+        ASSERT_TRUE(exists("/s1/A1"));
+        ASSERT_TRUE(exists("/s1/A2"));
+    }
+
+    {
+        SCOPED_TRACE("NonAtomicMulti Nested Multi Case");
+
+        const Coordination::Requests create_ops{
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s2", "", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s2/A1", "", zkutil::CreateMode::Persistent),
+                zkutil::makeSetRequest("/s2/non-existing", "", -1),
+            }, ACLs{}),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s2/A1", "", zkutil::CreateMode::Persistent),
+                zkutil::makeCreateRequest("/s2/A2", "", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+        };
+        const auto non_atomic_multi = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+        non_atomic_multi->atomic = false;
+
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(non_atomic_multi, 1, 0, create_zxid);
+        auto responses = storage.processRequest(non_atomic_multi, 1, create_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = non_atomic_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        ASSERT_EQ(multi_response->responses.size(), 3);
+        ASSERT_EQ(multi_response->responses[0]->error, Coordination::Error::ZOK);
+        ASSERT_EQ(multi_response->responses[1]->error, Coordination::Error::ZNONODE);
+        ASSERT_EQ(multi_response->responses[2]->error, Coordination::Error::ZOK);
+
+        ASSERT_TRUE(exists("/s2/A1"));
+        ASSERT_TRUE(exists("/s2/A2"));
+    }
+
+    {
+        SCOPED_TRACE("NonAtomicMulti Complex Nested Multi Error");
+
+        const Coordination::Requests create_ops_subrequest{
+            zkutil::makeCreateRequest("/s3/X4", "1", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/s3/A", "1", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/s3/X5", "1", zkutil::CreateMode::Persistent),
+        };
+        const auto non_atomic_multi_subrequest = std::make_shared<ZooKeeperMultiRequest>(create_ops_subrequest, ACLs{});
+        non_atomic_multi_subrequest->atomic = false;
+
+        const Coordination::Requests create_ops{
+            zkutil::makeCreateRequest("/s3", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/s3/A", "A", zkutil::CreateMode::Persistent),
+            non_atomic_multi_subrequest,
+            zkutil::makeCreateRequest("/s3/B", "B", zkutil::CreateMode::Persistent),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s3/X1", "1", zkutil::CreateMode::Persistent),
+                zkutil::makeCreateRequest("/s3/A", "1", zkutil::CreateMode::Persistent),
+                zkutil::makeCreateRequest("/s3/X2", "1", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+            zkutil::makeCreateRequest("/s3/C", "C", zkutil::CreateMode::Persistent),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/s3/X3", "1", zkutil::CreateMode::Persistent),
+                zkutil::makeCreateRequest("/s3/A", "1", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+        };
+        const auto non_atomic_multi = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+        non_atomic_multi->atomic = false;
+
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(non_atomic_multi, 1, 0, create_zxid);
+        auto responses = storage.processRequest(non_atomic_multi, 1, create_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = non_atomic_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        ASSERT_EQ(multi_response->error, Error::ZNODEEXISTS);
+        ASSERT_EQ(multi_response->responses.size(), 7);
+        ASSERT_EQ(multi_response->responses[0]->error, Coordination::Error::ZOK);
+        ASSERT_EQ(multi_response->responses[1]->error, Coordination::Error::ZOK);
+        {
+            const auto subrequest = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(multi_response->responses[2]);
+            ASSERT_EQ(subrequest->error, Coordination::Error::ZNODEEXISTS);
+            ASSERT_EQ(subrequest->responses[0]->error, Coordination::Error::ZOK);
+            ASSERT_EQ(subrequest->responses[1]->error, Coordination::Error::ZNODEEXISTS);
+            ASSERT_EQ(subrequest->responses[2]->error, Coordination::Error::ZOK);
+        }
+        ASSERT_EQ(multi_response->responses[3]->error, Coordination::Error::ZOK);
+        {
+            const auto subrequest = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(multi_response->responses[4]);
+            ASSERT_EQ(subrequest->error, Coordination::Error::ZNODEEXISTS);
+            ASSERT_EQ(subrequest->responses[0]->error, Coordination::Error::ZOK);
+            ASSERT_EQ(subrequest->responses[1]->error, Coordination::Error::ZNODEEXISTS);
+            ASSERT_EQ(subrequest->responses[2]->error, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+        }
+        ASSERT_EQ(multi_response->responses[5]->error, Coordination::Error::ZOK);
+        {
+            const auto subrequest = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(multi_response->responses[6]);
+            ASSERT_EQ(subrequest->error, Coordination::Error::ZNODEEXISTS);
+            ASSERT_EQ(subrequest->responses[0]->error, Coordination::Error::ZOK);
+            ASSERT_EQ(subrequest->responses[1]->error, Coordination::Error::ZNODEEXISTS);
+        }
+
+        ASSERT_TRUE(exists("/s3/A"));
+        ASSERT_TRUE(exists("/s3/B"));
+        ASSERT_TRUE(exists("/s3/C"));
+        ASSERT_FALSE(exists("/s3/X1"));
+        ASSERT_FALSE(exists("/s3/X2"));
+        ASSERT_FALSE(exists("/s3/X3"));
+        ASSERT_TRUE(exists("/s3/X4"));
+        ASSERT_TRUE(exists("/s3/X5"));
+    }
+
+    {
+        SCOPED_TRACE("NonAtomicMulti Motivation Case");
+
+        /// Prepare
+        const Coordination::Requests create_ops{
+            zkutil::makeCreateRequest("/lock-service", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/cluster", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/cluster/host1", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/cluster/host2", "", zkutil::CreateMode::Persistent),
+            zkutil::makeCreateRequest("/cluster/host3", "", zkutil::CreateMode::Persistent),
+        };
+        const auto create_multi = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+        create_multi->atomic = true;
+
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(create_multi, 1, 0, create_zxid);
+        storage.processRequest(create_multi, 1, create_zxid);
+
+        const Coordination::Requests tx1_ops{
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCheckRequest("/cluster/host1", 0),
+                zkutil::makeCreateRequest("/lock-service/1", "", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCheckRequest("/cluster/host2", 0),
+                zkutil::makeCreateRequest("/lock-service/2", "", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCheckRequest("/cluster/host3", 0),
+                zkutil::makeCreateRequest("/lock-service/3", "", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+        };
+        const auto tx1 = std::make_shared<ZooKeeperMultiRequest>(tx1_ops, ACLs{});
+        tx1->atomic = false;
+
+        const Coordination::Requests tx2_ops{
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCheckRequest("/cluster/host2", 0),
+                zkutil::makeCreateRequest("/lock-service/2", "", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+        };
+        const auto tx2 = std::make_shared<ZooKeeperMultiRequest>(tx2_ops, ACLs{});
+        tx2->atomic = false;
+
+        /// Commit tx2
+        int tx2_zxid = ++zxid;
+        storage.preprocessRequest(tx2, 1, 0, tx2_zxid);
+        auto tx_2_process = storage.processRequest(tx2, 1, tx2_zxid);
+        const auto tx_2_response = [&]()
+        {
+            WriteBufferFromOwnString out;
+            tx_2_process[0].response->writeImpl(out);
+
+            ReadBufferFromOwnString in(out.str());
+            auto read_response = tx2->makeResponse();
+            read_response->readImpl(in);
+
+            return std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        }();
+
+        /// Commit tx1
+        int tx1_zxid = ++zxid;
+        storage.preprocessRequest(tx1, 1, 0, tx1_zxid);
+        auto tx_1_process = storage.processRequest(tx1, 1, tx1_zxid);
+        const auto tx_1_response = [&]()
+        {
+            WriteBufferFromOwnString out;
+            tx_1_process[0].response->writeImpl(out);
+
+            ReadBufferFromOwnString in(out.str());
+            auto read_response = tx1->makeResponse();
+            read_response->readImpl(in);
+
+            return std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        }();
+
+        ASSERT_EQ(tx_2_response->error, Error::ZOK);
+        ASSERT_EQ(tx_1_response->error, Error::ZNODEEXISTS);
+
+        ASSERT_EQ(tx_2_response->responses.size(), 1);
+        ASSERT_EQ(tx_2_response->responses[0]->error, Error::ZOK);
+
+        ASSERT_EQ(tx_1_response->responses.size(), 3);
+        ASSERT_EQ(tx_1_response->responses[0]->error, Error::ZOK);
+        ASSERT_EQ(tx_1_response->responses[1]->error, Error::ZNODEEXISTS);
+        ASSERT_EQ(tx_1_response->responses[2]->error, Error::ZOK);
+
+        ASSERT_TRUE(exists("/lock-service/1"));
+        ASSERT_TRUE(exists("/lock-service/2"));
+        ASSERT_TRUE(exists("/lock-service/3"));
+    }
+}
+
+TYPED_TEST(CoordinationTest, TestNonAtomicNestedFirstError)
+{
+    using namespace DB;
+    using namespace Coordination;
+
+    using Storage = typename TestFixture::Storage;
+
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
+
+    Storage storage{500, "", this->keeper_context};
+    int32_t zxid = 0;
+
+    const auto exists = [&](const String & path)
+    {
+        int new_zxid = ++zxid;
+
+        const auto exists_request = std::make_shared<ZooKeeperExistsRequest>();
+        exists_request->path = path;
+
+        storage.preprocessRequest(exists_request, 1, 0, new_zxid);
+        auto responses = storage.processRequest(exists_request, 1, new_zxid);
+
+        EXPECT_EQ(responses.size(), 1);
+        return responses[0].response->error == Coordination::Error::ZOK;
+    };
+
+    {
+        SCOPED_TRACE("NonAtomicMulti First Nested Error");
+
+        const Coordination::Requests create_ops{
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeSetRequest("non-existing", "data", -1),
+                zkutil::makeCreateRequest("/B", "data", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+            std::make_shared<ZooKeeperMultiRequest>(Coordination::Requests{
+                zkutil::makeCreateRequest("/A", "data", zkutil::CreateMode::Persistent),
+            }, ACLs{}),
+        };
+        const auto non_atomic_multi = std::make_shared<ZooKeeperMultiRequest>(create_ops, ACLs{});
+        non_atomic_multi->atomic = false;
+
+        int create_zxid = ++zxid;
+        storage.preprocessRequest(non_atomic_multi, 1, 0, create_zxid);
+        auto responses = storage.processRequest(non_atomic_multi, 1, create_zxid);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Error::ZOK);
+
+        WriteBufferFromOwnString out;
+        responses[0].response->writeImpl(out);
+
+        ReadBufferFromOwnString in(out.str());
+        auto read_response = non_atomic_multi->makeResponse();
+        read_response->readImpl(in);
+
+        const auto multi_response = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(read_response);
+        ASSERT_EQ(multi_response->error, Error::ZNONODE);
+        ASSERT_EQ(multi_response->responses.size(), 2);
+        {
+            const auto subrequest = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(multi_response->responses[0]);
+            ASSERT_EQ(subrequest->error, Coordination::Error::ZNONODE);
+            ASSERT_EQ(subrequest->responses.size(), 2);
+            ASSERT_EQ(subrequest->responses[0]->error, Coordination::Error::ZNONODE);
+            ASSERT_EQ(subrequest->responses[1]->error, Coordination::Error::ZRUNTIMEINCONSISTENCY);
+        }
+        {
+            const auto subrequest = std::dynamic_pointer_cast<ZooKeeperMultiResponse>(multi_response->responses[1]);
+            ASSERT_EQ(subrequest->error, Coordination::Error::ZOK);
+            ASSERT_EQ(subrequest->responses.size(), 1);
+            ASSERT_EQ(subrequest->responses[0]->error, Coordination::Error::ZOK);
+        }
+
+        ASSERT_TRUE(exists("/A"));
+        ASSERT_FALSE(exists("/B"));
     }
 }
 

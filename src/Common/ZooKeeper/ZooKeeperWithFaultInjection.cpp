@@ -306,14 +306,14 @@ Coordination::Error ZooKeeperWithFaultInjection::tryCreate(const std::string & p
     return tryCreate(path, data, mode, path_created);
 }
 
-Coordination::Responses ZooKeeperWithFaultInjection::multi(const Coordination::Requests & requests, bool check_session_valid)
+Coordination::Responses ZooKeeperWithFaultInjection::multi(const Coordination::Requests & requests, bool check_session_valid, bool atomic)
 {
     return executeWithFaultSync(
         __func__,
         !requests.empty() ? requests.front()->getPath() : "",
         [&]()
         {
-            auto responses = keeper->multi(requests, check_session_valid);
+            auto responses = keeper->multi(requests, check_session_valid, atomic);
             if (unlikely(fault_policy))
                 multiResponseSaveEphemeralNodePaths(requests, responses);
             return responses;
@@ -390,14 +390,14 @@ void ZooKeeperWithFaultInjection::deleteEphemeralNodeIfContentMatches(
         __func__, path, [&]() { keeper->deleteEphemeralNodeIfContentMatches(path, fast_delete_if_equal_value); });
 }
 
-Coordination::Error ZooKeeperWithFaultInjection::tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid)
+Coordination::Error ZooKeeperWithFaultInjection::tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid, bool atomic)
 {
     return executeWithFaultSync(
         __func__,
         !requests.empty() ? requests.front()->getPath() : "",
         [&]()
         {
-            auto code = keeper->tryMulti(requests, responses, check_session_valid);
+            auto code = keeper->tryMulti(requests, responses, check_session_valid, atomic);
             if (unlikely(fault_policy) && code == Coordination::Error::ZOK)
                 multiResponseSaveEphemeralNodePaths(requests, responses);
             return code;
@@ -405,11 +405,11 @@ Coordination::Error ZooKeeperWithFaultInjection::tryMulti(const Coordination::Re
 }
 
 Coordination::Error
-ZooKeeperWithFaultInjection::tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid)
+ZooKeeperWithFaultInjection::tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid, bool atomic)
 {
     try
     {
-        return tryMulti(requests, responses, check_session_valid);
+        return tryMulti(requests, responses, check_session_valid, atomic);
     }
     catch (const Coordination::Exception & e)
     {
@@ -440,12 +440,12 @@ zkutil::ZooKeeper::FutureGet ZooKeeperWithFaultInjection::asyncTryGet(std::strin
     return future;
 }
 
-zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow(const Coordination::Requests & ops)
+zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow(const Coordination::Requests & ops, bool atomic)
 {
-    return asyncTryMultiNoThrow(std::span(ops));
+    return asyncTryMultiNoThrow(std::span(ops), atomic);
 }
 
-zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops)
+zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops, bool atomic)
 {
 #ifndef NDEBUG
     /// asyncTryMultiNoThrow is not setup to handle faults with ephemeral nodes
@@ -508,7 +508,7 @@ zkutil::ZooKeeper::FutureMulti ZooKeeperWithFaultInjection::asyncTryMultiNoThrow
         }
     };
 
-    keeper->impl->multi(ops, std::move(callback));
+    keeper->impl->multi(ops, atomic, std::move(callback));
     return future;
 }
 

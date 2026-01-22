@@ -420,13 +420,13 @@ public:
     /// Performs several operations in a transaction.
     /// Throws on every error.
     /// For check_session_valid see addCheckSessionOp
-    Coordination::Responses multi(const Coordination::Requests & requests, bool check_session_valid = false);
+    Coordination::Responses multi(const Coordination::Requests & requests, bool check_session_valid = false, bool atomic = true);
     /// Throws only if some operation has returned an "unexpected" error - an error that would cause
     /// the corresponding try- method to throw.
     /// On exception, `responses` may or may not be populated.
-    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
+    Coordination::Error tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false, bool atomic = true);
     /// Throws nothing (even session expired errors)
-    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false);
+    Coordination::Error tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid = false, bool atomic = true);
 
     std::string sync(const std::string & path);
 
@@ -528,10 +528,11 @@ public:
     FutureRemove asyncTryRemoveNoThrow(const std::string & path, int32_t version = -1);
 
     using FutureMulti = std::future<Coordination::MultiResponse>;
-    FutureMulti asyncMulti(const Coordination::Requests & ops);
+    FutureMulti asyncMulti(const Coordination::Requests & ops, bool atomic = true);
+    FutureMulti asyncMulti(std::span<const Coordination::RequestPtr> ops, bool atomic = true);
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
-    FutureMulti asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops);
+    FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops, bool atomic = true);
+    FutureMulti asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops, bool atomic = true);
 
     using FutureSync = std::future<Coordination::SyncResponse>;
     FutureSync asyncSync(const std::string & path);
@@ -623,7 +624,7 @@ private:
 
     /// returns error code with optional reason
     std::pair<Coordination::Error, std::string>
-    multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid);
+    multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses, bool check_session_valid, bool atomic);
 
     Coordination::Error existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallbackPtrOrEventPtr watch_callback);
     Coordination::Error syncImpl(const std::string & path, std::string & returned_path);

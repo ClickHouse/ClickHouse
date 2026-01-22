@@ -1,5 +1,7 @@
 #include <chrono>
+#include <memory>
 #include <Common/Stopwatch.h>
+#include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -1732,9 +1734,10 @@ void ZooKeeper::reconfig(
 
 void ZooKeeper::multi(
     const Requests & requests,
+    bool atomic,
     MultiCallback callback)
 {
-    multi(std::span(requests), std::move(callback));
+    multi(std::span(requests), atomic, std::move(callback));
 }
 
 void ZooKeeper::getACL(const String & path, GetACLCallback callback)
@@ -1753,6 +1756,7 @@ void ZooKeeper::getACL(const String & path, GetACLCallback callback)
 
 void ZooKeeper::multi(
     std::span<const RequestPtr> requests,
+    bool atomic,
     MultiCallback callback)
 {
     // If path_acls is not empty, iterate through requests and apply path-specific ACLs to create requests
@@ -1783,6 +1787,7 @@ void ZooKeeper::multi(
     }
 
     ZooKeeperMultiRequest request(requests, default_acls);
+    request.atomic = atomic;
 
     if (request.getOpNum() == OpNum::MultiRead)
     {
@@ -1792,6 +1797,12 @@ void ZooKeeper::multi(
         for (const auto & subrequest : request.requests)
             if (subrequest->watch_callback && !isFeatureEnabled(KeeperFeatureFlag::MULTI_WATCHES))
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Watches in multi query are not supported by the server");
+    }
+
+    if (request.getOpNum() == OpNum::NonAtomicMulti)
+    {
+        if (!isFeatureEnabled(KeeperFeatureFlag::NON_ATOMIC_MULTI))
+            throw Exception::fromMessage(Error::ZBADARGUMENTS, "NonAtomicMulti request type cannot be used because it's not supported by the server");
     }
 
     instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeMulti);
@@ -1918,7 +1929,8 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
 
     if (response)
     {
-        response->fillLogElements(elems, 0);
+        size_t idx = response->fillLogElements(elems, 0);
+        chassert(idx == elems.size());
         log_type = ZooKeeperLogElement::RESPONSE;
     }
 

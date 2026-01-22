@@ -1339,7 +1339,7 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
         {
             multi_promise->set_value();
         };
-        zookeeper.multi(ops, multi_callback);
+        zookeeper.multi(ops, /*atomic=*/true, multi_callback);
         multi_future.get();
     }
     auto remove_promise = std::make_shared<std::promise<void>>();

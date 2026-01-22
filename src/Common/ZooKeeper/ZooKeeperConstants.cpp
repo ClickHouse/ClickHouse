@@ -23,6 +23,7 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Reconfig),
     static_cast<int32_t>(OpNum::Multi),
     static_cast<int32_t>(OpNum::MultiRead),
+    static_cast<int32_t>(OpNum::NonAtomicMulti),
     static_cast<int32_t>(OpNum::CreateIfNotExists),
     static_cast<int32_t>(OpNum::Auth),
     static_cast<int32_t>(OpNum::SessionID),
@@ -67,6 +68,9 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
 
         case OpNum::MultiRead:
             return "multi-read";
+
+        case OpNum::NonAtomicMulti:
+            return "non-atomic-multi";
 
         case OpNum::Create:
         case OpNum::Create2:

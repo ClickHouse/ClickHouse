@@ -266,17 +266,20 @@ void KeeperOverDispatcher::reconfig(
 }
 
 void KeeperOverDispatcher::multi(
-        const Requests & requests,
-        MultiCallback callback)
+    const Requests & requests,
+    bool atomic,
+    MultiCallback callback)
 {
-    multi(std::span(requests), std::move(callback));
+    multi(std::span(requests), atomic, std::move(callback));
 }
 
 void KeeperOverDispatcher::multi(
     std::span<const RequestPtr> requests,
+    bool atomic,
     MultiCallback callback)
 {
     const auto request = std::shared_ptr<ZooKeeperMultiRequest>(new ZooKeeperMultiRequest(requests, {}));  // NOLINT(modernize-make-shared)
+    request->atomic = atomic;
 
     pushRequest(request, [callback](const ZooKeeperResponsePtr & response)
     {
