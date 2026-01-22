@@ -1,4 +1,4 @@
-#include <Interpreters/addTypeConversionToAST.h>
+#include "addTypeConversionToAST.h"
 
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>

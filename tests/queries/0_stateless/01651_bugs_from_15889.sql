@@ -54,7 +54,7 @@ WHERE (query_id =
     WHERE current_database = currentDatabase() AND (query LIKE '%test cpu time query profiler%') AND (query NOT LIKE '%system%')
     ORDER BY event_time DESC
     LIMIT 1
-)) AND (symbol LIKE '%Source%');
+)) AND (symbol LIKE '%Source%'); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY }
 
 
 WITH addressToSymbol(arrayJoin(trace)) AS symbol
@@ -112,7 +112,7 @@ WITH (
         LIMIT 1
     ) AS t)
 SELECT if(dateDiff('second', toDateTime(time_with_microseconds), toDateTime(t)) = -9223372036854775808, 'ok', '')
-SETTINGS enable_analyzer = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SETTINGS allow_experimental_analyzer = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 WITH (
     (

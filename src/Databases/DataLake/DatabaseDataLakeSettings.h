@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Core/FormatFactorySettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 
@@ -19,11 +19,7 @@ class SettingsChanges;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, DatabaseDataLakeCatalogType) \
 
-#define LIST_OF_DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
-    DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
-    STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M)
-
-LIST_OF_DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(DatabaseDataLakeSettings, DECLARE_SETTING_TRAIT)
+DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(DatabaseDataLakeSettings, DECLARE_SETTING_TRAIT)
 
 struct DatabaseDataLakeSettings
 {
@@ -34,11 +30,9 @@ struct DatabaseDataLakeSettings
 
     DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(DatabaseDataLakeSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(const ASTStorage & storage_def, bool is_attach);
+    void loadFromQuery(const ASTStorage & storage_def);
 
     void applyChanges(const SettingsChanges & changes);
-
-    SettingsChanges allChanged() const;
 
 private:
     std::unique_ptr<DatabaseDataLakeSettingsImpl> impl;

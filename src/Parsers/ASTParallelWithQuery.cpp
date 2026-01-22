@@ -28,7 +28,7 @@ void ASTParallelWithQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &
         {
             String indent_str = settings.one_line ? "" : String(4 * frame.indent, ' ');
             ostr << settings.nl_or_ws << indent_str;
-            ostr << "PARALLEL WITH";
+            ostr << (settings.hilite ? hilite_keyword : "") << "PARALLEL WITH" << (settings.hilite ? hilite_none : "");
             ostr << settings.nl_or_ws;
         }
         children[i]->format(ostr, settings, state, frame);

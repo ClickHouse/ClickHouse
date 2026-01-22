@@ -485,7 +485,7 @@ bool convertQueryToCNF(ASTSelectQuery * select_query)
 {
     if (select_query->where())
     {
-        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where().get());
+        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where());
         if (!cnf_form)
             return false;
 
@@ -515,7 +515,7 @@ void optimizeUsing(const ASTSelectQuery * select_query)
     for (const auto & expression : expression_list)
     {
         auto expression_name = expression->getAliasOrColumnName();
-        if (!expressions_names.contains(expression_name))
+        if (expressions_names.find(expression_name) == expressions_names.end())
         {
             uniq_expressions_list.push_back(expression);
             expressions_names.insert(expression_name);

@@ -5,21 +5,21 @@
 namespace DB
 {
 
-void ASTTransactionControl::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked /*frame*/) const
+void ASTTransactionControl::formatImpl(WriteBuffer & ostr, const FormatSettings & format /*state*/, FormatState &, FormatStateStacked /*frame*/) const
 {
     switch (action)
     {
         case BEGIN:
-            ostr << "BEGIN TRANSACTION";
+            ostr << (format.hilite ? hilite_keyword : "") << "BEGIN TRANSACTION" << (format.hilite ? hilite_none : "");
             break;
         case COMMIT:
-            ostr << "COMMIT";
+            ostr << (format.hilite ? hilite_keyword : "") << "COMMIT" << (format.hilite ? hilite_none : "");
             break;
         case ROLLBACK:
-            ostr << "ROLLBACK";
+            ostr << (format.hilite ? hilite_keyword : "") << "ROLLBACK" << (format.hilite ? hilite_none : "");
             break;
         case SET_SNAPSHOT:
-            ostr << "SET TRANSACTION SNAPSHOT " << snapshot;
+            ostr << (format.hilite ? hilite_keyword : "") << "SET TRANSACTION SNAPSHOT " << (format.hilite ? hilite_none : "") << snapshot;
             break;
     }
 }

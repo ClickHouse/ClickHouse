@@ -54,7 +54,7 @@ void HTTPChunkedStreamBuf::close()
 		sync();
 		_session.write("0\r\n\r\n", 5);
 
-		_chunk = std::char_traits<char>::eof();
+        _chunk = std::char_traits<char>::eof();
 	}
 }
 
@@ -90,7 +90,7 @@ unsigned int HTTPChunkedStreamBuf::parseChunkLen()
 	if (size_t pos = line.find(';'); pos != std::string::npos)
 		line.resize(pos);
 
-	unsigned chunkLen = 0;
+	unsigned chunkLen;
 	if (NumberParser::tryParseHex(line, chunkLen))
 		return chunkLen;
 	else
@@ -118,9 +118,6 @@ int HTTPChunkedStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 
 	if (_chunk > 0)
 	{
-		if (length == 0)
-			return 0;
-
 		if (length > _chunk) length = _chunk;
 		int n = _session.read(buffer, length);
 		if (n > 0)
@@ -131,32 +128,12 @@ int HTTPChunkedStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 		if (_chunk == 0) skipCRLF();
 		return n;
 	}
-	else
+	else 
 	{
 		skipCRLF();
 		_chunk = eof;
 		return 0;
 	}
-}
-
-
-bool HTTPChunkedStreamBuf::isComplete(bool read_from_device_to_check_eof) noexcept
-{
-	if (read_from_device_to_check_eof)
-	{
-		try
-		{
-			/// If the stream is closed without final last chunk
-			/// "Unexpected EOF" exception would be thrown
-			readFromDevice(nullptr, 0);
-		}
-		catch (...)
-		{
-			return false;
-		}
-	}
-
-	return _chunk == std::char_traits<char>::eof();
 }
 
 

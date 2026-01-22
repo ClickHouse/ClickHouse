@@ -29,12 +29,6 @@ protected:
     bool isGenericCompression() const override { return false; }
     bool isDeltaCompression() const override { return true; }
 
-    String getDescription() const override
-    {
-        return "Preprocessor (should be followed by some compression codec). Stores difference between neighboring values; good for monotonically increasing or decreasing data.";
-    }
-
-
 private:
     const UInt8 delta_bytes_size;
 };
@@ -110,7 +104,7 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
         dest += sizeof(T);
     }
 
-    return static_cast<UInt32>(dest - original_dest);
+    return dest - original_dest;
 }
 
 }
