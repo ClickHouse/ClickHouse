@@ -140,6 +140,7 @@ protected:
     void loadDeduplicationLog();
 
 private:
+    void shutdownImpl(bool is_drop);
 
     /// Mutex and condvar for synchronous mutations wait
     std::mutex mutation_wait_mutex;

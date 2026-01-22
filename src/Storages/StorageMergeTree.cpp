@@ -268,7 +268,7 @@ void StorageMergeTree::startup()
     }
 }
 
-void StorageMergeTree::shutdown(bool)
+void StorageMergeTree::shutdownImpl(bool)
 {
     if (shutdown_called.exchange(true))
         return;
@@ -297,10 +297,14 @@ void StorageMergeTree::shutdown(bool)
         deduplication_log->shutdown();
 }
 
+void StorageMergeTree::shutdown(bool is_drop)
+{
+    shutdownImpl(is_drop);
+}
 
 StorageMergeTree::~StorageMergeTree()
 {
-    shutdown(false);
+    shutdownImpl(false);
 }
 
 void StorageMergeTree::read(
