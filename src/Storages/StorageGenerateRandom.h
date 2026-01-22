@@ -2,14 +2,17 @@
 
 #include <optional>
 #include <Storages/IStorage.h>
+#include <base/types.h>
 #include <pcg_random.hpp>
 
 
 namespace DB
 {
-
+    
+/// max_json_keys, max_json_depth and null_ratio are internal defaults for JSON/Object
+/// generation. User-facing configuration will be added in a follow-up change.
 ColumnPtr fillColumnWithRandomData(
-    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, ContextPtr context);
+    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, UInt64 max_json_keys, UInt64 max_json_depth, double null_ratio, pcg64 & rng, ContextPtr context);
 
 /* Generates random data for given schema.
  */
