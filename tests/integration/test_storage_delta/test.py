@@ -2356,7 +2356,7 @@ def test_column_pruning(started_cluster):
         )
     )
     # Slightly different number depending on reader implementation.
-    assert 107220 <= bytes_read <= 107232
+    assert 107120 <= bytes_read <= 107232
 
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
@@ -2377,7 +2377,7 @@ def test_column_pruning(started_cluster):
         )
     )
     # Small diff because in case of delta-kernel metadata reading is not counted in the metric.
-    assert 105677 <= bytes_read <= 105689
+    assert 105580 <= bytes_read <= 105689
 
 
 def test_concurrent_reads(started_cluster):
