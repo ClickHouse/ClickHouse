@@ -734,9 +734,14 @@ protected:
     {
         Columns columns;
         columns.reserve(block_to_fill.columns());
+        
+        /// Default values for fillColumnWithRandomData and estimateValueSize function testing.  
+        constexpr UInt64 default_max_json_keys = 10;
+        constexpr UInt64 default_max_json_depth = 3;
+        constexpr double default_null_ratio = 0.1;
 
         for (const auto & elem : block_to_fill)
-            columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context));
+            columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length,default_max_json_keys,default_max_json_depth , default_null_ratio,rng, context));
 
         columns = Nested::flattenNested(block_to_fill.cloneWithColumns(columns)).getColumns();
 
@@ -865,7 +870,13 @@ Pipe StorageGenerateRandom::read(
     size_t preferred_block_size_bytes = context->getSettingsRef()[Setting::preferred_block_size_bytes];
     if (preferred_block_size_bytes)
     {
-        size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length);
+
+        /// Default values for fillColumnWithRandomData and estimateValueSize function testing.  
+        constexpr UInt64 default_max_json_keys = 10;
+        constexpr UInt64 default_max_json_depth = 3;
+        constexpr double default_null_ratio = 0.1;
+
+        size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length, default_max_json_keys,default_max_json_depth,default_null_ratio);
 
         size_t estimated_block_size_bytes = 0;
         if (common::mulOverflow(max_block_size, estimated_row_size_bytes, estimated_block_size_bytes))
