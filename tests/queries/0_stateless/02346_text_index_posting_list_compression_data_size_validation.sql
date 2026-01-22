@@ -132,7 +132,7 @@ OPTIMIZE TABLE tab_uncompressed FINAL;
 
 -- Compare the size of the text index for the same dataset with vs. without compression.
 SELECT
-    'table',
+    table,
     sum(rows),
     sum(secondary_indices_compressed_bytes)
 FROM system.parts
