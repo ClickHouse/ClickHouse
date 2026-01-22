@@ -55,6 +55,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         save_primary_index_in_memory,
         blocks_are_granules_size);
 
+    data_part->storage.commitToManifest(data_part, ManifestOpType::PreCommit);
+
     data_part_storage->createDirectories();
 
     /// NOTE do not pass context for writing to system.transactions_info_log,

@@ -2160,7 +2160,11 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     auto metadata_snapshot = getInMemoryMetadataPtr();
     const auto settings = getSettings();
 
-    auto disks = getStoragePolicy()->getDisks();
+    Disks disks;
+    if (auto manifest_disk = getManifestDisk())
+        disks.push_back(manifest_disk);
+    else
+        disks = getStoragePolicy()->getDisks();
 
     if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks && !(*settings)[MergeTreeSetting::disk].changed)
     {
@@ -4965,6 +4969,8 @@ void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction 
                return !may_be_cleaned_up || temporary_parts.contains(dir_name);
            }());
     assert(!(!need_rename && rename_in_transaction));
+
+    commitToManifest(part, ManifestOpType::Commit);
 
     if (need_rename && !rename_in_transaction)
         part->renameTo(part->name, true);

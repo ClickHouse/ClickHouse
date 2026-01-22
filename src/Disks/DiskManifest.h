@@ -3,15 +3,10 @@
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Storages/MergeTree/Manifest/IManifestStorage.h>
+#include <Storages/MergeTree/Manifest/BaseManifestEntry.h>
 
 namespace DB
 {
-
-// Forward declaration
-namespace Manifest
-{
-    class PartObject;
-}
 
 class DiskManifest;
 using DiskManifestPtr = std::shared_ptr<DiskManifest>;
@@ -31,22 +26,13 @@ private:
     size_t pos = 0;
 };
 
-/**
- * Virtual disk that uses manifest storage (KV store) to manage part metadata.
- * 
- * This disk implements IDisk interface but doesn't actually store files.
- * Instead, it reads part metadata from manifest storage (e.g., RocksDB) and
- * returns part names through iterateDirectory(). The actual part files are
- * stored on other disks (local or remote) using UUID as directory names.
- */
 class DiskManifest : public IDisk
 {
 public:
     DiskManifest(
         const String & name_,
         const String & db_path,
-        const String & local_disk_path_,
-        const String & remote_disk_path_,
+        const String & relative_data_path_,
         std::weak_ptr<IManifestStorage> manifest_storage_,
         MergeTreeDataFormatVersion format_version_);
 
@@ -172,13 +158,11 @@ public:
     bool isBroken() const override { return false; }
     bool isReadOnly() const override { return true; }
 
-    /// Map from part name to PartObject
-    mutable std::map<String, Manifest::PartObject> part_map;
+    mutable std::map<String, BaseManifestEntry> part_map;
 
 private:
     String db_path;
-    String local_disk_path;
-    String remote_disk_path;
+    String relative_data_path;
     std::weak_ptr<IManifestStorage> manifest_storage;
     MergeTreeDataFormatVersion format_version;
 

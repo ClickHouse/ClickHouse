@@ -203,6 +203,30 @@ StorageMergeTree::StorageMergeTree(
 }
 
 
+StorageMergeTree::StorageMergeTree(
+    const StorageID & table_id_,
+    const StorageInMemoryMetadata & metadata_,
+    LoadingStrictnessLevel mode,
+    ContextMutablePtr context_,
+    const String & date_column_name,
+    const MergingParams & merging_params_,
+    std::unique_ptr<MergeTreeSettings> storage_settings_)
+    : MergeTreeData(
+          table_id_,
+          metadata_,
+          context_,
+          date_column_name,
+          merging_params_,
+          std::move(storage_settings_),
+          false, /// require_part_metadata
+          mode)
+    , writer(*this)
+    , merger_mutator(*this)
+    , support_transaction(supportTransaction(getDisks(), log.load()))
+{
+}
+
+
 void StorageMergeTree::startup()
 {
     /// Do not schedule any background jobs if current storage has static data files.

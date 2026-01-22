@@ -72,14 +72,16 @@ ManifestStoragePtr ManifestStorageRocksDB::create(const String & dir)
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "No column family handles returned from RocksDB");
 
     std::unique_ptr<rocksdb::DB> db_ptr(db);
-    return std::shared_ptr<ManifestStorageRocksDB>(new ManifestStorageRocksDB(std::move(db_ptr), cf_handles[0]));
+    return std::shared_ptr<ManifestStorageRocksDB>(new ManifestStorageRocksDB(std::move(db_ptr), cf_handles[0], dir));
 }
 
 ManifestStorageRocksDB::ManifestStorageRocksDB(
     std::unique_ptr<rocksdb::DB> db,
-    rocksdb::ColumnFamilyHandle * default_cf_handle)
+    rocksdb::ColumnFamilyHandle * default_cf_handle,
+    const String & dir)
     : rocksdb_(std::move(db))
     , default_cf_handle_(default_cf_handle)
+    , db_dir_(dir)
 {
 }
 
@@ -276,6 +278,31 @@ void ManifestStorageRocksDB::shutdown()
     }
 
     rocksdb_->Close();
+}
+
+void ManifestStorageRocksDB::drop()
+{
+    // Shutdown first to close all resources
+    shutdown();
+
+    LOG_DEBUG(&Poco::Logger::get("ManifestStorageRocksDB"), "Dropping RocksDB directory: {}", db_dir_);
+
+    // Remove the parent directory (e.g., remove "e60" directory which contains the UUID directory)
+    if (!db_dir_.empty())
+    {
+        try
+        {
+            std::filesystem::path parent_dir = std::filesystem::path(db_dir_).parent_path();
+            if (std::filesystem::exists(parent_dir))
+            {
+                std::filesystem::remove_all(parent_dir);
+            }
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Failed to remove RocksDB directory {}: {}", db_dir_, e.what());
+        }
+    }
 }
 
 } // namespace DB

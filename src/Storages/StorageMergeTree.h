@@ -48,6 +48,15 @@ public:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_);
 
+    StorageMergeTree(
+        const StorageID & table_id_,
+        const StorageInMemoryMetadata & metadata,
+        LoadingStrictnessLevel mode,
+        ContextMutablePtr context_,
+        const String & date_column_name,
+        const MergingParams & merging_params_,
+        std::unique_ptr<MergeTreeSettings> settings_);
+
     void startup() override;
     void shutdown(bool is_drop) override;
 
@@ -120,6 +129,16 @@ public:
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
 
+protected:
+    /// For block numbers.
+    SimpleIncrement increment;
+
+    void loadMutations();
+
+    /// Load and initialize deduplication logs. Even if deduplication setting
+    /// equals zero creates object with deduplication window equals zero.
+    void loadDeduplicationLog();
+
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -130,9 +149,6 @@ private:
     MergeTreeDataMergerMutator merger_mutator;
 
     std::unique_ptr<MergeTreeDeduplicationLog> deduplication_log;
-
-    /// For block numbers.
-    SimpleIncrement increment;
 
     /// For clearOldParts
     AtomicStopwatch time_after_previous_cleanup_parts;
@@ -179,12 +195,6 @@ private:
     PlainLightweightUpdatesSync lightweight_updates_sync;
 
     const bool support_transaction;
-
-    void loadMutations();
-
-    /// Load and initialize deduplication logs. Even if deduplication setting
-    /// equals zero creates object with deduplication window equals zero.
-    void loadDeduplicationLog();
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).

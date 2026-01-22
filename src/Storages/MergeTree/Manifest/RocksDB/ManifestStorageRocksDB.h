@@ -72,11 +72,13 @@ public:
     uint64_t getEstimateNumKeys() const override;
     void flush() override;
     void shutdown() override;
+    void drop() override;
 
 private:
     explicit ManifestStorageRocksDB(
         std::unique_ptr<rocksdb::DB> db,
-        rocksdb::ColumnFamilyHandle * default_cf_handle);
+        rocksdb::ColumnFamilyHandle * default_cf_handle,
+        const String & dir);
 
     static void setupRocksDBEnvThreads();
     static ManifestStatus convertStatus(const rocksdb::Status & status);
@@ -84,6 +86,7 @@ private:
     std::unique_ptr<rocksdb::DB> rocksdb_;
     rocksdb::ColumnFamilyHandle * default_cf_handle_;
     std::atomic<bool> shutdown_called_{false};
+    String db_dir_;  // Store the database directory path for drop()
 };
 
 } // namespace DB

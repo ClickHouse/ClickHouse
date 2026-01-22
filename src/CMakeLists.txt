@@ -158,7 +158,6 @@ if (USE_LIBPQXX)
     add_headers_and_sources(dbms Storages/PostgreSQL)
 endif()
 
-add_subdirectory(Storages/MergeTree/Manifest/proto)
 add_headers_and_sources(dbms Storages/MergeTree/Manifest)
 
 if (TARGET ch_contrib::rocksdb)
@@ -631,10 +630,6 @@ if (USE_ORC)
     target_link_libraries(dbms PUBLIC ${ORC_LIBRARIES})
     target_include_directories(dbms SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${PROJECT_BINARY_DIR}/contrib/orc/c++/include")
 endif ()
-
-if (TARGET clickhouse_manifest_proto)
-    target_link_libraries(dbms PRIVATE clickhouse_manifest_proto)
-endif()
 
 if (TARGET ch_contrib::rocksdb)
     target_link_libraries(dbms PUBLIC ch_contrib::rocksdb)

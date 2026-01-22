@@ -2138,6 +2138,7 @@ void IMergeTreeDataPart::initializeIndexGranularityInfo(const MergeTreeSettings 
 void IMergeTreeDataPart::remove()
 {
     chassert(assertHasValidVersionMetadata());
+    storage.commitToManifest(shared_from_this(), ManifestOpType::PreRemove);
     part_is_probably_removed_from_disk = true;
 
     auto can_remove_callback = [this] ()
@@ -2174,6 +2175,7 @@ void IMergeTreeDataPart::remove()
 
     bool is_temporary_part = is_temp || state == MergeTreeDataPartState::Temporary;
     getDataPartStorage().remove(std::move(can_remove_callback), checksums, projection_checksums, is_temporary_part, storage.log.load());
+    storage.removeFromManifest(toString(uuid));
 }
 
 std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const
@@ -2213,6 +2215,7 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_err
 {
     auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
     assert(path_to_detach);
+    storage.commitToManifest(shared_from_this(), ManifestOpType::PreDetach);
     try
     {
         renameTo(path_to_detach.value(), true);
@@ -2246,6 +2249,7 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_err
             throw;
     }
     part_is_probably_removed_from_disk = true;
+    storage.removeFromManifest(toString(uuid));
 }
 
 DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/,

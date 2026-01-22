@@ -73,6 +73,14 @@ struct WriteSettings;
 class MarkCache;
 using MarkCachePtr = std::shared_ptr<MarkCache>;
 
+enum class ManifestOpType
+{
+    PreCommit,
+    PreRemove,
+    PreDetach,
+    Commit,
+};
+
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
 {
@@ -1360,6 +1368,12 @@ public:
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
 
+    virtual void commitToManifest(const DataPartPtr & /* part */, ManifestOpType /* op_type */) const { }
+
+    virtual void removeFromManifest(const String & /* part_uuid */) const { }
+
+    virtual DiskPtr getManifestDisk() const { return nullptr; }
+
 protected:
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;
@@ -1903,6 +1917,16 @@ protected:
     void addPartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
     void removePartContributionToUncompressedBytesInPatches(const DataPartPtr & part);
 
+    /// Returns default settings for storage with possible changes from global config.
+    virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
+
+    virtual LoadPartResult loadDataPart(
+        const MergeTreePartInfo & part_info,
+        const String & part_name,
+        const DiskPtr & part_disk_ptr,
+        MergeTreeDataPartState to_state,
+        DB::SharedMutex & part_loading_mutex);
+
 private:
     std::atomic<size_t> total_active_size_bytes = 0;
     std::atomic<size_t> total_active_size_rows = 0;
@@ -1917,16 +1941,6 @@ private:
 
     // Get partition matcher for FREEZE / UNFREEZE queries.
     MatcherFn getPartitionMatcher(const ASTPtr & partition, ContextPtr context) const;
-
-    /// Returns default settings for storage with possible changes from global config.
-    virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
-
-    virtual LoadPartResult loadDataPart(
-        const MergeTreePartInfo & part_info,
-        const String & part_name,
-        const DiskPtr & part_disk_ptr,
-        MergeTreeDataPartState to_state,
-        DB::SharedMutex & part_loading_mutex);
 
     LoadPartResult loadDataPartWithRetries(
         const MergeTreePartInfo & part_info,
