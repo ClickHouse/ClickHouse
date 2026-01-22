@@ -19,6 +19,12 @@ class ServerDied(Exception):
 def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
     options = []
     client_options = []
+
+    if upgrade_check:
+        # Disable settings randomization for upgrade checks to prevent test failures caused by missing settings in old version
+        options.append("--no-random-settings")
+        options.append("--no-random-merge-tree-settings")
+
     # allow constraint
     client_options.append(f"enable_analyzer=1")
 
