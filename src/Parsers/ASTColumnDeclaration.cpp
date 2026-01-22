@@ -1,4 +1,5 @@
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -111,7 +112,10 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
     if (ttl)
     {
         ostr << ' '  << "TTL"  << ' ';
-        ttl->format(ostr, format_settings, state, frame);
+        auto nested_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        ttl->format(ostr, format_settings, state, nested_frame);
     }
 
     if (collation)
@@ -130,14 +134,14 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
 void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
 {
-    auto visit_child = [&f](ASTPtr & member)
+    auto visit_child = [&f, this](ASTPtr & member)
     {
         IAST * new_member_ptr = member.get();
         f(reinterpret_cast<void **>(&new_member_ptr));
         if (new_member_ptr != member.get())
         {
             if (new_member_ptr)
-                member = new_member_ptr->ptr();
+                member = this->getChild(*new_member_ptr);
             else
                 member.reset();
         }

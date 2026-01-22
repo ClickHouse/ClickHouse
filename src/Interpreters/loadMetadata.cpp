@@ -17,10 +17,8 @@
 #include <Databases/TablesLoader.h>
 #include <Storages/StorageMaterializedView.h>
 
-#include <IO/ReadBufferFromFile.h>
 
 #include <Core/Settings.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -246,7 +244,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         {
             String db_name = sub_path.filename().string();
             if (!isSystemOrInformationSchema(db_name))
-                orphan_directories_and_symlinks.emplace(unescapeForFileName(db_name), sub_path);
+                orphan_directories_and_symlinks.emplace(unescapeForFileName(db_name), fs::path(sub_path.string() + ".sql"));
             continue;
         }
 
@@ -256,7 +254,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         if (sub_path.extension() == ".sql")
         {
             String db_name = sub_path.stem();
-            orphan_directories_and_symlinks.erase(db_name);
+            orphan_directories_and_symlinks.erase(unescapeForFileName(db_name));
             if (!isSystemOrInformationSchema(db_name))
                 databases.emplace(unescapeForFileName(db_name), sub_path);
         }
@@ -617,6 +615,8 @@ void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMu
 
     LOG_INFO(getLogger("loadMetadata"), "Conversion finished, removing convert_ordinary_to_atomic flag");
     fs::remove(convert_flag_path);
+
+    context->removeWarningMessage(Context::WarningType::DB_ORDINARY_DEPRECATED);
 }
 
 LoadTaskPtrs loadMetadataSystem(ContextMutablePtr context, bool async_load_system_database)

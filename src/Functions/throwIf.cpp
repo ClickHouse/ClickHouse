@@ -159,7 +159,7 @@ private:
             size_t result_size = in_untyped->size();
 
             /// We return non constant to avoid constant folding.
-            return ColumnUInt8::create(result_size, 0);
+            return ColumnUInt8::create(result_size, static_cast<UInt8>(0));
         }
 
         return nullptr;
@@ -196,7 +196,7 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionThrowIf>(documentation);
 }
 

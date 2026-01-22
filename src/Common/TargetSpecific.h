@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
 
 /* This file contains macros and helpers for writing platform-dependent code.
@@ -92,7 +93,12 @@ enum class TargetArch : UInt32
 };
 
 /// Runtime detection.
-bool isArchSupported(TargetArch arch);
+UInt32 getSupportedArchs();
+inline ALWAYS_INLINE bool isArchSupported(TargetArch arch)
+{
+    static UInt32 arches = getSupportedArchs();
+    return arch == TargetArch::Default || (arches & static_cast<UInt32>(arch));
+}
 
 String toString(TargetArch arch);
 

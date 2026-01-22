@@ -237,7 +237,7 @@ Positions: 6 0 1 2 3 4
           Join (JOIN FillRightFirst)
           Type: LEFT
           Strictness: SEMI
-          Algorithm: ConcurrentHashJoin
+          Algorithm: HashJoin
           Clauses: [(__lhs_const) = (__rhs_const)]
             Expression (Left Pre Join Actions)
             Actions: COLUMN Const(UInt8) -> __lhs_const UInt8 : 0
@@ -334,7 +334,7 @@ Positions: 6 0 1 2 3 4
           Join (JOIN FillRightFirst)
           Type: FULL
           Strictness: ALL
-          Algorithm: ConcurrentHashJoin
+          Algorithm: HashJoin
           Clauses: [(__lhs_const) = (__rhs_const)]
             Expression (Left Pre Join Actions)
             Actions: COLUMN Const(UInt8) -> __lhs_const UInt8 : 0
@@ -431,7 +431,7 @@ Positions: 6 0 1 2 3 4
           Join (JOIN FillRightFirst)
           Type: LEFT
           Strictness: ANTI
-          Algorithm: ConcurrentHashJoin
+          Algorithm: HashJoin
           Clauses: [(__lhs_const) = (__rhs_const)]
             Expression (Left Pre Join Actions)
             Actions: COLUMN Const(UInt8) -> __lhs_const UInt8 : 0

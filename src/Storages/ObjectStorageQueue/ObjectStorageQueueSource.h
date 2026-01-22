@@ -24,9 +24,12 @@ class ObjectStorageQueueSource : public ISource, WithContext
 public:
     using Storage = StorageObjectStorage;
     using Source = StorageObjectStorageSource;
-    using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
+    using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
+    using BucketHolders = std::vector<BucketHolderPtr>;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
+    using PartitionLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::PartitionLastProcessedFileInfoMap;
+    using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
     struct ObjectStorageQueueObjectInfo : public ObjectInfo
     {
@@ -48,6 +51,7 @@ public:
             size_t list_objects_batch_size_,
             const ActionsDAG::Node * predicate_,
             const NamesAndTypesList & virtual_columns_,
+            const NamesAndTypesList & hive_partition_columns_to_read_from_file_path_,
             ContextPtr context_,
             LoggerPtr logger_,
             bool enable_hash_ring_filtering_,
@@ -70,6 +74,8 @@ public:
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseFinishedBuckets();
 
+        bool useBucketsForProcessing() const { return use_buckets_for_processing; }
+
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;
@@ -78,10 +84,13 @@ public:
         const ObjectStoragePtr object_storage;
         const StorageObjectStorageConfigurationPtr configuration;
         const NamesAndTypesList virtual_columns;
+        const NamesAndTypesList hive_partition_columns_to_read_from_file_path;
         const bool file_deletion_on_processed_enabled;
         const ObjectStorageQueueMode mode;
         const bool enable_hash_ring_filtering;
         const StorageID storage_id;
+        const bool use_buckets_for_processing;
+        const size_t buckets_num = 0;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
@@ -102,19 +111,21 @@ public:
         std::mutex mutex;
         LoggerPtr log;
 
-        struct ListedKeys
+        struct BucketInfo
         {
             std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> keys;
-            std::optional<Processor> processor;
+            std::optional<size_t> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
-        std::unordered_map<Bucket, ListedKeys> listed_keys_cache TSA_GUARDED_BY(mutex);
+        std::unordered_map<Bucket, std::unique_ptr<BucketInfo>> keys_cache_per_bucket TSA_GUARDED_BY(mutex);
 
         /// We store a vector of holders, because we cannot release them until processed files are committed.
-        std::unordered_map<size_t, std::vector<BucketHolderPtr>> bucket_holders TSA_GUARDED_BY(mutex);
+        std::unordered_map<size_t, std::shared_ptr<BucketHolders>> bucket_holders TSA_GUARDED_BY(mutex);
 
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
+
+        bool is_path_with_hive_partitioning = false;
 
         /// Only for processing without buckets.
         std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry TSA_GUARDED_BY(mutex);
@@ -126,7 +137,12 @@ public:
             ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
         };
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
-        bool hasKeysForProcessor(const Processor & processor) const;
+        std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
+        BucketHolderPtr tryAcquireBucket(
+            size_t bucket,
+            BucketInfo & bucket_info,
+            BucketHolders & acquired_buckets,
+            size_t processor) const TSA_REQUIRES(mutex);
     };
 
     struct CommitSettings
@@ -183,8 +199,14 @@ public:
         Coordination::Requests & requests,
         bool insert_succeeded,
         StoredObjects & successful_files,
+        PartitionLastProcessedFileInfoMap & file_map,
+        LastProcessedFileInfoMapPtr created_nodes = nullptr,
         const std::string & exception_message = {},
         int error_code = 0);
+
+    static void preparePartitionProcessedRequests(
+        Coordination::Requests & requests,
+        const PartitionLastProcessedFileInfoMap & last_processed_file_per_partition);
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(

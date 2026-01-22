@@ -1,4 +1,5 @@
 #pragma once
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsComparison.h>
@@ -31,6 +32,23 @@ class FunctionsNullSafeCmp : public IFunction
 {
 private:
     const ComparisonParams params;
+
+    static bool containsNothing(const DataTypePtr & type)
+    {
+        if (isNothing(type))
+            return true;
+
+        if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+        {
+            for (const auto & elem : tuple_type->getElements())
+            {
+                if (containsNothing(elem))
+                    return true;
+            }
+        }
+        return false;
+    }
+
 public:
     explicit FunctionsNullSafeCmp(ComparisonParams params_) : params(std::move(params_)) {}
 
@@ -53,7 +71,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 
@@ -67,6 +85,9 @@ public:
 
         const DataTypePtr & left_ele_type = arguments[0];
         const DataTypePtr & right_ele_type = arguments[1];
+
+        if (containsNothing(left_ele_type) || containsNothing(right_ele_type))
+            return std::make_shared<DataTypeNothing>();
 
         if ((isMap(left_ele_type) && right_ele_type->onlyNull())
                 || (left_ele_type->onlyNull() && isMap(right_ele_type))

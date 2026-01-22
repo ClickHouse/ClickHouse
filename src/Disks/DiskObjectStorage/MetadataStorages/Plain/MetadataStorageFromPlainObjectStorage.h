@@ -76,7 +76,6 @@ private:
     const String storage_path_full;
 
     mutable ObjectMetadataCachePtr object_metadata_cache;
-    const ObjectStorageKeyGeneratorPtr key_generator;
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction
@@ -99,7 +98,7 @@ public:
     void removeDirectory(const std::string & path) override;
     void removeRecursive(const std::string &) override;
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
 
 private:
     MetadataStorageFromPlainObjectStorage & metadata_storage;

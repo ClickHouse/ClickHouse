@@ -59,6 +59,11 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"grace_hash",           JoinAlgorithm::GRACE_HASH}})
 
 
+IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
+    {{"greedy",             JoinOrderAlgorithm::GREEDY},
+     {"dpsize",             JoinOrderAlgorithm::DPSIZE}})
+
+
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
     {{"before_having",          TotalsMode::BEFORE_HAVING},
      {"after_having_exclusive", TotalsMode::AFTER_HAVING_EXCLUSIVE},
@@ -266,6 +271,20 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                         {"move", ObjectStorageQueueAction::MOVE},
                         {"tag", ObjectStorageQueueAction::TAG}})
 
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueuePartitioningMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"none", ObjectStorageQueuePartitioningMode::NONE},
+     {"NONE", ObjectStorageQueuePartitioningMode::NONE},
+     {"hive", ObjectStorageQueuePartitioningMode::HIVE},
+     {"HIVE", ObjectStorageQueuePartitioningMode::HIVE},
+     {"regex", ObjectStorageQueuePartitioningMode::REGEX},
+     {"REGEX", ObjectStorageQueuePartitioningMode::REGEX}})
+
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueueBucketingMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"path", ObjectStorageQueueBucketingMode::PATH},
+     {"PATH", ObjectStorageQueueBucketingMode::PATH},
+     {"partition", ObjectStorageQueueBucketingMode::PARTITION},
+     {"PARTITION", ObjectStorageQueueBucketingMode::PARTITION}})
+
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
@@ -320,7 +339,8 @@ IMPLEMENT_SETTING_ENUM(
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
-     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE}})
+     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -354,6 +374,12 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"single_stream", MergeTreeStringSerializationVersion::SINGLE_STREAM},
      {"with_size_stream", MergeTreeStringSerializationVersion::WITH_SIZE_STREAM}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreeNullableSerializationVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"basic", MergeTreeNullableSerializationVersion::BASIC},
+     {"allow_sparse", MergeTreeNullableSerializationVersion::ALLOW_SPARSE}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeObjectSerializationVersion,
@@ -408,5 +434,10 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(ArrowFlightDescriptorType, ErrorCodes::BAD_ARGUMENTS,
     {{"path", ArrowFlightDescriptorType::Path},
      {"command", ArrowFlightDescriptorType::Command}})
-}
 
+IMPLEMENT_SETTING_ENUM(DeduplicateInsertSelectMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"enable_when_possible", DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE},
+     {"force_enable", DeduplicateInsertSelectMode::FORCE_ENABLE},
+     {"disable", DeduplicateInsertSelectMode::DISABLE},
+     {"enable_even_for_bad_queries", DeduplicateInsertSelectMode::ENABLE_EVEN_FOR_BAD_QUERIES}})
+}

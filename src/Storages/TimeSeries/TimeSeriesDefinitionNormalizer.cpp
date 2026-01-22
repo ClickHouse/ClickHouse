@@ -194,7 +194,7 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
         make_new_column(TimeSeriesColumnNames::Timestamp, get_datetime_type());
 
     auto timestamp_column = typeid_cast<std::shared_ptr<ASTColumnDeclaration>>(columns[position - 1]);
-    auto timestamp_type = typeid_cast<std::shared_ptr<ASTDataType>>(timestamp_column->type->ptr());
+    auto timestamp_type = typeid_cast<std::shared_ptr<ASTDataType>>(timestamp_column->type);
 
     if (!is_next_column_named(TimeSeriesColumnNames::Value))
         make_new_column(TimeSeriesColumnNames::Value, get_float_type());
@@ -267,7 +267,7 @@ void TimeSeriesDefinitionNormalizer::addMissingDefaultForIDColumn(ASTCreateQuery
         return;
 
     auto & columns = create.columns_list->columns->children;
-    auto * it = std::find_if(columns.begin(), columns.end(), [](const ASTPtr & column)
+    auto it = std::find_if(columns.begin(), columns.end(), [](const ASTPtr & column)
     {
         return typeid_cast<const ASTColumnDeclaration &>(*column).name == TimeSeriesColumnNames::ID;
     });

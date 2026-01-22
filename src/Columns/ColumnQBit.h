@@ -102,22 +102,29 @@ public:
 #endif
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t, size_t, const IColumn &, int) const override
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #else
-    int doCompareAt(size_t, size_t, const IColumn &, int) const override
+    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #endif
     {
-        return 0;
+        const auto & rhs = assert_cast<const ColumnQBit &>(rhs_);
+        return tuple->compareAt(n, m, rhs.getTupleColumn(), nan_direction_hint);
     }
 
     void insertDefault() override { tuple->insertDefault(); }
     void popBack(size_t n) override { tuple->popBack(n); }
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override
     {
-        return tuple->serializeValueIntoArena(n, arena, begin);
+        return tuple->serializeValueIntoArena(n, arena, begin, settings);
     }
-    char * serializeValueIntoMemory(size_t n, char * memory) const override { return tuple->serializeValueIntoMemory(n, memory); }
-    void deserializeAndInsertFromArena(ReadBuffer & in) override { tuple->deserializeAndInsertFromArena(in); }
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override
+    {
+        return tuple->serializeValueIntoMemory(n, memory, settings);
+    }
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
+    {
+        tuple->deserializeAndInsertFromArena(in, settings);
+    }
     void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
@@ -125,6 +132,7 @@ public:
 
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;

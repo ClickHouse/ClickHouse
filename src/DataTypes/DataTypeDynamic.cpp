@@ -187,21 +187,21 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
                 if (local_discriminators[i] == shared_variant_local_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value.data(), value.size());
+                    ReadBufferFromMemory buf(value);
                     auto type = decodeDataType(buf);
                     if (type->getName() == subcolumn_type_name)
                     {
                         subcolumn_type->getDefaultSerialization()->deserializeBinary(*subcolumn, buf, format_settings);
-                        null_map.push_back(0);
+                        null_map.push_back(static_cast<UInt8>(0));
                     }
                     else
                     {
-                        null_map.push_back(1);
+                        null_map.push_back(static_cast<UInt8>(1));
                     }
                 }
                 else
                 {
-                    null_map.push_back(1);
+                    null_map.push_back(static_cast<UInt8>(1));
                 }
             }
 

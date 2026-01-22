@@ -1,0 +1,4 @@
+SELECT (-(42))[3]
+FROM system.one
+SELECT (-(\'a\')).1
+FROM system.one

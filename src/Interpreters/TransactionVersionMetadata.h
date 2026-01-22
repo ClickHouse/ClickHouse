@@ -10,6 +10,8 @@ class Logger;
 namespace DB
 {
 
+using LoggerPtr = std::shared_ptr<Poco::Logger>;
+
 /// This structure allows to pass more information about a part that transaction is trying to create/remove.
 /// It's useful for logging and for exception messages.
 struct TransactionInfoContext

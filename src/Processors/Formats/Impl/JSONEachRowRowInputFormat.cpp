@@ -121,7 +121,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(std::string_view name_ref)
     if (!format_settings.skip_unknown_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref);
 
-    skipJSONField(*in, std::string_view(name_ref.data(), name_ref.size()), format_settings.json);
+    skipJSONField(*in, name_ref, format_settings.json);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)

@@ -368,7 +368,7 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     if (value.isNull())
         return false;
 
-    UInt8 predicate_value = value.safeGet<UInt8>();
+    auto predicate_value = static_cast<UInt8>(value.safeGet<UInt8>());
     return predicate_value > 0;
 }
 
@@ -1301,7 +1301,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
             const auto & shared_variant = dynamic_column.getSharedVariant();
             auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
-            ReadBufferFromMemory buf(value_data.data(), value_data.size());
+            ReadBufferFromMemory buf(value_data);
             auto type = decodeDataType(buf);
             auto tmp_column = type->createColumn();
             tmp_column->reserve(1);
@@ -1331,7 +1331,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             {
                 String path{shared_paths->getDataAt(i)};
                 auto value_data = shared_values->getDataAt(i);
-                ReadBufferFromMemory buf(value_data.data(), value_data.size());
+                ReadBufferFromMemory buf(value_data);
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
                 dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);

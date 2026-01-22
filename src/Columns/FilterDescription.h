@@ -50,6 +50,9 @@ struct FilterDescription final : public IFilterDescription
 struct SparseFilterDescription final : public IFilterDescription
 {
     const ColumnUInt64 * filter_indices = nullptr;
+
+    /// Holds offsets for Sparse(Nullable) filter, keeping only non-null and non-zero elements.
+    ColumnPtr valid_offsets;
     explicit SparseFilterDescription(const IColumn & column);
 
     ColumnPtr filter(const IColumn & column, ssize_t) const override;

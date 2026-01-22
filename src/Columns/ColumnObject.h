@@ -143,18 +143,17 @@ public:
 
     void popBack(size_t n) override;
 
-    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
-    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
-    std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
+    std::optional<size_t> getSerializedValueSize(size_t, const IColumn::SerializationSettings *) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void filter(const Filter & filt) override;
     void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -176,6 +175,7 @@ public:
     void reserve(size_t n) override;
     size_t capacity() const override;
     void prepareForSquashing(const std::vector<ColumnPtr> & source_columns, size_t factor) override;
+    void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
@@ -205,6 +205,7 @@ public:
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
+    void fixDynamicStructure() override;
 
     const PathToColumnMap & getTypedPaths() const { return typed_paths; }
     PathToColumnMap & getTypedPaths() { return typed_paths; }
@@ -282,8 +283,14 @@ public:
     /// Insert all the data from shared data with specified path to dynamic column.
     static void fillPathColumnFromSharedData(IColumn & path_column, std::string_view path, const ColumnPtr & shared_data_column, size_t start, size_t end);
 
-    /// Validate that all dynamic paths have correct sizes and that shared data doesn't contain any dynamic paths.
-    void validateDynamicPathsAndSharedData(size_t shared_data_offset = 0) const;
+    /// Due to previous bugs we can have an invalid state where we have some path
+    /// both in shared data and in dynamic paths and only one value is not NULL.
+    /// This methods repairs the column and removes this duplicate by removing path
+    /// and value from shared data and keeping only dynamic path containing non-Null value.
+    /// offset argument - is the offset from which we should check for duplicates.
+    void repairDuplicatesInDynamicPathsAndSharedData(size_t offset = 0);
+
+    void validateDynamicPathsSizes() const;
 
     /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
     class SortedPathsIterator

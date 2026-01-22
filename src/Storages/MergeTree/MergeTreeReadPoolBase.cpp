@@ -1,12 +1,13 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
-#include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 
 namespace DB
@@ -320,7 +321,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MergeTreeReadTaskInfoPtr read_info,
     MergeTreeReadTask::Readers task_readers,
     MarkRanges ranges,
-    std::vector<MarkRanges> patches_ranges) const
+    std::vector<MarkRanges> patches_ranges,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
     auto task_size_predictor = read_info->shared_size_predictor
         ? std::make_unique<MergeTreeBlockSizePredictor>(*read_info->shared_size_predictor)
@@ -332,14 +334,16 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
         std::move(ranges),
         std::move(patches_ranges),
         block_size_params,
-        std::move(task_size_predictor));
+        std::move(task_size_predictor),
+        updater);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MergeTreeReadTaskInfoPtr read_info,
     MarkRanges ranges,
     std::vector<MarkRanges> patches_ranges,
-    MergeTreeReadTask * previous_task) const
+    MergeTreeReadTask * previous_task,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
     auto get_part_name = [](const auto & task_info) -> String
     {
@@ -380,16 +384,17 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
         task_readers.updateAllMarkRanges(ranges);
     }
 
-    return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges));
+    return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges), updater);
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MergeTreeReadTaskInfoPtr read_info,
     MarkRanges ranges,
-    MergeTreeReadTask * previous_task) const
+    MergeTreeReadTask * previous_task,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
     auto patches_ranges = ranges_in_patch_parts.getRanges(read_info->data_part, read_info->patch_parts, ranges);
-    return createTask(std::move(read_info), std::move(ranges), std::move(patches_ranges), previous_task);
+    return createTask(std::move(read_info), std::move(ranges), std::move(patches_ranges), previous_task, updater);
 }
 
 MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const

@@ -3,7 +3,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/FlatDirectoryStructureKeyGenerator.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 
 #include <memory>
@@ -79,11 +79,10 @@ private:
     const std::shared_ptr<PlainRewritableMetrics> metrics;
     const std::string storage_path_prefix;
     const std::string storage_path_full;
-    const std::string metadata_key_prefix;
 
     std::mutex metadata_mutex;
     std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
+    std::shared_ptr<PlainRewritableLayout> layout;
 
     std::mutex load_mutex;
     AtomicStopwatch previous_refresh;
@@ -93,6 +92,11 @@ class MetadataStorageFromPlainRewritableObjectStorageTransaction : public IMetad
 {
 protected:
     MetadataStorageFromPlainRewritableObjectStorage & metadata_storage;
+
+    /// Plain rewritable disks extract key names for files from generated directory keys. Here we will
+    /// maintain uncommitted directory tree that was populated during metadata transaction filling to be able
+    /// to extrace remote path of directory during nested file creation in the same transaction.
+    std::shared_ptr<InMemoryDirectoryTree> uncommitted_fs_tree;
     MetadataOperationsHolder operations;
 
 public:
@@ -121,7 +125,7 @@ public:
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string &path) const override;
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
 };
 
 }

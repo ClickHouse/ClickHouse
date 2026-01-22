@@ -8,6 +8,7 @@ import uuid
 from collections import defaultdict
 from pathlib import Path
 
+from ci.jobs.scripts.log_parser import FuzzerLogParser
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -92,8 +93,7 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         nproc = int(Utils.cpu_count() / 2)
-        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' \
-        | tee -a \"{self.test_output_file}\""
+        self.fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --memory-limit {5*2**30} --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --jobs {nproc} -- '{{TEST}}' | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{self.test_output_file}\""
         self.minio_proc = None
         self.azurite_proc = None
         self.debug_artifacts = []
@@ -696,6 +696,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
+    @staticmethod
+    def _chmod(files):
+        for file in files:
+            try:
+                os.chmod(file, 0o666)
+            except Exception as ex:
+                print(f"WARNING: Failed to chmod {file}: {ex}")
+
     def prepare_logs(self, info, all=False):
         res = []
         try:
@@ -719,6 +727,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 if Path(self.CH_LOCAL_LOG).exists():
                     res.append(self.CH_LOCAL_LOG)
             self.logs = res
+            self._chmod(self.logs)
         except Exception as e:
             print(f"WARNING: Failed to collect logs: {e}")
             traceback.print_exc()
@@ -826,24 +835,68 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 command=f"! awk 'found && /^[^[:space:]]/ {{ print; exit }} /^Traceback \(most recent call last\):/ {{ found=1 }} found {{ print }}' {temp_dir}/job.log | head -n 100 | tee /dev/stderr | grep -q .",
             )
         )
-        results.append(
-            Result.from_commands_run(
-                name="Sanitizer assert (in stderr.log)",
-                command=f"! sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log | grep -a -v \"ASan doesn't fully support makecontext/swapcontext functions\" | head -n 100 | tee /dev/stderr | grep -q .",
-            )
+
+        def pick_latest_file(pattern: str) -> Path | None:
+            log_dir = Path(self.log_dir)
+            candidates = list(log_dir.glob(pattern))
+            candidates = [p for p in candidates if p.is_file()]
+            if not candidates:
+                return None
+            return max(candidates, key=lambda p: p.stat().st_mtime)
+
+        sanitizer_hits = Shell.get_output(
+            f"sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log 2>/dev/null | "
+            f'grep -a -v "ASan doesn\'t fully support makecontext/swapcontext functions" | '
+            "head -n 1 || true"
         )
-        results.append(
-            Result.from_commands_run(
-                name="Fatal messages (in clickhouse-server.log or clickhouse-server.err.log)",
-                command=f"cd {self.log_dir} && ! grep -a '<Fatal>' clickhouse-server*.log | head -n200 | tee /dev/stderr | grep -q .",
-            )
+        fatal_hits = Shell.get_output(
+            f"cd {self.log_dir} && grep -a '<Fatal>' clickhouse-server*.log 2>/dev/null | head -n 1 || true"
         )
-        results.append(
-            Result.from_commands_run(
-                name="Logical error thrown (in clickhouse-server.log or clickhouse-server.err.log)",
-                command=f"cd {self.log_dir} && ! grep -a -A10 'Code: 49. DB::Exception: ' clickhouse-server*.log | head -n100 | tee /dev/stderr | grep -q .",
-            )
-        )
+        if sanitizer_hits or fatal_hits:
+            server_log = pick_latest_file(
+                "clickhouse-server*.err.log"
+            ) or pick_latest_file("clickhouse-server*.log")
+            stderr_log = pick_latest_file("stderr*.log")
+            if not (server_log or stderr_log):
+                results.append(
+                    Result.create_from(
+                        name="Sanitizer assert or Fatal messages in server logs",
+                        info="no server logs found",
+                        status=Result.StatusExtended.FAIL,
+                        labels=[Result.Label.BLOCKER],  # to explicitly block the merge
+                    )
+                )
+            else:
+                try:
+                    log_parser = FuzzerLogParser(
+                        server_log=str(server_log),
+                        stderr_log=str(stderr_log),
+                        fuzzer_log="",
+                    )
+                    name, description, files = log_parser.parse_failure()
+                    results.append(
+                        Result.create_from(
+                            name=name,
+                            info=description,
+                            status=Result.StatusExtended.FAIL,
+                            files=files,
+                            labels=[
+                                Result.Label.BLOCKER
+                            ],  # to explicitly block the merge
+                        )
+                    )
+                except Exception:
+                    results.append(
+                        Result.create_from(
+                            name="Failed to parse sanitizer/fatal failure from server logs",
+                            info=traceback.format_exc(),
+                            status=Result.StatusExtended.FAIL,
+                            labels=[
+                                Result.Label.BLOCKER
+                            ],  # to explicitly block the merge
+                        )
+                    )
+
         results.append(
             Result.from_commands_run(
                 name="Lost s3 keys",
@@ -1032,7 +1085,7 @@ quit
             for cache_status_path in cache_status_files:
                 Shell.check(f"rm {cache_status_path}", verbose=True)
 
-        scrapping_system_table = Result(name=f"Scrapping system tables", status="OK")
+        scraping_system_table = Result(name=f"Scraping system tables", status="OK")
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -1041,7 +1094,7 @@ quit
             )
             if res != 0:
                 print(f"ERROR: Failed to dump system table: {table}\nError: {stderr}")
-                scrapping_system_table.set_info(
+                scraping_system_table.set_info(
                     f"Failed to dump system table: {table}\nError: {stderr}"
                 )
             if "minio" in table:
@@ -1057,7 +1110,7 @@ quit
                     print(
                         f"ERROR: Failed to dump system table from replica 1: {table}\nError: {stderr}"
                     )
-                    scrapping_system_table.set_info(
+                    scraping_system_table.set_info(
                         f"Failed to dump system table from replica 1: {table}\nError: {stderr}"
                     )
                     res = False
@@ -1071,13 +1124,13 @@ quit
                     print(
                         f"ERROR: Failed to dump system table from replica 2: {table}\nError: {stderr}"
                     )
-                    scrapping_system_table.set_info(
+                    scraping_system_table.set_info(
                         f"Failed to dump system table from replica 2: {table}\nError: {stderr}"
                     )
                     res = False
-        if scrapping_system_table.info:
-            scrapping_system_table.set_status(Result.StatusExtended.FAIL)
-            self.extra_tests_results.append(scrapping_system_table)
+        if scraping_system_table.info:
+            scraping_system_table.set_status(Result.StatusExtended.FAIL)
+            self.extra_tests_results.append(scraping_system_table)
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 
     @staticmethod
@@ -1175,14 +1228,29 @@ if __name__ == "__main__":
     res = False
     try:
         if command == "logs_export_config":
-            res = ch.create_log_export_config()
+            if not Info().is_local_run:
+                # Disable log export for local runs - ideally this command wouldn't be triggered,
+                # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
+                res = ch.create_log_export_config()
+            else:
+                res = True
         elif command == "logs_export_start":
             # FIXME: the start_time must be preserved globally in ENV or something like that
             # to get the same values in different DBs
             # As a wild idea, it could be stored in a Info.check_start_timestamp
-            res = ch.start_log_exports(check_start_time=Utils.timestamp())
+            if not Info().is_local_run:
+                # Disable log export for local runs - ideally this command wouldn't be triggered,
+                # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
+                res = ch.start_log_exports(check_start_time=Utils.timestamp())
+            else:
+                res = True
         elif command == "logs_export_stop":
-            res = ch.stop_log_exports()
+            if not Info().is_local_run:
+                # Disable log export for local runs - ideally this command wouldn't be triggered,
+                # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
+                res = ch.stop_log_exports()
+            else:
+                res = True
         elif command == "start_minio":
             param = sys.argv[2]
             assert param in ["stateless"]

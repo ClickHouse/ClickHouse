@@ -1,14 +1,16 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Common/assert_cast.h>
 
@@ -18,15 +20,19 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int TYPE_MISMATCH;
-    extern const int LOGICAL_ERROR;
+extern const int ILLEGAL_COLUMN;
+extern const int TYPE_MISMATCH;
+extern const int LOGICAL_ERROR;
 }
 
 DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
 {
     if (!type)
         return type;
+
+    /// To support entering Nullable(Tuple)
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        return std::make_shared<DataTypeNullable>(recursiveRemoveLowCardinality(nullable_type->getNestedType()));
 
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
         return std::make_shared<DataTypeArray>(recursiveRemoveLowCardinality(array_type->getNestedType()));
@@ -44,7 +50,8 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
 
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
     {
-        return std::make_shared<DataTypeMap>(recursiveRemoveLowCardinality(map_type->getKeyType()), recursiveRemoveLowCardinality(map_type->getValueType()));
+        return std::make_shared<DataTypeMap>(
+            recursiveRemoveLowCardinality(map_type->getKeyType()), recursiveRemoveLowCardinality(map_type->getValueType()));
     }
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
@@ -57,7 +64,15 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
 {
     ColumnPtr res = column;
 
-    if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
+    /// To support entering Nullable(Tuple)
+    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+    {
+        const auto & nested = column_nullable->getNestedColumnPtr();
+        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        if (nested.get() != nested_no_lc.get())
+            res = ColumnNullable::create(nested_no_lc, column_nullable->getNullMapColumnPtr());
+    }
+    else if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
     {
         const auto & data = column_array->getDataPtr();
         auto data_no_lc = recursiveRemoveLowCardinality(data);
@@ -106,9 +121,12 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
         /// recursiveRemoveLowCardinality() must not change the size of a passed column!
         if (res->size() != column->size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "recursiveRemoveLowCardinality() somehow changed the size of column {}. Old size={}, new size={}. It's a bug",
-                            column->getName(), column->size(), res->size());
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "recursiveRemoveLowCardinality() somehow changed the size of column {}. Old size={}, new size={}. It's a bug",
+                column->getName(),
+                column->size(),
+                res->size());
         }
     }
 
@@ -126,6 +144,28 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
     /// We can allow insert enum column if it's numeric type is the same as the column's type in table.
     if (WhichDataType(to_type).isEnum() && from_type->getTypeId() == to_type->getTypeId())
         return column;
+
+    /// To support entering Nullable(Tuple)
+    if (const auto * from_nullable_type = typeid_cast<const DataTypeNullable *>(from_type.get()))
+    {
+        if (const auto * to_nullable_type = typeid_cast<const DataTypeNullable *>(to_type.get()))
+        {
+            const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get());
+            if (!column_nullable)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}", column->getName(), from_type->getName());
+
+            const auto & nested_from = from_nullable_type->getNestedType();
+            const auto & nested_to = to_nullable_type->getNestedType();
+
+            auto nested_result = recursiveLowCardinalityTypeConversion(column_nullable->getNestedColumnPtr(), nested_from, nested_to);
+
+            if (nested_result.get() == column_nullable->getNestedColumnPtr().get())
+                return column;
+
+            /// Keep the original null map, only change the nested data.
+            return ColumnNullable::create(nested_result, column_nullable->getNullMapColumnPtr());
+        }
+    }
 
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
     {
@@ -159,15 +199,13 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
         {
             const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
             if (!column_array)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}",
-                                column->getName(), from_type->getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}", column->getName(), from_type->getName());
 
             const auto & nested_from = from_array_type->getNestedType();
             const auto & nested_to = to_array_type->getNestedType();
 
             return ColumnArray::create(
-                    recursiveLowCardinalityTypeConversion(column_array->getDataPtr(), nested_from, nested_to),
-                    column_array->getOffsetsPtr());
+                recursiveLowCardinalityTypeConversion(column_array->getDataPtr(), nested_from, nested_to), column_array->getOffsetsPtr());
         }
     }
 
@@ -177,8 +215,7 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
         {
             const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get());
             if (!column_tuple)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}",
-                                column->getName(), from_type->getName());
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for type {}", column->getName(), from_type->getName());
 
             auto columns = column_tuple->getColumns();
             const auto & from_elements = from_tuple_type->getElements();

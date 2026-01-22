@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/types.h>
-
 #include <Core/Types.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 

@@ -44,7 +44,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_statistics_optimize;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
 }
@@ -262,6 +261,7 @@ struct QueryPlanSettings
             {"description", query_plan_options.description},
             {"actions", query_plan_options.actions},
             {"indexes", query_plan_options.indexes},
+            {"indices", query_plan_options.indexes},
             {"projections", query_plan_options.projections},
             {"optimize", optimize},
             {"json", json},
@@ -269,6 +269,7 @@ struct QueryPlanSettings
             {"distributed", query_plan_options.distributed},
             {"keep_logical_steps", keep_logical_steps},
             {"input_headers", query_plan_options.input_headers},
+            {"column_structure", query_plan_options.column_structure},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;

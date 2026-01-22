@@ -2,24 +2,25 @@
 
 #include <string>
 #include <string_view>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
+#include <Columns/IColumn.h>
+#include <Core/SortDescription.h>
+#include <Storages/KeyDescription.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
-#include <Columns/IColumn.h>
-#include <Storages/KeyDescription.h>
-#include <Core/SortDescription.h>
 
 #if USE_AVRO
 
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <IO/CompressedReadBufferWrapper.h>
+#include <IO/CompressionMethod.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <IO/CompressedReadBufferWrapper.h>
-#include <IO/CompressionMethod.h>
 
 namespace DB::Iceberg
 {
@@ -60,11 +61,11 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
-    IcebergMetadataFilesCachePtr cache_ptr,
+    IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     LoggerPtr log,
-    CompressionMethod compression_method);
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid);
 
 struct MetadataFileWithInfo
 {
@@ -87,13 +88,16 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
-    IcebergMetadataFilesCachePtr cache_ptr,
+    const String & table_path,
+    const DataLakeStorageSettings & data_lake_settings,
+    IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
-    Poco::Logger * log);
+    Poco::Logger * log,
+    const std::optional<String> & table_uuid);
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
+std::string normalizeUuid(const std::string & uuid);
 
 /// Parse transform and argument from input parameter
 /// "x" -> {"identity", "x"}
@@ -102,9 +106,9 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
 std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i);
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
 
-KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
+KeyDescription getSortingKeyDescriptionFromMetadata(
+    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
-
 }
 
 #endif

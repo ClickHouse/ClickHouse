@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <bit>
 
-#include <Common/StackTrace.h>
+#include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
@@ -1157,7 +1157,7 @@ inline void writeBinary(const CityHash_v1_0_2::uint128 & x, WriteBuffer & buf)
     writePODBinary(x.high64, buf);
 }
 
-inline void writeBinary(const StackTrace::FramePointers & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const FramePointers & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 
@@ -1177,7 +1177,7 @@ inline void writeText(T x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
 
-inline void writeText(std::string_view x, WriteBuffer & buf) { writeString(x.data(), x.size(), buf); }
+inline void writeText(std::string_view x, WriteBuffer & buf) { writeString(x, buf); }
 
 inline void writeText(const DayNum & x, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance()) { writeDateText(LocalDate(x, time_zone), buf); }
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
@@ -1237,7 +1237,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
 
     if (fixed_fractional_length && fractional_length < scale)
     {
-        T new_value = value / DecimalUtils::scaleMultiplier<Int256>(scale - fractional_length - 1);
+        T new_value = static_cast<T>(value / DecimalUtils::scaleMultiplier<Int256>(scale - fractional_length - 1));
         auto round_carry = new_value % 10;
         value = new_value / 10;
         if (round_carry >= 5)
