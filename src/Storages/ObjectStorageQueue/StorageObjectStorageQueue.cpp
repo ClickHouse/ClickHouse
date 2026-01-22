@@ -360,8 +360,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
-        zk_path,
         zookeeper_name,
+        zk_path,
         *queue_settings_,
         storage_metadata.getColumns(),
         configuration_->format,
@@ -373,8 +373,8 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
 
     temp_metadata = std::make_unique<ObjectStorageQueueMetadata>(
         storage_type,
-        zk_path,
         zookeeper_name,
+        zk_path,
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],

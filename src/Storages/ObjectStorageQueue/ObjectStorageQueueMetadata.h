@@ -57,8 +57,8 @@ public:
 
     ObjectStorageQueueMetadata(
         ObjectStorageType storage_type_,
-        const fs::path & zookeeper_path_,
         const std::string & zookeeper_name_,
+        const fs::path & zookeeper_path_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
         size_t cleanup_interval_min_ms_,
         size_t cleanup_interval_max_ms_,
@@ -82,8 +82,8 @@ public:
     /// what is in keeper (for example, processing_threads_num is adjustable,
     /// because its default depends on the CPU cores on the server);
     static ObjectStorageQueueTableMetadata syncWithKeeper(
-        const fs::path & zookeeper_path,
         const String & zookeeper_name,
+        const fs::path & zookeeper_path,
         const ObjectStorageQueueSettings & settings,
         const ColumnsDescription & columns,
         const std::string & format,
@@ -145,9 +145,15 @@ public:
     bool useBucketsForProcessing() const;
     /// Get number of buckets in case of bucket-based processing.
     size_t getBucketsNum() const { return buckets_num; }
+    ObjectStorageQueueBucketingMode getBucketingMode() const { return bucketing_mode; }
     /// Get bucket by file path in case of bucket-based processing.
     Bucket getBucketForPath(const std::string & path) const;
-    static Bucket getBucketForPath(const std::string & path, size_t buckets_num);
+    static Bucket getBucketForPath(
+        const std::string & path,
+        size_t buckets_num,
+        ObjectStorageQueueBucketingMode bucketing_mode,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser);
     /// Acquire (take unique ownership of) bucket for processing.
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
 
@@ -186,9 +192,10 @@ private:
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
+    const ObjectStorageQueueBucketingMode bucketing_mode;
     const ObjectStorageQueuePartitioningMode partitioning_mode;
-    const fs::path zookeeper_path;
     const std::string zookeeper_name;
+    const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
 
     const bool cleanup_processed_files = false;
