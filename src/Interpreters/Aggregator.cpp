@@ -44,11 +44,9 @@
 
 namespace ProfileEvents
 {
-    extern const Event ExternalAggregationWritePart;
     extern const Event ExternalAggregationCompressedBytes;
     extern const Event ExternalAggregationUncompressedBytes;
-    extern const Event ExternalProcessingCompressedBytesTotal;
-    extern const Event ExternalProcessingUncompressedBytesTotal;
+    extern const Event ExternalAggregationWritePart;
     extern const Event AggregationHashTablesInitializedAsTwoLevel;
     extern const Event OverflowThrow;
     extern const Event OverflowBreak;
@@ -547,7 +545,11 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     : header(header_)
     , keys_positions(calculateKeysPositions(header, params_))
     , params(params_)
-    , tmp_data(params.tmp_data_scope ? params.tmp_data_scope->childScope(CurrentMetrics::TemporaryFilesForAggregation) : nullptr)
+    , tmp_data(params.tmp_data_scope ? params.tmp_data_scope->childScope({
+        .current_metric = CurrentMetrics::TemporaryFilesForAggregation,
+        .bytes_compressed = ProfileEvents::ExternalAggregationCompressedBytes,
+        .bytes_uncompressed = ProfileEvents::ExternalAggregationUncompressedBytes,
+        .num_files = ProfileEvents::ExternalAggregationWritePart}) : nullptr)
     , min_bytes_for_prefetch(getMinBytesForPrefetch())
     , thread_pool{
           CurrentMetrics::AggregatorThreads,
@@ -1858,8 +1860,6 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
         return tmp_files.emplace_back(std::make_shared<const Block>(getHeader(false)), tmp_data, max_temp_file_size);
     }();
 
-    ProfileEvents::increment(ProfileEvents::ExternalAggregationWritePart);
-
     LOG_DEBUG(log, "Writing part of aggregation data into temporary file {}", out_stream.getHolder()->describeFilePath());
 
     /// Flush only two-level data and possibly overflow data.
@@ -1886,11 +1886,6 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
     }
 
     auto stat = out_stream.finishWriting();
-
-    ProfileEvents::increment(ProfileEvents::ExternalAggregationCompressedBytes, stat.compressed_size);
-    ProfileEvents::increment(ProfileEvents::ExternalAggregationUncompressedBytes, stat.uncompressed_size);
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingCompressedBytesTotal, stat.compressed_size);
-    ProfileEvents::increment(ProfileEvents::ExternalProcessingUncompressedBytesTotal, stat.uncompressed_size);
 
     double elapsed_seconds = watch.elapsedSeconds();
     double compressed_size = stat.compressed_size;

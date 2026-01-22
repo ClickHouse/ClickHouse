@@ -346,7 +346,7 @@ struct ConverterNumeric
 
     const To * getBatch(size_t offset, size_t count)
     {
-        if constexpr (sizeof(*column.getData().data()) == sizeof(To))
+        if constexpr (sizeof(*column.getData().data()) == sizeof(To) && !std::is_same_v<To, bool>)
             return reinterpret_cast<const To *>(column.getData().data() + offset);
         else
         {
@@ -1325,7 +1325,13 @@ void finalizeRowGroup(FileWriteState & file, size_t num_rows, const WriteOptions
         r.total_byte_size += c.meta_data.total_uncompressed_size;
         r.total_compressed_size += c.meta_data.total_compressed_size;
     }
-    chassert(!r.columns.empty());
+
+    if (r.columns.empty())
+    {
+        /// All columns are empty tuples, there are no pages.
+        r.__set_file_offset(file.offset);
+    }
+    else
     {
         auto & m = r.columns[0].meta_data;
         r.__set_file_offset(m.__isset.dictionary_page_offset ? m.dictionary_page_offset : m.data_page_offset);

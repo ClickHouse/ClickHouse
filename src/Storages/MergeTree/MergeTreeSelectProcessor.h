@@ -104,7 +104,6 @@ public:
         MergeTreeSelectAlgorithmPtr algorithm_,
         const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
-        const LazilyReadInfoPtr & lazily_read_info_,
         const IndexReadTasks & index_read_tasks_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
@@ -115,7 +114,6 @@ public:
 
     static Block transformHeader(
         Block block,
-        const LazilyReadInfoPtr & lazily_read_info,
         const FilterDAGInfoPtr & row_level_filter,
         const PrewhereInfoPtr & prewhere_info);
 
@@ -147,8 +145,6 @@ public:
 
 private:
     friend class SingleProjectionIndexReader;
-
-    static void injectLazilyReadColumns(size_t rows, Block & block, size_t part_index, const LazilyReadInfoPtr & lazily_read_info);
 
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;

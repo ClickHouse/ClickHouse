@@ -165,7 +165,7 @@ private:
 
         /// Expand the space.
         buf = reinterpret_cast<HashValue *>(Allocator::realloc(buf, old_size * sizeof(buf[0]), (1ULL << new_size_degree) * sizeof(buf[0])));
-        size_degree = new_size_degree;
+        size_degree = static_cast<UInt8>(new_size_degree);
 
         /** Now some items may need to be moved to a new location.
           * The element can stay in place, or move to a new location "on the right",
@@ -414,8 +414,8 @@ public:
         free();
 
         UInt8 new_size_degree = m_size <= 1
-             ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
-             : std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(m_size - 1)) + 2);
+            ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
+            : static_cast<UInt8>(std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(m_size - 1)) + 2));
 
         alloc(new_size_degree);
 

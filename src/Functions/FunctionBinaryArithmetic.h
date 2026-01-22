@@ -994,7 +994,7 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!isTuple(type0) || !isTuple(type1))
+        if (!isTuple(removeNullable(type0)) || !isTuple(removeNullable(type1)))
             return {};
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
@@ -1023,7 +1023,8 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!(isTuple(type0) && isNumber(type1)) && !(isTuple(type1) && isNumber(type0)))
+        if (!(isTuple(removeNullable(type0)) && isNumber(removeNullable(type1)))
+            && !(isTuple(removeNullable(type1)) && isNumber(removeNullable(type0))))
             return {};
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
@@ -1883,9 +1884,6 @@ public:
             if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(new_arguments[1].type) || isString(new_arguments[1].type))
                 std::swap(new_arguments[0], new_arguments[1]);
 
-            // if (isTime(new_arguments[0].type))
-            //     new_arguments[0].type = std::make_shared<Int64>();
-
             /// Change interval argument to its representation
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
@@ -2601,12 +2599,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             {
                 auto res = removeNullable(result_type)->createColumn();
                 res->insertManyDefaults(input_rows_count);
-                auto null_map_col = ColumnUInt8::create(input_rows_count, 1);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, true);
                 return !null_map_col->empty() ? wrapInNullable(std::move(res), std::move(null_map_col)) : makeNullable(std::move(res));
             }
             else if (result_type->isNullable())
             {
-                auto null_map_col = ColumnUInt8::create(input_rows_count, 0);
+                auto null_map_col = ColumnUInt8::create(input_rows_count, false);
                 PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
                     null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
