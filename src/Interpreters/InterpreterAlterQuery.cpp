@@ -193,7 +193,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         }
         else if (auto mut_command = MutationCommand::parse(*command_ast))
         {
-            mut_command->ast = child;
             if (mut_command->type == MutationCommand::UPDATE || mut_command->type == MutationCommand::DELETE)
             {
                 /// TODO: add a check for result query size.
@@ -206,7 +205,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
                             command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
-                    mut_command->ast = rewritten_command_ast;
                 }
             }
 

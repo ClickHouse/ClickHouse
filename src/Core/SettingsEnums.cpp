@@ -279,6 +279,12 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueuePartitioningMode, ErrorCodes::BAD_ARGUM
      {"regex", ObjectStorageQueuePartitioningMode::REGEX},
      {"REGEX", ObjectStorageQueuePartitioningMode::REGEX}})
 
+IMPLEMENT_SETTING_ENUM(ObjectStorageQueueBucketingMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"path", ObjectStorageQueueBucketingMode::PATH},
+     {"PATH", ObjectStorageQueueBucketingMode::PATH},
+     {"partition", ObjectStorageQueueBucketingMode::PARTITION},
+     {"PARTITION", ObjectStorageQueueBucketingMode::PARTITION}})
+
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
