@@ -73,6 +73,8 @@ void StorageMergeTreeWithManifest::drop()
 {
     StorageMergeTree::drop();
 
+    manifest_disk.reset();
+
     if (manifest_storage)
     {
         manifest_storage->shutdown();
@@ -143,6 +145,9 @@ void StorageMergeTreeWithManifest::commitToManifest(const DataPartPtr & part, Ma
 
 void StorageMergeTreeWithManifest::removeFromManifest(const String & part_uuid) const
 {
+    if (!manifest_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ManifestStorage is not initialized");
+
     throwIfNotOKOrNotFound(manifest_storage->del(part_uuid), "remove part from manifest", part_uuid);
 }
 
