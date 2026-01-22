@@ -23,6 +23,7 @@ namespace Setting
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_plan_optimize_exchanges;
+    extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsBool force_optimize_projection;
@@ -114,7 +115,6 @@ namespace Setting
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
-    extern const SettingsBool enable_cascades_optimizer;
 }
 
 namespace ServerSetting
