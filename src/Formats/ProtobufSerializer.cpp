@@ -2945,6 +2945,65 @@ namespace
         const std::unique_ptr<ProtobufSerializer> message_serializer;
     };
 
+    class ProtobufSerializerRecursiveTupleUnwrapper : public ProtobufSerializer
+    {
+    public:
+        explicit ProtobufSerializerRecursiveTupleUnwrapper(
+            std::unique_ptr<ProtobufSerializer> message_serializer_,
+            size_t nesting_levels_)
+            : message_serializer(std::move(message_serializer_))
+            , nesting_levels(nesting_levels_)
+        {
+        }
+
+        void setColumns(const ColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
+        {
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
+
+            ColumnPtr current_column = columns[0];
+            for (size_t i = 0; i < nesting_levels; ++i)
+            {
+                const auto & column_tuple = assert_cast<const ColumnTuple &>(*current_column);
+                size_t tuple_size = column_tuple.tupleSize();
+                if (tuple_size == 0)
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Empty Tuple at nesting level {}", i);
+                current_column = column_tuple.getColumnPtr(0);
+            }
+
+            const auto & final_tuple = assert_cast<const ColumnTuple &>(*current_column);
+            size_t final_tuple_size = final_tuple.tupleSize();
+            Columns element_columns;
+            element_columns.reserve(final_tuple_size);
+            for (size_t i = 0; i < final_tuple_size; ++i)
+                element_columns.emplace_back(final_tuple.getColumnPtr(i));
+
+            message_serializer->setColumns(element_columns.data(), element_columns.size());
+        }
+
+        void setColumns(const MutableColumnPtr * columns, [[maybe_unused]] size_t num_columns) override
+        {
+            if (num_columns != 1)
+                wrongNumberOfColumns(num_columns, "1");
+            ColumnPtr column0 = columns[0]->getPtr();
+            setColumns(&column0, 1);
+        }
+
+        void writeRow(size_t row_num) override { message_serializer->writeRow(row_num); }
+        void readRow(size_t row_num) override { message_serializer->readRow(row_num); }
+        void insertDefaults(size_t row_num) override { message_serializer->insertDefaults(row_num); }
+
+        void describeTree(WriteBuffer & out, size_t indent) const override
+        {
+            writeIndent(out, indent) << "ProtobufSerializerRecursiveTupleUnwrapper (levels: " << nesting_levels << ") ->\n";
+            message_serializer->describeTree(out, indent + 1);
+        }
+
+    private:
+        const std::unique_ptr<ProtobufSerializer> message_serializer;
+        const size_t nesting_levels;
+    };
+
 
     /// Serializes a flattened Nested data type (an array of tuples with explicit names)
     /// as a repeated nested message.
@@ -3547,6 +3606,72 @@ namespace
             };
 
             std::vector<std::pair<const FieldDescriptor *, std::string_view>> field_descriptors_with_suffixes;
+
+            if (use_confluent && num_columns == 1 && data_types[0]->getTypeId() == TypeIndex::Tuple)
+            {
+                const auto & tuple_data_type = assert_cast<const DataTypeTuple &>(*data_types[0]);
+                if (tuple_data_type.hasExplicitNames())
+                {
+                    std::function<bool(const DataTypeTuple &, std::vector<std::string_view> &, std::vector<DataTypePtr> &, size_t &)> unwrap_tuple;
+                    unwrap_tuple = [&](const DataTypeTuple & tuple, std::vector<std::string_view> & names, std::vector<DataTypePtr> & types, size_t & levels) -> bool
+                    {
+                        if (tuple.getElements().size() == 1 && tuple.getElements()[0]->getTypeId() == TypeIndex::Tuple)
+                        {
+                            const auto & nested = assert_cast<const DataTypeTuple &>(*tuple.getElements()[0]);
+                            if (nested.hasExplicitNames())
+                            {
+                                ++levels;
+                                return unwrap_tuple(nested, names, types, levels);
+                            }
+                            else
+                            {
+                                names.push_back(tuple.getElementNames()[0]);
+                                types.push_back(tuple.getElements()[0]);
+                                return true;
+                            }
+                        }
+                        else
+                        {
+                            for (size_t i = 0; i < tuple.getElements().size(); ++i)
+                            {
+                                names.push_back(tuple.getElementNames()[i]);
+                                types.push_back(tuple.getElements()[i]);
+                            }
+                            return true;
+                        }
+                    };
+
+                    std::vector<std::string_view> unwrapped_names;
+                    std::vector<DataTypePtr> unwrapped_types;
+                    size_t nesting_levels = 0;
+                    if (unwrap_tuple(tuple_data_type, unwrapped_names, unwrapped_types, nesting_levels))
+                    {
+                        if (!unwrapped_names.empty() && unwrapped_names.size() == unwrapped_types.size())
+                        {
+                            std::vector<size_t> used_indices;
+                            auto direct_serializer = buildMessageSerializerImpl(
+                                unwrapped_names.size(),
+                                unwrapped_names.data(),
+                                unwrapped_types.data(),
+                                message_descriptor,
+                                with_length_delimiter,
+                                google_wrappers_special_treatment,
+                                oneof_presence,
+                                parent_field_descriptor,
+                                used_indices,
+                                columns_are_reordered_outside,
+                                check_nested_while_filling_missing_columns,
+                                use_confluent);
+
+                            if (direct_serializer && used_indices.size() == unwrapped_names.size())
+                            {
+                                return std::make_unique<ProtobufSerializerRecursiveTupleUnwrapper>(
+                                    std::move(direct_serializer), nesting_levels);
+                            }
+                        }
+                    }
+                }
+            }
 
             /// We're going through all the passed columns.
             for (size_t column_idx : collections::range(num_columns))

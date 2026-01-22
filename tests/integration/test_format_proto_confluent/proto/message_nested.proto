@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+message A {
+  message Nested {
+    int32 x = 1;
+    message Nested2 {
+      int32 y = 1;
+    }
+  }
+}
+
+message B {
+  string s = 1;
+  message Nested3 {
+    int32 y = 1;
+    string z = 2;
+  }
+}

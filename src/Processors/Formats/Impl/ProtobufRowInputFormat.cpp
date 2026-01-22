@@ -14,6 +14,8 @@
 
 #include <Common/Exception.h>
 #include <Common/CacheBase.h>
+#include "IO/VarInt.h"
+#include "base/types.h"
 #include <Core/Block_fwd.h>
 
 #include <Processors/Formats/Impl/ConfluentRegistry.h>
@@ -271,10 +273,48 @@ bool ProtobufConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadE
 
     SchemaId schema_id = readConfluentSchemaId(*in, first_row);
     first_row = false;
-    descriptor = schema_registry->getProtobufSchema(schema_id);
-    in->ignore();
-    if (descriptor)
+    const google::protobuf::Descriptor * base_descriptor = schema_registry->getProtobufSchema(schema_id);
+
+    std::vector<Int64> indices;
+
+    Int64 first_value;
+    readVarInt(first_value, *in);
+
+    if (first_value == 0)
+    {
+        indices.push_back(0);
+    }
+    else
+    {
+        UInt64 indices_size = static_cast<UInt64>(first_value);
+        indices.reserve(indices_size);
+        for (size_t i = 0; i < indices_size; ++i)
+        {
+            Int64 index;
+            readVarInt(index, *in);
+            indices.push_back(index);
+        }
+    }
+
+    if (base_descriptor)
+    {
+        const google::protobuf::FileDescriptor * file_descriptor = base_descriptor->file();
+        const google::protobuf::Descriptor * target_descriptor = nullptr;
+        
+        if (indices.size() == 1 && indices[0] == 0)
+        {
+            target_descriptor = file_descriptor->message_type(0);
+        }
+        else
+        {
+            target_descriptor = file_descriptor->message_type(static_cast<int>(indices[0]));
+            for (size_t i = 1; i < indices.size(); ++i)
+                target_descriptor = target_descriptor->nested_type(static_cast<int>(indices[i]));
+        }
+
+        descriptor = target_descriptor;
         createReaderAndSerializer(schema_id);
+    }
     size_t row_num = columns.empty() ? 0 : columns[0]->size();
 
     serializers.get(schema_id)->setColumns(columns.data(), columns.size());
