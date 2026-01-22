@@ -655,6 +655,7 @@ void ZooKeeper::sendHandshake()
     if (pass_opentelemetry_tracing_context)
     {
         write(ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING);
+        write(use_xid_64);
         write(use_compression);
     }
     else if (use_xid_64)

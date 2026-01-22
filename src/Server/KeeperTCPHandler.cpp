@@ -319,14 +319,20 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     }
     else if (protocol_version >= Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING)
     {
-        if (!keeper_context->getCoordinationSettings()[CoordinationSetting::use_xid_64])
+        expect_opentelemetry_tracing_context = true;
+
+        Coordination::read(use_xid_64, *in);
+        if (use_xid_64)
+        {
+            close_xid = Coordination::CLOSE_XID_64;
+        }
+        if (use_xid_64 && !keeper_context->getCoordinationSettings()[CoordinationSetting::use_xid_64])
+        {
             throw Exception(
                 ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
                 "keeper_server.coordination_settings.use_xid_64 is set to 'false' while client has it enabled");
+        }
 
-        expect_opentelemetry_tracing_context = true;
-        close_xid = Coordination::CLOSE_XID_64;
-        use_xid_64 = true;
         Coordination::read(use_compression, *in);
     }
     else if (protocol_version >= Coordination::ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)

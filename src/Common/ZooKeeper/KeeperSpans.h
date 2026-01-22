@@ -33,13 +33,13 @@ namespace DB
 
 struct MaybeSpan
 {
-    const char * operation_name;
+    const std::string_view operation_name;
     const OpenTelemetry::SpanKind kind;
     HistogramMetrics::Metric & histogram;
     std::optional<OpenTelemetry::Span> span;
     UInt64 start_time_us = 0;
 
-    MaybeSpan(const char * operation_name_, OpenTelemetry::SpanKind kind_, HistogramMetrics::Metric & histogram_)
+    MaybeSpan(const std::string_view operation_name_, OpenTelemetry::SpanKind kind_, HistogramMetrics::Metric & histogram_)
         : operation_name(operation_name_), kind(kind_), histogram(histogram_) {}
 };
 

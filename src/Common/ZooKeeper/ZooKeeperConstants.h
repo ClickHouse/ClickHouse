@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <string_view>
 
 
 namespace Coordination
@@ -55,7 +56,7 @@ enum class OpNum : int32_t
 OpNum getOpNum(int32_t raw_op_num);
 
 /// Returns operation name as string (e.g., OpNum::Get -> "Get", OpNum::Set -> "Set")
-const char * opNumToString(OpNum op_num);
+std::string_view opNumToString(OpNum op_num);
 
 /// Returns operation type for use in metric labels (e.g., OpNum::Get -> "readonly", OpNum::Set -> "write")
 const char * toOperationTypeMetricLabel(OpNum op_num);

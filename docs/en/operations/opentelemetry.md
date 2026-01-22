@@ -39,8 +39,6 @@ To enable tracing for Keeper requests, configure the following settings in your 
             <host>keeper1</host>
             <port>9181</port>
         </node>
-        <!-- Enable 64-bit transaction IDs (required for tracing) -->
-        <use_xid_64>true</use_xid_64>
         <!-- Enable OpenTelemetry tracing context propagation -->
         <pass_opentelemetry_tracing_context>true</pass_opentelemetry_tracing_context>
     </zookeeper>

@@ -122,7 +122,6 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
 
         this->addAttribute("clickhouse.thread_id", getThreadId());
 
-        // todo(mstetsyuk): remove this->
         this->old_trace_flags = current_trace_context->trace_flags;
     }
     catch (...)
@@ -136,12 +135,6 @@ SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind)
 
     /// Set current span as parent of other spans created later on this thread.
     current_trace_context->span_id = this->span_id;
-}
-
-SpanHolder::SpanHolder(std::string_view _operation_name, SpanKind _kind, std::unordered_map<String, String> _attributes)
-    : SpanHolder(_operation_name, _kind)
-{
-    attributes = std::move(_attributes);
 }
 
 void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept

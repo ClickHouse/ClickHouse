@@ -303,11 +303,9 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     const auto & request = request_for_session.request;
     size_t request_size = sizeof(uint32_t) + Coordination::size(request->getOpNum()) + request->sizeImpl();
     Coordination::write(static_cast<int32_t>(request_size), write_buf);
+
     XidHelper xid_helper{.xid = request->xid};
-    if (request_for_session.use_xid_64)
-        Coordination::write(xid_helper.parts.lower, write_buf);
-    else
-        Coordination::write(static_cast<int32_t>(xid_helper.xid), write_buf);
+    Coordination::write(xid_helper.parts.lower, write_buf);
 
     Coordination::write(request->getOpNum(), write_buf);
     request->writeImpl(write_buf);
@@ -318,14 +316,17 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
     DB::writeIntBinary(static_cast<uint8_t>(KeeperDigestVersion::NO_DIGEST), write_buf); /// digest version or NO_DIGEST flag
     DB::writeIntBinary(static_cast<uint64_t>(0), write_buf); /// digest value
 
-    if (request_for_session.use_xid_64)
+    /// Write upper part of XID if either:
+    /// 1. use_xid_64
+    /// 2. !use_xid_64 && request->tracing_context -> pass zeroes
+    if (request_for_session.use_xid_64 || request->tracing_context)
     {
-        Coordination::write(xid_helper.parts.upper, write_buf); /// for 64bit XID MSB
+        Coordination::write(xid_helper.parts.upper, write_buf);
+    }
 
-        if (request->tracing_context)
-        {
-            request->tracing_context->serialize(write_buf);
-        }
+    if (request->tracing_context)
+    {
+        request->tracing_context->serialize(write_buf);
     }
 
     /// if new fields are added, update KeeperStateMachine::ZooKeeperLogSerializationVersion along with parseRequest function and PreAppendLog callback handler

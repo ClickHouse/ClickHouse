@@ -46,7 +46,7 @@ OpNum getOpNum(int32_t raw_op_num)
     return static_cast<OpNum>(raw_op_num);
 }
 
-const char * opNumToString(OpNum op_num)
+std::string_view opNumToString(OpNum op_num)
 {
     switch (op_num)
     {

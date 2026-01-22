@@ -63,7 +63,7 @@ struct Span
     SpanKind kind = SpanKind::INTERNAL;
     SpanStatus status_code = SpanStatus::UNSET;
     String status_message = {};
-    std::unordered_map<String, String> attributes = {};
+    std::vector<std::pair<String, String>> attributes = {};
 
     /// Following methods are declared as noexcept to make sure they're exception safe.
     /// This is because sometimes they will be called in exception handlers/dtor.
@@ -101,9 +101,9 @@ private:
         try
         {
             if constexpr (std::is_same_v<T, std::string_view> || std::is_same_v<T, String> || std::is_same_v<T, const char *>)
-                this->attributes[String(name)] = String(value);
+                attributes.emplace_back(std::pair{String(name), String(value)});
             else
-                this->attributes[String(name)] = toString(value);
+                attributes.emplace_back(std::pair{String(name), toString(value)});
         }
         catch (...)
         {
@@ -199,7 +199,6 @@ using TracingContextHolderPtr = std::unique_ptr<TracingContextHolder>;
 struct SpanHolder : public Span
 {
     explicit SpanHolder(std::string_view, SpanKind _kind = SpanKind::INTERNAL);
-    SpanHolder(std::string_view, SpanKind _kind, std::unordered_map<String, String> _attributes);
     ~SpanHolder();
 
     /// Finish a span explicitly if needed.
