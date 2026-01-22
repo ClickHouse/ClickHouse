@@ -266,6 +266,8 @@ public:
 
     bool isCommentAlter() const;
 
+    bool isReplacePartition() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;
