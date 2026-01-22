@@ -12,10 +12,12 @@
 namespace DB
 {
 
-///  Wrapper for IFilecachePriority that keeps two IFilecachePriority inside:
-///  Data: for `.bin`, `.mrk` and etc files
-///  System: for indexes, `.json`, `.txt` files.
-///  Such separations might be performance-useful.
+/**
+ * Wrapper for IFilecachePriority that keeps two IFilecachePriority inside:
+ * Data: for `.bin`, `.mrk` and etc files
+ * System: for indexes, `.json`, `.txt` files.
+ * Such separations might be performance-useful.
+ */
 class SplitFileCachePriority : public IFileCachePriority
 {
 public:
@@ -34,83 +36,84 @@ public:
         double system_segment_size_ratio_,
         const std::string & description_ = "none");
 
-    size_t getSize(const CachePriorityGuard::Lock &) const override;
+    Type getType() const override { return priorities_holder.at(SegmentType::Data)->getType(); }
 
-    size_t getElementsCount(const CachePriorityGuard::Lock &) const override;
-
+    size_t getSize(const CacheStateGuard::Lock &) const override;
     size_t getSizeApprox() const override;
 
+    size_t getElementsCount(const CacheStateGuard::Lock &) const override;
     size_t getElementsCountApprox() const override;
 
-    std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
-
+    std::string getStateInfoForLog(const CacheStateGuard::Lock & lock) const override;
 
     bool canFit( /// NOLINT
         size_t size,
         size_t elements,
-        const CachePriorityGuard::Lock & lock,
-        const OriginInfo& origin,
-        IteratorPtr reserve,
-        bool best_effort) const override;
+        const CacheStateGuard::Lock &,
+        IteratorPtr reservee = nullptr,
+        const OriginInfo & origin_info = {},
+        bool best_effort = false) const override;
 
-    IteratorPtr
-    add( /// NOLINT
+    IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
-        const OriginInfo & origin,
-        const CachePriorityGuard::Lock &,
+        const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock *,
         bool best_effort = false) override;
 
-    bool collectCandidatesForEviction(
+    bool tryIncreasePriority(
+        Iterator & iterator,
+        bool is_space_reservation_complete,
+        CachePriorityGuard & queue_guard,
+        CacheStateGuard & state_guard) override;
+
+    EvictionInfoPtr collectEvictionInfo(
         size_t size,
         size_t elements,
+        IFileCachePriority::Iterator * reservee,
+        bool is_total_space_cleanup,
+        bool is_dynamic_resize,
+        const IFileCachePriority::OriginInfo & origin,
+        const CacheStateGuard::Lock &) override;
+
+    bool collectCandidatesForEviction(
+        const EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
+        InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
         bool continue_from_last_eviction_pos,
-        const OriginInfo & origin,
-        const CachePriorityGuard::Lock &) override;
+        size_t max_candidates_size,
+        bool is_total_space_cleanup,
+        const OriginInfo & origin_info,
+        CachePriorityGuard &,
+        CacheStateGuard &) override;
 
-    CollectStatus collectCandidatesForEviction(
-        size_t desired_size,
-        size_t desired_elements_count,
-        size_t max_candidates_to_evict,
+    void iterate(
+        IterateFunc func,
         FileCacheReserveStat & stat,
-        EvictionCandidates & res,
-        const CachePriorityGuard::Lock &) override;
+        const CachePriorityGuard::ReadLock & lock) override;
 
-    void shuffle(const CachePriorityGuard::Lock &) override;
+    void shuffle(const CachePriorityGuard::WriteLock &) override;
 
-    PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
+    PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
 
-    Type getType() const override
-    {
-        return priorities_holder.at(SegmentType::Data)->getType();
-    }
+    bool modifySizeLimits(
+        size_t max_size_,
+        size_t max_elements_,
+        double size_ratio_,
+        const CacheStateGuard::Lock &) override;
 
-    bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) override;
+    void resetEvictionPos() override;
 
-    void iterate(IterateFunc func, const CachePriorityGuard::Lock & lock) override
-    {
-        priorities_holder[SegmentType::Data]->iterate(func, lock);
-        priorities_holder[SegmentType::System]->iterate(func, lock);
-    }
-
-    void resetEvictionPos(const CachePriorityGuard::Lock & lock) override;
-
-    protected:
+protected:
     size_t getHoldSize() override;
 
     size_t getHoldElements() override;
 
 private:
-    SegmentType getSegmentTypeForPriority(const SegmentType& segment_type) const
-    {
-        if (segment_type == SegmentType::Data || segment_type == SegmentType::General)
-            return SegmentType::Data;
-        return SegmentType::System;
-    }
+    SegmentType getPriorityType(const SegmentType & segment_type) const;
 
     PriorityPerType priorities_holder;
     double system_segment_size_ratio;
@@ -128,23 +131,26 @@ class SplitFileCachePriority::SplitIterator : public IFileCachePriority::Iterato
     friend class SLRUFileCachePriority;
 
 public:
-    SplitIterator(IFileCachePriority * inner_cache_priority, IteratorPtr iterator_, FileSegmentKeyType type);
+    SplitIterator(
+        IFileCachePriority * inner_cache_priority,
+        IteratorPtr iterator_,
+        FileSegmentKeyType type);
 
     EntryPtr getEntry() const override;
 
-    size_t increasePriority(const CachePriorityGuard::Lock &) override;
-
-    void remove(const CachePriorityGuard::Lock &) override;
+    void remove(const CachePriorityGuard::WriteLock &) override;
 
     void invalidate() override;
 
-    void incrementSize(size_t size, const CachePriorityGuard::Lock &) override;
+    void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 
     void decrementSize(size_t size) override;
 
     QueueEntryType getType() const override
     {
-        return type == FileSegmentKeyType::Data ? QueueEntryType::SplitCache_Data : QueueEntryType::SplitCache_System;
+        return type == FileSegmentKeyType::Data
+            ? QueueEntryType::SplitCache_Data
+            : QueueEntryType::SplitCache_System;
     }
 
     const FileSegmentKeyType type;

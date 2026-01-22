@@ -773,7 +773,7 @@ FileCache::getOrSet(
     size_t file_size,
     const CreateFileSegmentSettings & create_settings,
     size_t file_segments_limit,
-    const OriginInfo & origin,
+    const OriginInfo & origin_info,
     std::optional<size_t> boundary_alignment_)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCacheGetOrSetMicroseconds);
@@ -796,7 +796,9 @@ FileCache::getOrSet(
     chassert(aligned_offset <= initial_range.left);
     chassert(aligned_end_offset >= initial_range.right);
 
-    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, origin);
+    auto locked_key = metadata.lockKeyMetadata(
+        key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, origin_info);
+
     /// Get all segments which intersect with the given range.
     auto file_segments = getImpl(*locked_key, initial_range, file_segments_limit);
 
@@ -1032,7 +1034,7 @@ bool FileCache::tryReserve(
     FileSegment & file_segment,
     size_t size,
     FileCacheReserveStat & reserve_stat,
-    const OriginInfo & origin,
+    const OriginInfo & origin_info,
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason)
 {
@@ -1058,14 +1060,16 @@ bool FileCache::tryReserve(
 
     LOG_TEST(log, "Trying to reserve space ({} bytes) for {}:{}", size, file_segment.key(), file_segment.offset());
 
-    return doTryReserve(file_segment, size, reserve_stat, user, lock_wait_timeout_milliseconds, failure_reason);
+    return doTryReserve(
+        file_segment, size, reserve_stat, origin_info, lock_wait_timeout_milliseconds,
+        failure_reason);
 }
 
 bool FileCache::doTryReserve(
     FileSegment & file_segment,
     size_t size,
     FileCacheReserveStat & reserve_stat,
-    const UserInfo & user,
+    const OriginInfo & origin_info,
     size_t /* lock_wait_timeout_milliseconds */,
     std::string & failure_reason)
 {
@@ -1106,7 +1110,7 @@ bool FileCache::doTryReserve(
             if (query_context)
             {
                 query_priority = &query_context->getPriority();
-                if (!query_priority->canFit(size, required_elements_num, lock)
+                if (!query_priority->canFit(size, required_elements_num, lock, /* reservee */nullptr, origin_info)
                     && !query_context->recacheOnFileCacheQueryLimitExceeded())
                 {
                     LOG_TEST(
@@ -1123,7 +1127,7 @@ bool FileCache::doTryReserve(
                     main_priority_iterator.get(),
                     /* is_total_space_cleanup */false,
                     /* is_dynamic_resize */false,
-                    user,
+                    origin_info,
                     lock);
             }
         }
@@ -1135,7 +1139,7 @@ bool FileCache::doTryReserve(
             main_priority_iterator.get(),
             /* is_total_space_cleanup */false,
             /* is_dynamic_resize */false,
-            user,
+            origin_info,
             lock);
 
         /// Can we already just increment size for the queue entry and quit?
@@ -1157,7 +1161,7 @@ bool FileCache::doTryReserve(
     /// Collect candidates for eviction and
     /// evict them from in-memory state and from filesystem.
     if (!doEviction(
-        *main_eviction_info, query_eviction_info.get(), file_segment, user,
+        *main_eviction_info, query_eviction_info.get(), file_segment, origin_info,
         main_priority_iterator, reserve_stat, eviction_candidates,
         invalidated_entries, query_priority, failure_reason))
     {
@@ -1181,7 +1185,6 @@ bool FileCache::doTryReserve(
                 file_segment.getKeyMetadata(),
                 file_segment.offset(),
                 /* size */0,
-                user,
                 lock,
                 nullptr);
 
@@ -1189,7 +1192,7 @@ bool FileCache::doTryReserve(
             {
                 query_priority_iterator = query_context->tryGet(file_segment.key(), file_segment.offset(), lock);
                 if (!query_priority_iterator)
-                    query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), /* size */0, user, lock);
+                    query_context->add(file_segment.getKeyMetadata(), file_segment.offset(), /* size */0, lock);
             }
         }
     }
@@ -1244,7 +1247,7 @@ bool FileCache::doEviction(
     const EvictionInfo & main_eviction_info,
     const EvictionInfo * query_eviction_info,
     FileSegment & file_segment,
-    const UserInfo & user,
+    const OriginInfo & origin_info,
     const IFileCachePriority::IteratorPtr & main_priority_iterator,
     FileCacheReserveStat & reserve_stat,
     EvictionCandidates & eviction_candidates,
@@ -1293,7 +1296,7 @@ bool FileCache::doEviction(
                     continue_from_last_eviction_pos,
                     /* max_candidates_size */0,
                     /* is_total_space_cleanup */false,
-                    user,
+                    origin_info,
                     cache_guard,
                     cache_state_guard))
             {
@@ -1314,7 +1317,7 @@ bool FileCache::doEviction(
                 continue_from_last_eviction_pos,
                 /* max_candidates_size */0,
                 /* is_total_space_cleanup */false,
-                user,
+                origin_info,
                 cache_guard,
                 cache_state_guard))
         {
@@ -1421,7 +1424,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
             /* reservee */nullptr,
             /* is_total_space_cleanup */true,
             /* is_dynamic_resize */false,
-            getInternalUser(),
+            getInternalOrigin(),
             lock);
     }
 
@@ -1448,7 +1451,7 @@ void FileCache::freeSpaceRatioKeepingThreadFunc()
         /* continue_from_last_eviction_pos */false,
         /* max_candidates_size */keep_up_free_space_remove_batch,
         /* is_total_space_cleanup */true,
-        getInternalUser(),
+        getInternalOrigin(),
         cache_guard,
         cache_state_guard);
 
@@ -1782,7 +1785,7 @@ void FileCache::loadMetadataImpl()
     assertCacheCorrectness();
 }
 
-void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo & origin)
+void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo & origin_info)
 {
     fs::directory_iterator key_it{keys_dir};
     if (key_it == fs::directory_iterator{})
@@ -1815,7 +1818,11 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo 
         }
 
         const auto key = Key::fromKeyString(key_directory.filename().string());
-        auto key_metadata = metadata.getKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY, origin, /* is_initial_load */true);
+        auto key_metadata = metadata.getKeyMetadata(
+            key,
+            CacheMetadata::KeyNotFoundPolicy::CREATE_EMPTY,
+            origin_info,
+            /* is_initial_load */true);
 
         for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
         {
@@ -1864,9 +1871,10 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo 
                 auto state_lock = cache_state_guard.lock();
                 size_limit = main_priority->getSizeLimit(state_lock);
 
-                limits_satisfied = main_priority->canFit(size, 1, state_lock, /* reservee */nullptr, true);
+                limits_satisfied = main_priority->canFit(size, 1, state_lock, /* reservee */nullptr, origin_info, true);
                 if (limits_satisfied)
-                    cache_it = main_priority->add(key_metadata, offset, size, user, lock, &state_lock, /* best_effort */true);
+                    cache_it = main_priority->add(
+                        key_metadata, offset, size, lock, &state_lock, /* best_effort */true);
 
                 /// TODO: we can get rid of this lockCache() if we first load everything in parallel
                 /// without any mutual lock between loading threads, and only after do removeOverflow().
@@ -1920,7 +1928,7 @@ void FileCache::loadMetadataForKeys(const fs::path & keys_dir, const OriginInfo 
 
         if (key_metadata->sizeUnlocked() == 0)
         {
-            metadata.removeKey(key, false, false, origin.user_id);
+            metadata.removeKey(key, false, false, origin_info.user_id);
         }
     }
 }
@@ -2277,7 +2285,7 @@ bool FileCache::doDynamicResizeImpl(
         /* reservee */nullptr,
         /* is_total_space_cleanup */false,
         /* is_dynamic_resize */true,
-        getInternalUser(),
+        getInternalOrigin(),
         state_lock);
 
     chassert(!eviction_info->hasHoldSpace());
@@ -2313,7 +2321,7 @@ bool FileCache::doDynamicResizeImpl(
             /* continue_from_last_eviction_pos */false,
             /* max_candidates_size */0,
             /* is_total_space_cleanup */true,
-            getInternalUser(),
+            getInternalOrigin(),
             cache_guard,
             cache_state_guard))
     {
@@ -2420,7 +2428,6 @@ bool FileCache::doDynamicResizeImpl(
                 key_metadata,
                 file_segment->offset(),
                 file_segment->getDownloadedSize(),
-                getCommonOrigin(),
                 cache_write_lock,
                 &state_lock,
                 false);

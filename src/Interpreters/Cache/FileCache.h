@@ -369,7 +369,7 @@ private:
         FileSegment & file_segment,
         size_t size,
         FileCacheReserveStat & stat,
-        const UserInfo & user,
+        const OriginInfo & origin_info,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason);
 
@@ -377,7 +377,7 @@ private:
         const EvictionInfo & main_eviction_info,
         const EvictionInfo * query_eviction_info,
         FileSegment & file_segment,
-        const UserInfo & user,
+        const OriginInfo & origin_info,
         const IFileCachePriority::IteratorPtr & main_priority_iterator,
         FileCacheReserveStat & reserve_stat,
         EvictionCandidates & eviction_candidates,

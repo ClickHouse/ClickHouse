@@ -62,15 +62,15 @@ public:
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         bool is_dynamic_resize,
-        const IFileCachePriority::UserInfo & user,
+        const IFileCachePriority::OriginInfo & origin,
         const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
         size_t size,
         size_t elements,
-        //const OriginInfo&,
         const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
+        const OriginInfo & origin_info = {},
         bool best_effort = false) const override;
 
     /// Create a queue entry for given key and offset.
@@ -83,7 +83,6 @@ public:
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
-        const OriginInfo & origin,
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
         bool best_effort = false) override;
@@ -97,7 +96,7 @@ public:
         bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
-        const OriginInfo & origin,
+        const OriginInfo & origin_info,
         CachePriorityGuard &,
         CacheStateGuard &) override;
 
@@ -109,7 +108,7 @@ public:
 
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 
-    PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
+    PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
     //struct LRUPriorityDump : public IPriorityDump
     //{
     //    std::vector<FileSegmentInfo> infos;

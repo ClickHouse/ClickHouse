@@ -162,7 +162,7 @@ public:
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         bool is_dynamic_resize,
-        const IFileCachePriority::UserInfo & user,
+        const IFileCachePriority::OriginInfo & origin,
         const CacheStateGuard::Lock &) = 0;
 
     enum class IterationResult : uint8_t
@@ -182,7 +182,6 @@ public:
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
-        const OriginInfo & origin,
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
         bool best_effort = false) = 0;
@@ -193,9 +192,9 @@ public:
     virtual bool canFit( /// NOLINT
         size_t size,
         size_t elements,
-        //const OriginInfo&,
         const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
+        const OriginInfo & origin_info = {},
         bool best_effort = false) const = 0;
 
     virtual bool tryIncreasePriority(
@@ -229,7 +228,7 @@ public:
         bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
-        const OriginInfo & origin,
+        const OriginInfo & origin_info,
         CachePriorityGuard &,
         CacheStateGuard &) = 0;
 

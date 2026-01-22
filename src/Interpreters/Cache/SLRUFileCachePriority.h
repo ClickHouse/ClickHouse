@@ -43,22 +43,21 @@ public:
         IFileCachePriority::Iterator * reservee,
         bool is_total_space_cleanup,
         bool is_dynamic_resize,
-        const IFileCachePriority::UserInfo & user,
+        const IFileCachePriority::OriginInfo & origin_info,
         const CacheStateGuard::Lock &) override;
 
     bool canFit( /// NOLINT
         size_t size,
         size_t elements,
-        //const OriginInfo&,
         const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
+        const OriginInfo & origin_info = {},
         bool best_effort = false) const override;
 
     IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,
         size_t offset,
         size_t size,
-        const OriginInfo & origin,
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
         bool is_startup = false) override;
@@ -72,7 +71,7 @@ public:
         bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
-        const OriginInfo & origin,
+        const OriginInfo & origin_info,
         CachePriorityGuard &,
         CacheStateGuard &) override;
 
@@ -133,7 +132,7 @@ private:
         bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
-        const OriginInfo & origin,
+        const OriginInfo & origin_info,
         CachePriorityGuard & cache_guard,
         CacheStateGuard & state_guard);
 

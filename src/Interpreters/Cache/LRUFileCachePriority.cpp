@@ -88,12 +88,14 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     KeyMetadataPtr key_metadata,
     size_t offset,
     size_t size,
-    const OriginInfo &,
     const CachePriorityGuard::WriteLock & lock,
     const CacheStateGuard::Lock * state_lock,
     bool)
 {
-    return std::make_shared<LRUIterator>(add(std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock));
+    return std::make_shared<LRUIterator>(add(
+        std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata),
+        lock,
+        state_lock));
 }
 
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
@@ -315,6 +317,7 @@ bool LRUFileCachePriority::canFit( /// NOLINT
     size_t elements,
     const CacheStateGuard::Lock & lock,
     IteratorPtr,
+    const OriginInfo &,
     bool) const
 {
     return canFit(size, elements, 0, 0, lock);
@@ -343,10 +346,10 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
     IFileCachePriority::Iterator *,
     bool is_total_space_cleanup,
     bool is_dynamic_resize,
-    const IFileCachePriority::UserInfo & user_info,
+    const IFileCachePriority::OriginInfo & origin_info,
     const CacheStateGuard::Lock & lock)
 {
-    auto info = std::make_unique<QueueEvictionInfo>(description, user_info.user_id);
+    auto info = std::make_unique<QueueEvictionInfo>(description, origin_info.user_id);
     if (!size && !elements)
         return std::make_unique<EvictionInfo>(queue_id, std::move(info));
 
@@ -610,7 +613,9 @@ void LRUFileCachePriority::LRUIterator::invalidate()
              entry->toString(), cache_priority->getApproxStateInfoForLog());
 }
 
-void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CacheStateGuard::Lock & lock)
+void LRUFileCachePriority::LRUIterator::incrementSize(
+    size_t size,
+    const CacheStateGuard::Lock & lock)
 {
     chassert(size);
     assertValid();

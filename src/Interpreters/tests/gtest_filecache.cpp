@@ -1520,7 +1520,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
-    auto key_metadata = std::make_shared<KeyMetadata>(key, user, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
 
     auto add_file_segment = [&](size_t offset, size_t size)
     {
@@ -1528,9 +1528,9 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
         {
             auto write_lock = cache_guard.writeLock();
             auto state_lock = state_guard.lock();
-            it = priority.add(key_metadata, offset, size, user, write_lock, &state_lock);
+            it = priority.add(key_metadata, offset, size, write_lock, &state_lock);
         }
-        auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, user);
+        auto path = cache_metadata.getFileSegmentPath(key, offset, FileSegmentKind::Regular, origin);
 
         if (std::filesystem::exists(path))
             std::filesystem::remove(path);
@@ -1560,7 +1560,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
     IFileCachePriority::InvalidatedEntriesInfos invalidated_entries;
     auto evicted = std::make_unique<EvictionCandidates>();
 
-    auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, false, user, state_guard.lock());
+    auto eviction_info = priority.collectEvictionInfo(10, 1, nullptr, false, false, origin, state_guard.lock());
     priority.collectCandidatesForEviction(*eviction_info, stat, *evicted, invalidated_entries, nullptr, true, 0, false, origin, cache_guard, state_guard);
     eviction_info.reset();
 
