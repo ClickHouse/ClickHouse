@@ -153,14 +153,14 @@ std::tuple<double, BucketCountQuantile *, std::atomic<bool> *> takeSharedQuantil
         quantiles.emplace(CurrentMetrics::SharedMergeTreeMinReplicas, 0);
     }
 
-    static std::unordered_map<CurrentMetrics::Metric, BucketCountQuantile> datas;
+    static std::unordered_map<CurrentMetrics::Metric, BucketCountQuantile> buckets;
     {
-        datas.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMaxActiveReplicas), std::forward_as_tuple(0, 100, 101));
-        datas.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMaxInactiveReplicas), std::forward_as_tuple(0, 100, 101));
-        datas.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMaxReplicas), std::forward_as_tuple(0, 100, 101));
-        datas.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMinActiveReplicas), std::forward_as_tuple(0, 100, 101));
-        datas.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMinInactiveReplicas), std::forward_as_tuple(0, 100, 101));
-        datas.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMinReplicas), std::forward_as_tuple(0, 100, 101));
+        buckets.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMaxActiveReplicas), std::forward_as_tuple(0, 100, 101));
+        buckets.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMaxInactiveReplicas), std::forward_as_tuple(0, 100, 101));
+        buckets.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMaxReplicas), std::forward_as_tuple(0, 100, 101));
+        buckets.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMinActiveReplicas), std::forward_as_tuple(0, 100, 101));
+        buckets.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMinInactiveReplicas), std::forward_as_tuple(0, 100, 101));
+        buckets.emplace(std::piecewise_construct, std::forward_as_tuple(CurrentMetrics::SharedMergeTreeMinReplicas), std::forward_as_tuple(0, 100, 101));
     }
 
     static std::unordered_map<CurrentMetrics::Metric, std::atomic<bool>> updates;
@@ -173,7 +173,7 @@ std::tuple<double, BucketCountQuantile *, std::atomic<bool> *> takeSharedQuantil
         updates.emplace(CurrentMetrics::SharedMergeTreeMinReplicas, false);
     }
 
-    return std::make_tuple(quantiles.at(metric), &datas.at(metric), &updates.at(metric));
+    return std::make_tuple(quantiles.at(metric), &buckets.at(metric), &updates.at(metric));
 }
 
 }
@@ -210,7 +210,7 @@ void GlobalSum::sub(CurrentMetrics::Value delta) noexcept
 GlobalQuantile::GlobalQuantile(CurrentMetrics::Metric destination_metric_) noexcept
     : destination_metric(destination_metric_)
 {
-    std::tie(quantile, shared_data, shared_update) = takeSharedQuantileData(destination_metric);
+    std::tie(quantile, shared_buckets, shared_update) = takeSharedQuantileData(destination_metric);
 }
 
 GlobalQuantile::~GlobalQuantile() noexcept
@@ -218,33 +218,33 @@ GlobalQuantile::~GlobalQuantile() noexcept
     if (!was_accounted)
         return;
 
-    BucketCountQuantile * data = static_cast<BucketCountQuantile *>(shared_data);
+    BucketCountQuantile * buckets = static_cast<BucketCountQuantile *>(shared_buckets);
     std::atomic<bool> * update = static_cast<std::atomic<bool> *>(shared_update);
 
-    data->decrement(accounted_value.load());
+    buckets->decrement(accounted_value.load());
 
     if (update->exchange(true) == false)
     {
-        CurrentMetrics::set(destination_metric, data->quantile(quantile));
+        CurrentMetrics::set(destination_metric, buckets->quantile(quantile));
         update->store(false);
     }
 }
 
 void GlobalQuantile::set(CurrentMetrics::Value value) noexcept
 {
-    BucketCountQuantile * data = static_cast<BucketCountQuantile *>(shared_data);
+    BucketCountQuantile * buckets = static_cast<BucketCountQuantile *>(shared_buckets);
     std::atomic<bool> * update = static_cast<std::atomic<bool> *>(shared_update);
 
     CurrentMetrics::Value prev_value = accounted_value.exchange(value, std::memory_order_relaxed);
     if (was_accounted)
-        data->decrement(prev_value);
+        buckets->decrement(prev_value);
 
-    data->increment(value);
+    buckets->increment(value);
     was_accounted = true;
 
     if (update->exchange(true) == false)
     {
-        CurrentMetrics::set(destination_metric, data->quantile(quantile));
+        CurrentMetrics::set(destination_metric, buckets->quantile(quantile));
         update->store(false);
     }
 }
