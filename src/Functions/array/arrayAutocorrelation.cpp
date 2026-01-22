@@ -155,7 +155,7 @@ The result is an array of Float64 where the i-th element is the correlation coef
         {"Symmetric", "SELECT arrayAutocorrelation([10, 20, 10]);", "[1, 0.5, -1]"}
     };
     
-    FunctionDocumentation::IntroducedIn introduced_in = {0, 0};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 2};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     
     FunctionDocumentation documentation = {description, syntax, argument, {}, returned_value, examples, introduced_in, category};
