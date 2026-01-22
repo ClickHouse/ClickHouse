@@ -15,3 +15,9 @@ WITH 0 AS n SELECT multiIf(n = 0, intDiv(100, n), n = 1, 42, intDiv(100, n)); --
 WITH 0 AS n SELECT multiIf(n = 1, intDiv(100, n), n = 0, 42, intDiv(100, n));
 WITH 0 AS n SELECT multiIf(n = 0, intDiv(100, n), n = 1, intDiv(100, n), 42); -- { serverError ILLEGAL_DIVISION }
 WITH 0 AS n SELECT multiIf(n = 1, intDiv(100, n), n = 0, intDiv(100, n), 42); -- { serverError ILLEGAL_DIVISION }
+
+SELECT if(1, 1, (SELECT number FROM numbers(2)));
+SELECT if(0, 1, (SELECT number FROM numbers(2))); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY }
+SELECT if(1, 1, (SELECT blahblah FROM numbers(1))); -- { serverError UNKNOWN_IDENTIFIER }
+
+SELECT if(1, 1, COLUMNS('num')) from numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

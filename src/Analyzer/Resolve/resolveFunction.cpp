@@ -278,6 +278,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           * SELECT if(hasColumnInTable('system', 'numbers', 'not_existing_column'), not_existing_column, 5) FROM system.numbers;
           */
         auto & if_function_arguments = function_node_ptr->getArguments().getNodes();
+
+        /// MATCHER arguments for 'if' and 'multiIf' are not supported
+        for (auto & arg : if_function_arguments)
+            if (arg->getNodeType() == QueryTreeNodeType::MATCHER)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} does not support MATCHER arguments. In scope {}",
+                    function_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
         auto if_function_condition = if_function_arguments[0];
         auto arguments_projection_names = resolveExpressionNode(if_function_condition, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -311,6 +320,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_table_expression*/);
                 disable_constant_folding = current_do_not_execute;
 
+                chassert(dead_branch_argument_projection_names.size() == 1);
+
                 auto dead_branch_argument_projection_name =
                     possibly_invalid_argument_node->getNodeType() == QueryTreeNodeType::IDENTIFIER ?
                         possibly_invalid_argument_node->as<IdentifierNode>()->getIdentifier().getFullName() :
@@ -320,6 +331,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     scope,
                     false /*allow_lambda_expression*/,
                     false /*allow_table_expression*/);
+
+                chassert(result_projection_name.size() == 1);
 
                 if (*constant_condition)
                 {
@@ -371,9 +384,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     auto second_argument = resolveExpressionNode(if_function_arguments[1],
                         scope,
                         false /*allow_lambda_expression*/,
-                        false /*allow_table_expression*/)[0];
+                        false /*allow_table_expression*/);
 
-                    result_projection_names[0].insert(strlen("multiIf") + 1, arguments_projection_names[0] + ", " + second_argument + ", ");
+                    chassert(second_argument.size() == 1);
+
+                    result_projection_names[0].insert(strlen("multiIf") + 1, arguments_projection_names[0] + ", " + second_argument[0] + ", ");
 
                     if (if_function_arguments[1]->getNodeType() != QueryTreeNodeType::IDENTIFIER &&
                         !function_query_node->getResultType()->equals(*if_function_arguments[1]->getResultType()))
@@ -403,6 +418,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         false /*allow_lambda_expression*/,
                         false /*allow_table_expression*/);
                     disable_constant_folding = current_do_not_execute;
+
+                    chassert(second_argument_projection_names.size() == 1);
 
                     auto second_argument_projection_name =
                     if_function_arguments[1]->getNodeType() == QueryTreeNodeType::IDENTIFIER ?

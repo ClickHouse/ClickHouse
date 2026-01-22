@@ -4634,6 +4634,10 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
   */
 void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, IdentifierResolveScope & scope)
 {
+    bool current_do_not_execute = disable_constant_folding;
+    disable_constant_folding = false;
+    SCOPE_EXIT({ disable_constant_folding = current_do_not_execute; });
+
     size_t max_subquery_depth = scope.context->getSettingsRef()[Setting::max_subquery_depth];
     if (max_subquery_depth && scope.subquery_depth > max_subquery_depth)
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);
