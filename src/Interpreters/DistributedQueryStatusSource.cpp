@@ -2,11 +2,13 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Databases/DatabaseReplicated.h>
 
 namespace DB
 {
@@ -23,7 +25,7 @@ extern const int UNFINISHED;
 DistributedQueryStatusSource::DistributedQueryStatusSource(
     const String & zk_node_path,
     const String & zk_replicas_path,
-    SharedHeader block,
+    Block block,
     ContextPtr context_,
     const Strings & hosts_to_wait,
     const char * logger_name)
@@ -85,22 +87,13 @@ NameSet DistributedQueryStatusSource::getOfflineHosts(const NameSet & hosts_to_w
     NameSet offline;
     auto res = zookeeper->tryGet(paths);
     for (size_t i = 0; i < res.size(); ++i)
-    {
         if (res[i].error == Coordination::Error::ZNONODE)
             offline.insert(hosts_array[i]);
-
-        if (res[i].data.ends_with(DatabaseReplicated::REPLICA_UNSYNCED_MARKER))
-        {
-            LOG_TRACE(log, "Replica {} is not fully synced after recovery, considering it as offline", hosts_array[i]);
-            offline.insert(hosts_array[i]);
-        }
-    }
 
     if (offline.size() == hosts_to_wait.size())
     {
         /// Avoid reporting that all hosts are offline
-        LOG_WARNING(
-            log, "Did not find active hosts, will wait for all hosts: {}. This should not happen often", fmt::join(hosts_to_wait, ", "));
+        LOG_WARNING(log, "Did not find active hosts, will wait for all {} hosts. This should not happen often", offline.size());
         return {};
     }
 

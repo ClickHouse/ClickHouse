@@ -30,8 +30,6 @@ struct ExternalResultDescription
         vtDateTime,
         vtUUID,
         vtDateTime64,
-        vtTime,
-        vtTime64,
         vtDecimal32,
         vtDecimal64,
         vtDecimal128,

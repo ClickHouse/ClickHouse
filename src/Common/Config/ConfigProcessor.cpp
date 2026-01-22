@@ -1,6 +1,6 @@
 #include "config.h"
-#include <Common/Config/ConfigProcessor.h>
-#include <Common/Config/YAMLParser.h>
+#include "ConfigProcessor.h"
+#include "YAMLParser.h"
 
 #include <sys/utsname.h>
 #include <cerrno>
@@ -68,11 +68,9 @@ ConfigProcessor::ConfigProcessor(
     const std::string & path_,
     bool throw_on_bad_incl_,
     bool log_to_console,
-    const Substitutions & substitutions_,
-    bool throw_on_bad_include_from_)
+    const Substitutions & substitutions_)
     : path(path_)
     , throw_on_bad_incl(throw_on_bad_incl_)
-    , throw_on_bad_include_from(throw_on_bad_include_from_)
     , substitutions(substitutions_)
     /// We need larger name pool to allow to support vast amount of users in users.xml files for ClickHouse.
     /// Size is prime because Poco::XML::NamePool uses bad (inefficient, low quality)
@@ -420,20 +418,16 @@ bool ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
 }
 
 void ConfigProcessor::doIncludesRecursive(
-    XMLDocumentPtr config,
-    XMLDocumentPtr include_from,
-    const Substitutions & substitutions,
-    bool throw_on_bad_incl,
-    Poco::XML::DOMParser & dom_parser,
-    const LoggerPtr & log,
-    Node * node,
-    zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const Coordination::EventPtr & zk_changed_event,
-    std::unordered_set<std::string> * contributing_zk_paths)
+        XMLDocumentPtr config,
+        XMLDocumentPtr include_from,
+        Node * node,
+        zkutil::ZooKeeperNodeCache * zk_node_cache,
+        const zkutil::EventPtr & zk_changed_event,
+        std::unordered_set<std::string> & contributing_zk_paths)
 {
     if (node->nodeType() == Node::TEXT_NODE)
     {
-        for (const auto & substitution : substitutions)
+        for (auto & substitution : substitutions)
         {
             std::string value = node->nodeValue();
 
@@ -577,8 +571,7 @@ void ConfigProcessor::doIncludesRecursive(
         if (node->hasChildNodes() && !replace)
             throw Poco::Exception("Element <" + node->nodeName() + "> has value and does not have 'replace' attribute, can't process from_zk substitution");
 
-        if (contributing_zk_paths)
-            contributing_zk_paths->insert(attr_nodes["from_zk"]->getNodeValue());
+        contributing_zk_paths.insert(attr_nodes["from_zk"]->getNodeValue());
 
         if (zk_node_cache)
         {
@@ -620,9 +613,7 @@ void ConfigProcessor::doIncludesRecursive(
     }
 
     if (included_something)
-        doIncludesRecursive(
-            config, include_from, substitutions, throw_on_bad_incl,
-            dom_parser, log, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
+        doIncludesRecursive(config, include_from, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
     else
     {
         NodeListPtr children = node->childNodes();
@@ -630,9 +621,7 @@ void ConfigProcessor::doIncludesRecursive(
         for (Node * child = children->item(0); child; child = next_child)
         {
             next_child = child->nextSibling();
-            doIncludesRecursive(
-                config, include_from, substitutions, throw_on_bad_incl,
-                dom_parser, log, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
+            doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
         }
     }
 }
@@ -677,7 +666,7 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
     return files;
 }
 
-XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poco::XML::DOMParser & dom_parser)
+XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path)
 {
     fs::path p(config_path);
     std::string extension = p.extension();
@@ -721,7 +710,7 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poc
 XMLDocumentPtr ConfigProcessor::processConfig(
     bool * has_zk_includes,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const Coordination::EventPtr & zk_changed_event,
+    const zkutil::EventPtr & zk_changed_event,
     bool is_config_changed)
 {
     if (is_config_changed)
@@ -731,7 +720,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
 
     if (fs::exists(path))
     {
-        config = parseConfig(path, dom_parser);
+        config = parseConfig(path);
     }
     else
     {
@@ -757,13 +746,11 @@ XMLDocumentPtr ConfigProcessor::processConfig(
                 LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
             XMLDocumentPtr with;
-            with = parseConfig(merge_file, dom_parser);
+            with = parseConfig(merge_file);
             if (!merge(config, with))
             {
-                LOG_DEBUG(
-                    log, "Merging bypassed - configuration file '{}' "
-                    "doesn't belong to configuration '{}' - merging root node name '{}' doesn't match '{}'",
-                    merge_file, path, getRootNode(with.get())->nodeName(), getRootNode(config.get())->nodeName());
+                LOG_DEBUG(log, "Merging bypassed - configuration file '{}' doesn't belong to configuration '{}' - merging root node name '{}' doesn't match '{}'",
+                               merge_file, path, getRootNode(with.get())->nodeName(), getRootNode(config.get())->nodeName());
                 continue;
             }
 
@@ -781,18 +768,16 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     }
 
     std::unordered_set<std::string> contributing_zk_paths;
-
     try
     {
         Node * node = getRootNode(config.get())->getNodeByPath("include_from");
+
+        XMLDocumentPtr include_from;
         std::string include_from_path;
         if (node)
         {
             /// if we include_from env or zk.
-            doIncludesRecursive(
-                config, nullptr, substitutions, throw_on_bad_incl, dom_parser, log,
-                node, zk_node_cache, zk_changed_event, &contributing_zk_paths);
-
+            doIncludesRecursive(config, nullptr, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
             include_from_path = node->innerText();
         }
         else
@@ -801,25 +786,15 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             if (fs::exists(default_path))
                 include_from_path = default_path;
         }
+        if (!include_from_path.empty())
+        {
+            LOG_DEBUG(log, "Including configuration file '{}'.", include_from_path);
 
-        if (!throw_on_bad_include_from && !fs::exists(include_from_path))
-        {
-            LOG_WARNING(log, "File {} (from 'include_from') does not exist. Ignoring.", include_from_path);
+            include_from = parseConfig(include_from_path);
+            contributing_files.push_back(include_from_path);
         }
-        else
-        {
-            processIncludes(
-                config,
-                substitutions,
-                include_from_path,
-                throw_on_bad_incl,
-                dom_parser,
-                log,
-                &contributing_zk_paths,
-                &contributing_files,
-                zk_node_cache,
-                zk_changed_event);
-        }
+
+        doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
     }
     catch (Exception & e)
     {
@@ -858,33 +833,6 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     return config;
 }
 
-void ConfigProcessor::processIncludes(
-    XMLDocumentPtr & config,
-    const Substitutions & substitutions,
-    const std::string & include_from_path,
-    bool throw_on_bad_incl,
-    Poco::XML::DOMParser & dom_parser,
-    const LoggerPtr & log,
-    std::unordered_set<std::string> * contributing_zk_paths,
-    std::vector<std::string> * contributing_files,
-    zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const Coordination::EventPtr & zk_changed_event)
-{
-    XMLDocumentPtr include_from;
-    if (!include_from_path.empty())
-    {
-        LOG_DEBUG(log, "Including configuration file '{}'.", include_from_path);
-
-        include_from = parseConfig(include_from_path, dom_parser);
-        if (contributing_files)
-            contributing_files->push_back(include_from_path);
-    }
-
-    doIncludesRecursive(
-        config, include_from, substitutions, throw_on_bad_incl, dom_parser, log,
-        getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
-}
-
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes, bool is_config_changed)
 {
     bool has_zk_includes;
@@ -899,8 +847,8 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
-    zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const Coordination::EventPtr & zk_changed_event,
+    zkutil::ZooKeeperNodeCache & zk_node_cache,
+    const zkutil::EventPtr & zk_changed_event,
     bool fallback_to_preprocessed,
     bool is_config_changed)
 {
@@ -909,9 +857,8 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     bool processed_successfully = false;
     try
     {
-        if (zk_node_cache)
-            zk_node_cache->sync();
-        config_xml = processConfig(&has_zk_includes, zk_node_cache, zk_changed_event, is_config_changed);
+        zk_node_cache.sync();
+        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event, is_config_changed);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)
@@ -938,7 +885,7 @@ XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
     /// Create a copy of XML Document because hiding elements from preprocessed_xml document
     /// also influences on configuration which has a pointer to preprocessed_xml document.
 
-    XMLDocumentPtr xml_tree_copy = new Poco::XML::Document(name_pool);
+    XMLDocumentPtr xml_tree_copy = new Poco::XML::Document;
 
     for (Node * node = xml_tree->firstChild(); node; node = node->nextSibling())
     {

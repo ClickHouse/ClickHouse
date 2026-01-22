@@ -124,7 +124,7 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
 
 void getBlockSortPermutationImpl(const Block & block, const SortDescription & description, IColumn::PermutationSortStability stability, UInt64 limit, IColumn::Permutation & permutation)
 {
-    if (block.empty())
+    if (!block)
         return;
 
     ColumnsWithSortDescriptions columns_with_sort_descriptions = getColumnsWithSortDescription(block, description);
@@ -198,8 +198,6 @@ void getBlockSortPermutationImpl(const Block & block, const SortDescription & de
     }
 }
 
-}
-
 bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limit)
 {
     static_assert(sizeof(permutation[0]) == sizeof(UInt64), "Invalid permutation value size");
@@ -253,9 +251,6 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
     return true;
 }
 
-namespace
-{
-
 template <typename Comparator>
 bool isAlreadySortedImpl(size_t rows, Comparator compare)
 {
@@ -304,7 +299,7 @@ void checkSortedWithPermutationImpl(size_t rows, Comparator compare, UInt64 limi
 
 void checkSortedWithPermutation(const Block & block, const SortDescription & description, UInt64 limit, const IColumn::Permutation & permutation)
 {
-    if (block.empty())
+    if (!block)
         return;
 
     ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
@@ -338,14 +333,10 @@ void checkSortedWithPermutation(const Block & block, const SortDescription & des
 
 }
 
-void sortBlock(Block & block, const SortDescription & description, UInt64 limit, IColumn::PermutationSortStability stability)
+void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
 {
     IColumn::Permutation permutation;
-
-#ifndef NDEBUG
-    block.checkNumberOfRows();
-#endif
-    getBlockSortPermutationImpl(block, description, stability, limit, permutation);
+    getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Unstable, limit, permutation);
 
 #ifndef NDEBUG
     checkSortedWithPermutation(block, description, limit, permutation);
@@ -371,7 +362,7 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit,
 
 void stableGetPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & out_permutation)
 {
-    if (block.empty())
+    if (!block)
         return;
 
     getBlockSortPermutationImpl(block, description, IColumn::PermutationSortStability::Stable, 0, out_permutation);
@@ -383,7 +374,7 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
 
 bool isAlreadySorted(const Block & block, const SortDescription & description)
 {
-    if (block.empty())
+    if (!block)
         return true;
 
     ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);

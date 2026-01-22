@@ -4,11 +4,6 @@
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
 
-#if USE_EMBEDDED_COMPILER
-#    include <DataTypes/Native.h>
-#    include <llvm/IR/IRBuilder.h>
-#endif
-
 
 namespace DB
 {
@@ -63,67 +58,13 @@ public:
             return nullable_col->getNestedColumnPtr();
         return col;
     }
-
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
-
-    llvm::Value *
-    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
-    {
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        if (arguments[0].type->isNullable())
-            return b.CreateExtractValue(arguments[0].value, {0});
-        else
-            return arguments[0].value;
-    }
-#endif
-
-
 };
 
 }
 
 REGISTER_FUNCTION(AssumeNotNull)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the corresponding non-`Nullable` value for a value of type [`Nullable`](../data-types/nullable.md).
-If the original value is `NULL`, an arbitrary result can be returned.
-
-See also: functions [`ifNull`](#ifNull) and [`coalesce`](#coalesce).
-    )";
-    FunctionDocumentation::Syntax syntax = "assumeNotNull(x)";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "The original value of any nullable type.", {"Nullable(T)"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the non-nullable value, if the original value was not `NULL`, otherwise an arbitrary value, if the input value is `NULL`.", {"Any"}};
-    FunctionDocumentation::Examples examples = {
-        {"Usage example",
-         R"(
-CREATE TABLE t_null (x Int8, y Nullable(Int8))
-ENGINE=MergeTree()
-ORDER BY x;
-
-INSERT INTO t_null VALUES (1, NULL), (2, 3);
-
-SELECT assumeNotNull(y) FROM table;
-SELECT toTypeName(assumeNotNull(y)) FROM t_null;
-        )",
-         R"(
-┌─assumeNotNull(y)─┐
-│                0 │
-│                3 │
-└──────────────────┘
-┌─toTypeName(assumeNotNull(y))─┐
-│ Int8                         │
-│ Int8                         │
-└──────────────────────────────┘
-        )"}
-    };
-    FunctionDocumentation::IntroducedIn introduced_in{1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionAssumeNotNull>(documentation);
+    factory.registerFunction<FunctionAssumeNotNull>();
 }
 
 }

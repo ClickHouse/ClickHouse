@@ -24,14 +24,11 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
 #include <Interpreters/applyTableOverride.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
-#include <Interpreters/Context.h>
 
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
@@ -125,7 +122,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 
 
 /// Constructor for MaterializedPostgreSQL table engine - for the case of MaterializePosgreSQL database engine.
-/// It is used when nested ReplacingMergeTree table has already been created by replication thread.
+/// It is used when nested ReplacingMergeeTree table has already been created by replication thread.
 /// This storage is ready to handle read queries.
 StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
         StoragePtr nested_storage_,
@@ -331,11 +328,42 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
     if (which.isArray())
         return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
 
-    if (which.isDateTime64())
-        return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
-
+    /// getName() for decimal returns 'Decimal(precision, scale)', will get an error with it
     if (which.isDecimal())
-        return makeASTDataType("Decimal", std::make_shared<ASTLiteral>(getDecimalPrecision(*data_type)), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
+    {
+        auto make_decimal_expression = [&](std::string type_name)
+        {
+            auto ast_expression = std::make_shared<ASTDataType>();
+
+            ast_expression->name = type_name;
+            ast_expression->arguments = std::make_shared<ASTExpressionList>();
+            ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
+
+            return ast_expression;
+        };
+
+        if (which.isDecimal32())
+            return make_decimal_expression("Decimal32");
+
+        if (which.isDecimal64())
+            return make_decimal_expression("Decimal64");
+
+        if (which.isDecimal128())
+            return make_decimal_expression("Decimal128");
+
+        if (which.isDecimal256())
+            return make_decimal_expression("Decimal256");
+    }
+
+    if (which.isDateTime64())
+    {
+        auto ast_expression = std::make_shared<ASTDataType>();
+
+        ast_expression->name = "DateTime64";
+        ast_expression->arguments = std::make_shared<ASTExpressionList>();
+        ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
+        return ast_expression;
+    }
 
     return makeASTDataType(data_type->getName());
 }
@@ -568,9 +596,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL needs order by key or primary key");
 
         if (args.storage_def->primary_key)
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->primary_key), metadata.columns, args.getContext());
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
         else
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->getChild(*args.storage_def->order_by), metadata.columns, args.getContext());
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.getContext());
 
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
         auto connection_info = postgres::formatConnectionString(
@@ -599,7 +627,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
-            .source_access_type = AccessTypeObjects::Source::POSTGRES,
+            .source_access_type = AccessType::POSTGRES,
             .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
         });
 }

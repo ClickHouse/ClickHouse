@@ -5,6 +5,7 @@ import argparse
 import logging
 import re
 from datetime import date, timedelta
+from pathlib import Path
 from subprocess import DEVNULL
 from typing import Any, Dict, List, Optional, TextIO, Tuple
 
@@ -13,9 +14,12 @@ from github.GithubException import RateLimitExceededException, UnknownObjectExce
 from github.NamedUser import NamedUser
 from thefuzz.fuzz import ratio  # type: ignore
 
+from cache_utils import GitHubCache
 from ci_utils import Shell
+from env_helper import TEMP_PATH
 from git_helper import git_runner, is_shallow
 from github_helper import GitHub, PullRequest, PullRequests, Repository
+from s3_helper import S3Helper
 from version_helper import (
     FILE_WITH_VERSION_PATH,
     get_abs_path,
@@ -52,17 +56,7 @@ class Description:
     ):
         self.number = number
         self.html_url = html_url
-        user_login = user._rawData["login"]
-        if user_login == "Copilot":
-
-            class CopilotUser:
-                name = "Copilot"
-                login = "Copilot"
-                html_url = ""
-
-            self.user = CopilotUser()
-        else:
-            self.user = gh.get_user_cached(user_login)  # type: ignore
+        self.user = gh.get_user_cached(user._rawData["login"])  # type: ignore
         self.entry = entry
         self.category = category
 
@@ -93,10 +87,10 @@ class Description:
                 break
             except RateLimitExceededException:
                 gh.sleep_on_rate_limit()
-        user_display = (
-            f"[{user_name}]({self.user.html_url})" if self.user.html_url else user_name
+        return (
+            f"* {entry} [#{self.number}]({self.html_url}) "
+            f"([{user_name}]({self.user.html_url}))."
         )
-        return f"* {entry} [#{self.number}]({self.html_url}) ({user_display})."
 
     # Sort PR descriptions by numbers
     def __eq__(self, other: Any) -> bool:
@@ -464,6 +458,9 @@ def main():
         per_page=100,
         pool_size=args.jobs,
     )
+    temp_path = Path(TEMP_PATH)
+    gh_cache = GitHubCache(gh.cache_path, temp_path, S3Helper())
+    gh_cache.download()
     query = f"type:pr repo:{args.repo} is:merged"
 
     branch, patch = get_branch_and_patch_by_tag(TO_REF)
@@ -491,6 +488,7 @@ def main():
     changelog_year = get_year(prs)
 
     write_changelog(args.output, descriptions, changelog_year)
+    gh_cache.upload()
 
 
 if __name__ == "__main__":

@@ -9,10 +9,11 @@ namespace DB
 class AllMergeSelector : public IMergeSelector
 {
 public:
-    PartsRanges select(
+    /// Parameter max_total_size_to_merge is ignored.
+    PartsRange select(
         const PartsRanges & parts_ranges,
-        const MergeConstraints & merge_constraints,
-        const RangeFilter & range_filter) const override;
+        size_t max_total_size_to_merge,
+        RangeFilter range_filter) const override;
 };
 
 }
