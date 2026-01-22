@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeUUID.h>
 
 
 namespace DB
@@ -52,6 +53,7 @@ ColumnsDescription AsynchronousInsertLogElement::getColumnsDescription()
         {"flush_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "The date and time when the flush happened with microseconds precision."},
         {"flush_query_id", std::make_shared<DataTypeString>(), "ID of the flush query."},
         {"timeout_milliseconds", std::make_shared<DataTypeUInt64>(), "The adaptive timeout calculated for this entry."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -80,6 +82,7 @@ void AsynchronousInsertLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(flush_time_microseconds);
     columns[i++]->insert(flush_query_id);
     columns[i++]->insert(timeout_milliseconds);
+    columns[i++]->insert(log_marker);
 }
 
 }

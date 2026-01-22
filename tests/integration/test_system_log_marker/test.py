@@ -60,7 +60,7 @@ def test_log_marker_enabled(start_cluster):
     assert result == "1"
 
 
-def test_flush_batch_correlation(start_cluster):
+def test_log_marker_with_different_batches(start_cluster):
     """Test that same flush batch shares marker, different batches have different markers"""
     markers = []
 
@@ -81,8 +81,7 @@ def test_log_marker_disabled(start_cluster):
     """Test that log_marker column exists but is not populated when feature is disabled"""
     exec_and_flush(node_without_marker, "SELECT 1")
 
-    # Column should exist in schema
-    # But all values should be zero UUID (not populated)
+    # Column should exist in schema but all the values should be zero UUID (not populated)
     result = node_without_marker.query(
         "SELECT type FROM system.columns "
         "WHERE database='system' AND table='query_log' AND name='log_marker'"
