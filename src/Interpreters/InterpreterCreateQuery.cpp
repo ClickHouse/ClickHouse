@@ -2050,19 +2050,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     /// we can safely destroy the object without a call to "shutdown", because there is guarantee
     /// that no background threads/similar resources remain after exception from "startup".
 
-    try
-    {
-        res->startup();
-    }
-    catch (...)
-    {
-        if (create.attach)
-            database->detachTable(getContext(), create.getTable());
-        else
-            database->dropTable(getContext(), create.getTable());
-
-        throw;
-    }
+    res->startup();
     return true;
 }
 
