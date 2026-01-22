@@ -137,6 +137,12 @@ void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state
             ++local_stat.evicting_count;
             break;
         }
+        case State::Moving:
+        {
+            ++total_stat.moving_count;
+            ++local_stat.moving_count;
+            break;
+        }
         case State::Invalidated:
         {
             ++total_stat.invalidated_count;
@@ -154,6 +160,7 @@ std::string FileCacheReserveStat::Stat::toString() const
     wb << "non-releasable size: " << non_releasable_size << ", ";
     wb << "non-releasable count: " << non_releasable_count << ", ";
     wb << "evicting count: " << evicting_count << ", ";
+    wb << "moving count: " << moving_count << ", ";
     wb << "invalidated count: " << invalidated_count;
     return wb.str();
 }

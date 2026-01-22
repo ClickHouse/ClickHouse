@@ -4181,11 +4181,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     columns_in_keys.insert(columns_alter_type_metadata_only.begin(), columns_alter_type_metadata_only.end());
     columns_in_keys.insert(columns_alter_type_check_safe_for_partition.begin(), columns_alter_type_check_safe_for_partition.end());
 
-    std::unordered_map<String, String> columns_in_indices;
+    /// We use columns_in_indices to prevent alters that change column data type in a way that requires
+    /// reindexing secondary indices (respecting alter_column_secondary_index_mode). But only care about explicit indices
+    std::unordered_map<String, String> columns_in_explicit_indices;
     for (const auto & index : old_metadata.getSecondaryIndices())
     {
-        for (const String & col : index.expression->getRequiredColumns())
-            columns_in_indices.emplace(col, index.name);
+        if (!index.isImplicitlyCreated())
+        {
+            for (const String & col : index.expression->getRequiredColumns())
+                columns_in_explicit_indices.emplace(col, index.name);
+        }
     }
 
     std::unordered_map<String, String> columns_in_projections;
@@ -4309,7 +4314,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
             if (index_mode == AlterColumnSecondaryIndexMode::THROW)
             {
-                if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+                if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
                     throw Exception(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -4369,7 +4374,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 /// we will clear the index files (as we do with the column files) in any other case
                 if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
                 {
-                    if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+                    if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                     {
                         throw Exception(
                             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -4422,7 +4427,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
             if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
             {
-                if (auto it = columns_in_indices.find(command.column_name); it != columns_in_indices.end())
+                if (auto it = columns_in_explicit_indices.find(command.column_name); it != columns_in_explicit_indices.end())
                 {
                     throw Exception(
                         ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,

@@ -99,7 +99,8 @@ NameSet DistributedQueryStatusSource::getOfflineHosts(const NameSet & hosts_to_w
     if (offline.size() == hosts_to_wait.size())
     {
         /// Avoid reporting that all hosts are offline
-        LOG_WARNING(log, "Did not find active hosts, will wait for all {} hosts. This should not happen often", offline.size());
+        LOG_WARNING(
+            log, "Did not find active hosts, will wait for all hosts: {}. This should not happen often", fmt::join(hosts_to_wait, ", "));
         return {};
     }
 
