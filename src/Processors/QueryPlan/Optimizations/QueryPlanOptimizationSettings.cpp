@@ -14,6 +14,7 @@ namespace Setting
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
     extern const SettingsBool distributed_plan_optimize_exchanges;
+    extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsBool force_optimize_projection;
@@ -90,32 +91,6 @@ namespace Setting
     extern const SettingsUInt64 query_plan_optimize_join_order_limit;
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
-    extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsBool parallel_replicas_support_projection;
-    extern const SettingsBool make_distributed_plan;
-    extern const SettingsNonZeroUInt64 distributed_plan_default_shuffle_join_bucket_count;
-    extern const SettingsUInt64 distributed_plan_default_reader_bucket_count;
-    extern const SettingsBool distributed_plan_optimize_exchanges;
-    extern const SettingsString distributed_plan_force_exchange_kind;
-    extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
-    extern const SettingsBool distributed_plan_force_shuffle_aggregation;
-    extern const SettingsBool distributed_aggregation_memory_efficient;
-    extern const SettingsBool enable_cascades_optimizer;
-    extern const SettingsBool use_join_disjunctions_push_down;
-    extern const SettingsBool enable_join_runtime_filters;
-    extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
-    extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
-    extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
-    extern const SettingsBool query_plan_direct_read_from_text_index;
-    extern const SettingsBool use_skip_indexes;
-    extern const SettingsBool use_skip_indexes_on_data_read;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsBool use_skip_indexes_for_top_k;
-    extern const SettingsBool use_top_k_dynamic_filtering;
-    extern const SettingsUInt64 query_plan_max_limit_for_top_k_optimization;
-    extern const SettingsBool query_plan_read_in_order_through_join;
-    extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
 }
 
 namespace ServerSetting
