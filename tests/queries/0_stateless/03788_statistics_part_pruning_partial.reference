@@ -24,7 +24,7 @@ Expression ((Project names + Projection))
             Granules: 3/3
           Ranges: 3
 99
--- Test 2 after merge: value > 3000
+-- Test 2 after MATERIALIZE: value > 3000
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
