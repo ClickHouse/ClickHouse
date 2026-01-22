@@ -277,6 +277,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
             {"database_datalake_require_metadata_access", true, true, "New setting."},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
+            {"enable_cascades_optimizer", false, false, "New experimental setting."},
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {
@@ -334,7 +335,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"send_profile_events", true, true, "New setting. Whether to send profile events to the clients."},
             {"into_outfile_create_parent_directories", false, false, "New setting"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
-            {"enable_cascades_optimizer", false, false, "New experimental setting."},
             {"use_statistics_cache", 0, 0, "New setting"},
             {"input_format_parquet_use_native_reader_v3", false, true, "Seems stable"},
             {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
