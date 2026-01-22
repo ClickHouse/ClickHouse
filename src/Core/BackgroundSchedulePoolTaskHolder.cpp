@@ -39,17 +39,17 @@ BackgroundSchedulePoolTaskInfoPtr BackgroundSchedulePoolTaskHolder::getTaskInfoP
     return task_info;
 }
 
-BackgroundSchedulePoolTaskHolder & PausableTask::getTask()
+BackgroundSchedulePoolTaskHolder & BackgroundSchedulePoolPausableTask::getTask()
 {
     return task;
 }
 
-PausableTask::PausableTask(BackgroundSchedulePoolTaskHolder task_)
+BackgroundSchedulePoolPausableTask::BackgroundSchedulePoolPausableTask(BackgroundSchedulePoolTaskHolder task_)
     : task(std::move(task_))
 {
 }
 
-void PausableTask::pause()
+void BackgroundSchedulePoolPausableTask::pause()
 {
     std::lock_guard lock(pause_mutex);
     pause_count++;
@@ -57,7 +57,7 @@ void PausableTask::pause()
         task->deactivate();
 }
 
-void PausableTask::resume()
+void BackgroundSchedulePoolPausableTask::resume()
 {
     std::lock_guard lock(pause_mutex);
     pause_count--;
@@ -65,13 +65,13 @@ void PausableTask::resume()
         task->activateAndSchedule();
 }
 
-PausableTask::PauseHolder::PauseHolder(PausableTask & task_)
+BackgroundSchedulePoolPausableTask::PauseHolder::PauseHolder(BackgroundSchedulePoolPausableTask & task_)
     : task(task_)
 {
     task.pause();
 }
 
-PausableTask::PauseHolder::~PauseHolder()
+BackgroundSchedulePoolPausableTask::PauseHolder::~PauseHolder()
 {
     task.resume();
 }

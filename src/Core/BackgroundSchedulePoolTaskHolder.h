@@ -37,15 +37,15 @@ private:
 
 /// RAII guard that pauses parts check and reactivates it on destruction.
 /// Safe to destroy from any thread.
-class PausableTask
+class BackgroundSchedulePoolPausableTask
 {
 public:
-    explicit PausableTask(BackgroundSchedulePoolTaskHolder task_);
+    explicit BackgroundSchedulePoolPausableTask(BackgroundSchedulePoolTaskHolder task_);
 
-    PausableTask(const PausableTask &) = delete;
-    PausableTask & operator=(const PausableTask &) = delete;
-    PausableTask(PausableTask &&) = delete;
-    PausableTask & operator=(PausableTask &&) = delete;
+    BackgroundSchedulePoolPausableTask(const BackgroundSchedulePoolPausableTask &) = delete;
+    BackgroundSchedulePoolPausableTask & operator=(const BackgroundSchedulePoolPausableTask &) = delete;
+    BackgroundSchedulePoolPausableTask(BackgroundSchedulePoolPausableTask &&) = delete;
+    BackgroundSchedulePoolPausableTask & operator=(BackgroundSchedulePoolPausableTask &&) = delete;
 
     BackgroundSchedulePoolTaskHolder & getTask();
 
@@ -54,11 +54,11 @@ public:
 
     struct PauseHolder
     {
-        explicit PauseHolder(PausableTask & task_);
+        explicit PauseHolder(BackgroundSchedulePoolPausableTask & task_);
         ~PauseHolder();
 
-        private:
-            PausableTask & task;
+    private:
+        BackgroundSchedulePoolPausableTask & task;
     };
 
     using PauseHolderPtr = std::unique_ptr<PauseHolder>;

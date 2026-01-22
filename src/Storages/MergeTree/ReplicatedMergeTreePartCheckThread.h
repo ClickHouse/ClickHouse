@@ -69,7 +69,7 @@ public:
 
     /// Pause parts check in a thread-safe way.
     /// The returned guard can be safely destroyed from any thread.
-    PausableTask::PauseHolderPtr temporaryPause();
+    BackgroundSchedulePoolPausableTask::PauseHolderPtr temporaryPause();
 
     /// Can be called only while holding a TemporaryPause guard.
     void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
@@ -112,7 +112,7 @@ private:
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };
 
-    PausableTask pausable_task;
+    BackgroundSchedulePoolPausableTask pausable_task;
 };
 
 }
