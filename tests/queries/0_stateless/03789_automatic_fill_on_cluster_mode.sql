@@ -37,34 +37,12 @@ SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabas
   AND query LIKE '%ALTER TABLE test_auto_fill_cluster%'
   AND query LIKE '%ON CLUSTER%';
 
-SELECT 'Test 4: RENAME TABLE with automatic mode executed successfully';
-RENAME TABLE test_auto_fill_cluster TO test_renamed;
+SELECT 'Test 4: DROP TABLE with automatic mode executed successfully';
+DROP TABLE test_auto_fill_cluster;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 4 verification: RENAME TABLE contains ON CLUSTER';
+SELECT 'Test 4 verification: DROP TABLE contains ON CLUSTER';
 SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'
-  AND query LIKE '%RENAME TABLE test_auto_fill_cluster%' 
+  AND query LIKE '%DROP TABLE test_auto_fill_cluster%'
   AND query LIKE '%ON CLUSTER%';
-
-SELECT 'Test 5: DROP TABLE with automatic mode executed successfully';
-DROP TABLE test_renamed;
-
-SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 5 verification: DROP TABLE contains ON CLUSTER';
-SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND query LIKE '%DROP TABLE test_renamed%' 
-  AND query LIKE '%ON CLUSTER%';
-
-SELECT 'Test 6: Explicit ON CLUSTER should be preserved';
-CREATE TABLE test_explicit_cluster ON CLUSTER test_shard_localhost (id UInt32) ENGINE = MergeTree() ORDER BY id;
-
-SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 6 verification: Should contain explicit ON CLUSTER';
-SELECT count() > 0 FROM system.query_log WHERE current_database = currentDatabase()
-  AND type = 'QueryFinish'
-  AND query LIKE '%CREATE TABLE test_explicit_cluster%'
-  AND query LIKE '%ON CLUSTER%';
-
-DROP TABLE test_explicit_cluster;

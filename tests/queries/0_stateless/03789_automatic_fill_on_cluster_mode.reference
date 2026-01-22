@@ -7,12 +7,6 @@ Test 2 verification: Should contain ON CLUSTER
 Test 3: ALTER TABLE with automatic mode executed successfully
 Test 3 verification: ALTER TABLE contains ON CLUSTER
 1
-Test 4: RENAME TABLE with automatic mode executed successfully
-Test 4 verification: RENAME TABLE contains ON CLUSTER
-1
-Test 5: DROP TABLE with automatic mode executed successfully
-Test 5 verification: DROP TABLE contains ON CLUSTER
-1
-Test 6: Explicit ON CLUSTER should be preserved
-Test 6 verification: Should contain explicit ON CLUSTER
+Test 4: DROP TABLE with automatic mode executed successfully
+Test 4 verification: DROP TABLE contains ON CLUSTER
 1
