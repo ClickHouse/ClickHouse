@@ -4,6 +4,7 @@
 -- pre-join filters without changing query results, and that when the optimization is disabled
 -- such pre-join filters are not produced. It also validates join-order-dependent pushdown
 SET enable_analyzer=1;
+SET enable_join_runtime_filters=0;
 
 DROP TABLE IF EXISTS tp1;
 DROP TABLE IF EXISTS tp2;

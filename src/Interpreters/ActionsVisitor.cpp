@@ -98,7 +98,7 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
 namespace
 {
 std::pair<Field, DataTypePtr> buildCollectionFieldAndTypeFromASTFunction(
-    const std::shared_ptr<ASTFunction> & func, ContextPtr context)
+    const boost::intrusive_ptr<ASTFunction> & func, ContextPtr context)
 {
     if (!func)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IN: empty function AST for constant set");
@@ -207,7 +207,7 @@ ColumnsWithTypeAndName createBlockForSet(
   */
 ColumnsWithTypeAndName createBlockForSet(
     const DataTypePtr & left_arg_type,
-    const std::shared_ptr<ASTFunction> & right_arg,
+    const boost::intrusive_ptr<ASTFunction> & right_arg,
     ContextPtr context)
 {
     GetSetElementParams params{
@@ -237,7 +237,7 @@ FutureSetPtr makeExplicitSet(
     const auto & dag_node = actions.findInOutputs(column_name);
     const DataTypePtr & left_arg_type = dag_node.result_type;
 
-    const auto & right_arg_func = std::dynamic_pointer_cast<ASTFunction>(right_arg);
+    const auto & right_arg_func = boost::dynamic_pointer_cast<ASTFunction>(right_arg);
 
     ColumnsWithTypeAndName block;
     if (right_arg_func && (right_arg_func->name == "tuple" || right_arg_func->name == "array"))
@@ -609,7 +609,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         if (tid != 0)
             tuple_ast = tuple_ast->clone();
 
-        auto literal = std::make_shared<ASTLiteral>(UInt64{++tid});
+        auto literal = make_intrusive<ASTLiteral>(UInt64{++tid});
         visit(*literal, literal, data);
 
         auto func = makeASTOperator("tupleElement", tuple_ast, literal);
