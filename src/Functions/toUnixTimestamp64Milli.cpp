@@ -36,7 +36,7 @@ SELECT toUnixTimestamp64Milli(dt64);
     };
     FunctionDocumentation::IntroducedIn introduced_in_toUnixTimestamp64Milli = {20, 5};
     FunctionDocumentation::Category category_toUnixTimestamp64Milli = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation_toUnixTimestamp64Milli = {description_toUnixTimestamp64Milli, syntax_toUnixTimestamp64Milli, arguments_toUnixTimestamp64Milli, returned_value_toUnixTimestamp64Milli, examples_toUnixTimestamp64Milli, introduced_in_toUnixTimestamp64Milli, category_toUnixTimestamp64Milli};
+    FunctionDocumentation documentation_toUnixTimestamp64Milli = {description_toUnixTimestamp64Milli, syntax_toUnixTimestamp64Milli, arguments_toUnixTimestamp64Milli, {}, returned_value_toUnixTimestamp64Milli, examples_toUnixTimestamp64Milli, introduced_in_toUnixTimestamp64Milli, category_toUnixTimestamp64Milli};
 
     factory.registerFunction("toUnixTimestamp64Milli",
         [](ContextPtr){ return std::make_shared<FunctionToUnixTimestamp64>(3, "toUnixTimestamp64Milli"); }, documentation_toUnixTimestamp64Milli);

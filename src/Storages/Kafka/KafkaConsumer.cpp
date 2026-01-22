@@ -10,6 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DateLUT.h>
 #include <Common/ProfileEvents.h>
+#include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 #include <Storages/Kafka/IKafkaExceptionInfoSink.h>
 

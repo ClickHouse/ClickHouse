@@ -9,8 +9,8 @@
     <query>SELECT isValidUTF8(repeat(toString(number), 100)) or isValidUTF8(repeat(toString(number + 10), 100)) or isValidUTF8(repeat(toString(number + 20), 100))  FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT multiIf(number >= 500000, isValidUTF8(repeat(toString(number), 100)), less(number, 50000), number * 2, isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(1000000) FORMAT Null</query>
 
-    <query short="1">SELECT toTypeName(isValidUTF8(repeat(toString(number), 100))) FROM numbers(1000000) FORMAT Null</query>
-    <query short="1">SELECT toColumnTypeName(isValidUTF8(repeat(toString(number), 100))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT toTypeName(isValidUTF8(repeat(toString(number), 100))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT toColumnTypeName(isValidUTF8(repeat(toString(number), 100))) FROM numbers(1000000) FORMAT Null</query>
 
     <query>SELECT if(isValidUTF8(repeat(toString(number), 10)), isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(1000000) FORMAT Null</query>
     <query>SELECT and(isValidUTF8(repeat(toString(number), 10)), not isValidUTF8(repeat(toString(number), 100)), isValidUTF8(repeat(toString(number + 10), 100))) FROM numbers(1000000) FORMAT Null</query>

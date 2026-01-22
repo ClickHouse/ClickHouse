@@ -715,16 +715,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     bool need_rebuild_projections = false;
     std::vector<String> read_columns;
 
-    if (has_lightweight_delete_materialization)
-    {
-        auto & stage = stages.emplace_back(context);
-        stage.affects_all_columns = true;
-
-        need_rebuild_indexes = true;
-        need_rebuild_projections = true;
-    }
-
-    if (has_rewrite_parts)
+    if (has_lightweight_delete_materialization || has_rewrite_parts)
     {
         auto & stage = stages.emplace_back(context);
         stage.affects_all_columns = true;
@@ -781,7 +772,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 stages.back().filters.push_back(predicate);
             }
 
-            /// ALTER DELETE can changes number of rows in the part, so we need to rebuild indexes and projection
+            /// ALTER DELETE can change the number of rows in the part, so we need to rebuild indexes and projection
             need_rebuild_projections = true;
             need_rebuild_indexes_for_update_delete = true;
         }
@@ -1074,10 +1065,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             read_columns.emplace_back(command.column_name);
             materialized_statistics.insert(command.column_name);
 
-            /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
-            /// that depend on it. We should rebuild such projections and indices
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
+                /// Check if the type of this column is changed and there are projections that have this column in the primary key or indices
+                /// that depend on it. We should rebuild such projections and indices
                 const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
                 if (column && command.data_type && !column->type->equals(*command.data_type))
                 {
@@ -1095,16 +1086,21 @@ void MutationsInterpreter::prepare(bool dry_run)
                     for (const auto & index : metadata_snapshot->getSecondaryIndices())
                     {
                         const auto & index_cols = index.expression->getRequiredColumns();
-                        if (std::ranges::find(index_cols, command.column_name) != index_cols.end())
+                        if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
                         {
                             switch (index_mode)
                             {
                                 case AlterColumnSecondaryIndexMode::THROW:
                                 case AlterColumnSecondaryIndexMode::COMPATIBILITY:
-                                    /// The only way to reach this would be if the ALTER was created and then the table setting changed
-                                    throw Exception(
-                                        ErrorCodes::BAD_ARGUMENTS,
-                                        "Cannot ALTER column `{}` because index `{}` depends on it", command.column_name, index.name);
+                                    if (!index.isImplicitlyCreated())
+                                    {
+                                        /// The only way to reach this would be if the ALTER was created and then the table setting changed
+                                        throw Exception(
+                                            ErrorCodes::BAD_ARGUMENTS,
+                                            "Cannot ALTER column `{}` because index `{}` depends on it", command.column_name, index.name);
+                                    }
+                                    /// For implicit indices we don't throw, we will rebuild them
+                                    [[fallthrough]];
                                 case AlterColumnSecondaryIndexMode::REBUILD:
                                 {
                                     for (const auto & col : index_cols)
@@ -1120,6 +1116,16 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
+        else if (command.type == MutationCommand::DROP_COLUMN && command.clear)
+        {
+            /// When clearing a column, we need to also clear any indices that depend on it
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+            {
+                const auto & index_cols = index.expression->getRequiredColumns();
+                if (std::find(index_cols.begin(), index_cols.end(), command.column_name) != index_cols.end())
+                    dropped_indices.insert(index.name);
+            }
+        }
         /// The following mutations handled separately:
         else if (command.type == MutationCommand::APPLY_DELETED_MASK
               || command.type == MutationCommand::APPLY_PATCHES
@@ -1129,7 +1135,10 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else
         {
-            throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
+            throw Exception(
+                ErrorCodes::UNKNOWN_MUTATION_COMMAND,
+                "Unknown mutation command: {}",
+                command.ast ? command.ast->formatForLogging() : fmt::to_string(command.type));
         }
     }
 
@@ -1168,12 +1177,16 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 std::vector<Stage> stages_copy;
                 /// Copy all filled stages except index calculation stage.
+                /// We need to deep clone ASTs because prepareMutationStages may modify the ASTs in place
+                /// (e.g., replacing scalar subqueries with default values during dry_run).
                 for (const auto & stage : stages)
                 {
                     stages_copy.emplace_back(context);
-                    stages_copy.back().column_to_updated = stage.column_to_updated;
+                    for (const auto & [name, ast] : stage.column_to_updated)
+                        stages_copy.back().column_to_updated.emplace(name, ast->clone());
                     stages_copy.back().output_columns = stage.output_columns;
-                    stages_copy.back().filters = stage.filters;
+                    for (const auto & filter : stage.filters)
+                        stages_copy.back().filters.push_back(filter->clone());
                 }
 
                 prepareMutationStages(stages_copy, true);
@@ -1427,6 +1440,19 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     }
 }
 
+std::optional<ActionsDAG> MutationsInterpreter::createFilterDAGForStage(const Stage & stage)
+{
+    const auto & names = stage.filter_column_names;
+    if (names.empty())
+        return std::nullopt;
+
+    ActionsDAG::NodeRawConstPtrs nodes(names.size());
+    for (size_t i = 0; i < names.size(); ++i)
+        nodes[i] = &stage.expressions_chain.steps[i]->actions()->dag.findInOutputs(names[i]);
+
+    return ActionsDAG::buildFilterActionsDAG(nodes);
+}
+
 void MutationsInterpreter::Source::read(
     Stage & first_stage,
     QueryPlan & plan,
@@ -1454,20 +1480,6 @@ void MutationsInterpreter::Source::read(
 
     if (data)
     {
-        const auto & steps = first_stage.expressions_chain.steps;
-        const auto & names = first_stage.filter_column_names;
-        size_t num_filters = names.size();
-
-        std::optional<ActionsDAG> filter;
-        if (!first_stage.filter_column_names.empty())
-        {
-            ActionsDAG::NodeRawConstPtrs nodes(num_filters);
-            for (size_t i = 0; i < num_filters; ++i)
-                nodes[i] = &steps[i]->actions()->dag.findInOutputs(names[i]);
-
-            filter = ActionsDAG::buildFilterActionsDAG(nodes);
-        }
-
         createReadFromPartStep(
             MergeTreeSequentialSourceType::Mutation,
             plan,
@@ -1479,7 +1491,7 @@ void MutationsInterpreter::Source::read(
             required_columns,
             nullptr,
             mutation_settings.apply_deleted_mask,
-            std::move(filter),
+            createFilterDAGForStage(first_stage),
             false,
             false,
             context_,
@@ -1488,6 +1500,7 @@ void MutationsInterpreter::Source::read(
     else
     {
         auto select = std::make_shared<ASTSelectQuery>();
+        std::shared_ptr<const ActionsDAG> filter_actions_dag;
 
         select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
         for (const auto & column_name : first_stage.output_columns)
@@ -1500,8 +1513,11 @@ void MutationsInterpreter::Source::read(
         if (!first_stage.filters.empty())
         {
             ASTPtr where_expression;
+
             if (first_stage.filters.size() == 1)
+            {
                 where_expression = first_stage.filters[0];
+            }
             else
             {
                 auto coalesced_predicates = std::make_shared<ASTFunction>();
@@ -1511,11 +1527,18 @@ void MutationsInterpreter::Source::read(
                 coalesced_predicates->arguments->children = first_stage.filters;
                 where_expression = std::move(coalesced_predicates);
             }
+
             select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
+
+            if (auto filter = createFilterDAGForStage(first_stage))
+                filter_actions_dag = std::make_shared<ActionsDAG>(std::move(*filter));
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create filter DAG for stage with non-empty filters");
         }
 
         SelectQueryInfo query_info;
         query_info.query = std::move(select);
+        query_info.filter_actions_dag = std::move(filter_actions_dag);
 
         size_t max_block_size = context_->getSettingsRef()[Setting::max_block_size];
         Names extracted_column_names;
@@ -1555,7 +1578,7 @@ void MutationsInterpreter::initQueryPlan(Stage & first_stage, QueryPlan & plan)
     plan.setConcurrencyControl(false);
 
     source.read(first_stage, plan, metadata_snapshot, context, settings);
-    addCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
+    addDelayedCreatingSetsStep(plan, first_stage.analyzer->getPreparedSets(), context);
 }
 
 QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const
@@ -1586,7 +1609,7 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
             }
         }
 
-        addCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
+        addDelayedCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
     }
 
     QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);

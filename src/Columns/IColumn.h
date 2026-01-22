@@ -367,6 +367,10 @@ public:
     using Filter = IColumnFilter;
     [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
+    /// In-place filter that modifies the current column directly.
+    /// Elements that don't match the filter are removed from the current column.
+    virtual void filter(const Filter & filt) = 0;
+
     /** Expand column by mask inplace. After expanding column will
       * satisfy the following: if we filter it by given mask, we will
       * get initial column. Values with indexes i: mask[i] = 0
@@ -857,9 +861,6 @@ bool isColumnConst(const IColumn & column);
 
 /// True if column's an ColumnNullable instance. It's just a syntax sugar for type check.
 bool isColumnNullable(const IColumn & column);
-
-/// True if column's an ColumnLazy instance. It's just a syntax sugar for type check.
-bool isColumnLazy(const IColumn & column);
 
 /// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
 bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);

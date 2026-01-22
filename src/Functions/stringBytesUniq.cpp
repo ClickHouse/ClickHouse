@@ -30,7 +30,7 @@ struct StringBytesUniqImpl
             mask[byte >> 6] |= (1ULL << (byte & 0x3F));
         }
 
-        return std::popcount(mask[0]) + std::popcount(mask[1]) + std::popcount(mask[2]) + std::popcount(mask[3]);
+        return static_cast<ResultType>(std::popcount(mask[0]) + std::popcount(mask[1]) + std::popcount(mask[2]) + std::popcount(mask[3]));
     }
 };
 
@@ -66,7 +66,7 @@ Counts the number of distinct bytes in a string.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionStringBytesUniq>(documentation);
 }

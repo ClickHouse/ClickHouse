@@ -7,10 +7,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
+#include <IO/WriteHelpers.h>
 
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -24,6 +23,7 @@
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/MessageHeader.h>
+
 
 namespace DB
 {

@@ -1,15 +1,29 @@
 #pragma once
 
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
+
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+
+#include <Core/Types.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
+
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/castTypeToEither.h>
+
 #include <Interpreters/castColumn.h>
+
 #include <base/TypeList.h>
-#include <Common/assert_cast.h>
+#include <base/extended_types.h>
+
+#include <limits>
+#include <type_traits>
 
 namespace DB
 {
@@ -17,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 class FunctionMidpoint : public IFunction
@@ -26,20 +41,6 @@ public:
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMidpoint>(context); }
 
     explicit FunctionMidpoint(ContextPtr) { }
-
-    static DataTypePtr resolveReturnType(const DataTypes & types)
-    {
-        DataTypes withoutNulls;
-        for (const auto & type : types)
-        {
-            if (type->onlyNull())
-                continue;
-            withoutNulls.emplace_back(type);
-        }
-        if (!withoutNulls.empty())
-            return getLeastSupertype(withoutNulls);
-        return getLeastSupertype(types);
-    }
 
 private:
     String getName() const override { return name; }
@@ -53,48 +54,229 @@ private:
     {
         if (types.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
-        return resolveReturnType(types);
+
+        return getLeastSupertype(types);
     }
 
-    template <typename ColumnType>
-    static void calculateForType(auto & res_data, Columns & converted_columns, size_t input_rows_count)
+    template <typename T>
+    static constexpr bool is_integer_like_v = std::is_integral_v<T> || is_big_int_v<T>;
+
+    template <typename T>
+    struct WiderIntImpl
     {
-        using FieldType = typename ColumnType::ValueType;
-        res_data.resize(input_rows_count);
-        // For each row, sum across all input columns
+        using type = T;
+    };
+
+    template <typename T>
+    requires is_integer_like_v<T> && (sizeof(T) <= 16) /// cannot widen beyond 256-bit
+    struct WiderIntImpl<T>
+    {
+        static constexpr bool is_signed_v = std::numeric_limits<T>::is_signed;
+        using type = std::conditional_t<
+            (sizeof(T) <= 8),
+            std::conditional_t<is_signed_v, Int128, UInt128>,
+            std::conditional_t<is_signed_v, Int256, UInt256>>;
+    };
+
+    template <typename T>
+    using WiderInt = typename WiderIntImpl<T>::type;
+
+    template <typename ResultColumnType>
+    static void calculateForNumericType(auto & result_data, const Columns & input_columns, size_t input_rows_count)
+    {
+        using ResultType = typename ResultColumnType::ValueType;
+
+        /// We try to temporary use wider type to avoid overflow in summation
+        /// Otherwise, midpoint(UINT64_MAX, UINT64_MAX, UINT64_MAX) would overflow.
+        using SumType = WiderInt<ResultType>;
+
+        result_data.resize(input_rows_count);
+
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            FieldType sum{};
-            for (const auto & col : converted_columns)
+            SumType sum{};
+            for (const auto & column : input_columns)
             {
-                const auto * col_vec = assert_cast<const ColumnType *>(col.get());
-                sum += col_vec->getData()[row];
+                const auto * column_vec = assert_cast<const ResultColumnType *>(column.get());
+                sum += static_cast<SumType>(column_vec->getData()[row]);
             }
-            res_data[row] = sum / static_cast<FieldType>(converted_columns.size());
+
+            const auto denom = static_cast<SumType>(input_columns.size());
+            result_data[row] = static_cast<ResultType>(sum / denom); /// trunc toward 0
         }
     }
+
+    /// Nullable-aware: ignore NULL arguments per row; result is NULL only if all args are NULL in that row.
+    template <typename ResultColumnType>
+    static void calculateForNumericType(
+        auto & result_data,
+        const Columns & input_columns,
+        const std::vector<const ColumnUInt8::Container *> & input_null_maps,
+        ColumnUInt8::Container & result_null_map_data,
+        size_t input_rows_count)
+    {
+        using ResultType = typename ResultColumnType::ValueType;
+
+        /// We try to temporary use wider type to avoid overflow in summation
+        /// Otherwise, midpoint(Nullable(UINT64_MAX), UINT64_MAX, UINT64_MAX) would overflow.
+        using SumType = WiderInt<ResultType>;
+
+        result_data.resize(input_rows_count);
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            SumType sum{};
+
+            /// If no non-NULL values found, result is NULL.
+            size_t count = 0;
+
+            for (size_t i = 0; i < input_columns.size(); ++i)
+            {
+                chassert(input_null_maps[i] != nullptr);
+
+                /// Ignore the entries that are NULL so that we can compute average over non-NULLs only.
+                if ((*input_null_maps[i])[row])
+                    continue;
+
+                const auto * col_vec = assert_cast<const ResultColumnType *>(input_columns[i].get());
+                sum += static_cast<SumType>(col_vec->getData()[row]);
+                ++count;
+            }
+
+            if (count == 0)
+            {
+                result_null_map_data[row] = 1;
+                result_data[row] = ResultType{};
+            }
+            else
+            {
+                result_null_map_data[row] = 0;
+                result_data[row] = static_cast<ResultType>(sum / static_cast<SumType>(count)); /// trunc toward 0
+            }
+        }
+    }
+
+    template <typename ResultColumnType>
+    static void calculateForDecimalType(auto & result_data, const Columns & input_columns, size_t input_rows_count)
+    {
+        using ResultType = typename ResultColumnType::ValueType;
+        using Native = typename ResultType::NativeType;
+
+        using SumType = WiderInt<Native>;
+
+        result_data.resize(input_rows_count);
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            SumType sum{};
+            for (const auto & column : input_columns)
+            {
+                const auto * column_vec = assert_cast<const ResultColumnType *>(column.get());
+                sum += static_cast<SumType>(column_vec->getData()[row].value);
+            }
+
+            result_data[row].value = static_cast<Native>(sum / static_cast<SumType>(input_columns.size())); /// trunc toward 0
+        }
+    }
+
+    template <typename ResultColumnType>
+    static void calculateForDecimalType(
+        auto & result_data,
+        const Columns & input_columns,
+        const std::vector<const ColumnUInt8::Container *> & input_null_maps,
+        ColumnUInt8::Container & result_null_map_data,
+        size_t input_rows_count)
+    {
+        using ResultType = typename ResultColumnType::ValueType;
+        using Native = typename ResultType::NativeType;
+
+        using SumType = WiderInt<Native>;
+
+        result_data.resize(input_rows_count);
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            SumType sum{};
+            size_t count = 0;
+
+            for (size_t i = 0; i < input_columns.size(); ++i)
+            {
+                chassert(input_null_maps[i] != nullptr);
+                if ((*input_null_maps[i])[row])
+                    continue;
+
+                const auto * col_vec = assert_cast<const ResultColumnType *>(input_columns[i].get());
+                sum += static_cast<SumType>(col_vec->getData()[row].value);
+                ++count;
+            }
+
+            if (count == 0)
+            {
+                result_null_map_data[row] = 1;
+                result_data[row].value = Native{};
+            }
+            else
+            {
+                result_null_map_data[row] = 0;
+                result_data[row].value = static_cast<Native>(sum / static_cast<SumType>(count)); /// trunc toward 0
+            }
+        }
+    }
+
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        // allocate result column dynamically using result_type
-        auto col_res = result_type->createColumn();
+        const bool result_is_nullable = result_type->isNullable();
+        const DataTypePtr nested_result_type = result_is_nullable ? removeNullable(result_type) : result_type;
+
+        auto nested_result_column = nested_result_type->createColumn();
+
         Columns converted_columns;
+        converted_columns.reserve(arguments.size());
+
         for (const auto & argument : arguments)
         {
             if (argument.type->onlyNull())
-                continue; // ignore NULL arguments
+                continue;
+
             auto converted_col = castColumn(argument, result_type)->convertToFullColumnIfConst();
-            converted_columns.push_back(converted_col);
+            converted_columns.emplace_back(std::move(converted_col));
         }
 
-        // if all columns are nulls, we can return any of them
         if (converted_columns.empty())
-            return arguments[0].column;
-        // if there's just one non-null column then there's nothing to calculate
-        else if (converted_columns.size() == 1)
+            return arguments[0].column->cloneResized(input_rows_count);
+
+        if (converted_columns.size() == 1)
             return converted_columns[0];
 
-        if (isDecimal(result_type) || isDateTime64(result_type) || isTime64(result_type))
+        Columns columns;
+        columns.reserve(converted_columns.size());
+
+        std::vector<const ColumnUInt8::Container *> input_null_maps;
+        ColumnUInt8::MutablePtr result_null_map;
+        ColumnUInt8::Container * result_null_map_data = nullptr;
+
+        if (result_is_nullable)
+        {
+            input_null_maps.reserve(converted_columns.size());
+
+            result_null_map = ColumnUInt8::create();
+            result_null_map_data = &result_null_map->getData();
+            result_null_map_data->resize_fill(input_rows_count, 0);
+
+            for (const auto & col : converted_columns)
+            {
+                const auto * col_nullable = assert_cast<const ColumnNullable *>(col.get());
+                columns.emplace_back(col_nullable->getNestedColumnPtr());
+                input_null_maps.emplace_back(&col_nullable->getNullMapData());
+            }
+        }
+        else
+        {
+            std::swap(columns, converted_columns);
+        }
+
+        if (isDecimal(nested_result_type) || isDateTime64(nested_result_type) || isTime64(nested_result_type))
         {
             using DecimalAndTemporalTypes = TypeList<
                 DataTypeDecimal32,
@@ -102,21 +284,31 @@ private:
                 DataTypeDecimal128,
                 DataTypeDecimal256,
                 DataTypeDateTime64,
-                DataTypeTime64>; // those temporal type behave like decimals
+                DataTypeTime64>; /// these temporal types behave like decimals
+
             castTypeToEither(
                 DecimalAndTemporalTypes{},
-                result_type.get(),
+                nested_result_type.get(),
                 [&](const auto & type) -> bool
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using FieldType = typename DataType::FieldType;
-                    auto * col_res_vec = assert_cast<ColumnDecimal<FieldType> *>(col_res.get());
-                    auto & res_data = col_res_vec->getData();
-                    calculateForType<ColumnDecimal<FieldType>>(res_data, converted_columns, input_rows_count);
+                    using ResultColumn = ColumnDecimal<FieldType>;
+
+                    auto & result_column_data = assert_cast<ResultColumn *>(nested_result_column.get())->getData();
+
+                    if (result_is_nullable)
+                        calculateForDecimalType<ResultColumn>(
+                            result_column_data, columns, input_null_maps, *result_null_map_data, input_rows_count);
+                    else
+                        calculateForDecimalType<ResultColumn>(result_column_data, columns, input_rows_count);
+
                     return true;
                 });
         }
-        else if (isNumber(result_type) || isDate(result_type) || isDateTime(result_type) || isTime(result_type) || isDate32(result_type))
+        else if (
+            isNumber(nested_result_type) || isDate(nested_result_type) || isDateTime(nested_result_type) || isTime(nested_result_type)
+            || isDate32(nested_result_type))
         {
             using NumericAndTemporalTypes = TypeList<
                 DataTypeUInt8,
@@ -137,48 +329,92 @@ private:
                 DataTypeDate,
                 DataTypeDateTime,
                 DataTypeTime,
-                DataTypeDate32>; // those temporal type behave like numeric
+                DataTypeDate32>; /// these temporal types behave like numeric
+
             castTypeToEither(
                 NumericAndTemporalTypes{},
-                result_type.get(),
+                nested_result_type.get(),
                 [&](const auto & type) -> bool
                 {
                     using DataType = std::decay_t<decltype(type)>;
                     using FieldType = typename DataType::FieldType;
-                    auto * col_res_vec = assert_cast<ColumnVector<FieldType> *>(col_res.get());
-                    auto & res_data = col_res_vec->getData();
-                    calculateForType<ColumnVector<FieldType>>(res_data, converted_columns, input_rows_count);
+                    using ResultColumn = ColumnVector<FieldType>;
+
+                    auto & result_column_data = assert_cast<ResultColumn *>(nested_result_column.get())->getData();
+
+                    if (result_is_nullable)
+                        calculateForNumericType<ResultColumn>(
+                            result_column_data, columns, input_null_maps, *result_null_map_data, input_rows_count);
+                    else
+                        calculateForNumericType<ResultColumn>(result_column_data, columns, input_rows_count);
+
                     return true;
                 });
         }
+        else
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} supports only numeric/temporal types, got {}",
+                getName(),
+                result_type->getName());
+        }
 
-        return col_res;
+        if (result_is_nullable)
+            return ColumnNullable::create(std::move(nested_result_column), std::move(result_null_map));
+
+        return nested_result_column;
     }
 };
 
+/// Two-arg midpoint used by FunctionBinaryArithmetic fast-path.
+/// Integer rounding is trunc-toward-zero.
 template <typename A, typename B>
 struct MidpointImpl
 {
-    //using ResultType = NumberTraits::ResultOfMidpoint<A, B>;
-    using ResultType = NumberTraits::ResultOfIf<A, B>::Type;
+    template <typename T>
+    static constexpr bool is_integer_like_v = std::is_integral_v<T> || is_big_int_v<T>;
+
+    using ResultType = typename NumberTraits::ResultOfIf<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        if constexpr ( // Fast path: built-in integers
-            std::is_integral_v<A> && std::is_integral_v<B> &&
-            sizeof(A) <= 8 && sizeof(B) <= 8
-        )
+        if constexpr (is_integer_like_v<Result>)
         {
             Result x = static_cast<Result>(a);
             Result y = static_cast<Result>(b);
-            return (x & y) + ((x ^ y) >> 1);
+
+            constexpr bool is_signed_res = std::numeric_limits<Result>::is_signed;
+
+            if constexpr (!is_signed_res)
+            {
+                /// Unsigned: trunc0 == floor, overflow-safe midpoint.
+                return (x & y) + ((x ^ y) >> 1);
+            }
+            else
+            {
+                /// Signed: compute floor midpoint, then adjust to trunc-toward-0 when sum is negative and odd.
+                Result floor_avg = (x & y) + ((x ^ y) >> 1);
+
+                const bool odd = (((x ^ y) & 1) != 0);
+
+                /// Sum sign without overflow:
+                /// - if same sign, sign is that sign
+                /// - if opposite signs, x + y cannot overflow, so we can check (x + y) < 0 safely
+                const bool sum_negative = ((x < 0) == (y < 0)) ? (x < 0) : ((x + y) < 0);
+
+                if (odd && sum_negative)
+                    ++floor_avg;
+
+                return floor_avg;
+            }
         }
-        else // Safe path: everything else
+        else
         {
-            return static_cast<Result>((static_cast<double>(a) + static_cast<double>(b)) / 2.0);
+            return (static_cast<Result>(a) + static_cast<Result>(b)) / static_cast<Result>(2);
         }
     }
 
@@ -189,7 +425,7 @@ struct MidpointImpl
     {
         auto * ty = left->getType();
 
-        // Floating point
+        /// Floating point
         if (!ty->isIntegerTy())
         {
             auto * sum = b.CreateFAdd(left, right);
@@ -197,7 +433,7 @@ struct MidpointImpl
             return b.CreateFDiv(sum, two);
         }
 
-        // Integer: widen to avoid overflow
+        /// Integer: widen to avoid overflow
         unsigned bits = ty->getScalarSizeInBits();
         auto * wide_ty = llvm::IntegerType::get(ty->getContext(), bits * 2);
 
@@ -205,7 +441,8 @@ struct MidpointImpl
         llvm::Value * ext_r = is_signed ? b.CreateSExt(right, wide_ty) : b.CreateZExt(right, wide_ty);
 
         auto * sum = b.CreateAdd(ext_l, ext_r);
-        auto * avg = b.CreateUDiv(sum, llvm::ConstantInt::get(wide_ty, 2));
+        auto * two = llvm::ConstantInt::get(wide_ty, 2);
+        auto * avg = is_signed ? b.CreateSDiv(sum, two) : b.CreateUDiv(sum, two);
 
         return b.CreateTrunc(avg, ty);
     }
@@ -232,19 +469,27 @@ public:
     bool isVariadic() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
+    /// Fast-path only for:
+    /// - exactly 2 args
+    /// - both non-Nullable (we need ignore-NULL semantics for Nullable, handled by FunctionMidpoint)
+    /// - both non-Decimal numbers (Decimal handled by FunctionMidpoint)
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes argument_types;
         for (const auto & argument : arguments)
             argument_types.push_back(argument.type);
 
-        /// More efficient specialization for two numeric arguments.
         if (arguments.size() == 2)
         {
-            const auto & arg_0_type = arguments[0].type;
-            const auto & arg_1_type = arguments[1].type;
-            if (isNumber(arg_0_type) && isNumber(arg_1_type))
-                return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(context), argument_types, return_type);
+            const auto & a0 = arguments[0].type;
+            const auto & a1 = arguments[1].type;
+
+            if (!a0->isNullable() && !a1->isNullable())
+            {
+                if (isNumber(a0) && isNumber(a1) && !isDecimal(a0) && !isDecimal(a1))
+                    return std::make_unique<FunctionToFunctionBaseAdaptor>(
+                        SpecializedFunction::create(context), argument_types, return_type);
+            }
         }
 
         return std::make_unique<FunctionToFunctionBaseAdaptor>(FunctionMidpoint::create(context), argument_types, return_type);
@@ -255,14 +500,7 @@ public:
         if (types.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} cannot be called without arguments", getName());
 
-        if (types.size() == 2)
-        {
-            const auto & arg_0_type = types[0];
-            const auto & arg_1_type = types[1];
-            if (isNumber(arg_0_type) && isNumber(arg_1_type))
-                return SpecializedFunction::create(context)->getReturnTypeImpl(types);
-        }
-        return FunctionMidpoint::resolveReturnType(types);
+        return getLeastSupertype(types);
     }
 
 protected:

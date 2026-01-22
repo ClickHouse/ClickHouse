@@ -6,6 +6,8 @@
 #include <Interpreters/Context_fwd.h>
 #include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
+
+#include <mutex>
 #include <unordered_map>
 
 
@@ -89,7 +91,6 @@ private:
         const BackupSettings & backup_settings,
         std::shared_ptr<IBackupCoordination> backup_coordination,
         ContextMutablePtr context,
-        const ContextPtr & query_context,
         bool on_cluster,
         const ClusterPtr & cluster);
 

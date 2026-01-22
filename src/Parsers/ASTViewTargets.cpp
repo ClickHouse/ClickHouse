@@ -303,7 +303,7 @@ void ASTViewTargets::forEachPointerToChild(std::function<void(void**)> f)
             if (new_inner_engine != target.inner_engine.get())
             {
                 if (new_inner_engine)
-                    target.inner_engine = typeid_cast<std::shared_ptr<ASTStorage>>(new_inner_engine->ptr());
+                    target.inner_engine = typeid_cast<std::shared_ptr<ASTStorage>>(getChild(*new_inner_engine));
                 else
                     target.inner_engine.reset();
             }

@@ -269,7 +269,7 @@ private:
                 }
             };
             if (depth <= kMultiProcessingDepth)
-                runner(std::move(handle_row));
+                runner.enqueueAndKeepTrack(std::move(handle_row));
             else
                 handle_row();
         }
