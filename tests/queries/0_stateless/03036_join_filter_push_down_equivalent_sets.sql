@@ -2,7 +2,6 @@ SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 0;
 SET query_plan_convert_outer_join_to_inner_join = 0;
 SET parallel_hash_join_threshold = 0;
-SET enable_join_runtime_filters = 0;
 
 DROP TABLE IF EXISTS test_table_1;
 CREATE TABLE test_table_1
@@ -25,7 +24,7 @@ INSERT INTO test_table_2 SELECT number, number FROM numbers(10);
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';
@@ -38,7 +37,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false';
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';
@@ -51,7 +50,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5 AND rhs.id = 6
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
@@ -62,7 +61,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';
@@ -75,7 +74,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';
@@ -88,7 +87,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';
@@ -101,7 +100,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';
@@ -114,7 +113,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';
@@ -127,7 +126,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE rhs.id = 5
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';
@@ -140,7 +139,7 @@ SELECT '--';
 EXPLAIN header = 1, actions = 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5 AND rhs.id = 6
-SETTINGS query_plan_join_swap_table = 'false'
+SETTINGS query_plan_join_swap_table = 'false', enable_join_runtime_filters = 0
 ;
 
 SELECT '--';

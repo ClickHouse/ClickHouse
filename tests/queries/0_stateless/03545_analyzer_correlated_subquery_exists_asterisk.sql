@@ -3,7 +3,6 @@ SET allow_experimental_correlated_subqueries = 1;
 SET enable_parallel_replicas = 0;
 SET correlated_subqueries_default_join_kind = 'left';
 SET correlated_subqueries_use_in_memory_buffer = 0;
-SET enable_join_runtime_filters = 0;
 
 -- Disable table swaps during query planning
 SET query_plan_join_swap_table = false;
@@ -33,7 +32,8 @@ SELECT 1 FROM test AS t1
 WHERE EXISTS (
     SELECT * FROM test AS t2
     WHERE t1.i1 = t2.i2
-);
+)
+SETTINGS  enable_join_runtime_filters = 0;
 
 SELECT 1 FROM test AS t1
 WHERE EXISTS (
