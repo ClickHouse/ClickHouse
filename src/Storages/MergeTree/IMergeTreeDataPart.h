@@ -28,6 +28,7 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+
 namespace zkutil
 {
     class ZooKeeper;
@@ -363,9 +364,9 @@ public:
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
-        static void appendFiles(const MergeTreeData & data, Strings & files);
+        static void appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage);
         /// For Store
-        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_);
+        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
         /// For Load
         static String getFileColumnName(const String & column_name, const Checksums & checksums_);
     };

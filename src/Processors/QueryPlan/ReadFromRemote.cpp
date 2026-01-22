@@ -231,7 +231,7 @@ ASTSelectQuery & getSelectQuery(ASTPtr ast)
 
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
 /// It should not be needed after we send a full plan for distributed queries.
-static ASTPtr tryBuildAdditionalFilterAST(
+ASTPtr tryBuildAdditionalFilterAST(
     const ActionsDAG & dag,
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
@@ -258,7 +258,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
             continue;
         }
 
-        /// Labmdas are not supported (converting back to AST is complicated).
+        /// Lambdas are not supported (converting back to AST is complicated).
         /// We have two cases here cause function with no capture can be constant-folded.
         if (WhichDataType(node->result_type).isFunction()
             || (node->type == ActionsDAG::ActionType::FUNCTION
@@ -383,7 +383,12 @@ static ASTPtr tryBuildAdditionalFilterAST(
                 if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
                     set_from_subquery && set_from_subquery->getSourceAST())
                 {
-                    const auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
+                    auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
+
+                    /// Support running optimization multiple times
+                    auto source_ast = set_from_subquery->getSourceAST();
+                    if (auto * table_identifier = source_ast->as<ASTTableIdentifier>())
+                        temporary_table_name = table_identifier->name();
 
                     auto & external_table = (*external_tables)[temporary_table_name];
                     if (!external_table)
@@ -393,7 +398,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
                         /// This should happen because filter expression on initiator needs the set as well,
                         /// and it should be built before sending the external tables.
 
-                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(set_from_subquery->getSourceAST(), context);
+                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(source_ast, context);
                         NamesAndTypesList columns = header->getNamesAndTypesList();
 
                         auto external_storage_holder = TemporaryTableHolder(
@@ -463,7 +468,20 @@ static void addFilters(
 
     const auto * table_node = table_expressions.front()->as<TableNode>();
     if (!table_node)
-        return;
+    {
+        const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
+        if (!inner_query_node)
+            return;
+
+        table_expressions = extractTableExpressions(inner_query_node->getJoinTree());
+        /// Case with JOIN is not supported so far.
+        if (table_expressions.size() != 1)
+            return;
+
+        table_node = table_expressions.front()->as<TableNode>();
+        if (!table_node)
+            return;
+    }
 
     TableWithColumnNamesAndTypes table_with_columns(
         DatabaseAndTableWithAlias(table_node->toASTIdentifier()),
@@ -841,6 +859,8 @@ bool ReadFromRemote::hasSerializedPlan() const
 
 ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     ASTPtr query_ast_,
+    const QueryTreeNodePtr & query_tree_,
+    const PlannerContextPtr & planner_context_,
     ClusterPtr cluster_,
     const StorageID & storage_id_,
     ParallelReplicasReadingCoordinatorPtr coordinator_,
@@ -855,9 +875,11 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     std::vector<ConnectionPoolPtr> pools_to_use_,
     std::optional<size_t> exclude_pool_index_,
     ConnectionPoolWithFailoverPtr connection_pool_with_failover_)
-    : ISourceStep(std::move(header_))
+    : SourceStepWithFilterBase(std::move(header_))
     , cluster(cluster_)
     , query_ast(query_ast_)
+    , query_tree(query_tree_)
+    , planner_context(planner_context_)
     , storage_id(storage_id_)
     , coordinator(std::move(coordinator_))
     , stage(std::move(stage_))
@@ -900,6 +922,9 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    if (filter_actions_dag)
+        addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
+
     Pipes pipes = addPipes(query_ast, output_header);
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

@@ -11,7 +11,7 @@ $CLICKHOUSE_LOCAL --query "SELECT '==========LOCAL===========';"
 
 $CLICKHOUSE_LOCAL --query "
     SELECT 'Normal';
-    SET allow_experimental_qbit_type = 1;
+    SET enable_qbit_type = 1;
     DROP TABLE IF EXISTS qbit;
     CREATE TABLE qbit (id UInt32, vec QBit(Float32, 7)) ENGINE=Memory;
     INSERT INTO qbit VALUES (1, [1, 2, 3, 4, 5, 6, 7]);
@@ -23,7 +23,7 @@ $CLICKHOUSE_LOCAL --query "
 # RowBinary on local ClickHouse: [de]serializeBinary(const IColumn & column...
 $CLICKHOUSE_LOCAL --query "
     SELECT 'RowBinary';
-    SET allow_experimental_qbit_type = 1;
+    SET enable_qbit_type = 1;
     SET engine_file_truncate_on_insert = 1;
     DROP TABLE IF EXISTS qbit;
     CREATE TABLE qbit (id UInt32, vec QBit(Float32, 7)) ENGINE=Memory;
@@ -42,7 +42,7 @@ $CLICKHOUSE_LOCAL --query "SELECT '==========CLIENT===========';"
 # [de]serializeText(const IColumn & column...)
 $CLICKHOUSE_CLIENT --query "
     SELECT 'Normal';
-    SET allow_experimental_qbit_type = 1;
+    SET enable_qbit_type = 1;
     DROP TABLE IF EXISTS qbit;
     CREATE TABLE qbit (id UInt32, vec QBit(Float32, 7)) ENGINE=Memory;
     INSERT INTO qbit VALUES (1, [1, 2, 3, 4, 5, 6, 7]);
@@ -53,7 +53,7 @@ $CLICKHOUSE_CLIENT --query "
 # Native format: [de]serializeBinaryBulkWithMultipleStreams
 $CLICKHOUSE_CLIENT --query "
     SELECT 'Native';
-    SET allow_experimental_qbit_type = 1;
+    SET enable_qbit_type = 1;
     SET engine_file_truncate_on_insert = 1;
     INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}_2.clickhouse', 'Native') SELECT * FROM qbit;
     DESCRIBE file('${CLICKHOUSE_TEST_UNIQUE_NAME}_2.clickhouse', 'Native');
@@ -64,7 +64,7 @@ $CLICKHOUSE_CLIENT --query "
 # RowBinary format: [de]serializeBinaryBulkWithMultipleStreams
 $CLICKHOUSE_CLIENT --query "
     SELECT 'RowBinary';
-    SET allow_experimental_qbit_type = 1;
+    SET enable_qbit_type = 1;
     SET engine_file_truncate_on_insert = 1;
     INSERT INTO FUNCTION file('${CLICKHOUSE_TEST_UNIQUE_NAME}_3.clickhouse', 'RowBinary') SELECT * FROM qbit;
     SELECT * FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}_3.clickhouse', 'RowBinary', 'id UInt32, vec QBit(Float32, 7)') ORDER BY id;

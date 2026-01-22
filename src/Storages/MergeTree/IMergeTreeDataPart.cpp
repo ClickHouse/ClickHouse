@@ -88,11 +88,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsBool load_existing_rows_count_for_old_parts;
-    extern const MergeTreeSettingsUInt64 max_file_name_length;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsFloat primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-    extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
@@ -195,7 +193,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
 
     for (size_t i = 0; i < column_names.size(); ++i)
     {
-        String file_name = "minmax_" + getFileColumnName(column_names[i], storage_settings) + ".idx";
+        String file_name = "minmax_" + getFileColumnName(column_names[i], storage_settings, part_storage) + ".idx";
         auto serialization = data_types.at(i)->getDefaultSerialization();
 
         auto out = part_storage.writeFile(file_name, 4096, {});
@@ -259,7 +257,7 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
     }
 }
 
-void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, Strings & files)
+void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage)
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -267,17 +265,14 @@ void IMergeTreeDataPart::MinMaxIndex::appendFiles(const MergeTreeData & data, St
     size_t minmax_idx_size = minmax_column_names.size();
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
-        String file_name = "minmax_" + getFileColumnName(minmax_column_names[i], data.getSettings()) + ".idx";
+        String file_name = "minmax_" + getFileColumnName(minmax_column_names[i], data.getSettings(), data_part_storage) + ".idx";
         files.push_back(file_name);
     }
 }
 
-String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_)
+String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage)
 {
-    String stream_name = escapeForFileName(column_name);
-    if (storage_settings_ && (*storage_settings_)[MergeTreeSetting::replace_long_file_name_to_hash] && stream_name.size() > (*storage_settings_)[MergeTreeSetting::max_file_name_length])
-        stream_name = sipHash128String(stream_name);
-    return stream_name;
+    return replaceFileNameToHashIfNeeded(escapeForFileName(column_name), *storage_settings_, &data_part_storage);
 }
 
 String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const Checksums & checksums_)
@@ -562,7 +557,9 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx->initialized && !info.isPatch())
     {
         const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
-        return {DayNum(hyperrectangle.left.safeGet<UInt64>()), DayNum(hyperrectangle.right.safeGet<UInt64>())};
+        return {
+            DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.left.safeGet<UInt64>())),
+            DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.right.safeGet<UInt64>()))};
     }
     return {};
 }

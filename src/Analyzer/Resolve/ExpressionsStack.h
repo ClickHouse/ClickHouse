@@ -65,7 +65,7 @@ public:
     [[maybe_unused]] const QueryTreeNodePtr & operator[](int32_t n) const
     {
         if (n < 0)
-            n = expressions.size() + n - 1;
+            n = static_cast<int32_t>(expressions.size()) + n - 1;
         return expressions[n];
     }
 

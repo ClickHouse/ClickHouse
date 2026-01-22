@@ -351,7 +351,7 @@ void ZooKeeper::flushWriteBuffer()
 void ZooKeeper::cancelWriteBuffer() noexcept
 {
     if (compressed_out)
-         compressed_out->cancel();
+        compressed_out->cancel();
     if (out)
         out->cancel();
 }
@@ -590,7 +590,6 @@ void ZooKeeper::connect(
                     throw;
                 }
 
-                connected = true;
                 if (use_compression)
                 {
                     compressed_in.emplace(*in);
@@ -598,6 +597,8 @@ void ZooKeeper::connect(
                 }
 
                 original_index.store(node.original_index);
+
+                connected = true;
                 break;
             }
             catch (...)
@@ -1184,7 +1185,10 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
     bool already_started = finalization_started.test_and_set();
 
     if (already_started)
+    {
+        LOG_INFO(log, "Session {} already finalized. Current reason: '{}'", session_id, reason);
         return;
+    }
 
     LOG_INFO(log, "Finalizing session {}. finalization_started: {}, queue_finished: {}, reason: '{}'",
              session_id, already_started, requests_queue.isFinished(), reason);
@@ -1890,6 +1894,9 @@ void ZooKeeper::logOperationIfNeeded(const ZooKeeperRequestPtr & request, const 
 
     auto maybe_zk_log = getZooKeeperLog();
     if (!maybe_zk_log)
+        return;
+
+    if (elapsed_microseconds < maybe_zk_log->getDurationMicrosecondsThreshold())
         return;
 
     ZooKeeperLogElement::Type log_type = ZooKeeperLogElement::UNKNOWN;

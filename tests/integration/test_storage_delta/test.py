@@ -3887,3 +3887,61 @@ def test_truncate(started_cluster):
         f"TRUNCATE TABLE {table_name}"
     )
     assert count_files() == 3
+
+
+@pytest.mark.parametrize("on_cluster", [False, True])
+def test_deletion_vector(started_cluster, on_cluster):
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_dv")
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    path = f"/{table_name}"
+
+    suffix = "Cluster" if on_cluster else ""
+    cluster = "cluster," if on_cluster else ""
+    delta_function = f"""
+deltaLake{suffix}({cluster}
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' ,
+        '{minio_access_key}',
+        '{minio_secret_key}')
+    """
+
+    delta_table = (
+        DeltaTable.create(spark)
+        .tableName(table_name)
+        .location(path)
+        .addColumn("a", "INT", nullable=True)
+        .addColumn("b", "STRING", nullable=False)
+        .addColumn("c", "STRING", nullable=False)
+        .partitionedBy("a")
+        .property("delta.minReaderVersion", "2")
+        .property("delta.minWriterVersion", "5")
+        .property("delta.columnMapping.mode", "name")
+        .property("delta.enableDeletionVectors", "true")
+        .execute()
+    )
+
+    schema = StructType(
+        [
+            StructField("a", ShortType(), nullable=True),
+            StructField("b", StringType(), nullable=False),
+            StructField("c", StringType(), nullable=False),
+        ]
+    )
+
+    data = [(1, "a", "a"), (1, "b", "a"), (1, "c", "a"), (1, "b", "c"), (2, "b", "a")]
+    df = spark.createDataFrame(data=data, schema=schema)
+    df.write.format("delta").partitionBy("a").mode("overwrite").save(path)
+
+    upload_directory(minio_client, bucket, path, "")
+
+    assert 5 == int(node.query(f"SELECT count() FROM {delta_function} ORDER BY all").strip())
+
+    spark.sql(f"DELETE FROM {table_name} WHERE b = 'b'")
+    upload_directory(minio_client, bucket, path, "")
+
+    assert 2 == int(node.query(f"SELECT count() FROM {delta_function} ORDER BY all").strip())
+    # check rows indexes size is 2
+    # (not 3 because third deleted row is inside a different partition and represents a single row inside it)
+    assert node.contains_in_log("Row indexes size: 2")

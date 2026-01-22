@@ -33,6 +33,11 @@ class Info:
         """
         return self.env.LINKED_PR_NUMBER
 
+    def set_parent_pr_number(self, pr_number):
+        self.env.JOB_KV_DATA["parent_pr_number"] = pr_number
+        self.env.dump()
+        return self
+
     @property
     def workflow_name(self):
         return self.env.WORKFLOW_NAME
@@ -114,6 +119,10 @@ class Info:
         return self.env.RUN_URL
 
     @property
+    def run_id(self):
+        return self.env.RUN_ID
+
+    @property
     def pr_labels(self):
         return self.env.PR_LABELS
 
@@ -154,6 +163,8 @@ class Info:
         return self.workflow.get_secret(name)
 
     def get_job_url(self):
+        if not self.env.WORKFLOW_JOB_DATA:
+            return ""
         return f"{self.env.RUN_URL}/job/{self.env.WORKFLOW_JOB_DATA['check_run_id']}"
 
     def get_job_report_url(self, latest=False):
@@ -228,19 +239,8 @@ class Info:
         self.env.JOB_KV_DATA[key] = value
         self.env.dump()
 
-    def get_kv_data(self, key=None, source_job="config_workflow"):
-        if Utils.normalize_string(self.env.JOB_NAME) == Utils.normalize_string(
-            source_job
-        ):
-            kv_data = self.env.JOB_KV_DATA
-        else:
-            kv_data = json.loads(
-                self.env.WORKFLOW_STATUS_DATA.get(
-                    Utils.normalize_string(source_job), {}
-                )
-                .get("outputs", {})
-                .get("data", {})
-            )
+    def get_kv_data(self, key=None):
+        kv_data = self.env.JOB_KV_DATA
         if key:
             return kv_data.get(key, None)
         return kv_data
@@ -273,7 +273,8 @@ class Info:
         return True
 
     def docker_tag(self, image_name):
-        runconfig = self.get_kv_data("workflow_config")
-        if runconfig:
-            return runconfig.get("digest_dockers", None).get(image_name, None)
+        if self.env.WORKFLOW_CONFIG:
+            digest_dockers = self.env.WORKFLOW_CONFIG.get("digest_dockers", None)
+            if digest_dockers:
+                return digest_dockers.get(image_name, None)
         return None
