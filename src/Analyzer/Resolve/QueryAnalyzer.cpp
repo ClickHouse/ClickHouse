@@ -68,6 +68,7 @@ namespace Setting
     extern const SettingsBool asterisk_include_materialized_columns;
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_materialized_cte;
     extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
@@ -1381,7 +1382,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
             auto * union_node = cte_node->as<UnionNode>();
 
             bool is_materialized_cte = (query_node && query_node->isMaterialized()) || (union_node && union_node->isMaterialized());
-            if (is_materialized_cte)
+            if (is_materialized_cte && scope.context->getSettingsRef()[Setting::enable_materialized_cte])
             {
                 resolveExpressionNode(cte_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
