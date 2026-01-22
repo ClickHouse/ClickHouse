@@ -423,9 +423,7 @@ void CascadesOptimizer::optimize()
     LOG_TEST(optimizer_context.log, "Optimized plan:\n{}", dumpQueryPlanShort(*best_plan));
 
     /// Update the original plan in-place because there might be references to the root node of the original plan
-    query_plan.getRootNode()->step = best_plan->getRootNode()->step->clone();   /// We moved original step from the root node, but replaceNodeWithPlan
-                                                                                /// need the replaced node to have a step, so let's put a stub there
-    query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(best_plan));
+    query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*best_plan));
 
     LOG_TRACE(optimizer_context.log, "Optimization took {} ms", optimizer_timer.elapsedMilliseconds());
 }
