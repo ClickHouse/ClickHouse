@@ -605,19 +605,23 @@ bool SLRUFileCachePriority::tryIncreasePriority(
 
     {
         auto locked_key = prev_entry->key_metadata->lock();
-        if (prev_entry->isEvicting(*locked_key))
+        const auto entry_state = prev_entry->getState();
+        chassert(entry_state == Entry::State::Active || entry_state == Entry::State::Evicting);
+        if (entry_state != Entry::State::Active)
             return false;
 
         /// As we are in progress now of moving this queue entry to a protected queue,
         /// then we need to make sure no one tries to concurrently evict this entry from cache.
-        /// So we set "evicting flag" to make sure no one touches this entry in the meantime.
-        prev_entry->setEvictingFlag(*locked_key);
+        /// So we set "moving flag" to make sure no one touches this entry in the meantime.
+        /// And we do not reuse "evicting flag" because we want queries to be able
+        /// to use this file segment in the meantime.
+        prev_entry->setMovingFlag(*locked_key);
     }
 
     bool reset_evicting_flag_for_prev_entry = true;
     SCOPE_EXIT({
         if (reset_evicting_flag_for_prev_entry)
-            prev_entry->resetEvictingFlag();
+            prev_entry->resetFlag(/* from_state */Entry::State::Moving);
     });
 
     /// Entry is in probationary queue.
@@ -661,7 +665,7 @@ bool SLRUFileCachePriority::tryIncreasePriority(
         state_guard))
     {
         reset_evicting_flag_for_prev_entry = false;
-        prev_entry->resetEvictingFlag();
+        prev_entry->resetFlag(/* from_state */Entry::State::Moving);
 
         return probationary_queue.tryIncreasePriority(
             iterator.lru_iterator, is_space_reservation_complete, queue_guard, state_guard);

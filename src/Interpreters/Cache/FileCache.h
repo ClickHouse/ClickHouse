@@ -41,6 +41,7 @@ struct FileCacheReserveStat
         size_t non_releasable_count = 0;
 
         size_t evicting_count = 0;
+        size_t moving_count = 0;
         size_t invalidated_count = 0;
 
         Stat & operator +=(const Stat & other)
@@ -50,6 +51,7 @@ struct FileCacheReserveStat
             non_releasable_size += other.non_releasable_size;
             non_releasable_count += other.non_releasable_count;
             evicting_count += other.evicting_count;
+            moving_count += other.moving_count;
             invalidated_count += other.invalidated_count;
             return *this;
         }
@@ -65,6 +67,7 @@ struct FileCacheReserveStat
         Releasable,
         NonReleasable,
         Evicting,
+        Moving,
         Invalidated,
     };
     void update(size_t size, FileSegmentKind kind, State state);

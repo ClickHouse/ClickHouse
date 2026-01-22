@@ -1092,10 +1092,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                             {
                                 case AlterColumnSecondaryIndexMode::THROW:
                                 case AlterColumnSecondaryIndexMode::COMPATIBILITY:
-                                    /// The only way to reach this would be if the ALTER was created and then the table setting changed
-                                    throw Exception(
-                                        ErrorCodes::BAD_ARGUMENTS,
-                                        "Cannot ALTER column `{}` because index `{}` depends on it", command.column_name, index.name);
+                                    if (!index.isImplicitlyCreated())
+                                    {
+                                        /// The only way to reach this would be if the ALTER was created and then the table setting changed
+                                        throw Exception(
+                                            ErrorCodes::BAD_ARGUMENTS,
+                                            "Cannot ALTER column `{}` because index `{}` depends on it", command.column_name, index.name);
+                                    }
+                                    /// For implicit indices we don't throw, we will rebuild them
+                                    [[fallthrough]];
                                 case AlterColumnSecondaryIndexMode::REBUILD:
                                 {
                                     for (const auto & col : index_cols)
@@ -1172,12 +1177,16 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 std::vector<Stage> stages_copy;
                 /// Copy all filled stages except index calculation stage.
+                /// We need to deep clone ASTs because prepareMutationStages may modify the ASTs in place
+                /// (e.g., replacing scalar subqueries with default values during dry_run).
                 for (const auto & stage : stages)
                 {
                     stages_copy.emplace_back(context);
-                    stages_copy.back().column_to_updated = stage.column_to_updated;
+                    for (const auto & [name, ast] : stage.column_to_updated)
+                        stages_copy.back().column_to_updated.emplace(name, ast->clone());
                     stages_copy.back().output_columns = stage.output_columns;
-                    stages_copy.back().filters = stage.filters;
+                    for (const auto & filter : stage.filters)
+                        stages_copy.back().filters.push_back(filter->clone());
                 }
 
                 prepareMutationStages(stages_copy, true);
