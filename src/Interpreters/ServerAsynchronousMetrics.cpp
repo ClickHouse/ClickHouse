@@ -369,6 +369,15 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
     new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
 
+    {
+        Float64 max_merge_elapsed = 0;
+        for (const auto & merge : getContext()->getMergeList().get())
+            if (merge.elapsed > max_merge_elapsed)
+                max_merge_elapsed = merge.elapsed;
+        new_values["LongestRunningMerge"]
+            = {max_merge_elapsed, "Elapsed time in seconds of the longest currently running background merge."};
+    }
+
 #if USE_NURAFT
     {
         auto keeper_dispatcher = getContext()->tryGetKeeperDispatcher();
