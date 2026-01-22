@@ -34,7 +34,7 @@ struct ObjectStorageQueueLogElement
     time_t transaction_start_time;
     UInt64 get_object_time_ms;
 
-    String log_marker;
+    UUID log_marker;
 
     static std::string name() { return "ObjectStorageQueueLog"; }
 

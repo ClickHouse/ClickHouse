@@ -66,7 +66,7 @@ ColumnsDescription QueryViewsLogElement::getColumnsDescription()
         {"exception_code", std::make_shared<DataTypeInt32>(), "Code of an exception."},
         {"exception", std::make_shared<DataTypeString>(), "Exception message."},
         {"stack_trace", std::make_shared<DataTypeString>(), "Stack trace. An empty string, if the query was completed successfully."},
-        {"log_marker", std::make_shared<DataTypeString>(), "Optional unique marker for log entries that were flushed together."}
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."}
     };
 }
 
@@ -114,7 +114,7 @@ void QueryViewsLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(exception_code);
     columns[i++]->insertData(exception.data(), exception.size());
     columns[i++]->insertData(stack_trace.data(), stack_trace.size());
-    columns[i++]->insertData(log_marker.data(), log_marker.size());
+    columns[i++]->insert(log_marker);
 }
 
 }

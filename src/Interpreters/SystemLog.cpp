@@ -57,6 +57,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Columns/ColumnsNumber.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
@@ -678,14 +679,14 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         bool enable_log_marker = getContext()->getServerSettings()[ServerSetting::enable_system_log_marker];
         if (enable_log_marker && block.has("log_marker"))
         {
-            String marker_str = toString(UUIDHelpers::generateV4());
+            UUID marker_uuid = UUIDHelpers::generateV4();
             const size_t marker_idx = block.getPositionByName("log_marker");
 
-            /// Create a new String column with the same marker value for all rows
-            auto marker_col = ColumnString::create();
+            /// Create a new UUID column with the same marker value for all rows
+            auto marker_col = ColumnUUID::create();
             marker_col->reserve(to_flush.size());
             for (size_t i = 0; i < to_flush.size(); ++i)
-                marker_col->insertData(marker_str.data(), marker_str.size());
+                marker_col->insert(marker_uuid);
 
             /// Overwrite the marker column that was created by appendToBlock
             columns[marker_idx] = std::move(marker_col);

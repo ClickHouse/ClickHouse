@@ -45,7 +45,7 @@ struct QueryThreadLogElement
 
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
 
-    String log_marker;
+    UUID log_marker;
 
     static std::string name() { return "QueryThreadLog"; }
 

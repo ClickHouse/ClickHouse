@@ -120,7 +120,7 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[column_idx++]->insert(Array(last_error_trace_array.begin(), last_error_trace_array.end()));
 
-    columns[column_idx++]->insertData(log_marker.data(), log_marker.size());
+    columns[column_idx++]->insert(log_marker);
 }
 
 struct ValuePair

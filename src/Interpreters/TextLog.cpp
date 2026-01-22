@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
 
@@ -65,7 +66,7 @@ ColumnsDescription TextLogElement::getColumnsDescription()
         {"value9", std::make_shared<DataTypeString>(), "Argument 9 that was used to format the message."},
         {"value10", std::make_shared<DataTypeString>(), "Argument 10 that was used to format the message."},
 
-        {"log_marker", std::make_shared<DataTypeString>(), "Optional unique marker for log entries that were flushed together."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -104,7 +105,7 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(value9);
     columns[i++]->insert(value10);
 
-    columns[i++]->insertData(log_marker.data(), log_marker.size());
+    columns[i++]->insert(log_marker);
 }
 
 TextLog::TextLog(ContextPtr context_,

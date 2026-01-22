@@ -28,7 +28,7 @@ void TransposedMetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(metric_name);
     columns[column_idx++]->insert(value);
 
-    columns[column_idx++]->insertData(log_marker.data(), log_marker.size());
+    columns[column_idx++]->insert(log_marker);
 }
 
 

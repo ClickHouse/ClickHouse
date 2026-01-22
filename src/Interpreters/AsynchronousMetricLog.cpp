@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
@@ -51,7 +52,7 @@ ColumnsDescription AsynchronousMetricLogElement::getColumnsDescription()
         },
         {
             "log_marker",
-            std::make_shared<DataTypeString>(),
+            std::make_shared<DataTypeUUID>(),
             parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
             "Optional unique marker for log entries that were flushed together."
         }
@@ -68,7 +69,7 @@ void AsynchronousMetricLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(metric_name);
     columns[column_idx++]->insert(value);
 
-    columns[column_idx++]->insertData(log_marker.data(), log_marker.size());
+    columns[column_idx++]->insert(log_marker);
 }
 
 void AsynchronousMetricLog::addValues(const AsynchronousMetricValues & values)

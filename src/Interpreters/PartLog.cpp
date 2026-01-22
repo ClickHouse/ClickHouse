@@ -154,7 +154,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
 
         {"ProfileEvents", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "All the profile events captured during this operation."},
 
-        {"log_marker", std::make_shared<DataTypeString>(), "Optional unique marker for log entries that were flushed together."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -226,7 +226,7 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insertDefault();
     }
 
-    columns[i++]->insertData(log_marker.data(), log_marker.size());
+    columns[i++]->insert(log_marker);
 }
 
 bool PartLog::addNewPartsImpl(

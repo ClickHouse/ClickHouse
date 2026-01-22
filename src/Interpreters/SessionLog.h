@@ -61,7 +61,7 @@ struct SessionLogElement
     ClientInfo client_info;
     String auth_failure_reason;
 
-    String log_marker;
+    UUID log_marker;
 
     static std::string name() { return "SessionLog"; }
 

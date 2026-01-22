@@ -25,7 +25,7 @@ struct BackupLogElement
     Decimal64 event_time_usec{};
     BackupOperationInfo info{}; /// NOLINT(bugprone-throw-keyword-missing)
 
-    String log_marker;
+    UUID log_marker;
 
     static std::string name() { return "BackupLog"; }
     static ColumnsDescription getColumnsDescription();

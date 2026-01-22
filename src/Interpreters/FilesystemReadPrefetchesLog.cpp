@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <base/getFQDNOrHostName.h>
@@ -31,7 +32,7 @@ ColumnsDescription FilesystemReadPrefetchesLogElement::getColumnsDescription()
         {"state", std::make_shared<DataTypeString>()}, /// Was this prefetch used or we downloaded it in vain?
         {"thread_id", std::make_shared<DataTypeUInt64>()},
         {"reader_id", std::make_shared<DataTypeString>()},
-        {"log_marker", std::make_shared<DataTypeString>(), "Optional unique marker for log entries that were flushed together."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -64,7 +65,7 @@ void FilesystemReadPrefetchesLogElement::appendToBlock(MutableColumns & columns)
     columns[i++]->insert(thread_id);
     columns[i++]->insert(reader_id);
 
-    columns[i++]->insertData(log_marker.data(), log_marker.size());
+    columns[i++]->insert(log_marker);
 }
 
 }

@@ -58,7 +58,7 @@ ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
         {"finish_time_us", std::make_shared<DataTypeUInt64>(), "The finish time of the trace span (in microseconds)."},
         {"finish_date", std::make_shared<DataTypeDate>(), "The finish date of the trace span."},
         {"attribute", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>()), "Attribute depending on the trace span. They are filled in according to the recommendations in the OpenTelemetry standard."},
-        {"log_marker", std::make_shared<DataTypeString>(), "Optional unique marker for log entries that were flushed together."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 

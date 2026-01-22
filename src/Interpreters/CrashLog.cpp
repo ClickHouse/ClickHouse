@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/CrashLog.h>
@@ -21,7 +22,7 @@ namespace DB
 
 namespace
 {
-const DataTypePtr log_marker_datatype = std::make_shared<DataTypeString>();
+const DataTypePtr log_marker_datatype = std::make_shared<DataTypeUUID>();
 }
 
 std::weak_ptr<CrashLog> CrashLog::crash_log;
@@ -96,7 +97,7 @@ void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, co
 
         stack_trace.toStringEveryLine([&trace_full](std::string_view line) { trace_full.push_back(line); });
 
-        CrashLogElement element{static_cast<time_t>(time / 1000000000), time, signal, thread_id, query_id, trace, trace_full, ""};
+        CrashLogElement element{static_cast<time_t>(time / 1000000000), time, signal, thread_id, query_id, trace, trace_full, {}};
         crash_log_owned->add(std::move(element));
     }
 }

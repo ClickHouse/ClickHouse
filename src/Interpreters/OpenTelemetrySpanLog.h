@@ -15,7 +15,7 @@ struct OpenTelemetrySpanLogElement : public OpenTelemetry::Span
     explicit OpenTelemetrySpanLogElement(const OpenTelemetry::Span & span)
         : OpenTelemetry::Span(span) {}
 
-    String log_marker;
+    UUID log_marker;
 
     static std::string name() { return "OpenTelemetrySpanLog"; }
 

@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/AsyncReadCounters.h>
 #include <Interpreters/ProfileEventsExt.h>
@@ -160,7 +161,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
 
-        {"log_marker", std::make_shared<DataTypeString>(), "Optional unique marker for log entries that were flushed together."},
+        {"log_marker", std::make_shared<DataTypeUUID>(), "Optional unique marker for log entries that were flushed together."},
     };
 }
 
@@ -346,7 +347,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
 
-    typeid_cast<ColumnString &>(*columns[i++]).insertData(log_marker.data(), log_marker.size());
+    columns[i++]->insert(log_marker);
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
