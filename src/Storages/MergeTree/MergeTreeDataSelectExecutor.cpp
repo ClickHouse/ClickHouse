@@ -702,7 +702,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     for (const auto & part : parts)
     {
         auto estimates = part.data_part->getEstimates();
-        if (!estimates.empty() && !statistics_pruner.checkPartCanMatch(estimates).can_be_true)
+        if (!statistics_pruner.checkPartCanMatch(estimates).can_be_true)
         {
             LOG_TRACE(log, "Part {} pruned by statistics", part.data_part->name);
             continue;

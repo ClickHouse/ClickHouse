@@ -11,6 +11,7 @@ ORDER BY tuple()
 SETTINGS auto_statistics_types = 'minmax';
 
 SET use_statistics_for_part_pruning = 1;
+SET enable_analyzer = 1;
 
 -- =============================================================================
 -- Case 1: Float64 with NaN values

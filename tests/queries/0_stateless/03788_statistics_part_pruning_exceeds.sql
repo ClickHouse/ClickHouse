@@ -15,6 +15,7 @@ ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, auto_statistics_types = 'minmax';
 
 SET use_statistics_for_part_pruning = 1;
+SET enable_analyzer = 1;
 
 -- =============================================================================
 -- Case 1: UInt64 with min >= 2^53, both min and max exceed precision
