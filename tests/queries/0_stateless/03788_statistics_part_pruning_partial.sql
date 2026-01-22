@@ -45,7 +45,7 @@ ALTER TABLE test_stats_pruning_partial MATERIALIZE STATISTICS ALL;
 -- Test 2 after MATERIALIZE, > 3000 clause
 -- Part1、Part2 should be pruned
 -- =============================================================================
-SELECT '-- Test 2 after merge: value > 3000';
+SELECT '-- Test 2 after MATERIALIZE: value > 3000';
 WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000) WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000) WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM test_stats_pruning_partial WHERE value > 3000;

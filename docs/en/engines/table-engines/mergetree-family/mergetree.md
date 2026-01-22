@@ -1105,7 +1105,7 @@ ALTER TABLE tab DROP STATISTICS a;
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
 They can be used for prewhere optimization only if we enable `set use_statistics = 1`.
 
-#### Part Pruning with Statistics
+#### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
