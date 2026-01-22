@@ -8603,7 +8603,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(
 
     auto isDigit = [](char c) -> bool
     {
-        return c >= '0' && c <= '9';
+        return s.starts_with(prefix);
     };
 
     /// Some stream files are intentionally shared across "nested-like" columns.
