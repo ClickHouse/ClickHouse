@@ -1301,7 +1301,10 @@ protected:
     {
         // Round brackets can mean priority operator as well as function tuple
         if (!is_tuple && elements.size() == 1)
+        {
             node = std::move(elements[0]);
+            node->parenthesized = true;
+        }
         else
             node = makeASTOperator("tuple", std::move(elements));
 
@@ -2743,7 +2746,6 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         }
         else if (pos->type == TokenType::OpeningRoundBracket)
         {
-
             if (subquery_parser.parse(pos, tmp, expected))
             {
                 layers.back()->pushOperand(std::move(tmp));

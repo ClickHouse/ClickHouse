@@ -666,8 +666,6 @@ ASTPtr ASTAlterQuery::clone() const
 
 void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
     ostr << indent_str;
 
@@ -704,7 +702,6 @@ void ASTAlterQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & s
     formatOnCluster(ostr, settings);
 
     FormatStateStacked frame_nested = frame;
-    frame_nested.need_parens = false;
     if (settings.one_line)
     {
         frame_nested.expression_list_prepend_whitespace = true;

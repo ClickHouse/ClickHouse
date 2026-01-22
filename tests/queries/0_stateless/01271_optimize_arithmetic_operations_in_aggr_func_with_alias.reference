@@ -4,10 +4,10 @@ FROM
     SELECT number AS n
     FROM numbers(10)
 )
-WHERE (a > 0) AND (b > 0)
+WHERE a > 0 AND b > 0
 HAVING c > 0
 2
-SELECT min(n + 1 AS a) AS c
+SELECT min((n + 1 AS a)) AS c
 FROM
 (
     SELECT number AS n

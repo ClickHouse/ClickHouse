@@ -34,6 +34,9 @@ class IAST : public TypePromotion<IAST>
 public:
     ASTs children;
 
+    /// If the element has extra parentheses around it, e.g., in "a + (b)", b has extra parentheses.
+    bool parenthesized = false;
+
     virtual ~IAST();
     IAST() = default;
     IAST(const IAST &) = default;
@@ -249,7 +252,6 @@ public:
     struct FormatStateStacked
     {
         UInt16 indent = 0;
-        bool need_parens = false;
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         bool surround_each_list_element_with_parens = false;
@@ -262,16 +264,8 @@ public:
         const IAST * current_function = nullptr;  /// Pointer to the function whose arguments are being formatted
     };
 
-    void format(WriteBuffer & ostr, const FormatSettings & settings) const
-    {
-        FormatState state;
-        formatImpl(ostr, settings, state, FormatStateStacked());
-    }
-
-    void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-    {
-        formatImpl(ostr, settings, state, std::move(frame));
-    }
+    void format(WriteBuffer & ostr, const FormatSettings & settings) const;
+    void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 
     /// TODO: Move more logic into this class (see https://github.com/ClickHouse/ClickHouse/pull/45649).
     struct FormattingBuffer
@@ -282,10 +276,7 @@ public:
         FormatStateStacked frame;
     };
 
-    void format(FormattingBuffer out) const
-    {
-        formatImpl(out.ostr, out.settings, out.state, out.frame);
-    }
+    void format(FormattingBuffer out) const;
 
     /// Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
     /// You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
@@ -352,15 +343,8 @@ public:
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
 protected:
-    virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-    {
-        formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
-    }
-
-    virtual void formatImpl(FormattingBuffer /*out*/) const
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
-    }
+    virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    virtual void formatImpl(FormattingBuffer /*out*/) const;
 
     bool childrenHaveSecretParts() const;
 

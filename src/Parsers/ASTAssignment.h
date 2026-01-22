@@ -32,12 +32,6 @@ protected:
     {
         settings.writeIdentifier(ostr, column_name, /*ambiguous=*/false);
         ostr << " = ";
-
-        if (auto ast = std::dynamic_pointer_cast<ASTWithAlias>(expression()); ast && !ast->alias.empty())
-        {
-            frame.need_parens = true;
-        }
-
         expression()->format(ostr, settings, state, frame);
     }
 };

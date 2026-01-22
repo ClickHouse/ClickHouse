@@ -32,8 +32,6 @@ ASTPtr ASTCreateIndexQuery::clone() const
 
 void ASTCreateIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
     ostr << indent_str;

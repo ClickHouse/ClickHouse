@@ -65,8 +65,6 @@ ASTPtr ASTColumnDeclaration::clone() const
 
 void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     format_settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
 
     if (type)
@@ -112,10 +110,7 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
     if (ttl)
     {
         ostr << ' '  << "TTL"  << ' ';
-        auto nested_frame = frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl.get()); ast_alias && !ast_alias->tryGetAlias().empty())
-            nested_frame.need_parens = true;
-        ttl->format(ostr, format_settings, state, nested_frame);
+        ttl->format(ostr, format_settings, state, frame);
     }
 
     if (collation)

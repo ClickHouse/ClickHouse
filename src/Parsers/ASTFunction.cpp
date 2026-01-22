@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <string_view>
 
 #include <Parsers/ASTFunction.h>
@@ -273,10 +274,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     frame.expression_list_prepend_whitespace = false;
     if (kind == Kind::CODEC || kind == Kind::STATISTICS || kind == Kind::BACKUP_NAME)
         frame.allow_operators = false;
-    FormatStateStacked nested_need_parens = frame;
-    FormatStateStacked nested_dont_need_parens = frame;
-    nested_need_parens.need_parens = true;
-    nested_dont_need_parens.need_parens = false;
 
     if (auto * query = tryGetQueryArgument())
     {
@@ -287,7 +284,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         ostr << "(";
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
-        frame_nested.need_parens = false;
         ++frame_nested.indent;
         query->format(ostr, settings, state, frame_nested);
         ostr << nl_or_nothing << indent_str;
@@ -304,7 +300,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         auto indent2 = settings.one_line ? "" : String(4u * (frame.indent + 2), ' ');
         ostr << name << "(" << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
-        frame_nested.need_parens = false;
         frame_nested.indent += 2;
         arguments->children[0]->format(ostr, settings, state, frame_nested);
         ostr << nl_or_nothing << indent1 << (settings.one_line ? " " : "")
@@ -330,53 +325,35 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 it != operators.end())
             {
                 const auto & func_symbol = it->operator_name;
-
-                const auto * literal = arguments->children[0]->as<ASTLiteral>();
-                const auto * function = arguments->children[0]->as<ASTFunction>();
-                const auto * subquery = arguments->children[0]->as<ASTSubquery>();
-                bool is_tuple = (literal && literal->value.getType() == Field::Types::Tuple)
-                             || (function && function->name == "tuple" && function->arguments && function->arguments->children.size() > 1);
-                bool is_array = (literal && literal->value.getType() == Field::Types::Array)
-                             || (function && function->name == "array");
-                bool has_alias = !arguments->children[0]->tryGetAlias().empty();
-
-                /// Do not add parentheses for tuple and array literal, otherwise extra parens will be added `-((3, 7, 3), 1)` -> `-(((3, 7, 3), 1))`, `-[1]` -> `-([1])`
-                bool literal_need_parens = literal && !is_tuple && !is_array;
-
-                /// Negate always requires parentheses, otherwise -(-1) will be printed as --1
-                /// Also extra parentheses are needed for subqueries and tuple, because NOT can be parsed as a function:
-                /// not(SELECT 1) cannot be parsed, while not((SELECT 1)) can.
-                /// not((1, 2, 3)) is a function of one argument, while not(1, 2, 3) is a function of three arguments.
-                /// Note: If the arg to negate/not/- has an alias, we never need the inside parens
-                bool inside_parens = !has_alias
-                    && ((name == "negate" && (literal_need_parens || (function && function->name == "negate")))
-                        || (subquery && name == "not") || (is_tuple && name == "not"));
-
-                /// We DO need parentheses around a single literal
-                /// For example, SELECT (NOT 0) + (NOT 0) cannot be transformed into SELECT NOT 0 + NOT 0, since
-                /// this is equal to SELECT NOT (0 + NOT 0)
-                bool outside_parens = frame.need_parens && (!frame.allow_moving_operators_before_parens || !inside_parens);
-
-                /// Do not add extra parentheses for functions inside negate, i.e. -(-toUInt64(-(1)))
-                if (inside_parens)
-                    nested_need_parens.need_parens = false;
-
-                if (outside_parens)
-                    ostr << '(';
-
                 ostr << func_symbol;
 
-                if (inside_parens)
-                    ostr << '(';
+                /// For negate, add space if argument starts with '-' to avoid '--'
+                if (name == "negate" && !arguments->children.empty())
+                {
+                    const auto & arg = arguments->children[0];
+                    bool need_space = false;
+                    if (const auto * arg_func = arg->as<ASTFunction>())
+                    {
+                        if (arg_func->name == "negate" && !arg_func->parenthesized)
+                            need_space = true;
+                    }
+                    else if (const auto * arg_lit = arg->as<ASTLiteral>())
+                    {
+                        /// Check if it's a negative number literal (including negative zero for floats)
+                        const auto & value = arg_lit->value;
+                        bool is_negative = (value.getType() == Field::Types::Int64 && value.safeGet<Int64>() < 0)
+                            || (value.getType() == Field::Types::Int128 && value.safeGet<Int128>() < 0)
+                            || (value.getType() == Field::Types::Int256 && value.safeGet<Int256>() < 0)
+                            || (value.getType() == Field::Types::Float64 && std::signbit(value.safeGet<Float64>()));
+                        if (is_negative && !arg_lit->parenthesized)
+                            need_space = true;
+                    }
+                    if (need_space)
+                        ostr << ' ';
+                }
 
-                arguments->format(ostr, settings, state, nested_need_parens);
+                arguments->format(ostr, settings, state, frame);
                 written = true;
-
-                if (inside_parens)
-                    ostr << ')';
-
-                if (outside_parens)
-                    ostr << ')';
             }
         }
 
@@ -391,20 +368,11 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             if (auto it = std::ranges::find_if(operators, [&](const auto & op) { return boost::iequals(name, op.function_name); });
                 it != operators.end())
             {
-                if (frame.need_parens)
-                    ostr << '(';
-                arguments->format(ostr, settings, state, nested_need_parens);
+                arguments->format(ostr, settings, state, frame);
                 ostr << it->operator_name;
-                if (frame.need_parens)
-                    ostr << ')';
-
                 written = true;
             }
         }
-
-        /** need_parens - do we need parentheses around the expression with the operator.
-          * They are needed only if this expression is included in another expression with the operator.
-          */
 
         if (!written && arguments->children.size() == 2)
         {
@@ -435,66 +403,19 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
             if (auto it = std::ranges::find(operators, name, &FunctionOperatorMapping::function_name); it != operators.end())
             {
-                /// IN operators need extra parentheses to avoid parsing ambiguity when used as function arguments.
-                /// The parser cannot handle IN inside multi-argument function calls without parentheses.
-                /// Example: position(1 IN (SELECT 1), 2) must be formatted as position((1 IN (SELECT 1)), 2)
-                bool is_in_operator = (name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn");
-                bool in_function_args = frame.current_function != nullptr;
-                bool need_parens_around_in = frame.need_parens || (is_in_operator && in_function_args);
-                if (need_parens_around_in)
-                    ostr << '(';
-                arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+                arguments->children[0]->format(ostr, settings, state, frame);
                 ostr << it->operator_name;
-
-                /// Format x IN 1 as x IN (1): put parens around rhs even if there is a single element in set.
-                const auto * second_arg_func = arguments->children[1]->as<ASTFunction>();
-                const auto * second_arg_literal = arguments->children[1]->as<ASTLiteral>();
-                bool is_literal_tuple_or_array = second_arg_literal
-                    && (second_arg_literal->value.getType() == Field::Types::Tuple
-                        || second_arg_literal->value.getType() == Field::Types::Array);
-
-                /** Conditions for extra parens:
-                 *  1. Is IN operator
-                 *  2. 2nd arg is not subquery, function, or literal tuple or array
-                 *  3. If the 2nd argument has alias, we ignore condition 2 and add extra parens
-                 *
-                 *  Condition 3 is needed to avoid inconsistency in format-parse-format debug check in executeQuery.cpp
-                 */
-                bool extra_parents_around_in_rhs = is_in_operator
-                    && ((!arguments->children[1]->as<ASTSubquery>() && !second_arg_func && !is_literal_tuple_or_array)
-                        || !arguments->children[1]->tryGetAlias().empty());
-
-                if (extra_parents_around_in_rhs)
-                {
-                    ostr << '(';
-                    arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
-                    ostr << ')';
-                }
-
-                if (!extra_parents_around_in_rhs)
-                    arguments->children[1]->format(ostr, settings, state, nested_need_parens);
-
-                if (need_parens_around_in)
-                    ostr << ')';
+                arguments->children[1]->format(ostr, settings, state, frame);
                 written = true;
             }
 
             if (!written && name == "arrayElement"sv)
             {
-                if (frame.need_parens)
-                    ostr << '(';
-
-                /// Don't allow moving operators like '-' before parents,
-                /// otherwise (-(42))[3] will be formatted as -(42)[3] that will be parsed as -(42[3]);
-                nested_need_parens.allow_moving_operators_before_parens = false;
-                arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+                arguments->children[0]->format(ostr, settings, state, frame);
                 ostr << '[';
-                arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
+                arguments->children[1]->format(ostr, settings, state, frame);
                 ostr << ']';
                 written = true;
-
-                if (frame.need_parens)
-                    ostr << ')';
             }
 
             if (!written && name == "tupleElement"sv)
@@ -537,19 +458,10 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     if (isInt64OrUInt64FieldType(lit_right->value.getType())
                         && lit_right->value.safeGet<Int64>() >= 0)
                     {
-                        if (frame.need_parens)
-                            ostr << '(';
-
-                        /// Don't allow moving operators like '-' before parents,
-                        /// otherwise (-(42)).1 will be formatted as -(42).1 that will be parsed as -((42).1)
-                        nested_need_parens.allow_moving_operators_before_parens = false;
-                        arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+                        arguments->children[0]->format(ostr, settings, state, frame);
                         ostr << ".";
-                        arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
+                        arguments->children[1]->format(ostr, settings, state, frame);
                         written = true;
-
-                        if (frame.need_parens)
-                            ostr << ')';
                     }
                 }
             }
@@ -566,25 +478,20 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 /// If lambda function is not the first element in the list, it has to be put in parentheses.
                 /// Example: f(x, (y -> z)) should not be printed as f((x, y) -> z).
 
-                if (frame.need_parens || frame.list_element_index > 0)
-                    ostr << '(';
-
                 if (first_argument_is_tuple
                     && first_argument_function->arguments
                     && (first_argument_function->arguments->children.size() == 1 || first_argument_function->arguments->children.empty()))
                 {
                     if (first_argument_function->arguments->children.size() == 1)
-                        first_argument_function->arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+                        first_argument_function->arguments->children[0]->format(ostr, settings, state, frame);
                     else
                         ostr << "()";
                 }
                 else
-                    first_argument->format(ostr, settings, state, nested_need_parens);
+                    first_argument->format(ostr, settings, state, frame);
 
                 ostr << " -> ";
-                arguments->children[1]->format(ostr, settings, state, nested_need_parens);
-                if (frame.need_parens || frame.list_element_index > 0)
-                    ostr << ')';
+                arguments->children[1]->format(ostr, settings, state, frame);
                 written = true;
             }
         }
@@ -599,18 +506,14 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
             if (auto it = std::ranges::find(operators, name, &FunctionOperatorMapping::function_name); it != operators.end())
             {
-                if (frame.need_parens)
-                    ostr << '(';
                 for (size_t i = 0; i < arguments->children.size(); ++i)
                 {
                     if (i != 0)
                         ostr << it->operator_name;
                     if (arguments->children[i]->as<ASTSetQuery>())
                         ostr << "SETTINGS ";
-                    arguments->children[i]->format(ostr, settings, state, nested_need_parens);
+                    arguments->children[i]->format(ostr, settings, state, frame);
                 }
-                if (frame.need_parens)
-                    ostr << ')';
                 written = true;
             }
         }
@@ -624,25 +527,24 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << ", ";
                 if (arguments->children[i]->as<ASTSetQuery>())
                     ostr << "SETTINGS ";
-                nested_dont_need_parens.list_element_index = i;
-                arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
+                frame.list_element_index = i;
+                arguments->children[i]->format(ostr, settings, state, frame);
             }
             ostr << ']';
             written = true;
         }
 
-        if (!written && arguments->children.size() >= 2 && name == "tuple"sv && !(frame.need_parens && !alias.empty()))
+        if (!written && arguments->children.size() >= 2 && name == "tuple"sv)
         {
             ostr << '(';
-
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i != 0)
                     ostr << ", ";
                 if (arguments->children[i]->as<ASTSetQuery>())
                     ostr << "SETTINGS ";
-                nested_dont_need_parens.list_element_index = i;
-                arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
+                frame.list_element_index = i;
+                arguments->children[i]->format(ostr, settings, state, frame);
             }
             ostr << ')';
             written = true;
@@ -657,8 +559,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << ", ";
                 if (arguments->children[i]->as<ASTSetQuery>())
                     ostr << "SETTINGS ";
-                nested_dont_need_parens.list_element_index = i;
-                arguments->children[i]->format(ostr, settings, state, nested_dont_need_parens);
+                frame.list_element_index = i;
+                arguments->children[i]->format(ostr, settings, state, frame);
             }
             ostr << ')';
             written = true;
@@ -678,7 +580,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     if (parameters)
     {
         ostr << '(';
-        parameters->format(ostr, settings, state, nested_dont_need_parens);
+        parameters->format(ostr, settings, state, frame);
         ostr << ')';
     }
 
@@ -707,9 +609,9 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     if (secret_arguments.are_named)
                     {
                         if (const auto * func_ast = typeid_cast<const ASTFunction *>(argument.get()))
-                            func_ast->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
+                            func_ast->arguments->children[0]->format(ostr, settings, state, frame);
                         else
-                            argument->format(ostr, settings, state, nested_dont_need_parens);
+                            argument->format(ostr, settings, state, frame);
                         ostr << " = ";
                     }
                     if (!secret_arguments.replacement.empty())
@@ -742,19 +644,16 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (j != 0)
                             ostr << ", ";
                         auto inner_arg = function->arguments->children[j];
-                        if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
-                            inner_arg->format(ostr, settings, state, nested_dont_need_parens);
+                        if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, frame))
+                            inner_arg->format(ostr, settings, state, frame);
                     }
                     ostr << ")";
                     continue;
                 }
             }
 
-            nested_dont_need_parens.list_element_index = i;
-            /// Mark that we're formatting an argument of this function (needed for IN operator parentheses)
-            if (arguments->children.size() > 1)
-                nested_dont_need_parens.current_function = this;
-            argument->format(ostr, settings, state, nested_dont_need_parens);
+            frame.list_element_index = i;
+            argument->format(ostr, settings, state, frame);
         }
     }
 

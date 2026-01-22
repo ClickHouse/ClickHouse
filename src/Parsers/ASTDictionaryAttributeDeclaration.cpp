@@ -33,8 +33,6 @@ ASTPtr ASTDictionaryAttributeDeclaration::clone() const
 
 void ASTDictionaryAttributeDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
-
     settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
 
     if (type)
