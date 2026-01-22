@@ -4365,8 +4365,8 @@ Notice the `WHERE` clause is rewritten in CNF, but the result set is the identic
 
 Possible values: true, false
 )", 0) \
-    DECLARE(Bool, optimize_or_like_chain, false, R"(
-Optimize multiple OR LIKE into multiMatchAny. This optimization should not be enabled by default, because it defies index analysis in some cases.
+    DECLARE(Bool, optimize_or_like_chain, true, R"(
+Optimize multiple OR LIKE/ILIKE/match into multiSearchAny (for substring patterns) or match with combined regexp (for other patterns). The original expressions are preserved in indexHint() to allow index analysis.
 )", 0) \
     DECLARE(Bool, optimize_arithmetic_operations_in_aggregate_functions, true, R"(
 Move arithmetic operations out of aggregation functions
