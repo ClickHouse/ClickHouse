@@ -2,7 +2,6 @@
 
 #include "config.h"
 
-#include <fmt/format.h>
 #include <Common/Exception.h>
 
 #if USE_ROCKSDB

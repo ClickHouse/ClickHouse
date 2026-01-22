@@ -442,18 +442,6 @@ std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(const Block &
     return out;
 }
 
-void MergeTreePartition::store(const MergeTreeData & storage, WriteBuffer & buf) const
-{
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
-    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
-
-    if (partition_key_sample.empty())
-        return;
-
-    for (size_t i = 0; i < value.size(); ++i)
-        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->serializeBinary(value[i], buf, FormatSettings{});
-}
-
 void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context)
 {
     if (!metadata_snapshot->hasPartitionKey())

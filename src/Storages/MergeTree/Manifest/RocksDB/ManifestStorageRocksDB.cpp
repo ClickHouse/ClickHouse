@@ -282,12 +282,10 @@ void ManifestStorageRocksDB::shutdown()
 
 void ManifestStorageRocksDB::drop()
 {
-    // Shutdown first to close all resources
     shutdown();
 
     LOG_DEBUG(&Poco::Logger::get("ManifestStorageRocksDB"), "Dropping RocksDB directory: {}", db_dir_);
 
-    // Remove the parent directory (e.g., remove "e60" directory which contains the UUID directory)
     if (!db_dir_.empty())
     {
         try
@@ -305,6 +303,6 @@ void ManifestStorageRocksDB::drop()
     }
 }
 
-} // namespace DB
+}
 
-#endif // USE_ROCKSDB
+#endif

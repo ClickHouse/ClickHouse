@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartState.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 

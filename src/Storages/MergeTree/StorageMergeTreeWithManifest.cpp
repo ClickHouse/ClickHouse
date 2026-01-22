@@ -1,38 +1,17 @@
 #include <Storages/MergeTree/StorageMergeTreeWithManifest.h>
 
 #include <filesystem>
-#include <Compression/CompressionFactory.h>
 #include <Interpreters/Context.h>
 #include <Common/escapeForFileName.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Disks/DiskManifest.h>
-#include <Disks/SingleDiskVolume.h>
-#include <Disks/StoragePolicy.h>
-#include <IO/ReadBufferFromFileDecorator.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadSettings.h>
-#include <IO/WriteBufferFromString.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/parseQuery.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/Manifest/IManifestStorage.h>
 #include <Storages/MergeTree/Manifest/ManifestStorageFactory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/checkDataPart.h>
-#include <base/JSON.h>
 #include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/TransactionID.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -251,14 +230,17 @@ MergeTreeData::LoadPartResult StorageMergeTreeWithManifest::loadDataPart(
             BaseManifestEntry updated_entry = entry;
             updated_entry.disk_name = actual_disk->getName();
             updated_entry.disk_path = actual_disk->getPath();
-            auto status = manifest_storage->put(entry.part_uuid, updated_entry.toString());
-            if (status != ManifestStatus::OK)
+            try
+            {
+                throwIfNotOK(manifest_storage->put(entry.part_uuid, updated_entry.toString()), "update manifest for part", part_name);
+            }
+            catch (const Exception & e)
             {
                 LOG_WARNING(
                     &Poco::Logger::get("StorageMergeTreeWithManifest"),
-                    "Failed to update manifest for part '{}', status: {}",
+                    "Failed to update manifest for part '{}': {}",
                     part_name,
-                    static_cast<int>(status));
+                    e.message());
             }
         }
     }

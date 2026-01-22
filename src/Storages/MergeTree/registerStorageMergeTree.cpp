@@ -905,8 +905,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (arg_num != arg_cnt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong number of engine arguments.");
 
-    /// manifest_storage_type was already extracted and removed from settings above (before validation)
-
     if (replicated)
     {
         bool need_check_table_structure = true;

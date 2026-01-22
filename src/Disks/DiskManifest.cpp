@@ -1,13 +1,10 @@
 #include <Disks/DiskManifest.h>
 
-#include <Disks/DiskFactory.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/Manifest/BaseManifestEntry.h>
 #include <Storages/MergeTree/Manifest/IManifestStorage.h>
 #include <Common/Exception.h>
-#include <Common/Macros.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <filesystem>
@@ -122,26 +119,32 @@ DirectoryIteratorPtr DiskManifest::iterateDirectory(const String & /* path */) c
                     (void)e;
                 }
             }
-            auto del_status = manifest->del(uuid);
-            if (del_status != ManifestStatus::OK && del_status != ManifestStatus::NotFound)
+            try
+            {
+                throwIfNotOKOrNotFound(manifest->del(uuid), "delete PreActive part from manifest", part_name);
+            }
+            catch (const Exception & e)
             {
                 LOG_WARNING(
                     &Poco::Logger::get("DiskManifest"),
-                    "Failed to delete PreActive part '{}' from manifest, status: {}",
+                    "Failed to delete PreActive part '{}' from manifest: {}",
                     part_name,
-                    static_cast<int>(del_status));
+                    e.message());
             }
         }
         else
         {
-            auto del_status = manifest->del(uuid);
-            if (del_status != ManifestStatus::OK && del_status != ManifestStatus::NotFound)
+            try
+            {
+                throwIfNotOKOrNotFound(manifest->del(uuid), "delete part from manifest", part_name);
+            }
+            catch (const Exception & e)
             {
                 LOG_WARNING(
                     &Poco::Logger::get("DiskManifest"),
-                    "Failed to delete part '{}' from manifest, status: {}",
+                    "Failed to delete part '{}' from manifest: {}",
                     part_name,
-                    static_cast<int>(del_status));
+                    e.message());
             }
         }
     }
