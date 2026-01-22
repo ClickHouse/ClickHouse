@@ -477,6 +477,11 @@ void considerEnablingParallelReplicas(
                     return;
                 }
 
+                ReadFromMergeTree * local_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
+                if (!local_plan_reading_step)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
+                chassert(local_plan_reading_step->getAnalyzedResult() == nullptr);
+                local_plan_reading_step->setAnalyzedResult(analysis);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));
                 return;
             }
