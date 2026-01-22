@@ -3,7 +3,6 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SymbolIndex.h>
-#include <Common/ArenaAllocator.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -13,7 +12,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <filesystem>
 
 namespace DB
 {
