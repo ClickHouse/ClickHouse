@@ -273,7 +273,7 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
 
         UInt64 num_keys = nested_column->size();
         writeBinaryLittleEndian(num_keys, *stream);
-        dict_inner_serialization->serializeBinaryBulk(*nested_column, *stream, 0, num_keys);
+        dictionary_inner_serialization->serializeBinaryBulk(*nested_column, *stream, 0, num_keys);
         low_cardinality_state->shared_dictionary = nullptr;
     }
 }
@@ -512,7 +512,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
         const auto & nested_column = global_dictionary->getNestedNotNullableColumn();
         UInt64 num_keys = nested_column->size();
         writeBinaryLittleEndian(num_keys, *keys_stream);
-        dict_inner_serialization->serializeBinaryBulk(*nested_column, *keys_stream, 0, num_keys);
+        dictionary_inner_serialization->serializeBinaryBulk(*nested_column, *keys_stream, 0, num_keys);
         low_cardinality_state->shared_dictionary = nullptr;
     }
 
@@ -520,7 +520,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
     {
         UInt64 num_keys = keys->size();
         writeBinaryLittleEndian(num_keys, *indexes_stream);
-        dict_inner_serialization->serializeBinaryBulk(*keys, *indexes_stream, 0, num_keys);
+        dictionary_inner_serialization->serializeBinaryBulk(*keys, *indexes_stream, 0, num_keys);
     }
 
     UInt64 num_rows = positions->size();
@@ -569,7 +569,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
         auto keys_type = removeNullable(dictionary_type);
         auto global_dict_keys = keys_type->createColumn();
-        dict_inner_serialization->deserializeBinaryBulk(*global_dict_keys, *keys_stream, 0, num_keys, 0);
+        dictionary_inner_serialization->deserializeBinaryBulk(*global_dict_keys, *keys_stream, 0, num_keys, 0);
 
         auto column_unique = DataTypeLowCardinality::createColumnUnique(*dictionary_type, std::move(global_dict_keys));
         low_cardinality_state->global_dictionary = std::move(column_unique);
@@ -582,7 +582,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
         auto keys_type = removeNullable(dictionary_type);
         auto additional_keys = keys_type->createColumn();
-        dict_inner_serialization->deserializeBinaryBulk(*additional_keys, *indexes_stream, 0, num_keys, 0);
+        dictionary_inner_serialization->deserializeBinaryBulk(*additional_keys, *indexes_stream, 0, num_keys, 0);
         low_cardinality_state->additional_keys = std::move(additional_keys);
 
         if (!low_cardinality_state->index_type.need_global_dictionary && dictionary_type->isNullable())
@@ -707,11 +707,11 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
 void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->serializeBinary(field, ostr, settings);
+    dictionary_serialization->serializeBinary(field, ostr, settings);
 }
 void SerializationLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    dictionary_type->getDefaultSerialization()->deserializeBinary(field, istr, settings);
+    dictionary_serialization->deserializeBinary(field, istr, settings);
 }
 
 void SerializationLowCardinality::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -824,7 +824,7 @@ void SerializationLowCardinality::serializeImpl(
 {
     const auto & low_cardinality_column = getColumnLowCardinality(column);
     size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
-    auto serialization = dictionary_type->getDefaultSerialization();
+    auto serialization = dictionary_serialization;
     (serialization.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, std::forward<Args>(args)...);
 }
 
@@ -835,7 +835,7 @@ void SerializationLowCardinality::deserializeImpl(
     auto & low_cardinality_column = getColumnLowCardinality(column);
     auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
 
-    auto serialization = dictionary_type->getDefaultSerialization();
+    auto serialization = dictionary_serialization;
     (serialization.get()->*func)(*temp_column, std::forward<Args>(args)...);
 
     low_cardinality_column.insertFromFullColumn(*temp_column, 0);
@@ -848,7 +848,7 @@ bool SerializationLowCardinality::tryDeserializeImpl(
     auto & low_cardinality_column = getColumnLowCardinality(column);
     auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
 
-    auto serialization = dictionary_type->getDefaultSerialization();
+    auto serialization = dictionary_serialization;
     if (!(serialization.get()->*func)(*temp_column, std::forward<Args>(args)...))
         return false;
 

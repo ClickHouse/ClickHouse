@@ -110,7 +110,7 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
         chassert(shared_variant_global_discr.has_value());
         settings.path.push_back(Substream::DynamicData);
         dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(
-            ColumnDynamic::getSharedVariantDataType()->getDefaultSerialization(),
+            shared_variant_serialization,
             ColumnDynamic::getSharedVariantTypeName(),
             *shared_variant_global_discr);
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnDynamic.h>
 
@@ -12,7 +13,11 @@ class SerializationDynamicElement;
 class SerializationDynamic : public ISerialization
 {
 public:
-    explicit SerializationDynamic(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES) : max_dynamic_types(max_dynamic_types_)
+    explicit SerializationDynamic(
+        size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES,
+        const SerializationInfoSettings & serialization_info_settings_ = {})
+        : max_dynamic_types(max_dynamic_types_)
+        , serialization_info_settings(serialization_info_settings_)
     {
     }
 
@@ -137,6 +142,8 @@ public:
 
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
 
+    SerializationPtr createSerializationForType(const DataTypePtr & type) const;
+
 private:
     friend SerializationDynamicElement;
 
@@ -163,6 +170,7 @@ private:
     };
 
     size_t max_dynamic_types;
+    const SerializationInfoSettings & serialization_info_settings;
 };
 
 }

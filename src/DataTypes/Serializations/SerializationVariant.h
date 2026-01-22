@@ -72,7 +72,7 @@ public:
 
     using VariantSerializations = std::vector<SerializationPtr>;
 
-    explicit SerializationVariant(const DataTypes & variant_types_, const String & variant_name_);
+    explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -217,9 +217,9 @@ private:
         std::function<bool(IColumn & variant_columm, const SerializationPtr & nested, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
         const FormatSettings & settings) const;
 
+    DataTypes variant_types;
     VariantSerializations variant_serializations;
     std::vector<String> variant_names;
-    DataTypes variant_types;
     std::vector<size_t> deserialize_text_order;
     /// Name of Variant data type for better exception messages.
     String variant_name;

@@ -68,7 +68,7 @@ public:
 
     void updateHashImpl(SipHash & hash) const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     const DataTypePtr & getNestedType() const { return nested; }
 
