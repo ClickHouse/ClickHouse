@@ -107,13 +107,12 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     }
     else
     {
-        if (s_temporary.ignore(pos, expected))
-            temporary = true;
-
         if (s_view.ignore(pos, expected))
             is_view = true;
         else if (s_dictionary.ignore(pos, expected))
             is_dictionary = true;
+        else if (s_temporary.ignore(pos, expected))
+            temporary = true;
 
         /// for TRUNCATE queries TABLE keyword is assumed as default and can be skipped
         if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && kind != ASTDropQuery::Kind::Truncate))
@@ -178,7 +177,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->cluster = cluster_str;
 
     if (database_and_tables && database_and_tables->as<ASTExpressionList &>().children.size() == 1)
-        node = query->getRewrittenASTsOfSingleTable(query)[0];
+        node = query->getRewrittenASTsOfSingleTable()[0];
 
     return true;
 }

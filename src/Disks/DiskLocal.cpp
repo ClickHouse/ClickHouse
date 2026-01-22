@@ -14,7 +14,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <filesystem>
-#include <memory>
 #include <system_error>
 #include <fcntl.h>
 #include <unistd.h>
@@ -27,14 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <pcg_random.hpp>
 #include <Common/logger_useful.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
-// On illumos, <sys/regset.h> defines FS as a macro (x86 segment register).
-// Undef it to allow use of the FS:: namespace from filesystemHelpers.h.
-#ifdef FS
-#  undef FS
-#endif
 
 namespace CurrentMetrics
 {
@@ -60,6 +52,22 @@ std::mutex DiskLocal::reservation_mutex;
 
 
 using DiskLocalPtr = std::shared_ptr<DiskLocal>;
+
+std::optional<size_t> fileSizeSafe(const fs::path & path)
+{
+    std::error_code ec;
+
+    size_t size = fs::file_size(path, ec);
+    if (!ec)
+        return size;
+
+    if (ec == std::errc::no_such_file_or_directory)
+        return std::nullopt;
+    if (ec == std::errc::operation_not_supported)
+        return std::nullopt;
+
+    throw fs::filesystem_error("DiskLocal", path, ec);
+}
 
 class DiskLocalReservation : public IReservation
 {
@@ -286,6 +294,12 @@ void DiskLocal::createDirectories(const String & path)
     fs::create_directories(fs::path(disk_path) / path);
 }
 
+void DiskLocal::clearDirectory(const String & path)
+{
+    for (const auto & entry : fs::directory_iterator(fs::path(disk_path) / path))
+        (void)fs::remove(entry.path());
+}
+
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 {
     fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
@@ -322,9 +336,11 @@ bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const st
     return DB::renameExchangeIfSupported(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint) const
+std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint);
+    if (!file_size.has_value())
+        file_size = fileSizeSafe(fs::path(disk_path) / path);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -575,7 +591,7 @@ try
     ReadSettings read_settings;
     /// Proper disk read checking requires direct io
     read_settings.direct_io_threshold = 1;
-    auto buf = readFile(disk_checker_path, read_settings, {});
+    auto buf = readFile(disk_checker_path, read_settings, {}, {});
     UInt32 magic_number;
     readIntBinary(magic_number, *buf);
     if (buf->eof())
@@ -765,12 +781,6 @@ void DiskLocal::chmod(const String & path, mode_t mode)
     if (::chmod(full_path.string().c_str(), mode) == 0)
         return;
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot chmod file: {}", path);
-}
-
-ObjectStoragePtr DiskLocal::getObjectStorage()
-{
-    LocalObjectStorageSettings settings_object_storage(name, disk_path, /* read_only */false);
-    return std::make_shared<LocalObjectStorage>(settings_object_storage);
 }
 
 void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)

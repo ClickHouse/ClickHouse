@@ -75,8 +75,7 @@ public:
         void merge(const Data & rhs, Arena * arena)
         {
             reserve(size + rhs.size, arena);
-            if (rhs.size)
-                memcpy(elements + size, rhs.elements, rhs.size * sizeof(Element));
+            memcpy(elements + size, rhs.elements, rhs.size * sizeof(Element));
             size += rhs.size;
         }
 

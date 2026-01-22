@@ -100,9 +100,6 @@ using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjecti
 class StorageReplicatedMergeTree final : public MergeTreeData
 {
 public:
-    /** For the system table replicas. */
-    using ReplicatedStatus = ReplicatedTableStatus;
-
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
     StorageReplicatedMergeTree(
@@ -207,6 +204,8 @@ public:
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
+    void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
+
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     void onActionLockRemove(StorageActionBlockType action_type) override;
@@ -216,7 +215,7 @@ public:
     bool waitForProcessingQueue(UInt64 max_wait_milliseconds, SyncReplicaMode sync_mode, std::unordered_set<String> source_replicas);
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
-    void getStatus(ReplicatedStatus & res, bool with_zk_fields = true);
+    void getStatus(ReplicatedTableStatus & res, bool with_zk_fields = true);
 
     using LogEntriesData = std::vector<ReplicatedMergeTreeLogEntryData>;
     void getQueue(LogEntriesData & res, String & replica_name);
@@ -241,7 +240,7 @@ public:
     bool canUseAdaptiveGranularity() const override;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override;
+    void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const override;
 
     /// Makes backup entries to backup the data of the storage.
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -379,7 +378,8 @@ private:
     size_t clearOldPartsAndRemoveFromZK();
     void clearOldPartsAndRemoveFromZKImpl(zkutil::ZooKeeperPtr zookeeper, DataPartsVector && parts);
 
-    friend class ReplicatedMergeTreeSink;
+    template<bool async_insert>
+    friend class ReplicatedMergeTreeSinkImpl;
     friend class ReplicatedMergeTreeSinkPatch;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
@@ -450,6 +450,7 @@ private:
 
     InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
+    MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
 
@@ -497,6 +498,7 @@ private:
     BackgroundSchedulePoolTaskHolder queue_updating_task;
 
     BackgroundSchedulePoolTaskHolder mutations_updating_task;
+    Coordination::WatchCallbackPtr mutations_watch_callback;
 
     /// A task that selects parts to merge.
     BackgroundSchedulePoolTaskHolder merge_selecting_task;
@@ -550,7 +552,7 @@ private:
         std::shared_ptr<std::atomic<bool>> exists;
     };
 
-    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks TSA_GUARDED_BY(existing_zero_copy_locks_mutex);
+    std::unordered_map<String, ZeroCopyLockDescription> existing_zero_copy_locks;
 
     void readLocalImpl(
         QueryPlan & query_plan,
@@ -826,21 +828,21 @@ private:
     /// Creates new block number if block with such block_id does not exist
     /// If zookeeper_path_prefix specified then allocate block number on this path
     /// (can be used if we want to allocate blocks on other replicas)
-    EphemeralLockInZooKeeper allocateBlockNumber(
+    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
         const zkutil::ZooKeeperPtr & zookeeper,
-        const std::vector<std::string> & zookeeper_block_id_paths = {},
+        const String & zookeeper_block_id_path = "",
         const String & zookeeper_path_prefix = "",
         const std::optional<String> & znode_data = std::nullopt) const;
 
-    EphemeralLockInZooKeeper allocateBlockNumber(
+    template<typename T>
+    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id,
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
-        const std::vector<std::string> & zookeeper_block_id_paths = {},
+        const T & zookeeper_block_id_path,
         const String & zookeeper_path_prefix = "",
         const std::optional<String> & znode_data = std::nullopt) const;
 
-    using WatchEventByPath = std::unordered_map<std::string, Coordination::EventPtr>;
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica.
       *
@@ -851,20 +853,18 @@ private:
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       */
     void waitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-                                             Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events,
-                                             const String & error_context = {});
+                                             Int64 wait_for_inactive_timeout, const String & error_context = {});
     Strings tryWaitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
-                                                   Int64 wait_for_inactive_timeout, WatchEventByPath & watch_events);
+                                                   Int64 wait_for_inactive_timeout);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
     bool tryWaitForReplicaToProcessLogEntry(const String & table_zookeeper_path, const String & replica_name,
-                                            const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout,
-                                            Coordination::EventPtr & watch_event);
+                                            const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout = 0);
 
     /// Depending on settings, do nothing or wait for this replica or all replicas process log entry.
-    void waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, WatchEventByPath & watch_events, const String & error_context = {});
+    void waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, const String & error_context = {});
 
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
@@ -883,7 +883,6 @@ private:
     mutable std::unordered_set<std::string> existing_nodes_cache;
     mutable std::mutex existing_nodes_cache_mutex;
     bool existsNodeCached(const ZooKeeperWithFaultInjectionPtr & zookeeper, const std::string & path) const;
-    void tryRemoveNodeCache(const std::string & path) const;
 
     /// Cancels INSERTs in the block range by removing ephemeral block numbers
     void clearLockedBlockNumbersInPartition(zkutil::ZooKeeper & zookeeper, const String & partition_id, Int64 min_block_num, Int64 max_block_num);
@@ -912,7 +911,7 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context) override;
-    PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) override;
+    PartitionCommandsResultInfo attachPartition(const ASTPtr & partition, const StorageMetadataPtr & metadata_snapshot, bool part, ContextPtr query_context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
     void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context) override;
@@ -1014,8 +1013,8 @@ private:
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {
-        explicit DataValidationTasks(DataPartsVector && parts_, ReplicatedMergeTreePartCheckThread::TemporaryPause && pause_)
-            : pause(std::move(pause_)), parts(std::move(parts_)), it(parts.begin())
+        explicit DataValidationTasks(DataPartsVector && parts_, std::unique_lock<std::mutex> && parts_check_lock_)
+            : parts_check_lock(std::move(parts_check_lock_)), parts(std::move(parts_)), it(parts.begin())
         {}
 
         DataPartPtr next()
@@ -1032,9 +1031,7 @@ private:
             return std::distance(it, parts.end());
         }
 
-        /// Pauses the part check thread while this object exists.
-        /// Safe to destroy from any thread (unlike unique_lock which has thread affinity).
-        ReplicatedMergeTreePartCheckThread::TemporaryPause pause;
+        std::unique_lock<std::mutex> parts_check_lock;
 
         mutable std::mutex mutex;
         DataPartsVector parts;

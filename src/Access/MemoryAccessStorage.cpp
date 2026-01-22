@@ -68,7 +68,7 @@ bool MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & ne
 }
 
 
-bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool notify)
+bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
@@ -116,7 +116,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     if (name_collision && (id_by_name != id))
     {
         assert(replace_if_exists);
-        removeNoLock(id_by_name, /* throw_if_not_exists= */ true, /* notify= */ notify); // NOLINT
+        removeNoLock(id_by_name, /* throw_if_not_exists= */ true); // NOLINT
     }
 
     if (id_collision)
@@ -134,12 +134,11 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
                     assert(inserted);
                 }
                 existing_entry.entity = new_entity;
-                if (notify)
-                    changes_notifier.onEntityUpdated(id, new_entity);
+                changes_notifier.onEntityUpdated(id, new_entity);
             }
             return true;
         }
-        removeNoLock(id, /* throw_if_not_exists= */ true, /* notify= */ notify); // NOLINT
+        removeNoLock(id, /* throw_if_not_exists= */ true); // NOLINT
     }
 
     /// Do insertion.
@@ -147,8 +146,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     entry.id = id;
     entry.entity = new_entity;
     entries_by_name[name] = &entry;
-    if (notify)
-        changes_notifier.onEntityAdded(id, new_entity);
+    changes_notifier.onEntityAdded(id, new_entity);
     return true;
 }
 
@@ -160,7 +158,7 @@ bool MemoryAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 }
 
 
-bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, bool notify)
+bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
@@ -181,8 +179,7 @@ bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists
     entries_by_name.erase(name);
     entries_by_id.erase(it);
 
-    if (notify)
-        changes_notifier.onEntityRemoved(removed_id, type);
+    changes_notifier.onEntityRemoved(removed_id, type);
     return true;
 }
 
@@ -194,7 +191,7 @@ bool MemoryAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_
 }
 
 
-bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, bool notify)
+bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
@@ -228,8 +225,7 @@ bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
         entries_by_name[new_entity->getName()] = &entry;
     }
 
-    if (notify)
-        changes_notifier.onEntityUpdated(id, new_entity);
+    changes_notifier.onEntityUpdated(id, new_entity);
     return true;
 }
 
@@ -269,12 +265,6 @@ void MemoryAccessStorage::setAll(const std::vector<AccessEntityPtr> & all_entiti
 
 void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities)
 {
-    setAll(all_entities, /* notify= */ true);
-}
-
-
-void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, bool notify)
-{
     std::lock_guard lock{mutex};
 
     /// Remove conflicting entities from the specified list.
@@ -290,7 +280,7 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
 
     /// Insert or update entities.
     for (const auto & [id, entity] : entities_without_conflicts)
-        insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false, /* conflicting_id = */ nullptr, /* notify= */ notify);
+        insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false, /* conflicting_id = */ nullptr);
 }
 
 }
