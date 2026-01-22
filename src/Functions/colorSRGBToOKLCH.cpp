@@ -8,20 +8,21 @@ namespace DB
   */
 namespace
 {
-class FunctionColorSRGBToOKLCH : public ColorConversionFromSRGBBase<FunctionColorSRGBToOKLCH>
+class FunctionColorSRGBToOKLCH : public ColorConversionFromSRGBBase
 {
 public:
     static constexpr auto name = "colorSRGBToOKLCH";
 
     explicit FunctionColorSRGBToOKLCH(ContextPtr context_)
-        : ColorConversionFromSRGBBase<FunctionColorSRGBToOKLCH>(context_) {}
+        : ColorConversionFromSRGBBase(context_) {}
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionColorSRGBToOKLCH>(context_); }
 
     String getName() const override { return name; }
 
+protected:
     /// sRGB -> OKLCH conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
-    ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const
+    ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const override
     {
         /// Step 1-3: sRGB to OKLab (handled by ColorConversion namespace helper)
         ColorConversion::Color oklab = ColorConversion::srgbToOklab(rgb, gamma);

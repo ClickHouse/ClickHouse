@@ -26,7 +26,7 @@ namespace ColorConversion
 {
     /// Conversion constants for conversion between OKLCH and sRGB
     ///
-    /// Source: Björn Ottosson, "OkLab – A perceptual colour space", https://bottosson.github.io/posts/oklab/
+    /// Source: Björn Ottosson, “OkLab – A perceptual colour space”, https://bottosson.github.io/posts/oklab/
 
     constexpr Float64 epsilon = 1e-6;           /// epsilon used when Chroma is approximately 0; below this value we set Chroma = Hue = 0.
     constexpr Float64 rad2deg = 57.2957795131;  /// 180 / pi (radians -> degrees)
@@ -188,7 +188,6 @@ public:
 /** Base class for functions that convert color from sRGB color space to perceptual color spaces.
   * Returns a tuple of type Tuple(Float64, Float64, Float64).
   */
-template <typename Derived>
 class ColorConversionFromSRGBBase : public ColorConversionBase
 {
 public:
@@ -232,8 +231,8 @@ public:
             ColorConversion::Color rgb_data{red_data[row], green_data[row], blue_data[row]};
             Float64 gamma_cur = gamma_data ? (*gamma_data)[row] : ColorConversion::default_gamma;
 
-            /// Call derived class conversion function
-            ColorConversion::Color res = static_cast<const Derived*>(this)->convertFromSrgb(rgb_data, gamma_cur);
+            /// Call derived class conversion function via virtual dispatch
+            ColorConversion::Color res = convertFromSrgb(rgb_data, gamma_cur);
 
             channel0_data.push_back(res[0]);
             channel1_data.push_back(res[1]);
@@ -242,12 +241,15 @@ public:
 
         return ColumnTuple::create(Columns({std::move(col_channel0), std::move(col_channel1), std::move(col_channel2)}));
     }
+
+protected:
+    /// Pure virtual function - derived classes MUST implement this
+    virtual ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const = 0;
 };
 
 /** Base class for functions that convert color from perceptual color spaces to sRGB color space.
   * Returns a tuple of type Tuple(Float64, Float64, Float64).
   */
-template <typename Derived>
 class ColorConversionToSRGBBase : public ColorConversionBase
 {
 public:
@@ -291,7 +293,8 @@ public:
             ColorConversion::Color input_color{channel0_data[row], channel1_data[row], channel2_data[row]};
             Float64 gamma_cur = gamma_data ? (*gamma_data)[row] : ColorConversion::default_gamma;
 
-            ColorConversion::Color res = static_cast<const Derived*>(this)->convertToSrgb(input_color, gamma_cur);
+            /// Call derived class conversion function via virtual dispatch
+            ColorConversion::Color res = convertToSrgb(input_color, gamma_cur);
 
             red_data.push_back(res[0]);
             green_data.push_back(res[1]);
@@ -300,6 +303,10 @@ public:
 
         return ColumnTuple::create(Columns({std::move(col_red), std::move(col_green), std::move(col_blue)}));
     }
+
+protected:
+    /// Pure virtual function - derived classes MUST implement this
+    virtual ColorConversion::Color convertToSrgb(const ColorConversion::Color & color, Float64 gamma) const = 0;
 };
 
 }

@@ -1,13 +1,10 @@
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/ColorConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/ITupleFunction.h>
-#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -17,20 +14,21 @@ namespace DB
   */
 namespace
 {
-class FunctionColorOKLCHToSRGB : public ColorConversionToSRGBBase<FunctionColorOKLCHToSRGB>
+class FunctionColorOKLCHToSRGB : public ColorConversionToSRGBBase
 {
 public:
     static constexpr auto name = "colorOKLCHToSRGB";
 
     explicit FunctionColorOKLCHToSRGB(ContextPtr context_)
-        : ColorConversionToSRGBBase<FunctionColorOKLCHToSRGB>(context_) {}
+        : ColorConversionToSRGBBase(context_) {}
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionColorOKLCHToSRGB>(context_); }
 
     String getName() const override { return name; }
 
+protected:
     /// OKLCH -> sRGB conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
-    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklch, Float64 gamma) const
+    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklch, Float64 gamma) const override
     {
         /// Step 1: OKLCH to OKLab (cylindrical to Cartesian)
         Float64 chroma = oklch[1];

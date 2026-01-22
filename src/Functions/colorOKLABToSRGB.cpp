@@ -1,13 +1,10 @@
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/ColorConversion.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/ITupleFunction.h>
-#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -17,20 +14,21 @@ namespace DB
   */
 namespace
 {
-class FunctionColorOKLABToSRGB : public ColorConversionToSRGBBase<FunctionColorOKLABToSRGB>
+class FunctionColorOKLABToSRGB : public ColorConversionToSRGBBase
 {
 public:
     static constexpr auto name = "colorOKLABToSRGB";
 
     explicit FunctionColorOKLABToSRGB(ContextPtr context_)
-        : ColorConversionToSRGBBase<FunctionColorOKLABToSRGB>(context_) {}
+        : ColorConversionToSRGBBase(context_) {}
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionColorOKLABToSRGB>(context_); }
 
     String getName() const override { return name; }
 
+protected:
     /// OKLAB -> sRGB conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
-    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklab, Float64 gamma) const
+    ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklab, Float64 gamma) const override
     {
         /// OKLAB is already in Cartesian form, so we can directly convert to sRGB
         /// Steps 1-3: OKLab to sRGB (handled by ColorConversion namespace helper)
