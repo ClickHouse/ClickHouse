@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-TABLE="default.tm1"
+TABLE="default.tm_$RANDOM_$RANDOM"
 PARQUET_FILE="${USER_FILES_PATH}/03793_parquet_complex_types_fix.parquet"
 
 rm -rf "${PARQUET_FILE}"
@@ -17,8 +17,7 @@ CREATE TABLE ${TABLE}
 (
     a Map(Tuple(a String, b String), String)
 )
-ENGINE = MergeTree
-ORDER BY tuple();
+ENGINE = Memory();
 
 INSERT INTO ${TABLE}
 SELECT mapFromArrays(
