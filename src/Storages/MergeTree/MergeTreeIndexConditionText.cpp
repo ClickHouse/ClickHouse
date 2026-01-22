@@ -848,27 +848,23 @@ void applyTextIndexFunctionParams(
     std::unique_ptr<ITokenExtractor> token_extractor,
     std::vector<String> search_tokens)
 {
-    if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
+    chassert(function_dag_node != nullptr && function_dag_node->function_base != nullptr);
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_dag_node->function_base.get());
+    chassert(adaptor != nullptr);
+
+    if (function_name == "hasAnyTokens")
     {
-        chassert(function_dag_node != nullptr && function_dag_node->function_base != nullptr);
-
-        const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(function_dag_node->function_base.get());
-        chassert(adaptor != nullptr);
-
-        if (function_name == "hasAnyTokens")
-        {
-            auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits> &>(*adaptor->getFunction());
-            search_function.setTokenExtractor(std::move(token_extractor));
-            search_function.setSearchTokens(search_tokens);
-        }
-        else
-        {
-            auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAllTokensTraits> &>(*adaptor->getFunction());
-            search_function.setTokenExtractor(std::move(token_extractor));
-            search_function.setSearchTokens(search_tokens);
-        }
+        auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits> &>(*adaptor->getFunction());
+        search_function.setTokenExtractor(std::move(token_extractor));
+        search_function.setSearchTokens(search_tokens);
+    }
+    else if (function_name == "hasAllTokens")
+    {
+        auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAllTokensTraits> &>(*adaptor->getFunction());
+        search_function.setTokenExtractor(std::move(token_extractor));
+        search_function.setSearchTokens(search_tokens);
     }
 
-    /// There is nothing to apply for other text index functions.
+    /// There is nothing to apply for other text index functions yet.
 }
 }

@@ -342,9 +342,9 @@ private:
             if (!info.is_fully_materialied)
             {
                 default_expression = convertNodeToAST(function_node);
-                if (auto * function = default_expression->as<ASTFunction>())
+                if (search_query->function_name == "hasAnyTokens" || search_query->function_name == "hasAllTokens")
                 {
-                    if (search_query->function_name == "hasAnyTokens" || search_query->function_name == "hasAllTokens")
+                    if (auto * function = default_expression->as<ASTFunction>())
                         function->addConfigurator(
                             [function_name = search_query->function_name,
                              search_tokens = search_query->tokens,
