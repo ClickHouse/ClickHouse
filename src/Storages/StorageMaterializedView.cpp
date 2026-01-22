@@ -139,7 +139,7 @@ StorageMaterializedView::StorageMaterializedView(
                         "either ENGINE or an existing table in a TO clause");
 
     if (to_table_engine && to_table_engine->primary_key)
-        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->getChild(*to_table_engine->primary_key),
+        storage_metadata.primary_key = KeyDescription::getKeyFromAST(to_table_engine->primary_key->ptr(),
                                                                      storage_metadata.columns,
                                                                      local_context->getGlobalContext());
 
@@ -286,22 +286,22 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->has_uuid = to_inner_uuid != UUIDHelpers::Nil;
 
         auto new_columns_list = std::make_shared<ASTColumns>();
-        new_columns_list->set(new_columns_list->columns, query.columns_list->getChild(*query.columns_list->columns));
+        new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
         if (storage_features.supports_skipping_indices)
         {
             if (query.columns_list->indices)
-                new_columns_list->set(new_columns_list->indices, query.columns_list->getChild(*query.columns_list->indices));
+                new_columns_list->set(new_columns_list->indices, query.columns_list->indices->ptr());
             if (query.columns_list->constraints)
-                new_columns_list->set(new_columns_list->constraints, query.columns_list->getChild(*query.columns_list->constraints));
+                new_columns_list->set(new_columns_list->constraints, query.columns_list->constraints->ptr());
             if (query.columns_list->primary_key)
-                new_columns_list->set(new_columns_list->primary_key, query.columns_list->getChild(*query.columns_list->primary_key));
+                new_columns_list->set(new_columns_list->primary_key, query.columns_list->primary_key->ptr());
             if (query.columns_list->primary_key_from_columns)
-                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->getChild(*query.columns_list->primary_key_from_columns));
+                new_columns_list->set(new_columns_list->primary_key_from_columns, query.columns_list->primary_key_from_columns->ptr());
         }
         if (storage_features.supports_projections)
         {
             if (query.columns_list->projections)
-                new_columns_list->set(new_columns_list->projections, query.columns_list->getChild(*query.columns_list->projections));
+                new_columns_list->set(new_columns_list->projections, query.columns_list->projections->ptr());
         }
 
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
@@ -399,8 +399,7 @@ void StorageMaterializedView::read(
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
                                                                         mv_header.getColumnsWithTypeAndName(),
-                                                                        ActionsDAG::MatchColumnsMode::Name,
-                                                                        context);
+                                                                        ActionsDAG::MatchColumnsMode::Name);
             /* Leave columns outside from materialized view structure as is.
              * They may be added in case of distributed query with JOIN.
              * In that case underlying table returns joined columns as well.
@@ -645,7 +644,7 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     {
         auto query_for_logging = drop_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
         UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds(), /*internal*/ true);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds());
         LOG_ERROR(getLogger("StorageMaterializedView"),
             "{}: Failed to drop temporary table after refresh. Table {} is left behind and requires manual cleanup.",
             getStorageID().getFullTableName(), table_id.getFullTableName());

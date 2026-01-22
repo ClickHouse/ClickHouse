@@ -251,12 +251,6 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->table_overrides, table_overrides->clone());
     if (targets)
         res->set(res->targets, targets->clone());
-    if (sql_security)
-        res->set(res->sql_security, sql_security->clone());
-    if (watermark_function)
-        res->set(res->watermark_function, watermark_function->clone());
-    if (lateness_function)
-        res->set(res->lateness_function, lateness_function->clone());
 
     if (dictionary)
     {
@@ -340,6 +334,8 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
             what = "VIEW";
         else if (is_materialized_view)
             what = "MATERIALIZED VIEW";
+        else if (is_live_view)
+            what = "LIVE VIEW";
         else if (is_window_view)
             what = "WINDOW VIEW";
 
@@ -643,8 +639,4 @@ void ASTCreateQuery::setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr s
     targets->setInnerEngine(target_kind, storage_def);
 }
 
-bool ASTCreateQuery::isCreateQueryWithImmediateInsertSelect() const
-{
-    return select && !attach && !is_create_empty && !is_ordinary_view && (!(is_materialized_view || is_window_view) || is_populate);
-}
 }

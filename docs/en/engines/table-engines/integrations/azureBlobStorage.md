@@ -3,7 +3,7 @@ description: 'This engine provides an integration with Azure Blob Storage ecosys
 sidebar_label: 'Azure Blob Storage'
 sidebar_position: 10
 slug: /engines/table-engines/integrations/azureBlobStorage
-title: 'AzureBlobStorage table engine'
+title: 'AzureBlobStorage Table Engine'
 doc_type: 'reference'
 ---
 

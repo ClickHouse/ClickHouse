@@ -204,7 +204,7 @@ public:
                     nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
                 else
                     nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(false);
+                to_concrete.getNullMapData().push_back(0);
             }
             else
             {
@@ -402,66 +402,6 @@ public:
         if constexpr (result_is_nullable)
             if (!memoryIsByte(null_map, row_begin, row_end, 1))
                 this->setFlag(place);
-    }
-
-    void addManyDefaults(
-        AggregateDataPtr __restrict /*place*/,
-        const IColumn ** /*columns*/,
-        size_t /*length*/,
-        Arena * /*arena*/) const override
-    {
-    }
-
-    void addBatchSparseSinglePlace(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr __restrict place,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
-        const auto & offsets = column_sparse.getOffsetsData();
-        const auto & values = column_sparse.getValuesColumn();
-        const auto * nested_column = &assert_cast<const ColumnNullable &>(values).getNestedColumn();
-
-        auto from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin() + 1;
-        auto to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin() + 1;
-
-        if (from >= to)
-            return;
-
-        this->setFlag(place);
-        this->nested_function->addBatchSinglePlace(from, to, this->nestedPlace(place), &nested_column, arena, -1);
-    }
-
-    void addBatchSparse(
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
-        const auto & offsets = column_sparse.getOffsetsData();
-        const auto & values = column_sparse.getValuesColumn();
-        const auto * nested_column = &assert_cast<const ColumnNullable &>(values).getNestedColumn();
-
-        size_t from = std::lower_bound(offsets.begin(), offsets.end(), row_begin) - offsets.begin();
-        size_t to = std::lower_bound(offsets.begin(), offsets.end(), row_end) - offsets.begin();
-
-        for (size_t i = from; i < to; ++i)
-        {
-            size_t offset = offsets[i];
-            if (places[offset])
-            {
-                this->nested_function->add(
-                    this->nestedPlace(places[offset] + place_offset),
-                    &nested_column, i + 1, arena);
-
-                this->setFlag(places[offset] + place_offset);
-            }
-        }
     }
 
 #if USE_EMBEDDED_COMPILER

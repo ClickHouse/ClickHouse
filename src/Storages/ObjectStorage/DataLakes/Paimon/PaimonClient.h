@@ -11,7 +11,7 @@
 #include <vector>
 #include <Core/TypeId.h>
 #include <Disks/IStoragePolicy.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
+#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/Decimal.h>
 #include <base/types.h>
@@ -20,6 +20,7 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <Poco/JSON/Array.h>
@@ -266,22 +267,19 @@ struct PaimonManifestEntry
         const size_t row_num,
         const PaimonTableSchema & table_schema_,
         const String & partition_default_name_)
-        : kind(toKind(
-              static_cast<int8_t>(
-                  avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_KIND}), TypeIndex::Int32)
-                      .safeGet<Int8>())))
+        : kind(
+            toKind(avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_KIND}), TypeIndex::Int32)
+                       .safeGet<Int8>()))
         , partition(
               avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_PARTITION}), TypeIndex::String)
                   .safeGet<String>())
-        , bucket(
-              static_cast<Int32>(
-                  avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_BUCKET}), TypeIndex::Int32)
-                      .safeGet<Int32>()))
-        , total_buckets(
-              static_cast<Int32>(
-                  avro_deserializer
-                      .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_TOTAL_BUCKETS}), TypeIndex::Int32)
-                      .safeGet<Int32>()))
+        , bucket(static_cast<Int32>(
+              avro_deserializer.getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_BUCKET}), TypeIndex::Int32)
+                  .safeGet<Int32>()))
+        , total_buckets(static_cast<Int32>(
+              avro_deserializer
+                  .getValueFromRowByName(row_num, concatPath({root_path, COLUMN_PAIMON_MANIFEST_TOTAL_BUCKETS}), TypeIndex::Int32)
+                  .safeGet<Int32>()))
         , file(
               avro_deserializer,
               concatPath({root_path, COLUMN_PAIMON_MANIFEST_FILE}),
@@ -303,16 +301,18 @@ struct PaimonManifest
 class PaimonTableClient : private WithContext
 {
 public:
-    PaimonTableClient(ObjectStoragePtr object_storage_, const String & table_location_, const DB::ContextPtr & context_);
+    PaimonTableClient(
+        ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, const DB::ContextPtr & context_);
 
     Poco::JSON::Object::Ptr getTableSchemaJSON(const std::pair<Int32, String> & schema_meta_info);
     std::pair<Int32, String> getLastestTableSchemaInfo();
-    std::optional<std::pair<Int64, String>> getLastestTableSnapshotInfo();
+    std::pair<Int64, String> getLastestTableSnapshotInfo();
     PaimonSnapshot getSnapshot(const std::pair<Int64, String> & snapshot_meta_info);
     PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name);
     std::vector<PaimonManifestFileMeta> getManifestMeta(String manifest_list_path);
 private:
     const ObjectStoragePtr object_storage;
+    const StorageObjectStorageConfigurationWeakPtr configuration;
     const String table_location;
     LoggerPtr log;
 };

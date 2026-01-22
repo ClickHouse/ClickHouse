@@ -6,7 +6,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
-#include <Common/Logger.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
 
@@ -45,11 +44,6 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
-
-Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
-    :  limits(limits_), transform_null_in(transform_null_in_), max_elements_to_fill(max_elements_to_fill_)
-    , log(getLogger("Set")), cast_cache(std::make_unique<InternalCastFunctionCache>())
-{}
 
 
 template <typename Method>
@@ -305,7 +299,7 @@ ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_
     size_t vec_res_size = original_data.size();
 
     // Prepare the precision null map
-    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, static_cast<UInt8>(0));
+    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, 0);
     NullMap & precision_null_map = precision_null_map_column->getData();
 
     // Determine which rows should be null based on precision loss
@@ -437,16 +431,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
-        /// Since we have optional support for Nullable(Tuple), if `data_types[i]` is `Tuple(...)` type, then
-        /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
-        /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.
-        /// To avoid that, we do not do `castColumnAccurateOrNull` for Tuple types.
-        auto target_type_without_nullable = removeNullable(data_types[i]);
-        bool is_tuple_type = typeid_cast<const DataTypeTuple *>(target_type_without_nullable.get()) != nullptr;
-
-        bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
-
-        if (use_cast_accurate_or_null)
+        if (!transform_null_in && data_types[i]->canBeInsideNullable())
         {
             result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
@@ -648,10 +633,6 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
             return std::tie(l.key_index, l.tuple_index) < std::tie(r.key_index, r.tuple_index);
         });
 
-    /// Deduplicate key columns. This can make the condition weaker, e.g.:
-    ///     (x + 1, x + 2) IN (10, 10)
-    /// effectively turns into:
-    ///     (x + 1) IN (10)
     indexes_mapping.erase(std::unique(
         indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)

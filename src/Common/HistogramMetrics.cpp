@@ -3,7 +3,7 @@
 
 #include <algorithm>
 #include <mutex>
-#include <boost/container_hash/hash.hpp>
+#include <shared_mutex>
 
 namespace HistogramMetrics
 {
@@ -66,73 +66,9 @@ namespace HistogramMetrics
     MetricFamily & KeeperResponseTime = Factory::instance().registerMetric(
         "keeper_response_time_ms",
         "The response time of Keeper, in milliseconds",
-        {10, 100, 150, 225, 337, 500, 750},
-        {"operation_type"}
+        {1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2500, 5000, 10000},
+        {"operation"}
     );
-    Metric & KeeperResponseTimeReadonly = KeeperResponseTime.withLabels({"readonly"});
-    Metric & KeeperResponseTimeWrite = KeeperResponseTime.withLabels({"write"});
-    Metric & KeeperResponseTimeMulti = KeeperResponseTime.withLabels({"multi"});
-
-    Metric & KeeperClientQueueDuration = Factory::instance().registerMetric(
-        "keeper_client_queue_duration_milliseconds",
-        "Time requests spend waiting to be enqueued and waiting in the queue before processed",
-        {10, 100, 250, 500}
-    );
-
-    MetricFamily & KeeperClientRoundtripDuration = Factory::instance().registerMetric(
-        "keeper_client_roundtrip_duration_milliseconds",
-        "Time from sending requests to receiving response from the Keeper (network + Keeper processing)",
-        {10, 100, 150, 225, 337, 500, 750},
-        {"operation_type"}
-    );
-
-
-    MetricFamily & KeeperServerPreprocessRequestDurationMetricFamily = Factory::instance().registerMetric(
-        "keeper_server_preprocess_request_duration_milliseconds",
-        "Time to preprocess request on the Keeper server",
-        {10, 100, 150, 225, 337, 500, 750},
-        {}
-    );
-    Metric & KeeperServerPreprocessRequestDuration = KeeperServerPreprocessRequestDurationMetricFamily.withLabels({});
-
-    MetricFamily & KeeperServerProcessRequestDuration = Factory::instance().registerMetric(
-        "keeper_server_process_request_duration_milliseconds",
-        "Time to process request on the Keeper server",
-        {10, 100, 150, 225, 337, 500, 750},
-        {"operation_type"}
-    );
-
-    MetricFamily & KeeperServerQueueDurationMetricFamily = Factory::instance().registerMetric(
-        "keeper_server_queue_duration_milliseconds",
-        "Time responses spend waiting to be enqueued and waiting in the queue before being processed",
-        {10, 100, 250, 500},
-        {}
-    );
-    Metric & KeeperServerQueueDuration = KeeperServerQueueDurationMetricFamily.withLabels({});
-
-    MetricFamily & KeeperServerSendDurationMetricFamily = Factory::instance().registerMetric(
-        "keeper_server_send_duration_milliseconds",
-        "Time to send responses on the Keeper server after dequeuing",
-        {10, 100, 250, 500},
-        {}
-    );
-    Metric & KeeperServerSendDuration = KeeperServerSendDurationMetricFamily.withLabels({});
-
-    MetricFamily & KeeperBatchSizeElementsMetricFamily = Factory::instance().registerMetric(
-        "keeper_batch_size_elements",
-        "Size of batch sent to Raft in elements.",
-        {4, 8, 16, 32, 64, 128, 256, 299},
-        {}
-    );
-    Metric & KeeperCurrentBatchSizeElements = KeeperBatchSizeElementsMetricFamily.withLabels({});
-
-    MetricFamily & KeeperBatchSizeBytesMetricFamily = Factory::instance().registerMetric(
-        "keeper_batch_size_bytes",
-        "Size of batch sent to Raft in bytes.",
-        {1 << 12, 1 << 13, 1 << 14, 1 << 15, 1 << 16, 1 << 17, 1 << 18, 307199},
-        {}
-    );
-    Metric & KeeperCurrentBatchSizeBytes = KeeperBatchSizeBytesMetricFamily.withLabels({});
 
     Metric::Metric(const Buckets & buckets_)
         : buckets(buckets_)
@@ -161,14 +97,16 @@ namespace HistogramMetrics
         return sum.load(std::memory_order_relaxed);
     }
 
-    size_t MetricFamily::LabelValuesHash::operator()(const LabelValues & label_values) const
+
+    size_t MetricFamily::LabelValuesHash::operator()(const LabelValues& label_values) const
     {
-        size_t result = 0;
-        for (const String & label_value : label_values)
+        SipHash hash;
+        hash.update(label_values.size());
+        for (const String& label_value : label_values)
         {
-            boost::hash_combine(result, label_value);
+            hash.update(label_value.data(), label_value.size());
         }
-        return result;
+        return hash.get64();
     }
 
     MetricFamily::MetricFamily(String name_, String documentation_, Buckets buckets_, Labels labels_)
@@ -181,7 +119,7 @@ namespace HistogramMetrics
 
     Metric & MetricFamily::withLabels(LabelValues label_values)
     {
-        chassert(label_values.size() == labels.size());
+        assert(label_values.size() == labels.size());
         {
             std::shared_lock lock(mutex);
             if (auto it = metrics.find(label_values); it != metrics.end())
@@ -207,11 +145,6 @@ namespace HistogramMetrics
         metric.withLabels(std::move(labels)).observe(value);
     }
 
-    void observe(Metric & metric, Value value)
-    {
-        metric.observe(value);
-    }
-
     Factory & Factory::instance()
     {
         static Factory factory;
@@ -225,11 +158,5 @@ namespace HistogramMetrics
             std::make_unique<MetricFamily>(std::move(name), std::move(documentation), std::move(buckets), std::move(labels))
         );
         return *registry.back();
-    }
-
-    Metric & Factory::registerMetric(String name, String documentation, Buckets buckets)
-    {
-        auto & family = registerMetric(std::move(name), std::move(documentation), std::move(buckets), {});
-        return family.withLabels({});
     }
 }

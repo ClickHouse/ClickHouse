@@ -13,7 +13,6 @@ namespace JoinStuff
 /// Flags needed to implement RIGHT and FULL JOINs.
 class JoinUsedFlags
 {
-public:
     using RawColumnsPtr = const Columns *;
     using UsedFlagsForColumns = std::vector<std::atomic_bool>;
 
@@ -26,6 +25,7 @@ public:
 
     bool need_flags;
 
+public:
     /// Update size for vector with flags.
     /// Calling this method invalidates existing flags.
     /// It can be called several times, but all of them should happen before using this structure.
@@ -45,21 +45,13 @@ public:
     }
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, bool prefer_use_maps_all>
-    void reinit(const Columns * columns, const ScatteredBlock::Selector & selector)
+    void reinit(const Columns * columns)
     {
         if constexpr (MapGetter<KIND, STRICTNESS, prefer_use_maps_all>::flagged)
         {
             assert(per_row_flags[columns].size() <= columns->at(0)->size());
             need_flags = true;
             per_row_flags[columns] = std::vector<std::atomic_bool>(columns->at(0)->size());
-
-            /// Mark all rows outside of selector as used.
-            /// We should not emit them in RIGHT/FULL JOIN result,
-            /// since they belongs to another shard, which will handle flags for these rows
-            for (auto & flag : per_row_flags[columns])
-                flag.store(true);
-            for (size_t index : selector)
-                per_row_flags[columns][index].store(false);
         }
     }
 
@@ -128,6 +120,7 @@ public:
         {
             return per_offset_flags[f.getOffset()].load();
         }
+
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
@@ -185,15 +178,6 @@ public:
             bool expected = false;
             return per_offset_flags[offset].compare_exchange_strong(expected, true);
         }
-    }
-
-    /// Are all offset flags set? (index 0 is skipped as it is a service index)
-    bool allOffsetFlagsSet() const noexcept
-    {
-        for (const auto & per_offset_flag : per_offset_flags)
-            if (!per_offset_flag.load(std::memory_order_relaxed))
-                return false;
-        return true;
     }
 };
 
