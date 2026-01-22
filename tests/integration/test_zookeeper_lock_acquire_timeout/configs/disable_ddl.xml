@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- Disable distributed DDL to prevent DDLWorker from interfering with our mutex test -->
+    <distributed_ddl remove="remove"/>
+</clickhouse>

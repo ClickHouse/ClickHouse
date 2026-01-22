@@ -322,6 +322,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
+    extern const SettingsMilliseconds get_zookeeper_lock_acquire_timeout_ms;
 }
 
 namespace MergeTreeSetting
@@ -396,6 +397,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
     extern const int TYPE_MISMATCH;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
@@ -425,10 +427,10 @@ struct ContextSharedPart : boost::noncopyable
     /// under context lock.
     mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
-    mutable std::mutex zookeeper_mutex;
+    mutable std::timed_mutex zookeeper_mutex;
 
-    mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
-    ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
+    mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper. Protected by zookeeper_mutex.
+    ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs. Protected by zookeeper_mutex.
 
     ConfigurationPtr sensitive_data_masker_config;
 
@@ -4580,7 +4582,12 @@ void recordZooKeeperConnectionLoss()
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
-    std::lock_guard lock(shared->zookeeper_mutex);
+    auto lock_acquire_timeout = getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+    if (hasQueryContext())
+        lock_acquire_timeout = getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
+    std::unique_lock lock(shared->zookeeper_mutex, std::defer_lock);
+    if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while acquiring ZooKeeper lock ({} ms)", lock_acquire_timeout.totalMilliseconds());
 
     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
 
