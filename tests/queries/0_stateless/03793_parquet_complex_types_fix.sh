@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 TABLE="default.tm_$RANDOM_$RANDOM"
-PARQUET_FILE="${USER_FILES_PATH}/03793_parquet_complex_types_fix.parquet"
+PARQUET_FILE="${USER_FILES_PATH}/03793_parquet_complex_types_fix_$RANDOM_$RANDOM.parquet"
 
 rm -rf "${PARQUET_FILE}"
 
