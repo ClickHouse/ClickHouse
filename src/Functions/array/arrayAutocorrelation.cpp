@@ -102,9 +102,8 @@ public:
         res_offsets.reserve(offsets.size());
 
         size_t current_offset = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (const auto next_offset : offsets)
         {
-            size_t next_offset = offsets[i];
             size_t array_size = next_offset - current_offset;
 
             impl(&data[current_offset], array_size, res_data);
