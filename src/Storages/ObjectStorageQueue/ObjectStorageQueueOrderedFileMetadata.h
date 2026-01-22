@@ -37,7 +37,6 @@ public:
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
         const std::string & zookeeper_name_,
-        ObjectStorageQueueBucketingMode bucketing_mode_,
         ObjectStorageQueuePartitioningMode partitioning_mode_,
         const ObjectStorageQueueFilenameParser * parser_,
         LoggerPtr log_);
@@ -55,12 +54,7 @@ public:
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 
-    static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(
-        const std::string & path,
-        size_t buckets_num,
-        ObjectStorageQueueBucketingMode bucketing_mode,
-        ObjectStorageQueuePartitioningMode partitioning_mode,
-        const ObjectStorageQueueFilenameParser * parser);
+    static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num);
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
@@ -76,7 +70,6 @@ public:
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
         const std::string & zookeeper_name_,
-        ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser,
         LoggerPtr log);

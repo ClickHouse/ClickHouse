@@ -115,7 +115,7 @@ struct FormatSettings
 
     bool input_format_ipv4_default_on_conversion_error = false;
     bool input_format_ipv6_default_on_conversion_error = false;
-    bool check_conversion_from_numbers_to_enum = true;
+    bool check_conversion_from_numbers_to_enum = false;
 
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;

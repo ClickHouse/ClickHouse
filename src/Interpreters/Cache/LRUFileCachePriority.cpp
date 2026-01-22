@@ -219,14 +219,13 @@ LRUFileCachePriority::iterateImpl(
 
         //LOG_TEST(log, "Entry: {}", entry.toString());
 
-        auto is_evictable_state = [&]() -> bool
+        auto is_evictable_state = [&](Entry::State entry_state) -> bool
         {
-            switch (entry.getState())
+            switch (entry_state)
             {
                 case Entry::State::Active:
                 {
-                    /// TODO: Inroduce a separate pre-Active state for zero size valid entries
-                    return entry.size > 0;
+                    return true;
                 }
                 case Entry::State::Invalidated:
                 {
@@ -261,7 +260,7 @@ LRUFileCachePriority::iterateImpl(
         };
 
         /// Check state without locked key as an optimization.
-        if (!is_evictable_state())
+        if (!is_evictable_state(entry.getState()))
         {
             ++it;
             continue;
@@ -280,7 +279,7 @@ LRUFileCachePriority::iterateImpl(
         }
 
         /// Reread entry state under locked key.
-        if (!is_evictable_state())
+        if (!is_evictable_state(entry.getState()))
         {
             ++it;
             continue;
@@ -606,12 +605,11 @@ void LRUFileCachePriority::LRUIterator::invalidate()
         cache_priority->state->sub(entry->size, 1);
         entry->size = 0;
     }
+    entry->setInvalidatedFlag();
 
     LOG_TEST(cache_priority->log,
-             "Invalidating entry in LRU queue {}: {}",
+             "Invalidated entry in LRU queue {}: {}",
              entry->toString(), cache_priority->getApproxStateInfoForLog());
-
-    entry->setInvalidatedFlag();
 }
 
 void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CacheStateGuard::Lock & lock)
