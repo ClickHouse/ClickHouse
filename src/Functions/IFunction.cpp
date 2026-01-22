@@ -9,6 +9,8 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Block.h>
+#include <Core/Field.h>
+#include <Core/RangeRef.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -57,6 +59,24 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 
 namespace
 {
+
+Field materializeFieldForMonotonicity(const ColumnValueRef & ref)
+{
+    if (ref.isNegativeInfinity())
+        return NEGATIVE_INFINITY;
+    if (ref.isPositiveInfinity())
+        return POSITIVE_INFINITY;
+
+    /// We don't have access to column metadata here, so treat missing column or NULL as +Inf,
+    if (!ref.column)
+        return POSITIVE_INFINITY;
+
+    Field out;
+    ref.column->get(ref.row, out);
+    if (out.isNull())
+        out = POSITIVE_INFINITY;
+    return out;
+}
 
 bool allArgumentsAreConstants(const ColumnsWithTypeAndName & args)
 {
@@ -602,6 +622,13 @@ IFunctionBase::Monotonicity IFunctionBase::getMonotonicityForRange(const IDataTy
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
 }
 
+IFunctionBase::Monotonicity IFunctionBase::getMonotonicityForRange(const IDataType & type, const ColumnValueRef & left, const ColumnValueRef & right) const
+{
+    const Field left_field = materializeFieldForMonotonicity(left);
+    const Field right_field = materializeFieldForMonotonicity(right);
+    return getMonotonicityForRange(type, left_field, right_field);
+}
+
 FieldIntervalPtr IFunctionBase::getPreimage(const IDataType & /*type*/, const Field & /*point*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its preimage", getName());
@@ -759,6 +786,13 @@ DataTypePtr IFunctionOverloadResolver::getReturnTypeImpl(const DataTypes & /*arg
 IFunctionBase::Monotonicity IFunction::getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} has no information about its monotonicity", getName());
+}
+
+IFunctionBase::Monotonicity IFunction::getMonotonicityForRange(const IDataType & type, const ColumnValueRef & left, const ColumnValueRef & right) const
+{
+    const Field left_field = materializeFieldForMonotonicity(left);
+    const Field right_field = materializeFieldForMonotonicity(right);
+    return getMonotonicityForRange(type, left_field, right_field);
 }
 
 FieldIntervalPtr IFunction::getPreimage(const IDataType & /*type*/, const Field & /*point*/) const

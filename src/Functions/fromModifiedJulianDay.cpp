@@ -126,7 +126,12 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
-            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true, };
+            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
+        }
+
+        Monotonicity getMonotonicityForRange(const IDataType &, const ColumnValueRef &, const ColumnValueRef &) const override
+        {
+            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
         }
 
     private:

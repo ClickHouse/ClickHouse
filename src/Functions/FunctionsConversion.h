@@ -19,6 +19,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/AccurateComparison.h>
+#include <Core/RangeRef.h>
 #include <Core/Settings.h>
 #include <Core/Types.h>
 #include <Core/callOnTypeIndex.h>
@@ -3023,6 +3024,14 @@ public:
         return Monotonic::get(type, left, right);
     }
 
+    Monotonicity getMonotonicityForRange(const IDataType & type, const ColumnValueRef & left, const ColumnValueRef & right) const override
+    {
+        if constexpr (requires(const IDataType & t, const ColumnValueRef & l, const ColumnValueRef & r) { Monotonic::get(t, l, r); })
+            return Monotonic::get(type, left, right);
+
+        return IFunction::getMonotonicityForRange(type, left, right);
+    }
+
 private:
     const FunctionConvertSettings settings;
 
@@ -3479,12 +3488,20 @@ struct PositiveMonotonicity
     {
         return { .is_monotonic = true };
     }
+    static IFunction::Monotonicity get(const IDataType &, const ColumnValueRef &, const ColumnValueRef &)
+    {
+        return { .is_monotonic = true };
+    }
 };
 
 struct UnknownMonotonicity
 {
     static bool has() { return false; }
     static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
+    {
+        return { };
+    }
+    static IFunction::Monotonicity get(const IDataType &, const ColumnValueRef &, const ColumnValueRef &)
     {
         return { };
     }
@@ -3652,6 +3669,133 @@ struct ToNumberMonotonicity
 
         UNREACHABLE();
     }
+
+    static IFunction::Monotonicity get(const IDataType & type, const ColumnValueRef & left, const ColumnValueRef & right)
+    {
+        if (!type.isValueRepresentedByNumber())
+            return {};
+
+        /// If type is same, the conversion is always monotonic.
+        /// (Enum has separate case, because it is different data type)
+        if (checkAndGetDataType<DataTypeNumber<T>>(&type) || checkAndGetDataType<DataTypeEnum<T>>(&type))
+            return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
+
+        const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
+        const IDataType * inner_type = low_cardinality ? low_cardinality->getDictionaryType().get() : &type;
+        WhichDataType which_inner_type(inner_type);
+
+        /// When converting to Float, the conversion is always monotonic.
+        if constexpr (is_floating_point<T>)
+        {
+            if (std::is_same_v<T, BFloat16> && (which_inner_type.isInt8() || which_inner_type.isUInt8()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            if (std::is_same_v<T, Float32> && (which_inner_type.isBFloat16() || which_inner_type.isInt8() || which_inner_type.isInt16()
+                || which_inner_type.isUInt8() || which_inner_type.isUInt16()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            if (std::is_same_v<T, Float64> && (which_inner_type.isBFloat16() || which_inner_type.isFloat32()
+                || which_inner_type.isInt8() || which_inner_type.isInt16() || which_inner_type.isInt32()
+                || which_inner_type.isUInt8() || which_inner_type.isUInt16() || which_inner_type.isUInt32()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            return { .is_monotonic = true, .is_always_monotonic = true };
+        }
+
+        auto is_unbounded = [](const ColumnValueRef & ref)
+        {
+            /// Unbounded ranges are passed as +/-Inf.
+            /// NULL values in key ranges are treated as +Inf in KeyCondition.cpp.
+            return ref.isInfinity() || !ref.column || ref.isNullAt();
+        };
+
+        /// If converting from Float, for monotonicity, arguments must fit in range of result type.
+        if (which_inner_type.isFloat())
+        {
+            if (is_unbounded(left) || is_unbounded(right))
+                return {};
+
+            Float64 left_float = left.column->getFloat64(left.row);
+            Float64 right_float = right.column->getFloat64(right.row);
+
+            if (left_float >= static_cast<Float64>(std::numeric_limits<T>::min())
+                && left_float <= static_cast<Float64>(std::numeric_limits<T>::max())
+                && right_float >= static_cast<Float64>(std::numeric_limits<T>::min())
+                && right_float <= static_cast<Float64>(std::numeric_limits<T>::max()))
+                return { .is_monotonic = true };
+
+            return {};
+        }
+
+        /// Integer cases.
+        /// See the comment in the Field-based overload.
+        if (!(which_inner_type.isNativeInteger() || which_inner_type.isEnum() || which_inner_type.isDateOrDate32() || which_inner_type.isDateTime()))
+            return {};
+
+        const bool left_is_null = is_unbounded(left);
+        const bool right_is_null = is_unbounded(right);
+
+        const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
+        const bool to_is_unsigned = is_unsigned_v<T>;
+
+        const size_t size_of_from = type.getSizeOfValueInMemory();
+        const size_t size_of_to = sizeof(T);
+
+        const bool left_in_first_half = left_is_null ? from_is_unsigned : (left.column->getInt(left.row) >= 0);
+        const bool right_in_first_half = right_is_null ? !from_is_unsigned : (right.column->getInt(right.row) >= 0);
+
+        /// Size of type is the same.
+        if (size_of_from == size_of_to)
+        {
+            if (from_is_unsigned == to_is_unsigned)
+                return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
+
+            if (left_in_first_half == right_in_first_half)
+                return { .is_monotonic = true };
+
+            return {};
+        }
+
+        /// Size of type is expanded.
+        if (size_of_from < size_of_to)
+        {
+            if (from_is_unsigned == to_is_unsigned)
+                return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
+
+            if (!to_is_unsigned)
+                return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
+
+            /// signed -> unsigned. If arguments from the same half, then function is monotonic.
+            if (left_in_first_half == right_in_first_half)
+                return { .is_monotonic = true };
+
+            return {};
+        }
+
+        /// Size of type is shrunk.
+        if (size_of_from > size_of_to)
+        {
+            /// Function cannot be monotonic on unbounded ranges.
+            if (left_is_null || right_is_null)
+                return {};
+
+            const UInt64 left_value = left.column->getUInt(left.row);
+            const UInt64 right_value = right.column->getUInt(right.row);
+
+            /// Function cannot be monotonic when left and right are not on the same ranges.
+            if (divideByRangeOfType(left_value) != divideByRangeOfType(right_value))
+                return {};
+
+            if (to_is_unsigned)
+                return { .is_monotonic = true };
+
+            // If To is signed, it's possible that the signedness is different after conversion. So we check it explicitly.
+            const bool is_monotonic = (T(left_value) >= 0) == (T(right_value) >= 0);
+            return { .is_monotonic = is_monotonic };
+        }
+
+        UNREACHABLE();
+    }
 };
 
 template <typename T>
@@ -3692,6 +3836,76 @@ struct ToDateMonotonicity
             return {.is_monotonic = true, .is_always_monotonic = true};
         }
     }
+
+    static IFunction::Monotonicity get(const IDataType & type, const ColumnValueRef & left, const ColumnValueRef & right)
+    {
+        auto which = WhichDataType(type);
+        if (which.isDateOrDate32() || which.isTime() || which.isTime64() || which.isDateTime() || which.isDateTime64() || which.isInt8()
+            || which.isInt16() || which.isUInt8() || which.isUInt16())
+        {
+            if (std::is_same_v<T, DataTypeDate> && (which.isDate() || which.isInt8() || which.isUInt8() || which.isUInt16()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            if (std::is_same_v<T, DataTypeDate32>
+                && (which.isDateOrDate32() || which.isInt8() || which.isInt16() || which.isUInt8() || which.isUInt16()))
+                return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+            return {.is_monotonic = true, .is_always_monotonic = true};
+        }
+
+        if (!isNativeNumber(type))
+            return {};
+
+        const bool left_is_null = left.isInfinity() || left.isNullAt();
+        const bool right_is_null = right.isInfinity() || right.isNullAt();
+
+        auto crosses_uint64_boundary = [&]() -> bool
+        {
+            if (!which.isUInt32() && !which.isUInt64())
+                return false;
+
+            chassert(left_is_null || left.column);
+            chassert(right_is_null || right.column);
+
+            const UInt64 left_value = left_is_null ? 0 : left.column->getUInt(left.row);
+            const UInt64 right_value = right_is_null ? 0 : right.column->getUInt(right.row);
+
+            return (left_is_null || left_value < 0xFFFF) && (right_is_null || right_value >= 0xFFFF);
+        };
+
+        auto crosses_int64_boundary = [&]() -> bool
+        {
+            if (!which.isInt32() && !which.isInt64())
+                return false;
+
+            chassert(left_is_null || left.column);
+            chassert(right_is_null || right.column);
+
+            const Int64 left_value = left_is_null ? 0 : left.column->getInt(left.row);
+            const Int64 right_value = right_is_null ? 0 : right.column->getInt(right.row);
+
+            return (left_is_null || left_value < 0xFFFF) && (right_is_null || right_value >= 0xFFFF);
+        };
+
+        auto crosses_float64_boundary = [&]() -> bool
+        {
+            if (!which.isFloat32() && !which.isFloat64())
+                return false;
+
+            chassert(left_is_null || left.column);
+            chassert(right_is_null || right.column);
+
+            const Float64 left_value = left_is_null ? 0 : left.column->getFloat64(left.row);
+            const Float64 right_value = right_is_null ? 0 : right.column->getFloat64(right.row);
+
+            return (left_is_null || left_value < 0xFFFF) && (right_is_null || right_value >= 0xFFFF);
+        };
+
+        if (crosses_uint64_boundary() || crosses_int64_boundary() || crosses_float64_boundary())
+            return {};
+
+        return {.is_monotonic = true, .is_always_monotonic = true};
+    }
 };
 
 template <typename T>
@@ -3715,6 +3929,22 @@ struct ToDateTimeMonotonicity
         }
         else
             return {};
+    }
+
+    static IFunction::Monotonicity get(const IDataType & type, const ColumnValueRef &, const ColumnValueRef &)
+    {
+        if (!type.isValueRepresentedByNumber())
+            return {};
+
+        auto which = WhichDataType(type);
+        if (std::is_same_v<T, DataTypeDateTime>
+            && (which.isDateTime() || which.isDate() || which.isUInt8() || which.isUInt16() || which.isUInt32()))
+            return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+        if (std::is_same_v<T, DataTypeDateTime64> && (which.isDateOrDate32OrDateTimeOrDateTime64() || which.isNativeInteger()))
+            return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
+
+        return {.is_monotonic = true, .is_always_monotonic = true};
     }
 };
 
@@ -3758,6 +3988,59 @@ struct ToStringMonotonicity
         {
             return (left.safeGet<Int64>() == 0 && right.safeGet<Int64>() == 0)
                 || (left.safeGet<Int64>() > 0 && right.safeGet<Int64>() > 0 && floor(log10(left.safeGet<Int64>())) == floor(log10(right.safeGet<Int64>())))
+                ? positive : not_monotonic;
+        }
+
+        return not_monotonic;
+    }
+
+    static IFunction::Monotonicity get(const IDataType & type, const ColumnValueRef & left, const ColumnValueRef & right)
+    {
+        IFunction::Monotonicity positive{ .is_monotonic = true };
+        IFunction::Monotonicity not_monotonic;
+
+        const auto * type_ptr = &type;
+        if (const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
+            type_ptr = low_cardinality_type->getDictionaryType().get();
+
+        /// Order on enum values (which is the order on integers) is completely arbitrary in respect to the order on strings.
+        if (WhichDataType(type).isEnum())
+            return not_monotonic;
+
+        /// `toString` function is monotonous if the argument is Date or Date32 or DateTime or String, or non-negative numbers with the same number of symbols.
+        if (checkDataTypes<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime, DataTypeString>(type_ptr))
+            return positive;
+
+        auto is_unbounded = [](const ColumnValueRef & ref)
+        {
+            return ref.isInfinity() || !ref.column || ref.isNullAt();
+        };
+
+        if (is_unbounded(left) || is_unbounded(right))
+            return {};
+
+        const IDataType * numeric_type_ptr = type_ptr;
+        if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(numeric_type_ptr))
+            numeric_type_ptr = nullable_type->getNestedType().get();
+
+        if (numeric_type_ptr->isValueRepresentedByUnsignedInteger())
+        {
+            const UInt64 left_value = left.column->getUInt(left.row);
+            const UInt64 right_value = right.column->getUInt(right.row);
+
+            return (left_value == 0 && right_value == 0)
+                || (floor(log10(static_cast<double>(left_value))) == floor(log10(static_cast<double>(right_value))))
+                ? positive : not_monotonic;
+        }
+
+        if (numeric_type_ptr->isValueRepresentedByInteger() && !numeric_type_ptr->isValueRepresentedByUnsignedInteger())
+        {
+            const Int64 left_value = left.column->getInt(left.row);
+            const Int64 right_value = right.column->getInt(right.row);
+
+            return (left_value == 0 && right_value == 0)
+                || (left_value > 0 && right_value > 0
+                    && floor(log10(static_cast<double>(left_value))) == floor(log10(static_cast<double>(right_value))))
                 ? positive : not_monotonic;
         }
 
@@ -4222,11 +4505,13 @@ class FunctionCast final : public IFunctionBase
 {
 public:
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
+    using MonotonicityForRangeRef = std::function<Monotonicity(const IDataType &, const ColumnValueRef &, const ColumnValueRef &)>;
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
 
     FunctionCast(ContextPtr context
             , const char * cast_name_
             , MonotonicityForRange && monotonicity_for_range_
+            , MonotonicityForRangeRef && monotonicity_for_range_ref_
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
             , std::optional<CastDiagnostic> diagnostic_
@@ -4234,7 +4519,8 @@ public:
             , FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
         : settings(context, date_time_overflow_behavior)
         , cast_name(cast_name_)
-        , monotonicity_for_range(std::move(monotonicity_for_range_))
+        , monotonicity_for_range_field(std::move(monotonicity_for_range_))
+        , monotonicity_for_range_ref(std::move(monotonicity_for_range_ref_))
         , argument_types(argument_types_)
         , return_type(return_type_)
         , diagnostic(std::move(diagnostic_))
@@ -4267,12 +4553,20 @@ public:
 
     bool hasInformationAboutMonotonicity() const override
     {
-        return static_cast<bool>(monotonicity_for_range);
+        return static_cast<bool>(monotonicity_for_range_field);
     }
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        return monotonicity_for_range(type, left, right);
+        return monotonicity_for_range_field(type, left, right);
+    }
+
+    Monotonicity getMonotonicityForRange(const IDataType & type, const ColumnValueRef & left, const ColumnValueRef & right) const override
+    {
+        if (monotonicity_for_range_ref)
+            return monotonicity_for_range_ref(type, left, right);
+
+        return IFunctionBase::getMonotonicityForRange(type, left, right);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -4286,7 +4580,8 @@ private:
     const FunctionConvertSettings settings;
 
     const char * cast_name;
-    MonotonicityForRange monotonicity_for_range;
+    MonotonicityForRange monotonicity_for_range_field;
+    MonotonicityForRangeRef monotonicity_for_range_ref;
 
     DataTypes argument_types;
     DataTypePtr return_type;

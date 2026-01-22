@@ -1,9 +1,16 @@
 #pragma once
 
 #include <optional>
+#include <memory>
+#include <mutex>
+#include <span>
+#include <unordered_map>
 
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
+#include <Core/RangeRef.h>
+
+#include <Common/SipHash.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -27,6 +34,37 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
 class MergeTreeSetIndex;
+
+/// Context for analysis during index evaluation for Primary Key. Currently, it is only used in the
+/// ColumnValueRef path, and only contains the cache of index position of function result columns
+/// when applying monotonic functions to index columns.
+struct PrimaryKeyIndexAnalysisContext
+{
+    struct FunctionResultColumnKey
+    {
+        const IFunctionBase * function = nullptr;
+        size_t input_column_idx = 0;
+
+        bool operator==(const FunctionResultColumnKey & other) const noexcept
+        {
+            return function == other.function && input_column_idx == other.input_column_idx;
+        }
+    };
+
+    struct FunctionResultColumnKeyHash
+    {
+        size_t operator()(const FunctionResultColumnKey & key) const noexcept
+        {
+            SipHash hash;
+            hash.update(reinterpret_cast<uintptr_t>(key.function));
+            hash.update(static_cast<UInt64>(key.input_column_idx));
+            return static_cast<size_t>(hash.get64());
+        }
+    };
+
+    using FunctionResultColumnIndex = std::unordered_map<FunctionResultColumnKey, size_t, FunctionResultColumnKeyHash>;
+    FunctionResultColumnIndex function_result_column_to_index;
+};
 
 
 /// Canonize the predicate
@@ -107,6 +145,12 @@ public:
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
         const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
 
+    BoolMask checkInHyperrectangle(
+        std::span<const RangeRef> hyperrectangle,
+        ColumnsWithTypeAndName & key_columns_block,
+        PrimaryKeyIndexAnalysisContext & index_analysis_context,
+        const DataTypes & data_types) const;
+
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
     /// data_types - the types of the key columns.
@@ -117,6 +161,16 @@ public:
         const FieldRef * left_keys,
         const FieldRef * right_keys,
         const DataTypes & data_types,
+        BoolMask initial_mask = BoolMask(false, false)) const;
+
+    /// Same as checkInRange, but avoids materialization of Field values from columns.
+    BoolMask checkInRange(
+        size_t used_key_size,
+        ColumnsWithTypeAndName & key_columns_block,
+        const ColumnValueRef * left_keys,
+        const ColumnValueRef * right_keys,
+        const DataTypes & data_types,
+        PrimaryKeyIndexAnalysisContext & index_analysis_context,
         BoolMask initial_mask = BoolMask(false, false)) const;
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
@@ -185,6 +239,18 @@ public:
         Range key_range,
         const MonotonicFunctionsChain & functions,
         DataTypePtr current_type,
+        bool single_point = false);
+
+    /// Same as applyMonotonicFunctionsChainToRange(), but works on RangeRef to avoid Field materialization
+    /// and additionally can use cache to quickly get the index of function's result columns in key_columns.
+    /// The cache is stored in index_analysis_context.
+    static std::optional<RangeRef> applyMonotonicFunctionsChainToRange(
+        RangeRef key_range,
+        size_t key_column_idx,
+        ColumnsWithTypeAndName & key_columns,
+        const MonotonicFunctionsChain & functions,
+        DataTypePtr current_type,
+        PrimaryKeyIndexAnalysisContext & index_analysis_context,
         bool single_point = false);
 
     bool matchesExactContinuousRange() const;
@@ -326,6 +392,7 @@ public:
     KeyCondition(
         ThisIsPrivate,
         ColumnIndices key_columns_,
+        DataTypes key_data_types_,
         size_t num_key_columns_,
         bool single_point_,
         bool date_time_overflow_behavior_ignore_,
@@ -350,6 +417,8 @@ private:
         BoolMask initial_mask) const;
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
+
+    void rebuildPreparedRangeForRefs();
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
@@ -487,6 +556,7 @@ private:
     /// `key_columns` may contain all columns of the key tuple or only the columns used in the
     /// KeyCondition. Either way, num_key_columns is the length of the whole key tuple.
     size_t num_key_columns = 0;
+    DataTypes key_data_types;
 
     /// Space-filling curves in the key
     enum class SpaceFillingCurveType
@@ -568,5 +638,25 @@ private:
     /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
     /// on a given regular expression, which is relaxed for simplicity.
     bool relaxed = false;
+
+    struct PreparedRangeForRefs
+    {
+        struct PreparedValue
+        {
+            ColumnPtr column;
+            ColumnValueRef ref;
+        };
+
+        struct PreparedRange
+        {
+            PreparedValue left;
+            PreparedValue right;
+            RangeRef range;
+        };
+
+        std::vector<PreparedRange> ranges;
+    };
+
+    PreparedRangeForRefs prepared_range_for_refs;
 };
 }

@@ -48,6 +48,7 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
     bool hasInformationAboutMonotonicity() const override { return true; }
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
+    Monotonicity getMonotonicityForRange(const IDataType &, const ColumnValueRef &, const ColumnValueRef &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

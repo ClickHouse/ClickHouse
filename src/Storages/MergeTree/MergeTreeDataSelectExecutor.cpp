@@ -31,6 +31,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Core/Settings.h>
+#include <Core/RangeRef.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -80,6 +81,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
+    extern const SettingsBool use_sparse_lightweight_representation_of_primary_key_for_index_analysis;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -1567,34 +1569,31 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         }
     }
 
+    size_t used_key_size = num_key_columns;
+
+    const bool use_sparse_pk_representation = settings[Setting::use_sparse_lightweight_representation_of_primary_key_for_index_analysis];
+    PrimaryKeyIndexAnalysisContext pk_index_analysis_context;
+
     /// If there are no monotonic functions, there is no need to save block reference.
     /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
-    std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
-    if (key_condition.hasMonotonicFunctionsChain())
+    const bool has_monotonic_functions_chain = key_condition.hasMonotonicFunctionsChain();
+    std::vector<FieldRef> index_left;
+    std::vector<FieldRef> index_right;
+
+    std::vector<ColumnValueRef> index_left_refs;
+    std::vector<ColumnValueRef> index_right_refs;
+
+    if (use_sparse_pk_representation)
     {
-        create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
-        {
-            field = {index_columns.get(), row, column};
-            // NULL_LAST
-            if (field.isNull())
-                field = POSITIVE_INFINITY;
-        };
+        index_left_refs.resize(used_key_size);
+        index_right_refs.resize(used_key_size);
     }
     else
     {
-        create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
-        {
-            (*index_columns)[column].column->get(row, field);
-            // NULL_LAST
-            if (field.isNull())
-                field = POSITIVE_INFINITY;
-        };
+        /// NOTE Creating temporary Field objects to pass to KeyCondition.
+        index_left.resize(used_key_size);
+        index_right.resize(used_key_size);
     }
-
-    /// NOTE Creating temporary Field objects to pass to KeyCondition.
-    size_t used_key_size = num_key_columns;
-    std::vector<FieldRef> index_left(used_key_size);
-    std::vector<FieldRef> index_right(used_key_size);
 
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
@@ -1606,6 +1605,54 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         auto check_key_condition = [&]()
         {
+            if (use_sparse_pk_representation)
+            {
+                auto set_key = [&](size_t row, size_t column, ColumnValueRef & out, ColumnValueRef::Special missing_special)
+                {
+                    const auto * col = (*index_columns)[column].column.get();
+                    if (!col)
+                    {
+                        out = (missing_special == ColumnValueRef::Special::NegativeInfinity) ? ColumnValueRef::negativeInfinity()
+                                                                                             : ColumnValueRef::positiveInfinity();
+                        return;
+                    }
+
+                    if (col->isNullAt(row))
+                    {
+                        out = ColumnValueRef::positiveInfinity();
+                        return;
+                    }
+
+                    out = ColumnValueRef::normal(col, row);
+                };
+
+                if (range.end == marks_count)
+                {
+                    for (size_t i = 0; i < used_key_size; ++i)
+                    {
+                        auto & left = reverse_flags[i] ? index_right_refs[i] : index_left_refs[i];
+                        auto & right = reverse_flags[i] ? index_left_refs[i] : index_right_refs[i];
+
+                        set_key(range.begin, i, left, ColumnValueRef::Special::NegativeInfinity);
+                        right = ColumnValueRef::positiveInfinity();
+                    }
+                }
+                else
+                {
+                    for (size_t i = 0; i < used_key_size; ++i)
+                    {
+                        auto & left = reverse_flags[i] ? index_right_refs[i] : index_left_refs[i];
+                        auto & right = reverse_flags[i] ? index_left_refs[i] : index_right_refs[i];
+
+                        set_key(range.begin, i, left, ColumnValueRef::Special::NegativeInfinity);
+                        set_key(range.end, i, right, ColumnValueRef::Special::PositiveInfinity);
+                    }
+                }
+
+                return key_condition.checkInRange(
+                    used_key_size, *index_columns, index_left_refs.data(), index_right_refs.data(), key_types, pk_index_analysis_context, initial_mask);
+            }
+
             if (range.end == marks_count)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
@@ -1613,7 +1660,16 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
                     auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
-                        create_field_ref(range.begin, i, left);
+                    {
+                        if (has_monotonic_functions_chain)
+                            left = {index_columns.get(), range.begin, i};
+                        else
+                            (*index_columns)[i].column->get(range.begin, left);
+
+                        // NULL_LAST
+                        if (left.isNull())
+                            left = POSITIVE_INFINITY;
+                    }
                     else
                         left = NEGATIVE_INFINITY;
 
@@ -1628,8 +1684,22 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
                     {
-                        create_field_ref(range.begin, i, left);
-                        create_field_ref(range.end, i, right);
+                        if (has_monotonic_functions_chain)
+                        {
+                            left = {index_columns.get(), range.begin, i};
+                            right = {index_columns.get(), range.end, i};
+                        }
+                        else
+                        {
+                            (*index_columns)[i].column->get(range.begin, left);
+                            (*index_columns)[i].column->get(range.end, right);
+                        }
+
+                        // NULL_LAST
+                        if (left.isNull())
+                            left = POSITIVE_INFINITY;
+                        if (right.isNull())
+                            right = POSITIVE_INFINITY;
                     }
                     else
                     {
