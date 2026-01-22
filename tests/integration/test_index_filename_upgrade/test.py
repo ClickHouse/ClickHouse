@@ -54,3 +54,6 @@ def test_index_filename_upgrade(started_cluster):
     node.wait_for_log_line("Index `minmax_index_ESPAÑA` has dropped 1")
 
     node.query("DROP TABLE test_index_filename;")
+
+    # Leave the node in the original state: Just to avoid flakiness when running it multiple times
+    node.restart_with_original_version()
