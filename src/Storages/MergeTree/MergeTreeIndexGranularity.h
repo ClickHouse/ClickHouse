@@ -72,8 +72,6 @@ public:
     /// Returns new optimized index granularity structure or nullptr if no optimization is not applicable.
     virtual std::shared_ptr<MergeTreeIndexGranularity> optimize() = 0;
     virtual std::string describe() const = 0;
-
-    virtual std::vector<size_t> getMarksRowsPartialSums() const { return {}; }
 };
 
 using MergeTreeIndexGranularityPtr = std::shared_ptr<MergeTreeIndexGranularity>;
