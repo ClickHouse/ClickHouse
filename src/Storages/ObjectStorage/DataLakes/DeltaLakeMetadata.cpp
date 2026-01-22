@@ -623,7 +623,8 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
 DataLakeMetadataPtr DeltaLakeMetadata::create(
     ObjectStoragePtr object_storage,
     StorageObjectStorageConfigurationWeakPtr configuration,
-    ContextPtr local_context)
+    ContextPtr local_context,
+    std::optional<StorageID> /*table_id*/)
 {
 #if USE_DELTA_KERNEL_RS
     auto configuration_ptr = configuration.lock();

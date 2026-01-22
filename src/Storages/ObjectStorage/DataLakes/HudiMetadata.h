@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Core/Types.h>
+#include <optional>
 
 namespace DB
 {
@@ -45,7 +46,8 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         StorageObjectStorageConfigurationWeakPtr configuration,
-        ContextPtr local_context)
+        ContextPtr local_context,
+        std::optional<StorageID> /*table_id*/ = std::nullopt)
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration.lock(), local_context);
     }

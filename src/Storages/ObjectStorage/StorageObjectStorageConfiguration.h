@@ -16,6 +16,7 @@
 #include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <optional>
 
 namespace DB
 {
@@ -196,7 +197,12 @@ public:
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before);
+    /// table_id is optional to keep compatibility with existing callers.
+    virtual void update(
+        ObjectStoragePtr object_storage,
+        ContextPtr local_context,
+        bool if_not_updated_before,
+        std::optional<StorageID> table_id);
 
     virtual void create(
         ObjectStoragePtr object_storage,

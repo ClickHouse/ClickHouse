@@ -204,7 +204,8 @@ ColumnsDescription TableFunctionObjectStorage<
         configuration->update(
             object_storage,
             context,
-            /* if_not_updated_before */ true);
+            /* if_not_updated_before */ true,
+            std::nullopt);
 
         std::string sample_path;
         ColumnsDescription columns;

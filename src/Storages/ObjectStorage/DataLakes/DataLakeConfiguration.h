@@ -17,6 +17,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
+#include <optional>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -85,19 +86,23 @@ public:
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before) override
+    void update(
+        ObjectStoragePtr object_storage,
+        ContextPtr local_context,
+        bool if_not_updated_before,
+        std::optional<StorageID> table_id) override
     {
         const bool updated_before = current_metadata != nullptr;
         if (updated_before && if_not_updated_before)
             return;
 
-        BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before);
+        BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before, table_id);
         if (current_metadata && current_metadata->supportsUpdate())
         {
             current_metadata->update(local_context);
             return;
         }
-        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context, table_id);
     }
 
     void create(
@@ -117,7 +122,7 @@ public:
                 throw Exception(
                     ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
         }
-        BaseStorageConfiguration::update(object_storage, local_context, true);
+        BaseStorageConfiguration::update(object_storage, local_context, true, table_id_);
 
         DataLakeMetadata::createInitial(
             object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
@@ -297,7 +302,7 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
-        update(object_storage, context, /* if_not_updated_before */ true);
+        update(object_storage, context, /* if_not_updated_before */ true, table_id);
         return current_metadata->write(
             sample_block,
             table_id,

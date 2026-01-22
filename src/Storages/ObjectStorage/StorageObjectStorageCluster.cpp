@@ -80,7 +80,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     configuration->update(
         object_storage,
         context_,
-        /* if_not_updated_before */ false);
+        /* if_not_updated_before */ false,
+        std::nullopt);
 
     // For tables need to update configuration on each read
     // because data can be changed after previous update
@@ -138,7 +139,8 @@ std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_co
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ false);
+        /* if_not_updated_before */ false,
+        std::nullopt);
     return configuration->totalRows(query_context);
 }
 
@@ -147,7 +149,8 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ false);
+        /* if_not_updated_before */ false,
+        std::nullopt);
     return configuration->totalBytes(query_context);
 }
 
@@ -210,7 +213,8 @@ void StorageObjectStorageCluster::updateExternalDynamicMetadataIfExists(ContextP
     configuration->update(
         object_storage,
         query_context,
-        /* if_not_updated_before */ true);
+        /* if_not_updated_before */ true,
+        std::nullopt);
     if (configuration->needsUpdateForSchemaConsistency())
     {
         auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
@@ -288,7 +292,8 @@ void StorageObjectStorageCluster::updateConfigurationIfNeeded(ContextPtr context
         configuration->update(
             object_storage,
             context,
-            /* if_not_updated_before */false);
+            /* if_not_updated_before */false,
+            std::nullopt);
     }
 }
 

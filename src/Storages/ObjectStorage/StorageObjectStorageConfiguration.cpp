@@ -27,7 +27,8 @@ namespace ErrorCodes
 void StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context,
-    bool /* if_not_updated_before */)
+    bool /* if_not_updated_before */,
+    std::optional<StorageID> /* table_id */)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);

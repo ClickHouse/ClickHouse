@@ -632,7 +632,8 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    std::optional<StorageID> /*table_id*/)
 {
     auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)

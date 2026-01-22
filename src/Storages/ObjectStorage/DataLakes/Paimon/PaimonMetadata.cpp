@@ -63,7 +63,8 @@ extern const DataLakeStorageSettingsInt64 paimon_target_snapshot_id;
 DataLakeMetadataPtr PaimonMetadata::create(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
-    const ContextPtr & local_context)
+    const ContextPtr & local_context,
+    std::optional<StorageID> table_id)
 {
     auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)
@@ -116,12 +117,11 @@ DataLakeMetadataPtr PaimonMetadata::create(
         if (!local_context->hasZooKeeper())
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Incremental read requires Keeper but ZooKeeper is not configured");
 
-        /// Build keeper path automatically: /clickhouse/paimon/{table_path}
-        /// table_path already unique per storage definition
-        String keeper_path = "/clickhouse/paimon";
-        if (!keeper_path.ends_with('/'))
-            keeper_path += '/';
-        /// Sanitize table_path for Keeper (no '/',' ' or ':' allowed in znode names)
+        /// Build keeper path aligned with ClickHouse table paths:
+        /// /clickhouse/tables/table_uuid/sanitized_paimon_table_path
+        String keeper_path = "/clickhouse/tables/";
+        keeper_path += toString(table_id->uuid);
+        keeper_path += "/";
         String sanitized = table_path;
         for (auto & ch : sanitized)
         {
@@ -152,7 +152,8 @@ DataLakeMetadataPtr PaimonMetadata::create(
         partition_default_name,
         incremental_read_enabled,
         target_snapshot_id,
-        metadata_refresh_interval_ms);
+        metadata_refresh_interval_ms,
+        table_id ? std::optional<UUID>(table_id->uuid) : std::nullopt);
 
     return std::make_unique<PaimonMetadata>(
         object_storage, configuration_ptr, global_context, std::move(persistent_components), table_client);
