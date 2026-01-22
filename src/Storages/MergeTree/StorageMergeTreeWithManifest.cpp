@@ -38,7 +38,8 @@ StorageMergeTreeWithManifest::StorageMergeTreeWithManifest(
     std::unique_ptr<MergeTreeSettings> settings_,
     const String & manifest_storage_type_)
     : StorageMergeTree(table_id_, metadata, mode, context_, date_column_name, merging_params_,
-                       [&settings_, &manifest_storage_type_]() -> std::unique_ptr<MergeTreeSettings> {
+                       [&settings_, &manifest_storage_type_]() -> std::unique_ptr<MergeTreeSettings>
+                       {
                            if (!manifest_storage_type_.empty() && settings_)
                                (*settings_)[MergeTreeSetting::assign_part_uuids] = true;
                            return std::move(settings_);
