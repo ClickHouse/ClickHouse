@@ -4,7 +4,7 @@
 -- Checks by the predicate evaluation order in EXPLAIN. This is quite fragile, a better approach would be helpful (maybe 'send_logs_level'?)
 
 SET allow_experimental_statistics = 1;
-SET allow_statistics_optimize = 1;
+SET use_statistics = 1;
 SET mutations_sync = 1;
 SET enable_analyzer = 1;
 
