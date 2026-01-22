@@ -23,8 +23,8 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto with_element = std::make_shared<ASTWithElement>();
 
     // Trying to parse structure: identifier [(alias1, alias2, ...)] AS (subquery)
-    if (ASTPtr name_or_expr;
-        (s_ident.parse(pos, name_or_expr, expected) || ParserExpressionWithOptionalAlias(false).parse(pos, name_or_expr, expected)) &&
+    if (ASTPtr name;
+        s_ident.parse(pos, name, expected) &&
         (
             [&]() -> bool {
                 auto saved_pos = pos;
@@ -49,8 +49,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         s_as.ignore(pos, expected) &&
         s_subquery.parse(pos, with_element->subquery, expected))
     {
-        if (name_or_expr)
-            tryGetIdentifierNameInto(name_or_expr, with_element->name);
+        tryGetIdentifierNameInto(name, with_element->name);
 
         with_element->children.push_back(with_element->subquery);
 
