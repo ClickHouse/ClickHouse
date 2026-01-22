@@ -58,16 +58,16 @@ bool MutationCommand::affectsAllColumns() const
 
 std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & command, bool parse_alter_commands, bool with_pure_metadata_commands)
 {
+    MutationCommand res;
+    res.ast = command.clone();
     if (with_pure_metadata_commands)
     {
-        MutationCommand res;
         res.type = ALTER_WITHOUT_MUTATION;
         return res;
     }
 
     if (command.type == ASTAlterCommand::DELETE)
     {
-        MutationCommand res;
         res.type = DELETE;
         res.predicate = command.predicate->clone();
         if (command.partition)
@@ -76,7 +76,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (command.type == ASTAlterCommand::UPDATE)
     {
-        MutationCommand res;
         res.type = UPDATE;
         res.predicate = command.predicate->clone();
         if (command.partition)
@@ -95,7 +94,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (command.type == ASTAlterCommand::APPLY_DELETED_MASK)
     {
-        MutationCommand res;
         res.type = APPLY_DELETED_MASK;
         if (command.partition)
             res.partition = command.partition->clone();
@@ -103,7 +101,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     else if (command.type == ASTAlterCommand::APPLY_PATCHES)
     {
-        MutationCommand res;
         res.type = APPLY_PATCHES;
         if (command.partition)
             res.partition = command.partition->clone();
@@ -111,7 +108,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (command.type == ASTAlterCommand::MATERIALIZE_INDEX)
     {
-        MutationCommand res;
         res.type = MATERIALIZE_INDEX;
         if (command.partition)
             res.partition = command.partition->clone();
@@ -121,7 +117,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (command.type == ASTAlterCommand::MATERIALIZE_STATISTICS)
     {
-        MutationCommand res;
         res.type = MATERIALIZE_STATISTICS;
         if (command.partition)
             res.partition = command.partition->clone();
@@ -134,7 +129,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (command.type == ASTAlterCommand::MATERIALIZE_PROJECTION)
     {
-        MutationCommand res;
         res.type = MATERIALIZE_PROJECTION;
         if (command.partition)
             res.partition = command.partition->clone();
@@ -144,7 +138,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (command.type == ASTAlterCommand::MATERIALIZE_COLUMN)
     {
-        MutationCommand res;
         res.type = MATERIALIZE_COLUMN;
         if (command.partition)
             res.partition = command.partition->clone();
@@ -156,7 +149,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     if (parse_alter_commands && command.type == ASTAlterCommand::MODIFY_COLUMN && command.remove_property.empty()
         && nullptr == command.settings_changes && nullptr == command.settings_resets)
     {
-        MutationCommand res;
         res.type = MutationCommand::Type::READ_COLUMN;
         const auto & ast_col_decl = command.col_decl->as<ASTColumnDeclaration &>();
         if (nullptr == ast_col_decl.type)
@@ -167,7 +159,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (parse_alter_commands && command.type == ASTAlterCommand::DROP_COLUMN)
     {
-        MutationCommand res;
         res.type = MutationCommand::Type::DROP_COLUMN;
         res.column_name = getIdentifierName(command.column);
         if (command.partition)
@@ -179,7 +170,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (parse_alter_commands && command.type == ASTAlterCommand::DROP_INDEX)
     {
-        MutationCommand res;
         res.type = MutationCommand::Type::DROP_INDEX;
         res.column_name = command.index->as<ASTIdentifier &>().name();
         if (command.partition)
@@ -190,7 +180,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (parse_alter_commands && command.type == ASTAlterCommand::DROP_STATISTICS)
     {
-        MutationCommand res;
         res.type = MutationCommand::Type::DROP_STATISTICS;
         if (command.partition)
             res.partition = command.partition->clone();
@@ -202,7 +191,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (parse_alter_commands && command.type == ASTAlterCommand::DROP_PROJECTION)
     {
-        MutationCommand res;
         res.type = MutationCommand::Type::DROP_PROJECTION;
         res.column_name = command.projection->as<ASTIdentifier &>().name();
         if (command.partition)
@@ -213,7 +201,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (parse_alter_commands && command.type == ASTAlterCommand::RENAME_COLUMN)
     {
-        MutationCommand res;
         res.type = MutationCommand::Type::RENAME_COLUMN;
         res.column_name = command.column->as<ASTIdentifier &>().name();
         res.rename_to = command.rename_to->as<ASTIdentifier &>().name();
@@ -221,7 +208,6 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (command.type == ASTAlterCommand::MATERIALIZE_TTL)
     {
-        MutationCommand res;
         res.type = MATERIALIZE_TTL;
         if (command.partition)
             res.partition = command.partition->clone();
@@ -229,14 +215,12 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
     }
     if (command.type == ASTAlterCommand::REWRITE_PARTS)
     {
-        MutationCommand res;
         res.type = REWRITE_PARTS;
         if (command.partition)
             res.partition = command.partition->clone();
         return res;
     }
 
-    MutationCommand res;
     res.type = ALTER_WITHOUT_MUTATION;
     return res;
 }

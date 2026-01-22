@@ -1092,10 +1092,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                             {
                                 case AlterColumnSecondaryIndexMode::THROW:
                                 case AlterColumnSecondaryIndexMode::COMPATIBILITY:
-                                    /// The only way to reach this would be if the ALTER was created and then the table setting changed
-                                    throw Exception(
-                                        ErrorCodes::BAD_ARGUMENTS,
-                                        "Cannot ALTER column `{}` because index `{}` depends on it", command.column_name, index.name);
+                                    if (!index.isImplicitlyCreated())
+                                    {
+                                        /// The only way to reach this would be if the ALTER was created and then the table setting changed
+                                        throw Exception(
+                                            ErrorCodes::BAD_ARGUMENTS,
+                                            "Cannot ALTER column `{}` because index `{}` depends on it", command.column_name, index.name);
+                                    }
+                                    /// For implicit indices we don't throw, we will rebuild them
+                                    [[fallthrough]];
                                 case AlterColumnSecondaryIndexMode::REBUILD:
                                 {
                                     for (const auto & col : index_cols)
