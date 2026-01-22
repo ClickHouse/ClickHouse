@@ -39,4 +39,41 @@ BackgroundSchedulePoolTaskInfoPtr BackgroundSchedulePoolTaskHolder::getTaskInfoP
     return task_info;
 }
 
+BackgroundSchedulePoolTaskHolder & PausableTask::getTask()
+{
+    return task;
+}
+
+PausableTask::PausableTask(BackgroundSchedulePoolTaskHolder task_)
+    : task(std::move(task_))
+{
+}
+
+void PausableTask::pause()
+{
+    std::lock_guard lock(pause_mutex);
+    pause_count++;
+    if (pause_count == 1)
+        task->deactivate();
+}
+
+void PausableTask::resume()
+{
+    std::lock_guard lock(pause_mutex);
+    pause_count--;
+    if (pause_count == 0)
+        task->activateAndSchedule();
+}
+
+PausableTask::PauseHolder::PauseHolder(PausableTask & task_)
+    : task(task_)
+{
+    task.pause();
+}
+
+PausableTask::PauseHolder::~PauseHolder()
+{
+    task.resume();
+}
+
 }

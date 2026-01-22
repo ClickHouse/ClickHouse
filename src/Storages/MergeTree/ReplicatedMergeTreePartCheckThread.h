@@ -1,10 +1,8 @@
 #pragma once
 
 #include <set>
-#include <map>
 #include <list>
 #include <mutex>
-#include <thread>
 #include <atomic>
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
@@ -68,39 +66,6 @@ public:
     CheckResult checkPartAndFix(const String & part_name, std::optional<time_t> * recheck_after = nullptr, bool throw_on_broken_projection = true);
 
     ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection);
-
-    /// RAII guard that pauses parts check and reactivates it on destruction.
-    /// Safe to destroy from any thread.
-    class PausableTask
-    {
-    public:
-        explicit PausableTask(BackgroundSchedulePoolTaskHolder task_);
-
-        PausableTask(const PausableTask &) = delete;
-        PausableTask & operator=(const PausableTask &) = delete;
-        PausableTask(PausableTask &&) = delete;
-        PausableTask & operator=(PausableTask &&) = delete;
-
-        BackgroundSchedulePoolTaskHolder & getTask();
-
-        void pause();
-        void resume();
-
-        struct PauseHolder
-        {
-            explicit PauseHolder(PausableTask & task_);
-            ~PauseHolder();
-
-            private:
-                PausableTask & task;
-        };
-
-        using PauseHolderPtr = std::unique_ptr<PauseHolder>;
-    private:
-        std::mutex pause_mutex;
-        size_t pause_count = 0;
-        BackgroundSchedulePoolTaskHolder task;
-    };
 
     /// Pause parts check in a thread-safe way.
     /// The returned guard can be safely destroyed from any thread.

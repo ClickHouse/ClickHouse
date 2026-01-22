@@ -82,44 +82,7 @@ BackgroundSchedulePoolTaskHolder & ReplicatedMergeTreePartCheckThread::getTask()
     return pausable_task.getTask();
 }
 
-BackgroundSchedulePoolTaskHolder & ReplicatedMergeTreePartCheckThread::PausableTask::getTask()
-{
-    return task;
-}
-
-ReplicatedMergeTreePartCheckThread::PausableTask::PausableTask(BackgroundSchedulePoolTaskHolder task_)
-    : task(std::move(task_))
-{
-}
-
-void ReplicatedMergeTreePartCheckThread::PausableTask::pause()
-{
-    std::lock_guard lock(pause_mutex);
-    pause_count++;
-    if (pause_count == 1)
-        task->deactivate();
-}
-
-void ReplicatedMergeTreePartCheckThread::PausableTask::resume()
-{
-    std::lock_guard lock(pause_mutex);
-    pause_count--;
-    if (pause_count == 0)
-        task->activateAndSchedule();
-}
-
-ReplicatedMergeTreePartCheckThread::PausableTask::PauseHolder::PauseHolder(PausableTask & task_)
-    : task(task_)
-{
-    task.pause();
-}
-
-ReplicatedMergeTreePartCheckThread::PausableTask::PauseHolder::~PauseHolder()
-{
-    task.resume();
-}
-
-ReplicatedMergeTreePartCheckThread::PausableTask::PauseHolderPtr ReplicatedMergeTreePartCheckThread::temporaryPause()
+PausableTask::PauseHolderPtr ReplicatedMergeTreePartCheckThread::temporaryPause()
 {
     return std::make_unique<PausableTask::PauseHolder>(pausable_task);
 }
