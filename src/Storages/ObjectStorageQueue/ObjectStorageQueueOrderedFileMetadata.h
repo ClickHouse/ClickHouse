@@ -21,6 +21,7 @@ public:
         Bucket bucket;
         std::string bucket_lock_path;
         std::string processor_info;
+        std::string zookeeper_name;
         std::string toString() const;
     };
     using BucketInfoPtr = std::shared_ptr<const BucketInfo>;
@@ -160,7 +161,6 @@ private:
     bool released = false;
     bool finished = false;
     LoggerPtr log;
-    std::string zookeeper_name;
 };
 
 }

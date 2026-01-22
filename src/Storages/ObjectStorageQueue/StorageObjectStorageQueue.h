@@ -61,7 +61,6 @@ public:
     const auto & getFormatName() const { return configuration->format; }
 
     const fs::path & getZooKeeperPath() const { return zk_path; }
-    const String & getZooKeeperName() const { return zookeeper_name; }
 
     zkutil::ZooKeeperPtr getZooKeeper() const;
 
@@ -80,7 +79,7 @@ public:
         const Settings & settings,
         const ObjectStorageQueueSettings & queue_settings,
         UUID database_uuid = UUIDHelpers::Nil,
-        String * zookeeper_name_out = nullptr);
+        String * result_zookeeper_name = nullptr);
 
     static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
 

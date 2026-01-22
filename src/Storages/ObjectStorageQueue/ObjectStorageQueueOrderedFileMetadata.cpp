@@ -114,14 +114,14 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolder::BucketHolder(
     : bucket_info(std::make_shared<BucketInfo>(BucketInfo{
         .bucket = bucket_,
         .bucket_lock_path = bucket_lock_path_,
-        .processor_info = processor_info_ }))
+        .processor_info = processor_info_,
+        .zookeeper_name = zookeeper_name_ }))
     , log(log_)
-    , zookeeper_name(zookeeper_name_)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
-        chassert(checkBucketOwnership(ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)));
+        chassert(checkBucketOwnership(ObjectStorageQueueMetadata::getZooKeeper(log, bucket_info->zookeeper_name)));
     });
 #endif
 }
@@ -161,7 +161,7 @@ void ObjectStorageQueueOrderedFileMetadata::BucketHolder::release()
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     zk_retry.retryLoop([&]
     {
-        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, bucket_info->zookeeper_name);
         if (zk_retry.isRetry())
         {
             /// It is possible that we fail "after operation",

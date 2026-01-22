@@ -1597,7 +1597,7 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     const Settings & settings,
     const ObjectStorageQueueSettings & queue_settings,
     UUID database_uuid,
-    String * zookeeper_name_out)
+    String * result_zookeeper_name)
 {
     /// keeper_path setting can be set explicitly by the user in the CREATE query, or filled in registerQueueStorage.cpp.
     /// We also use keeper_path to determine whether we move it between databases, since the default path contains UUID of the database.
@@ -1611,13 +1611,32 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     {
         String configured_path = queue_settings[ObjectStorageQueueSetting::keeper_path].value;
 
-        bool starts_with_slash = !configured_path.empty() && configured_path.front() == '/';
-        bool has_keeper_prefix = zkutil::extractZooKeeperName(configured_path) != zkutil::DEFAULT_ZOOKEEPER_NAME;
+        const auto first_slash = configured_path.find('/');
+        const auto first_colon = configured_path.find(':');
+        const bool has_keeper_prefix = first_colon != String::npos && (first_slash == String::npos || first_colon < first_slash);
 
-        if (has_keeper_prefix || starts_with_slash)
+        String keeper_name;
+        String keeper_path = configured_path;
+        if (has_keeper_prefix)
+        {
+            keeper_name = configured_path.substr(0, first_colon);
+            keeper_path = configured_path.substr(first_colon + 1);
+            if (keeper_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'");
+        }
+
+        const bool starts_with_slash = !keeper_path.empty() && keeper_path.front() == '/';
+
+        if (starts_with_slash)
             result_zk_path = configured_path;
         else
-            result_zk_path = (fs::path(zk_path_prefix) / configured_path).string();
+        {
+            const auto prefixed_path = (fs::path(zk_path_prefix) / keeper_path).string();
+            if (has_keeper_prefix)
+                result_zk_path = keeper_name + ":" + prefixed_path;
+            else
+                result_zk_path = prefixed_path;
+        }
     }
     else
     {
@@ -1634,8 +1653,8 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         result_zk_path = context_->getMacros()->expand(result_zk_path, info);
     }
 
-    if (zookeeper_name_out)
-        *zookeeper_name_out = zkutil::extractZooKeeperName(result_zk_path);
+    if (result_zookeeper_name)
+        *result_zookeeper_name = zkutil::extractZooKeeperName(result_zk_path);
     return zkutil::extractZooKeeperPath(result_zk_path, true);
 }
 
