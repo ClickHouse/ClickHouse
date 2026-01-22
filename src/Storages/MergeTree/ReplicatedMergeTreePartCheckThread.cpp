@@ -37,9 +37,9 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreePartCheckThread)")
     , log(getLogger(log_name))
+    , pausable_task(storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); }))
 {
-    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); });
-    task->schedule();
+    getTask()->schedule();
 }
 
 ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
@@ -51,7 +51,7 @@ void ReplicatedMergeTreePartCheckThread::start()
 {
     std::lock_guard lock(start_stop_mutex);
     need_stop = false;
-    task->activateAndSchedule();
+    getTask()->activateAndSchedule();
 }
 
 void ReplicatedMergeTreePartCheckThread::stop()
@@ -61,7 +61,7 @@ void ReplicatedMergeTreePartCheckThread::stop()
 
     std::lock_guard lock(start_stop_mutex);
     need_stop = true;
-    task->deactivate();
+    getTask()->deactivate();
 }
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
@@ -74,31 +74,17 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     LOG_TRACE(log, "Enqueueing {} for check after {}s", name, delay_to_check_seconds);
     parts_queue.emplace_back(name, std::chrono::steady_clock::now() + std::chrono::seconds(delay_to_check_seconds));
     parts_set.insert(name);
-    task->schedule();
+    getTask()->schedule();
 }
 
-ReplicatedMergeTreePartCheckThread::TemporaryPause::TemporaryPause(BackgroundSchedulePoolTaskInfoPtr task_)
-    : task(std::move(task_))
+BackgroundSchedulePoolTaskHolder & ReplicatedMergeTreePartCheckThread::getTask()
 {
-    /// Note: deactivate() is expected to be called before creating TemporaryPause
-    /// This constructor just stores the task pointer for later reactivation
+    return pausable_task.getTask();
 }
 
-ReplicatedMergeTreePartCheckThread::TemporaryPause::~TemporaryPause()
+BackgroundSchedulePoolPausableTask::PauseHolderPtr ReplicatedMergeTreePartCheckThread::temporaryPause()
 {
-    if (task)
-        task->activateAndSchedule();
-}
-
-ReplicatedMergeTreePartCheckThread::TemporaryPause ReplicatedMergeTreePartCheckThread::temporaryPause()
-{
-    /// deactivate() waits for any running task execution to finish
-    /// and prevents new executions from starting.
-    /// This is safe to call from any thread.
-    task->deactivate();
-
-    /// The TemporaryPause guard will reactivate the task when destroyed from any thread.
-    return TemporaryPause(task.getTaskInfoPtr());
+    return std::make_unique<BackgroundSchedulePoolPausableTask::PauseHolder>(pausable_task);
 }
 
 void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
@@ -609,7 +595,7 @@ void ReplicatedMergeTreePartCheckThread::run()
                 if (next_it != parts_queue.end())
                 {
                     auto delay = next_it->time - current_time;
-                    task->scheduleAfter(duration_cast<std::chrono::milliseconds>(delay).count());
+                    getTask()->scheduleAfter(duration_cast<std::chrono::milliseconds>(delay).count());
                 }
                 return;
             }
@@ -646,7 +632,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
         storage.checkBrokenDisks();
 
-        task->schedule();
+        getTask()->schedule();
     }
     catch (const Coordination::Exception & e)
     {
@@ -655,12 +641,12 @@ void ReplicatedMergeTreePartCheckThread::run()
         if (Coordination::isHardwareError(e.code))
             return;
 
-        task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
+        getTask()->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
     }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
+        getTask()->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
     }
 }
 
