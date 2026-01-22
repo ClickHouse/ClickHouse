@@ -6536,6 +6536,11 @@ void Context::setConnectionClientVersion(UInt64 client_version_major, UInt64 cli
     client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
 }
 
+time_t Context::getInitialQueryStartTime() const
+{
+    return client_info.initial_query_start_time;
+}
+
 void Context::increaseDistributedDepth()
 {
     ++client_info.distributed_depth;

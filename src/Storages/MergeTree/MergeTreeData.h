@@ -2,6 +2,9 @@
 
 #include <mutex>
 #include <tuple>
+#include <vector>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/TTLDescription.h>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
 #include <Common/SimpleIncrement.h>
@@ -559,6 +562,7 @@ public:
             bool need_data_mutations = false;
             bool need_alter_mutations = false;
             bool need_patch_parts = false;
+            bool need_ttl_mutations = false;
         };
 
         static Int64 getMinPartDataVersionForPartition(const Params & params, const String & partition_id);
@@ -572,6 +576,8 @@ public:
         /// Returns mutation commands that are required to be applied to the `part`.
         /// @return list of mutation commands in order: oldest to newest.
         virtual MutationCommands getOnFlyMutationCommandsForPart(const DataPartPtr & part) const = 0;
+        virtual MutationCommands getOnFlyMutationCommandsForTTL(const ContextPtr & query_context) const = 0;
+
         virtual PatchParts getPatchesForPart(const DataPartPtr & part) const = 0;
         virtual std::shared_ptr<IMutationsSnapshot> cloneEmpty() const = 0;
         virtual NameSet getAllUpdatedColumns() const = 0;
@@ -588,9 +594,9 @@ public:
         Params params;
         MutationCounters counters;
         PatchesByPartition patches_by_partition;
-
+        std::vector<ASTPtr> ttl_asts;
         MutationsSnapshotBase() = default;
-        MutationsSnapshotBase(Params params_, MutationCounters counters_, DataPartsVector patches_);
+        MutationsSnapshotBase(Params params_, MutationCounters counters_, DataPartsVector patches_, std::vector<ASTPtr> ttl_asts_);
 
         void addPatches(DataPartsVector patches_) override;
         PatchParts getPatchesForPart(const DataPartPtr & part) const final;
@@ -691,6 +697,8 @@ public:
 
     /// Returns the number of data mutations suitable for applying on the fly.
     virtual MutationCounters getMutationCounters() const = 0;
+
+    std::vector<ASTPtr> getAllTTLAsts() const;
 
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;

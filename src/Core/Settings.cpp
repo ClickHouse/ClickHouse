@@ -5083,6 +5083,10 @@ If true, include only column names and types into result of DESCRIBE query
     DECLARE(Bool, apply_mutations_on_fly, false, R"(
 If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
 )", 0) \
+    DECLARE(Bool, apply_ttl_on_fly, false, R"(
+If true, TTL expressions are applied on-the-fly during SELECT queries,
+so the query results reflect the TTL rules immediately without waiting for background merges.
+)", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_update, true, R"(
     Allow to use lightweight updates.
 )", BETA, allow_experimental_lightweight_update) \

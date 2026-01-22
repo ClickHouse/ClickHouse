@@ -22,6 +22,8 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -2867,8 +2869,13 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts)
     }
 }
 
-StorageMergeTree::MutationsSnapshot::MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_)
-    : MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_))
+StorageMergeTree::MutationsSnapshot::MutationsSnapshot(
+    Params params_,
+    MutationCounters counters_,
+    MutationsByVersion mutations_snapshot,
+    DataPartsVector patches_,
+    std::vector<ASTPtr> ttl_asts_)
+    : MutationsSnapshotBase(std::move(params_), std::move(counters_), std::move(patches_), std::move(ttl_asts_))
     , mutations_by_version(std::move(mutations_snapshot))
 {
 }
@@ -2890,6 +2897,29 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
     return result;
 }
 
+MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsForTTL(const ContextPtr & query_context) const
+{
+    MutationCommands commands;
+    for (const auto & ttl_expr : ttl_asts)
+    {
+        ASTPtr ast = std::make_shared<ASTAlterCommand>();
+        auto * command = ast->as<ASTAlterCommand>();
+        command->type = ASTAlterCommand::DELETE;
+        auto time = query_context->getInitialQueryStartTime();
+
+        auto where_expr = makeASTFunction(
+            "less",
+            ttl_expr,
+            std::make_shared<ASTLiteral>(Field(UInt32(time)))
+        );
+
+        command->predicate = where_expr.get();
+        auto mutation = MutationCommand::parse(command);
+        commands.push_back(*mutation);
+    }
+    return commands;
+}
+
 NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
 {
     NameSet res = getColumnsUpdatedInPatches();
@@ -2909,13 +2939,25 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
     DataPartsVector patch_parts;
     MutationCounters mutations_snapshot_counters;
     MutationsSnapshot::MutationsByVersion mutations_snapshot;
+    std::vector<ASTPtr> ttl_asts;
+
+    if (params.need_ttl_mutations)
+        ttl_asts = getAllTTLAsts();
 
     if (params.need_patch_parts)
         patch_parts = getPatchPartsVectorForInternalUsage();
 
     std::lock_guard lock(currently_processing_in_background_mutex);
-    if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0)
-        return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+    if (!params.need_data_mutations
+        && !params.need_alter_mutations
+        && !params.need_ttl_mutations
+        && mutation_counters.num_metadata <= 0)
+        return std::make_shared<MutationsSnapshot>(
+                    params,
+                    std::move(mutations_snapshot_counters),
+                    std::move(mutations_snapshot),
+                    std::move(patch_parts),
+                    std::move(ttl_asts));
 
     UInt64 max_mutation_version = std::numeric_limits<UInt64>::max();
     if (params.max_mutation_versions && !params.max_mutation_versions->empty())
@@ -2932,7 +2974,12 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
         }
     }
 
-    return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
+    return std::make_shared<MutationsSnapshot>(
+            params,
+            std::move(mutations_snapshot_counters),
+            std::move(mutations_snapshot),
+            std::move(patch_parts),
+            std::move(ttl_asts));
 }
 
 MutationCounters StorageMergeTree::getMutationCounters() const

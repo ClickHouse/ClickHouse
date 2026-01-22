@@ -119,7 +119,6 @@ public:
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
     MergeTreeDeduplicationLog * getDeduplicationLog() { return deduplication_log.get(); }
-
 private:
 
     /// Mutex and condvar for synchronous mutations wait
@@ -340,9 +339,15 @@ private:
         MutationsByVersion mutations_by_version;
 
         MutationsSnapshot() = default;
-        MutationsSnapshot(Params params_, MutationCounters counters_, MutationsByVersion mutations_snapshot, DataPartsVector patches_);
+        MutationsSnapshot(
+            Params params_,
+            MutationCounters counters_,
+            MutationsByVersion mutations_snapshot,
+            DataPartsVector patches_,
+            std::vector<ASTPtr> ttl_asts_);
 
         MutationCommands getOnFlyMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const override;
+        MutationCommands getOnFlyMutationCommandsForTTL(const ContextPtr & query_context) const override;
         std::shared_ptr<MergeTreeData::IMutationsSnapshot> cloneEmpty() const override { return std::make_shared<MutationsSnapshot>(); }
         NameSet getAllUpdatedColumns() const override;
     };

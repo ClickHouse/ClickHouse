@@ -885,7 +885,7 @@ public:
     void increaseDistributedDepth();
     const OpenTelemetry::TracingContext & getClientTraceContext() const { return client_info.client_trace_context; }
     OpenTelemetry::TracingContext & getClientTraceContext() { return client_info.client_trace_context; }
-
+    time_t getInitialQueryStartTime() const;
     enum StorageNamespace
     {
          ResolveGlobal = 1u,                                           /// Database name must be specified
