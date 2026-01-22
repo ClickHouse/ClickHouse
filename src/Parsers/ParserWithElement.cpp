@@ -52,7 +52,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             tryGetIdentifierNameInto(cte_name, with_element->name);
             with_element->aliases = std::move(aliases);
-            with_element->has_materialized_keyword = has_materialized_keyword;
+            with_element->is_materialized = has_materialized_keyword;
             with_element->subquery = std::move(subquery);
             with_element->children.push_back(with_element->subquery);
 
