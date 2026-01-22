@@ -761,6 +761,21 @@ void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
+    /// Validate that the log table has log_marker column when the feature is enabled
+    if (bool enable_log_marker = getContext()->getServerSettings()[ServerSetting::enable_system_log_marker])
+    {
+        auto columns = LogElement::getColumnsDescription();
+        if (!columns.has("log_marker"))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "System log '{}' is missing required 'log_marker' column when enable_system_log_marker is enabled. "
+                "Please add 'log_marker UUID column' to {}.getColumnsDescription()",
+                description,
+                LogElement::name());
+        }
+    }
+
     auto table = getStorage();
     if (table)
     {
