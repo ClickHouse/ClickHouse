@@ -89,6 +89,15 @@ def cluster():
         cluster.shutdown()
 
 
+backup_id_counter = 0
+
+
+def new_backup_name():
+    global backup_id_counter
+    backup_id_counter += 1
+    return f"backup{backup_id_counter}"
+
+
 def azure_query(
     node, query, expect_error=False, try_num=10, settings={}, query_on_retry=None
 ):
