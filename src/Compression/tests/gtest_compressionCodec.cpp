@@ -1461,159 +1461,182 @@ auto ALPSequentialGenerator = []<typename T>(T base = T{0}, T exception = T{0}, 
     };
 };
 
-INSTANTIATE_TEST_SUITE_P(ALPPyramidOfSequences,
+INSTANTIATE_TEST_SUITE_P(ALPSequentialF64,
     CodecTest,
     ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.3)),
         ::testing::Values(
-            Codec("ALP")
-        ),
-        ::testing::ValuesIn(
-              generatePyramidOfSequences<Float64>(2050, G(ALPSequentialGenerator.template operator()<Float64>()))
-            + generatePyramidOfSequences<Float32>(2050, G(ALPSequentialGenerator.template operator()<Float32>()))
-            + generatePyramidOfSequences<Float64>(2050, G(ALPSequentialGenerator.template operator()<Float64>(-50.0)))
-            + generatePyramidOfSequences<Float32>(2050, G(ALPSequentialGenerator.template operator()<Float32>(-50.0f)))
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 1024),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 2048),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 2560),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(-50.0)), 0, 2048),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(-5000.0)), 0, 2048)
         )
     )
 );
 
-INSTANTIATE_TEST_SUITE_P(ALPLongSequence,
+INSTANTIATE_TEST_SUITE_P(ALPSequentialF32,
     CodecTest,
     ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.8)),
         ::testing::Values(
-            Codec("ALP", 0.9)
-        ),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 1024),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 2048),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 2560),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(-50.0)), 0, 2048),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(-5000.0)), 0, 2048)
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPPyramidOfSequences,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP")),
+        ::testing::ValuesIn(
+              generatePyramidOfSequences<Float64>(2050, G(ALPSequentialGenerator.template operator()<Float64>()))
+            + generatePyramidOfSequences<Float32>(2050, G(ALPSequentialGenerator.template operator()<Float32>()))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF64,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.3)),
         ::testing::Values(
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 150000),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 65536),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 66000),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 150000)
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPLongSequencesF32,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.9)),
+        ::testing::Values(
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 65536),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 66000),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 150000)
         )
     )
 );
 
-INSTANTIATE_TEST_SUITE_P(ALPFloat64CompressionRatio,
+INSTANTIATE_TEST_SUITE_P(ALPHighPrecissionFloatsF64,
     CodecTest,
     ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.5)),
         ::testing::Values(
-            Codec("ALP", 0.5)
-        ),
-        ::testing::Values(
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 1024),
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 1025),
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 2048),
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>()), 0, 2049),
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(-50.0)), 0, 2048),
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 0, 0, 3)), 0, 2048),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 0, 0, 4)), 0, 2048),
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 0, 0, 5)), 0, 2048)
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 0, 0, 6)), 0, 2048)
         )
     )
 );
 
-INSTANTIATE_TEST_SUITE_P(ALPFloat32CompressionRatio,
+INSTANTIATE_TEST_SUITE_P(ALPHighPrecissionFloatsF32,
     CodecTest,
     ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.999)),
         ::testing::Values(
-            Codec("ALP", 0.9)
-        ),
-        ::testing::Values(
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 1024),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 1025),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 2048),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>()), 0, 2049),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(-50.0f)), 0, 2048),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 0, 0, 3)), 0, 2048)
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 0, 0, 4)), 0, 2048),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 0, 0, 6)), 0, 2048)
         )
     )
 );
 
-INSTANTIATE_TEST_SUITE_P(ALPSpecialFloats,
+INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF64,
     CodecTest,
     ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.4)),
         ::testing::Values(
-            Codec("ALP", 0.9)
-        ),
-        ::testing::Values(
-            // Test positive infinity
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::infinity(), 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::infinity(), 0.1))),
-
-            // Test negative infinity
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -std::numeric_limits<Float64>::infinity(), 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -std::numeric_limits<Float32>::infinity(), 0.1))),
-
-            // Test NaN
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.1))),
-
-            // Test negative zero
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::bit_cast<Float64>(0x8000000000000000ULL), 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::bit_cast<Float32>(0x80000000U), 0.1))),
-
-            // Test max float
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::bit_cast<Float64>(0x8000000000000000ULL), 0.1))), // negative zero
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::max(), 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::max(), 0.1))),
-
-            // Test min float
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::min(), 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::min(), 0.1))),
-
-            // Test denorm min float
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::denorm_min(), 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::denorm_min(), 0.1))),
-
-            // Test ALP upper
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, 922337203685477478.0, 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 922337203685477478.0f, 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -922337203685477478.0, 0.1)))
+        )
+    )
+);
 
-            // Test ALP lower
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -922337203685477478.0, 0.1))),
+INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF32,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.9)),
+        ::testing::Values(
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::infinity(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -std::numeric_limits<Float32>::infinity(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::bit_cast<Float32>(0x80000000U), 0.1))), // negative zero
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::max(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::min(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::denorm_min(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, 922337203685477478.0f, 0.1))),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -922337203685477478.0f, 0.1)))
         )
     )
 );
 
-INSTANTIATE_TEST_SUITE_P(ALPExceptions,
+INSTANTIATE_TEST_SUITE_P(ALPManyExceptionsF64,
     CodecTest,
     ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.99)),
         ::testing::Values(
-            Codec("ALP")
-        ),
-        ::testing::Values(
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.1))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.1))),
-
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.25))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.25))),
-
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.5))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.5))),
-
-            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.75))),
-            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.75)))
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.4))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.6)))
         )
     )
 );
 
-INSTANTIATE_TEST_SUITE_P(ALPSameValues,
+INSTANTIATE_TEST_SUITE_P(ALPManyExceptionsF32,
     CodecTest,
     ::testing::Combine(
+        ::testing::Values(Codec("ALP", 1.01)),
         ::testing::Values(
-            Codec("ALP")
-        ),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.4))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.6)))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPExceptionsOnly,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 1.01)),
         ::testing::Values(
-            generateSeq<Float64>(G(SameValueGenerator(2.2))),
-            generateSeq<Float32>(G(SameValueGenerator(2.2f))),
-
-            generateSeq<Float64>(G(SameValueGenerator(-2.2))),
-            generateSeq<Float32>(G(SameValueGenerator(-2.2f))),
-
-            generateSeq<Float64>(G(SameValueGenerator(0.0))),
-            generateSeq<Float32>(G(SameValueGenerator(0.0f))),
-
-            generateSeq<Float64>(G(SameValueGenerator(M_PIf64))),
-            generateSeq<Float32>(G(SameValueGenerator(M_PIf32))),
-
             generateSeq<Float64>(G(SameValueGenerator(std::numeric_limits<Float64>::quiet_NaN()))),
             generateSeq<Float32>(G(SameValueGenerator(std::numeric_limits<Float32>::quiet_NaN())))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPSameValuesF64,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.1)),
+        ::testing::Values(
+            generateSeq<Float64>(G(SameValueGenerator(2.2))),
+            generateSeq<Float64>(G(SameValueGenerator(-2.2))),
+            generateSeq<Float64>(G(SameValueGenerator(0.0))),
+            generateSeq<Float64>(G(SameValueGenerator(M_PIf64)))
+        )
+    )
+);
+
+INSTANTIATE_TEST_SUITE_P(ALPSameValuesF32,
+    CodecTest,
+    ::testing::Combine(
+        ::testing::Values(Codec("ALP", 0.1)),
+        ::testing::Values(
+            generateSeq<Float32>(G(SameValueGenerator(2.2f))),
+            generateSeq<Float32>(G(SameValueGenerator(-2.2f))),
+            generateSeq<Float32>(G(SameValueGenerator(0.0f))),
+            generateSeq<Float32>(G(SameValueGenerator(M_PIf32)))
         )
     )
 );

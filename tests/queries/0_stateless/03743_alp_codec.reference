@@ -1,22 +1,38 @@
-Test Data integrity (Positive and Exception numbers)
-f64 errors:	0
-f32 errors:	0
-alp64	1.9444
-alp32	1.2333
-Test Data integrity (Positive and Negative numbers)
-f64 errors:	0
-f32 errors:	0
-alp64	2.3015
-alp32	1.3417
-Test Special Float Values (NaN, Inf, Zeros, Subnormals, Boundary)
-f64 errors:	0
-f32 errors:	0
-alp64	2.3923
-alp32	1.503
-Compare compression ratio with Gorilla codec (higher is better)
-alp64	1.9526
-alp32	1.0866
-gorilla64	0.975
-gorilla32	0.9591
-Test different precisions in one data series compression ratio
-alp64	1.8393
+Positive Numbers
+3000	0
+3000	0
+Positive and Negative Numbers
+3000	0
+3000	0
+Negative Numbers
+3000	0
+3000	0
+Same Numbers Repeatedly (All Values Same)
+3000	0
+3000	0
+Mix Rational and Irrational Numbers
+3000	0
+3000	0
+Special Values: NaN, Inf, Zeros, Subnormals, Clamp Bounds
+4000	0
+3600	0
+Block Size Tests (Float64)
+Size 0	0	0
+Size 1	1	0
+Size 1023	1023	0
+Size 1024	1024	0
+Size 1025	1025	0
+Size 2047	2047	0
+Size 2048	2048	0
+Size 2049	2049	0
+Block Size Tests (Float32)
+Size 1023	1023	0
+Size 1025	1025	0
+All Not Rational Float Test
+Irrational	1000	0
+NaN/Infinite	1000	0
+Mixed Blocks Test (per-block parameters)
+4096	0
+Aggregations Test
+5000	1	1	1	1
+5000	1	1	1	1
