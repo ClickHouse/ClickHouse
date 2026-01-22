@@ -1525,6 +1525,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->include_stats = true;
         else if constexpr (num == OpNum::CheckStat)
             res->stat_to_check.emplace();
+        else if constexpr (num == OpNum::TryRemove)
+            res->try_remove = true;
 
         return res;
     });
@@ -1539,6 +1541,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Create2, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
+    registerZooKeeperRequest<OpNum::TryRemove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::Exists, ZooKeeperExistsRequest>(*this);
     registerZooKeeperRequest<OpNum::Get, ZooKeeperGetRequest>(*this);
     registerZooKeeperRequest<OpNum::Set, ZooKeeperSetRequest>(*this);
