@@ -230,8 +230,8 @@ NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
             auto split = splitName(name_type.name);
             if (!split.second.empty())
             {
-                auto it = existing.find(split.first); 
-                if (it != existing.end() && !isNested(it->second)) /// parent exists and isn't Nested => don't infer Nested from prefix.suffix
+                auto it = existing.find(split.first);
+                if (it != existing.end() && !isNested(it->second))
                     continue;
 
                 nested[split.first].emplace_back(split.second, type_arr->getNestedType());
