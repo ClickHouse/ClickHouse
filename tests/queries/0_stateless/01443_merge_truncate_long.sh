@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-async-insert
-# no-async-insert: https://github.com/ClickHouse/ClickHouse/issues/80105
+# no-async-insert: Too many small inserts (each taking async_insert_busy_timeout_max_ms time)
 
 set -e
 

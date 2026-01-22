@@ -1,4 +1,5 @@
 #include <Functions/FunctionDynamicAdaptor.h>
+#include <Functions/FunctionVariantAdaptor.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -6,9 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/MaskOperations.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
@@ -19,7 +18,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -45,6 +43,7 @@ namespace Setting
 {
 extern const SettingsBool short_circuit_function_evaluation_for_nulls;
 extern const SettingsDouble short_circuit_function_evaluation_for_nulls_threshold;
+extern const SettingsBool use_variant_default_implementation_for_comparisons;
 }
 
 namespace ErrorCodes
@@ -246,19 +245,31 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return wrapInNullable(res, args, result_type, input_rows_count);
         }
 
-        auto result_null_map = ColumnUInt8::create(input_rows_count, 0);
-        auto & result_null_map_data = result_null_map->getData();
+        ColumnPtr result_null_map = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
         for (const auto & arg : args)
         {
             if (arg.type->isNullable() && !isColumnConst(*arg.column))
             {
-                const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
-                for (size_t i = 0; i < input_rows_count; ++i)
-                    result_null_map_data[i] |= null_map[i];
+                if (result_null_map)
+                {
+                    MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                    auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                    const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                        result_null_map_data[i] |= null_map[i];
+                    result_null_map = std::move(mut);
+                }
+                else
+                {
+                    /// If only one arg is nullable, share its null map between the arg and the result.
+                    result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                }
             }
         }
 
-        size_t rows_with_nulls = countBytesInFilter(result_null_map_data.data(), 0, input_rows_count);
+        size_t rows_with_nulls = result_null_map ?
+            countBytesInFilter(assert_cast<const ColumnUInt8 &>(*result_null_map).getData().data(),
+                               0, input_rows_count) : 0;
         size_t rows_without_nulls = input_rows_count - rows_with_nulls;
         ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRows, input_rows_count);
         ProfileEvents::increment(ProfileEvents::DefaultImplementationForNullsRowsWithNulls, rows_with_nulls);
@@ -269,7 +280,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
         }
 
-        double null_ratio = rows_with_nulls / static_cast<double>(result_null_map_data.size());
+        double null_ratio = rows_with_nulls / static_cast<double>(input_rows_count);
         bool should_short_circuit
             = short_circuit_function_evaluation_for_nulls && null_ratio >= short_circuit_function_evaluation_for_nulls_threshold;
 
@@ -289,6 +300,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
 
             /// Generate Filter
             IColumn::Filter filter_mask(input_rows_count);
+            const auto & result_null_map_data = assert_cast<const ColumnUInt8 &>(*result_null_map).getData();
             for (size_t i = 0; i < input_rows_count; ++i)
                 filter_mask[i] = !result_null_map_data[i];
 
@@ -666,6 +678,23 @@ FunctionBasePtr IFunctionOverloadResolver::build(const ColumnsWithTypeAndName & 
                 for (size_t i = 0; i < arguments.size(); ++i)
                     data_types[i] = arguments[i].type;
                 return std::make_shared<FunctionBaseDynamicAdaptor>(shared_from_this(), std::move(data_types));
+            }
+        }
+    }
+
+    /// Use FunctionBaseVariantAdaptor if default implementation for Variant is enabled and we have Variant type in arguments.
+    if (useDefaultImplementationForVariant())
+    {
+        checkNumberOfArguments(arguments.size());
+
+        for (const auto & arg : arguments)
+        {
+            if (isVariant(arg.type))
+            {
+                DataTypes data_types(arguments.size());
+                for (size_t i = 0; i < arguments.size(); ++i)
+                    data_types[i] = arguments[i].type;
+                return std::make_shared<FunctionBaseVariantAdaptor>(shared_from_this(), std::move(data_types));
             }
         }
     }

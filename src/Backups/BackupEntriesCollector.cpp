@@ -13,7 +13,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
-#include <Storages/StorageMaterializedView.h>
 #include <base/chrono_io.h>
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
@@ -24,7 +23,6 @@
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Common/typeid_cast.h>
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -75,7 +73,7 @@ namespace
         else
             str = fmt::format("table {}.{}", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
         if (first_upper)
-            str[0] = std::toupper(str[0]);
+            str[0] = static_cast<char>(std::toupper(str[0]));
         return str;
     }
 
@@ -101,12 +99,14 @@ namespace
 BackupEntriesCollector::BackupEntriesCollector(
     const ASTBackupQuery::Elements & backup_query_elements_,
     const BackupSettings & backup_settings_,
+    const String & backup_id_,
     std::shared_ptr<IBackupCoordination> backup_coordination_,
     const ReadSettings & read_settings_,
     const ContextPtr & context_,
     ThreadPool & threadpool_)
     : backup_query_elements(backup_query_elements_)
     , backup_settings(backup_settings_)
+    , backup_id(backup_id_)
     , backup_coordination(backup_coordination_)
     , read_settings(read_settings_)
     , context(context_)
@@ -118,10 +118,10 @@ BackupEntriesCollector::BackupEntriesCollector(
           context->getConfigRef().getUInt64("backups.min_sleep_before_next_attempt_to_collect_metadata", 100))
     , max_sleep_before_next_attempt_to_collect_metadata(
           context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
-    , compare_collected_metadata(
-        context->getConfigRef().getBool("backups.compare_collected_metadata",
-                                        !context->getSettingsRef()[Setting::cloud_mode])) /// Collected metadata shouldn't be compared by default in our Cloud
-                                                                                          /// (because in the Cloud only Replicated databases are used)
+    , compare_collected_metadata(context->getConfigRef().getBool(
+          "backups.compare_collected_metadata",
+          !context->getSettingsRef()[Setting::cloud_mode])) /// Collected metadata shouldn't be compared by default in our Cloud
+    /// (because in the Cloud only Replicated databases are used)
     , log(getLogger("BackupEntriesCollector"))
     , zookeeper_retries_info(
           context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
@@ -542,14 +542,16 @@ void BackupEntriesCollector::gatherTablesMetadata()
             }
 
             /// Add information to `table_infos`.
-            auto & res_table_info = table_infos[QualifiedTableName{database_name, table_name}];
+            const auto qualified_name = QualifiedTableName{database_name, table_name};
+            auto & res_table_info = table_infos[qualified_name];
             res_table_info.database = database_info.database;
             res_table_info.storage = storage;
             res_table_info.create_table_query = create_table_query;
             res_table_info.metadata_path_in_backup = metadata_path_in_backup;
             res_table_info.data_path_in_backup = data_path_in_backup;
+            res_table_info.should_backup_data = shouldBackupTableData(qualified_name, storage);
 
-            if (!backup_settings.structure_only)
+            if (res_table_info.should_backup_data)
             {
                 auto it = database_info.tables.find(table_name);
                 if (it != database_info.tables.end())
@@ -798,42 +800,8 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    auto filter_fn = [&](const auto & item) -> bool
-    {
-        if (backup_settings.backup_data_from_refreshable_materialized_view_targets)
-            return true;
-
-        const auto & [name, info] = item;
-
-        /// Skip table data for refreshable materialized view targets.
-        auto dependents = DatabaseCatalog::instance().getReferentialDependents(info.storage->getStorageID());
-        auto is_rmv_targeting_table = [&](const StorageID & mv_candidate, const StoragePtr & target) -> bool
-        {
-            auto table = DatabaseCatalog::instance().tryGetTable(mv_candidate, context);
-            if (!table || table->getName() != "MaterializedView")
-                return false;
-
-            const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get());
-            const auto & create_query = info.create_table_query->template as<const ASTCreateQuery &>();
-            bool append = create_query.refresh_strategy && create_query.refresh_strategy->append;
-            return mv && mv->isRefreshable() && !append && mv->getTargetTable() == target;
-        };
-
-        if (!dependents.empty()
-            && std::all_of(
-                dependents.begin(),
-                dependents.end(),
-                [&](const auto & dependent) { return is_rmv_targeting_table(dependent, info.storage); }))
-        {
-            LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", name.getFullName());
-            return false;
-        }
-        return true;
-    };
-
-
     ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
-    for (const auto & table_name : table_infos | std::views::filter(filter_fn) | std::views::keys)
+    for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
         runner.enqueueAndKeepTrack([&]()
         {
@@ -845,10 +813,10 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
 
 void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableName & table_name)
 {
-    if (backup_settings.structure_only)
+    const auto & table_info = table_infos.at(table_name);
+    if (!table_info.should_backup_data)
         return;
 
-    const auto & table_info = table_infos.at(table_name);
     const auto & storage = table_info.storage;
     const auto & data_path_in_backup = table_info.data_path_in_backup;
 
@@ -875,6 +843,23 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
         e.addMessage("While collecting data of {} for backup", tableNameWithTypeToString(table_name.database, table_name.table, false));
         throw;
     }
+}
+
+bool BackupEntriesCollector::shouldBackupTableData(const QualifiedTableName & table_name, const StoragePtr & storage) const
+{
+    if (backup_settings.structure_only)
+        return false;
+
+    if (!storage)
+        return true;
+
+    if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
+        && BackupUtils::isTargetForReplaceRefreshableMaterializedView(storage->getStorageID(), context))
+    {
+        LOG_TRACE(log, "Skipping table data for {} (a target of a refreshable materialized view)", table_name.getFullName());
+        return false;
+    }
+    return true;
 }
 
 void BackupEntriesCollector::addBackupEntryUnlocked(const String & file_name, BackupEntryPtr backup_entry)

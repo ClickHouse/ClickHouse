@@ -46,7 +46,7 @@ class RunConfig(MetaClasses.Serializable):
 
     @classmethod
     def from_workflow_data(cls):
-        return cls.from_dict(Info().get_kv_data("workflow_config"))
+        return cls.from_dict(Info().env.WORKFLOW_CONFIG)
 
     def set_job_as_filtered(self, job_name, reason):
         self.cache_success.append(job_name)

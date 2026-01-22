@@ -3,9 +3,9 @@
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Field.h>
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -15,12 +15,8 @@
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
-#include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/Common/AccessFlags.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/ISource.h>
@@ -70,6 +66,9 @@ protected:
     Chunk generate() override
     {
         if (std::exchange(analyzed, true))
+            return {};
+
+        if (data_parts.empty())
             return {};
 
         auto ranges = getIndexAnalysis();
@@ -129,6 +128,8 @@ protected:
         if (predicate)
         {
             auto execution_context = Context::createCopy(context);
+            execution_context->setSetting("enable_parallel_blocks_marshalling", false);
+
             auto expression = buildQueryTree(predicate, execution_context);
 
             auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, metadata_snapshot->getColumns());
@@ -151,6 +152,21 @@ protected:
                 empty_correlated_columns_set);
             correlated_subtrees.assertEmpty("in constant expression without query context");
 
+            auto subquery_options = SelectQueryOptions{}.subquery();
+            subquery_options.ignore_limits = false;
+            for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
+            {
+                auto query_tree = subquery->detachQueryTree();
+                Planner subquery_planner(
+                    query_tree,
+                    subquery_options,
+                    std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
+                subquery_planner.buildQueryPlanIfNeeded();
+
+                auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+                subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+            }
+
             filter_dag.emplace(std::move(actions));
         }
 
@@ -171,34 +187,28 @@ protected:
             query_info,
             metadata_snapshot);
 
-        ContextMutablePtr new_context = Context::createCopy(context);
-        new_context->setSetting("use_skip_indexes_on_data_read", false);
-
         /// TODO: we may also want to support query condition cache here as well
 
         ReadFromMergeTree::AnalysisResult analysis_result;
-        return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            parts_ranges,
-            metadata_snapshot,
-            snapshot_data.mutations_snapshot,
-            query_info,
-            new_context,
-            indexes->key_condition,
-            indexes->part_offset_condition,
-            indexes->total_offset_condition,
-            indexes->key_condition_rpn_template,
-            indexes->skip_indexes,
-            /* top_k_filter_info= */ std::nullopt,
-            reader_settings,
-            getLogger("MergeTreeAnalyzeIndexSource"),
-            num_streams,
-            analysis_result.index_stats,
-            indexes->use_skip_indexes,
-            indexes->use_skip_indexes_for_disjunctions,
-            /* find_exact_ranges= */ false,
-            /* is_final_query= */ false,
-            /* is_parallel_reading_from_replicas= */ false,
-            analysis_result);
+        indexes->use_skip_indexes_on_data_read = false; /// for static skip index analysis
+        indexes->use_skip_indexes_if_final_exact_mode = false; /// not supported in distributed index analysis
+        MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
+        {
+            .metadata_snapshot = metadata_snapshot,
+            .mutations_snapshot = snapshot_data.mutations_snapshot,
+            .query_info = query_info,
+            .context = context,
+            .indexes = *indexes,
+            .top_k_filter_info = std::nullopt,
+            .reader_settings = reader_settings,
+            .log = getLogger("MergeTreeAnalyzeIndexSource"),
+            .num_streams = num_streams,
+            .find_exact_ranges = false,
+            .is_parallel_reading_from_replicas = false,
+            .has_projections = false,
+            .result = analysis_result,
+        };
+        return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges, analysis_result.index_stats);
     }
 
 private:
