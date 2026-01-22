@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/ColorConversion.h>
-#include <Functions/ColorConversionToSRGBBase.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/ITupleFunction.h>
 #include <Interpreters/castColumn.h>
@@ -34,8 +33,8 @@ public:
     ColorConversion::Color convertToSrgb(const ColorConversion::Color & oklab, Float64 gamma) const
     {
         /// OKLAB is already in Cartesian form, so we can directly convert to sRGB
-        /// Steps 1-2: OKLab to sRGB (handled by base class helper)
-        return oklabToSrgb(oklab, gamma);
+        /// Steps 1-3: OKLab to sRGB (handled by ColorConversion namespace helper)
+        return ColorConversion::oklabToSrgb(oklab, gamma);
     }
 };
 }

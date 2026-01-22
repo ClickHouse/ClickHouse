@@ -1,4 +1,4 @@
-#include <Functions/ColorConversionFromSRGBBase.h>
+#include <Functions/ColorConversion.h>
 
 namespace DB
 {
@@ -23,8 +23,8 @@ public:
     /// sRGB -> OKLCH conversion. Follows the step-by-step pipeline described in Ottosson's article. See ColorConversion.h
     ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const
     {
-        /// Step 1-3: sRGB to OKLab (handled by base class helper)
-        ColorConversion::Color oklab = srgbToOklab(rgb, gamma);
+        /// Step 1-3: sRGB to OKLab (handled by ColorConversion namespace helper)
+        ColorConversion::Color oklab = ColorConversion::srgbToOklab(rgb, gamma);
 
         /// Step 4: OKLab to OKLCH (Cartesian to cylindrical)
         ColorConversion::Color oklch = oklab;

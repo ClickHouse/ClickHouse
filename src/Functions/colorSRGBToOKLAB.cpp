@@ -1,4 +1,4 @@
-#include <Functions/ColorConversionFromSRGBBase.h>
+#include <Functions/ColorConversion.h>
 
 namespace DB
 {
@@ -24,8 +24,8 @@ public:
     ColorConversion::Color convertFromSrgb(const ColorConversion::Color & rgb, Float64 gamma) const
     {
         /// sRGB is already in Cartesian form, so we can directly convert to OKLab
-        /// Steps 1-3: sRGB to OKLab (handled by base class helper)
-        return srgbToOklab(rgb, gamma);
+        /// Steps 1-3: sRGB to OKLab (handled by ColorConversion namespace helper)
+        return ColorConversion::srgbToOklab(rgb, gamma);
     }
 };
 }

@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/ColorConversion.h>
-#include <Functions/ColorConversionToSRGBBase.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/ITupleFunction.h>
 #include <Interpreters/castColumn.h>
@@ -41,8 +40,8 @@ public:
         oklab[1] = chroma * std::cos(hue_rad);
         oklab[2] = chroma * std::sin(hue_rad);
 
-        /// Steps 2-3: OKLab to sRGB (handled by base class helper)
-        return oklabToSrgb(oklab, gamma);
+        /// Steps 2-3: OKLab to sRGB (handled by ColorConversion namespace helper)
+        return ColorConversion::oklabToSrgb(oklab, gamma);
     }
 };
 }
