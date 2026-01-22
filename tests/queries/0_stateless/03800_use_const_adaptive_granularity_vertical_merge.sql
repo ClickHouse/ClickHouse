@@ -16,10 +16,8 @@ SETTINGS
     enable_index_granularity_compression = 1,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
-    auto_statistics_types = '',
     vertical_merge_algorithm_min_rows_to_activate = 0,
     vertical_merge_algorithm_min_columns_to_activate = 1,
-    string_serialization_version = 'single_stream',
     merge_max_block_size = 65535;
 
 -- { echo }
