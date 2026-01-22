@@ -115,6 +115,10 @@ void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory &
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
+void registerAggregateFunctionSerializedHLL(AggregateFunctionFactory & factory);
+void registerAggregateFunctionSerializedTDigest(AggregateFunctionFactory & factory);
+void registerAggregateFunctionSerializedDoubleSketch(AggregateFunctionFactory & factory);
+void registerAggregateFunctionLatencyValuesAndWeights(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctions()
 {
@@ -210,6 +214,10 @@ void registerAggregateFunctions()
         registerAggregateFunctionLast2Samples(factory);
         registerAggregateFunctionTimeseries(factory);
         registerAggregateFunctionTimeseriesGroupArray(factory);
+        registerAggregateFunctionSerializedHLL(factory);
+        registerAggregateFunctionSerializedTDigest(factory);
+        registerAggregateFunctionSerializedDoubleSketch(factory);
+        registerAggregateFunctionLatencyValuesAndWeights(factory);
 
         registerWindowFunctions(factory);
     }
