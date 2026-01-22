@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-object-storage, no-random-merge-tree-settings
 # Tag no-object-storage: s3 does not have fsync
+# add_minmax_index_for_numeric_columns=0: More files
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,7 +19,8 @@ $CLICKHOUSE_CLIENT -m -q "
         ratio_of_defaults_for_sparse_serialization = 1,
         serialization_info_version = 'basic',
         write_marks_for_substreams_in_compact_parts = 1,
-        auto_statistics_types = '';
+        auto_statistics_types = '',
+        add_minmax_index_for_numeric_columns=0;
 "
 
 ret=1

@@ -29,7 +29,7 @@ using Strings = std::vector<String>;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public std::enable_shared_from_this<IAST>, public TypePromotion<IAST>
+class IAST : public TypePromotion<IAST>
 {
 public:
     ASTs children;
@@ -70,8 +70,6 @@ public:
     /** Get the text that identifies this element. */
     virtual String getID(char delimiter = '_') const = 0; /// NOLINT
 
-    ASTPtr ptr() { return shared_from_this(); }
-
     /** Get a deep copy of the tree. Cloned object must have the same range. */
     virtual ASTPtr clone() const = 0;
 
@@ -109,6 +107,15 @@ public:
     {
         for (const auto & child : children)
             child->collectIdentifierNames(set);
+    }
+
+    ASTPtr getChild(const IAST & child) const
+    {
+        for (const auto & node : children)
+            if (node.get() == &child)
+                return node;
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");
     }
 
     template <typename T>
