@@ -326,6 +326,8 @@ public:
     bool isWriteOnce() const override { return delegate->isWriteOnce(); }
     bool isPlain() const override { return delegate->isPlain(); }
 
+    ObjectStoragePtr getObjectStorage() override { return delegate->getObjectStorage(); }
+
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
     std::shared_ptr<DiskEncryptedTransaction> createEncryptedTransaction() const
