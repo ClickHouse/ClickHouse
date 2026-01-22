@@ -762,7 +762,8 @@ void SystemLog<LogElement>::prepareTable()
     String description = table_id.getNameForLogs();
 
     /// Validate that the log table has log_marker column when the feature is enabled
-    if (bool enable_log_marker = getContext()->getServerSettings()[ServerSetting::enable_system_log_marker])
+    bool enable_log_marker = getContext()->getServerSettings()[ServerSetting::enable_system_log_marker];
+    if (enable_log_marker)
     {
         auto columns = LogElement::getColumnsDescription();
         if (!columns.has("log_marker"))
