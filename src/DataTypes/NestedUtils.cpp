@@ -209,10 +209,6 @@ namespace
 {
 using NameToDataType = std::map<String, DataTypePtr>;
 
-
-{
-using NameToDataType = std::map<String, DataTypePtr>;
-
 NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
 {
     std::unordered_map<String, DataTypePtr> existing; /// name->type for fast prefix lookup
