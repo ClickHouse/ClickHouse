@@ -216,6 +216,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
 
     flatTableColumnPath(
         flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, t.cols, [](const SQLColumn &) { return true; });
+    chassert(!this->table_entries.empty());
     for (const auto & entry : this->table_entries)
     {
         DB::Strings names;
@@ -349,6 +350,7 @@ void StatementGenerator::addDictionaryRelation(const String & rel_name, const SQ
 
     flatTableColumnPath(
         flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, d.cols, [](const SQLColumn &) { return true; });
+    chassert(!this->table_entries.empty());
     for (const auto & entry : this->table_entries)
     {
         DB::Strings names;
