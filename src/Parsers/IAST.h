@@ -351,6 +351,12 @@ public:
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
+    // dummy implementation for testing purposes
+    virtual void writeJSON(WriteBuffer &, size_t) const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "writeJSON is not implemented for {}", getID());
+    }
+
 protected:
     virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
     {

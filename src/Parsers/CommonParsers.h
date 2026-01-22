@@ -579,7 +579,8 @@ namespace DB
     MR_MACROS(YYYY, "YYYY") \
     MR_MACROS(ZKPATH, "ZKPATH") \
     MR_MACROS(STALENESS, "STALENESS") \
-    MR_MACROS(WITH_TABLES, "WITH TABLES")
+    MR_MACROS(WITH_TABLES, "WITH TABLES") \
+    MR_MACROS(JSON, "JSON")
 
 /// The list of keywords where underscore is intentional
 #define APPLY_FOR_PARSER_KEYWORDS_WITH_UNDERSCORES(MR_MACROS) \

@@ -1,8 +1,11 @@
+#include <IO/WriteBuffer.h>
 #include <Parsers/ASTAlterQuery.h>
 
 #include <Core/ServerSettings.h>
 #include <IO/Operators.h>
+#include <Parsers/JSONObjectBuilder.h>
 #include <base/scope_guard.h>
+#include <base/types.h>
 #include <Common/quoteString.h>
 
 
@@ -574,6 +577,181 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(void**)> f)
     f(reinterpret_cast<void **>(&rename_to));
 }
 
+String ASTAlterCommand::getTypeString() const
+{
+    switch (type)
+    {
+        case ADD_COLUMN:
+            return "ADD COLUMN";
+        case DROP_COLUMN:
+            return "DROP COLUMN";
+        case MODIFY_COLUMN:
+            return "MODIFY COLUMN";
+        case MATERIALIZE_COLUMN:
+            return "MATERIALIZE COLUMN";
+        case COMMENT_COLUMN:
+            return "COMMENT COLUMN";
+        case MODIFY_COMMENT:
+            return "MODIFY COMMENT";
+        case MODIFY_ORDER_BY:
+            return "MODIFY ORDER BY";
+        case MODIFY_SAMPLE_BY:
+            return "MODIFY SAMPLE BY";
+        case REMOVE_SAMPLE_BY:
+            return "REMOVE SAMPLE BY";
+        case ADD_INDEX:
+            return "ADD INDEX";
+        case DROP_INDEX:
+            return "DROP INDEX";
+        case MATERIALIZE_INDEX:
+            return "MATERIALIZE INDEX";
+        case ADD_STATISTICS:
+            return "ADD STATISTICS";
+        case MODIFY_STATISTICS:
+            return "MODIFY STATISTICS";
+        case DROP_STATISTICS:
+            return "DROP STATISTICS";
+        case MATERIALIZE_STATISTICS:
+            return "MATERIALIZE STATISTICS";
+        case UNLOCK_SNAPSHOT:
+            return "UNLOCK SNAPSHOT";
+        case ADD_CONSTRAINT:
+            return "ADD CONSTRAINT";
+        case DROP_CONSTRAINT:
+            return "DROP CONSTRAINT";
+        case ADD_PROJECTION:
+            return "ADD PROJECTION";
+        case DROP_PROJECTION:
+            return "DROP PROJECTION";
+        case MATERIALIZE_PROJECTION:
+            return "MATERIALIZE PROJECTION";
+        case DROP_PARTITION:
+            return "DROP PARTITION";
+        case DROP_DETACHED_PARTITION:
+            return "DROP DETACHED PARTITION";
+        case FORGET_PARTITION:
+            return "FORGET PARTITION";
+        case ATTACH_PARTITION:
+            return "ATTACH PARTITION";
+        case MOVE_PARTITION:
+            return "MOVE PARTITION";
+        case REPLACE_PARTITION:
+            return "REPLACE PARTITION";
+        case FETCH_PARTITION:
+            return "FETCH PARTITION";
+        case FREEZE_PARTITION:
+            return "FREEZE PARTITION";
+        case FREEZE_ALL:
+            return "FREEZE ALL";
+        case UNFREEZE_PARTITION:
+            return "UNFREEZE PARTITION";
+        case UNFREEZE_ALL:
+            return "UNFREEZE ALL";
+        case DELETE:
+            return "DELETE";
+        case UPDATE:
+            return "UPDATE";
+        case MODIFY_TTL:
+            return "MODIFY TTL";
+        case REMOVE_TTL:
+            return "REMOVE TTL";
+        case MATERIALIZE_TTL:
+            return "MATERIALIZE TTL";
+        case REWRITE_PARTS:
+            return "REWRITE PARTS";
+        case MODIFY_SETTING:
+            return "MODIFY SETTING";
+        case RESET_SETTING:
+            return "RESET SETTING";
+        case MODIFY_DATABASE_SETTING:
+            return "MODIFY DATABASE SETTING";
+        case MODIFY_QUERY:
+            return "MODIFY QUERY";
+        case MODIFY_REFRESH:
+            return "MODIFY REFRESH";
+        case RENAME_COLUMN:
+            return "RENAME COLUMN";
+        case MODIFY_SQL_SECURITY:
+            return "MODIFY SQL SECURITY";
+        case APPLY_DELETED_MASK:
+            return "APPLY DELETED MASK";
+        case APPLY_PATCHES:
+            return "APPLY PATCHES";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+void ASTAlterCommand::writeJSON(WriteBuffer & buf, size_t indent) const
+{
+    JSONObjectBuilder builder(buf, indent);
+    builder.startObject(String(getID(' ')));
+
+    builder.writeField("type", static_cast<int>(type));
+    builder.writeField("col_decl", col_decl, col_decl != nullptr);
+    builder.writeField("column", column, column != nullptr);
+    builder.writeField("order_by", order_by, order_by != nullptr);
+    builder.writeField("sample_by", sample_by, sample_by != nullptr);
+    builder.writeField("index_decl", index_decl, index_decl != nullptr);
+    builder.writeField("index", index, index != nullptr);
+    builder.writeField("constraint_decl", constraint_decl, constraint_decl != nullptr);
+    builder.writeField("constraint", constraint, constraint != nullptr);
+    builder.writeField("projection_decl", projection_decl, projection_decl != nullptr);
+    builder.writeField("projection", projection, projection != nullptr);
+    builder.writeField("statistics_decl", statistics_decl, statistics_decl != nullptr);
+    builder.writeField("partition", partition, partition != nullptr);
+    builder.writeField("predicate", predicate, predicate != nullptr);
+    builder.writeField("update_assignments", update_assignments, update_assignments != nullptr);
+    builder.writeField("comment", comment, comment != nullptr);
+    builder.writeField("ttl", ttl, ttl != nullptr);
+    builder.writeField("settings_changes", settings_changes, settings_changes != nullptr);
+    builder.writeField("settings_resets", settings_resets, settings_resets != nullptr);
+    builder.writeField("select", select, select != nullptr);
+    builder.writeField("sql_security", sql_security, sql_security != nullptr);
+    builder.writeField("rename_to", rename_to, rename_to != nullptr);
+    builder.writeField("refresh", refresh, refresh != nullptr);
+    builder.writeField("snapshot_desc", snapshot_desc, snapshot_desc != nullptr);
+
+    builder.writeField("detach", detach, detach);
+    builder.writeField("part", part, part);
+    builder.writeField("clear_column", clear_column, clear_column);
+    builder.writeField("clear_index", clear_index, clear_index);
+    builder.writeField("clear_statistics", clear_statistics, clear_statistics);
+    builder.writeField("clear_projection", clear_projection, clear_projection);
+    builder.writeField("if_not_exists", if_not_exists, if_not_exists);
+    builder.writeField("if_exists", if_exists, if_exists);
+    builder.writeField("first", first, first);
+    builder.writeField("replace", replace, replace);
+
+    builder.writeField("move_destination_name", move_destination_name, !move_destination_name.empty());
+    builder.writeField("from", from, !from.empty());
+    builder.writeField("with_name", with_name, !with_name.empty());
+    builder.writeField("from_database", from_database, !from_database.empty());
+    builder.writeField("from_table", from_table, !from_table.empty());
+    builder.writeField("to_database", to_database, !to_database.empty());
+    builder.writeField("to_table", to_table, !to_table.empty());
+    builder.writeField("snapshot_name", snapshot_name, !snapshot_name.empty());
+    builder.writeField("remove_property", remove_property, !remove_property.empty());
+
+    auto convert_to_mv_dest_str = [this]()
+    {
+        switch (move_destination_type)
+        {
+            case DataDestinationType::DISK:
+                return "DISK";
+            case DataDestinationType::VOLUME:
+                return "VOLUME";
+            case DataDestinationType::TABLE:
+                return "TABLE";
+            default:
+                return "";
+        }
+    };
+
+    String move_destination_type_str = convert_to_mv_dest_str();
+    builder.writeField("move_destination_type", move_destination_type_str, !move_destination_type_str.empty());
+}
+
 
 bool ASTAlterQuery::isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const
 {
@@ -724,4 +902,50 @@ void ASTAlterQuery::forEachPointerToChild(std::function<void(void**)> f)
     f(reinterpret_cast<void **>(&command_list));
 }
 
+void ASTAlterQuery::writeJSON(WriteBuffer & buf, size_t indent) const
+{
+    JSONObjectBuilder builder(buf, indent);
+    builder.startObject(getID(' '));
+
+    auto alter_obj_as_str = [this]()
+    {
+        switch (alter_object)
+        {
+            case AlterObjectType::TABLE:
+                return "TABLE";
+            case AlterObjectType::DATABASE:
+                return "DATABASE";
+            default:
+                return "Alter";
+        }
+    };
+
+    String alter_object_str = alter_obj_as_str();
+    builder.writeField("alter_object", alter_object_str, !alter_object_str.empty());
+    builder.writeField("database", database, database != nullptr);
+    builder.writeField("table", table, table != nullptr);
+
+    // Command list using writeField with custom array writing
+    if (command_list && !command_list->children.empty())
+    {
+        WriteBufferFromOwnString obj_buf;
+
+        size_t outer_indent = builder.getIndent();
+        buf.write(String(outer_indent * 2, ' ').c_str(), outer_indent * 2);
+        writeChar('[', buf);
+        writeChar('\n', buf);
+        String inner_indent = String((outer_indent + 1) * 2, ' ');
+        for (size_t i = 0; i < command_list->children.size(); ++i)
+        {
+            buf.write(inner_indent.c_str(), inner_indent.size());
+            command_list->children[i]->writeJSON(buf, outer_indent + 1);
+            if (i + 1 < command_list->children.size())
+                writeChar(',', buf);
+            writeChar('\n', buf);
+        }
+        buf.write(String(outer_indent * 2, ' ').c_str(), outer_indent * 2);
+        writeChar(']', buf);
+    }
+    builder.writeField("on_cluster", cluster, !cluster.empty());
+}
 }

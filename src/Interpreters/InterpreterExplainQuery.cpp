@@ -1,3 +1,4 @@
+#include <IO/WriteBuffer.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 
@@ -18,7 +19,9 @@
 #include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTFormatFactory.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTJSONFormatter.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -37,7 +40,6 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
-
 
 namespace DB
 {
@@ -736,6 +738,11 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 writeCString("<no current transaction>", buf);
             }
 
+            break;
+        }
+        case ASTExplainQuery::ASTToJSON:
+        {
+            ASTFormatFactory::create("json")->format(ast, buf);
             break;
         }
     }
