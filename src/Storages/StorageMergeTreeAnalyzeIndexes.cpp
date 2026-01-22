@@ -187,18 +187,17 @@ protected:
             query_info,
             metadata_snapshot);
 
-        ContextMutablePtr new_context = Context::createCopy(context);
-        new_context->setSetting("use_skip_indexes_on_data_read", false);
-
         /// TODO: we may also want to support query condition cache here as well
 
         ReadFromMergeTree::AnalysisResult analysis_result;
+        indexes->use_skip_indexes_on_data_read = false; /// for static skip index analysis
+        indexes->use_skip_indexes_if_final_exact_mode = false; /// not supported in distributed index analysis
         MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
         {
             .metadata_snapshot = metadata_snapshot,
             .mutations_snapshot = snapshot_data.mutations_snapshot,
             .query_info = query_info,
-            .context = new_context,
+            .context = context,
             .indexes = *indexes,
             .top_k_filter_info = std::nullopt,
             .reader_settings = reader_settings,
