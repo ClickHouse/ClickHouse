@@ -6266,9 +6266,6 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 
-    static constexpr std::string background_profile_name_setting = "background_profile";
-    static constexpr std::string background_profile_default_name = "background";
-
     makeBackgroundContext(config);
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
