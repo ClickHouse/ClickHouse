@@ -352,9 +352,9 @@ public:
         return current_metadata->optimize(metadata_snapshot, context, format_settings);
     }
 
-    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override
+    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override
     {
-        current_metadata->addDeleteTransformers(object_info, builder, format_settings, local_context);
+        current_metadata->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context);
     }
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
