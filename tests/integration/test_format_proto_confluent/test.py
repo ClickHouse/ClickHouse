@@ -8,7 +8,7 @@ import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from .message_pb2 import TestRecord
+from .message_pb2 import TestRecord, TestRecordBatch
 from .message_nested_pb2 import A, B
 
 import pytest
@@ -85,6 +85,50 @@ def test_select(started_cluster):
     stdout = run_query(instance, f"select * from protobuf_data{uuid_table}")
     assert list(map(str.split, stdout.splitlines())) == [['42', 'abc'], ['43', 'abc'], ['44', 'abc']]
 
+def test_repeated_fields(started_cluster):
+    reg_url = f"http://localhost:{started_cluster.schema_registry_port}"
+    schema_registry_client = SchemaRegistryClient({"url": reg_url})
+
+    serializer = ProtobufSerializer(
+        TestRecordBatch,
+        schema_registry_client,
+        {"use.deprecated.format": False},
+    )
+
+    ctx = SerializationContext(topic="test_subject", field=MessageField.VALUE)
+
+    buf = io.BytesIO()
+    batch = TestRecordBatch(
+        rows=[
+            TestRecord(value=42, value2="abc"),
+            TestRecord(value=43, value2="abc"),
+            TestRecord(value=44, value2="abc"),
+        ]
+    )
+    data = serializer(batch, ctx)
+    buf.write(data)
+    batch = TestRecordBatch(
+        rows=[
+            TestRecord(value=45, value2="abc"),
+            TestRecord(value=46, value2="abacaba"),
+        ]
+    )
+    data = serializer(batch, ctx)
+    buf.write(data)
+    data = buf.getvalue()
+
+    instance = started_cluster.instances["dummy"]
+    schema_registry_url = f"http://{started_cluster.schema_registry_host}:{started_cluster.schema_registry_port}"
+    settings = {"format_protobuf_schema_registry_url": schema_registry_url}
+
+    uuid_table = get_uuid_str()
+    run_query(instance, f"create table protobuf_data{uuid_table}(rows Array(Tuple(value Int64, value2 String))) engine = Memory()")
+
+    run_query(instance, f"insert into protobuf_data{uuid_table} format ProtobufConfluent", data, settings)
+
+    stdout = run_query(instance, f"select * from protobuf_data{uuid_table}")
+    assert stdout == "[(42,'abc'),(43,'abc'),(44,'abc')]\n"
+
 
 def test_select_auth(started_cluster):
     # type: (ClickHouseCluster) -> None
@@ -128,7 +172,7 @@ def test_select_auth(started_cluster):
     stdout = run_query(instance, f"select * from protobuf_data{uuid_table}")
     assert list(map(str.split, stdout.splitlines())) == [['42', 'abc'], ['43', 'abc'], ['44', 'abc']]
 
-def test_select_ab_msg_indexes(started_cluster, tmp_path):
+def test_nested_fields(started_cluster, tmp_path):
     reg_url = f"http://localhost:{started_cluster.schema_registry_port}"
     schema_registry_client = SchemaRegistryClient({"url": reg_url})
 

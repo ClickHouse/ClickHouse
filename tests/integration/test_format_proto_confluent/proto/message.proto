@@ -4,3 +4,7 @@ message TestRecord {
   int64 value = 1;
   string value2 = 2;
 }
+
+message TestRecordBatch {
+  repeated TestRecord rows = 1;
+}

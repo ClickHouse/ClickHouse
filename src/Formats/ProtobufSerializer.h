@@ -7,6 +7,7 @@
 #   include <Core/NamesAndTypes.h>
 #   include <Formats/ProtobufSchemas.h>
 
+#include <iostream>
 
 namespace google::protobuf { class Descriptor; }
 
@@ -24,11 +25,16 @@ class WriteBuffer;
 class ProtobufSerializer
 {
 public:
-    virtual ~ProtobufSerializer() = default;
+    virtual ~ProtobufSerializer()
+    {
+        std::cerr << "destructor";
+        finalizeRead();
+    }
 
     virtual void setColumns(const ColumnPtr * columns, size_t num_columns) = 0;
     virtual void writeRow(size_t row_num) = 0;
     virtual void finalizeWrite() {}
+    virtual void finalizeRead() {}
     virtual void reset() {}
 
     virtual void setColumns(const MutableColumnPtr * columns, size_t num_columns) = 0;

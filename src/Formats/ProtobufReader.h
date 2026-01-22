@@ -37,6 +37,11 @@ public:
 
     void setReadBuffer(ReadBuffer & in_) { in = &in_; }
 
+    ReadBuffer * getBuffer() const
+    {
+        return in;
+    }
+
 private:
     void readBinary(void * data, size_t size);
     void ignore(UInt64 num_bytes);

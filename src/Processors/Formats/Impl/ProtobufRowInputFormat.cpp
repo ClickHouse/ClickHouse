@@ -11,10 +11,12 @@
 #include <IO/ReadHelpers.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/PeekableReadBuffer.h>
 
 #include <Common/Exception.h>
 #include <Common/CacheBase.h>
 #include "IO/VarInt.h"
+#include "Interpreters/Context_fwd.h"
 #include "base/types.h"
 #include <Core/Block_fwd.h>
 
@@ -270,7 +272,16 @@ bool ProtobufConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadE
     {
         return false;
     }
-
+#if 0
+    while (true)
+    {
+        char var;
+        if (!in->read(var))
+            break;
+        std::cerr << static_cast<Int32>(var) << ' ';
+    }
+    std::cerr << '\n';
+#endif
     SchemaId schema_id = readConfluentSchemaId(*in, first_row);
     first_row = false;
     const google::protobuf::Descriptor * base_descriptor = schema_registry->getProtobufSchema(schema_id);

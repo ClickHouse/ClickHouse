@@ -2612,6 +2612,7 @@ namespace
 
         void readRow(size_t row_num) override
         {
+            (void)use_confluent;
             if (parent_field_descriptor || has_envelope_as_parent)
                 reader->startNestedMessage();
             else
@@ -2628,6 +2629,7 @@ namespace
                     int field_tag;
                     while (reader->readFieldNumber(field_tag))
                     {
+                        std::cerr << "field_tag " << field_tag << '\n';
                         auto field_index = findFieldIndexByFieldTag(field_tag);
                         if (!field_index.has_value())
                         {
@@ -2640,6 +2642,7 @@ namespace
                         field_serializer->readRow(row_num);
                         field_infos[field_index.value()].field_read = true;
                     }
+                    std::cerr << "end\n";
 
                     for (auto & info : field_infos)
                     {
@@ -2673,15 +2676,25 @@ namespace
                 }
             }
 
-            if (!use_confluent)
+            finalizeRead();
+            addDefaultsToMissingColumns(row_num);
+        }
+
+        ~ProtobufSerializerMessage() override
+        {
+            //finalizeRead();
+        }
+
+        void finalizeRead() override
+        {
+            std::cerr << "reader->getBuffer()->available() " << reader->getBuffer()->available() << '\n';
+            if (reader->getBuffer()->available() == 0)
             {
                 if (parent_field_descriptor || has_envelope_as_parent)
                     reader->endNestedMessage();
                 else
                     reader->endMessage(false);
             }
-
-            addDefaultsToMissingColumns(row_num);
         }
 
         void insertDefaults(size_t row_num) override
