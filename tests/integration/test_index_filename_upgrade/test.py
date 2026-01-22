@@ -37,13 +37,13 @@ def test_index_filename_upgrade(started_cluster):
     )
     node.query("INSERT INTO test_index_filename SELECT number FROM numbers(1); -- Compact / packed")
     node.query("INSERT INTO test_index_filename SELECT number FROM numbers(10000); -- Wide")
-    node.query("SELECT count() FROM test_index_filename WHERE `column` = 24 SETTINGS use_query_condition_cache=0;")
+    node.query("SELECT count() FROM test_index_filename WHERE `column` = 24 SETTINGS use_query_condition_cache=0, use_skip_indexes_on_data_read=0;")
     node.wait_for_log_line("Index `minmax_index_ESPAÑA` has dropped 1")
 
     # When restarting with the latest version, the index filename is expected to be escaped so loading it will fail
     node.restart_with_latest_version()
 
-    node.query("SELECT count() FROM test_index_filename WHERE `column` = 24 SETTINGS use_query_condition_cache=0;")
+    node.query("SELECT count() FROM test_index_filename WHERE `column` = 24 SETTINGS use_query_condition_cache=0, use_skip_indexes_on_data_read=0;")
     node.wait_for_log_line("File for index `minmax_index_ESPAÑA` does not exist")
     node.wait_for_log_line("Index `minmax_index_ESPAÑA` has dropped 0")
 
