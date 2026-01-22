@@ -614,3 +614,177 @@ def test_ordered_mode_with_regex_partitioning_large_num_files(started_cluster, e
     expected_partition_keys = [f"server-{i}" for i in range(1, num_hosts + 1)]
     expected_partition_keys.sort()  # Sort lexicographically to match processed_nodes sorting
     assert processed_nodes == expected_partition_keys, f"Expected {num_hosts} partitions, got {len(processed_nodes)}: {processed_nodes}"
+
+
+@pytest.mark.parametrize("bucketing_mode", ["path", "partition"])
+@pytest.mark.parametrize("engine_name", ["S3Queue"])
+def test_bucketing_mode_with_regex_partitioning(started_cluster, engine_name, bucketing_mode):
+    """
+    Test bucketing_mode setting with regex-based partitioning.
+
+    - bucketing_mode='path': Files distributed across buckets based on hash of full path (default)
+    - bucketing_mode='partition': Files from same partition always go to same bucket
+
+    This test verifies that when bucketing_mode='partition':
+    1. Validation: Fails without partitioning_mode, succeeds with partitioning_mode
+    2. All files from the same hostname end up in the same bucket
+    3. Files are only in specific buckets, not distributed across all buckets
+    4. Each partition maps to exactly ONE bucket
+    """
+    instance = started_cluster.instances["instance"]
+    instances = [instance]
+
+    # Test validation: bucketing_mode='partition' requires partitioning_mode
+    if bucketing_mode == "partition":
+        validation_table = f"test_validation_{engine_name}_{generate_random_string()}"
+        validation_path = f"{validation_table}_data"
+        validation_keeper = f"/clickhouse/test_{validation_table}_{generate_random_string()}"
+
+        # Should fail without partitioning_mode
+        with pytest.raises(Exception) as exc_info:
+            create_table(
+                started_cluster,
+                instance,
+                validation_table,
+                "ordered",
+                validation_path,
+                additional_settings={
+                    "keeper_path": validation_keeper,
+                    "processing_threads_num": 4,
+                    "buckets": 4,
+                    "bucketing_mode": "partition",
+                    # partitioning_mode defaults to 'none'
+                },
+                engine_name=engine_name,
+            )
+
+        error_message = str(exc_info.value)
+        assert "bucketing_mode='partition' requires partitioning_mode" in error_message, \
+            f"Expected validation error about bucketing_mode, got: {error_message}"
+
+    table_name = f"test_bucketing_{bucketing_mode}_{engine_name}_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+
+    # Regex patterns for hostname-based partitioning
+    partition_regex = r'(?P<hostname>server-\d+)_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)'
+    partition_component = 'hostname'
+
+    processing_threads_num = 4
+    buckets = 4
+
+    # Create files across 3 hostnames (partitions)
+    # With bucketing_mode='partition', all files from same hostname should go to same bucket
+    # With bucketing_mode='path', files from same hostname may be distributed across buckets
+
+    num_hostnames = 3
+    files_per_hostname = 6
+
+    print(f"Testing bucketing_mode='{bucketing_mode}' with {num_hostnames} partitions and {buckets} buckets")
+
+    expected_data = []
+    for host_id in range(1, num_hostnames + 1):
+        for seq in range(1, files_per_hostname + 1):
+            value = host_id * 100 + seq
+            filename = f"{files_path}/server-{host_id}_20251217T100000.000000Z_{seq:04d}.csv"
+            content = f"{value},{host_id},{seq}\n".encode()
+            put_file_content(started_cluster, engine_name, filename, content)
+            expected_data.append(f"{value},{host_id},{seq}")
+
+    # Create table with specified bucketing_mode
+    for node in instances:
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "ordered",
+            files_path,
+            additional_settings={
+                "s3queue_loading_retries": 3,
+                "keeper_path": keeper_path,
+                "polling_max_timeout_ms": 5000,
+                "polling_backoff_ms": 1000,
+                "processing_threads_num": processing_threads_num,
+                "buckets": buckets,
+                "bucketing_mode": bucketing_mode,
+            },
+            engine_name=engine_name,
+            partitioning_mode="regex",
+            partition_regex=partition_regex,
+            partition_component=partition_component,
+        )
+        create_mv(node, table_name, dst_table_name)
+
+    # Wait for tables to be created
+    for node in instances:
+        for _ in range(10):
+            try:
+                node.query(f"EXISTS TABLE {table_name}_mv")
+                break
+            except:
+                time.sleep(0.5)
+
+    # Wait for all files to be processed
+    def wait_for_all_data(expected_count):
+        for i in range(30):
+            count = 0
+            for node in instances:
+                count += int(node.query(f"SELECT count() FROM {dst_table_name}"))
+            print(f"Progress: {count}/{expected_count}")
+            if count >= expected_count:
+                break
+            time.sleep(1)
+
+    expected_count = num_hostnames * files_per_hostname
+    wait_for_all_data(expected_count)
+
+    # Verify all files were processed
+    total_count = 0
+    for node in instances:
+        total_count += int(node.query(f"SELECT count() FROM {dst_table_name}"))
+    assert total_count == expected_count, f"Expected {expected_count} rows, got {total_count}"
+
+    # Verify data correctness
+    data = ""
+    for node in instances:
+        data += node.query(f"SELECT column1, column2, column3 FROM {dst_table_name} ORDER BY column1 FORMAT CSV")
+
+    data_lines = data.strip().split("\n")
+    data_lines.sort()
+    expected_data.sort()
+    assert data_lines == expected_data, f"Data mismatch"
+
+    # Check bucket distribution in ZooKeeper
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    # Map: partition_key -> bucket_id
+    partition_to_buckets = {}
+    buckets_used = set()
+
+    for bucket_id in range(buckets):
+        bucket_path = f"{keeper_path}/buckets/{bucket_id}/processed"
+        if not zk.exists(bucket_path):
+            continue
+
+        buckets_used.add(bucket_id)
+        partition_keys = zk.get_children(bucket_path)
+        for partition_key in partition_keys:
+            if partition_key not in partition_to_buckets:
+                partition_to_buckets[partition_key] = []
+            partition_to_buckets[partition_key].append(bucket_id)
+
+    if bucketing_mode == "partition":
+        # All 3 hostnames should be present as partition keys
+        assert len(partition_to_buckets) == num_hostnames, \
+            f"Expected {num_hostnames} partitions, got {len(partition_to_buckets)}"
+
+        # With bucketing_mode='partition', each partition should map to exactly ONE bucket
+        for partition_key, bucket_ids in partition_to_buckets.items():
+            assert len(bucket_ids) == 1, \
+                f"With bucketing_mode='partition', partition '{partition_key}' should be in exactly 1 bucket, " \
+                f"but found in buckets: {bucket_ids}"
+
+        # With 3 partitions and 4 buckets, we should use EXACTLY 3 buckets (one per partition)
+        assert len(buckets_used) == num_hostnames, \
+            f"Expected EXACTLY {num_hostnames} buckets to be used (one per partition), but {len(buckets_used)} were used: {buckets_used}"
