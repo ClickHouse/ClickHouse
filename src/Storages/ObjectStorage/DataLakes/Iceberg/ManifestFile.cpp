@@ -9,9 +9,10 @@
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -461,7 +462,8 @@ ManifestFileContent::ManifestFileContent(
                         upper_reference_data_file_path = reference_file_path_field.safeGet<String>();
                     }
                 }
-                else if (auto it = value_for_bounds.find(data_file_column_id_in_position_delete_file); it != value_for_bounds.end())
+                else if (auto it = value_for_bounds.find(IcebergPositionDeleteTransform::data_file_path_column_field_id);
+                         it != value_for_bounds.end())
                 {
                     auto & [lower, upper] = it->second;
                     lower_reference_data_file_path = lower.safeGet<String>();

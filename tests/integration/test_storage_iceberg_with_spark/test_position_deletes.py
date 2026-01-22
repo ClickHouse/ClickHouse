@@ -7,7 +7,9 @@ from helpers.iceberg_utils import (
     default_upload_directory,
     get_uuid_str,
     create_iceberg_table,
-    get_creation_expression
+    get_creation_expression,
+    parse_manifest_entry,
+    ManifestEntry
 )
 
 
@@ -177,17 +179,6 @@ class LogEntry:
         self.upper_bound = upper_bound
         self.action = action
 
-
-class ManifestEntry:
-    def __init__(self, file_path: str, is_delete: bool, is_data: bool,
-                 lower_bound: Optional[str], upper_bound: Optional[str]):
-        self.file_path = file_path
-        self.is_delete = is_delete
-        self.is_data = is_data
-        self.lower_bound = lower_bound
-        self.upper_bound = upper_bound
-
-
 def parse_log_entry(log_line: str) -> LogEntry:
     """
     Parse a log line to extract data_file, position_delete_file, lower_bound, upper_bound.
@@ -217,58 +208,22 @@ def parse_log_entry(log_line: str) -> LogEntry:
     
     assert False, "Failed to parse log entry: " + log_line
 
+def get_matching_info_from_profile_events(instance, query_id: str) -> (int, int):
+    instance.query("SYSTEM FLUSH LOGS")
 
-def unescape_path(path: Optional[str]) -> Optional[str]:
-    """
-    Unescape a path that has backslash-escaped forward slashes.
-    """
-    if path is None:
-        return None
-    return path.replace('\\/', '/')
-
-
-def get_bound_for_column(bounds: Any, column_id: int) -> Optional[str]:
-    """
-    Extract bound value for a specific column ID from bounds structure.
-    Bounds can be either a dict {column_id: value} or a list of {key: column_id, value: value}.
-    Returns unescaped path.
-    """
-    if bounds is None:
-        return None
-    value: Optional[str] = None
-    if isinstance(bounds, dict):
-        value = bounds.get(str(column_id))
-    elif isinstance(bounds, list):
-        for item in bounds:
-            if isinstance(item, dict) and item.get('key') == column_id:
-                value = item.get('value')
-                break
-    return unescape_path(value)
-
-
-def parse_manifest_entry(content_json: dict[str, Any]) -> ManifestEntry:
-    """
-    Parse manifest file entry JSON to extract file info and bounds for column 2147483546.
-    """
-    DATA_FILE_COLUMN_ID = 2147483546
-    
-    data_file = content_json.get('data_file', {})
-    file_path: str = data_file.get('file_path', '')
-    content_type: int = data_file.get('content', 0)  # 0 = data, 1 = position delete, 2 = equality delete
-    
-    lower_bounds = data_file.get('lower_bounds')
-    upper_bounds = data_file.get('upper_bounds')
-    
-    lower_bound = get_bound_for_column(lower_bounds, DATA_FILE_COLUMN_ID)
-    upper_bound = get_bound_for_column(upper_bounds, DATA_FILE_COLUMN_ID)
-    
-    return ManifestEntry(
-        file_path=file_path,
-        is_delete=(content_type == 1),  # position delete
-        is_data=(content_type == 0),
-        lower_bound=lower_bound,
-        upper_bound=upper_bound
+    accepted_pairs = int(
+        instance.query(
+            f"SELECT ProfileEvents['IcebergMetadataMinMaxAcceptedDataFilePositionDeleteFilePairs'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
     )
+
+    rejected_pairs = int(
+        instance.query(
+            f"SELECT ProfileEvents['IcebergMetadataMinMaxRejectedDataFilePositionDeleteFilePairs'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+    )
+
+    return (accepted_pairs, rejected_pairs)
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -345,18 +300,22 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
     """
     metadata_log_result = instance.query(metadata_log_query)
 
+
+
     delete_files_from_manifest: dict[str, ManifestEntry] = {}
     data_files_from_manifest: set[str] = set()
     for line in metadata_log_result.strip().split('\n'):
         if line:
             content_json = json.loads(line)
             entry = parse_manifest_entry(content_json)
-            if entry.is_delete:
+            if entry.content_type == 1:
                 file_name = entry.file_path.split('/')[-1]
                 delete_files_from_manifest[file_name] = entry
-            elif entry.is_data:
+            elif entry.content_type == 0:
                 file_name = entry.file_path.split('/')[-1]
                 data_files_from_manifest.add(file_name)
+            else:
+                assert False, f"Unexpected content type: {entry.content_type}"
                 
 
     #  Verify that bounds from logs match bounds from manifest entries.
@@ -386,3 +345,5 @@ def test_position_deletes_bounds_logging(started_cluster_iceberg_with_spark, sto
         else:
             assert is_within_bounds, \
                 f"Data file {data_file_path} was processed but is NOT within bounds [{lower}, {upper}]"
+
+    assert get_matching_info_from_profile_events(instance, query_id) == (3, 6)

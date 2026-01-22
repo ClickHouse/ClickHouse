@@ -59,6 +59,8 @@ extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
 extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
+extern const Event IcebergMetadataMinMaxAcceptedDataFilePositionDeleteFilePairs;
+extern const Event IcebergMetadataMinMaxRejectedDataFilePositionDeleteFilePairs;
 };
 
 
@@ -378,7 +380,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             /// Skip position deletes that do not match the data file path.
             if (!can_contain_data_file_deletes)
             {
-                LOG_DEBUG(
+                ProfileEvents::increment(ProfileEvents::IcebergMetadataMinMaxRejectedDataFilePositionDeleteFilePairs);
+                LOG_TEST(
                     logger,
                     "Skipping position delete file `{}` for data file `{}` because position delete has out of bounds reference data file "
                     "bounds: "
@@ -390,7 +393,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             }
             else
             {
-                LOG_DEBUG(
+                ProfileEvents::increment(ProfileEvents::IcebergMetadataMinMaxAcceptedDataFilePositionDeleteFilePairs);
+                LOG_TEST(
                     logger,
                     "Processing position delete file `{}` for data file `{}` with reference data file bounds: "
                     "(lower bound: `{}`, upper bound: `{}`)",
