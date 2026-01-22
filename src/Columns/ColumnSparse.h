@@ -263,9 +263,6 @@ private:
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
 
-/// Remove sparse representation and ensure Nullable columns have ColumnNullable wrapper
-ColumnPtr recursiveRemoveSparse(const ColumnPtr & column, const DataTypePtr & type);
-
 /// Remove all special representations (for now Sparse and Replicated).
 ColumnPtr removeSpecialRepresentations(const ColumnPtr & column);
 

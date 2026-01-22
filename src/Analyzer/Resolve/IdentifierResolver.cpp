@@ -1067,8 +1067,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             !using_column_node_it->second->getColumnType()->equals(*resolved_column.getColumnType()))
         {
             // std::cerr << "... fixing type for " << resolved_column.dumpTree() << std::endl;
-            auto resolved_column_clone = std::static_pointer_cast<ColumnNode>(resolved_column.clone());
-            resolved_column_clone->setColumnType(using_column_node_it->second->getColumnType());
+            QueryTreeNodePtr resolved_column_clone = std::static_pointer_cast<ColumnNode>(resolved_column.clone());
+            resolved_column_clone = buildCastFunction(resolved_identifier_candidate, result_type, current_scope.context, true);
 
             auto projection_name_it = projection_name_mapping.find(resolved_identifier_candidate);
             if (projection_name_it != projection_name_mapping.end())

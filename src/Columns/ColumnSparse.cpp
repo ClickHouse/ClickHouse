@@ -3,14 +3,12 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnReplicated.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/iota.h>
-#include <DataTypes/IDataType.h>
 
 #include <algorithm>
 #include <bit>
@@ -914,20 +912,6 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
     }
 
     return column->convertToFullColumnIfSparse();
-}
-
-ColumnPtr recursiveRemoveSparse(const ColumnPtr & column, const DataTypePtr & type)
-{
-    auto result = recursiveRemoveSparse(column);
-
-    /// If the type is Nullable but the result column is not, wrap it in ColumnNullable
-    if (type && type->isNullable() && !result->isNullable())
-    {
-        auto null_map = ColumnUInt8::create(result->size(), 0);
-        result = ColumnNullable::create(result, std::move(null_map));
-    }
-
-    return result;
 }
 
 ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
