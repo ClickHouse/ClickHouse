@@ -50,7 +50,7 @@ def test_index_filename_upgrade(started_cluster):
     node.query("ALTER TABLE test_index_filename MODIFY SETTING escape_index_filenames=0;")
 
     # And now the index should work
-    node.query("SELECT count() FROM test_index_filename WHERE `column` = 24;")
+    node.query("SELECT count() FROM test_index_filename WHERE `column` = 24 SETTINGS use_query_condition_cache=0, use_skip_indexes_on_data_read=0;")
     node.wait_for_log_line("Index `minmax_index_ESPAÑA` has dropped 1")
 
     node.query("DROP TABLE test_index_filename;")
