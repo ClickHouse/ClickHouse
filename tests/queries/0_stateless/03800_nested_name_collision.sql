@@ -5,8 +5,8 @@ DROP TABLE IF EXISTS nested_collision;
 -- This previously crashed because "n" (String) conflicted with inferred Nested "n" from "n.a"
 CREATE TABLE nested_collision
 (
-    `n` String,
-    `n.a` Array(String)
+    n String,
+    "n.a" Array(String)
 )
 ENGINE = Memory;
 

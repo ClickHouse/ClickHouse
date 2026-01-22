@@ -209,15 +209,17 @@ namespace
 {
 using NameToDataType = std::map<String, DataTypePtr>;
 
+
 NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
 {
-    std::unordered_set<String> existing_names; /// set of existing top-level column names to avoid inferring conflicting Nested parents
-    existing_names.reserve(names_and_types.size());
-    for (const auto & nt : names_and_types)
-        existing_names.emplace(nt.name);
+    std::unordered_map<String, DataTypePtr> existing; /// name->type for fast prefix lookup
+    existing.reserve(names_and_types.size()); 
+    for (const auto & nt : names_and_types) 
+        existing.emplace(nt.name, nt.type); 
 
     std::unordered_map<String, NamesAndTypesList> nested;
-    nested.reserve(names_and_types.size());
+    nested.reserve(names_and_types.size()); 
+
     for (const auto & name_type : names_and_types)
     {
         const auto * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
@@ -226,8 +228,14 @@ NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
         if (!isNested(name_type.type) && type_arr)
         {
             auto split = splitName(name_type.name);
-            if (!split.second.empty() && !existing_names.contains(split.first)) /// do not infer Nested parent if its name already exists as a real column (prevents duplicates like n + "n.a")
+            if (!split.second.empty())
+            {
+                auto it = existing.find(split.first); 
+                if (it != existing.end() && !isNested(it->second)) /// parent exists and isn't Nested => don't infer Nested from prefix.suffix
+                    continue;
+
                 nested[split.first].emplace_back(split.second, type_arr->getNestedType());
+            }
         }
     }
 
