@@ -26,10 +26,13 @@ inline std::string_view checkAndReturnHost(const Pos & pos, const Pos & dot_pos,
 /// @return empty string view if the host is not valid (i.e. it does not have dot, or there no symbol after dot).
 inline std::string_view getURLHostRFC(const char * data, size_t size)
 {
+    if (size == 0)
+        return std::string_view{};
+
     Pos pos = data;
     Pos end = data + size;
 
-    if (*pos == '/' && *(pos + 1) == '/')
+    if (size >= 2 && *pos == '/' && *(pos + 1) == '/')
     {
         pos += 2;
     }
