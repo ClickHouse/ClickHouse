@@ -838,11 +838,11 @@ void TCPHandler::runImpl()
                 if (auto * create_query = query_state->parsed_query->as<ASTCreateQuery>();
                     create_query && create_query->isCreateQueryWithImmediateInsertSelect())
                 {
-                    sendProgress(*query_state);
-
+                    
                     /// Log peak memory usage just before sending it to client to make it as accurate as possible
                     /// (though note we may still have some allocations in between, that will make the difference)
                     query_scope->logPeakMemoryUsage();
+                    sendProgress(*query_state);
                     sendSelectProfileEvents(*query_state);
                 }
             }
@@ -1443,7 +1443,7 @@ void TCPHandler::processOrdinaryQuery(QueryState & state, CurrentThread::QuerySc
         sendTotals(state, executor.getTotalsBlock());
         sendExtremes(state, executor.getExtremesBlock());
         sendProfileInfo(state, executor.getProfileInfo());
-        sendProgress(state);
+        // sendProgress(state);
         sendLogs(state);
 
         /// Log peak memory usage just before sending it to client to make it as accurate as possible
