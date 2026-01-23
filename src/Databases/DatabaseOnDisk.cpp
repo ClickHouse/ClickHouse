@@ -136,7 +136,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     /// Later (breaking) changes to table storages made the engines throw, which now prevents attaching old definitions which include
     /// those query settings
     /// In order to ignore them now we call `applySettingsFromQuery` which will move the settings from engine to query level
-    auto ast = std::make_shared<ASTCreateQuery>(std::move(ast_create_query));
+    auto ast = make_intrusive<ASTCreateQuery>(std::move(ast_create_query));
     auto set_context = Context::createCopy(context);
     InterpreterSetQuery::applySettingsFromQuery(ast, set_context);
 
@@ -584,7 +584,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQueryImpl() const
     if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
     }
 
     return ast;
@@ -856,10 +856,10 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     }
 
     /// setup create table query storage info.
-    auto ast_engine = std::make_shared<ASTFunction>();
+    auto ast_engine = make_intrusive<ASTFunction>();
     ast_engine->name = storage->getName();
     ast_engine->no_empty_args = true;
-    auto ast_storage = std::make_shared<ASTStorage>();
+    auto ast_storage = make_intrusive<ASTStorage>();
     ast_storage->set(ast_storage->engine, ast_engine);
 
     const Settings & settings = getContext()->getSettingsRef();
@@ -872,7 +872,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
         throw_on_error);
 
     create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            std::make_shared<ASTLiteral>(storage->getInMemoryMetadata().comment));
+                            make_intrusive<ASTLiteral>(storage->getInMemoryMetadata().comment));
 
     return create_table_query;
 }
@@ -897,7 +897,7 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     }
     else
     {
-        auto storage_settings = std::make_shared<ASTSetQuery>();
+        auto storage_settings = make_intrusive<ASTSetQuery>();
         storage_settings->is_standalone = false;
         storage_settings->changes = settings_changes;
         create->storage->set(create->storage->settings, storage_settings->clone());

@@ -53,6 +53,7 @@ namespace ErrorCodes
     DECLARE(ObjectStorageQueuePartitioningMode, partitioning_mode, ObjectStorageQueuePartitioningMode::NONE, "Partitioning strategy: NONE (no partitioning, default), HIVE (path-based like date=2025-01-01/city=NY), or REGEX (extract from filename using partition_regex)", 0) \
     DECLARE(String, partition_regex, "", "Regex to extract named capture groups from filename. All named groups are captured. Use partition_component to specify which group is the partition key. Example: '(?P<hostname>[^_]+)_(?P<timestamp>[^_]+)_(?P<sequence>\\d+)'", 0) \
     DECLARE(String, partition_component, "", "Name of the capture group from partition_regex to use as partition key. Required when using partitioning_mode='regex'. Example: 'hostname'", 0) \
+    DECLARE(ObjectStorageQueueBucketingMode, bucketing_mode, ObjectStorageQueueBucketingMode::PATH, "Bucketing strategy for Ordered mode parallel processing: PATH (hash full file path, default), PARTITION (hash partition key, requires partitioning_mode != NONE)", 0) \
     DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
     DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
@@ -235,7 +236,7 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
