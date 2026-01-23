@@ -127,7 +127,7 @@ public:
                     result_type = ResultType::DateTime64;
             }
         };
-        
+
         auto check_third_argument = [&]
         {
             const DataTypePtr & type_arg3 = arguments[2].type;
