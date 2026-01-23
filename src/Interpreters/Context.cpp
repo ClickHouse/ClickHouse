@@ -26,6 +26,7 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ConcurrencyControl.h>
+#include <Common/UntrackedMemoryHolder.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
@@ -513,6 +514,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable UncompressedCachePtr uncompressed_cache TSA_GUARDED_BY(mutex);            /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
     mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
+    mutable UntrackedMemoryHolderPtr untracked_memory_holder TSA_GUARDED_BY(mutex);
     mutable OnceFlag load_marks_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
     mutable OnceFlag prefetch_threadpool_initialized;
@@ -3774,6 +3776,20 @@ PrimaryIndexCachePtr Context::getPrimaryIndexCache() const
 {
     SharedLockGuard lock(shared->mutex);
     return shared->primary_index_cache;
+}
+
+UntrackedMemoryHolderPtr Context::getUntrackedMemoryHolder() const
+{
+    {
+        SharedLockGuard lock(shared->mutex);
+        if (shared->untracked_memory_holder)
+            return shared->untracked_memory_holder;
+    }
+
+    std::lock_guard lock(shared->mutex);
+    if (!shared->untracked_memory_holder)
+        shared->untracked_memory_holder = std::make_shared<UntrackedMemoryHolder>();
+    return shared->untracked_memory_holder;
 }
 
 void Context::clearPrimaryIndexCache() const

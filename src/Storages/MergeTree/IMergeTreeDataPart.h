@@ -57,6 +57,9 @@ using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 class PrimaryIndexCache;
 using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
 
+class UntrackedMemoryHolder;
+using UntrackedMemoryHolderPtr = std::shared_ptr<UntrackedMemoryHolder>;
+
 enum class DataPartRemovalState : uint8_t
 {
     NOT_ATTEMPTED,

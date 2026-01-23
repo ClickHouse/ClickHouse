@@ -72,6 +72,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/UntrackedMemoryHolder.h>
 
 #if USE_PROTOBUF
 #include <Formats/ProtobufSchemas.h>
@@ -902,6 +903,18 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
             FailPointInjection::disableFailPoint(query.fail_point_name);
+            break;
+        }
+        case Type::ALLOCATE_UNTRACKED_MEMORY:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_UNTRACKED_MEMORY);
+            getContext()->getUntrackedMemoryHolder()->alloc(query.untracked_memory_size);
+            break;
+        }
+        case Type::FREE_UNTRACKED_MEMORY:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_UNTRACKED_MEMORY);
+            getContext()->getUntrackedMemoryHolder()->free();
             break;
         }
         case Type::WAIT_FAILPOINT:
@@ -2302,6 +2315,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::INSTRUMENT_REMOVE:
         {
             required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
+            break;
+        }
+        case Type::ALLOCATE_UNTRACKED_MEMORY:
+        case Type::FREE_UNTRACKED_MEMORY:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_UNTRACKED_MEMORY);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

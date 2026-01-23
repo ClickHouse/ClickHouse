@@ -106,6 +106,8 @@ public:
         UNFREEZE,
         ENABLE_FAILPOINT,
         DISABLE_FAILPOINT,
+        ALLOCATE_UNTRACKED_MEMORY,
+        FREE_UNTRACKED_MEMORY,
         WAIT_FAILPOINT,
         NOTIFY_FAILPOINT,
         SYNC_FILESYSTEM_CACHE,
@@ -163,6 +165,7 @@ public:
     String volume;
     String disk;
     UInt64 seconds{};
+    UInt64 untracked_memory_size{};
 
     std::optional<String> query_result_cache_tag;
 

@@ -168,6 +168,8 @@ bool authenticateUserByHTTP(
         checkUserNameNotEmpty(user, "authentication via parameters");
     }
 
+    CurrentMemoryTracker::check();
+
     if (has_config_credentials)
     {
         current_credentials = std::make_unique<AlwaysAllowCredentials>(*config_credentials);
