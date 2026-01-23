@@ -70,15 +70,17 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     pending.setCapacity(max_tasks_count);
     active.set_capacity(max_tasks_count);
 
+    /// Update policy before starting threads to avoid a data race between
+    /// updatePolicy modifying the variant and worker threads calling empty().
+    if (!policy.empty())
+        pending.updatePolicy(policy);
+
     pool->setMaxThreads(std::max(1UL, threads_count));
     pool->setMaxFreeThreads(std::max(1UL, threads_count));
     pool->setQueueSize(std::max(1UL, threads_count));
 
     for (size_t number = 0; number < threads_count; ++number)
         pool->scheduleOrThrowOnError([this] { threadFunction(); });
-
-    if (!policy.empty())
-        pending.updatePolicy(policy);
 }
 
 template <class Queue>

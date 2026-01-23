@@ -304,6 +304,25 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
         env.dump()
 
+    _GH_Auth(workflow)
+
+    # refresh PR data
+    if env.PR_NUMBER > 0:
+        title, body, labels = GH.get_pr_title_body_labels()
+        print(f"NOTE: PR title: {title}")
+        print(f"NOTE: PR labels: {labels}")
+        if title:
+            if title != env.PR_TITLE:
+                print("PR title has been changed")
+                env.PR_TITLE = title
+            if env.PR_BODY != body:
+                print("PR body has been changed")
+                env.PR_BODY = body
+            if env.PR_LABELS != labels:
+                print("PR labels have been changed")
+                env.PR_LABELS = labels
+            env.dump()
+
     if workflow.enable_report:
         print("Push pending CI report")
         HtmlRunnerHooks.push_pending_ci_report(workflow)
@@ -510,21 +529,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 info=info,
             )
         )
-
-    # refresh PR data
-    if env.PR_NUMBER > 0:
-        title, body, labels = GH.get_pr_title_body_labels()
-        if title:
-            if title != env.PR_TITLE:
-                print("PR title has been changed")
-                env.PR_TITLE = title
-            if env.PR_BODY != body:
-                print("PR body has been changed")
-                env.PR_BODY = body
-            if env.PR_LABELS != labels:
-                print("PR labels have been changed")
-                env.PR_LABELS = labels
-            env.dump()
 
     if workflow.enable_slack_feed:
         if env.PR_NUMBER:

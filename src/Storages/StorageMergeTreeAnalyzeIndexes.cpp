@@ -128,6 +128,8 @@ protected:
         if (predicate)
         {
             auto execution_context = Context::createCopy(context);
+            execution_context->setSetting("enable_parallel_blocks_marshalling", false);
+
             auto expression = buildQueryTree(predicate, execution_context);
 
             auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, metadata_snapshot->getColumns());
@@ -185,34 +187,28 @@ protected:
             query_info,
             metadata_snapshot);
 
-        ContextMutablePtr new_context = Context::createCopy(context);
-        new_context->setSetting("use_skip_indexes_on_data_read", false);
-
         /// TODO: we may also want to support query condition cache here as well
 
         ReadFromMergeTree::AnalysisResult analysis_result;
-        return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            parts_ranges,
-            metadata_snapshot,
-            snapshot_data.mutations_snapshot,
-            query_info,
-            new_context,
-            indexes->key_condition,
-            indexes->part_offset_condition,
-            indexes->total_offset_condition,
-            indexes->key_condition_rpn_template,
-            indexes->skip_indexes,
-            /* top_k_filter_info= */ std::nullopt,
-            reader_settings,
-            getLogger("MergeTreeAnalyzeIndexSource"),
-            num_streams,
-            analysis_result.index_stats,
-            indexes->use_skip_indexes,
-            indexes->use_skip_indexes_for_disjunctions,
-            /* find_exact_ranges= */ false,
-            /* is_final_query= */ false,
-            /* is_parallel_reading_from_replicas= */ false,
-            analysis_result);
+        indexes->use_skip_indexes_on_data_read = false; /// for static skip index analysis
+        indexes->use_skip_indexes_if_final_exact_mode = false; /// not supported in distributed index analysis
+        MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
+        {
+            .metadata_snapshot = metadata_snapshot,
+            .mutations_snapshot = snapshot_data.mutations_snapshot,
+            .query_info = query_info,
+            .context = context,
+            .indexes = *indexes,
+            .top_k_filter_info = std::nullopt,
+            .reader_settings = reader_settings,
+            .log = getLogger("MergeTreeAnalyzeIndexSource"),
+            .num_streams = num_streams,
+            .find_exact_ranges = false,
+            .is_parallel_reading_from_replicas = false,
+            .has_projections = false,
+            .result = analysis_result,
+        };
+        return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges, analysis_result.index_stats);
     }
 
 private:

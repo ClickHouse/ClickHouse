@@ -12,7 +12,7 @@ TEST_DB = f"db_sc_{uuid.uuid4().hex[:6]}"
 SET_PREFIX = f"""\
 USE {TEST_DB};
 SET allow_experimental_statistics = 1;
-SET allow_statistics_optimize = 1;
+SET use_statistics = 1;
 SET mutations_sync = 2;
 SET log_queries = 1;
 SET log_query_settings = 1;

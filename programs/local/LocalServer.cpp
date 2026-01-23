@@ -1142,22 +1142,22 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
 void LocalServer::addExtraOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
-        ("table,N", po::value<std::string>(), "name of the initial table")
-        ("copy", "shortcut for format conversion, equivalent to: --query 'SELECT * FROM table'")
+        ("table,N", po::value<std::string>(), "Name of the initial table")
+        ("copy", "Shortcut for format conversion, equivalent to: --query 'SELECT * FROM table'")
 
         /// If structure argument is omitted then initial query is not generated
-        ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
-        ("file,F", po::value<std::string>(), "path to file with data of the initial table (stdin if not specified)")
+        ("structure,S", po::value<std::string>(), "Structure of the initial table (list of column and type names)")
+        ("file,F", po::value<std::string>(), "Path to file with data of the initial table (stdin if not specified)")
 
-        ("input-format", po::value<std::string>(), "input format of the initial table data")
+        ("input-format", po::value<std::string>(), "Default input format. Takes precedence over --format.")
 
         ("logger.console", po::value<bool>()->implicit_value(true), "Log to console")
         ("logger.log", po::value<std::string>(), "Log file name")
         ("logger.level", po::value<std::string>(), "Log level")
 
-        ("no-system-tables", "do not attach system tables (better startup time)")
+        ("no-system-tables", "Do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path. If it was not specified, we will use a temporary directory, that is cleaned up on exit.")
-        ("only-system-tables", "attach only system tables from specified path")
+        ("only-system-tables", "Attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
 }
