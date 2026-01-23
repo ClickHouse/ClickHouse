@@ -319,9 +319,9 @@ String getKeeperPath(Poco::Util::LayeredConfiguration & config)
 int Keeper::main(const std::vector<std::string> & /*args*/)
 try
 {
-#if USE_JEMALLOC
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
+#if USE_JEMALLOC
     Jemalloc::setup(
         server_settings[ServerSetting::jemalloc_enable_global_profiler],
         server_settings[ServerSetting::jemalloc_enable_background_threads],

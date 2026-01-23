@@ -308,8 +308,7 @@ void MemoryWorker::start()
 MemoryWorker::~MemoryWorker()
 {
     {
-        std::lock_guard rss_update_lock(rss_update_mutex);
-        std::lock_guard purge_dirty_pages_lock(purge_dirty_pages_mutex);
+        std::scoped_lock lock(rss_update_mutex, purge_dirty_pages_mutex);
         shutdown = true;
     }
 
@@ -413,6 +412,11 @@ void MemoryWorker::updateResidentMemoryThread()
 
 void MemoryWorker::purgeDirtyPagesThread()
 {
+    /// Instead of having completely separate logic for purging dirty pages,
+    /// we rely on the main thread to notify us when we need to purge dirty pages.
+    /// We do it to avoid reading RSS value in both threads. Even though they are fairly
+    /// fast, they are still not free.
+    /// So we keep the work of reading current RSS in one thread which allows us to keep the low period time for it.
     DB::setThreadName(ThreadName::MEMORY_WORKER);
 
     std::unique_lock purge_dirty_pages_lock(purge_dirty_pages_mutex);
