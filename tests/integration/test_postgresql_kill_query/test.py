@@ -66,7 +66,7 @@ SELECT generate_infinite_sequence() as counter;"""
     )
 
     def execute_query():
-        node1.query(
+        _, error = node1.query_and_get_answer_with_error(
             f"""SELECT * FROM postgresql(
         '{postgres_host_with__port}',
         'postgres_database',
@@ -75,6 +75,7 @@ SELECT generate_infinite_sequence() as counter;"""
         'ClickHouse_PostgreSQL_P@ssw0rd')""",
             query_id=query_id,
         )
+        assert "DB::Exception: Query was cancelled" in error
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
@@ -135,7 +136,7 @@ FROM generate_series(1, 1000000);
     )
 
     def execute_query():
-        node1.query(
+        _, error = node1.query_and_get_answer_with_error(
             f"""SELECT sleepEachRow(0.0001), id, random_int, random_string
 FROM postgresql(
     '{postgres_host_with__port}',
@@ -147,6 +148,7 @@ FROM postgresql(
 SETTINGS max_block_size = 10000""",
             query_id=query_id,
         )
+        assert "DB::Exception: Query was cancelled" in error
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
