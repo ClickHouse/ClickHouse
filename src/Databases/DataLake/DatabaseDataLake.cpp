@@ -74,7 +74,7 @@ namespace Setting
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
-    extern const SettingsBool require_metadata_access;
+    extern const SettingsBool database_datalake_require_metadata_access;
 
 }
 
@@ -761,13 +761,13 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
                     }
                     catch (...)
                     {
-                        if (context_->getSettingsRef()[Setting::require_metadata_access])
+                        if (context_->getSettingsRef()[Setting::database_datalake_require_metadata_access])
                         {
                             auto error_code = getCurrentExceptionCode();
                             auto error_message = getCurrentExceptionMessage(true, false, true, true);
                             auto enhanced_message = fmt::format(
                                 "Received error {} while fetching table metadata for existing table '{}'. "
-                                "If you want this error to be ignored, use require_metadata_access=0. Error: {}",
+                                "If you want this error to be ignored, use database_datalake_require_metadata_access=0. Error: {}",
                                 error_code,
                                 table_name,
                                 error_message);
