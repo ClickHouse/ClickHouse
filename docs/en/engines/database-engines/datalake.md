@@ -61,6 +61,7 @@ The following settings are supported:
 | `region`                | AWS region for the service (e.g., `us-east-1`)                                          |
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
+| `namespaces`            | Comma-separated list of namespaces, supported types: `rest`, `glue` and `unity`         |
 
 ## Examples {#examples}
 
@@ -84,3 +85,29 @@ SETTINGS
 SHOW TABLES IN databse_name;       
 SELECT count() from database_name.table_name;
 ```
+
+## Namespace filter {#namespace}
+
+By default, ClickHouse reads tables from all namespaces available in the catalog. You can limit this behavior using the `namespaces` database setting. The value should be a comma‑separated list of namespaces that are allowed to be read.
+
+Supported catalog types are `rest`, `glue` and `unity`.
+
+For example, if the catalog contains three namespaces - `dev`, `stage`, and `prod` - and you want to read data only from dev and stage, set:
+```
+namespaces='dev,stage'
+```
+
+### Nested namespaces {#namespace-nested}
+
+The Iceberg (`rest`) catalog supports nested namespaces. The `namespaces` filter accepts the following patterns:
+
+- `namespace` - includes tables from the specified namespace, but not from its nested namespaces.
+- `namespace.nested` - includes tables from the nested namespace, but not from the parent.
+- `namespace.*` - includes tables from all nested namespaces, but not from the parent.
+
+If you need to include both a namespace and its nested namespaces, specify both explicitly. For example:
+```
+namespaces='namespace,namespace.*'
+```
+
+The default value is '*', which means all namespaces are included.

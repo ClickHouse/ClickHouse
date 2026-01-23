@@ -73,6 +73,9 @@ private:
     std::string region;
     CatalogSettings settings;
     DB::ASTPtr table_engine_definition;
+    std::unordered_set<std::string> allowed_namespaces;
+
+    bool isNamespaceAllowed(const std::string & namespace_) const;
 
     DataLake::ICatalog::Namespaces getDatabases(const std::string & prefix, size_t limit = 0) const;
     DB::Names getTablesForDatabase(const std::string & db_name, size_t limit = 0) const;
