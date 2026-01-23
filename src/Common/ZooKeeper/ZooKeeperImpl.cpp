@@ -706,13 +706,9 @@ void ZooKeeper::receiveHandshake()
     if (pass_opentelemetry_tracing_context)
     {
         if (protocol_version_read < ZOOKEEPER_PROTOCOL_VERSION_WITH_TRACING)
-        {
-            LOG_DEBUG(log, "Server doesn't support tracing context (protocol version {}), disabling tracing context passing", protocol_version_read);
-            pass_opentelemetry_tracing_context = false;
-        }
+            throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version with opentelemetry tracing: {}", protocol_version_read);
     }
-
-    if (use_xid_64)
+    else if (use_xid_64)
     {
         if (protocol_version_read < ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64)
             throw Exception(Error::ZMARSHALLINGERROR, "Unexpected protocol version with 64bit XID: {}", protocol_version_read);
