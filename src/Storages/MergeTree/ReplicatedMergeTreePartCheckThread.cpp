@@ -84,7 +84,7 @@ BackgroundSchedulePoolTaskHolder & ReplicatedMergeTreePartCheckThread::getTask()
 
 BackgroundSchedulePoolPausableTask::PauseHolderPtr ReplicatedMergeTreePartCheckThread::temporaryPause()
 {
-    return std::make_unique<BackgroundSchedulePoolPausableTask::PauseHolder>(pausable_task);
+    return pausable_task.pause();
 }
 
 void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)

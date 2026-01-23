@@ -6,6 +6,7 @@
 #include <base/cgroupsv2.h>
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
+#include <Common/OSThreadNiceValue.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -353,6 +354,10 @@ uint64_t MemoryWorker::getMemoryUsage(bool log_error)
 void MemoryWorker::updateResidentMemoryThread()
 {
     DB::setThreadName(ThreadName::MEMORY_WORKER);
+
+    /// Set the biggest priority for this thread to avoid drift
+    /// under the CPU starvation.
+    OSThreadNiceValue::set(-20);
 
     std::chrono::milliseconds chrono_period_ms{rss_update_period_ms};
     [[maybe_unused]] bool first_run = true;
