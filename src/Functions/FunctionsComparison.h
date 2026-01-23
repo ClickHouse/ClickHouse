@@ -53,6 +53,7 @@ namespace Setting
 {
     extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsBool use_variant_default_implementation_for_comparisons;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
 }
 
 namespace ErrorCodes
@@ -720,11 +721,13 @@ struct ComparisonParams
     bool check_decimal_overflow = false;
     bool validate_enum_literals_in_operators = false;
     bool use_variant_default_implementation = true;
+    FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode = FormatSettings::DateTimeInputFormat::Basic;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
         , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
         , use_variant_default_implementation(context->getSettingsRef()[Setting::use_variant_default_implementation_for_comparisons])
+        , cast_string_to_date_time_mode(context->getSettingsRef()[Setting::cast_string_to_date_time_mode])
     {}
 
     ComparisonParams() = default;
@@ -998,7 +1001,9 @@ private:
             return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
-        Field converted = convertFieldToType(string_value, *type_to_compare, type_string);
+        FormatSettings format_settings;
+        format_settings.date_time_input_format = params.cast_string_to_date_time_mode;
+        Field converted = convertFieldToType(string_value, *type_to_compare, type_string, format_settings);
 
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
         if (converted.isNull())
