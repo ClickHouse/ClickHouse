@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationInfoSettings.h"
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 
 #include <Parsers/IAST.h>
 
