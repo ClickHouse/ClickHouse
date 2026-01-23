@@ -1115,10 +1115,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
                     && parallel_replicas_enabled_for_storage(storage, settings))
                 {
-                    auto allow_parallel_replicas_for_table_expression = [&parallel_replicas_enabled_for_storage](
-                                                                            const QueryTreeNodePtr current_table_expression,
-                                                                            const QueryTreeNodePtr & join_tree_node,
-                                                                            const Settings & query_settings)
+                    auto allow_parallel_replicas_for_join_tree
+                        = [&parallel_replicas_enabled_for_storage](const QueryTreeNodePtr & join_tree_node, const Settings & query_settings)
                     {
                         if (join_tree_node->as<CrossJoinNode>())
                             return false;
@@ -1133,20 +1131,18 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (left_table && left_table->getStorage()->isView())
                             return false;
 
+                        const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
+
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
                         if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left)
                         {
-                            if (current_table_expression.get() == left_table_expr.get())
-                                // here current table expression is table or table function
-                                // we've already checked that it's supported storage for parallel replicas
-                                return true;
-
-                            // current table expression is right one
-
                             // check that left table expression can be used for parallel replicas
                             if (left_table)
                                 return parallel_replicas_enabled_for_storage(left_table->getStorage(), query_settings);
+
+                            if (left_table_function)
+                                return parallel_replicas_enabled_for_storage(left_table_function->getStorage(), query_settings);
 
                             // check if left one is not subquery
                             return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
@@ -1202,7 +1198,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     }
                     else if (
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
-                        && allow_parallel_replicas_for_table_expression(table_expression, parent_join_tree, settings))
+                        && allow_parallel_replicas_for_join_tree(parent_join_tree, settings))
                     {
                         // (1) find read step
                         QueryPlan::Node * node = query_plan.getRootNode();
