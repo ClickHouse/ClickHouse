@@ -86,8 +86,6 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 
-
-#include <ios>
 #include <ranges>
 
 namespace DB
