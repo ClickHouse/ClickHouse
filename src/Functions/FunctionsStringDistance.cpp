@@ -115,7 +115,8 @@ struct ByteHammingDistanceImpl
     }
 };
 
-void parseUTF8String(const char * __restrict data, size_t size, std::function<void(UInt32)> utf8_consumer, std::function<void(unsigned char)> ascii_consumer = nullptr)
+template <typename UTF8Consumer>
+void parseUTF8String(const char * __restrict data, size_t size, UTF8Consumer && utf8_consumer)
 {
     const char * end = data + size;
     while (data < end)
@@ -123,10 +124,7 @@ void parseUTF8String(const char * __restrict data, size_t size, std::function<vo
         size_t len = UTF8::seqLength(*data);
         if (len == 1)
         {
-            if (ascii_consumer)
-                ascii_consumer(static_cast<unsigned char>(*data));
-            else
-                utf8_consumer(static_cast<UInt32>(*data));
+            utf8_consumer(static_cast<UInt32>(*data));
             ++data;
         }
         else
@@ -187,10 +185,9 @@ struct ByteJaccardIndexImpl
             parseUTF8String(
                 haystack,
                 haystack_size,
-                [&](UInt32 data) { scratch.haystack_utf8_set.insert(data); },
-                {});
+                [&](UInt32 data) { scratch.haystack_utf8_set.insert(data); });
             parseUTF8String(
-                needle, needle_size, [&](UInt32 data) { scratch.needle_utf8_set.insert(data); }, {});
+                needle, needle_size, [&](UInt32 data) { scratch.needle_utf8_set.insert(data); });
         }
         else
         {
