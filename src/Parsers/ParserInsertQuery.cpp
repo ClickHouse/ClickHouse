@@ -193,7 +193,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                         throw Exception(ErrorCodes::SYNTAX_ERROR,
                             "Only one WITH should be presented, either before INSERT or SELECT.");
                     child_select->setExpression(ASTSelectQuery::Expression::WITH,
-                        std::move(with_expression_list));
+                        ASTPtr(with_expression_list));
                 }
             }
         }
@@ -271,7 +271,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// Create query and fill its fields.
-    auto query = std::make_shared<ASTInsertQuery>();
+    auto query = make_intrusive<ASTInsertQuery>();
     node = query;
 
     if (infile)

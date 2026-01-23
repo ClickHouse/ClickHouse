@@ -63,15 +63,16 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
     ObjectStoragePtr object_storage,
     const SharedHeader & header,
     const std::optional<FormatSettings> & format_settings,
+    FormatParserSharedResourcesPtr parser_shared_resources,
     ContextPtr context_,
     const String & table_location,
     SecondaryStorages & secondary_storages)
 {
     IcebergDataObjectInfoPtr self = shared_from_this();
     if (!context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        return std::make_shared<IcebergStreamingPositionDeleteTransform>(header, self, object_storage, format_settings, context_, table_location, secondary_storages);
+        return std::make_shared<IcebergStreamingPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_, table_location, secondary_storages);
     else
-        return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, context_, table_location, secondary_storages);
+        return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_, table_location, secondary_storages);
 }
 
 void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ManifestFileEntryPtr position_delete_object)
@@ -83,8 +84,7 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ManifestFileEntryPt
             "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
             info.file_format);
     }
-    info.position_deletes_objects.emplace_back(
-        position_delete_object->file_path, position_delete_object->file_format, position_delete_object->reference_data_file_path);
+    info.position_deletes_objects.emplace_back(position_delete_object->file_path, position_delete_object->file_format, std::nullopt);
 }
 
 void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ManifestFileEntryPtr & equality_delete_object)

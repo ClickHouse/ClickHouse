@@ -27,6 +27,7 @@ public:
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_,
         const String & table_location_,
         SecondaryStorages & secondary_storages_)
@@ -36,8 +37,7 @@ public:
         , object_storage(object_storage_)
         , format_settings(format_settings_)
         , context(context_)
-        , table_location(table_location_)
-        , secondary_storages(secondary_storages_)
+        , parser_shared_resources(parser_shared_resources_)
     {
         initializeDeleteSources();
     }
@@ -56,6 +56,8 @@ protected:
     const ObjectStoragePtr object_storage;
     const std::optional<FormatSettings> format_settings;
     ContextPtr context;
+    FormatParserSharedResourcesPtr parser_shared_resources;
+
     const String table_location;
     SecondaryStorages & secondary_storages;
 
@@ -74,10 +76,11 @@ public:
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_,
         const String & table_location_,
         SecondaryStorages & secondary_storages_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, context_, table_location_, secondary_storages_)
+        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_, table_location_, secondary_storages_)
     {
         initialize();
     }
@@ -101,10 +104,11 @@ public:
         IcebergDataObjectInfoPtr iceberg_object_info_,
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_,
         const String & table_location_,
         SecondaryStorages & secondary_storages_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, context_, table_location_, secondary_storages_)
+        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_, table_location_, secondary_storages_)
     {
         initialize();
     }

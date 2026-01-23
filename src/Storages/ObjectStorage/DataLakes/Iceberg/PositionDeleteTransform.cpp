@@ -63,16 +63,11 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
     auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_from_metadata;
     ASTPtr where_ast = makeASTFunction(
         "equals",
-        std::make_shared<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
-        std::make_shared<ASTLiteral>(Field(iceberg_data_path)));
+        make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
+        make_intrusive<ASTLiteral>(Field(iceberg_data_path)));
 
     for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
     {
-        /// Skip position deletes that do not match the data file path.
-        if (position_deletes_object.reference_data_file_path.has_value()
-            && position_deletes_object.reference_data_file_path.value() != iceberg_data_path)
-            continue;
-
         /// Resolve the position delete file path to get the correct storage and key
         auto [delete_storage_to_use, resolved_key] = resolveObjectStorageForPath(
             table_location, position_deletes_object.file_path, object_storage, secondary_storages, context);
@@ -118,7 +113,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), 1),
+            parser_shared_resources,
             std::make_shared<FormatFilterInfo>(actions_dag_ptr, context, nullptr, nullptr, nullptr),
             true /* is_remote_fs */,
             compression_method);
