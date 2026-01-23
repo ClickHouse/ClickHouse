@@ -373,10 +373,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     node = column_declaration;
 
     if (type)
-    {
-        column_declaration->type = type;
-        column_declaration->children.push_back(std::move(type));
-    }
+        column_declaration->setType(std::move(type));
 
     column_declaration->null_modifier = null_modifier;
 
@@ -384,45 +381,26 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (default_expression)
     {
         column_declaration->ephemeral_default = ephemeral_default;
-        column_declaration->default_expression = default_expression;
-        column_declaration->children.push_back(std::move(default_expression));
+        column_declaration->setDefaultExpression(std::move(default_expression));
     }
 
     if (comment_expression)
-    {
-        column_declaration->comment = comment_expression;
-        column_declaration->children.push_back(std::move(comment_expression));
-    }
+        column_declaration->setComment(std::move(comment_expression));
 
     if (codec_expression)
-    {
-        column_declaration->codec = codec_expression;
-        column_declaration->children.push_back(std::move(codec_expression));
-    }
+        column_declaration->setCodec(std::move(codec_expression));
 
     if (settings)
-    {
-        column_declaration->settings = settings;
-        column_declaration->children.push_back(std::move(settings));
-    }
+        column_declaration->setSettings(std::move(settings));
 
     if (statistics_desc_expression)
-    {
-        column_declaration->statistics_desc = statistics_desc_expression;
-        column_declaration->children.push_back(std::move(statistics_desc_expression));
-    }
+        column_declaration->setStatisticsDesc(std::move(statistics_desc_expression));
 
     if (ttl_expression)
-    {
-        column_declaration->ttl = ttl_expression;
-        column_declaration->children.push_back(std::move(ttl_expression));
-    }
+        column_declaration->setTTL(std::move(ttl_expression));
 
     if (collation_expression)
-    {
-        column_declaration->collation = collation_expression;
-        column_declaration->children.push_back(std::move(collation_expression));
-    }
+        column_declaration->setCollation(std::move(collation_expression));
 
     column_declaration->primary_key_specifier = primary_key_specifier;
 

@@ -95,7 +95,7 @@ void TableOverrideAnalyzer::analyze(const StorageInMemoryMetadata & metadata, Re
         for (const auto & column_ast : override->columns->columns->children)
         {
             auto * override_column = column_ast->as<ASTColumnDeclaration>();
-            auto override_type = DataTypeFactory::instance().get(override_column->type);
+            auto override_type = DataTypeFactory::instance().get(override_column->getType());
             auto found = metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, override_column->name);
             std::optional<ColumnDefaultKind> override_default_kind;
             if (!override_column->default_specifier.empty())
