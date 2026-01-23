@@ -129,7 +129,7 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
 
     checkUrl(url, context_, true);
 
-    auto args = makeASTFunction("hdfs", std::make_shared<ASTLiteral>(url));
+    auto args = makeASTFunction("hdfs", make_intrusive<ASTLiteral>(url));
 
     auto table_function = TableFunctionFactory::instance().get(args, context_);
     if (!table_function)

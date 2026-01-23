@@ -1155,7 +1155,7 @@ void DatabaseCatalog::dropTemporaryDatabasesTask()
                 drop_ctx->setCurrentQueryId("");
                 drop_ctx->setInternalQuery(true);
 
-                auto query = std::make_shared<ASTDropQuery>();
+                auto query = make_intrusive<ASTDropQuery>();
                 query->setDatabase(name);
                 query->if_exists = true;
                 query->sync = false;
