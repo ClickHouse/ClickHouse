@@ -13,6 +13,7 @@ namespace DB
 
 class ASTSelectWithUnionQuery;
 
+/// TODO(ahmadov): remove include of `ActionsDAG` from ASTFunction.
 using FunctionConfigurator = std::function<void(const ActionsDAG::Node *)>;
 
 /** AST for function application or operator.
