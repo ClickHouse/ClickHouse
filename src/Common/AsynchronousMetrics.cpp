@@ -1686,7 +1686,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
-            openFileIfExists("/proc/pressure/cpu", memory_pressure);
+            openFileIfExists("/proc/pressure/cpu", cpu_pressure);
         }
     }
 
