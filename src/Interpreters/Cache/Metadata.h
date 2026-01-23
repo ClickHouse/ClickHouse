@@ -45,12 +45,13 @@ struct FileSegmentMetadata : private boost::noncopyable
     bool isRemoved(const LockedKey &) const { return removed; }
 
     /// Whether queue entry is in evicting state.
-    bool isEvicting(const LockedKey & lock) const
+    bool isEvicting(const LockedKey &) const
     {
         auto iterator = getQueueIterator();
         if (!iterator)
-            return false; /// Iterator is set only on first space reservation attempt.
-        return iterator->getEntry()->isEvicting(lock);
+            return false;
+        const auto entry_state = iterator->getEntry()->getState();
+        return entry_state == Priority::Entry::State::Evicting;
     }
 
     void setRemovedFlag(const LockedKey &, bool value = true)
@@ -75,7 +76,7 @@ struct FileSegmentMetadata : private boost::noncopyable
 
         const auto & entry = iterator->getEntry();
         chassert(size() == entry->size);
-        entry->resetEvictingFlag();
+        entry->resetFlag(Priority::Entry::State::Evicting);
     }
 
     Priority::IteratorPtr getQueueIterator() const { return file_segment->getQueueIterator(); }

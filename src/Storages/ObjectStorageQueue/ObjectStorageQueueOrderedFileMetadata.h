@@ -35,6 +35,7 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        ObjectStorageQueueBucketingMode bucketing_mode_,
         ObjectStorageQueuePartitioningMode partitioning_mode_,
         const ObjectStorageQueueFilenameParser * parser_,
         LoggerPtr log_);
@@ -51,7 +52,12 @@ public:
         bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
-    static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(const std::string & path, size_t buckets_num);
+    static ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPath(
+        const std::string & path,
+        size_t buckets_num,
+        ObjectStorageQueueBucketingMode bucketing_mode,
+        ObjectStorageQueuePartitioningMode partitioning_mode,
+        const ObjectStorageQueueFilenameParser * parser);
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
@@ -62,6 +68,7 @@ public:
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
         size_t buckets_num,
+        ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser,
         LoggerPtr log);

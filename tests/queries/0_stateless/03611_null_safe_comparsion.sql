@@ -490,19 +490,19 @@ ORDER BY key;
 SELECT '1.8 Some ILLEGAL_TYPE_OF_ARGUMENT case';
 SELECT
     c_tuple <=> NULL AS tuple_vs_null
-FROM 03611_nscmp_tbl; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+FROM 03611_nscmp_tbl;
 
 SELECT
     NULL <=> c_tuple AS tuple_vs_null
-FROM 03611_nscmp_tbl; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+FROM 03611_nscmp_tbl;
 
 SELECT
     c_tuple IS DISTINCT FROM NULL AS tuple_vs_null_distinct
-FROM 03611_nscmp_tbl; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+FROM 03611_nscmp_tbl;
 
 SELECT
     NULL IS DISTINCT FROM c_tuple AS tuple_vs_null_distinct
-FROM 03611_nscmp_tbl; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+FROM 03611_nscmp_tbl;
 
 SELECT c_variant = 1 FROM 03611_nscmp_tbl;
 

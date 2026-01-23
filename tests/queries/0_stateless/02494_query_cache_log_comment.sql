@@ -3,7 +3,7 @@
 
 -- Check that setting 'log_comment' is ignored in query cache lookups
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 SELECT 1 SETTINGS use_query_cache = 1, log_comment='aaa' FORMAT Null;
 SELECT 1 SETTINGS use_query_cache = 1, log_comment='bbb' FORMAT Null;
@@ -19,4 +19,4 @@ WHERE type = 'QueryFinish'
     AND query LIKE 'SELECT 1 SETTINGS use_query_cache%'
 ORDER BY event_time_microseconds;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;

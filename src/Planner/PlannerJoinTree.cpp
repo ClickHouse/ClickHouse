@@ -716,13 +716,14 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
 }
 
 std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
-    std::unordered_map<std::string, ActionsDAG> & alias_column_expressions, const SharedHeader & current_header)
+    AliasColumnExpressions & alias_column_expressions, const SharedHeader & current_header)
 {
     ActionsDAG merged_alias_columns_actions_dag(current_header->getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag.getInputs();
 
-    for (auto & [column_name, alias_column_actions_dag] : alias_column_expressions)
+    for (auto & alias_column_expression : alias_column_expressions)
     {
+        auto & alias_column_actions_dag = alias_column_expression.second;
         const auto & current_outputs = alias_column_actions_dag.getOutputs();
         action_dag_outputs.insert(action_dag_outputs.end(), current_outputs.begin(), current_outputs.end());
         merged_alias_columns_actions_dag.mergeNodes(std::move(alias_column_actions_dag));

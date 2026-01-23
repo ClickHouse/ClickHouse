@@ -810,7 +810,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// A workaround because embedded rocksdb doesn't have default immutable settings
         /// But InterpreterAlterQuery requires settings_changes to be set to run ALTER MODIFY
         /// SETTING queries. So we just add a setting with its default value.
-        auto settings_changes = std::make_shared<ASTSetQuery>();
+        auto settings_changes = make_intrusive<ASTSetQuery>();
         settings_changes->is_standalone = false;
         settings_changes->changes.insertSetting("optimize_for_bulk_insert", (*settings)[RocksDBSetting::optimize_for_bulk_insert].value);
         metadata.settings_changes = settings_changes;

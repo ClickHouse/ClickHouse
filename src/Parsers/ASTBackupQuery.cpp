@@ -186,7 +186,7 @@ namespace
         changes.emplace_back("async", true);
         changes.emplace_back("host_id", params.host_id);
 
-        auto out_settings = std::make_shared<ASTSetQuery>();
+        auto out_settings = make_intrusive<ASTSetQuery>();
         out_settings->changes = std::move(changes);
         out_settings->is_standalone = false;
         return out_settings;
@@ -240,7 +240,7 @@ String ASTBackupQuery::getID(char) const
 
 ASTPtr ASTBackupQuery::clone() const
 {
-    auto res = std::make_shared<ASTBackupQuery>(*this);
+    auto res = make_intrusive<ASTBackupQuery>(*this);
     res->children.clear();
 
     if (backup_name)
@@ -277,7 +277,7 @@ void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
 ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
 {
-    auto new_query = std::static_pointer_cast<ASTBackupQuery>(clone());
+    auto new_query = boost::static_pointer_cast<ASTBackupQuery>(clone());
     new_query->cluster.clear();
     new_query->settings = rewriteSettingsWithoutOnCluster(new_query->settings, params);
     ASTBackupQuery::setCurrentDatabase(new_query->elements, params.default_database);

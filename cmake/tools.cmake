@@ -63,7 +63,7 @@ endif ()
 
 if (LINKER_NAME)
     message(STATUS "Using linker: ${LINKER_NAME}")
-elseif (NOT ARCH_S390X AND NOT OS_FREEBSD)
+elseif (NOT ARCH_S390X AND NOT OS_FREEBSD AND NOT OS_SUNOS)
     message (FATAL_ERROR "The only supported linker is LLVM's LLD, but we cannot find it.")
 else ()
     message(STATUS "Using linker: <default>")

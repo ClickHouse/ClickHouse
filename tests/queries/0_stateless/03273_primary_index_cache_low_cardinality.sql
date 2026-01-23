@@ -2,7 +2,7 @@
 
 DROP TABLE IF EXISTS t_primary_index_cache;
 
-SYSTEM DROP PRIMARY INDEX CACHE;
+SYSTEM CLEAR PRIMARY INDEX CACHE;
 
 CREATE TABLE t_primary_index_cache (a LowCardinality(String), b LowCardinality(String))
 ENGINE = MergeTree ORDER BY (a, b)
@@ -14,7 +14,7 @@ INSERT INTO t_primary_index_cache SELECT number%10, number%11 FROM numbers(10000
 -- Check cache size
 SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;
 
-SYSTEM DROP PRIMARY INDEX CACHE;
+SYSTEM CLEAR PRIMARY INDEX CACHE;
 
 -- Check that cache is empty
 SELECT metric, value FROM system.metrics WHERE metric IN ('PrimaryIndexCacheFiles', 'PrimaryIndexCacheBytes') ORDER BY metric;

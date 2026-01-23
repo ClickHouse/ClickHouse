@@ -262,7 +262,7 @@ QueryTreeNodePtr UnionNode::cloneImpl() const
 
 ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     select_with_union_query->union_mode = union_mode;
     select_with_union_query->is_normalized = true;
     select_with_union_query->children.push_back(getQueriesNode()->toAST(options));
@@ -273,41 +273,41 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (recursive_cte_table)
     {
-        auto recursive_select_query = std::make_shared<ASTSelectQuery>();
+        auto recursive_select_query = make_intrusive<ASTSelectQuery>();
         recursive_select_query->recursive_with = true;
 
-        auto with_element_ast = std::make_shared<ASTWithElement>();
+        auto with_element_ast = make_intrusive<ASTWithElement>();
         with_element_ast->name = cte_name;
-        with_element_ast->subquery = std::make_shared<ASTSubquery>(std::move(result_query));
+        with_element_ast->subquery = make_intrusive<ASTSubquery>(std::move(result_query));
         with_element_ast->children.push_back(with_element_ast->subquery);
 
-        auto with_expression_list_ast = std::make_shared<ASTExpressionList>();
+        auto with_expression_list_ast = make_intrusive<ASTExpressionList>();
         with_expression_list_ast->children.push_back(std::move(with_element_ast));
 
         recursive_select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list_ast));
 
-        auto select_expression_list_ast = std::make_shared<ASTExpressionList>();
+        auto select_expression_list_ast = make_intrusive<ASTExpressionList>();
         select_expression_list_ast->children.reserve(recursive_cte_table->columns.size());
         for (const auto & recursive_cte_table_column : recursive_cte_table->columns)
-            select_expression_list_ast->children.push_back(std::make_shared<ASTIdentifier>(recursive_cte_table_column.name));
+            select_expression_list_ast->children.push_back(make_intrusive<ASTIdentifier>(recursive_cte_table_column.name));
 
         recursive_select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list_ast));
 
-        auto table_expression_ast = std::make_shared<ASTTableExpression>();
-        table_expression_ast->children.push_back(std::make_shared<ASTTableIdentifier>(cte_name));
+        auto table_expression_ast = make_intrusive<ASTTableExpression>();
+        table_expression_ast->children.push_back(make_intrusive<ASTTableIdentifier>(cte_name));
         table_expression_ast->database_and_table_name = table_expression_ast->children.back();
 
-        auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
+        auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
         tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));
         tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
 
-        ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+        ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
         tables_in_select_query_ast->children.push_back(std::move(tables_in_select_query_element_ast));
 
         recursive_select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
-        auto recursive_select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-        auto recursive_select_with_union_query_list_of_selects = std::make_shared<ASTExpressionList>();
+        auto recursive_select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+        auto recursive_select_with_union_query_list_of_selects = make_intrusive<ASTExpressionList>();
         recursive_select_with_union_query_list_of_selects->children.push_back(std::move(recursive_select_query));
         recursive_select_with_union_query->children.push_back(std::move(recursive_select_with_union_query_list_of_selects));
         recursive_select_with_union_query->list_of_selects = recursive_select_with_union_query->children.back();
@@ -318,7 +318,7 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (is_subquery)
     {
-        auto subquery = std::make_shared<ASTSubquery>(std::move(result_query));
+        auto subquery = make_intrusive<ASTSubquery>(std::move(result_query));
         if (set_subquery_cte_name)
             subquery->cte_name = cte_name;
 

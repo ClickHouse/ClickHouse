@@ -10,13 +10,13 @@ INSERT INTO t_prewarm_columns VALUES (1, 1, 1, 1);
 
 SELECT count() FROM t_prewarm_columns WHERE NOT ignore(*);
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 DETACH TABLE t_prewarm_columns;
 ATTACH TABLE t_prewarm_columns;
 
 SELECT count() FROM t_prewarm_columns WHERE NOT ignore(*);
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SYSTEM PREWARM MARK CACHE t_prewarm_columns;
 
 SELECT count() FROM t_prewarm_columns WHERE NOT ignore(*);

@@ -91,13 +91,13 @@ static QueryTreeNodePtr resolveTableFunction(const ASTPtr & table_function, cons
 
 static ASTPtr makeASTForReadingColumns(const Names & names, ASTPtr table_expression)
 {
-    auto select = std::make_shared<ASTSelectQuery>();
-    auto columns = std::make_shared<ASTExpressionList>();
+    auto select = make_intrusive<ASTSelectQuery>();
+    auto columns = make_intrusive<ASTExpressionList>();
     for (const auto & name : names)
-        columns->children.push_back(std::make_shared<ASTIdentifier>(name));
+        columns->children.push_back(make_intrusive<ASTIdentifier>(name));
 
-    auto tables = std::make_shared<ASTTablesInSelectQuery>();
-    auto table_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    auto table_element = make_intrusive<ASTTablesInSelectQueryElement>();
     table_element->children.push_back(table_expression);
     table_element->table_expression = std::move(table_expression);
     tables->children.push_back(std::move(table_element));
@@ -110,8 +110,8 @@ static ASTPtr makeASTForReadingColumns(const Names & names, ASTPtr table_express
 
 static ASTPtr wrapWithUnion(ASTPtr select)
 {
-    auto select_with_union = std::make_shared<ASTSelectWithUnionQuery>();
-    auto selects = std::make_shared<ASTExpressionList>();
+    auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+    auto selects = make_intrusive<ASTExpressionList>();
     selects->children.push_back(select);
     select_with_union->list_of_selects = selects;
     select_with_union->children.push_back(select_with_union->list_of_selects);
@@ -190,7 +190,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     bool is_storage_merge = typeid_cast<const StorageMerge *>(storage.get());
     if (storage->isRemote() || is_storage_merge)
     {
-        auto table_expression = std::make_shared<ASTTableExpression>();
+        auto table_expression = make_intrusive<ASTTableExpression>();
         if (table_function_ast)
         {
             table_expression->children.push_back(table_function_ast);
@@ -199,7 +199,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         else
         {
             const auto & table_id = storage->getStorageID();
-            auto table_identifier = std::make_shared<ASTTableIdentifier>(table_id.database_name, table_id.table_name);
+            auto table_identifier = make_intrusive<ASTTableIdentifier>(table_id.database_name, table_id.table_name);
             table_expression->children.push_back(table_identifier);
             table_identifier->uuid = table_id.uuid;
             table_expression->database_and_table_name = std::move(table_identifier);

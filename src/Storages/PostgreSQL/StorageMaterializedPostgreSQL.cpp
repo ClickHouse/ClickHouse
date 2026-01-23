@@ -303,16 +303,16 @@ void StorageMaterializedPostgreSQL::read(
 }
 
 
-std::shared_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterializedColumnsDeclaration(
+boost::intrusive_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterializedColumnsDeclaration(
         String name, String type, UInt64 default_value)
 {
-    auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+    auto column_declaration = make_intrusive<ASTColumnDeclaration>();
 
     column_declaration->name = std::move(name);
     column_declaration->type = makeASTDataType(type);
 
     column_declaration->default_specifier = "MATERIALIZED";
-    column_declaration->default_expression = std::make_shared<ASTLiteral>(default_value);
+    column_declaration->default_expression = make_intrusive<ASTLiteral>(default_value);
 
     column_declaration->children.emplace_back(column_declaration->type);
     column_declaration->children.emplace_back(column_declaration->default_expression);
@@ -332,22 +332,22 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
         return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
 
     if (which.isDateTime64())
-        return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
+        return makeASTDataType("DateTime64", make_intrusive<ASTLiteral>(static_cast<UInt32>(6)));
 
     if (which.isDecimal())
-        return makeASTDataType("Decimal", std::make_shared<ASTLiteral>(getDecimalPrecision(*data_type)), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
+        return makeASTDataType("Decimal", make_intrusive<ASTLiteral>(getDecimalPrecision(*data_type)), make_intrusive<ASTLiteral>(getDecimalScale(*data_type)));
 
     return makeASTDataType(data_type->getName());
 }
 
 
-std::shared_ptr<ASTExpressionList>
+boost::intrusive_ptr<ASTExpressionList>
 StorageMaterializedPostgreSQL::getColumnsExpressionList(const NamesAndTypesList & columns, std::unordered_map<std::string, ASTPtr> defaults) const
 {
-    auto columns_expression_list = std::make_shared<ASTExpressionList>();
+    auto columns_expression_list = make_intrusive<ASTExpressionList>();
     for (const auto & [name, type] : columns)
     {
-        const auto & column_declaration = std::make_shared<ASTColumnDeclaration>();
+        const auto & column_declaration = make_intrusive<ASTColumnDeclaration>();
 
         column_declaration->name = name;
         column_declaration->type = getColumnDeclaration(type);
@@ -370,7 +370,7 @@ StorageMaterializedPostgreSQL::getColumnsExpressionList(const NamesAndTypesList 
 ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override)
 {
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
+    auto create_table_query = make_intrusive<ASTCreateQuery>();
 
     auto table_id = getStorageID();
     create_table_query->setTable(getNestedTableName());
@@ -378,11 +378,11 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     if (is_materialized_postgresql_database)
         create_table_query->uuid = table_id.uuid;
 
-    auto storage = std::make_shared<ASTStorage>();
-    storage->set(storage->engine, makeASTFunction("ReplacingMergeTree", std::make_shared<ASTIdentifier>("_version")));
+    auto storage = make_intrusive<ASTStorage>();
+    storage->set(storage->engine, makeASTFunction("ReplacingMergeTree", make_intrusive<ASTIdentifier>("_version")));
 
-    auto columns_declare_list = std::make_shared<ASTColumns>();
-    auto order_by_expression = std::make_shared<ASTFunction>();
+    auto columns_declare_list = make_intrusive<ASTColumns>();
+    auto order_by_expression = make_intrusive<ASTFunction>();
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
@@ -484,9 +484,9 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
             merging_columns = table_structure->replica_identity_columns->columns;
 
         order_by_expression->name = "tuple";
-        order_by_expression->arguments = std::make_shared<ASTExpressionList>();
+        order_by_expression->arguments = make_intrusive<ASTExpressionList>();
         for (const auto & column : merging_columns)
-            order_by_expression->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+            order_by_expression->arguments->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
 
         storage->set(storage->order_by, order_by_expression);
     }

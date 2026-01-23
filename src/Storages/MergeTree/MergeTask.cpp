@@ -131,6 +131,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool vertical_merge_optimize_lightweight_delete;
     extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_wide_part;
+    extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_compact_part;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
@@ -1317,6 +1318,8 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
+        else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
+            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
         bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
         auto merge_step = std::make_unique<ColumnGathererStep>(
@@ -2446,8 +2449,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         }
 
         const bool is_vertical_merge = (global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical);
-        /// If merge is vertical we cannot calculate it
-        ctx->blocks_are_granules_size = is_vertical_merge;
 
         if (global_ctx->cleanup && !(*merge_tree_settings)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
@@ -2458,6 +2459,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
+        else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
+            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),
@@ -2469,7 +2472,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             max_dynamic_subcolumns,
-            ctx->blocks_are_granules_size,
+            is_vertical_merge,
             cleanup,
             global_ctx->time_of_merge);
 

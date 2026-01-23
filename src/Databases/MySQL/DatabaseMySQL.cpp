@@ -214,11 +214,11 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
         {
             storage_engine_arguments->children.push_back(
-                makeASTOperator("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_name)));
+                makeASTOperator("equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(table_name)));
         }
         else
         {
-            auto mysql_table_name = std::make_shared<ASTLiteral>(table_name);
+            auto mysql_table_name = make_intrusive<ASTLiteral>(table_name);
             storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
         }
 
@@ -252,13 +252,13 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 
 ASTPtr DatabaseMySQL::getCreateDatabaseQueryImpl() const
 {
-    const auto & create_query = std::make_shared<ASTCreateQuery>();
+    const auto & create_query = make_intrusive<ASTCreateQuery>();
     create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
     create_query->uuid = db_uuid;
 
     if (!comment.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
+        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
 
     return create_query;
 }

@@ -1,0 +1,175 @@
+CTE Result
+1	2024-01-01 00:00:00.000000	3
+NULL Nullable(Tuple) element access
+\N
+Nullable(Int32)
+Non-NULL Nullable(Tuple) element access
+hello
+Nullable(String)
+Array of Nullable(Tuple) element access - element nullable
+[1,NULL]
+Array(Nullable(Int32))
+Array of Nullable(Tuple) element access - element not nullable
+[[1,2,3],[],[]]
+Array(Array(Int32))
+Error cases for Nullable(Tuple) element access
+Array of Nullable(Tuple) element access - struct-like access
+[7,4,8]
+Array(Nullable(Int8))
+[7,NULL,8]
+Array of Nullable(Tuple) element access - element already Nullable
+[1,NULL]
+Array(Nullable(Int32))
+Default value when element not found
+default_value
+String
+Default value with NULL tuple
+\N
+Nullable(Int32)
+Nested Nullable(Tuple) - outer nullable
+(1,'inner')
+Nullable(Tuple(Int32, String))
+Nested Nullable(Tuple) - NULL outer
+\N
+Nullable(Tuple(Int32, String))
+Regular Tuple with Nullable element
+\N
+Nullable(String)
+Nested Array of Nullable(Tuple)
+[[1,NULL],[NULL,2]]
+Array(Array(Nullable(Int32)))
+Empty tuple
+All NULL elements in array
+[NULL,NULL,NULL]
+Array(Nullable(Int32))
+Named access with default value
+default
+String
+Large tuple access
+10
+Nullable(Int32)
+Const Nullable(Tuple)
+42
+42
+42
+Nullable(Int32)
+Nullable(Int32)
+Nullable(Int32)
+Multiple elements from same Nullable(Tuple)
+1	hello	3.14
+Nullable(Tuple) in WHERE clause
+(3,'3')
+(4,'4')
+NULL propagation in expressions
+\N
+Aggregation on Nullable(Tuple) elements
+45	10
+Array with alternating NULL/non-NULL tuples
+['a',NULL,'b',NULL,'c']
+Nullable(Tuple) from table - element 1
+1	100	Nullable(Int32)
+2	\N	Nullable(Int32)
+3	300	Nullable(Int32)
+4	\N	Nullable(Int32)
+5	500	Nullable(Int32)
+Nullable(Tuple) from table - element 2
+1	hello	Nullable(String)
+2	\N	Nullable(String)
+3	world	Nullable(String)
+4	\N	Nullable(String)
+5	test	Nullable(String)
+Filter by Nullable(Tuple) element
+3	300
+5	500
+Count non-NULL elements
+5	3	2
+Aggregation on Nullable(Tuple) elements
+900	300	100	500	3
+Array(Nullable(Tuple)) - extract element 1
+1	[100,NULL]	Array(Nullable(Int32))
+2	[200,300]	Array(Nullable(Int32))
+3	[NULL]	Array(Nullable(Int32))
+4	[]	Array(Nullable(Int32))
+Array(Nullable(Tuple)) - extract element 2
+1	['a',NULL]	Array(Nullable(String))
+2	['b','c']	Array(Nullable(String))
+3	[NULL]	Array(Nullable(String))
+4	[]	Array(Nullable(String))
+Array(Nullable(Tuple)) - unnest and extract
+1	100	a
+2	200	b
+2	300	c
+Nullable named tuple - by name
+1	Alice	30	50000	Nullable(String)
+2	\N	\N	\N	Nullable(String)
+3	Charlie	35	75000	Nullable(String)
+4	Diana	28	60000	Nullable(String)
+5	\N	\N	\N	Nullable(String)
+Nullable named tuple - by index
+1	Alice	30	50000
+2	\N	\N	\N
+3	Charlie	35	75000
+4	Diana	28	60000
+5	\N	\N	\N
+Nullable named tuple - filter by element
+3	Charlie	75000
+4	Diana	60000
+Nullable named tuple - aggregation
+31	185000	3
+JOIN using Nullable(Tuple) elements
+GROUP BY Nullable(Tuple) element
+hello	1	100
+test	1	500
+world	1	300
+Subquery with Nullable(Tuple) element filter
+3	300
+5	500
+CASE on Nullable(Tuple) element
+1	low
+2	null
+3	high
+4	null
+5	high
+Nullable(Tuple) with default value (element exists)
+1	100
+2	\N
+3	300
+4	\N
+5	500
+Nullable(Tuple) with default value (element does not exist)
+1	default_string
+2	default_string
+3	default_string
+4	default_string
+5	default_string
+Nested array Nullable(Tuple) - extract x values
+1	[[1,NULL],[5]]	Array(Array(Nullable(Int32)))
+2	[[7],[NULL,11]]	Array(Array(Nullable(Int32)))
+Nested array Nullable(Tuple) - extract y values
+1	[[2,NULL],[6]]
+2	[[8],[NULL,12]]
+Window function with Nullable(Tuple) element
+1	100	1	1
+3	300	2	2
+5	500	3	3
+2	\N	4	4
+4	\N	5	4
+DISTINCT Nullable(Tuple) elements
+hello
+test
+world
+UNION with Nullable(Tuple) elements
+100
+500
+\N
+\N
+IN operator with Nullable(Tuple) elements
+1	100
+3	300
+5	500
+ORDER BY Nullable(Tuple) elements
+1	100	hello
+3	300	world
+5	500	test
+2	\N	\N
+4	\N	\N

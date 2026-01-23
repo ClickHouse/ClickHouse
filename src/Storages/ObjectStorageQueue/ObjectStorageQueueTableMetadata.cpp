@@ -19,6 +19,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 buckets;
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
+    extern const ObjectStorageQueueSettingsObjectStorageQueueBucketingMode bucketing_mode;
     extern const ObjectStorageQueueSettingsObjectStorageQueuePartitioningMode partitioning_mode;
     extern const ObjectStorageQueueSettingsString partition_regex;
     extern const ObjectStorageQueueSettingsString partition_component;
@@ -63,6 +64,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , columns(columns_.toString(true))
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
     , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
+    , bucketing_mode(engine_settings[ObjectStorageQueueSetting::bucketing_mode].toString())
     , partitioning_mode(
           engine_settings[ObjectStorageQueueSetting::use_hive_partitioning]
               ? "hive"
@@ -91,6 +93,13 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "partition_component must be specified when using partitioning_mode='regex'");
     }
+
+    // Validate bucketing mode configuration
+    if (bucketing_mode == "partition" && partitioning_mode == "none")
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "bucketing_mode='partition' requires partitioning_mode to be set to 'hive' or 'regex'");
+    }
 }
 
 String ObjectStorageQueueTableMetadata::toString() const
@@ -106,6 +115,7 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("columns", columns);
     json.set("last_processed_file", last_processed_path);
     json.set("loading_retries", loading_retries.load());
+    json.set("bucketing_mode", bucketing_mode);
     json.set("partitioning_mode", partitioning_mode);
     json.set("partition_regex", partition_regex);
     json.set("partition_component", partition_component);
@@ -149,6 +159,15 @@ ObjectStorageQueueMode ObjectStorageQueueTableMetadata::getMode() const
     return modeFromString(mode);
 }
 
+ObjectStorageQueueBucketingMode ObjectStorageQueueTableMetadata::getBucketingMode() const
+{
+    if (bucketing_mode == "path")
+        return ObjectStorageQueueBucketingMode::PATH;
+    if (bucketing_mode == "partition")
+        return ObjectStorageQueueBucketingMode::PARTITION;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue bucketing mode: {}", bucketing_mode);
+}
+
 ObjectStorageQueuePartitioningMode ObjectStorageQueueTableMetadata::getPartitioningMode() const
 {
     if (partitioning_mode == "none")
@@ -181,6 +200,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , columns(json->getValue<String>("columns"))
     , mode(json->getValue<String>("mode"))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
+    , bucketing_mode(getOrDefault<String>(json, "bucketing_mode", "", "path"))
     , partitioning_mode(getOrDefault<String>(json, "partitioning_mode", "", "none"))
     , partition_regex(getOrDefault<String>(json, "partition_regex", "", ""))
     , partition_component(getOrDefault<String>(json, "partition_component", "", ""))
@@ -241,6 +261,14 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
             "Stored in ZooKeeper: {}, local: {}",
             from_zk.mode,
             mode);
+
+    if (bucketing_mode != from_zk.bucketing_mode)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs in bucketing mode. "
+            "Stored in ZooKeeper: {}, local: {}",
+            from_zk.bucketing_mode,
+            bucketing_mode);
 
     if (partitioning_mode != from_zk.partitioning_mode)
         throw Exception(

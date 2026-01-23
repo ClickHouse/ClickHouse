@@ -1,10 +1,8 @@
 #pragma once
 
 #include <set>
-#include <map>
 #include <list>
 #include <mutex>
-#include <thread>
 #include <atomic>
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
@@ -69,31 +67,16 @@ public:
 
     ReplicatedCheckResult checkPartImpl(const String & part_name, bool throw_on_broken_projection);
 
-    /// RAII guard that pauses parts check and reactivates it on destruction.
-    /// Safe to destroy from any thread.
-    class TemporaryPause
-    {
-    public:
-        explicit TemporaryPause(BackgroundSchedulePoolTaskInfoPtr task_);
-        ~TemporaryPause();
-
-        TemporaryPause(const TemporaryPause &) = delete;
-        TemporaryPause & operator=(const TemporaryPause &) = delete;
-        TemporaryPause(TemporaryPause &&) = default;
-        TemporaryPause & operator=(TemporaryPause &&) = default;
-
-    private:
-        BackgroundSchedulePoolTaskInfoPtr task;
-    };
-
     /// Pause parts check in a thread-safe way.
     /// The returned guard can be safely destroyed from any thread.
-    TemporaryPause temporaryPause();
+    BackgroundSchedulePoolPausableTask::PauseHolderPtr temporaryPause();
 
     /// Can be called only while holding a TemporaryPause guard.
     void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:
+    BackgroundSchedulePoolTaskHolder & getTask();
+
     void run();
 
     bool onPartIsLostForever(const String & part_name);
@@ -128,7 +111,8 @@ private:
 
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };
-    BackgroundSchedulePoolTaskHolder task;
+
+    BackgroundSchedulePoolPausableTask pausable_task;
 };
 
 }

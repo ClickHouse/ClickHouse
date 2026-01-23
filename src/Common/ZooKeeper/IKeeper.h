@@ -425,6 +425,7 @@ struct RemoveRequest : virtual Request
 {
     String path;
     int32_t version = -1;
+    bool try_remove = false;
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }

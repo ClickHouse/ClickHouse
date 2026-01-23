@@ -386,9 +386,9 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & identifier = identifier_node.getIdentifier();
 
         if (identifier.getPartsSize() == 1)
-            table_expression_node_ast = std::make_shared<ASTTableIdentifier>(identifier[0]);
+            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0]);
         else if (identifier.getPartsSize() == 2)
-            table_expression_node_ast = std::make_shared<ASTTableIdentifier>(identifier[0], identifier[1]);
+            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0], identifier[1]);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Identifier for table expression must contain 1 or 2 parts. Actual '{}'",
@@ -401,7 +401,7 @@ static ASTPtr convertIntoTableExpressionAST(
         table_expression_node_ast = table_expression_node->toAST(convert_to_ast_options);
     }
 
-    auto result_table_expression = std::make_shared<ASTTableExpression>();
+    auto result_table_expression = make_intrusive<ASTTableExpression>();
     result_table_expression->children.push_back(table_expression_node_ast);
 
     std::optional<TableExpressionModifiers> table_expression_modifiers;
@@ -439,11 +439,11 @@ static ASTPtr convertIntoTableExpressionAST(
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())
-            result_table_expression->sample_size = std::make_shared<ASTSampleRatio>(*sample_size_ratio);
+            result_table_expression->sample_size = make_intrusive<ASTSampleRatio>(*sample_size_ratio);
 
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
-            result_table_expression->sample_offset = std::make_shared<ASTSampleRatio>(*sample_offset_ratio);
+            result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
     }
 
     return result_table_expression;
@@ -471,7 +471,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(
         {
             auto table_expression_ast = convertIntoTableExpressionAST(table_expression, convert_to_ast_options);
 
-            auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
+            auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
             tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));
             tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
 

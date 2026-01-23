@@ -95,10 +95,10 @@ public:
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override;
     QueryKind getQueryKind() const override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&backup_name));
-        f(reinterpret_cast<void **>(&base_backup_name));
+        f(reinterpret_cast<IAST **>(&backup_name), nullptr);
+        f(reinterpret_cast<IAST **>(&base_backup_name), nullptr);
     }
 };
 

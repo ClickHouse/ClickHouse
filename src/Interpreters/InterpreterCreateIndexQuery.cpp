@@ -11,6 +11,7 @@
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/AlterCommands.h>
 
 namespace DB

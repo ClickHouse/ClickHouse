@@ -9,7 +9,7 @@ namespace DB
 
 ASTPtr ASTColumnDeclaration::clone() const
 {
-    const auto res = std::make_shared<ASTColumnDeclaration>(*this);
+    const auto res = make_intrusive<ASTColumnDeclaration>(*this);
     res->children.clear();
 
     if (type)
@@ -132,27 +132,14 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
     }
 }
 
-void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
+void ASTColumnDeclaration::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
 {
-    auto visit_child = [&f, this](ASTPtr & member)
-    {
-        IAST * new_member_ptr = member.get();
-        f(reinterpret_cast<void **>(&new_member_ptr));
-        if (new_member_ptr != member.get())
-        {
-            if (new_member_ptr)
-                member = this->getChild(*new_member_ptr);
-            else
-                member.reset();
-        }
-    };
-
-    visit_child(default_expression);
-    visit_child(comment);
-    visit_child(codec);
-    visit_child(statistics_desc);
-    visit_child(ttl);
-    visit_child(collation);
-    visit_child(settings);
+    f(nullptr, &default_expression);
+    f(nullptr, &comment);
+    f(nullptr, &codec);
+    f(nullptr, &statistics_desc);
+    f(nullptr, &ttl);
+    f(nullptr, &collation);
+    f(nullptr, &settings);
 }
 }

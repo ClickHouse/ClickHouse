@@ -466,7 +466,7 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
         if (inserted)
         {
             auto * postings_stream = large_postings_streams.at(token).get();
-            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx);
+            it->second = MergeTreeIndexGranuleText::readPostingsBlock(*postings_stream, *deserialization_state, token_info, block_idx, granule_text.getPostingListCodec());
         }
 
         token_postings.push_back(it->second);

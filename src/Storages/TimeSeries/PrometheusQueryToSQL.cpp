@@ -101,12 +101,12 @@ namespace
             String str = toString(decimal);
             if (str.find_first_of(".eE") == String::npos)
                 str += "."; /// toDateTime64() doesn't accept an integer as its first argument, so we convert it to float.
-            return makeASTFunction("toDateTime64", std::make_shared<ASTLiteral>(str), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
+            return makeASTFunction("toDateTime64", make_intrusive<ASTLiteral>(str), make_intrusive<ASTLiteral>(getDecimalScale(*data_type)));
         }
         else if (data_type_idx == TypeIndex::Decimal64)
-            return makeASTFunction("toDecimal64", std::make_shared<ASTLiteral>(toString(decimal)), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
+            return makeASTFunction("toDecimal64", make_intrusive<ASTLiteral>(toString(decimal)), make_intrusive<ASTLiteral>(getDecimalScale(*data_type)));
         else
-            return std::make_shared<ASTLiteral>(Field{decimal});
+            return make_intrusive<ASTLiteral>(Field{decimal});
     }
 
     /// Subtracts an interval from a timestamp.
@@ -273,9 +273,9 @@ private:
     static ASTPtr toAST(const Piece & piece)
     {
         chassert(!piece.empty());
-        auto select_query = std::make_shared<ASTSelectQuery>();
+        auto select_query = make_intrusive<ASTSelectQuery>();
 
-        auto select_list_exp = std::make_shared<ASTExpressionList>();
+        auto select_list_exp = make_intrusive<ASTExpressionList>();
         auto & select_list = select_list_exp->children;
         if (piece.group_column)
             select_list.push_back(piece.group_column);
@@ -295,12 +295,12 @@ private:
 
         if (!piece.from_subquery.empty() || piece.from_table_function)
         {
-            auto tables = std::make_shared<ASTTablesInSelectQuery>();
-            auto table = std::make_shared<ASTTablesInSelectQueryElement>();
-            auto table_exp = std::make_shared<ASTTableExpression>();
+            auto tables = make_intrusive<ASTTablesInSelectQuery>();
+            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+            auto table_exp = make_intrusive<ASTTableExpression>();
             if (!piece.from_subquery.empty())
             {
-                table_exp->database_and_table_name = std::make_shared<ASTTableIdentifier>(piece.from_subquery);
+                table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(piece.from_subquery);
                 table_exp->children.emplace_back(table_exp->database_and_table_name);
             }
             else if (piece.from_table_function)
@@ -315,7 +315,7 @@ private:
 
         if (!piece.group_by.empty())
         {
-            auto group_by_list = std::make_shared<ASTExpressionList>();
+            auto group_by_list = make_intrusive<ASTExpressionList>();
             select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_by_list);
             group_by_list->children = piece.group_by;
         }
@@ -325,20 +325,20 @@ private:
 
         if (!piece.with.empty())
         {
-            auto with_expression_list_ast = std::make_shared<ASTExpressionList>();
+            auto with_expression_list_ast = make_intrusive<ASTExpressionList>();
             for (const auto & [name, ast] : piece.with)
             {
-                auto with_element_ast = std::make_shared<ASTWithElement>();
+                auto with_element_ast = make_intrusive<ASTWithElement>();
                 with_element_ast->name = name;
-                with_element_ast->subquery = std::make_shared<ASTSubquery>(ast);
+                with_element_ast->subquery = make_intrusive<ASTSubquery>(ast);
                 with_element_ast->children.push_back(with_element_ast->subquery);
                 with_expression_list_ast->children.push_back(std::move(with_element_ast));
             }
             select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list_ast));
         }
 
-        auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-        auto list_of_selects = std::make_shared<ASTExpressionList>();
+        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+        auto list_of_selects = make_intrusive<ASTExpressionList>();
         list_of_selects->children.push_back(std::move(select_query));
         select_with_union_query->list_of_selects = list_of_selects;
         select_with_union_query->children.push_back(list_of_selects);
@@ -379,10 +379,10 @@ private:
 
         Piece res;
         res.result_type = PrometheusQueryResultType::STRING;
-        res.string_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::String);
+        res.string_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::String);
 
         if (piece.empty())
-            res.from_table_function = makeASTFunction("null", std::make_shared<ASTLiteral>(fmt::format("{} String", TimeSeriesColumnNames::String)));
+            res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(fmt::format("{} String", TimeSeriesColumnNames::String)));
         else
             res.from_subquery = addSubquery(std::move(piece));
 
@@ -397,10 +397,10 @@ private:
 
         Piece res;
         res.result_type = PrometheusQueryResultType::SCALAR;
-        res.scalar_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Scalar);
+        res.scalar_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Scalar);
 
         if (piece.empty())
-            res.from_table_function = makeASTFunction("null", std::make_shared<ASTLiteral>(fmt::format("{} {}", TimeSeriesColumnNames::Scalar, getTimeSeriesTableInfo().value_data_type)));
+            res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(fmt::format("{} {}", TimeSeriesColumnNames::Scalar, getTimeSeriesTableInfo().value_data_type)));
         else
             res.from_subquery = addSubquery(std::move(piece));
 
@@ -418,10 +418,10 @@ private:
 
         if (piece.empty())
         {
-            res.tags_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags);
-            res.timestamp_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
-            res.value_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value);
-            res.from_table_function = makeASTFunction("null", std::make_shared<ASTLiteral>(
+            res.tags_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags);
+            res.timestamp_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
+            res.value_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value);
+            res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(
                 fmt::format("{} Array(Tuple(String, String)), {} {}, {} {}",
                             TimeSeriesColumnNames::Tags, TimeSeriesColumnNames::Timestamp, getTimeSeriesTableInfo().timestamp_data_type,
                             TimeSeriesColumnNames::Value, getTimeSeriesTableInfo().value_data_type)));
@@ -430,11 +430,11 @@ private:
 
         if (piece.tags_column)
         {
-            res.tags_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags);
+            res.tags_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags);
         }
         else if (piece.group_column)
         {
-            res.tags_column = makeASTFunction("timeSeriesTagsGroupToTags", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+            res.tags_column = makeASTFunction("timeSeriesTagsGroupToTags", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group));
             res.tags_column->setAlias(TimeSeriesColumnNames::Tags);
         }
         else
@@ -447,17 +447,17 @@ private:
 
         if (piece.timestamp_column && piece.value_column)
         {
-            res.timestamp_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
-            res.value_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value);
+            res.timestamp_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
+            res.value_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value);
         }
         else if (piece.time_series_column)
         {
-            res.where = makeASTFunction("notEmpty", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries));
-            auto array_element = makeASTFunction("arrayElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
-                                                 std::make_shared<ASTLiteral>(Field{1u}));
-            res.timestamp_column = makeASTFunction("tupleElement", array_element, std::make_shared<ASTLiteral>(Field{1u}));
+            res.where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries));
+            auto array_element = makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
+                                                 make_intrusive<ASTLiteral>(Field{1u}));
+            res.timestamp_column = makeASTFunction("tupleElement", array_element, make_intrusive<ASTLiteral>(Field{1u}));
             res.timestamp_column->setAlias(TimeSeriesColumnNames::Timestamp);
-            res.value_column = makeASTFunction("tupleElement", array_element, std::make_shared<ASTLiteral>(Field{2u}));
+            res.value_column = makeASTFunction("tupleElement", array_element, make_intrusive<ASTLiteral>(Field{2u}));
             res.value_column->setAlias(TimeSeriesColumnNames::Value);
         }
         else
@@ -480,9 +480,9 @@ private:
 
         if (piece.empty())
         {
-            res.tags_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags);
-            res.time_series_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries);
-            res.from_table_function = makeASTFunction("null", std::make_shared<ASTLiteral>(
+            res.tags_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags);
+            res.time_series_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries);
+            res.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(
                 fmt::format("{} Array(Tuple(String, String)), {} Array(Tuple({}, {}))",
                             TimeSeriesColumnNames::Tags, TimeSeriesColumnNames::TimeSeries,
                             getTimeSeriesTableInfo().timestamp_data_type, getTimeSeriesTableInfo().value_data_type)));
@@ -491,11 +491,11 @@ private:
 
         if (piece.tags_column)
         {
-            res.tags_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags);
+            res.tags_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags);
         }
         else if (piece.group_column)
         {
-            res.tags_column = makeASTFunction("timeSeriesTagsGroupToTags", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+            res.tags_column = makeASTFunction("timeSeriesTagsGroupToTags", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group));
             res.tags_column->setAlias(TimeSeriesColumnNames::Tags);
         }
         else
@@ -508,15 +508,15 @@ private:
 
         if (piece.time_series_column)
         {
-            res.time_series_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries);
+            res.time_series_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries);
         }
         else if (piece.timestamp_column && piece.value_column)
         {
             res.time_series_column = makeASTFunction("timeSeriesGroupArray",
-                                                     std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                                                     std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                                                     make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                                                     make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
             res.time_series_column->setAlias(TimeSeriesColumnNames::TimeSeries);
-            res.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+            res.group_by.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group));
         }
         else
         {
@@ -585,21 +585,21 @@ private:
         Piece res;
 
         res.from_table_function = makeASTFunction("timeSeriesSelector",
-            std::make_shared<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
-            std::make_shared<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
-            std::make_shared<ASTLiteral>(getPromQLText(instant_selector)),
+            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
+            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
+            make_intrusive<ASTLiteral>(getPromQLText(instant_selector)),
             timestampToAST(subtract(start_time, previous(window))),
             timestampToAST(end_time));
 
-        res.group_column = makeASTFunction("timeSeriesIdToTagsGroup", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        res.group_column = makeASTFunction("timeSeriesIdToTagsGroup", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
         res.group_column->setAlias(TimeSeriesColumnNames::Group);
 
         res.time_series_column = makeGridFunction("timeSeriesLastToGrid", start_time, end_time, step, window,
-                                                  std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                                                  std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                                                  make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                                                  make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
 
         res.time_series_column->setAlias(TimeSeriesColumnNames::TimeSeries);
-        res.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+        res.group_by.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group));
         res.result_type = ResultType::INSTANT_VECTOR;
 
         return res;
@@ -629,16 +629,16 @@ private:
         Piece res;
 
         res.from_table_function = makeASTFunction("timeSeriesSelector",
-            std::make_shared<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
-            std::make_shared<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
-            std::make_shared<ASTLiteral>(getPromQLText(instant_selector)),
+            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getDatabaseName()),
+            make_intrusive<ASTLiteral>(getTimeSeriesTableInfo().storage_id.getTableName()),
+            make_intrusive<ASTLiteral>(getPromQLText(instant_selector)),
             timestampToAST(subtract(start_time, previous(window))),
             timestampToAST(end_time));
 
-        res.group_column = makeASTFunction("timeSeriesIdToTagsGroup", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID));
+        res.group_column = makeASTFunction("timeSeriesIdToTagsGroup", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
         res.group_column->setAlias(TimeSeriesColumnNames::Group);
-        res.timestamp_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
-        res.value_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value);
+        res.timestamp_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
+        res.value_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value);
         res.result_type = ResultType::RANGE_VECTOR;
         res.window = window;
 
@@ -725,9 +725,9 @@ private:
 
         Piece res;
         res.result_type = ResultType::INSTANT_VECTOR;
-        res.group_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group);
-        res.timestamp_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
-        res.value_column = makeASTFunction(ch_function_name, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
+        res.group_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group);
+        res.timestamp_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp);
+        res.value_column = makeASTFunction(ch_function_name, make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
         res.value_column->setAlias(TimeSeriesColumnNames::Value);
         res.from_subquery = addSubquery(splitTimeSeriesColumnToTwoNonArrays(std::move(argument)));
         return res;
@@ -771,14 +771,14 @@ private:
 
         Piece res;
         res.result_type = ResultType::INSTANT_VECTOR;
-        res.group_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group);
+        res.group_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group);
 
         res.time_series_column = makeGridFunction(grid_function_name, start_time, end_time, step, window,
-                                                  std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                                                  std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                                                  make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                                                  make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
 
         res.time_series_column->setAlias(TimeSeriesColumnNames::TimeSeries);
-        res.group_by.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group));
+        res.group_by.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group));
         res.from_subquery = addSubquery(splitTimeSeriesColumnToTwoArrays(std::move(argument)));
         return res;
     }
@@ -797,12 +797,12 @@ private:
 
         Piece res;
         res.result_type = piece.result_type;
-        res.group_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group);
-        res.timestamp_column = makeASTFunction("tupleElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
-                                               std::make_shared<ASTLiteral>(Field{1u}));
+        res.group_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group);
+        res.timestamp_column = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
+                                               make_intrusive<ASTLiteral>(Field{1u}));
         res.timestamp_column->setAlias(TimeSeriesColumnNames::Timestamp);
-        res.value_column = makeASTFunction("tupleElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
-                                           std::make_shared<ASTLiteral>(Field{2u}));
+        res.value_column = makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries),
+                                           make_intrusive<ASTLiteral>(Field{2u}));
         res.value_column->setAlias(TimeSeriesColumnNames::Value);
         res.from_subquery = addSubquery(std::move(piece));
         res.timestamp_column_is_array = true;
@@ -818,14 +818,14 @@ private:
 
         Piece res;
         res.result_type = piece.result_type;
-        res.group_column = std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Group);
+        res.group_column = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group);
         res.timestamp_column = makeASTFunction("tupleElement", makeASTFunction("arrayJoin",
-                                               std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)),
-                                               std::make_shared<ASTLiteral>(Field{1u}));
+                                               make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)),
+                                               make_intrusive<ASTLiteral>(Field{1u}));
         res.timestamp_column->setAlias(TimeSeriesColumnNames::Timestamp);
         res.value_column = makeASTFunction("tupleElement", makeASTFunction("arrayJoin",
-                                           std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)),
-                                           std::make_shared<ASTLiteral>(Field{2u}));
+                                           make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)),
+                                           make_intrusive<ASTLiteral>(Field{2u}));
         res.value_column->setAlias(TimeSeriesColumnNames::Value);
         res.from_subquery = addSubquery(std::move(piece));
         return res;
@@ -839,7 +839,7 @@ private:
                             ASTPtr timestamp_column, ASTPtr value_column) const
     {
         auto aggregate_function = makeASTFunction(grid_function_name, timestamp_column, value_column);
-        aggregate_function->parameters = std::make_shared<ASTExpressionList>();
+        aggregate_function->parameters = make_intrusive<ASTExpressionList>();
         aggregate_function->parameters->children.push_back(timestampToAST(start_time));
         aggregate_function->parameters->children.push_back(timestampToAST(end_time));
         aggregate_function->parameters->children.push_back(intervalToAST(step));

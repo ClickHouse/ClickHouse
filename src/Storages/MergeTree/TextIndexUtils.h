@@ -148,6 +148,8 @@ private:
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
 
+    PostingListCodecPtr posting_list_codec;
+
     bool is_initialized = false;
 };
 

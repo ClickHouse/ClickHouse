@@ -7,6 +7,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 
+#include <string_view>
 #include <unordered_map>
 
 #include <boost/blank.hpp>
@@ -23,40 +24,69 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
+/// Utility functions and types used by the BaseSettings template class.
+/// These are implementation details that handle serialization, error reporting,
+/// and metadata management for settings.
 struct BaseSettingsHelpers
 {
+    /// Error handling
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
     static void flushWarnings();
 
+    /// Serialization helpers
     static void writeString(std::string_view str, WriteBuffer & out);
     static String readString(ReadBuffer & in);
 
+    /// Setting metadata flags
     enum Flags : UInt64
     {
-        IMPORTANT = 0x01,
-        CUSTOM = 0x02,
-        TIER = 0x0c, /// 0b1100 == 2 bits
+        IMPORTANT = 0x01,  /// Setting affects query results, cannot be ignored by older versions
+        CUSTOM = 0x02,     /// User-defined custom setting
+        TIER = 0x0c,       /// 0b1100 == 2 bits for tier level (PRODUCTION/BETA/EXPERIMENTAL)
         /// If adding new flags, consider first if Tier might need more bits
     };
 
     static SettingsTierType getTier(UInt64 flags);
     static void writeFlags(Flags flags, WriteBuffer & out);
     static UInt64 readFlags(ReadBuffer & in);
+
 private:
     /// For logging the summary of unknown settings instead of logging each one separately.
     inline static thread_local Strings unknown_settings;
     inline static thread_local bool unknown_settings_warning_logged = false;
-
 };
 
-/** Template class to define collections of settings.
-  * If you create a new setting, please also add it to ./utils/check-style/check-settings-style
-  * for validation
+/** Template class to define collections of settings with compile-time metadata.
   *
-  * Example of usage:
+  * OVERVIEW:
+  * This template provides a type-safe, compile-time-checked settings system.
+  * Settings are defined via macros that generate metadata and accessor functions.
+  *
+  * DESIGN RATIONALE:
+  * - Type safety: Each setting has a specific type (UInt64, Bool, String, etc.)
+  * - Performance: No runtime lookups for direct member access
+  * - Metadata: Descriptions, default values, and flags are compile-time constants
+  * - Serialization: Built-in support for reading/writing settings
+  *
+  * USAGE EXAMPLE:
+  * See the detailed example in the comments below.
+  *
+  * WORKFLOW:
+  * 1. Define your settings list with DECLARE() macros in a .cpp file
+  * 2. Use DECLARE_SETTINGS_TRAITS() to generate the trait struct
+  * 3. Use IMPLEMENT_SETTINGS_TRAITS() to implement the accessor
+  * 4. Derive your SettingsImpl from BaseSettings<YourTraits>
+  * 5. Use IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR to enable settings.member syntax
+  *
+  * VALIDATION:
+  * If you create a new setting, please also add it to:
+  * ./utils/check-style/check-settings-style for validation
+  *
+  * DETAILED EXAMPLE:
   *
   * mysettings.h:
+  * -------------
   * #include <Core/BaseSettingsFwdMacros.h>
   * #include <Core/SettingsFields.h>
   *
@@ -78,14 +108,15 @@ private:
   * };
   *
   * mysettings.cpp:
+  * ---------------
   * #include <Core/BaseSettings.h>
   * #include <Core/BaseSettingsFwdMacrosImpl.h>
   *
   * #define APPLY_FOR_MYSETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
   *     DECLARE(UInt64, a, 100, "Description of a", 0) \
-  *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) // IMPORTANT - means the setting can't be ignored by older versions) \
-  *     DECLARE(String, s, "default", "Description of s", 0)
-  *     DECLARE_WITH_ALIAS(String, experimental, "default", "Description of s", 0, stable)
+  *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) \
+  *     DECLARE(String, s, "default", "Description of s", 0) \
+  *     DECLARE_WITH_ALIAS(String, experimental, "default", "Description", 0, stable)
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS)
@@ -94,11 +125,12 @@ private:
   * {
   * };
   *
-  * #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) MySettings##TYPE NAME = &MySettings##Impl ::NAME;
+  * #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
+  *     MySettings##TYPE NAME = &MySettingsImpl::NAME;
   *
   * namespace MySetting
   * {
-  * APPLY_FOR_MYSETTINGS(INITIALIZE_SETTING_EXTERN, SETTING_SKIP_TRAIT)
+  *     APPLY_FOR_MYSETTINGS(INITIALIZE_SETTING_EXTERN, SETTING_SKIP_TRAIT)
   * }
   * #undef INITIALIZE_SETTING_EXTERN
   *
@@ -107,6 +139,7 @@ private:
 template <class TTraits>
 class BaseSettings : public TTraits::Data
 {
+    /// Hash function for efficient string lookups in custom settings map
     struct StringHash
     {
         using is_transparent = void;
@@ -124,28 +157,54 @@ public:
 
     using Traits = TTraits;
 
+    /// Set a setting by name
     virtual void set(std::string_view name, const Field & value);
+
+    /// Get the value of a setting
     Field get(std::string_view name) const;
 
+    /// Try to get a setting value; returns false if setting doesn't exist
     bool tryGet(std::string_view name, Field & value) const;
 
+    /// Check if a setting has been changed from its default value
     bool isChanged(std::string_view name) const;
+
+    /// Get all changed settings as a SettingsChanges struct
     SettingsChanges changes() const;
+
+    /// Apply a single setting change
     void applyChange(const SettingChange & change);
+
+    /// Apply multiple setting changes
     void applyChanges(const SettingsChanges & changes);
 
-    /// Resets all the settings to their default values.
+    /// Resets all the settings to their default values
     void resetToDefault();
-    /// Resets specified setting to its default value.
+
+    /// Resets specified setting to its default value
     void resetToDefault(std::string_view name);
 
+    /// Check if a setting exists (either built-in or custom)
     bool has(std::string_view name) const { return hasBuiltin(name) || hasCustom(name); }
+
+    /// Check if a built-in setting exists (excludes custom settings)
     static bool hasBuiltin(std::string_view name);
+
+    /// Check if a custom setting exists
     bool hasCustom(std::string_view name) const;
 
-    const char * getTypeName(std::string_view name) const;
-    const char * getDescription(std::string_view name) const;
+    /// Get the type name of a setting (e.g., "UInt64", "String")
+    std::string_view getTypeName(std::string_view name) const;
+
+    /// Get the description of a setting
+    std::string_view getDescription(std::string_view name) const;
+
+    /// Get the tier (PRODUCTION/BETA/EXPERIMENTAL) of a setting
     SettingsTierType getTier(std::string_view name) const;
+
+    // ========================================================================
+    // VALIDATION & CONVERSION (static utilities)
+    // ========================================================================
 
     /// Checks if it's possible to assign a field to a specified value and throws an exception if not.
     /// This function doesn't change the fields, it performs check only.
@@ -156,13 +215,19 @@ public:
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
 
+    /// Write all settings (or only changed ones depending on format)
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
+
+    /// Read settings from a buffer
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
 
+    /// Write only changed settings in binary format
     void writeChangedBinary(WriteBuffer & out) const;
+
+    /// Read settings in binary format
     void readBinary(ReadBuffer & in);
 
-    // A debugging aid.
+    /// Convert all settings to a human-readable string (for debugging)
     std::string toString() const;
 
     /// Represents a reference to a setting field.
@@ -170,14 +235,14 @@ public:
     {
     public:
         const String & getName() const;
-        const String & getPath() const;
+        std::string_view getPath() const;
         Field getValue() const;
         void setValue(const Field & value);
         String getValueString() const;
         String getDefaultValueString() const;
         bool isValueChanged() const;
-        const char * getTypeName() const;
-        const char * getDescription() const;
+        std::string_view getTypeName() const;
+        std::string_view getDescription() const;
         bool isCustom() const;
         SettingsTierType getTier() const;
 
@@ -383,7 +448,7 @@ bool BaseSettings<TTraits>::hasCustom(std::string_view name) const
 }
 
 template <typename TTraits>
-const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
+std::string_view BaseSettings<TTraits>::getTypeName(std::string_view name) const
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
@@ -395,7 +460,7 @@ const char * BaseSettings<TTraits>::getTypeName(std::string_view name) const
 }
 
 template <typename TTraits>
-const char * BaseSettings<TTraits>::getDescription(std::string_view name) const
+std::string_view BaseSettings<TTraits>::getDescription(std::string_view name) const
 {
     name = TTraits::resolveName(name);
     const auto & accessor = Traits::Accessor::instance();
@@ -790,12 +855,12 @@ const String & BaseSettings<TTraits>::SettingFieldRef::getName() const
 }
 
 template <typename TTraits>
-const String & BaseSettings<TTraits>::SettingFieldRef::getPath() const
+std::string_view BaseSettings<TTraits>::SettingFieldRef::getPath() const
 {
     if constexpr (Traits::allow_custom_settings)
     {
         if (custom_setting)
-            return (*custom_setting)->first;
+            return "";
     }
     return accessor->getPath(index);
 }
@@ -857,7 +922,7 @@ bool BaseSettings<TTraits>::SettingFieldRef::isValueChanged() const
 }
 
 template <typename TTraits>
-const char * BaseSettings<TTraits>::SettingFieldRef::getTypeName() const
+std::string_view BaseSettings<TTraits>::SettingFieldRef::getTypeName() const
 {
     if constexpr (Traits::allow_custom_settings)
     {
@@ -868,7 +933,7 @@ const char * BaseSettings<TTraits>::SettingFieldRef::getTypeName() const
 }
 
 template <typename TTraits>
-const char * BaseSettings<TTraits>::SettingFieldRef::getDescription() const
+std::string_view BaseSettings<TTraits>::SettingFieldRef::getDescription() const
 {
     if constexpr (Traits::allow_custom_settings)
     {
@@ -898,89 +963,199 @@ SettingsTierType BaseSettings<TTraits>::SettingFieldRef::getTier() const
     return accessor->getTier(index);
 }
 
+// ============================================================================
+// MACRO SYSTEM FOR DEFINING SETTINGS TRAITS
+// ============================================================================
+
+/** MACRO OVERVIEW:
+  *
+  * The macros below generate the "Traits" struct that describes a collection of settings.
+  * The Traits struct contains:
+  * - Data: A struct with actual SettingField members for each setting
+  * - Accessor: A singleton class providing runtime reflection/metadata
+  *
+  * MACRO HIERARCHY:
+  * - DECLARE_SETTINGS_TRAITS*: Public entry points, forward to DECLARE_SETTINGS_TRAITS_COMMON
+  * - DECLARE_SETTINGS_TRAITS_COMMON: Generates the Traits struct declaration
+  * - IMPLEMENT_SETTINGS_TRAITS*: Public entry points, forward to IMPLEMENT_SETTINGS_TRAITS_COMMON
+  * - IMPLEMENT_SETTINGS_TRAITS_COMMON: Implements the Accessor singleton
+  * - Helper macros: DECLARE_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_, etc.
+  *
+  * The complexity here is necessary to support:
+  * - Compile-time type safety
+  * - Runtime reflection (name -> value lookups)
+  * - Efficient direct member access (no hash lookups for known settings)
+  * - Custom user-defined settings (optional)
+  * - Setting aliases
+  */
+
 using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 
+/// Generate traits for a basic settings collection (no custom settings, no paths)
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
     DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 0)
 
+/// Generate traits with support for custom (user-defined) settings
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
     DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT, 1)
 
+/// Generate traits with support for settings that have config file paths
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_WITH_PATH(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
     DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, 0)
 
+/// Generate traits with both custom settings and path support
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_WITH_PATH_ALLOW_CUSTOM_SETTINGS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
     DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, 1)
 
+
+// ----------------------------------------------------------------------------
+// DECLARE_SETTINGS_TRAITS_COMMON - The actual implementation
+// ----------------------------------------------------------------------------
+
+/** This macro generates a complete Traits struct with two main components:
+  *
+  * 1. Data struct: Contains actual SettingFieldXXX members for each setting
+  *    - Generated from LIST_OF_SETTINGS macros
+  *    - Provides compile-time type-safe member access
+  *
+  * 2. Accessor class: Provides runtime reflection capabilities
+  *    - Maps setting names to indices
+  *    - Provides generic get/set via Field interface
+  *    - Stores metadata (description, type, default value, flags)
+  *    - Singleton pattern for efficiency
+  *
+  * PARAMETERS:
+  * - SETTINGS_TRAITS_NAME: Name of the generated traits struct
+  * - LIST_OF_SETTINGS_WITHOUT_PATH_MACRO: Macro that expands to DECLARE() calls
+  * - LIST_OF_SETTINGS_WITH_PATH_MACRO: Macro for settings with config paths
+  * - ALLOW_CUSTOM_SETTINGS: 0 or 1, enables user-defined settings
+  */
 /// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS) \
+#define DECLARE_SETTINGS_TRAITS_COMMON( \
+    SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO, ALLOW_CUSTOM_SETTINGS) \
     struct SETTINGS_TRAITS_NAME \
     { \
+        /** Data struct: Contains one SettingFieldXXX member per setting */ \
         struct Data \
         { \
             LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(DECLARE_SETTINGS_TRAITS_, DECLARE_SETTINGS_TRAITS_) \
             LIST_OF_SETTINGS_WITH_PATH_MACRO(DECLARE_SETTINGS_TRAITS_, DECLARE_SETTINGS_TRAITS_) \
         }; \
         \
+        /** Accessor: Provides runtime reflection and metadata access */ \
         class Accessor \
         { \
         public: \
+            /** Get the singleton instance (initialized once at first access) */ \
             static const Accessor & instance(); \
+            \
+            /** Get total number of settings */ \
             size_t size() const { return field_infos.size(); } \
+            \
+            /** Find setting index by name. Returns -1 if not found. */ \
             size_t find(std::string_view name) const; \
+            \
+            /* Metadata accessors (by index) */ \
             const String & getName(size_t index) const { return field_infos[index].name; } \
-            const String & getPath(size_t index) const { return field_infos[index].path; } \
-            const char * getTypeName(size_t index) const { return field_infos[index].type; } \
-            const char * getDescription(size_t index) const { return field_infos[index].description; } \
+            std::string_view getPath(size_t index) const { return field_infos[index].path; } \
+            std::string_view getTypeName(size_t index) const { return field_infos[index].type; } \
+            std::string_view getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].flags & BaseSettingsHelpers::Flags::IMPORTANT; } \
             SettingsTierType getTier(size_t index) const { return BaseSettingsHelpers::getTier(field_infos[index].flags); } \
-            Field castValueUtil(size_t index, const Field & value) const { return field_infos[index].cast_value_util_function(value); } \
-            String valueToStringUtil(size_t index, const Field & value) const { return field_infos[index].value_to_string_util_function(value); } \
-            Field stringToValueUtil(size_t index, const String & str) const { return field_infos[index].string_to_value_util_function(str); } \
-            void setValue(Data & data, size_t index, const Field & value) const { return field_infos[index].set_value_function(data, value); } \
-            Field getValue(const Data & data, size_t index) const { return field_infos[index].get_value_function(data); } \
-            void setValueString(Data & data, size_t index, const String & str) const { return field_infos[index].set_value_string_function(data, str); } \
-            String getValueString(const Data & data, size_t index) const { return field_infos[index].get_value_string_function(data); } \
-            bool isValueChanged(const Data & data, size_t index) const { return field_infos[index].is_value_changed_function(data); } \
-            void resetValueToDefault(Data & data, size_t index) const { return field_infos[index].reset_value_to_default_function(data); } \
-            void writeBinary(const Data & data, size_t index, WriteBuffer & out) const { return field_infos[index].write_binary_function(data, out); } \
-            void readBinary(Data & data, size_t index, ReadBuffer & in) const { return field_infos[index].read_binary_function(data, in); } \
-            String getDefaultValueString(size_t index) const { return field_infos[index].get_default_value_string_function(); } \
+            \
+            /* Value conversion utilities */ \
+            Field castValueUtil(size_t index, const Field & value) const \
+            { \
+                auto p = field_infos[index].create_default_function(); \
+                *p = value; \
+                return static_cast<Field>(*p); \
+            } \
+            String valueToStringUtil(size_t index, const Field & value) const \
+            { \
+                auto p = field_infos[index].create_default_function(); \
+                *p = value; \
+                return p->toString(); \
+            } \
+            Field stringToValueUtil(size_t index, const String & str) const \
+            { \
+                auto p = field_infos[index].create_default_function(); \
+                p->parseFromString(str); \
+                return static_cast<Field>(*p); \
+            } \
+            \
+            /* Direct data access (by index) */ \
+            void setValue(Data & data, size_t index, const Field & value) const \
+            { \
+                *field_infos[index].get_data_function(data) = value; \
+            } \
+            Field getValue(const Data & data, size_t index) const \
+            { \
+                return static_cast<Field>(*field_infos[index].get_data_function(*const_cast<Data *>(&data))); \
+            } \
+            void setValueString(Data & data, size_t index, const String & str) const \
+            { \
+                field_infos[index].get_data_function(data)->parseFromString(str); \
+            } \
+            String getValueString(const Data & data, size_t index) const \
+            { \
+                return field_infos[index].get_data_function(*const_cast<Data *>(&data))->toString(); \
+            } \
+            bool isValueChanged(const Data & data, size_t index) const \
+            { \
+                return field_infos[index].get_data_function(*const_cast<Data *>(&data))->isChanged(); \
+            } \
+            void resetValueToDefault(Data & data, size_t index) const \
+            { \
+                auto p = field_infos[index].create_default_function(); \
+                *field_infos[index].get_data_function(*const_cast<Data *>(&data)) = static_cast<Field>(*p); \
+                field_infos[index].get_data_function(*const_cast<Data *>(&data))->setChanged(false); \
+            } \
+            \
+            /* Binary serialization (by index) */ \
+            void writeBinary(const Data & data, size_t index, WriteBuffer & out) const \
+            { \
+                field_infos[index].get_data_function(*const_cast<Data *>(&data))->writeBinary(out); \
+            } \
+            void readBinary(Data & data, size_t index, ReadBuffer & in) const \
+            { \
+                field_infos[index].get_data_function(data)->readBinary(in); \
+            } \
+            \
+            /* Default value as string */ \
+            String getDefaultValueString(size_t index) const { return field_infos[index].create_default_function()->toString(); } \
+            \
         private: \
             Accessor(); \
+            \
+            /** Metadata for one setting */ \
             struct FieldInfo \
             { \
                 String name; \
-                String path; \
-                const char * type; \
-                const char * description; \
-                UInt64 flags; \
-                Field (*cast_value_util_function)(const Field &); \
-                String (*value_to_string_util_function)(const Field &); \
-                Field (*string_to_value_util_function)(const String &); \
-                void (*set_value_function)(Data &, const Field &) ; \
-                Field (*get_value_function)(const Data &) ; \
-                void (*set_value_string_function)(Data &, const String &) ; \
-                String (*get_value_string_function)(const Data &) ; \
-                bool (*is_value_changed_function)(const Data &); \
-                void (*reset_value_to_default_function)(Data &) ; \
-                void (*write_binary_function)(const Data &, WriteBuffer &) ; \
-                void (*read_binary_function)(Data &, ReadBuffer &) ; \
-                String (*get_default_value_string_function)() ; \
+                const std::string_view path; \
+                const std::string_view type; \
+                const std::string_view description; \
+                const UInt64 flags; \
+                SettingFieldBase * (*get_data_function)(Data &);                    /* Get pointer to setting in Data struct */ \
+                std::unique_ptr<SettingFieldBase> (*create_default_function)();     /* Create setting with default value */ \
             }; \
-            std::vector<FieldInfo> field_infos; \
-            std::unordered_map<std::string_view, size_t> name_to_index_map; \
+            \
+            std::vector<FieldInfo> field_infos;                                     /* Metadata for all settings */ \
+            std::unordered_map<std::string_view, size_t> name_to_index_map;         /* Fast name -> index lookup */ \
         }; \
+        \
+        /** Whether this traits allows custom settings */ \
         static constexpr bool allow_custom_settings = ALLOW_CUSTOM_SETTINGS; \
         \
-        static inline const AliasMap aliases_to_settings = { \
-            LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
-            LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_PATH_AND_ALIAS_TRAITS_) \
-        }; \
+        /** Map of aliases to actual setting names */ \
+        static inline const AliasMap aliases_to_settings \
+            = {LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_) \
+                   LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_)}; \
+        \
+        /** Reverse map: setting name -> list of aliases */ \
         using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
         static inline const SettingsToAliasesMap & settingsToAliases() \
         { \
@@ -994,6 +1169,7 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             return setting_to_aliases_mapping; \
         } \
         \
+        /** Resolve alias to actual setting name */ \
         static std::string_view resolveName(std::string_view name) \
         { \
             if (auto it = aliases_to_settings.find(name); it != aliases_to_settings.end()) \
@@ -1002,41 +1178,54 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
         } \
     };
 
+
+/// Skip this setting in the macro expansion (used for selective application)
 /// NOLINTNEXTLINE
 #define SETTING_SKIP_TRAIT(...)
 
+/// Generates a Data member
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     SettingField##TYPE NAME {DEFAULT};
+
+/// Generates an alias mapping entry
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS) \
     { #ALIAS, #NAME },
-/// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_WITH_PATH_AND_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ALIAS) \
-    { #ALIAS, #NAME },
-// NOLINTNEXTLINE
-#define DECLARE_SETTINGS_WITH_PATH_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ...) \
-    { PATH, #NAME },
 
+/// Implement the Accessor singleton for basic settings
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
     IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, SETTING_SKIP_TRAIT)
 
+/// Implement the Accessor singleton for settings with paths
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_WITH_PATH(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
     IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO)
 
+
+/** This macro implements:
+  * 1. Accessor::instance() - Singleton accessor, initialized lazily on first access
+  * 2. Accessor::Accessor() - Private constructor
+  * 3. Accessor::find() - Name lookup function
+  * 4. Explicit template instantiation of BaseSettings<SETTINGS_TRAITS_NAME>
+  *
+  * The instance() method builds the field_infos vector with metadata for each setting.
+  * This is the "expensive" part that creates all the lambda functions at compile time.
+  */
     /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_WITHOUT_PATH_MACRO, LIST_OF_SETTINGS_WITH_PATH_MACRO) \
     const SETTINGS_TRAITS_NAME::Accessor & SETTINGS_TRAITS_NAME::Accessor::instance() \
     { \
+        /* Singleton pattern: initialize once, return same instance */ \
         static const Accessor the_instance = [] \
         { \
+            [[maybe_unused]] constexpr int IMPORTANT = 0x01; \
             Accessor res; \
-            constexpr int IMPORTANT = 0x01; \
-            UNUSED(IMPORTANT); \
+            /* Populate field_infos with one entry per setting */ \
             LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
             LIST_OF_SETTINGS_WITH_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_, IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_) \
+            /* Build name -> index map for fast lookups */ \
             for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
             { \
                 const auto & info = res.field_infos[i]; \
@@ -1056,44 +1245,38 @@ using AliasMap = std::unordered_map<std::string_view, std::string_view>;
             return it->second; \
         return static_cast<size_t>(-1); \
     } \
-    \
-    template class BaseSettings<SETTINGS_TRAITS_NAME>;
 
+
+/// Generate a FieldInfo entry for a setting without a config path.
+/// Creates two lambdas:
+/// 1. get_data_function: Returns pointer to the setting field in a Data struct
+/// 2. create_default_function: Creates a new setting field with default value
 /// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
     res.field_infos.emplace_back( \
-        FieldInfo{#NAME, #NAME, #TYPE, DESCRIPTION, \
+        FieldInfo\
+        { \
+            #NAME, \
+            "", \
+            #TYPE, \
+            DESCRIPTION, \
             static_cast<UInt64>(FLAGS), \
-            [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
-            [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \
-            [](const String & str) -> Field { SettingField##TYPE temp; temp.parseFromString(str); return static_cast<Field>(temp); }, \
-            [](Data & data, const Field & value) { data.NAME = value; }, \
-            [](const Data & data) -> Field { return static_cast<Field>(data.NAME); }, \
-            [](Data & data, const String & str) { data.NAME.parseFromString(str); }, \
-            [](const Data & data) -> String { return data.NAME.toString(); }, \
-            [](const Data & data) -> bool { return data.NAME.changed; }, \
-            [](Data & data) { data.NAME = SettingField##TYPE{DEFAULT}; }, \
-            [](const Data & data, WriteBuffer & out) { data.NAME.writeBinary(out); }, \
-            [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); }, \
-            []() -> String { return SettingField##TYPE{DEFAULT}.toString(); } \
+            [](Data & data) -> SettingFieldBase * { return &data.NAME; }, \
+            []() -> std::unique_ptr<SettingFieldBase> { return std::make_unique<SettingField##TYPE>(DEFAULT); }, \
         });
 
-        /// NOLINTNEXTLINE
+/// Generate a FieldInfo entry for a setting with a config file path
+/// NOLINTNEXTLINE
 #define IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, PATH, ...) \
     res.field_infos.emplace_back( \
-        FieldInfo{#NAME, PATH, #TYPE, DESCRIPTION, \
+        FieldInfo\
+        { \
+            #NAME, \
+            PATH, \
+            #TYPE, \
+            DESCRIPTION, \
             static_cast<UInt64>(FLAGS), \
-            [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
-            [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \
-            [](const String & str) -> Field { SettingField##TYPE temp; temp.parseFromString(str); return static_cast<Field>(temp); }, \
-            [](Data & data, const Field & value) { data.NAME = value; }, \
-            [](const Data & data) -> Field { return static_cast<Field>(data.NAME); }, \
-            [](Data & data, const String & str) { data.NAME.parseFromString(str); }, \
-            [](const Data & data) -> String { return data.NAME.toString(); }, \
-            [](const Data & data) -> bool { return data.NAME.changed; }, \
-            [](Data & data) { data.NAME = SettingField##TYPE{DEFAULT}; }, \
-            [](const Data & data, WriteBuffer & out) { data.NAME.writeBinary(out); }, \
-            [](Data & data, ReadBuffer & in) { data.NAME.readBinary(in); }, \
-            []() -> String { return SettingField##TYPE{DEFAULT}.toString(); } \
+            [](Data & data) -> SettingFieldBase * { return &data.NAME; }, \
+            []() -> std::unique_ptr<SettingFieldBase> { return std::make_unique<SettingField##TYPE>(DEFAULT); }, \
         });
 }

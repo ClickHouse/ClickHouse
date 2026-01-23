@@ -1,4 +1,5 @@
 #include <chrono>
+#include <ranges>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/OSThreadNiceValue.h>

@@ -592,6 +592,10 @@ Possible values:
 + 0 — Disable (throw error on type mismatch).
 + 1 — Enable (skip field on type mismatch).
 )", 0) \
+    DECLARE(UInt64Auto, max_dynamic_subcolumns_in_json_type_parsing, "auto", R"(
+The maximum number of dynamic subcolumns that can be created in every column during parsing of JSON column.
+It allows to control the number of dynamic subcolumns during parsing regardless of dynamic parameters specified in the data type.
+)", 0) \
     DECLARE(Bool, input_format_try_infer_integers, true, R"(
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
 
@@ -755,10 +759,23 @@ Deserialization of IPV6 will use default values instead of throwing exception on
 
 Disabled by default.
 )", 0) \
-    DECLARE(Bool, check_conversion_from_numbers_to_enum, false, R"(
+    DECLARE(Bool, check_conversion_from_numbers_to_enum, true, R"(
 Throw an exception during Numbers to Enum conversion if the value does not exist in Enum.
 
-Disabled by default.
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+**Example**
+
+```text
+CREATE TABLE tab (
+  val Enum('first' = 1, 'second' = 2, 'third' = 3)
+) ENGINE = Memory;
+
+INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -- returns an error
+```
 )", 0) \
     DECLARE(String, bool_true_representation, "true", R"(
 Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.

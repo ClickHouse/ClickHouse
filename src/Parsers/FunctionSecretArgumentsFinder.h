@@ -770,6 +770,12 @@ protected:
         const String & engine_name = function->name();
         if (engine_name == "S3")
         {
+            if (isNamedCollectionName(0))
+            {
+                /// BACKUP ... TO S3(named_collection, ..., secret_access_key = 'secret_access_key', ...)
+                findSecretNamedArgument("secret_access_key", 1);
+                return;
+            }
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
             markSecretArgument(2);
         }

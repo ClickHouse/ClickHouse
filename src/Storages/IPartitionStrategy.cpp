@@ -48,11 +48,11 @@ namespace
             {
                 const auto & child = tuple_function->arguments->children[index++];
 
-                concat_args.push_back(std::make_shared<ASTLiteral>(partition_column.name + "="));
+                concat_args.push_back(make_intrusive<ASTLiteral>(partition_column.name + "="));
 
                 concat_args.push_back(makeASTFunction("toString", child));
 
-                concat_args.push_back(std::make_shared<ASTLiteral>("/"));
+                concat_args.push_back(make_intrusive<ASTLiteral>("/"));
             }
         }
         else
@@ -65,9 +65,9 @@ namespace
             }
 
             ASTs to_string_args = {1, partition_by};
-            concat_args.push_back(std::make_shared<ASTLiteral>(partition_columns.front().name + "="));
+            concat_args.push_back(make_intrusive<ASTLiteral>(partition_columns.front().name + "="));
             concat_args.push_back(makeASTFunction("toString", std::move(to_string_args)));
-            concat_args.push_back(std::make_shared<ASTLiteral>("/"));
+            concat_args.push_back(make_intrusive<ASTLiteral>("/"));
         }
 
         return makeASTFunction("concat", std::move(concat_args));

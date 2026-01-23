@@ -107,14 +107,14 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
         /*common_key_prefix*/ "");
 }
 
-static AzureBlobStorage::ConnectionParams getConnectionParams(
+AzureBlobStorage::ConnectionParams getAzureConnectionParams(
     const String & connection_url,
     const String & container_name,
     const std::optional<String> & account_name,
     const std::optional<String> & account_key,
     const std::optional<String> & client_id,
     const std::optional<String> & tenant_id,
-    const ContextPtr & local_context)
+    ContextPtr local_context)
 {
     AzureBlobStorage::ConnectionParams connection_params;
     auto request_settings = AzureBlobStorage::getRequestSettings(local_context->getSettingsRef());
@@ -253,7 +253,7 @@ void AzureStorageParsedArguments::fromNamedCollection(const NamedCollection & co
     partition_columns_in_data_file = collection.getOrDefault<bool>(
         "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
 
-    connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
+    connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
 static ASTPtr extractExtraCredentials(ASTs & args)
@@ -645,7 +645,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
         structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
     }
 
-    connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
+    connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
 void addStructureAndFormatToArgsIfNeededAzure(
@@ -661,13 +661,13 @@ void addStructureAndFormatToArgsIfNeededAzure(
         /// at the end of arguments to override existed format and structure with "auto" values.
         if (collection->getOrDefault<String>("format", "auto") == "auto")
         {
-            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
             auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
         if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
         {
-            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
             auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
             args.push_back(structure_equal_func);
         }
@@ -684,8 +684,8 @@ void addStructureAndFormatToArgsIfNeededAzure(
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-        auto structure_literal = std::make_shared<ASTLiteral>(structure_);
-        auto format_literal = std::make_shared<ASTLiteral>(format_);
+        auto structure_literal = make_intrusive<ASTLiteral>(structure_);
+        auto format_literal = make_intrusive<ASTLiteral>(format_);
         auto is_format_arg = [] (const std::string & s) -> bool
         {
             return s == "auto" || FormatFactory::instance().getAllFormats().contains(Poco::toLower(s));
@@ -698,7 +698,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
             if (with_structure)
             {
                 /// Add compression = "auto" before structure argument.
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                args.push_back(make_intrusive<ASTLiteral>("auto"));
                 args.push_back(structure_literal);
             }
         }
@@ -716,7 +716,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
                 if (with_structure)
                 {
                     /// Add compression=auto before structure argument.
-                    args.push_back(std::make_shared<ASTLiteral>("auto"));
+                    args.push_back(make_intrusive<ASTLiteral>("auto"));
                     args.push_back(structure_literal);
                 }
             }
@@ -726,7 +726,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
                 auto structure_arg = args.back();
                 args[3] = format_literal;
                 /// Add compression=auto before structure argument.
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                args.push_back(make_intrusive<ASTLiteral>("auto"));
                 if (fourth_arg == "auto")
                     args.push_back(structure_literal);
                 else
@@ -754,7 +754,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
                 if (with_structure)
                 {
                     /// Add compression=auto before structure argument.
-                    args.push_back(std::make_shared<ASTLiteral>("auto"));
+                    args.push_back(make_intrusive<ASTLiteral>("auto"));
                     args.push_back(structure_literal);
                 }
             }
@@ -783,7 +783,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
                 if (with_structure)
                 {
                     /// Add compression=auto before structure argument.
-                    args.push_back(std::make_shared<ASTLiteral>("auto"));
+                    args.push_back(make_intrusive<ASTLiteral>("auto"));
                     args.push_back(structure_literal);
                 }
             }
@@ -793,7 +793,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
                 auto structure_arg = args.back();
                 args[5] = format_literal;
                 /// Add compression=auto before structure argument.
-                args.push_back(std::make_shared<ASTLiteral>("auto"));
+                args.push_back(make_intrusive<ASTLiteral>("auto"));
                 if (sixth_arg == "auto")
                     args.push_back(structure_literal);
                 else
@@ -834,13 +834,13 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     {
         if (format == "auto")
         {
-            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
             auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
         if (structure == "auto")
         {
-            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
             auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
             args.push_back(structure_equal_func);
         }

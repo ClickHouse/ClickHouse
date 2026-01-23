@@ -95,7 +95,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
             getName(), kind_arg->formatForErrorMessage());
 
     ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
-    auto explain_query = std::make_shared<ASTExplainQuery>(kind);
+    auto explain_query = make_intrusive<ASTExplainQuery>(kind);
 
     const auto * settings_arg = function->arguments->children[1]->as<ASTLiteral>();
     if (!settings_arg || settings_arg->value.getType() != Field::Types::String)

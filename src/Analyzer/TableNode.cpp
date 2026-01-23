@@ -111,17 +111,17 @@ ASTPtr TableNode::toASTImpl(const ConvertToASTOptions & /* options */) const
     return toASTIdentifier();
 }
 
-std::shared_ptr<ASTTableIdentifier> TableNode::toASTIdentifier() const
+boost::intrusive_ptr<ASTTableIdentifier> TableNode::toASTIdentifier() const
 {
     if (!temporary_table_name.empty())
-        return std::make_shared<ASTTableIdentifier>(temporary_table_name);
+        return make_intrusive<ASTTableIdentifier>(temporary_table_name);
 
     // In case of cross-replication we don't know what database is used for the table.
     // `storage_id.hasDatabase()` can return false only on the initiator node.
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
     if (!storage_id.hasDatabase())
-        return std::make_shared<ASTTableIdentifier>(storage_id.getTableName());
-    return std::make_shared<ASTTableIdentifier>(storage_id.getDatabaseName(), storage_id.getTableName());
+        return make_intrusive<ASTTableIdentifier>(storage_id.getTableName());
+    return make_intrusive<ASTTableIdentifier>(storage_id.getDatabaseName(), storage_id.getTableName());
 }
 
 }

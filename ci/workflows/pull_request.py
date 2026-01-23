@@ -16,6 +16,7 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
             "_debug, parallel",
             "_binary, parallel",
             "_asan, distributed plan, parallel",
+            "_tsan, parallel",
         )
     )
 ]
@@ -155,6 +156,7 @@ workflow = Workflow.Config(
             0
         ].name,  # plain integration test job, no old analyzer, no dist plan
         "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
+        "build": "Build (amd_binary)",
     },
 )
 

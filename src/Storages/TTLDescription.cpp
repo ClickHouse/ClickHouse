@@ -321,7 +321,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             {
                 if (!aggregation_columns_set.contains(column.name) && !used_primary_key_columns_set.contains(column.name))
                 {
-                    ASTPtr expr = makeASTFunction("any", std::make_shared<ASTIdentifier>(column.name));
+                    ASTPtr expr = makeASTFunction("any", make_intrusive<ASTIdentifier>(column.name));
                     aggregations.emplace_back(column.name, std::move(expr));
                 }
             }

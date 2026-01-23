@@ -22,14 +22,14 @@ ASTPtr makeASTForLogicalAnd(ASTs && arguments)
     });
 
     if (!partial_result)
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(0)});
+        return make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(0)});
     if (arguments.empty())
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        return make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)});
     if (arguments.size() == 1)
         return arguments[0];
 
-    auto function = std::make_shared<ASTFunction>();
-    auto exp_list = std::make_shared<ASTExpressionList>();
+    auto function = make_intrusive<ASTFunction>();
+    auto exp_list = make_intrusive<ASTExpressionList>();
     function->name = "and";
     function->arguments = exp_list;
     function->children.push_back(exp_list);
@@ -51,14 +51,14 @@ ASTPtr makeASTForLogicalOr(ASTs && arguments)
     });
 
     if (partial_result)
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)});
+        return make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)});
     if (arguments.empty())
-        return std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(0)});
+        return make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(0)});
     if (arguments.size() == 1)
         return arguments[0];
 
-    auto function = std::make_shared<ASTFunction>();
-    auto exp_list = std::make_shared<ASTExpressionList>();
+    auto function = make_intrusive<ASTFunction>();
+    auto exp_list = make_intrusive<ASTExpressionList>();
     function->name = "or";
     function->arguments = exp_list;
     function->children.push_back(exp_list);

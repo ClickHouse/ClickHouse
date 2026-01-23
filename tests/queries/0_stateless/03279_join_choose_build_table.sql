@@ -19,6 +19,7 @@ INSERT INTO products SELECT number, 'product ' || toString(number) FROM numbers(
 
 SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_limit = 2;
+SET enable_join_runtime_filters = 0;
 
 SELECT * FROM products, sales
 WHERE sales.product_id = products.id AND date = '2024-05-07'

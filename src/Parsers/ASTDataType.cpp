@@ -13,7 +13,7 @@ String ASTDataType::getID(char delim) const
 
 ASTPtr ASTDataType::clone() const
 {
-    auto res = std::make_shared<ASTDataType>(*this);
+    auto res = make_intrusive<ASTDataType>(*this);
     res->children.clear();
 
     if (arguments)

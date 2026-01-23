@@ -53,7 +53,7 @@ public:
     String getID(char) const override { return "UserNamesWithHost"; }
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTUserNamesWithHost>(*this);
+        auto clone = make_intrusive<ASTUserNamesWithHost>(*this);
         clone->cloneChildren();
         return clone;
     }

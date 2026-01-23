@@ -163,6 +163,7 @@ public:
         ObjectInfoPtr object_info,
         QueryPipelineBuilder & builder,
         const std::optional<FormatSettings> & format_settings,
+        FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr local_context) const;
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(

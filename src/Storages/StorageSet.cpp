@@ -48,7 +48,6 @@ public:
     String getName() const override { return "SetOrJoinSink"; }
     void consume(Chunk & chunk) override;
     void onFinish() override;
-    void onException(std::exception_ptr /* exception */) override;
 
 private:
     void cancelBuffers() noexcept;
@@ -125,11 +124,6 @@ void SetOrJoinSink::onFinish()
     {
         cancelBuffers();
     }
-}
-
-void SetOrJoinSink::onException(std::exception_ptr /* exception */)
-{
-    cancelBuffers();
 }
 
 

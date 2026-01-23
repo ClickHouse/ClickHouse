@@ -1048,7 +1048,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = destination_id;
 
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
@@ -1083,11 +1083,11 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     if (block_to_write.columns() != block.columns())
         LOG_WARNING(log, "Not all columns from block in buffer exist in destination table {}. Some columns are discarded.", destination_id.getNameForLogs());
 
-    auto list_of_columns = std::make_shared<ASTExpressionList>();
+    auto list_of_columns = make_intrusive<ASTExpressionList>();
     insert->columns = list_of_columns;
     list_of_columns->children.reserve(block_to_write.columns());
     for (const auto & column : block_to_write)
-        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
+        list_of_columns->children.push_back(make_intrusive<ASTIdentifier>(column.name));
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();

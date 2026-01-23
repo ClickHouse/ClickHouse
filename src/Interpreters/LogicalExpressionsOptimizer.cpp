@@ -301,7 +301,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
         equals_expr_lhs = operands[0];
     }
 
-    auto tuple_literal = std::make_shared<ASTLiteral>(std::move(tuple));
+    auto tuple_literal = make_intrusive<ASTLiteral>(std::move(tuple));
 
     /// Construct the expression `expr IN (x1, ..., xN)`
     auto in_function = makeASTOperator("in", equals_expr_lhs, tuple_literal);

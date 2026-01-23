@@ -2,7 +2,7 @@
 -- Tag no-parallel: Messes with internal cache
 
 -- Start with empty query cache (QC)
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 -- Insert an entry into the query cache.
 SELECT 1 SETTINGS use_query_cache = true;
@@ -24,4 +24,4 @@ WHERE type = 'QueryFinish'
   AND current_database = currentDatabase()
   AND query = 'select 1 SETTINGS use_query_cache = true;';
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;

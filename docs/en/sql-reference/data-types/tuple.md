@@ -182,3 +182,38 @@ ORDER BY key ASC;
 │   2 │             2 │                                     0 │
 └─────┴───────────────┴───────────────────────────────────────┘
 ```
+
+## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
+
+:::warning Experimental Feature
+Requires `SET allow_experimental_nullable_tuple_type = 1`
+This is an experimental feature and may change in future versions.
+:::
+
+Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullable(T2), ...)` where only individual elements can be `NULL`.
+
+| Type                                       | Tuple can be NULL | Elements can be NULL |
+| ------------------------------------------ | ----------------- | -------------------- |
+| `Nullable(Tuple(String, Int64))`           | ✅                | ❌                   |
+| `Tuple(Nullable(String), Nullable(Int64))` | ❌                | ✅                   |
+
+Example:
+
+```sql
+SET allow_experimental_nullable_tuple_type = 1;
+
+CREATE TABLE test (
+    id UInt32,
+    data Nullable(Tuple(String, Int64))
+) ENGINE = Memory;
+
+INSERT INTO test VALUES (1, ('hello', 42)), (2, NULL);
+
+SELECT * FROM test WHERE data IS NULL;
+```
+
+```txt
+ ┌─id─┬─data─┐
+ │  2 │ ᴺᵁᴸᴸ │
+ └────┴──────┘
+```

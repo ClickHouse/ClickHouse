@@ -55,6 +55,10 @@ IMergeTreeReader::IMergeTreeReader(
     , converted_requested_columns(Nested::convertToSubcolumns(columns_))
     , virtual_fields(virtual_fields_)
 {
+    /// Check the memory consumption before doing all the heavy-lifting such as
+    /// initializing buffers, reading marks, etc. Maybe that's not needed?
+    CurrentMemoryTracker::check();
+
     columns_to_read.reserve(getColumns().size());
     serializations.reserve(getColumns().size());
 

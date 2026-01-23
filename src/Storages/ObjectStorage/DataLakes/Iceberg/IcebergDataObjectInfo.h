@@ -8,6 +8,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/EqualityDeleteObject.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 
+#include <Formats/FormatParserSharedResources.h>
+
 
 namespace DB::Iceberg
 {
@@ -53,6 +55,7 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         ObjectStoragePtr object_storage,
         const SharedHeader & header,
         const std::optional<FormatSettings> & format_settings,
+        FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr context_);
 
     std::optional<String> getFileFormat() const override { return info.file_format; }

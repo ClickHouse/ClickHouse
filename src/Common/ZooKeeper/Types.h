@@ -26,7 +26,7 @@ template <typename R>
 using AsyncResponses = std::vector<std::pair<std::string, std::future<R>>>;
 
 Coordination::RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode, bool ignore_if_exists = false);
-Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version);
+Coordination::RequestPtr makeRemoveRequest(const std::string & path, int version, bool try_remove = false);
 Coordination::RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version);
 Coordination::RequestPtr makeCheckRequest(const std::string & path, int version, bool not_exists = false, std::optional<Coordination::Stat> stat_to_check = std::nullopt);
 Coordination::RequestPtr makeGetRequest(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch = {});

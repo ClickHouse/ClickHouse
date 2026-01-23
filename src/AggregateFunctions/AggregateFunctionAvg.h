@@ -1,16 +1,21 @@
 #pragma once
 
+#include <cmath>
 #include <type_traits>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnDecimal.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionsRound.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionSum.h>
-#include <Core/DecimalFunctions.h>
 
 #include "config.h"
 
@@ -21,6 +26,28 @@
 
 namespace DB
 {
+
+/// Convert Float64 avg result to target type with rounding
+/// Returns 0 for NaN (empty set case)
+template <typename ValueType>
+ValueType avgResultToValue(Float64 v, UInt32 scale = 0)
+{
+    if (std::isnan(v))
+        return ValueType(0);
+
+    if constexpr (is_decimal<ValueType>)
+    {
+        const auto mult = DecimalUtils::scaleMultiplier<ValueType>(scale);
+        const Float64 scaled = v * static_cast<Float64>(mult);
+        const auto rounded = roundWithMode(scaled, RoundingMode::Round);
+        return ValueType(static_cast<typename ValueType::NativeType>(rounded));
+    }
+    else
+    {
+        const auto rounded = roundWithMode(v, RoundingMode::Round);
+        return static_cast<ValueType>(rounded);
+    }
+}
 
 struct Settings;
 
@@ -129,11 +156,33 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if constexpr (is_decimal<Numerator> || is_decimal<Denominator>)
-            assert_cast<ColumnVector<Float64> &>(to).getData().push_back(
-                this->data(place).divideIfAnyDecimal(num_scale, denom_scale));
-        else
-            assert_cast<ColumnVector<Float64> &>(to).getData().push_back(this->data(place).divide());
+        const auto compute_avg = [&]() -> Float64
+        {
+            if constexpr (is_decimal<Numerator> || is_decimal<Denominator>)
+                return this->data(place).divideIfAnyDecimal(num_scale, denom_scale);
+            else
+                return this->data(place).divide();
+        };
+
+        const auto & res_type = this->getResultType();
+        WhichDataType result_which(res_type);
+
+        Float64 v = compute_avg();
+
+        /// Processing of results with Date/Time types
+        if (callOnBasicType<void, false, false, false, true>(result_which.idx, [&](auto types) -> bool
+        {
+            using ValueType = typename decltype(types)::RightType;
+            auto & col = assert_cast<ColumnVectorOrDecimal<ValueType> &>(to);
+            if constexpr (is_decimal<ValueType>)
+                col.getData().push_back(avgResultToValue<ValueType>(v, col.getScale()));
+            else
+                col.getData().push_back(avgResultToValue<ValueType>(v));
+            return true;
+        }))
+            return;
+
+        assert_cast<ColumnVector<Float64> &>(to).getData().push_back(v);
     }
 
 
@@ -151,6 +200,9 @@ public:
 
         const auto & result_type = this->getResultType();
         can_be_compiled &= canBeNativeType(*result_type);
+
+        /// JIT compilation does not support non-float result types (like DateTime[64]/Time[64])
+        can_be_compiled &= WhichDataType(result_type).isFloat64();
 
         return can_be_compiled;
     }

@@ -62,10 +62,10 @@ void TimeSeriesDefinitionNormalizer::reorderColumns(ASTCreateQuery & create) con
     auto & columns = create.columns_list->columns->children;
 
     /// Build a map "column_name -> column_declaration".
-    std::unordered_map<std::string_view, std::shared_ptr<ASTColumnDeclaration>> columns_by_name;
+    std::unordered_map<std::string_view, boost::intrusive_ptr<ASTColumnDeclaration>> columns_by_name;
     for (const auto & column : columns)
     {
-        auto column_declaration = typeid_cast<std::shared_ptr<ASTColumnDeclaration>>(column);
+        auto column_declaration = boost::static_pointer_cast<ASTColumnDeclaration>(column);
         columns_by_name[column_declaration->name] = column_declaration;
     }
 
@@ -142,10 +142,10 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
     }
 
     if (!create.columns_list)
-        create.set(create.columns_list, std::make_shared<ASTColumns>());
+        create.set(create.columns_list, make_intrusive<ASTColumns>());
 
     if (!create.columns_list->columns)
-        create.columns_list->set(create.columns_list->columns, std::make_shared<ASTExpressionList>());
+        create.columns_list->set(create.columns_list->columns, make_intrusive<ASTExpressionList>());
     auto & columns = create.columns_list->columns->children;
 
     /// Here in this function we rely on that the columns are already sorted in the canonical order (see the reorderColumns() function).
@@ -164,7 +164,7 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
 
     auto make_new_column = [&](const String & column_name, ASTPtr type)
     {
-        auto new_column = std::make_shared<ASTColumnDeclaration>();
+        auto new_column = make_intrusive<ASTColumnDeclaration>();
         new_column->name = column_name;
         new_column->type = type;
         columns.insert(columns.begin() + position, new_column);
@@ -172,14 +172,14 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
     };
 
     auto get_uuid_type = [] { return makeASTDataType("UUID"); };
-    auto get_datetime_type = [] { return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(3ul)); };
+    auto get_datetime_type = [] { return makeASTDataType("DateTime64", make_intrusive<ASTLiteral>(3ul)); };
     auto get_float_type = [] { return makeASTDataType("Float64"); };
     auto get_string_type = [] { return makeASTDataType("String"); };
     auto get_lc_string_type = [&] { return makeASTDataType("LowCardinality", get_string_type()); };
     auto get_string_to_string_map_type = [&] { return makeASTDataType("Map", get_string_type(), get_string_type()); };
     auto get_lc_string_to_string_map_type = [&] { return makeASTDataType("Map", get_lc_string_type(), get_string_type()); };
 
-    auto make_nullable = [&](std::shared_ptr<ASTDataType> type)
+    auto make_nullable = [&](boost::intrusive_ptr<ASTDataType> type)
     {
         if (type->name == "Nullable")
             return type;
@@ -193,8 +193,8 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
     if (!is_next_column_named(TimeSeriesColumnNames::Timestamp))
         make_new_column(TimeSeriesColumnNames::Timestamp, get_datetime_type());
 
-    auto timestamp_column = typeid_cast<std::shared_ptr<ASTColumnDeclaration>>(columns[position - 1]);
-    auto timestamp_type = typeid_cast<std::shared_ptr<ASTDataType>>(timestamp_column->type);
+    auto timestamp_column = boost::static_pointer_cast<ASTColumnDeclaration>(columns[position - 1]);
+    auto timestamp_type = boost::static_pointer_cast<ASTDataType>(timestamp_column->type);
 
     if (!is_next_column_named(TimeSeriesColumnNames::Value))
         make_new_column(TimeSeriesColumnNames::Value, get_float_type());
@@ -291,11 +291,11 @@ ASTPtr TimeSeriesDefinitionNormalizer::chooseIDAlgorithm(const ASTColumnDeclarat
     /// Build a list of arguments for a hash function.
     /// All hash functions below allow multiple arguments, so we use two arguments: metric_name, all_tags.
     ASTs arguments_for_hash_function;
-    arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+    arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
 
     if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
     {
-        arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::AllTags));
+        arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::AllTags));
     }
     else
     {
@@ -304,16 +304,16 @@ ASTPtr TimeSeriesDefinitionNormalizer::chooseIDAlgorithm(const ASTColumnDeclarat
         {
             const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
             const auto & column_name = tuple.at(1).safeGet<String>();
-            arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(column_name));
+            arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(column_name));
         }
-        arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+        arguments_for_hash_function.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
     }
 
     auto make_hash_function = [&](const String & function_name)
     {
-        auto function = std::make_shared<ASTFunction>();
+        auto function = make_intrusive<ASTFunction>();
         function->name = function_name;
-        auto arguments_list = std::make_shared<ASTExpressionList>();
+        auto arguments_list = make_intrusive<ASTExpressionList>();
         arguments_list->children = std::move(arguments_for_hash_function);
         function->arguments = arguments_list;
         return function;
@@ -375,13 +375,13 @@ void TimeSeriesDefinitionNormalizer::addMissingInnerEnginesFromAsTable(ASTCreate
                 backQuoteIfNeed(as_table.database), backQuoteIfNeed(as_table.table));
         }
 
-        auto inner_table_engine = create.getTargetInnerEngine(target_kind);
+        auto * inner_table_engine = create.getTargetInnerEngine(target_kind);
         if (!inner_table_engine)
         {
             /// Copy an inner engine's definition from the other table.
             inner_table_engine = as_create_query->getTargetInnerEngine(target_kind);
             if (inner_table_engine)
-                create.setTargetInnerEngine(target_kind, typeid_cast<std::shared_ptr<ASTStorage>>(inner_table_engine->clone()));
+                create.setTargetInnerEngine(target_kind, boost::static_pointer_cast<ASTStorage>(inner_table_engine->clone()));
         }
     }
 }
@@ -394,15 +394,16 @@ void TimeSeriesDefinitionNormalizer::addMissingInnerEngines(ASTCreateQuery & cre
         if (create.hasTargetTableID(target_kind))
             continue; /// External target is set, inner engine is not needed.
 
-        auto inner_table_engine = create.getTargetInnerEngine(target_kind);
+        auto * inner_table_engine = create.getTargetInnerEngine(target_kind);
         if (inner_table_engine && inner_table_engine->engine)
             continue; /// Engine is set already, skip it.
 
         if (!inner_table_engine)
         {
             /// Some part of storage definition (such as PARTITION BY) is specified, but the inner ENGINE is not: just set default one.
-            inner_table_engine = std::make_shared<ASTStorage>();
-            create.setTargetInnerEngine(target_kind, inner_table_engine);
+            auto new_inner_table_engine = make_intrusive<ASTStorage>();
+            inner_table_engine = new_inner_table_engine.get();
+            create.setTargetInnerEngine(target_kind, std::move(new_inner_table_engine));
         }
 
         /// Set engine by default.
@@ -424,8 +425,8 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
             {
                 inner_storage_def.set(inner_storage_def.order_by,
                                       makeASTOperator("tuple",
-                                                      std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID),
-                                                      std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
+                                                      make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
+                                                      make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
             }
             break;
         }
@@ -444,21 +445,21 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
             if (!inner_storage_def.order_by && !inner_storage_def.primary_key && inner_storage_def.engine->name.ends_with("MergeTree"))
             {
                 inner_storage_def.set(inner_storage_def.primary_key,
-                                      std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+                                      make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
 
                 ASTs order_by_list;
-                order_by_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
-                order_by_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID));
+                order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+                order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
 
                 if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time] && !time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
                 {
-                    order_by_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
-                    order_by_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
+                    order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
+                    order_by_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
                 }
 
-                auto order_by_tuple = std::make_shared<ASTFunction>();
+                auto order_by_tuple = make_intrusive<ASTFunction>();
                 order_by_tuple->name = "tuple";
-                auto arguments_list = std::make_shared<ASTExpressionList>();
+                auto arguments_list = make_intrusive<ASTExpressionList>();
                 arguments_list->children = std::move(order_by_list);
                 order_by_tuple->arguments = arguments_list;
                 inner_storage_def.set(inner_storage_def.order_by, order_by_tuple);
@@ -473,7 +474,7 @@ void TimeSeriesDefinitionNormalizer::setInnerEngineByDefault(ViewTarget::Kind in
 
             if (!inner_storage_def.order_by && !inner_storage_def.primary_key && inner_storage_def.engine->name.ends_with("MergeTree"))
             {
-                inner_storage_def.set(inner_storage_def.order_by, std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName));
+                inner_storage_def.set(inner_storage_def.order_by, make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName));
             }
             break;
         }

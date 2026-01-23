@@ -56,7 +56,7 @@ namespace
     /// Makes an ASTIdentifier for a column of the specified table.
     ASTPtr makeASTColumn(const StorageID & table_id, const String & column_name)
     {
-        return std::make_shared<ASTIdentifier>(Strings{table_id.database_name, table_id.table_name, column_name});
+        return make_intrusive<ASTIdentifier>(Strings{table_id.database_name, table_id.table_name, column_name});
     }
 
     /// Makes an AST for condition `data_table.timestamp >= min_timestamp_ms`
@@ -64,7 +64,7 @@ namespace
     {
         return makeASTOperator("greaterOrEquals",
                                makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
-                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
+                               make_intrusive<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `data_table.timestamp <= max_timestamp_ms`
@@ -72,7 +72,7 @@ namespace
     {
         return makeASTOperator("lessOrEquals",
                                makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
-                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
+                               make_intrusive<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `tags_table.max_time >= min_timestamp_ms`
@@ -80,7 +80,7 @@ namespace
     {
         return makeASTOperator("greaterOrEquals",
                                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MaxTime),
-                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
+                               make_intrusive<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for condition `tags_table.min_time <= max_timestamp_ms`
@@ -88,7 +88,7 @@ namespace
     {
         return makeASTOperator("lessOrEquals",
                                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MinTime),
-                               std::make_shared<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
+                               make_intrusive<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
     }
 
     /// Makes an AST for the expression referencing a tag value.
@@ -102,7 +102,7 @@ namespace
             return makeASTColumn(tags_table_id, it->second);
 
         /// arrayElement() can be used to extract a value from a Map too.
-        return makeASTOperator("arrayElement", makeASTColumn(tags_table_id, TimeSeriesColumnNames::Tags), std::make_shared<ASTLiteral>(label_name));
+        return makeASTOperator("arrayElement", makeASTColumn(tags_table_id, TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(label_name));
     }
 
     /// Makes an AST for a label matcher, for example `metric_name == 'value'` or `NOT match(labels['label_name'], 'regexp')`.
@@ -116,22 +116,22 @@ namespace
         auto type = label_matcher.type();
 
         if (type == prometheus::LabelMatcher::EQ)
-            return makeASTOperator("equals", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
+            return makeASTOperator("equals", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), make_intrusive<ASTLiteral>(label_value));
         if (type == prometheus::LabelMatcher::NEQ)
             return makeASTOperator(
                 "notEquals",
                 makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name),
-                std::make_shared<ASTLiteral>(label_value));
+                make_intrusive<ASTLiteral>(label_value));
         if (type == prometheus::LabelMatcher::RE)
             return makeASTFunction(
-                "match", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), std::make_shared<ASTLiteral>(label_value));
+                "match", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), make_intrusive<ASTLiteral>(label_value));
         if (type == prometheus::LabelMatcher::NRE)
             return makeASTOperator(
                 "not",
                 makeASTFunction(
                     "match",
                     makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name),
-                    std::make_shared<ASTLiteral>(label_value)));
+                    make_intrusive<ASTLiteral>(label_value)));
         throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Unexpected type of label matcher: {}", type);
     }
 
@@ -200,12 +200,12 @@ namespace
         const StorageID & data_table_id,
         const StorageID & tags_table_id)
     {
-        auto select_query = std::make_shared<ASTSelectQuery>();
+        auto select_query = make_intrusive<ASTSelectQuery>();
 
             /// SELECT tags_table.metric_name, any(tags_table.tag_column1), ... any(tags_table.tag_columnN), any(tags_table.tags),
             ///        groupArray(data_table.timestamp, data_table.value)
             {
-            auto exp_list = std::make_shared<ASTExpressionList>();
+            auto exp_list = make_intrusive<ASTExpressionList>();
 
             exp_list->children.push_back(
                 makeASTColumn(tags_table_id, TimeSeriesColumnNames::MetricName));
@@ -225,19 +225,19 @@ namespace
             exp_list->children.push_back(
                 makeASTFunction("groupArray",
                                 makeASTOperator("tuple",
-                                                makeASTFunction("CAST", makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp), std::make_shared<ASTLiteral>("DateTime64(3)")),
-                                                makeASTFunction("CAST", makeASTColumn(data_table_id, TimeSeriesColumnNames::Value), std::make_shared<ASTLiteral>("Float64")))));
+                                                makeASTFunction("CAST", makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp), make_intrusive<ASTLiteral>("DateTime64(3)")),
+                                                makeASTFunction("CAST", makeASTColumn(data_table_id, TimeSeriesColumnNames::Value), make_intrusive<ASTLiteral>("Float64")))));
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, exp_list);
         }
 
         /// FROM data_table
-        auto tables = std::make_shared<ASTTablesInSelectQuery>();
+        auto tables = make_intrusive<ASTTablesInSelectQuery>();
 
         {
-            auto table = std::make_shared<ASTTablesInSelectQueryElement>();
-            auto table_exp = std::make_shared<ASTTableExpression>();
-            table_exp->database_and_table_name = std::make_shared<ASTTableIdentifier>(data_table_id);
+            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+            auto table_exp = make_intrusive<ASTTableExpression>();
+            table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(data_table_id);
             table_exp->children.emplace_back(table_exp->database_and_table_name);
 
             table->table_expression = table_exp;
@@ -246,9 +246,9 @@ namespace
 
         /// SEMI LEFT JOIN tags_table ON data_table.id = tags_table.id
         {
-            auto table = std::make_shared<ASTTablesInSelectQueryElement>();
+            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
 
-            auto table_join = std::make_shared<ASTTableJoin>();
+            auto table_join = make_intrusive<ASTTableJoin>();
             table_join->kind = JoinKind::Left;
             table_join->strictness = JoinStrictness::Semi;
 
@@ -256,8 +256,8 @@ namespace
             table_join->children.push_back(table_join->on_expression);
             table->table_join = table_join;
 
-            auto table_exp = std::make_shared<ASTTableExpression>();
-            table_exp->database_and_table_name = std::make_shared<ASTTableIdentifier>(tags_table_id);
+            auto table_exp = make_intrusive<ASTTableExpression>();
+            table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
             table_exp->children.emplace_back(table_exp->database_and_table_name);
 
             table->table_expression = table_exp;
@@ -277,7 +277,7 @@ namespace
 
         /// GROUP BY tags_table.metric_name, tags_table.tag_column1, ..., tags_table.tag_columnN, tags_table.tags
         {
-            auto exp_list = std::make_shared<ASTExpressionList>();
+            auto exp_list = make_intrusive<ASTExpressionList>();
 
             exp_list->children.push_back(
                 makeASTColumn(tags_table_id, TimeSeriesColumnNames::MetricName));

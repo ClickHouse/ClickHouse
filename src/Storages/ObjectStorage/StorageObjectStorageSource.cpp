@@ -645,7 +645,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
-        configuration->addDeleteTransformers(object_info, builder, format_settings, context_);
+        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
 
         if (object_info->data_lake_metadata
             && object_info->data_lake_metadata->excluded_rows

@@ -1211,11 +1211,12 @@ void Runner::runBenchmarkWithGenerator()
             path = file_output->parent_path() / filename;
         }
 
-        std::cerr << "Storing output to " << path << std::endl;
+        std::cerr << "Storing output to " << fs::absolute(path) << std::endl;
 
         DB::WriteBufferFromFile file_output_buffer(path);
         DB::ReadBufferFromString read_buffer(output_string);
         DB::copyData(read_buffer, file_output_buffer);
+        file_output_buffer.finalize();
     }
 }
 

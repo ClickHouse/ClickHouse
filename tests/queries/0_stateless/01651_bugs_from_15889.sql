@@ -54,7 +54,7 @@ WHERE (query_id =
     WHERE current_database = currentDatabase() AND (query LIKE '%test cpu time query profiler%') AND (query NOT LIKE '%system%')
     ORDER BY event_time DESC
     LIMIT 1
-)) AND (symbol LIKE '%Source%'); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY }
+)) AND (symbol LIKE '%Source%');
 
 
 WITH addressToSymbol(arrayJoin(trace)) AS symbol

@@ -124,12 +124,12 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             {
                 limit_offset = evaluateConstantExpressionAsLiteral(limit_offset_ast, context)->as<ASTLiteral &>().value.safeGet<UInt64>();
                 UInt64 new_limit_offset = settings[Setting::offset] + limit_offset;
-                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(new_limit_offset);
+                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(new_limit_offset);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
             else if (settings[Setting::offset])
             {
-                ASTPtr new_limit_offset_ast = std::make_shared<ASTLiteral>(settings[Setting::offset].value);
+                ASTPtr new_limit_offset_ast = make_intrusive<ASTLiteral>(settings[Setting::offset].value);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(new_limit_offset_ast));
             }
 
@@ -145,12 +145,12 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
                     new_limit_length = settings[Setting::limit] ? std::min(settings[Setting::limit].value, limit_length - settings[Setting::offset].value)
                                                        : (limit_length - settings[Setting::offset].value);
 
-                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(new_limit_length);
+                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(new_limit_length);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
             else if (settings[Setting::limit])
             {
-                ASTPtr new_limit_length_ast = std::make_shared<ASTLiteral>(settings[Setting::limit].value);
+                ASTPtr new_limit_length_ast = make_intrusive<ASTLiteral>(settings[Setting::limit].value);
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
 

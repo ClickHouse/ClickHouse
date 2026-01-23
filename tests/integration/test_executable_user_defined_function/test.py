@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True, main_configs=[])
@@ -392,3 +393,50 @@ def test_executable_function_query_cache(started_cluster):
     assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
 
     node.query("SYSTEM DROP QUERY CACHE");
+
+def test_executable_function_python_exception_in_query_log(started_cluster):
+    '''Test that Python exceptions with tracebacks appear in query_log when stderr_reaction defaults to throw'''
+    skip_test_msan(node)
+
+    # Clear query log
+    node.query("SYSTEM FLUSH LOGS")
+
+    # Generate a unique query_id for tracking
+    query_id = uuid.uuid4().hex
+
+    # Try to execute UDF that will raise Python exception
+    try:
+        node.query("SELECT test_function_python_exception_default(1)", query_id=query_id)
+        assert False, "Exception should have been thrown"
+    except Exception as ex:
+        # Verify exception is thrown
+        assert "DB::Exception" in str(ex)
+        assert "Executable generates stderr" in str(ex)
+
+    # Flush logs to ensure query_log is updated
+    node.query("SYSTEM FLUSH LOGS")
+
+    # Check query_log for the exception
+    # Note: type is 'ExceptionBeforeStart' because exception occurs during prepare(), not during block processing
+    result = node.query(f"""
+        SELECT exception
+        FROM system.query_log
+        WHERE query_id = '{query_id}'
+          AND type = 'ExceptionBeforeStart'
+        FORMAT TabSeparated
+    """)
+
+    # Parse result with TSV to ensure proper formatting
+    exception_text = TSV(result).lines[0]
+
+    # Verify specific exception components are present
+    # UDF stderr must contain complete Python traceback
+    required_components = [
+        "Executable generates stderr: Traceback (most recent call last):",
+        "in process_data",
+        "result = int(value) / 0",
+        "ZeroDivisionError: division by zero",
+    ]
+
+    for component in required_components:
+        assert component in exception_text, f"Missing required component: {component}"

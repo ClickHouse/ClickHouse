@@ -1076,7 +1076,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function untuple can't have lambda-expressions as arguments");
 
             auto result_type = untuple_argument->getResultType();
-            const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type.get());
+            DataTypePtr result_type_without_nullable = removeNullable(result_type);
+            const auto * tuple_data_type = typeid_cast<const DataTypeTuple *>(result_type_without_nullable.get());
             if (!tuple_data_type)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "Function 'untuple' argument must have compound type. Actual type {}. In scope {}",

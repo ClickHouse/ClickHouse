@@ -339,11 +339,6 @@ class FuzzerLogParser:
             if match:
                 # Extract only the part after the pattern
                 extracted = line[match.end() :]
-                # Remove everything before and including 'ClickHouse/' if present
-                if "ClickHouse/" in extracted:
-                    extracted = extracted.split("ClickHouse/")[-1]
-                elif "/./" in extracted:
-                    extracted = extracted.split("/./")[-1]
                 # Only append if there's meaningful content after extraction
                 if extracted.strip():
                     lines.append(extracted)

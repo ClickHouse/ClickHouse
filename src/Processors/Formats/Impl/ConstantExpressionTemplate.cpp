@@ -75,7 +75,7 @@ struct SpecialParserType
 
 struct LiteralInfo
 {
-    using ASTLiteralPtr = std::shared_ptr<ASTLiteral>;
+    using ASTLiteralPtr = boost::intrusive_ptr<ASTLiteral>;
     LiteralInfo(const ASTLiteralPtr & literal_, const String & column_name_, bool force_nullable_)
             : literal(literal_), dummy_column_name(column_name_), force_nullable(force_nullable_) { }
     ASTLiteralPtr literal;
@@ -209,7 +209,7 @@ private:
 
     bool visitIfLiteral(ASTPtr & ast, bool force_nullable)
     {
-        auto literal = std::dynamic_pointer_cast<ASTLiteral>(ast);
+        auto literal = boost::dynamic_pointer_cast<ASTLiteral>(ast);
         if (!literal)
             return false;
         if (literal->begin && literal->end)
@@ -245,7 +245,7 @@ private:
             String column_name = "-dummy-" + std::to_string(replaced_literals.size());
             replaced_literals.emplace_back(literal, column_name, force_nullable);
             setDataType(replaced_literals.back());
-            ast = std::make_shared<ASTIdentifier>(column_name);
+            ast = make_intrusive<ASTIdentifier>(column_name);
         }
         return true;
     }
@@ -710,18 +710,18 @@ void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const I
     {
         expr->setAlias("_expression");
 
-        auto is_null = makeASTFunction("isNull", std::make_shared<ASTIdentifier>("_expression"));
+        auto is_null = makeASTFunction("isNull", make_intrusive<ASTIdentifier>("_expression"));
         is_null->setAlias("_is_expression_nullable");
 
-        auto default_value = makeASTFunction("defaultValueOfTypeName", std::make_shared<ASTLiteral>(result_column_type.getName()));
-        auto cast = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
+        auto default_value = makeASTFunction("defaultValueOfTypeName", make_intrusive<ASTLiteral>(result_column_type.getName()));
+        auto cast = makeASTFunction("_CAST", std::move(expr), make_intrusive<ASTLiteral>(result_column_type.getName()));
 
         auto cond = makeASTFunction("if", std::move(is_null), std::move(default_value), std::move(cast));
-        expr = makeASTFunction("tuple", std::move(cond), std::make_shared<ASTIdentifier>("_is_expression_nullable"));
+        expr = makeASTFunction("tuple", std::move(cond), make_intrusive<ASTIdentifier>("_is_expression_nullable"));
     }
     else
     {
-        expr = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
+        expr = makeASTFunction("_CAST", std::move(expr), make_intrusive<ASTLiteral>(result_column_type.getName()));
     }
 }
 

@@ -1,8 +1,9 @@
+-- add_minmax_index_for_numeric_columns=0: Disable minmax index to not interfere with the indexHint tests. With it it would filter out more rows (correctly)
 -- { echo }
 
 drop table if exists tbl;
 
-create table tbl (p Int64, t Int64, f Float64) Engine=MergeTree partition by p order by t settings index_granularity=1;
+create table tbl (p Int64, t Int64, f Float64) Engine=MergeTree partition by p order by t settings index_granularity=1, add_minmax_index_for_numeric_columns=0;
 
 insert into tbl select number / 4, number, 0 from numbers(16);
 

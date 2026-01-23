@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 -- DROP TABLE system.query_log; -- debugging
 
@@ -64,4 +64,4 @@ WHERE current_database = currentDatabase()
     AND query = 'SELECT 124437995, throwIf(1) SETTINGS use_query_cache = 1;'
     AND type = 'ExceptionWhileProcessing';
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;

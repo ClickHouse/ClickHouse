@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 ASTPtr ASTTTLElement::clone() const
 {
-    auto clone = std::make_shared<ASTTTLElement>(*this);
+    auto clone = make_intrusive<ASTTTLElement>(*this);
     clone->children.clear();
     clone->ttl_expr_pos = -1;
     clone->where_expr_pos = -1;

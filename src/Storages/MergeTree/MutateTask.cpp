@@ -2522,7 +2522,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
     /// Checks if columns used in skipping indexes modified.
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    ASTPtr indices_recalc_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr indices_recalc_expr_list = make_intrusive<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
     bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
 

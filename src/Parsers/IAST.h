@@ -1,15 +1,14 @@
 #pragma once
 
+#include <Parsers/IAST_fwd.h>
 #include <base/types.h>
 #include <Parsers/IASTHash.h>
-#include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/LiteralEscapingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
 
 #include <set>
-
 
 class SipHash;
 
@@ -29,7 +28,7 @@ using Strings = std::vector<String>;
 
 /** Element of the syntax tree (hereinafter - directed acyclic graph with elements of semantics)
   */
-class IAST : public TypePromotion<IAST>
+class IAST : public TypePromotion<IAST>, public boost::intrusive_ref_counter<IAST>
 {
 public:
     ASTs children;
@@ -69,6 +68,8 @@ public:
 
     /** Get the text that identifies this element. */
     virtual String getID(char delimiter = '_') const = 0; /// NOLINT
+
+    ASTPtr ptr() { return ASTPtr(this); }
 
     /** Get a deep copy of the tree. Cloned object must have the same range. */
     virtual ASTPtr clone() const = 0;
@@ -187,13 +188,16 @@ public:
     }
 
     /// After changing one of `children` elements, update the corresponding member pointer if needed.
-    void updatePointerToChild(void * old_ptr, void * new_ptr)
+    void updatePointerToChild(const IAST * old_ptr, const ASTPtr & new_ptr)
     {
-        forEachPointerToChild([old_ptr, new_ptr](void ** ptr) mutable
+        std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f = [old_ptr, new_ptr](IAST ** raw, boost::intrusive_ptr<IAST> * smart)
         {
-            if (*ptr == old_ptr)
-                *ptr = new_ptr;
-        });
+            if (raw && *raw == old_ptr)
+                *raw = new_ptr.get();
+            else if (smart && smart->get() == old_ptr)
+                *smart = new_ptr;
+        };
+        forEachPointerToChild(f);
     }
 
     /// Convert to a string.
@@ -366,16 +370,10 @@ protected:
 
     /// Some AST classes have naked pointers to children elements as members.
     /// This method allows to iterate over them.
-    virtual void forEachPointerToChild(std::function<void(void**)>) {}
+    virtual void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)>) {}
 
 private:
     size_t checkDepthImpl(size_t max_depth) const;
-
-    /** Forward linked list of ASTPtr to delete.
-      * Used in IAST destructor to avoid possible stack overflow.
-      */
-    ASTPtr next_to_delete = nullptr;
-    ASTPtr * next_to_delete_list_head = nullptr;
 };
 
 }

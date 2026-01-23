@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -1514,6 +1515,27 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     auto set_columns = prepared_set->getSetElements();
 
     auto set_types = future_set->getTypes();
+
+    chassert(set_types.size() == set_columns.size());
+
+    /// Special case: ORDER BY key_tuple (a single Tuple-typed key column) with predicate
+    /// `key_tuple IN ((a, b), (c, d), ...)`.
+    ///
+    /// The prepared set for `IN` can come as "unpacked" columns (one column per tuple element),
+    /// but for a packed tuple key we must keep it as a single ColumnTuple so it can be cast to
+    /// the key column type when preparing index conditions
+    if (left_args_count == 1 && data_types.size() == 1 && set_columns.size() > 1)
+    {
+        DataTypePtr key_type = removeNullable(data_types[0]);
+        if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
+        {
+            if (key_tuple_type->getElements().size() == set_types.size())
+            {
+                set_columns = {ColumnTuple::create(set_columns)};
+                set_types = {std::make_shared<DataTypeTuple>(set_types)};
+            }
+        }
+    }
 
     bool is_constant_transformed = false;
     if (!tryPrepareSetColumnsForIndex(

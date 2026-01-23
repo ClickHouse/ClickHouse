@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
 
-    $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE"
+    $CLICKHOUSE_CLIENT --query "SYSTEM CLEAR FILESYSTEM CACHE"
 
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_2242"
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS system.filesystem_cache_log"

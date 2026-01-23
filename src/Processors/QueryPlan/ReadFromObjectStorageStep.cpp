@@ -96,6 +96,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         num_streams = 1;
     }
 
+    // here create for node -> query -> level thread pool
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), num_streams);
 
     auto format_filter_info = std::make_shared<FormatFilterInfo>(

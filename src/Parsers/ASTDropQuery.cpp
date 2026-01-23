@@ -28,7 +28,7 @@ String ASTDropQuery::getID(char delim) const
 
 ASTPtr ASTDropQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropQuery>(*this);
+    auto res = make_intrusive<ASTDropQuery>(*this);
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;

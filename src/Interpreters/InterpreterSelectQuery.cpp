@@ -253,10 +253,10 @@ try
     const auto & table_name = table_id.getTableName();
 
     /// TODO: implement some AST builders for this kind of stuff
-    ASTPtr query_ast = std::make_shared<ASTSelectQuery>();
+    ASTPtr query_ast = make_intrusive<ASTSelectQuery>();
     auto * select_ast = query_ast->as<ASTSelectQuery>();
 
-    select_ast->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+    select_ast->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
     auto expr_list = select_ast->select();
 
     /// The first column is our filter expression.
@@ -277,14 +277,14 @@ try
             context->getSettingsRef()[Setting::max_parser_backtracks]));
     }
 
-    select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+    select_ast->setExpression(ASTSelectQuery::Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
     auto tables = select_ast->tables();
-    auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
-    auto table_expr = std::make_shared<ASTTableExpression>();
+    auto tables_elem = make_intrusive<ASTTablesInSelectQueryElement>();
+    auto table_expr = make_intrusive<ASTTableExpression>();
     tables->children.push_back(tables_elem);
     tables_elem->table_expression = table_expr;
     tables_elem->children.push_back(table_expr);
-    table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(db_name, table_name);
+    table_expr->database_and_table_name = make_intrusive<ASTTableIdentifier>(db_name, table_name);
     table_expr->children.push_back(table_expr->database_and_table_name);
 
     /// Using separate expression analyzer to prevent any possible alias injection
@@ -976,7 +976,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (analysis_result.prewhere_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::PREWHERE, {});
         else
-            query.setExpression(ASTSelectQuery::Expression::PREWHERE, std::make_shared<ASTLiteral>(0u));
+            query.setExpression(ASTSelectQuery::Expression::PREWHERE, make_intrusive<ASTLiteral>(0u));
         need_analyze_again = true;
     }
 
@@ -986,7 +986,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (analysis_result.where_constant_filter_description.always_true)
             query.setExpression(ASTSelectQuery::Expression::WHERE, {});
         else
-            query.setExpression(ASTSelectQuery::Expression::WHERE, std::make_shared<ASTLiteral>(0u));
+            query.setExpression(ASTSelectQuery::Expression::WHERE, make_intrusive<ASTLiteral>(0u));
         need_analyze_again = true;
     }
 
@@ -1409,7 +1409,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
     {
         NamesAndTypesList source_columns;
         ColumnsWithTypeAndName result_columns;
-        ASTPtr exprs = std::make_shared<ASTExpressionList>();
+        ASTPtr exprs = make_intrusive<ASTExpressionList>();
 
         if (query.interpolate()->children.empty())
         {
@@ -1423,7 +1423,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
             {
                 source_columns.emplace_back(name, type);
                 result_columns.emplace_back(type, name);
-                exprs->children.emplace_back(std::make_shared<ASTIdentifier>(name));
+                exprs->children.emplace_back(make_intrusive<ASTIdentifier>(name));
             }
         }
         else
@@ -2385,10 +2385,10 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         NameSet required_aliases_from_prewhere; /// Set of ALIAS required columns for PREWHERE
 
         /// Expression, that contains all raw required columns
-        ASTPtr required_columns_all_expr = std::make_shared<ASTExpressionList>();
+        ASTPtr required_columns_all_expr = make_intrusive<ASTExpressionList>();
 
         /// Expression, that contains raw required columns for PREWHERE
-        ASTPtr required_columns_from_prewhere_expr = std::make_shared<ASTExpressionList>();
+        ASTPtr required_columns_from_prewhere_expr = make_intrusive<ASTExpressionList>();
 
         /// Sort out already known required columns between expressions,
         /// also populate `required_aliases_from_prewhere`.
@@ -2410,7 +2410,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 column_expr = setAlias(column_expr, column);
             }
             else
-                column_expr = std::make_shared<ASTIdentifier>(column);
+                column_expr = make_intrusive<ASTIdentifier>(column);
 
             if (required_columns_from_prewhere.contains(column))
             {
@@ -2443,7 +2443,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
                 if (columns_to_remove.contains(column.name))
                     continue;
 
-                required_columns_all_expr->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                required_columns_all_expr->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
                 required_columns_after_prewhere.emplace_back(column.name, column.type);
             }
 

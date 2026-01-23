@@ -281,7 +281,7 @@ namespace
             ASTPtr res_settings;
             if (!settings_changes.empty())
             {
-                auto settings_changes_ast = std::make_shared<ASTSetQuery>();
+                auto settings_changes_ast = make_intrusive<ASTSetQuery>();
                 settings_changes_ast->changes = std::move(settings_changes);
                 settings_changes_ast->is_standalone = false;
                 res_settings = settings_changes_ast;
@@ -313,7 +313,7 @@ namespace
         std::erase_if(changes, [](const SettingChange & change) { return change.name == "async"; }); // NOLINT
         changes.emplace_back("async", async);
 
-        auto new_settings = std::make_shared<ASTSetQuery>();
+        auto new_settings = make_intrusive<ASTSetQuery>();
         new_settings->changes = std::move(changes);
         new_settings->is_standalone = false;
         settings = new_settings;
@@ -360,7 +360,7 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     parseSettings(pos, expected, settings, base_backup_name, cluster_host_ids);
     parseSyncOrAsync(pos, expected, settings);
 
-    auto query = std::make_shared<ASTBackupQuery>();
+    auto query = make_intrusive<ASTBackupQuery>();
     node = query;
 
     query->kind = kind;

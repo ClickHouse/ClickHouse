@@ -343,12 +343,13 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     ) == total_rows
 
 
-def test_max_set_age(started_cluster):
+@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+def test_max_set_age(started_cluster, mode):
     # We use an instance without keeper fault injection,
     # because otherwise we fail to update keeper state in 1.5 * max_age,
     # so we cannot check max_set_age correctness properly.
     node = started_cluster.instances["instance_without_keeper_fault_injection"]
-    table_name = f"max_set_age_{generate_random_string()}"
+    table_name = f"max_set_age_{mode}_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}"
@@ -360,7 +361,7 @@ def test_max_set_age(started_cluster):
         started_cluster,
         node,
         table_name,
-        "unordered",
+        mode,
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
@@ -370,6 +371,7 @@ def test_max_set_age(started_cluster):
             "polling_max_timeout_ms": 1000,
             "polling_backoff_ms": 1000,
             "processing_threads_num": 1,
+            "s3queue_loading_retries": 0,
         },
     )
     create_mv(node, table_name, dst_table_name)
@@ -378,7 +380,7 @@ def test_max_set_age(started_cluster):
 
     expected_rows = files_to_generate
 
-    node.wait_for_log_line("Checking node limits")
+    node.wait_for_log_line("Checking failed nodes for tracking limits")
     node.wait_for_log_line("Node limits check finished")
 
     def get_count():
@@ -397,21 +399,23 @@ def test_max_set_age(started_cluster):
         node.query(f"SELECT uniq(_path) from {dst_table_name}")
     )
 
-    expected_rows *= 2
-    wait_for_condition(lambda: get_count() == expected_rows)
-    assert files_to_generate == int(
-        node.query(f"SELECT uniq(_path) from {dst_table_name}")
-    )
+    # We do not removed processed nodes in ordered mode
+    if mode != "ordered":
+        expected_rows *= 2
+        wait_for_condition(lambda: get_count() == expected_rows)
+        assert files_to_generate == int(
+            node.query(f"SELECT uniq(_path) from {dst_table_name}")
+        )
 
-    paths_count = [
-        int(x)
-        for x in node.query(
-            f"SELECT count() from {dst_table_name} GROUP BY _path"
-        ).splitlines()
-    ]
-    assert files_to_generate == len(paths_count)
-    for path_count in paths_count:
-        assert 2 == path_count
+        paths_count = [
+            int(x)
+            for x in node.query(
+                f"SELECT count() from {dst_table_name} GROUP BY _path"
+            ).splitlines()
+        ]
+        assert files_to_generate == len(paths_count)
+        for path_count in paths_count:
+            assert 2 == path_count
 
     def get_object_storage_failures():
         return int(
@@ -430,10 +434,18 @@ def test_max_set_age(started_cluster):
     ).encode()
 
     # use a different filename for each test to allow running a bunch of them sequentially with --count
-    file_with_error = f"max_set_age_fail_{uuid.uuid4().hex[:8]}.csv"
+    file_with_error = f"z_max_set_age_fail_{uuid.uuid4().hex[:8]}.csv"
     put_s3_file_content(started_cluster, f"{files_path}/{file_with_error}", values_csv)
 
     wait_for_condition(lambda: failed_count + 1 == get_object_storage_failures())
+
+    for _ in range(10):
+        node.query("SYSTEM FLUSH LOGS")
+        if "Cannot parse input" in node.query(
+            f"SELECT exception FROM system.s3queue WHERE file_name ilike '%{file_with_error}'"
+        ):
+            break
+        time.sleep(1)
 
     node.query("SYSTEM FLUSH LOGS")
     assert "Cannot parse input" in node.query(
@@ -463,11 +475,13 @@ def test_max_set_age(started_cluster):
 
     node.restart_clickhouse()
 
-    expected_rows *= 2
-    wait_for_condition(lambda: get_count() == expected_rows)
-    assert files_to_generate == int(
-        node.query(f"SELECT uniq(_path) from {dst_table_name}")
-    )
+    # We do not removed processed nodes in ordered mode
+    if mode != "ordered":
+        expected_rows *= 2
+        wait_for_condition(lambda: get_count() == expected_rows)
+        assert files_to_generate == int(
+            node.query(f"SELECT uniq(_path) from {dst_table_name}")
+        )
 
 
 def test_max_set_size(started_cluster):
@@ -490,10 +504,10 @@ def test_max_set_size(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "s3queue_tracked_files_limit": 9,
-            "s3queue_cleanup_interval_min_ms": 0,
-            "s3queue_cleanup_interval_max_ms": 0,
+            "s3queue_cleanup_interval_min_ms": 50,
+            "s3queue_cleanup_interval_max_ms": 50,
             "s3queue_processing_threads_num": 1,
-            "commit_on_select": 1
+            "commit_on_select": 1,
         },
     )
     total_values = generate_random_files(

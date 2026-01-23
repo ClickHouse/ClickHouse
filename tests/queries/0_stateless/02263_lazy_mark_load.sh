@@ -29,7 +29,7 @@ EOF
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES lazy_mark_test"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO lazy_mark_test select number, number % 3, number % 5, number % 10, number % 13, number % 15, number % 17, number % 18, number % 22, number % 25 from numbers(1000000)"
-${CLICKHOUSE_CLIENT} -q "SYSTEM DROP MARK CACHE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM CLEAR MARK CACHE"
 # max_threads=1 is needed because otherwise OpenedFileCache makes ProfileEvents['FileOpen'] nondeterministic
 # (usually all threads access the file at overlapping times, and the file is opened just once;
 #  but sometimes a thread is much slower than others and ends opening the same file a second time)

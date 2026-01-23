@@ -56,14 +56,14 @@ namespace
     ASTPtr tagNameToAST(const String & tag_name, const std::unordered_map<String, String> & column_name_by_tag_name)
     {
         if (tag_name == TimeSeriesTagNames::MetricName)
-            return std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MetricName);
+            return make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName);
 
         auto it = column_name_by_tag_name.find(tag_name);
         if (it != column_name_by_tag_name.end())
-            return std::make_shared<ASTIdentifier>(it->second);
+            return make_intrusive<ASTIdentifier>(it->second);
 
         /// arrayElement() can be used to extract a value from a Map too.
-        return makeASTFunction("arrayElement", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags), std::make_shared<ASTLiteral>(tag_name));
+        return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
     }
 
     ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
@@ -89,7 +89,7 @@ namespace
             if (!value.ends_with('$'))
                 value += '$';
         }
-        ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), std::make_shared<ASTLiteral>(value));
+        ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
         if (add_not)
             res = makeASTFunction("not", res);
         return res;
@@ -113,8 +113,8 @@ namespace
             /// tags_table.max_time >= min_time
             asts.push_back(makeASTFunction(
                 "greaterOrEquals",
-                std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MaxTime),
-                std::make_shared<ASTLiteral>(min_time)));
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime),
+                make_intrusive<ASTLiteral>(min_time)));
         }
 
         if (!max_time.isNull())
@@ -122,8 +122,8 @@ namespace
             /// tags_table.min_time <= max_time
             asts.push_back(makeASTFunction(
                 "lessOrEquals",
-                std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MinTime),
-                std::make_shared<ASTLiteral>(max_time)));
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime),
+                make_intrusive<ASTLiteral>(max_time)));
         }
 
         return makeASTForLogicalAnd(std::move(asts));
@@ -135,23 +135,23 @@ namespace
         const std::unordered_map<String, String> & column_name_by_tag_name,
         const Field & min_time, const Field & max_time)
     {
-        auto select_query = std::make_shared<ASTSelectQuery>();
+        auto select_query = make_intrusive<ASTSelectQuery>();
 
         /// SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, tag_name1, tag_column1, ...)
         {
-            auto select_list_exp = std::make_shared<ASTExpressionList>();
+            auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
             ASTs args;
-            args.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID));
-            args.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Tags));
-            args.push_back(std::make_shared<ASTLiteral>(TimeSeriesTagNames::MetricName));
-            args.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+            args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags));
+            args.push_back(make_intrusive<ASTLiteral>(TimeSeriesTagNames::MetricName));
+            args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
 
             for (const auto & [tag_name, column_name] : column_name_by_tag_name)
             {
-                args.push_back(std::make_shared<ASTLiteral>(tag_name));
-                args.push_back(std::make_shared<ASTIdentifier>(column_name));
+                args.push_back(make_intrusive<ASTLiteral>(tag_name));
+                args.push_back(make_intrusive<ASTIdentifier>(column_name));
             }
 
             select_list.push_back(makeASTFunction("timeSeriesStoreTags", std::move(args)));
@@ -159,12 +159,12 @@ namespace
         }
 
         /// FROM tags_table_id
-        auto tables = std::make_shared<ASTTablesInSelectQuery>();
+        auto tables = make_intrusive<ASTTablesInSelectQuery>();
 
         {
-            auto table = std::make_shared<ASTTablesInSelectQueryElement>();
-            auto table_exp = std::make_shared<ASTTableExpression>();
-            table_exp->database_and_table_name = std::make_shared<ASTTableIdentifier>(tags_table_id);
+            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+            auto table_exp = make_intrusive<ASTTableExpression>();
+            table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
             table_exp->children.emplace_back(table_exp->database_and_table_name);
 
             table->table_expression = table_exp;
@@ -180,10 +180,10 @@ namespace
         }
 
         /// Wrap the select query into ASTSelectWithUnionQuery.
-        auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
         {
             select_with_union_query->union_mode = SelectUnionMode::UNION_DEFAULT;
-            auto list_of_selects = std::make_shared<ASTExpressionList>();
+            auto list_of_selects = make_intrusive<ASTExpressionList>();
             list_of_selects->children.push_back(std::move(select_query));
             select_with_union_query->children.push_back(std::move(list_of_selects));
             select_with_union_query->list_of_selects = select_with_union_query->children.back();
@@ -200,15 +200,15 @@ namespace
         ASTs conditions;
 
         /// id IN (SELECT id FROM (select_id_query))
-        conditions.push_back(makeASTFunction("in", std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID), select_query_from_tags_table));
+        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), select_query_from_tags_table));
 
         if (!min_time.isNull())
         {
             /// timestamp >= min_time
             conditions.push_back(makeASTFunction(
                 "greaterOrEquals",
-                std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                std::make_shared<ASTLiteral>(min_time)));
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                make_intrusive<ASTLiteral>(min_time)));
         }
 
         if (!max_time.isNull())
@@ -216,8 +216,8 @@ namespace
             /// timestamp <= max_time
             conditions.push_back(makeASTFunction(
                 "lessOrEquals",
-                std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                std::make_shared<ASTLiteral>(max_time)));
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                make_intrusive<ASTLiteral>(max_time)));
         }
 
         return makeASTForLogicalAnd(std::move(conditions));
@@ -227,27 +227,27 @@ namespace
                                         ASTPtr select_query_from_tags_table,
                                         const Field & min_time, const Field & max_time)
     {
-        auto select_query = std::make_shared<ASTSelectQuery>();
+        auto select_query = make_intrusive<ASTSelectQuery>();
 
         /// SELECT id, timestamp, value
         {
-            auto select_list_exp = std::make_shared<ASTExpressionList>();
+            auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
-            select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::ID));
-            select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
-            select_list.push_back(std::make_shared<ASTIdentifier>(TimeSeriesColumnNames::Value));
+            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
+            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
 
         /// FROM data_table_id
-        auto tables = std::make_shared<ASTTablesInSelectQuery>();
+        auto tables = make_intrusive<ASTTablesInSelectQuery>();
 
         {
-            auto table = std::make_shared<ASTTablesInSelectQueryElement>();
-            auto table_exp = std::make_shared<ASTTableExpression>();
-            table_exp->database_and_table_name = std::make_shared<ASTTableIdentifier>(data_table_id);
+            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+            auto table_exp = make_intrusive<ASTTableExpression>();
+            table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(data_table_id);
             table_exp->children.emplace_back(table_exp->database_and_table_name);
 
             table->table_expression = table_exp;
@@ -263,9 +263,9 @@ namespace
         }
 
         /// Wrap the select query into ASTSelectWithUnionQuery.
-        auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
         select_with_union_query->union_mode = SelectUnionMode::UNION_DEFAULT;
-        auto list_of_selects = std::make_shared<ASTExpressionList>();
+        auto list_of_selects = make_intrusive<ASTExpressionList>();
         list_of_selects->children.push_back(std::move(select_query));
         select_with_union_query->children.push_back(std::move(list_of_selects));
         select_with_union_query->list_of_selects = select_with_union_query->children.back();

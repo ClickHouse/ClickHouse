@@ -54,7 +54,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     if (!lambda_p.parse(pos, function_core, expected))
         return false;
 
-    auto create_function_query = std::make_shared<ASTCreateFunctionQuery>();
+    auto create_function_query = make_intrusive<ASTCreateFunctionQuery>();
     node = create_function_query;
 
     create_function_query->function_name = function_name;

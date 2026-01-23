@@ -1230,6 +1230,8 @@ void SerializationObject::restoreColumnObject(ColumnObject & column_object, size
 
 void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    updateMaxDynamicPathsLimitIfNeeded(col, settings);
+
     if (settings.binary.read_json_as_string)
     {
         String data;
@@ -1348,6 +1350,16 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
 SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev, const DataTypePtr &) const
 {
     return std::make_shared<SerializationObjectTypedPath>(prev, path);
+}
+
+void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const
+{
+    if (!format_settings.json.max_dynamic_subcolumns_in_json_type_parsing || !column.empty())
+        return;
+
+    auto & column_object = assert_cast<ColumnObject &>(column);
+    if (*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing < column_object.getMaxDynamicPaths())
+        column_object.setMaxDynamicPaths(*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing);
 }
 
 }

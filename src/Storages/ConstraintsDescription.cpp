@@ -197,12 +197,12 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
         // Wrap the scalar expression with a function call "equals(SELECT..., 1)".
         if (dynamic_cast<ASTSubquery *>(expr.get()))
         {
-            auto func = std::make_shared<ASTFunction>();
+            auto func = make_intrusive<ASTFunction>();
             func ->name = "equals";
-            func->children.push_back(std::make_shared<ASTExpressionList>());
-            auto args = std::make_shared<ASTExpressionList>();
+            func->children.push_back(make_intrusive<ASTExpressionList>());
+            auto args = make_intrusive<ASTExpressionList>();
             args->children.push_back(expr);
-            args->children.push_back(std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)}));
+            args->children.push_back(make_intrusive<ASTLiteral>(Field{static_cast<UInt8>(1)}));
             func->arguments = args;
             expr = func;
         }

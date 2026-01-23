@@ -83,7 +83,7 @@ public:
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
     static AuthenticationData fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate);
-    std::shared_ptr<ASTAuthenticationData> toAST() const;
+    boost::intrusive_ptr<ASTAuthenticationData> toAST() const;
 
     struct Util
     {

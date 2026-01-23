@@ -39,51 +39,77 @@ public:
 
         std::atomic<size_t> size;
         std::atomic<size_t> hits = 0;
-        std::atomic<bool> invalidated = false;
 
         std::string toString(const std::string & prefix = "") const;
 
-        bool isEvicting(const LockedKey &) const
+        enum class State
         {
-            return isEvictingUnlocked();
-        }
+            Active,
+            /// Entry is collected for eviction via IFileCachePriority::collectEvictionCandidates
+            /// and is being or soon will be removed from filesystem.
+            Evicting,
+            /// Can only be set in SLRU eviciton policy during moves
+            /// in between protected/probationary queues.
+            Moving,
+            /// Has size 0, will never get non-zero size and must soon be removed from queue.
+            Invalidated,
+            /// Removed from queue completely.
+            Removed,
+        };
 
-        /// Used when less strong guarantees are acceptable trade off for not taking a mutex.
-        bool isEvictingUnlocked() const
-        {
-            return state.load(std::memory_order_relaxed) == State::Evicting;
-        }
-
-        bool isRemoved(const CachePriorityGuard::WriteLock &) const
-        {
-            return state.load(std::memory_order_relaxed) == State::Removed;
-        }
+        /// Be aware that by default this method has relaxed guarantees.
+        /// See which locks are used in setter methods below if stronger guarantees are needed.
+        State getState() const { return state.load(std::memory_order_relaxed); }
 
         void setEvictingFlag(const LockedKey &)
         {
             [[maybe_unused]] auto prev = state.exchange(State::Evicting, std::memory_order_relaxed);
-            chassert(prev != State::Evicting, toString("Evicting flag is already set for "));
+            chassert(
+                prev == State::Active,
+                printUnexpectedState(prev, "Active", "Evicting"));
+        }
+
+        void setMovingFlag(const LockedKey &)
+        {
+            [[maybe_unused]] auto prev = state.exchange(State::Moving, std::memory_order_relaxed);
+            chassert(
+                prev == State::Active,
+                printUnexpectedState(prev, "Active", "Moving"));
         }
 
         void setRemoved(const CachePriorityGuard::WriteLock &)
         {
             [[maybe_unused]] auto prev = state.exchange(State::Removed, std::memory_order_relaxed);
-            chassert(prev != State::Removed, toString("Removed flag is already set for "));
+            chassert(
+                prev == State::Active || prev == State::Evicting || prev == State::Invalidated,
+                printUnexpectedState(prev, "Active or Evicting or Invalidated", "Removed"));
         }
 
-        void resetEvictingFlag()
+        void setInvalidatedFlag()
         {
-            [[maybe_unused]] auto prev = state.exchange(State::Active, std::memory_order_relaxed);
-            chassert(prev == State::Evicting, toString("Evicting flag is not set for "));
+            [[maybe_unused]] auto prev = state.exchange(State::Invalidated);
+            chassert(
+                prev == State::Active || prev == State::Evicting || prev == State::Moving,
+                printUnexpectedState(prev, "Active or Evicting", "Invalidated"));
+        }
+
+        void resetFlag(State from_state, State to_state = State::Active)
+        {
+            [[maybe_unused]] auto prev = state.exchange(to_state, std::memory_order_relaxed);
+            chassert(
+                prev == from_state,
+                printUnexpectedState(prev, magic_enum::enum_name(from_state), fmt::format("{}", magic_enum::enum_name(to_state))));
         }
 
     private:
-        enum class State
+        std::string printUnexpectedState(
+            State prev_state, std::string_view expected_state, std::string type) const
         {
-            Active,
-            Evicting,
-            Removed
-        };
+            return fmt::format(
+                "Previous state is {}, but expected state to be {} while setting {} flag for {}",
+                magic_enum::enum_name(prev_state), expected_state, type, toString());
+        }
+
         std::atomic<State> state = State::Active;
     };
     using EntryPtr = std::shared_ptr<Entry>;

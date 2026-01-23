@@ -386,7 +386,6 @@ try
         if ((e.code() != ErrorCodes::AUTHENTICATION_FAILED && e.code() != ErrorCodes::REQUIRED_PASSWORD) ||
             config().has("password") ||
             config().getBool("ask-password", false) ||
-            config().has("ssh-key-file") ||
             !is_interactive)
             throw;
 

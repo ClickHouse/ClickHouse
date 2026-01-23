@@ -30,6 +30,7 @@
 #include <Coordination/KeeperReconfiguration.h>
 #include <Coordination/KeeperStorage.h>
 
+#include <limits>
 #include <shared_mutex>
 #include <base/defines.h>
 
@@ -579,8 +580,9 @@ struct ErrorDelta
 
 struct FailedMultiDelta
 {
-    std::vector<Coordination::Error> error_codes;
-    Coordination::Error global_error{Coordination::Error::ZOK};
+    size_t failed_pos = std::numeric_limits<size_t>::max();
+    Coordination::Error failed_pos_error = Coordination::Error::ZOK;
+    Coordination::Error global_error = Coordination::Error::ZOK;
 };
 
 // Denotes end of a subrequest in multi request
@@ -1474,6 +1476,7 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
         case Coordination::OpNum::CreateIfNotExists:
             return function(static_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
+        case Coordination::OpNum::TryRemove:
             return function(static_cast<const Coordination::ZooKeeperRemoveRequest &>(zk_request));
         case Coordination::OpNum::RemoveRecursive:
             return function(static_cast<const Coordination::ZooKeeperRemoveRecursiveRequest &>(zk_request));
@@ -1964,17 +1967,31 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
     if (!node)
     {
+        if (zk_request.try_remove)
+            return {};
+
         if (zk_request.restored_from_zookeeper_log)
         {
             update_parent_pzxid();
             add_parent_update_delta();
         }
+
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNONODE}};
     }
     if (zk_request.version != -1 && zk_request.version != node->stats.version)
+    {
+        if (zk_request.try_remove)
+            return {};
+
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
+    }
     if (node->stats.numChildren() != 0)
+    {
+        if (zk_request.try_remove)
+            return {};
+
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNOTEMPTY}};
+    }
 
     if (zk_request.restored_from_zookeeper_log)
         update_parent_pzxid();
@@ -2000,9 +2017,20 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr
-process(const Coordination::ZooKeeperRemoveRequest & /*zk_request*/, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t /*session_id*/)
+process(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t /*session_id*/)
 {
-    auto response = std::make_shared<Coordination::ZooKeeperRemoveResponse>();
+    std::shared_ptr<Coordination::ZooKeeperRemoveResponse> response;
+    if (zk_request.try_remove)
+        response = std::make_shared<Coordination::ZooKeeperTryRemoveResponse>();
+    else
+        response = std::make_shared<Coordination::ZooKeeperRemoveResponse>();
+
+    if (deltas.empty())
+    {
+        chassert(zk_request.try_remove);
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
 
     response->error = storage.commit(std::move(deltas));
     return response;
@@ -3012,9 +3040,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     const KeeperContext & keeper_context)
 {
     ProfileEvents::increment(ProfileEvents::KeeperMultiRequest);
-    std::vector<Coordination::Error> response_errors;
     const auto & subrequests = zk_request.requests;
-    response_errors.reserve(subrequests.size());
 
     /// we cannot use `digest` directly in case we need to rollback Multi request
     uint64_t current_digest = 0;
@@ -3039,17 +3065,11 @@ std::list<KeeperStorageBase::Delta> preprocess(
                 error && zk_request.getOpNum() == Coordination::OpNum::Multi)
             {
                 storage.uncommitted_state.rollback(std::move(new_deltas));
-                response_errors.push_back(error->error);
-
-                for (size_t j = i + 1; j < subrequests.size(); ++j)
-                    response_errors.push_back(Coordination::Error::ZRUNTIMEINCONSISTENCY);
-
-                return {KeeperStorageBase::Delta{zxid, FailedMultiDelta{std::move(response_errors)}}};
+                return {KeeperStorageBase::Delta{zxid, FailedMultiDelta{ .failed_pos = i, .failed_pos_error = error->error }}};
             }
         }
 
         new_subdeltas.emplace_back(zxid, SubDeltaEnd{});
-        response_errors.push_back(Coordination::Error::ZOK);
 
         // manually add deltas so that the result of previous request in the transaction is used in the next request
         storage.uncommitted_state.applyDeltas(new_subdeltas, current_digest_ptr);
@@ -3098,10 +3118,16 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
     chassert(!deltas.empty());
     if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation))
     {
-        for (size_t i = 0; i < subrequests.size(); ++i)
-        {
+        const size_t subrequests_count = subrequests.size();
+
+        for (size_t i = 0; i < subrequests_count; ++i)
             response->responses.push_back(std::make_shared<Coordination::ZooKeeperErrorResponse>());
-            response->responses[i]->error = failed_multi->error_codes[i];
+
+        if (failed_multi->failed_pos < subrequests_count)
+        {
+            response->responses[failed_multi->failed_pos]->error = failed_multi->failed_pos_error;
+            for (size_t i = failed_multi->failed_pos + 1; i < subrequests_count; ++i)
+                response->responses[i]->error = Coordination::Error::ZRUNTIMEINCONSISTENCY;
         }
 
         response->error = failed_multi->global_error;
@@ -3577,17 +3603,10 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
         {
             /// Multi requests handle failures using FailedMultiDelta
             if (zk_request->getOpNum() == Coordination::OpNum::Multi || zk_request->getOpNum() == Coordination::OpNum::MultiRead)
-            {
-                const auto & multi_request = dynamic_cast<const Coordination::ZooKeeperMultiRequest &>(*zk_request);
-                std::vector<Coordination::Error> response_errors;
-                response_errors.resize(multi_request.requests.size(), Coordination::Error::ZOK);
-                new_deltas.emplace_back(
-                    new_last_zxid, FailedMultiDelta{std::move(response_errors), Coordination::Error::ZNOAUTH});
-            }
+                new_deltas.emplace_back(new_last_zxid, FailedMultiDelta{ .global_error = Coordination::Error::ZNOAUTH });
             else
-            {
                 new_deltas.emplace_back(new_last_zxid, Coordination::Error::ZNOAUTH);
-            }
+
             return;
         }
 

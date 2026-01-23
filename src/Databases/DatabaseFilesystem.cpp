@@ -152,7 +152,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     if (!checkTableFilePath(table_path, context_, throw_on_error))
         return {};
 
-    auto ast_function_ptr = makeASTFunction("file", std::make_shared<ASTLiteral>(table_path));
+    auto ast_function_ptr = makeASTFunction("file", make_intrusive<ASTLiteral>(table_path));
 
     auto table_function = TableFunctionFactory::instance().get(ast_function_ptr, context_);
     if (!table_function)
@@ -199,7 +199,7 @@ ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
     if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
     }
 
     return ast;

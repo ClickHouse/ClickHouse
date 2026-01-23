@@ -47,6 +47,7 @@ CREATE TABLE tab
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
+                                [, posting_list_codec = 'none' | 'bitpacking' ]
                             )
 )
 ENGINE = MergeTree
@@ -116,6 +117,24 @@ Examples:
 Also, the preprocessor expression must only reference the column on top of which the text index is defined.
 Using non-deterministic functions is not allowed.
 
+The preprocessor can also be used with [Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md) columns.
+In this case, the preprocessor expression transforms the array elements individually.
+
+Example:
+
+```sql
+CREATE TABLE tab
+(
+    col Array(String),
+    INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))
+
+    -- This is not legal:
+    INDEX idx_illegal col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arraySort(col))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
 
 For example,
@@ -147,7 +166,6 @@ ORDER BY tuple();
 
 SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
 ```
-
 **Other arguments (optional)**. Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
 However, unlike other skipping indexes, text indexes have an infinite granularity, i.e. the text index is created for the entire part and explicitly specified index granularity is ignored.
 This value has been chosen empirically and it provides a good trade-off between speed and index size for most use cases.
@@ -165,6 +183,10 @@ Optional parameter `dictionary_block_size` (default: 512) specifies the size of 
 Optional parameter `dictionary_block_frontcoding_compression` (default: 1) specifies if the dictionary blocks use front coding as compression.
 
 Optional parameter `posting_list_block_size` (default: 1048576) specifies the size of posting list blocks in rows.
+
+Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
+- `none` - the posting lists are stored without additional compression.
+- `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size).
 
 </details>
 

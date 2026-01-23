@@ -57,7 +57,7 @@ SELECT * FROM text_index_cache_stats(filter = 'text_511');
 
 SELECT 'Clear text index header cache';
 
-SYSTEM DROP TEXT INDEX HEADER CACHE;
+SYSTEM CLEAR TEXT INDEX HEADER CACHE;
 
 SELECT '--- cache miss on the first run.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_001');
@@ -71,6 +71,6 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_510');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_510');
 
-SYSTEM DROP TEXT INDEX HEADER CACHE;
+SYSTEM CLEAR TEXT INDEX HEADER CACHE;
 DROP VIEW text_index_cache_stats;
 DROP TABLE tab;

@@ -50,9 +50,9 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     rewriter_result.aggregates.clear();
 
     /// Replace select list to remove joined columns
-    auto select_list = std::make_shared<ASTExpressionList>();
+    auto select_list = make_intrusive<ASTExpressionList>();
     for (const auto & column : rewriter_result.required_source_columns)
-        select_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+        select_list->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
 
     select.setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
@@ -67,7 +67,7 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
 
         const size_t left_table_pos = 0;
         /// Test each argument of `and` function and select ones related to only left table
-        std::shared_ptr<ASTFunction> new_conj = makeASTOperator("and");
+        boost::intrusive_ptr<ASTFunction> new_conj = makeASTOperator("and");
         for (auto && node : splitConjunctionsAst(where))
         {
             if (membership_collector.getIdentsMembership(node) == left_table_pos)

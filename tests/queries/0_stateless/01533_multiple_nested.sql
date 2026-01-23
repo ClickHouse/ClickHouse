@@ -32,7 +32,7 @@ SELECT col3.n1, col3.n2, col3.n1.a, col3.n1.b, col3.n2.s, col3.n2.t FROM nested;
 
 SELECT 'read files';
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT col1.a FROM nested FORMAT Null;
 
 -- 4 files: (col1.size0, col1.a) x2
@@ -42,7 +42,7 @@ FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col1.a FROM %nested%'))
     AND event_date >= yesterday() AND current_database = currentDatabase();
 
-SYSTEM DROP MARK CACHE;
+SYSTEM CLEAR MARK CACHE;
 SELECT col3.n2.s FROM nested FORMAT Null;
 
 -- 6 files: (col3.size0, col3.n2.size1, col3.n2.s) x2

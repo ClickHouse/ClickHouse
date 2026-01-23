@@ -39,7 +39,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02286 FORMAT Null"
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
-    $CLICKHOUSE_CLIENT --multiline --query "SYSTEM DROP FILESYSTEM CACHE 'ff'; --{serverError 36}"
+    $CLICKHOUSE_CLIENT --multiline --query "SYSTEM CLEAR FILESYSTEM CACHE 'ff'; --{serverError 36}"
 
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 

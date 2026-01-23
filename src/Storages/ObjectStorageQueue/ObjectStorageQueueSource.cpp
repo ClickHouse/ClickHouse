@@ -453,6 +453,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
             paths,
             metadata->getPath(),
             metadata->getBucketsNum(),
+            metadata->getBucketingMode(),
             metadata->getPartitioningMode(),
             metadata->getFilenameParser(),
             log);
@@ -568,7 +569,12 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
 
     if (use_buckets_for_processing)
     {
-        const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(object_info->getPath(), buckets_num);
+        const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(
+            object_info->getPath(),
+            buckets_num,
+            metadata->getBucketingMode(),
+            metadata->getPartitioningMode(),
+            metadata->getFilenameParser());
         std::lock_guard lock(mutex);
         keys_cache_per_bucket.at(bucket)->keys.emplace_front(object_info, file_metadata);
     }
@@ -829,7 +835,12 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 
             chassert(!file_metadata);
 
-            const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(object_info->getPath(), buckets_num);
+            const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(
+                object_info->getPath(),
+                buckets_num,
+                metadata->getBucketingMode(),
+                metadata->getPartitioningMode(),
+                metadata->getFilenameParser());
             auto bucket_it = keys_cache_per_bucket.find(bucket);
             if (bucket_it == keys_cache_per_bucket.end())
             {

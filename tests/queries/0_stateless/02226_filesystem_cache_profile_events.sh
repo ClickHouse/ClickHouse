@@ -92,7 +92,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     TRUNCATE TABLE test_02226;
     SELECT count() FROM test_02226;
 
-    SYSTEM DROP FILESYSTEM CACHE;
+    SYSTEM CLEAR FILESYSTEM CACHE;
 
     INSERT INTO test_02226 SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000;
     """

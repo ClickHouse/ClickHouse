@@ -347,7 +347,7 @@ StorageSystemPartsBase::StorageSystemPartsBase(const StorageID & table_id_, Colu
             return;
         ColumnDescription column(alias_name, columns.get(column_name).type);
         column.default_desc.kind = ColumnDefaultKind::Alias;
-        column.default_desc.expression = std::make_shared<ASTIdentifier>(column_name);
+        column.default_desc.expression = make_intrusive<ASTIdentifier>(column_name);
         columns.add(column);
     };
 

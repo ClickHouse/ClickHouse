@@ -343,7 +343,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         int8_t backspace_steps; // how many steps to last token of previous pipe
     };
 
-    auto select_query = std::make_shared<ASTSelectQuery>();
+    auto select_query = make_intrusive<ASTSelectQuery>();
     node = select_query;
     ASTPtr tables;
 
@@ -595,17 +595,17 @@ bool ParserKQLSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!ParserKQLTableFunction().parse(pos, select_node, expected))
         return false;
 
-    ASTPtr node_subquery = std::make_shared<ASTSubquery>(std::move(select_node));
+    ASTPtr node_subquery = make_intrusive<ASTSubquery>(std::move(select_node));
 
-    ASTPtr node_table_expr = std::make_shared<ASTTableExpression>();
+    ASTPtr node_table_expr = make_intrusive<ASTTableExpression>();
     node_table_expr->as<ASTTableExpression>()->subquery = node_subquery;
 
     node_table_expr->children.emplace_back(node_subquery);
 
-    ASTPtr node_table_in_select_query_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    ASTPtr node_table_in_select_query_element = make_intrusive<ASTTablesInSelectQueryElement>();
     node_table_in_select_query_element->as<ASTTablesInSelectQueryElement>()->table_expression = node_table_expr;
 
-    ASTPtr res = std::make_shared<ASTTablesInSelectQuery>();
+    ASTPtr res = make_intrusive<ASTTablesInSelectQuery>();
 
     res->children.emplace_back(node_table_in_select_query_element);
 
@@ -636,18 +636,18 @@ bool ParserSimpleCHSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             ASTSelectQuery::Expression::TABLES, parent_select_node->as<ASTSelectQuery>()->tables());
     }
 
-    ASTPtr node_subquery = std::make_shared<ASTSubquery>(std::move(sub_select_node));
+    ASTPtr node_subquery = make_intrusive<ASTSubquery>(std::move(sub_select_node));
 
-    ASTPtr node_table_expr = std::make_shared<ASTTableExpression>();
+    ASTPtr node_table_expr = make_intrusive<ASTTableExpression>();
     node_table_expr->as<ASTTableExpression>()->subquery = node_subquery;
 
     node_table_expr->children.emplace_back(node_subquery);
 
-    ASTPtr node_table_in_select_query_element = std::make_shared<ASTTablesInSelectQueryElement>();
+    ASTPtr node_table_in_select_query_element = make_intrusive<ASTTablesInSelectQueryElement>();
     node_table_in_select_query_element->as<ASTTablesInSelectQueryElement>()->table_expression = node_table_expr;
 
     node_table_in_select_query_element->children.emplace_back(node_table_expr);
-    ASTPtr res = std::make_shared<ASTTablesInSelectQuery>();
+    ASTPtr res = make_intrusive<ASTTablesInSelectQuery>();
 
     res->children.emplace_back(node_table_in_select_query_element);
 

@@ -524,17 +524,20 @@ void TCPHandler::runImpl()
 
         try
         {
-            /** If Query - process it. If Ping or Cancel - go back to the beginning.
+            /** If Query - process it.
+            *  If IgnoredPartUUIDs - keep looping for Query.
+            *  If Ping or Cancel - go back to the beginning of outer loop.
             *  There may come settings for a separate query that modify `query_context`.
-            *  It's possible to receive part uuids packet before the query, so then receivePacket has to be called twice.
             */
-            if (!receivePacketsExpectQuery(query_state))
-                continue;
+            while (!query_state && receivePacketsExpectQuery(query_state))
+            {
+                /// Keep looping for IgnoredPartUUIDs packets
+            }
 
-            /** If part_uuids got received in previous packet, trying to read again.
-            */
-            if (part_uuids_to_ignore.has_value() && !receivePacketsExpectQuery(query_state))
+            if (!query_state)
+            {
                 continue;
+            }
 
             chassert(query_state);
 

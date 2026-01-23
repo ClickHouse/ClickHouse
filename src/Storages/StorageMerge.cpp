@@ -114,9 +114,9 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 {
     auto & select = ast->as<ASTSelectQuery &>();
     if (!select.with())
-        select.setExpression(ASTSelectQuery::Expression::WITH, std::make_shared<ASTExpressionList>());
+        select.setExpression(ASTSelectQuery::Expression::WITH, make_intrusive<ASTExpressionList>());
 
-    auto literal = std::make_shared<ASTLiteral>(value);
+    auto literal = make_intrusive<ASTLiteral>(value);
     literal->alias = column_name;
     literal->prefer_alias_to_column_name = true;
     select.with()->children.push_back(literal);
@@ -733,7 +733,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 bool with_aliases = common_processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty();
                 if (with_aliases)
                 {
-                    ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
+                    ASTPtr required_columns_expr_list = make_intrusive<ASTExpressionList>();
                     ASTPtr column_expr;
 
                     auto sample_block = merge_storage_snapshot->metadata->getSampleBlock();
@@ -761,7 +761,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                             aliases.push_back({ .name = column, .type = type, .expression = column_expr->clone() });
                         }
                         else
-                            column_expr = std::make_shared<ASTIdentifier>(column);
+                            column_expr = make_intrusive<ASTIdentifier>(column);
 
                         required_columns_expr_list->children.emplace_back(std::move(column_expr));
                     }

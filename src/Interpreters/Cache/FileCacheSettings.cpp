@@ -117,7 +117,7 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
         desc.name = setting.getName();
         desc.type = [&]() -> DataTypePtr
         {
-            const std::string type_name = setting.getTypeName();
+            const auto type_name = setting.getTypeName();
             if (type_name == "UInt64")
                 return std::make_shared<DataTypeUInt64>();
             else if (type_name == "String")
