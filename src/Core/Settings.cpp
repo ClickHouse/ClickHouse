@@ -1469,7 +1469,7 @@ If not explicitly set, ClickHouse will automatically enable this optimization wh
 
 This automatic derivation ensures that rows with the same primary key values will always belong to the same partition, making it safe to avoid cross-partition merges.
 
-**Default value:** `false` (but may be automatically enabled based on table structure)
+**Default value:** `false` (but may be automatically enabled based on table structure if not set explicitly)
 )", 0) \
     DECLARE(Bool, split_parts_ranges_into_intersecting_and_non_intersecting_final, true, R"(
 Split parts ranges into intersecting and non intersecting during FINAL optimization
