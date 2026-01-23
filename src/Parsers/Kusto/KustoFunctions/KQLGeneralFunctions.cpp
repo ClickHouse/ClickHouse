@@ -101,4 +101,23 @@ bool BinAt::convertImpl(String & out, IParser::Pos & pos)
     return true;
 }
 
+bool Iif::convertImpl(String & out, IParser::Pos & pos)
+{
+    const String fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+
+    ++pos;
+    String predicate = getConvertedArgument(fn_name, pos);
+
+    ++pos;
+    String if_true = getConvertedArgument(fn_name, pos);
+
+    ++pos;
+    String if_false = getConvertedArgument(fn_name, pos);
+
+    out = fmt::format("if({}, {}, {})", predicate, if_true, if_false);
+    return true;
+}
+
 }
