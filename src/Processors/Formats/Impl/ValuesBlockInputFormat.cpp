@@ -18,7 +18,6 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/ObjectUtils.h>
 
-
 namespace DB
 {
 namespace Setting
