@@ -43,7 +43,6 @@ def test_reset_ddl_worker(started_cluster):
     prev_reset_count = get_ddl_worker_reset_count(node1)
 
     node1.query("SYSTEM RESET DDL WORKER")
-    time.sleep(5)
 
     assert_ddl_worker_reset_with_retry(node1, prev_reset_count)
 
