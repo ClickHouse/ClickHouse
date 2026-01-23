@@ -84,6 +84,36 @@ void moveChangelogBetweenDisks(
 
 constexpr auto DEFAULT_PREFIX = "changelog";
 
+inline std::string
+formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension)
+{
+    return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
+}
+
+ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path)
+{
+    // we can have .bin.zstd so we cannot use std::filesystem stem and extension
+    std::string filename_with_extension = path.filename();
+    std::string_view filename_with_extension_view = filename_with_extension;
+
+    auto first_dot = filename_with_extension.find('.');
+    if (first_dot == std::string::npos)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid changelog file {}", path.generic_string());
+
+    Strings filename_parts;
+    boost::split(filename_parts, filename_with_extension_view.substr(0, first_dot), boost::is_any_of("_"));
+    if (filename_parts.size() < 3)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path.generic_string());
+
+    auto result = std::make_shared<ChangelogFileDescription>();
+    result->prefix = filename_parts[0];
+    result->from_log_index = parse<uint64_t>(filename_parts[1]);
+    result->to_log_index = parse<uint64_t>(filename_parts[2]);
+    result->extension = std::string(filename_with_extension.substr(first_dot + 1));
+    result->path = path.generic_string();
+    return result;
+}
+
 Checksum computeRecordChecksum(const ChangelogRecord & record)
 {
     SipHash hash;
@@ -132,11 +162,6 @@ void ChangelogFileDescription::waitAllAsyncOperations()
     }
 
     file_operations.clear();
-}
-
-std::string Changelog::formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension)
-{
-    return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
 }
 
 /// Appendable log writer
@@ -198,7 +223,7 @@ public:
                     std::string new_path = path;
                     if (last_index_written && *last_index_written != current_file_description->to_log_index)
                     {
-                        new_path = Changelog::formatChangelogPath(
+                        new_path = formatChangelogPath(
                             current_file_description->prefix,
                             current_file_description->from_log_index,
                             *last_index_written,
@@ -343,7 +368,7 @@ public:
         if (log_file_settings.compress_logs)
             new_description->extension += "." + toContentEncodingName(CompressionMethod::Zstd);
 
-        new_description->path = Changelog::formatChangelogPath(
+        new_description->path = formatChangelogPath(
             new_description->prefix,
             new_start_log_index,
             new_start_log_index + log_file_settings.rotate_interval - 1,
@@ -617,7 +642,7 @@ LogEntryPtr getLogEntry(const CacheEntry & cache_entry)
 class ChangelogReader
 {
 public:
-    explicit ChangelogReader(ChangelogFileDescriptionPtr changelog_description_) : changelog_description(std::move(changelog_description_))
+    explicit ChangelogReader(ChangelogFileDescriptionPtr changelog_description_) : changelog_description(changelog_description_)
     {
         compression_method = chooseCompressionMethod(changelog_description->path, "");
         auto read_buffer_from_file = changelog_description->disk->readFile(changelog_description->path, getReadSettings());
@@ -1463,27 +1488,10 @@ void LogEntryStorage::refreshCache()
     }
 }
 
-LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end, int64_t max_size_bytes) const
+LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end) const
 {
-    /// Special case: negative byte limit means return empty (backpressure signal)
-    if (max_size_bytes == -1)
-        return nuraft::cs_new<std::vector<nuraft::ptr<nuraft::log_entry>>>();
-
     LogEntriesPtr ret = nuraft::cs_new<std::vector<nuraft::ptr<nuraft::log_entry>>>();
     ret->reserve(end - start);
-
-    int64_t total_size = 0;
-
-    const auto size_limit_reached = [&](int64_t entry_size)
-    {
-        if (max_size_bytes == 0)
-            return false;
-
-        bool limit_reached = total_size > 0 && total_size + entry_size > max_size_bytes;
-        if (!limit_reached)
-            total_size += entry_size;
-        return limit_reached;
-    };
 
     /// we rely on fact that changelogs need to be written sequentially with
     /// no other writes between
@@ -1528,19 +1536,11 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
         if (auto commit_cache_entry = commit_logs_cache.getEntry(i))
         {
             flush_file();
-
-            if (size_limit_reached(static_cast<int64_t>(commit_cache_entry->get_buf().size())))
-                break;
-
             ret->push_back(std::move(commit_cache_entry));
         }
         else if (auto latest_cache_entry = latest_logs_cache.getEntry(i))
         {
             flush_file();
-
-            if (size_limit_reached(static_cast<int64_t>(latest_cache_entry->get_buf().size())))
-                break;
-
             ret->push_back(std::move(latest_cache_entry));
         }
         else
@@ -1550,9 +1550,6 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Location of log entry with index {} is missing", i);
 
             const auto & log_location = location_it->second;
-
-            if (size_limit_reached(static_cast<int64_t>(log_location.size_in_file)))
-                break;
 
             if (!read_info)
                 set_new_file(log_location);
@@ -1643,63 +1640,6 @@ void LogEntryStorage::shutdown()
     if (commit_logs_prefetcher->joinable())
         commit_logs_prefetcher->join();
 }
-
-
-ChangelogFileDescriptionPtr Changelog::getChangelogFileDescription(const std::filesystem::path & path)
-{
-    // we can have .bin.zstd so we cannot use std::filesystem stem and extension
-    std::string filename_with_extension = path.filename();
-    std::string_view filename_with_extension_view = filename_with_extension;
-
-    auto first_dot = filename_with_extension.find('.');
-    if (first_dot == std::string::npos)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid changelog file {}", path.generic_string());
-
-    Strings filename_parts;
-    boost::split(filename_parts, filename_with_extension_view.substr(0, first_dot), boost::is_any_of("_"));
-    if (filename_parts.size() < 3)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid changelog {}", path.generic_string());
-
-    auto result = std::make_shared<ChangelogFileDescription>();
-    result->prefix = filename_parts[0];
-    result->from_log_index = parse<uint64_t>(filename_parts[1]);
-    result->to_log_index = parse<uint64_t>(filename_parts[2]);
-    result->extension = std::string(filename_with_extension.substr(first_dot + 1));
-    result->path = path.generic_string();
-    return result;
-}
-
-void Changelog::readChangelog(ChangelogFileDescriptionPtr changelog_description, LogEntryStorage & entry_storage)
-{
-    ChangelogReader reader(changelog_description);
-    reader.readChangelog(entry_storage, changelog_description->from_log_index, getLogger("Changelog"));
-}
-
-void Changelog::spliceChangelog(ChangelogFileDescriptionPtr source_changelog, ChangelogFileDescriptionPtr destination_changelog)
-{
-    CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
-    auto keeper_context = std::make_shared<KeeperContext>(true, settings);
-    keeper_context->setLogDisk(destination_changelog->disk);
-    LogFileSettings log_file_settings
-    {
-        .compress_logs = chooseCompressionMethod(destination_changelog->path, "auto") != CompressionMethod::None
-    };
-    LogEntryStorage entry_storage{log_file_settings, keeper_context};
-    readChangelog(source_changelog, entry_storage);
-
-    std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
-    ChangelogWriter writer(existing_changelogs, entry_storage, keeper_context, log_file_settings, /*move_changelog_cb_=*/{});
-    writer.setFile(destination_changelog, WriteMode::Rewrite);
-
-    for (auto i = destination_changelog->from_log_index; i <= destination_changelog->to_log_index; ++i)
-    {
-        auto entry = entry_storage.getEntry(i);
-        writer.appendRecord(buildRecord(i, entry));
-    }
-
-    writer.finalize();
-}
-
 
 Changelog::Changelog(
     LoggerPtr log_, LogFileSettings log_file_settings, FlushSettings flush_settings_, KeeperContextPtr keeper_context_)
@@ -2439,9 +2379,9 @@ LogEntryPtr Changelog::getLastEntry() const
     return entry;
 }
 
-LogEntriesPtr Changelog::getLogEntriesBetween(uint64_t start, uint64_t end, int64_t max_size_bytes)
+LogEntriesPtr Changelog::getLogEntriesBetween(uint64_t start, uint64_t end)
 {
-    return entry_storage.getLogEntriesBetween(start, end, max_size_bytes);
+    return entry_storage.getLogEntriesBetween(start, end);
 }
 
 LogEntryPtr Changelog::entryAt(uint64_t index) const

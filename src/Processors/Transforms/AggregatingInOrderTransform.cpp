@@ -12,7 +12,7 @@ namespace DB
 {
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
-    SharedHeader header,
+    Block header,
     AggregatingTransformParamsPtr params_,
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
@@ -25,7 +25,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
 }
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
-    SharedHeader header, AggregatingTransformParamsPtr params_,
+    Block header, AggregatingTransformParamsPtr params_,
     const SortDescription & sort_description_for_merging,
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_,
@@ -82,6 +82,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(rows);
     src_rows += rows;
     src_bytes += chunk.bytes();
 
@@ -188,8 +190,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                         = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
                 cur_block_bytes += current_memory_usage;
                 finalizeCurrentChunk(std::move(chunk), key_end);
-                if (rows_before_aggregation)
-                    rows_before_aggregation->add(key_end);
                 return;
             }
 
@@ -200,9 +200,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
         key_begin = key_end;
     }
-
-    if (rows_before_aggregation)
-        rows_before_aggregation->add(rows);
 
     cur_block_bytes += current_memory_usage;
     block_end_reached = false;
@@ -286,9 +283,9 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         return Status::NeedData;
     }
 
-    chassert(!is_consume_finished);
+    assert(!is_consume_finished);
     current_chunk = input.pull(true /* set_not_needed */);
-    removeSpecialColumnRepresentations(current_chunk);
+    convertToFullIfSparse(current_chunk);
     return Status::Ready;
 }
 
@@ -343,8 +340,8 @@ void AggregatingInOrderTransform::generate()
     need_generate = false;
 }
 
-FinalizeAggregatedTransform::FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_)
-    : ISimpleTransform({std::move(header)}, {std::make_shared<const Block>(params_->getHeader())}, true)
+FinalizeAggregatedTransform::FinalizeAggregatedTransform(Block header, AggregatingTransformParamsPtr params_)
+    : ISimpleTransform({std::move(header)}, {params_->getHeader()}, true)
     , params(params_)
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {

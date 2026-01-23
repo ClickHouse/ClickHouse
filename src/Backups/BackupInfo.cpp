@@ -47,9 +47,6 @@ ASTPtr BackupInfo::toAST() const
     for (const auto & arg : args)
         list->children.push_back(std::make_shared<ASTLiteral>(arg));
 
-    if (function_arg)
-        list->children.push_back(function_arg);
-
     return func;
 }
 
@@ -88,11 +85,6 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
             const auto * lit = elem->as<const ASTLiteral>();
             if (!lit)
             {
-                if (index == args_size - 1 && elem->as<const ASTFunction>())
-                {
-                    res.function_arg = elem;
-                    break;
-                }
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected literal, got {}", elem->formatForErrorMessage());
             }
             res.args.push_back(lit->value);

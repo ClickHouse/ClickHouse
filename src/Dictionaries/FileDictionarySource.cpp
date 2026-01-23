@@ -1,15 +1,14 @@
-#include <Dictionaries/FileDictionarySource.h>
+#include "FileDictionarySource.h"
 #include <Common/logger_useful.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
-#include <QueryPipeline/BlockIO.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Dictionaries/DictionarySourceFactory.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/registerDictionaries.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+#include "registerDictionaries.h"
+#include "DictionarySourceHelpers.h"
 
 
 namespace DB
@@ -47,7 +46,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 }
 
 
-BlockIO FileDictionarySource::loadAll()
+QueryPipeline FileDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
@@ -55,9 +54,7 @@ BlockIO FileDictionarySource::loadAll()
     source->addBuffer(std::move(in_ptr));
     last_modification = getLastModification();
 
-    BlockIO io;
-    io.pipeline = QueryPipeline(std::move(source));
-    return io;
+    return QueryPipeline(std::move(source));
 }
 
 
@@ -75,8 +72,7 @@ Poco::Timestamp FileDictionarySource::getLastModification() const
 
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {
-    auto create_table_source = [=](const String & /*name*/,
-                                     const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,

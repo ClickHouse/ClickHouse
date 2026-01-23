@@ -27,7 +27,6 @@ node1 = cluster.add_instance(
     main_configs=["configs/overrides.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
     "node2", main_configs=["configs/overrides.xml"], with_zookeeper=True
@@ -133,7 +132,7 @@ def test_metrics_storage_buffer_size(start_cluster):
                 "SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'"
             )
         )
-        assert 22 <= bytes <= 23
+        assert 24 <= bytes <= 25
 
         node1.query("INSERT INTO test.buffer_table VALUES('hello');")
         assert (
@@ -147,7 +146,7 @@ def test_metrics_storage_buffer_size(start_cluster):
                 "SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'"
             )
         )
-        assert 22 <= bytes <= 23
+        assert 24 <= bytes <= 25
 
         # flush
         node1.query("OPTIMIZE TABLE test.buffer_table")

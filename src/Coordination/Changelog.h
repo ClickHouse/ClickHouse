@@ -11,7 +11,6 @@
 #include <unordered_set>
 #include <future>
 #include <vector>
-#include <filesystem>
 
 namespace nuraft
 {
@@ -209,7 +208,7 @@ struct LogEntryStorage
 
     void refreshCache();
 
-    LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end, int64_t max_size_bytes = 0) const;
+    LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end) const;
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
@@ -361,8 +360,8 @@ public:
     /// Get entry with latest config in logstore
     LogEntryPtr getLatestConfigChange() const;
 
-    /// Return log entries between [start, end) with optional byte size limit
-    LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index, int64_t max_size_bytes = 0);
+    /// Return log entries between [start, end)
+    LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index);
 
     /// Return entry at position index
     LogEntryPtr entryAt(uint64_t index) const;
@@ -396,12 +395,6 @@ public:
     bool isInitialized() const;
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
-
-    static ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path);
-
-    static void readChangelog(ChangelogFileDescriptionPtr changelog_description, LogEntryStorage & entry_storage);
-    static void spliceChangelog(ChangelogFileDescriptionPtr source_changelog, ChangelogFileDescriptionPtr destination_changelog);
-    static std::string formatChangelogPath(const std::string & name_prefix, uint64_t from_index, uint64_t to_index, const std::string & extension);
 
     /// Fsync log to disk
     ~Changelog();

@@ -12,11 +12,6 @@
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
-#if USE_EMBEDDED_COMPILER
-#    include <DataTypes/Native.h>
-#    include <llvm/IR/IRBuilder.h>
-#endif
-
 namespace DB
 {
 namespace Setting
@@ -50,11 +45,6 @@ public:
     {
         /// (column IS NULL) triggers a bug in old analyzer when it is replaced to constant.
         if (!use_analyzer)
-            return nullptr;
-
-        /// SELECT arrayFilter(x -> (x IS NOT NULL), []) can trigger `defaultImplementationForNothing()`
-        /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
-        if (isNothing(result_type))
             return nullptr;
 
         const ColumnWithTypeAndName & elem = arguments[0];
@@ -121,23 +111,6 @@ public:
         return DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
     }
 
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
-
-    llvm::Value *
-    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
-    {
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        if (arguments[0].type->isNullable())
-        {
-            auto * is_null = b.CreateExtractValue(arguments[0].value, {1});
-            return b.CreateSelect(is_null, b.getInt8(0), b.getInt8(1));
-        }
-        else
-            return b.getInt8(1);
-    }
-#endif
-
 private:
     MULTITARGET_FUNCTION_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res) /// NOLINT
@@ -171,44 +144,7 @@ private:
 
 REGISTER_FUNCTION(IsNotNull)
 {
-    FunctionDocumentation::Description description = R"(
-Checks if the argument is not `NULL`.
-
-Also see: operator [`IS NOT NULL`](/sql-reference/operators#is_not_null).
-    )";
-    FunctionDocumentation::Syntax syntax = "isNotNull(x)";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "A value of non-compound data type.", {"Any"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if `x` is not `NULL`, otherwise `0`.", {"UInt8"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-CREATE TABLE t_null
-(
-  x Int32,
-  y Nullable(Int32)
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
-INSERT INTO t_null VALUES (1, NULL), (2, 3);
-
-SELECT x FROM t_null WHERE isNotNull(y);
-        )",
-        R"(
-┌─x─┐
-│ 2 │
-└───┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionIsNotNull>(documentation);
+    factory.registerFunction<FunctionIsNotNull>();
 }
 
 }

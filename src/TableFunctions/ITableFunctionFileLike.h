@@ -1,9 +1,8 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
-#include <Core/Names.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/IAST_fwd.h>
+#include "Core/Names.h"
+#include "Parsers/IAST_fwd.h"
 
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/evaluateConstantExpression.h>

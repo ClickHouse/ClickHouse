@@ -6,7 +6,6 @@
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Interpreters/PreparedSets.h>
-#include <Common/Logger.h>
 #include <Common/Stopwatch.h>
 
 #include <Poco/Logger.h>
@@ -28,8 +27,8 @@ class CreatingSetsTransform : public IAccumulatingTransform
 {
 public:
     CreatingSetsTransform(
-        SharedHeader in_header_,
-        SharedHeader out_header_,
+        Block in_header_,
+        Block out_header_,
         SetAndKeyPtr set_and_key_,
         StoragePtr external_table_,
         SizeLimits network_transfer_limits_,

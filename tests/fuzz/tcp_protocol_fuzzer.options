@@ -1,6 +1,3 @@
-[libfuzzer]
-timeout = 20
-
 [fuzzer_arguments]
 --log-file=tcp_protocol_fuzzer.log
 --=
