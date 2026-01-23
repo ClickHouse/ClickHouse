@@ -1147,8 +1147,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             // current table expression is right one
 
                             // check that left table expression can be used for parallel replicas
-                            if (left_table && parallel_replicas_enabled_for_storage(left_table->getStorage(), query_settings))
-                                return true;
+                            if (left_table)
+                                return parallel_replicas_enabled_for_storage(left_table->getStorage(), query_settings);
 
                             // check if left one is not subquery
                             return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
