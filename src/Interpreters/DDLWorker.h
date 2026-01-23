@@ -91,11 +91,13 @@ public:
 
     bool isCurrentlyActive() const { return initialized && !stop_flag; }
 
-    /// Returns cached ZooKeeper session (possibly expired).
+    /// Return the latest ZooKeeper session.
     ZooKeeperPtr getZooKeeper() const;
+    /// Returns cached ZooKeeper session (possibly expired).
+    ZooKeeperPtr getCachedZooKeeper() const;
     /// If necessary, creates a new session and caches it.
     /// Should be called in `initializeMainThread` only, so if it is expired, `runMainThread` will reinitialized the state.
-    ZooKeeperPtr getAndSetZooKeeper();
+    ZooKeeperPtr getAndCacheZooKeeper();
 
     void notifyHostIDsUpdated();
     void updateHostIDs(const std::vector<HostID> & hosts);

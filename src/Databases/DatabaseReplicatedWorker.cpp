@@ -85,7 +85,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
         try
         {
             chassert(!database->is_probably_dropped);
-            auto zookeeper = getAndSetZooKeeper();
+            auto zookeeper = getAndCacheZooKeeper();
             if (database->is_readonly)
                 database->tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel::ATTACH);
             if (database->is_probably_dropped)
@@ -149,7 +149,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// Check if we need to recover replica.
     /// Invariant: replica is lost if it's log_ptr value is less then max_log_ptr - logs_to_keep.
 
-    auto zookeeper = getZooKeeper();
+    auto zookeeper = getCachedZooKeeper();
 
     /// Create "active" node (remove previous one if necessary)
     String active_path = fs::path(database->replica_path) / "active";
@@ -263,7 +263,7 @@ void DatabaseReplicatedDDLWorker::markReplicasActive(bool reinitialized)
 {
     if (reinitialized || !active_node_holder_zookeeper || active_node_holder_zookeeper->expired())
     {
-        auto zookeeper = getZooKeeper();
+        auto zookeeper = getCachedZooKeeper();
 
         String active_path = fs::path(database->replica_path) / "active";
         String active_id = toString(ServerUUID::get());
@@ -587,7 +587,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (unsynced_after_recovery)
     {
-        UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
+        UInt32 max_log_ptr = parse<UInt32>(getAndCacheZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
         LOG_TRACE(log, "Replica was not fully synced after recovery: our_log_ptr={}, max_log_ptr={}", our_log_ptr, max_log_ptr);
         chassert(our_log_ptr < max_log_ptr);
         bool became_synced = our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
@@ -753,7 +753,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordination::Stat &)
 {
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
+    UInt32 max_log_ptr = parse<UInt32>(getCachedZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
     return entry_number + logs_to_keep < max_log_ptr;
 }
 
