@@ -121,6 +121,10 @@
           (info "ssh-add -l stderr:" (:err result)))
         (catch Exception e (info "ssh-add failed:" (.getMessage e))))))
 
+  (info "Sleeping for 10 minutes to allow manual debugging...")
+  (Thread/sleep 600000)
+  (info "Sleep complete, continuing with test")
+
   (let [quorum (boolean (:quorum opts))
         workload  ((get workloads (:workload opts)) opts)
         current-nemesis (get custom-nemesis/custom-nemesises (:nemesis opts))]
