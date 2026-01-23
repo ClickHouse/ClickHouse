@@ -185,15 +185,6 @@ const TimeSeriesSettings & StorageTimeSeries::getStorageSettings() const
     return *storage_settings;
 }
 
-void StorageTimeSeries::startup()
-{
-}
-
-void StorageTimeSeries::shutdown(bool)
-{
-}
-
-
 void StorageTimeSeries::drop()
 {
     /// Sync flag and the setting make sense for Atomic databases only.
