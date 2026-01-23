@@ -474,8 +474,6 @@ Direct read is controlled by two settings:
 - Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) which specifies if direct read is generally enabled.
 - Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
 
-Also, the text index must be fully materialized to use direct reading (use `ALTER TABLE ... MATERIALIZE INDEX` for that).
-
 **Supported functions**
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
