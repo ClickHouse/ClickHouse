@@ -142,7 +142,7 @@ void ThreadGroup::linkThread(UInt64 thread_id)
     peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
 }
 
-void ThreadGroup::unlinkThread(UInt64 /*elapsed_thread_counter_ms*/)
+void ThreadGroup::unlinkThread()
 {
     std::lock_guard lock(mutex);
     chassert(active_thread_count > 0);
@@ -408,7 +408,7 @@ void ThreadStatus::detachFromGroup()
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
 
-    thread_group->unlinkThread(thread_attach_time.elapsedMilliseconds());
+    thread_group->unlinkThread();
 
     if (thread_group->os_threads_nice_value != 0)
     {

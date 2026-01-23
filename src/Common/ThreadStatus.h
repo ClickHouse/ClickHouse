@@ -130,7 +130,7 @@ public:
     UInt64 getGroupElapsedMs() const;
 
     void linkThread(UInt64 thread_id);
-    void unlinkThread(UInt64 elapsed_thread_counter_ms);
+    void unlinkThread();
 
 private:
     mutable std::mutex mutex;
