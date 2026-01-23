@@ -1131,8 +1131,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (left_table && left_table->getStorage()->isView())
                             return false;
 
-                        const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
-
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
                         if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left)
@@ -1141,6 +1139,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             if (left_table)
                                 return parallel_replicas_enabled_for_storage(left_table->getStorage(), query_settings);
 
+                            const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
                             if (left_table_function)
                                 return parallel_replicas_enabled_for_storage(left_table_function->getStorage(), query_settings);
 
