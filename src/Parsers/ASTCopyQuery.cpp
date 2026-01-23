@@ -12,7 +12,7 @@ void ASTCopyQuery::formatImpl(WriteBuffer & ostr, const FormatSettings &, Format
 
 ASTPtr ASTCopyQuery::clone() const
 {
-    auto res = std::make_shared<ASTCopyQuery>(*this);
+    auto res = make_intrusive<ASTCopyQuery>(*this);
     res->children.clear();
     return res;
 }
