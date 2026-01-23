@@ -50,7 +50,7 @@ bool isDeduplicationEnabledForInsertSelect(bool select_query_sorted, const Setti
                 throw Exception(ErrorCodes::DEDUPLICATION_IS_NOT_POSSIBLE,
                     "Deduplication for INSERT SELECT with non-stable SELECT is not possible"
                     " (the SELECT part can return different results on each execution)."
-                    " You can disable it by setting 'insert_deduplicate' or `async_insert_deduplicate` to 0."
+                    " You can disable it by setting `insert_deduplicate` or `async_insert_deduplicate` to 0."
                     " Or make SELECT query stable (for example, by adding ORDER BY all to the query).");
 
             return true;
