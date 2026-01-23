@@ -116,27 +116,20 @@ std::optional<MarkType> MergeTreeIndexGranularityInfo::getMarksTypeFromFilesyste
 }
 
 MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(
-    MarkType mark_type_, size_t index_granularity_, size_t index_granularity_bytes_)
-    : mark_type(mark_type_)
-    , fixed_index_granularity(index_granularity_)
-    , index_granularity_bytes(index_granularity_bytes_)
-{
-}
-
-MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_)
+    const MergeTreeData & storage, const MergeTreeSettings & storage_settings, MergeTreeDataPartType type_)
     : MergeTreeIndexGranularityInfo(
-        storage,
-        {storage.canUseAdaptiveGranularity(),
-         (*storage.getSettings())[MergeTreeSetting::compress_marks],
-         (*storage.getSettings())[MergeTreeSetting::write_marks_for_substreams_in_compact_parts],
-         type_.getValue()})
+          storage_settings,
+          {storage.canUseAdaptiveGranularity(),
+           storage_settings[MergeTreeSetting::compress_marks],
+           storage_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts],
+           type_.getValue()})
 {
 }
 
-MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_)
+MergeTreeIndexGranularityInfo::MergeTreeIndexGranularityInfo(const MergeTreeSettings & storage_settings, MarkType mark_type_)
     : mark_type(mark_type_)
-    , fixed_index_granularity((*storage.getSettings())[MergeTreeSetting::index_granularity])
-    , index_granularity_bytes((*storage.getSettings())[MergeTreeSetting::index_granularity_bytes])
+    , fixed_index_granularity(storage_settings[MergeTreeSetting::index_granularity])
+    , index_granularity_bytes(storage_settings[MergeTreeSetting::index_granularity_bytes])
 {
 }
 

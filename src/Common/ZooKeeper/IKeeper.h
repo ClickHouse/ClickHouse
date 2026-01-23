@@ -267,9 +267,11 @@ struct CheckWatchRequest : virtual Request
 {
     enum class CheckWatchType : int32_t
     {
-        ANY = 0,
-        DATA = 1,
-        CHILDREN = 2,
+        CHILDREN = 1,
+        DATA = 2,
+        ANY = 3,
+        PERSISTENT = 4,
+        PERSISTENT_RECURSIVE = 5
     };
 
     String path;
@@ -550,7 +552,7 @@ struct CheckRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + sizeof(version); }
+    size_t bytesSize() const override { return path.size() + sizeof(version) + sizeof(stat_to_check); }
 };
 
 struct CheckResponse : virtual Response
@@ -836,4 +838,3 @@ template <> struct std::hash<Coordination::WatchCallbackPtrOrEventPtr>
         return self.hash();
     }
 };
-

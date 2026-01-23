@@ -302,12 +302,20 @@ public:
     };
 
     using Ephemerals = std::unordered_map<int64_t, std::unordered_set<std::string>>;
+
+    enum class WatchType : uint8_t
+    {
+        WATCH,
+        LIST_WATCH,
+        PERSISTENT_WATCH,
+        PERSISTENT_LIST_WATCH,
+        PERSISTENT_RECURSIVE_WATCH,
+    };
+
     struct WatchInfo
     {
-        String path;
-        bool is_list_watch;
-        bool is_persistent;
-        bool trigger_on_exists;
+        std::string_view path;
+        WatchType type;
 
         bool operator==(const WatchInfo &) const = default;
     };
@@ -395,9 +403,12 @@ public:
     /// Currently active watches (node_path -> subscribed sessions)
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
-    Watches exist_watches;
     Watches persistent_watches;
+    Watches persistent_list_watches;
     Watches persistent_recursive_watches;
+
+    /// Mapping session_id -> set of watched nodes paths
+    SessionAndWatcher sessions_and_watchers;
 
     static bool checkDigest(const KeeperDigest & first, const KeeperDigest & second);
 
@@ -441,14 +452,7 @@ public:
     bool containsWatch(const String & path, Coordination::CheckWatchRequest::CheckWatchType check_type) const;
     void addPersistentWatch(const String & path, Coordination::AddWatchRequest::AddWatchMode mode, int64_t session_id);
 
-    void setWatches(const std::vector<String> & watches_paths,
-        const std::vector<String> & list_watches_paths,
-        const std::vector<String> & exist_watches_paths,
-        const std::vector<String> & persistent_watches_paths,
-        const std::vector<String> & persistent_recursive_watches_paths,
-        int64_t session_id);
-
-    void removePersistentWatch(const String& path, Coordination::RemoveWatchRequest::WatchType type, int64_t session_id);
+    bool removePersistentWatch(const String& path, Coordination::RemoveWatchRequest::WatchType type, int64_t session_id);
 protected:
     KeeperStorageBase(int64_t tick_time_ms, const KeeperContextPtr & keeper_context, const String & superdigest_);
 
@@ -467,8 +471,6 @@ protected:
 
     std::atomic<bool> finalized{false};
 
-    /// Mapping session_id -> set of watched nodes paths
-    SessionAndWatcher sessions_and_watchers;
     size_t total_watches_count = 0;
 
     void clearDeadWatches(int64_t session_id);
@@ -634,6 +636,15 @@ public:
 
     /// Clear outdated data from internal container.
     void clearGarbageAfterSnapshot();
+
+    KeeperResponsesForSessions setWatches(
+        int64_t last_zxid,
+        const std::vector<String> & watches_paths,
+        const std::vector<String> & list_watches_paths,
+        const std::vector<String> & exist_watches_paths,
+        const std::vector<String> & persistent_watches_paths,
+        const std::vector<String> & persistent_recursive_watches_paths,
+        int64_t session_id);
 
     /// Introspection functions mostly used in 4-letter commands
     uint64_t getNodesCount() const;

@@ -23,6 +23,22 @@ If it is set to true, allow strings in single quotes.
     DECLARE(Bool, format_csv_allow_double_quotes, true, R"(
 If it is set to true, allow strings in double quotes.
 )", 0) \
+    DECLARE(Bool, input_format_parallel_parsing, true, R"(
+Enables or disables order-preserving parallel parsing of data formats. Supported only for [TabSeparated (TSV)](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+)", 0) \
+    DECLARE(Bool, output_format_parallel_formatting, true, R"(
+Enables or disables parallel formatting of data formats. Supported only for [TSV](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [CSV](/interfaces/formats/CSV) and [JSONEachRow](/interfaces/formats/JSONEachRow) formats.
+
+Possible values:
+
+- 1 — Enabled.
+- 0 — Disabled.
+)", 0) \
     DECLARE(Bool, output_format_csv_serialize_tuple_into_separate_columns, true, R"(
 If it set to true, then Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost)
 )", 0) \
@@ -546,6 +562,12 @@ Possible values:
     DECLARE(Bool, type_json_skip_duplicated_paths, false, R"(
 When enabled, during parsing JSON object into JSON type duplicated paths will be ignored and only the first one will be inserted instead of an exception
 )", 0) \
+    DECLARE(Bool, type_json_allow_duplicated_key_with_literal_and_nested_object, false, R"(
+When enabled, JSONs like `{"a" : 42, "a" : {"b" : 42}}` where some key is duplicated but one of them is a nested object are allowed to be parsed.
+)", 0) \
+    DECLARE(Bool, type_json_use_partial_match_to_skip_paths_by_regexp, true, R"(
+When enabled, during parsing JSON object into JSON type regular expressions specified using SKIP REGEXP will require partial match to skip a path. When disabled, full match will be required.
+)", 0) \
     DECLARE(Bool, json_type_escape_dots_in_keys, false, R"(
 When enabled, dots in JSON keys will be escaped during parsing.
 )", 0) \
@@ -636,6 +658,16 @@ Allow data types conversion in Native input format
     DECLARE(Bool, input_format_native_decode_types_in_binary_format, false, R"(
 Read data types in binary format instead of type names in Native input format
 )", 0) \
+    DECLARE(UInt64, output_format_compression_level, 3, R"(
+Default compression level if query output is compressed. The setting is applied when `SELECT` query has `INTO OUTFILE` or when writing to table functions `file`, `url`, `hdfs`, `s3`, or `azureBlobStorage`.
+
+Possible values: from `1` to `22`
+)", 0) \
+    DECLARE(UInt64, output_format_compression_zstd_window_log, 0, R"(
+Can be used when the output compression method is `zstd`. If greater than `0`, this setting explicitly sets compression window size (power of `2`) and enables a long-range mode for zstd compression. This can help to achieve a better compression ratio.
+
+Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
+)", 0) \
     DECLARE(Bool, output_format_native_encode_types_in_binary_format, false, R"(
 Write data types in binary format instead of type names in Native output format
 )", 0) \
@@ -657,7 +689,7 @@ Possible values:
 
     ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
 
-- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parsedatetimebesteffortus)
+- `'best_effort_us'` — Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parseDateTimeBestEffortUS)
 
 - `'basic'` — Use basic parser.
 
@@ -723,6 +755,11 @@ Deserialization of IPV6 will use default values instead of throwing exception on
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, check_conversion_from_numbers_to_enum, false, R"(
+Throw an exception during Numbers to Enum conversion if the value does not exist in Enum.
+
+Disabled by default.
+)", 0) \
     DECLARE(String, bool_true_representation, "true", R"(
 Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.
 )", 0) \
@@ -755,6 +792,12 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 )", 0) \
     DECLARE(UInt64, format_binary_max_array_size, 1_GiB, R"(
 The maximum allowed size for Array in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
+)", 0) \
+    DECLARE(UInt64, input_format_binary_max_type_complexity, 1000, R"(
+Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Protects against malicious inputs. 0 = unlimited.
+)", 0) \
+    DECLARE(UInt64, format_binary_max_object_size, 100000, R"(
+The maximum allowed number of paths in a single Object for JSON type RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \
     DECLARE(Bool, input_format_binary_decode_types_in_binary_format, false, R"(
 Read data types in binary format instead of type names in RowBinaryWithNamesAndTypes input format
@@ -1046,7 +1089,7 @@ If the data rendered in Pretty formats arrived in multiple chunks, even after a 
 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
 )", 0) \
     DECLARE(String, output_format_pretty_grid_charset, "UTF-8", R"(
-Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default one).
+Charset for printing grid borders. Available charsets: ASCII, UTF-8 (default).
 )", 0) \
     DECLARE(UInt64, output_format_pretty_display_footer_column_names, true, R"(
 Display column names in the footer if there are many table rows.
@@ -1310,6 +1353,9 @@ The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`
     DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_columns, 5, R"(
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
 )", 0) \
+    DECLARE(Bool, output_format_pretty_named_tuples_as_json, true, R"(
+        Controls whether named tuples in Pretty format are output as pretty-printed JSON objects.
+)", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](/engines/table-engines/special/distributed) table when there is no distributed key.
 
@@ -1319,16 +1365,6 @@ Possible values:
 
 - 0 — Insertion is rejected if there are multiple shards and no distributed key is given.
 - 1 — Insertion is done randomly among all available shards when no distributed key is given.
-)", 0) \
-    \
-    DECLARE(Bool, exact_rows_before_limit, false, R"(
-When enabled, ClickHouse will provide exact value for rows_before_limit_at_least statistic, but with the cost that the data before limit will have to be read completely
-)", 0) \
-    DECLARE(Bool, rows_before_aggregation, false, R"(
-When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
-)", 0) \
-    DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
-Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
 )", 0) \
     \
     DECLARE(Bool, output_format_arrow_low_cardinality_as_dictionary, false, R"(
@@ -1434,19 +1470,6 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled.
 )", IMPORTANT) \
-    DECLARE(Bool, regexp_dict_allow_hyperscan, true, R"(
-Allow regexp_tree dictionary using Hyperscan library.
-)", 0) \
-    DECLARE(Bool, regexp_dict_flag_case_insensitive, false, R"(
-Use case-insensitive matching for a regexp_tree dictionary. Can be overridden in individual expressions with (?i) and (?-i).
-)", 0) \
-    DECLARE(Bool, regexp_dict_flag_dotall, false, R"(
-Allow '.' to match newline characters for a regexp_tree dictionary.
-)", 0) \
-    \
-    DECLARE(Bool, dictionary_use_async_executor, false, R"(
-Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
-)", 0) \
     DECLARE(Bool, precise_float_parsing, false, R"(
 Prefer more precise (but slower) float parsing algorithm
 )", 0) \

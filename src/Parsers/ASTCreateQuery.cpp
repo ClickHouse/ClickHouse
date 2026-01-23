@@ -251,6 +251,12 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->table_overrides, table_overrides->clone());
     if (targets)
         res->set(res->targets, targets->clone());
+    if (sql_security)
+        res->set(res->sql_security, sql_security->clone());
+    if (watermark_function)
+        res->set(res->watermark_function, watermark_function->clone());
+    if (lateness_function)
+        res->set(res->lateness_function, lateness_function->clone());
 
     if (dictionary)
     {

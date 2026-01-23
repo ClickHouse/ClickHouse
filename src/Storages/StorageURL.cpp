@@ -27,24 +27,20 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
-#include <Common/re2.h>
 
 #include <TableFunctions/TableFunctionURL.h>
 
 #include <Formats/SchemaInferenceUtils.h>
-#include <Core/FormatFactorySettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -934,25 +930,11 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::UNION)
+            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
             auto key = getKeyForSchemaCache(current_url_option, *format, format_settings, getContext());
             StorageURL::getSchemaCache(getContext()).addColumns(key, columns);
-        }
-
-        void setResultingSchema(const ColumnsDescription & columns) override
-        {
-            if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url]
-                || getContext()->getSettingsRef()[Setting::schema_inference_mode] != SchemaInferenceMode::DEFAULT)
-                return;
-
-            for (const auto & options : url_options_to_check)
-            {
-                auto keys = getKeysForSchemaCache(options, *format, format_settings, getContext());
-                StorageURL::getSchemaCache(getContext()).addManyColumns(keys, columns);
-            }
         }
 
         void setFormatName(const String & format_name) override
@@ -1597,7 +1579,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
 {
     ASTs::iterator headers_it = url_function_args.end();
 
-    for (auto * arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
+    for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
         const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
         if (headers_ast_function && headers_ast_function->name == "headers")

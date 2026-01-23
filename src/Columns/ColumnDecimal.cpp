@@ -450,6 +450,66 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 }
 
 template <is_decimal T>
+void ColumnDecimal<T>::filter(const IColumn::Filter & filt)
+{
+    size_t size = data.size();
+    if (size != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
+
+    const UInt8 * filt_pos = filt.data();
+    const UInt8 * filt_end = filt_pos + size;
+    const T * data_pos = data.data();
+    T * res_data = data.data();
+    size_t res_size = 0;
+
+    /** A slightly more optimized version.
+    * Based on the assumption that often pieces of consecutive values
+    *  completely pass or do not pass the filter.
+    * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+    */
+    static constexpr size_t SIMD_BYTES = 64;
+    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+
+    while (filt_pos < filt_end_aligned)
+    {
+        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+
+        if (0xffffffffffffffff == mask)
+        {
+            memmove(res_data + res_size, data_pos, SIMD_BYTES * sizeof(T));
+            res_size += SIMD_BYTES;
+        }
+        else
+        {
+            while (mask)
+            {
+                size_t index = std::countr_zero(mask);
+                res_data[res_size++] = data_pos[index];
+            #ifdef __BMI__
+                mask = _blsr_u64(mask);
+            #else
+                mask = mask & (mask-1);
+            #endif
+            }
+        }
+
+        filt_pos += SIMD_BYTES;
+        data_pos += SIMD_BYTES;
+    }
+
+    while (filt_pos < filt_end)
+    {
+        if (*filt_pos)
+            res_data[res_size++] = *data_pos;
+
+        ++filt_pos;
+        ++data_pos;
+    }
+
+    data.resize_assume_reserved(res_size);
+}
+
+template <is_decimal T>
 void ColumnDecimal<T>::expand(const IColumn::Filter & mask, bool inverted)
 {
     expandDataByMask<T>(data, mask, inverted);

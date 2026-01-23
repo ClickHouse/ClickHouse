@@ -1,16 +1,12 @@
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
-#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <base/getThreadId.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -73,13 +69,13 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     , readers(std::move(readers_))
     , prefetch_runner(pool, ThreadName::PREFETCH_READER)
 {
-    prefetch_runner(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
+    prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
 
     for (const auto & reader : readers.prewhere)
-        prefetch_runner(read_prefetch.createPrefetchedTask(reader.get(), priority_));
+        prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(reader.get(), priority_));
 
     for (const auto & patch_reader : readers.patches)
-        prefetch_runner(read_prefetch.createPrefetchedTask(patch_reader->getReader(), priority_));
+        prefetch_runner.enqueueAndKeepTrack(read_prefetch.createPrefetchedTask(patch_reader->getReader(), priority_));
 
     fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
     {

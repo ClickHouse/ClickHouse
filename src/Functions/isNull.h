@@ -4,6 +4,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context_fwd.h>
 
+#if USE_EMBEDDED_COMPILER
+#    include <DataTypes/Native.h>
+#    include <llvm/IR/IRBuilder.h>
+#endif
+
+
 namespace DB
 {
 namespace Setting
@@ -35,8 +41,14 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override;
 
-private:
-    bool use_analyzer;
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
+
+    llvm::Value *
+    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override;
+#endif
+
+    private : bool use_analyzer;
 };
 
 }

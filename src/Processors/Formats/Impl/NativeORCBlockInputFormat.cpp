@@ -1222,7 +1222,7 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
 static ColumnPtr readByteMapFromORCColumn(const orc::ColumnVectorBatch * orc_column)
 {
     if (!orc_column->hasNulls)
-        return ColumnUInt8::create(orc_column->numElements, 0);
+        return ColumnUInt8::create(orc_column->numElements, static_cast<UInt8>(0));
 
     auto nullmap_column = ColumnUInt8::create();
     PaddedPODArray<UInt8> & bytemap_data = assert_cast<ColumnVector<UInt8> &>(*nullmap_column).getData();
@@ -1266,7 +1266,7 @@ readColumnWithBooleanData(const orc::ColumnVectorBatch * orc_column, const Strin
         if (!orc_bool_column->hasNulls || orc_bool_column->notNull[i])
             column_data.push_back(static_cast<UInt8>(orc_bool_column->data[i]));
         else
-            column_data.push_back(0);
+            column_data.push_back(static_cast<UInt8>(0));
     }
 
     return {std::move(internal_column), internal_type, column_name};
@@ -1314,7 +1314,11 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
     size_t rows = orc_str_column.numElements;
     const auto & orc_dict = *orc_str_column.dictionary;
     if (orc_dict.dictionaryOffset.size() <= 1)
-        return {internal_type->createColumn(), internal_type, column_name};
+    {
+        auto result_column = internal_type->createColumn();
+        result_column->insertManyDefaults(rows);
+        return {std::move(result_column), internal_type, column_name};
+    }
 
     size_t dict_size = orc_dict.dictionaryOffset.size() - 1;
     auto holder_column = holder_type->createColumn();

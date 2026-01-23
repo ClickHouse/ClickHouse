@@ -19,6 +19,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
@@ -529,6 +530,7 @@ protected:
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
+    mutable std::mutex table_function_results_mutex;
 
     ContextWeakMutablePtr query_context;
     ContextWeakMutablePtr session_context;  /// Session context or nullptr. Could be equal to this.
@@ -596,13 +598,7 @@ protected:
     mutable SampleBlockCache sample_block_cache;
     mutable std::mutex sample_block_cache_mutex;
 
-    using StorageMetadataCache = std::unordered_map<const IStorage *, StorageMetadataPtr>;
-    mutable StorageMetadataCache storage_metadata_cache;
-    mutable std::mutex storage_metadata_cache_mutex;
-
-    using StorageSnapshotCache = std::unordered_map<const IStorage *, StorageSnapshotPtr>;
-    mutable StorageSnapshotCache storage_snapshot_cache;
-    mutable std::mutex storage_snapshot_cache_mutex;
+    QueryMetadataCacheWeakPtr query_metadata_cache;
 
     PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
     PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
@@ -924,8 +920,8 @@ public:
     void addSpecialScalar(const String & name, const Block & block);
 
     /// Mapping between identifiers and time series tags collected in the context of the currently executed query.
-    const ContextTimeSeriesTagsCollector & getTimeSeriesTagsCollector() const;
-    ContextTimeSeriesTagsCollector & getTimeSeriesTagsCollector();
+    std::shared_ptr<const ContextTimeSeriesTagsCollector> getTimeSeriesTagsCollector() const;
+    std::shared_ptr<ContextTimeSeriesTagsCollector> getTimeSeriesTagsCollector();
 
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
@@ -981,7 +977,7 @@ public:
     /// Overload for the new analyzer. Structure inference is performed in QueryAnalysisPass.
     StoragePtr executeTableFunction(const ASTPtr & table_expression, const TableFunctionPtr & table_function_ptr);
 
-    StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values);
+    StoragePtr buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const;
 
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
@@ -1070,7 +1066,6 @@ public:
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
     const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
-    void setUserDefinedSQLObjectsStorage(std::unique_ptr<IUserDefinedSQLObjectsStorage> storage);
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
@@ -1087,8 +1082,15 @@ public:
     const BackupsInMemoryHolder & getBackupsInMemory() const;
 
     /// I/O formats.
-    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
-                                  const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+    InputFormatPtr getInputFormat(
+        const String & name,
+        ReadBuffer & buf,
+        const Block & sample,
+        UInt64 max_block_size,
+        const std::optional<FormatSettings> & format_settings = std::nullopt,
+        const std::optional<UInt64> & max_block_size_bytes = std::nullopt,
+        const std::optional<UInt64> & min_block_size_rows = std::nullopt,
+        const std::optional<UInt64> & min_block_size_bytes = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
@@ -1445,7 +1447,7 @@ public:
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
-    std::shared_ptr<PartLog> getPartLog(const String & part_database) const;
+    std::shared_ptr<PartLog> getPartLog() const;
 
     std::shared_ptr<BackgroundSchedulePoolLog> getBackgroundSchedulePoolLog() const;
 
@@ -1539,8 +1541,8 @@ public:
     void setGoogleProtosPath(const String & path);
 
     std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> getSampleBlockCache() const;
-    std::pair<Context::StorageMetadataCache *, std::unique_lock<std::mutex>> getStorageMetadataCache() const;
-    std::pair<Context::StorageSnapshotCache *, std::unique_lock<std::mutex>> getStorageSnapshotCache() const;
+    QueryMetadataCachePtr getQueryMetadataCache() const;
+    void setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_);
 
     /// Query parameters for prepared statements.
     bool hasQueryParameters() const;

@@ -44,7 +44,7 @@ struct AggregateFunctionGroupBitOrData
     static void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * value_ptr)
     {
         auto type = toNativeType<T>(builder);
-        builder.CreateStore(llvm::Constant::getNullValue(type), value_ptr);
+        builder.CreateStore(llvm::Constant::getNullValue(type), value_ptr)->setAlignment(llvm::Align(alignof(T)));
     }
 
     static llvm::Value* compileUpdate(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs)
@@ -67,7 +67,7 @@ struct AggregateFunctionGroupBitAndData
     static void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * value_ptr)
     {
         auto type = toNativeType<T>(builder);
-        builder.CreateStore(llvm::ConstantInt::get(type, -1), value_ptr);
+        builder.CreateStore(llvm::ConstantInt::get(type, -1), value_ptr)->setAlignment(llvm::Align(alignof(T)));
     }
 
     static llvm::Value* compileUpdate(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs)
@@ -90,7 +90,7 @@ struct AggregateFunctionGroupBitXorData
     static void compileCreate(llvm::IRBuilderBase & builder, llvm::Value * value_ptr)
     {
         auto type = toNativeType<T>(builder);
-        builder.CreateStore(llvm::Constant::getNullValue(type), value_ptr);
+        builder.CreateStore(llvm::Constant::getNullValue(type), value_ptr)->setAlignment(llvm::Align(alignof(T)));
     }
 
     static llvm::Value* compileUpdate(llvm::IRBuilderBase & builder, llvm::Value * lhs, llvm::Value * rhs)
@@ -167,10 +167,11 @@ public:
 
         auto * value_ptr = aggregate_data_ptr;
         auto * value = b.CreateLoad(return_type, value_ptr);
+        value->setAlignment(llvm::Align(alignof(T)));
 
         auto * result_value = Data::compileUpdate(builder, value, arguments[0].value);
 
-        b.CreateStore(result_value, value_ptr);
+        b.CreateStore(result_value, value_ptr)->setAlignment(llvm::Align(alignof(T)));
     }
 
     void compileMerge(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_dst_ptr, llvm::Value * aggregate_data_src_ptr) const override
@@ -181,13 +182,15 @@ public:
 
         auto * value_dst_ptr = aggregate_data_dst_ptr;
         auto * value_dst = b.CreateLoad(return_type, value_dst_ptr);
+        value_dst->setAlignment(llvm::Align(alignof(T)));
 
         auto * value_src_ptr = aggregate_data_src_ptr;
         auto * value_src = b.CreateLoad(return_type, value_src_ptr);
+        value_src->setAlignment(llvm::Align(alignof(T)));
 
         auto * result_value = Data::compileUpdate(builder, value_dst, value_src);
 
-        b.CreateStore(result_value, value_dst_ptr);
+        b.CreateStore(result_value, value_dst_ptr)->setAlignment(llvm::Align(alignof(T)));
     }
 
     llvm::Value * compileGetResult(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr) const override
@@ -197,7 +200,9 @@ public:
         auto * return_type = toNativeType(b, this->getResultType());
         auto * value_ptr = aggregate_data_ptr;
 
-        return b.CreateLoad(return_type, value_ptr);
+        auto * res = b.CreateLoad(return_type, value_ptr);
+        res->setAlignment(llvm::Align(alignof(T)));
+        return res;
     }
 
 #endif
@@ -229,9 +234,137 @@ AggregateFunctionPtr createAggregateFunctionBitwise(const std::string & name, co
 
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("groupBitOr", createAggregateFunctionBitwise<AggregateFunctionGroupBitOrData>);
-    factory.registerFunction("groupBitAnd", createAggregateFunctionBitwise<AggregateFunctionGroupBitAndData>);
-    factory.registerFunction("groupBitXor", createAggregateFunctionBitwise<AggregateFunctionGroupBitXorData>);
+    FunctionDocumentation::Description description_or = R"(
+Applies bitwise OR for series of numbers.
+    )";
+    FunctionDocumentation::Syntax syntax_or = R"(
+groupBitOr(expr)
+    )";
+    FunctionDocumentation::Arguments arguments_or = {
+        {"expr", "Expression of `(U)Int*` type.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::Parameters parameters_or = {};
+    FunctionDocumentation::ReturnedValue returned_value_or = {"Returns a value of `(U)Int*` type.", {"(U)Int*"}};
+    FunctionDocumentation::Examples examples_or = {
+    {
+        "Bitwise OR example",
+        R"(
+CREATE TABLE t (num UInt32) ENGINE = Memory;
+INSERT INTO t VALUES (44), (28), (13), (85);
+
+-- Test data:
+-- binary     decimal
+-- 00101100 = 44
+-- 00011100 = 28
+-- 00001101 = 13
+-- 01010101 = 85
+
+SELECT groupBitOr(num) FROM t;
+        )",
+        R"(
+-- Result:
+-- binary     decimal
+-- 01111101 = 125
+
+┌─groupBitOr(num)─┐
+│             125 │
+└─────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_or = {1, 1};
+    FunctionDocumentation::Category category_or = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_or = {description_or, syntax_or, arguments_or, parameters_or, returned_value_or, examples_or, introduced_in_or, category_or};
+
+    factory.registerFunction("groupBitOr", {createAggregateFunctionBitwise<AggregateFunctionGroupBitOrData>, {}, documentation_or});
+
+    FunctionDocumentation::Description description = R"(
+Applies bitwise AND for series of numbers.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+groupBitAnd(expr)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "Expression of `(U)Int*` type.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::Parameters parameters = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of `(U)Int*` type.", {"(U)Int*"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Bitwise AND example",
+        R"(
+CREATE TABLE t (num UInt32) ENGINE = Memory;
+INSERT INTO t VALUES (44), (28), (13), (85);
+
+-- Test data:
+-- binary     decimal
+-- 00101100 = 44
+-- 00011100 = 28
+-- 00001101 = 13
+-- 01010101 = 85
+
+SELECT groupBitAnd(num) FROM t;
+            )",
+            R"(
+-- Result:
+-- binary     decimal
+-- 00000100 = 4
+
+┌─groupBitAnd(num)─┐
+│                4 │
+└──────────────────┘
+            )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("groupBitAnd", {createAggregateFunctionBitwise<AggregateFunctionGroupBitAndData>, {}, documentation});
+
+    FunctionDocumentation::Description description_xor = R"(
+Applies bitwise XOR for series of numbers.
+    )";
+    FunctionDocumentation::Syntax syntax_xor = R"(
+groupBitXor(expr)
+    )";
+    FunctionDocumentation::Arguments arguments_xor = {
+        {"expr", "Expression of `(U)Int*` type.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::Parameters parameters_xor = {};
+    FunctionDocumentation::ReturnedValue returned_value_xor = {"Returns a value of `(U)Int*` type.", {"(U)Int*"}};
+    FunctionDocumentation::Examples examples_xor = {
+    {
+        "Bitwise XOR example",
+        R"(
+CREATE TABLE t (num UInt32) ENGINE = Memory;
+INSERT INTO t VALUES (44), (28), (13), (85);
+
+-- Test data:
+-- binary     decimal
+-- 00101100 = 44
+-- 00011100 = 28
+-- 00001101 = 13
+-- 01010101 = 85
+
+SELECT groupBitXor(num) FROM t;
+        )",
+        R"(
+-- Result:
+-- binary     decimal
+-- 01101000 = 104
+
+┌─groupBitXor(num)─┐
+│              104 │
+└──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_xor = {1, 1};
+    FunctionDocumentation::Category category_xor = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_xor = {description_xor, syntax_xor, arguments_xor, parameters_xor, returned_value_xor, examples_xor, introduced_in_xor, category_xor};
+
+    factory.registerFunction("groupBitXor", {createAggregateFunctionBitwise<AggregateFunctionGroupBitXorData>, {}, documentation_xor});
 
     /// Aliases for compatibility with MySQL.
     factory.registerAlias("BIT_OR", "groupBitOr", AggregateFunctionFactory::Case::Insensitive);

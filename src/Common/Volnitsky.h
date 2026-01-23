@@ -475,7 +475,7 @@ protected:
         while (hash[cell_num])
             cell_num = (cell_num + 1) % VolnitskyTraits::hash_size; /// Search for the next free cell.
 
-        hash[cell_num] = offset;
+        hash[cell_num] = static_cast<UInt8>(offset);
     }
 };
 
