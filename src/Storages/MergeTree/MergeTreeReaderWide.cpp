@@ -24,6 +24,11 @@ namespace
     constexpr auto DATA_FILE_EXTENSION = ".bin";
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 MergeTreeReaderWide::MergeTreeReaderWide(
     MergeTreeDataPartInfoForReaderPtr data_part_info_,
     NamesAndTypesList columns_,
@@ -327,7 +332,22 @@ ReadBuffer * MergeTreeReaderWide::getStream(
 
     auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
     if (!stream_name)
+    {
+        /// We allow missing streams only for columns/subcolumns that are not present in this part.
+        auto column = data_part_info_for_read->getColumnsDescription().tryGetColumn(GetColumnsOptions::AllPhysical, name_and_type.getNameInStorage());
+        if (column && (!name_and_type.isSubcolumn() || column->type->hasSubcolumn(name_and_type.getSubcolumnName())))
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Stream {} for column {} with type {} is not found",
+                ISerialization::getFileNameForStream(
+                    name_and_type.type->getName(), substream_path, ISerialization::StreamFileNameSettings(*storage_settings)),
+                    name_and_type.name,
+                    column->type->getName());
+        }
+
         return nullptr;
+    }
 
     auto it = streams.find(*stream_name);
     if (it == streams.end())
