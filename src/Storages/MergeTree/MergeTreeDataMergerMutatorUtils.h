@@ -12,16 +12,6 @@
 namespace DB
 {
 
-std::expected<void, PreformattedMessage> canMergeAllParts(const PartsRange & range, const MergePredicatePtr & merge_predicate);
-std::unordered_map<String, PartitionStatistics> calculateStatisticsForPartitions(const PartsRanges & ranges);
-
-String getBestPartitionToOptimizeEntire(
-    size_t max_total_size_to_merge,
-    const ContextPtr & context,
-    const MergeTreeSettingsPtr & settings,
-    const std::unordered_map<String, PartitionStatistics> & stats,
-    const LoggerPtr & log);
-
 PartsRanges grabAllPossibleRanges(
     const PartsCollectorPtr & parts_collector,
     const StorageMetadataPtr & metadata_snapshot,
