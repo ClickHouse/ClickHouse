@@ -216,7 +216,6 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
 
     flatTableColumnPath(
         flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, t.cols, [](const SQLColumn &) { return true; });
-    chassert(!this->table_entries.empty());
     for (const auto & entry : this->table_entries)
     {
         DB::Strings names;
@@ -229,7 +228,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         rel.cols.emplace_back(SQLRelationCol(rel_name, names));
     }
     this->table_entries.clear();
-    if (allow_internal_cols && rg.nextSmallNumber() < (this->inside_projection ? 6 : 3))
+    if (allow_internal_cols && (rel.cols.empty() || (rg.nextSmallNumber() < (this->inside_projection ? 6 : 3))))
     {
         if (t.isMergeTreeFamily() && this->allow_not_deterministic)
         {
@@ -306,6 +305,11 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
         }
+    }
+    if (rel.cols.empty())
+    {
+        /// Ensure at least one column
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c0"}));
     }
     return rel;
 }
