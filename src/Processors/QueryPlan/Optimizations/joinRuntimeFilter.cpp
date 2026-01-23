@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
+#include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -20,6 +21,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace QueryPlanOptimizations
 {
@@ -54,7 +60,8 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
     /// Runtime filter can only be applied to join algorithms that first read the right side and only after that read the left side.
     return
         join_algorithm == JoinAlgorithm::HASH ||
-        join_algorithm == JoinAlgorithm::PARALLEL_HASH;
+        join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
+        join_algorithm == JoinAlgorithm::GRACE_HASH;
 }
 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -66,6 +73,17 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
     /// Joining two sources?
     if (node.children.size() != 2)
+        return false;
+
+    /// If right table is already filled and will be used for lookups directly (e.g. StorageJoin) then runtime filter cannot be constructed
+    if (typeid_cast<JoinStepLogicalLookup *>(node.children[1]->step.get()))
+        return false;
+
+    /// There are cases when either or both joined tables are replaced with const data at optimization time, e.g. when they are (SELECT 1 AS col).
+    /// In such cases a header can be empty and all the const data is in the ActionsDAG in the Join step. There is no need (and no way) to build
+    /// runtime filter in this scenario.
+    if (node.children[0]->step->getOutputHeader()->empty() ||
+        node.children[1]->step->getOutputHeader()->empty())
         return false;
 
     /// Check if join can do runtime filtering on left table
@@ -83,6 +101,10 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
+    /// Sometimes cross join can be represented by inner join without expressions
+    if (join_operator.expression.empty())
+        return false;
+
     /// In the case of LEFT ANTI JOIN we need to add a filter that filters out rows
     /// that would have matches in the right table. This means we need to add something like NOT IN filter.
     const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
@@ -96,10 +118,25 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// Check that there are only equality predicates
     for (const auto & condition : join_operator.expression)
     {
-        auto predicate = condition.asBinaryPredicate();
-        if (get<0>(predicate) != JoinConditionOperator::Equals)
+        auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals)
             return false;
+
+        /// For the case of ANTI JOIN (more specifically for check_left_does_not_contain) the hash table in JOIN can have extra rows that can be filtered
+        /// out by post-condition. In this case we cannot build set of keys for runtime filter from right-side rows because the set will contain more rows
+        /// and thus 'NOT IN set' operation will filter out rows that should not be filtered.
+        /// So in this case we check that all JOIN predicates are equality between expr from left columns and expr from right columns, but not something
+        /// like "func(left, right) = const"
+        if (check_left_does_not_contain &&
+            !(lhs.fromLeft() && rhs.fromRight()) &&
+            !(lhs.fromRight() && rhs.fromLeft()))
+        {
+            return false;
+        }
     }
+
+    /// Save original number of expression before extracting key DAGs
+    const auto total_join_on_predicates_count = join_operator.expression.size();
 
     {
         /// Extract expressions for calculating join on keys
@@ -116,14 +153,21 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
+    /// When negation will be use for the set of rows in filter, double check that all original predicates were transformed into equality predicates
+    /// between left and right side
+    if (check_left_does_not_contain &&
+        (join_keys_build_side.size() != total_join_on_predicates_count ||
+        join_keys_probe_side.size() != total_join_on_predicates_count))
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Original predicate count {} does not match the number of JOIN ON keys, left: {}, right: {}",
+            total_join_on_predicates_count, join_keys_probe_side.size(), join_keys_build_side.size());
+    }
+
     const String filter_name_prefix = fmt::format("{}_runtime_filter_{}", check_left_does_not_contain ? "_exclusion_" : "", thread_local_rng());
 
     {
-        ActionsDAG filter_dag;
-
         /// Pass all columns on probe side
-        for (const auto & column : apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName())
-            filter_dag.addOrReplaceInOutputs(filter_dag.addInput(column));
+        ActionsDAG filter_dag(apply_filter_node->step->getOutputHeader()->getColumnsWithTypeAndName(), false);
 
         String filter_column_name;
         ActionsDAG::NodeRawConstPtrs all_filter_conditions;
@@ -157,6 +201,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 common_type = join_key_build_side.type;
             }
 
+            LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from `{}` and applied to `{}`",
+                filter_name, join_key_build_side.name, join_key_probe_side.name);
+
             /// Add filter lookup to the probe subtree
             all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key_probe_side, common_type));
 
@@ -172,8 +219,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     optimization_settings.join_runtime_filter_exact_values_limit,
                     optimization_settings.join_runtime_bloom_filter_bytes,
                     optimization_settings.join_runtime_bloom_filter_hash_functions,
+                    optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
+                    optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
+                    optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
                     /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain);
-                new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {} ({})", join_key_build_side.name, filter_name), 200);
+                new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
                 new_build_filter_node->children = {build_filter_node};
 
                 build_filter_node = new_build_filter_node;

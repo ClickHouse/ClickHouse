@@ -24,6 +24,9 @@ public:
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_bytes_,
         UInt64 bloom_filter_hash_functions_,
+        Float64 pass_ratio_threshold_for_disabling_,
+        UInt64 blocks_to_skip_before_reenabling_,
+        Float64 max_ratio_of_set_bits_in_bloom_filter_,
         bool allow_to_use_not_exact_filter_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
@@ -38,8 +41,6 @@ private:
     const DataTypePtr filter_column_original_type;
     const DataTypePtr filter_column_target_type;
     const String filter_name;
-
-    const size_t filters_to_merge;
 
     FunctionBasePtr cast_to_target_type;
 

@@ -163,6 +163,7 @@ public:
         ObjectInfoPtr object_info,
         QueryPipelineBuilder & builder,
         const std::optional<FormatSettings> & format_settings,
+        FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr local_context) const;
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
@@ -230,14 +231,11 @@ public:
 
     virtual void checkAlterIsPossible(const AlterCommands & commands)
     {
-        /// Check if any of the alter commands is ADD_INDEX and throw immediately
-        const bool alter_adds_index
-            = std::ranges::any_of(commands, [](const AlterCommand & c) { return c.type == AlterCommand::ADD_INDEX; });
-        if (alter_adds_index)
+        for (const auto & command : commands)
         {
-            const auto & features = StorageFactory::instance().getStorageFeatures(getEngineName());
-            if (!features.supports_skipping_indices)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support skipping indices.", getEngineName());
+            if (!command.isCommentAlter())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                    command.type, getEngineName());
         }
     }
 

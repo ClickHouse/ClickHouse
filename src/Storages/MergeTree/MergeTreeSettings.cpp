@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
+
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/isDiskFunction.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
@@ -38,6 +40,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int READONLY;
 }
 
@@ -220,7 +223,7 @@ namespace ErrorCodes
     Only available in ClickHouse Cloud. Maximal number of bytes to write in a
     single stripe in compact parts
     )", 0) \
-    DECLARE(UInt64, compact_parts_max_granules_to_buffer, 128, R"(
+    DECLARE(NonZeroUInt64, compact_parts_max_granules_to_buffer, 128, R"(
     Only available in ClickHouse Cloud. Maximal number of granules to write in a
     single stripe in compact parts
     )", 0) \
@@ -274,8 +277,8 @@ namespace ErrorCodes
     Controls the serialization format for top-level `String` columns.
 
     This setting is only effective when `serialization_info_version` is set to "with_types".
-    When enabled, top-level `String` columns are serialized with a separate `.size`
-    subcolumn storing string lengths, rather than inline. This allows real `.size`
+    When set to `with_size_stream`, top-level `String` columns are serialized with a separate
+    `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
     subcolumns and can improve compression efficiency.
 
     Nested `String` types (e.g., inside `Nullable`, `LowCardinality`, `Array`, or `Map`)
@@ -286,7 +289,16 @@ namespace ErrorCodes
     - `single_stream` — Use the standard serialization format with inline sizes.
     - `with_size_stream` — Use a separate size stream for top-level `String` columns.
     )", 0) \
-    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
+    DECLARE(MergeTreeNullableSerializationVersion, nullable_serialization_version, "basic", R"(
+    Controls the serialization method used for `Nullable(T)` columns.
+
+    Possible values:
+
+    - basic — Use the standard serialization for `Nullable(T)`.
+
+    - allow_sparse — Permit `Nullable(T)` to use sparse encoding.
+    )", 0) \
+    DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v3", R"(
     Serialization version for JSON data type. Required for compatibility.
 
     Possible values:
@@ -296,7 +308,7 @@ namespace ErrorCodes
 
     Only version `v3` supports changing the shared data serialization version.
     )", 0) \
-    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "map", R"(
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version, "advanced", R"(
     Serialization version for shared data inside JSON data type.
 
     Possible values:
@@ -308,7 +320,7 @@ namespace ErrorCodes
     Number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
     [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
     )", 0) \
-    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map", R"(
+    DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map_with_buckets", R"(
     This setting allows to specify different serialization version of the
     shared data inside JSON type for zero level parts that are created during inserts.
     It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase
@@ -320,7 +332,7 @@ namespace ErrorCodes
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
     Number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
     )", 0) \
-    DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v2", R"(
+    DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
     Serialization version for Dynamic data type. Required for compatibility.
 
     Possible values:
@@ -350,6 +362,14 @@ namespace ErrorCodes
 
     For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_wide_part is set to 128,
     after merge into the Wide data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
+    )", 0) \
+    \
+    DECLARE(UInt64Auto, merge_max_dynamic_subcolumns_in_compact_part, Field("auto"), R"(
+    The maximum number of dynamic subcolumns that can be created in every column in the Compact data part after merge.
+    It allows to control the number of dynamic subcolumns in Compact part regardless of dynamic parameters specified in the data type.
+
+    For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_compact_part is set to 128,
+    after merge into the Compact data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
     )", 0) \
     \
     /** Merge selector settings. */ \
@@ -534,6 +554,9 @@ namespace ErrorCodes
     Max amount of parts which can be merged at once (0 - disabled). Doesn't affect
     OPTIMIZE FINAL query.
     )", 0) \
+    DECLARE(Bool, materialize_statistics_on_merge, true, R"(When enabled, merges will build and store statistics for new parts.
+    Otherwise they can be created/stored by explicit [MATERIALIZE STATISTICS](/sql-reference/statements/alter/statistics.md)
+    or [during INSERTs](/operations/settings/settings.md#materialize_statistics_on_insert))", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_merge, true, R"(
     When enabled, merges build and store skip indices for new parts.
     Otherwise they can be created/stored by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index)
@@ -715,6 +738,15 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, R"(
     The algorithm to select parts for merges assignment
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once, false, R"(
+    Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
+    By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
+    errors but at the same time this will increase the write amplification.
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent, 5, R"(
+    Controls the exponent value used in formulae building lowering curve. Lowering exponent will
+    lower merge widths which will trigger increase in write amplification. The reverse is also true.
     )", EXPERIMENTAL) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, R"(
     Enable heuristic for selecting parts for merge which removes parts from right
@@ -936,7 +968,14 @@ namespace ErrorCodes
     Allow to use adaptive writer buffers during writing dynamic subcolumns to
     reduce memory usage
     )", 0) \
-    DECLARE(UInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
+    DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
+    Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
+
+    Possible values:
+    - 0 - unlimited
+    - 1 - always enabled
+    )", 0) \
+    DECLARE(NonZeroUInt64, adaptive_write_buffer_initial_size, 16 * 1024, R"(
     Initial size of an adaptive write buffer
     )", 0) \
     DECLARE(UInt64, min_free_disk_bytes_to_perform_insert, 0, R"(
@@ -1988,7 +2027,7 @@ namespace ErrorCodes
 
     Possible values:
     - `rebuild` (default): Rebuilds any secondary indices affected by the column in the `ALTER` command.
-    - `throw`: Prevents any `ALTER` of columns covered by secondary indices by throwing an exception.
+    - `throw`: Prevents any `ALTER` of columns covered by **explicit** secondary indices by throwing an exception. Implicit indices are excluded from this restriction and will be rebuilt.
     - `drop`: Drop the dependent secondary indices. The new parts won't have the indices, requiring `MATERIALIZE INDEX` to recreate them.
     - `compatibility`: Matches the original behaviour: `throw` on `ALTER ... MODIFY COLUMN` and `rebuild` on `ALTER ... UPDATE/DELETE`.
     - `ignore`: Intended for expert usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
@@ -2160,7 +2199,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }
@@ -2416,6 +2455,8 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = MergeTreeSettingsTraits::resolveName(change.name);
             auto setting_index = MergeTreeSettingsTraits::Accessor::instance().find(final_name);
+            if (setting_index == static_cast<size_t>(-1))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown setting in history: {}", final_name);
             auto previous_value = MergeTreeSettingsTraits::Accessor::instance().castValueUtil(setting_index, change.previous_value);
 
             if (get(final_name) != previous_value)

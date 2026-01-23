@@ -36,6 +36,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
     , granularity(other.granularity)
+    , is_implicitly_created(other.is_implicitly_created)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -70,10 +71,11 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     data_types = other.data_types;
     sample_block = other.sample_block;
     granularity = other.granularity;
+    is_implicitly_created = other.is_implicitly_created;
     return *this;
 }
 
-IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context)
+IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, bool is_implicitly_created, ContextPtr context)
 {
     const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
     if (!index_definition)
@@ -94,6 +96,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     result.name = index_definition->name;
     result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
+    result.is_implicitly_created = is_implicitly_created;
 
     result.initExpressionInfo(index_definition->getExpression(), columns, context);
 
@@ -118,7 +121,7 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
 
 void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
 {
-    *this = getIndexFromAST(definition_ast, new_columns, context);
+    *this = getIndexFromAST(definition_ast, new_columns, is_implicitly_created, context);
 }
 
 void IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context)
@@ -166,6 +169,11 @@ FieldVector IndexDescription::parsePositionalArgumentsFromAST(const ASTPtr & arg
     return result;
 }
 
+bool IndexDescription::isSimpleSingleColumnIndex() const
+{
+    return expression_list_ast && expression_list_ast->children.size() == 1 && expression_list_ast->children[0]->as<ASTIdentifier>();
+}
+
 
 bool IndicesDescription::has(const String & name) const
 {
@@ -183,7 +191,22 @@ bool IndicesDescription::hasType(const String & type) const
     return false;
 }
 
-String IndicesDescription::toString() const
+String IndicesDescription::explicitToString() const
+{
+    if (empty())
+        return {};
+
+    ASTExpressionList list;
+    for (const auto & index : *this)
+    {
+        if (!index.isImplicitlyCreated())
+            list.children.push_back(index.definition_ast);
+    }
+
+    return list.formatWithSecretsOneLine();
+}
+
+String IndicesDescription::allToString() const
 {
     if (empty())
         return {};
@@ -206,7 +229,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
     ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     for (const auto & index : list->children)
-        result.emplace_back(IndexDescription::getIndexFromAST(index, columns, context));
+        result.emplace_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, context));
 
     return result;
 }
@@ -214,7 +237,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
 
 ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const
 {
-    ASTPtr combined_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr combined_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & index : *this)
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
@@ -236,8 +259,8 @@ Names IndicesDescription::getAllRegisteredNames() const
 ASTPtr createImplicitMinMaxIndexAST(const String & column_name)
 {
     auto index_type = makeASTFunction("minmax");
-    auto index_ast = std::make_shared<ASTIndexDeclaration>(
-        std::make_shared<ASTIdentifier>(column_name), index_type,
+    auto index_ast = make_intrusive<ASTIndexDeclaration>(
+        make_intrusive<ASTIdentifier>(column_name), index_type,
         IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name);
 
     index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
@@ -247,7 +270,7 @@ ASTPtr createImplicitMinMaxIndexAST(const String & column_name)
 IndexDescription createImplicitMinMaxIndexDescription(const String & column_name, const ColumnsDescription & columns, ContextPtr context)
 {
     auto index_ast = createImplicitMinMaxIndexAST(column_name);
-    return IndexDescription::getIndexFromAST(index_ast, columns, context);
+    return IndexDescription::getIndexFromAST(index_ast, columns, /* is_implicitly_created */ true, context);
 }
 
 }

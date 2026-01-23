@@ -17,7 +17,7 @@ public:
 
     const char * getName() const override { return name; }
 
-    HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
+    HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationPtr configuration_, ContextPtr context_);
 
     NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return {}; }
 
@@ -47,7 +47,7 @@ public:
         StorageObjectStorageConfigurationWeakPtr configuration,
         ContextPtr local_context)
     {
-        return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
+        return std::make_unique<HudiMetadata>(object_storage, configuration.lock(), local_context);
     }
 
 protected:
@@ -60,7 +60,8 @@ protected:
 
 private:
     const ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationWeakPtr configuration;
+    const String table_path;
+    const String format;
     mutable Strings data_files;
 
     Strings getDataFilesImpl() const;

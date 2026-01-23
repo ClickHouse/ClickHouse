@@ -24,6 +24,10 @@ set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm/include"
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
 )
+if (ENABLE_XRAY)
+    set (LLVM_INCLUDE_DIRS "${LLVM_INCLUDE_DIRS}" "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
+endif ()
+
 set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
 
 # There are compilation errors with C++23.
@@ -94,6 +98,10 @@ else()
         list(APPEND REQUIRED_LLVM_LIBRARIES LLVMSystemZInfo LLVMSystemZDesc LLVMSystemZCodeGen)
     elseif (ARCH_RISCV64)
         list(APPEND REQUIRED_LLVM_LIBRARIES LLVMRISCVInfo LLVMRISCVDesc LLVMRISCVCodeGen)
+    endif ()
+
+    if (ENABLE_XRAY)
+        list(APPEND REQUIRED_LLVM_LIBRARIES LLVMXRay)
     endif ()
 endif()
 

@@ -10,10 +10,6 @@
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/logger_useful.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesColumnsValidator.h>
@@ -533,12 +529,12 @@ namespace
                 LOG_INFO(log, "{}: Inserting {} rows to the {} table",
                          time_series_storage_id.getNameForLogs(), block.rows(), toString(table_kind));
 
-                auto insert_query = std::make_shared<ASTInsertQuery>();
+                auto insert_query = make_intrusive<ASTInsertQuery>();
                 insert_query->table_id = target_table_id;
 
-                auto columns_ast = std::make_shared<ASTExpressionList>();
+                auto columns_ast = make_intrusive<ASTExpressionList>();
                 for (const auto & name : block.getNames())
-                    columns_ast->children.emplace_back(std::make_shared<ASTIdentifier>(name));
+                    columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
                 insert_query->columns = columns_ast;
 
                 ContextMutablePtr insert_context = Context::createCopy(context);

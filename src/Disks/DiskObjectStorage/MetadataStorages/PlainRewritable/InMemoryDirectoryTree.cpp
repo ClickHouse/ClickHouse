@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -18,17 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-static std::filesystem::path normalizePath(std::string_view path)
-{
-    if (path.ends_with('/'))
-        path.remove_suffix(1);
-
-    if (path.starts_with('/'))
-        path.remove_prefix(1);
-
-    return std::filesystem::path(path);
 }
 
 struct InMemoryDirectoryTree::INode
@@ -56,9 +46,8 @@ struct InMemoryDirectoryTree::INode
     }
 };
 
-std::shared_ptr<InMemoryDirectoryTree::INode> InMemoryDirectoryTree::walk(const std::filesystem::path & path, bool create_missing) const
+std::shared_ptr<InMemoryDirectoryTree::INode> InMemoryDirectoryTree::walk(const NormalizedPath & path, bool create_missing) const
 {
-    chassert(normalizePath(path.string()) == path);
     std::shared_ptr<INode> node = root;
 
     for (const auto & step : fs::path(path))
@@ -74,9 +63,8 @@ std::shared_ptr<InMemoryDirectoryTree::INode> InMemoryDirectoryTree::walk(const 
     return node;
 }
 
-void InMemoryDirectoryTree::traverseSubtree(const std::filesystem::path & path, const ObserveFunction & observe) const
+void InMemoryDirectoryTree::traverseSubtree(const NormalizedPath & path, const ObserveFunction & observe) const
 {
-    chassert(normalizePath(path.string()) == path);
     std::vector<std::pair<fs::path, std::shared_ptr<INode>>> unvisited;
 
     if (auto start_node = walk(path))
@@ -95,7 +83,7 @@ void InMemoryDirectoryTree::traverseSubtree(const std::filesystem::path & path, 
     }
 }
 
-std::filesystem::path InMemoryDirectoryTree::determineNodePath(std::shared_ptr<INode> node) const TSA_REQUIRES(mutex)
+NormalizedPath InMemoryDirectoryTree::determineNodePath(std::shared_ptr<INode> node) const TSA_REQUIRES(mutex)
 {
     std::vector<std::string> path_parts;
     while (auto parent = node->parent.lock())
@@ -108,7 +96,7 @@ std::filesystem::path InMemoryDirectoryTree::determineNodePath(std::shared_ptr<I
     for (const auto & step : path_parts | std::views::reverse)
         nodes_path /= step;
 
-    return nodes_path;
+    return NormalizedPath{nodes_path};
 }
 
 std::shared_ptr<InMemoryDirectoryTree::INode> InMemoryDirectoryTree::trimDanglingVirtualPath(std::shared_ptr<INode> node)
@@ -186,11 +174,11 @@ std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> InMemoryDire
     return subtree_info;
 }
 
-std::optional<FileRemoteInfo> InMemoryDirectoryTree::getFileRemoteInfo(const std::string & path) const
+std::optional<DirectoryRemoteInfo> InMemoryDirectoryTree::getDirectoryRemoteInfo(const std::string & path) const
 {
     std::lock_guard guard(mutex);
     const auto normalized_path = normalizePath(path);
-    const auto inode = walk(normalized_path.parent_path());
+    const auto inode = walk(normalized_path);
 
     if (!inode)
         return std::nullopt;
@@ -198,10 +186,21 @@ std::optional<FileRemoteInfo> InMemoryDirectoryTree::getFileRemoteInfo(const std
     if (inode->isVirtual())
         return std::nullopt;
 
-    if (!inode->remote_info->files.contains(normalized_path.filename()))
+    return inode->remote_info;
+}
+
+std::optional<FileRemoteInfo> InMemoryDirectoryTree::getFileRemoteInfo(const std::string & path) const
+{
+    const auto normalized_path = normalizePath(path);
+    const auto directory_remote_info = getDirectoryRemoteInfo(normalized_path.parent_path());
+
+    if (!directory_remote_info)
         return std::nullopt;
 
-    return inode->remote_info->files.at(normalized_path.filename());
+    if (!directory_remote_info->files.contains(normalized_path.filename()))
+        return std::nullopt;
+
+    return directory_remote_info->files.at(normalized_path.filename());
 }
 
 void InMemoryDirectoryTree::recordDirectoryPath(const std::string & path, DirectoryRemoteInfo info)
@@ -212,9 +211,6 @@ void InMemoryDirectoryTree::recordDirectoryPath(const std::string & path, Direct
 
     if (!inode->isVirtual())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' was already recorded", normalized_path.string());
-
-    if (!inode->subdirectories.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", normalized_path.string());
 
     remote_path_to_inode[info.remote_path] = inode;
     inode->remote_info = std::move(info);
@@ -335,6 +331,18 @@ std::pair<bool, std::optional<DirectoryRemoteInfo>> InMemoryDirectoryTree::exist
         return {true, std::nullopt};
 
     return {true, inode->remote_info};
+}
+
+bool InMemoryDirectoryTree::existsVirtualDirectory(const std::string & path) const
+{
+    std::lock_guard guard(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto inode = walk(normalized_path);
+
+    if (!inode)
+        return false;
+
+    return inode->isVirtual();
 }
 
 bool InMemoryDirectoryTree::existsFile(const std::string & path) const

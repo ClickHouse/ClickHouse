@@ -22,7 +22,6 @@ namespace DB
 {
 
 class ArrowColumnToCHColumn;
-class ParquetRecordReader;
 
 // Parquet files contain a metadata block with the following information:
 //  * list of columns,
@@ -248,9 +247,6 @@ private:
         std::vector<int> row_groups_idxs;
 
         // These are only used by the decoding thread, so don't require locking the mutex.
-        // If use_native_reader, only native_record_reader is used;
-        // otherwise, only native_record_reader is not used.
-        std::shared_ptr<ParquetRecordReader> native_record_reader;
         std::unique_ptr<parquet::arrow::FileReader> file_reader;
         std::unique_ptr<RowGroupPrefetchIterator> prefetch_iterator;
         std::shared_ptr<arrow::RecordBatchReader> record_batch_reader;

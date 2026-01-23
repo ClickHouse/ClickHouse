@@ -88,7 +88,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     auto * storage = create_query->storage;
 
     bool is_replicated_or_shared_engine = false;
-    auto engine = std::make_shared<ASTFunction>();
+    auto engine = make_intrusive<ASTFunction>();
 
     static constexpr std::string_view replicated_engine_prefix = "Replicated";
 
@@ -110,7 +110,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
 
     /// Add old engine's arguments
-    auto args = std::make_shared<ASTExpressionList>();
+    auto args = make_intrusive<ASTExpressionList>();
 
     if (storage->engine->arguments)
     {
@@ -138,7 +138,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     }
     else
     {
-        auto settings_ast = std::make_shared<ASTSetQuery>();
+        auto settings_ast = make_intrusive<ASTSetQuery>();
         storage->set(storage->settings, settings_ast);
         settings = storage->settings;
     }
@@ -362,7 +362,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
     for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
         std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-        runner([batch, &process_metadata_file]() mutable
+        runner.enqueueAndKeepTrack([batch, &process_metadata_file]() mutable
             {
                 for (const auto & file : batch)
                     process_metadata_file(file);
@@ -418,10 +418,10 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(comment));
     }
 
     return ast;

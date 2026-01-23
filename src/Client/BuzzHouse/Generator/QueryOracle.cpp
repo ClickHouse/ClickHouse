@@ -1,10 +1,7 @@
-#include <cstdio>
-
-#include <Common/checkStackSize.h>
-
 #include <Client/BuzzHouse/Generator/QueryOracle.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
@@ -18,20 +15,25 @@ namespace BuzzHouse
 {
 
 const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_CSV},
-       {OutFormat::OUT_JSON,
-        OutFormat::OUT_JSONColumns,
-        OutFormat::OUT_JSONColumnsWithMetadata,
-        OutFormat::OUT_JSONCompact,
-        OutFormat::OUT_JSONCompactColumns,
-        OutFormat::OUT_JSONCompactEachRow,
-        OutFormat::OUT_JSONCompactStringsEachRow,
-        OutFormat::OUT_JSONEachRow,
-        OutFormat::OUT_JSONLines,
-        OutFormat::OUT_JSONObjectEachRow,
-        OutFormat::OUT_JSONStringsEachRow},
-       {OutFormat::OUT_TabSeparated, OutFormat::OUT_TabSeparatedRaw},
-       {OutFormat::OUT_Values}};
+    = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
+
+static void finishSettings(SettingValues * svs)
+{
+    /// Wait for mutations to finish
+    static const std::unordered_map<String, String> & toSet
+        = {{"alter_sync", "2"},
+           {"apply_deleted_mask", "1"},
+           {"apply_patch_parts", "1"},
+           {"lightweight_deletes_sync", "2"},
+           {"mutations_sync", "2"}};
+    for (const auto & [key, val] : toSet)
+    {
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+
+        sv->set_property(key);
+        sv->set_value(val);
+    }
+}
 
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
@@ -41,7 +43,8 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
 {
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
-    SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
+    Select * sel = ts->mutable_sel();
+    SelectStatementCore * ssc = sel->mutable_select_core();
     /// TODO fix this 0 WHERE, 1 HAVING, 2 WHERE + HAVING
     const uint32_t combination = 0;
 
@@ -81,6 +84,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.enforceFinal(false);
     gen.setAllowEngineUDF(true);
 
+    finishSettings(sel->mutable_setting_values());
     ts->set_format(OutFormat::OUT_CSV);
     /// If the file fails to be removed due to a legitimate way, the oracle will fail anyway
     const auto err = std::filesystem::remove(qcfile);
@@ -96,8 +100,10 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
-    SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sq1.single_query().explain().inner_query().select().sel().select_core());
-    SelectStatementCore * ssc2 = ts->mutable_sel()->mutable_select_core();
+    Select & sel1 = const_cast<Select &>(sq1.single_query().explain().inner_query().select().sel());
+    SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sel1.select_core());
+    Select * sel2 = ts->mutable_sel();
+    SelectStatementCore * ssc2 = sel2->mutable_select_core();
     SQLFuncCall * sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
@@ -122,6 +128,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
+    sel2->set_allocated_setting_values(sel1.release_setting_values());
     ts->set_format(sq1.single_query().explain().inner_query().select().format());
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
@@ -155,64 +162,117 @@ void QueryOracle::insertOnTableOrCluster(
 
 /// Dump and read table oracle
 void QueryOracle::dumpTableContent(
-    RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq1)
+    RandomGenerator & rg,
+    StatementGenerator & gen,
+    const DumpOracleStrategy strategy,
+    const bool test_content,
+    const SQLTable & t,
+    SQLQuery & sq1,
+    SQLQuery & sq2)
 {
-    bool first = true;
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     Select * sel = ts->mutable_sel();
     SelectStatementCore * ssc = sel->mutable_select_core();
     JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-    OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
 
     insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
     jtf->set_final(t.supportsFinal());
-
-    gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
-    for (const auto & entry : gen.entries)
+    switch (strategy)
     {
-        ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
+        case DumpOracleStrategy::DUMP_TABLE:
+        case DumpOracleStrategy::OPTIMIZE:
+        case DumpOracleStrategy::REATTACH:
+        case DumpOracleStrategy::BACKUP_RESTORE: {
+            /// Dump entire table and compare contents
+            bool first = true;
+            OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
 
-        gen.columnPathRef(entry, ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
-        gen.columnPathRef(entry, eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
-        if (rg.nextBool())
-        {
-            eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
+            gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
+            for (const auto & entry : gen.entries)
+            {
+                ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
+
+                gen.columnPathRef(entry, ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
+                gen.columnPathRef(entry, eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
+                if (rg.nextBool())
+                {
+                    eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
+                }
+                if (rg.nextBool())
+                {
+                    eot->set_nulls_order(
+                        rg.nextBool() ? ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_FIRST
+                                      : ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_LAST);
+                }
+                first = false;
+            }
+            gen.entries.clear();
         }
-        if (rg.nextBool())
-        {
-            eot->set_nulls_order(
-                rg.nextBool() ? ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_FIRST
-                              : ExprOrderingTerm_NullsOrder::ExprOrderingTerm_NullsOrder_LAST);
+        break;
+        case DumpOracleStrategy::ALTER_UPDATE:
+            /// Just match the count
+            ssc->add_result_columns()
+                ->mutable_eca()
+                ->mutable_expr()
+                ->mutable_comp_expr()
+                ->mutable_func_call()
+                ->mutable_func()
+                ->set_catalog_func(FUNCcount);
+            break;
+        case DumpOracleStrategy::INSERT_COUNT: {
+            /// On the first step get the current count plus the rows to be inserted
+            BinaryExpr * bexpr = ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+
+            nrows = rows_dist(rg.generator);
+            bexpr->set_op(BinaryOperator::BINOP_PLUS);
+            bexpr->mutable_lhs()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(FUNCcount);
+            bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(nrows);
         }
-        first = false;
+        break;
     }
-    gen.entries.clear();
-
     if (test_content)
     {
-        /// Don't write statistics
-        if (!sel->has_setting_values())
-        {
-            const auto * news = sel->mutable_setting_values();
-            UNUSED(news);
-        }
-        SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
-        SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
-
-        sv->set_property("output_format_write_statistics");
-        sv->set_value("0");
+        finishSettings(sel->mutable_setting_values());
     }
     ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+    /// Prepare second query
+    switch (strategy)
+    {
+        case DumpOracleStrategy::DUMP_TABLE:
+        case DumpOracleStrategy::OPTIMIZE:
+        case DumpOracleStrategy::REATTACH:
+        case DumpOracleStrategy::BACKUP_RESTORE:
+        case DumpOracleStrategy::ALTER_UPDATE:
+            /// Second step equal as the first one
+            sq2.CopyFrom(sq1);
+            break;
+        case DumpOracleStrategy::INSERT_COUNT: {
+            /// In the second step, just get the total count
+            sq2.CopyFrom(sq1);
+            SelectStatementCore & scc
+                = const_cast<SelectStatementCore &>(sq2.single_query().explain().inner_query().select().sel().select_core());
+            scc.clear_result_columns();
+            scc.add_result_columns()
+                ->mutable_eca()
+                ->mutable_expr()
+                ->mutable_comp_expr()
+                ->mutable_func_call()
+                ->mutable_func()
+                ->set_catalog_func(FUNCcount);
+        }
+        break;
+    }
 }
 
 void QueryOracle::generateExportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const bool test_content, const SQLTable & t, SQLQuery & sq2)
 {
+    SettingValues * svs = nullptr;
     Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
     Expr * expr = ff->mutable_structure();
@@ -232,7 +292,7 @@ void QueryOracle::generateExportQuery(
     if (!can_test_oracle_result && rg.nextSmallNumber() < 3)
     {
         /// Sometimes generate a not matching structure
-        gen.addRandomRelation(rg, std::nullopt, gen.entries.size(), expr);
+        gen.addRandomRelation(rg, std::nullopt, static_cast<uint32_t>(gen.entries.size()), expr);
     }
     else
     {
@@ -267,16 +327,22 @@ void QueryOracle::generateExportQuery(
     if (rg.nextSmallNumber() < 10)
     {
         const auto & settings = can_test_oracle_result ? serverSettings : formatSettings;
-        gen.generateSettingValues(rg, settings, ins->mutable_setting_values());
-        const SettingValues & svs = ins->setting_values();
 
-        for (int i = 0; i < (svs.other_values_size() + 1) && can_test_oracle_result; i++)
+        svs = ins->mutable_setting_values();
+        gen.generateSettingValues(rg, settings, svs);
+        for (int i = 0; i < (svs->other_values_size() + 1) && can_test_oracle_result; i++)
         {
-            const SetValue & osv = i == 0 ? svs.set_value() : svs.other_values(i - 1);
+            const SetValue & osv = i == 0 ? svs->set_value() : svs->other_values(i - 1);
             const CHSetting & ochs = settings.at(osv.property());
 
             can_test_oracle_result &= !ochs.changes_behavior;
         }
+    }
+    if (can_test_oracle_result)
+    {
+        /// Ensure deleted mask and patch parts are applied
+        svs = svs ? svs : ins->mutable_setting_values();
+        finishSettings(svs);
     }
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -288,24 +354,26 @@ void QueryOracle::generateExportQuery(
 void QueryOracle::dumpOracleIntermediateSteps(
     RandomGenerator & rg,
     StatementGenerator & gen,
-    const SQLTable & t,
+    SQLTable & t,
     const DumpOracleStrategy strategy,
     const bool test_content,
     std::vector<SQLQuery> & intermediate_queries)
 {
+    SQLQuery next;
+    const std::optional<String> & cluster = t.getCluster();
+
     intermediate_queries.clear();
+    gen.setAllowNotDetermistic(false);
     switch (strategy)
     {
         case DumpOracleStrategy::DUMP_TABLE: {
-            SQLQuery next1;
             SQLQuery next2;
             SQLQuery next3;
-            const std::optional<String> & cluster = t.getCluster();
             const auto & t2
                 = test_content ? t : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format)).get();
 
             /// Export data
-            generateExportQuery(rg, gen, test_content, t, next1);
+            generateExportQuery(rg, gen, test_content, t, next);
             /// Truncate table, then insert everything again
             Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
 
@@ -315,26 +383,27 @@ void QueryOracle::dumpOracleIntermediateSteps(
                 trunc->mutable_cluster()->set_cluster(cluster.value());
             }
             /// Import data again
-            generateImportQuery(rg, gen, t2, next1, next3);
+            generateImportQuery(rg, gen, t2, next, next3);
 
-            intermediate_queries.emplace_back(next1);
+            intermediate_queries.emplace_back(next);
             intermediate_queries.emplace_back(next2);
             intermediate_queries.emplace_back(next3);
         }
         break;
         case DumpOracleStrategy::OPTIMIZE: {
-            SQLQuery next;
+            OptimizeTable * ot = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_opt();
 
-            gen.generateNextOptimizeTableInternal(
-                rg, t, true, next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_opt());
+            gen.generateNextOptimizeTableInternal(rg, t, true, ot);
+            if (rg.nextSmallNumber() < 3)
+            {
+                gen.generateSettingValues(rg, serverSettings, ot->mutable_setting_values());
+            }
             intermediate_queries.emplace_back(next);
         }
         break;
         case DumpOracleStrategy::REATTACH: {
-            SQLQuery next1;
             SQLQuery next2;
-            const std::optional<String> & cluster = t.getCluster();
-            Detach * det = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_detach();
+            Detach * det = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_detach();
             Attach * att = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_attach();
 
             det->set_sobject(SQLObject::TABLE);
@@ -357,67 +426,136 @@ void QueryOracle::dumpOracleIntermediateSteps(
             {
                 gen.generateSettingValues(rg, serverSettings, att->mutable_setting_values());
             }
-            intermediate_queries.emplace_back(next1);
+            intermediate_queries.emplace_back(next);
             intermediate_queries.emplace_back(next2);
         }
         break;
         case DumpOracleStrategy::BACKUP_RESTORE: {
-            SQLQuery next1;
-            SQLQuery next2;
-            std::optional<String> cluster;
-            BackupRestore * bac = next1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
-            BackupRestore * res = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
-            SettingValues * bac_vals = nullptr;
-            SettingValues * res_vals = nullptr;
+            SQLQuery next3;
+            std::optional<String> bcluster;
+            BackupRestore * bac = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
+            BackupRestore * res = next3.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_backup_restore();
+            SettingValues * bsett = nullptr;
+            SettingValues * rsett = nullptr;
+            BackupRestoreObject * baco = bac->mutable_backup_element()->mutable_bobject();
+            const String dname = t.getDatabaseName();
+            const String tname = t.getTableName();
+            const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
 
             bac->set_command(BackupRestore_BackupCommand_BACKUP);
             res->set_command(BackupRestore_BackupCommand_RESTORE);
-            cluster = gen.backupOrRestoreObject(bac->mutable_backup_element()->mutable_bobject(), SQLObject::TABLE, t);
-            cluster = gen.backupOrRestoreObject(res->mutable_backup_element()->mutable_bobject(), SQLObject::TABLE, t);
-            if (cluster.has_value())
+
+            t.setName(baco->mutable_object()->mutable_est(), false);
+            bcluster = gen.backupOrRestoreObject(baco, SQLObject::TABLE, t);
+            if (bcluster.has_value())
             {
-                bac->mutable_cluster()->set_cluster(cluster.value());
-                res->mutable_cluster()->set_cluster(cluster.value());
+                bac->mutable_cluster()->set_cluster(bcluster.value());
+                res->mutable_cluster()->set_cluster(bcluster.value());
+            }
+            if (table_has_partitions && rg.nextSmallNumber() < 4)
+            {
+                baco->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
             }
 
             gen.setBackupDestination(rg, bac);
             res->set_backup_number(bac->backup_number());
             res->set_out(bac->out());
             res->mutable_params()->CopyFrom(bac->params());
+            res->mutable_backup_element()->mutable_bobject()->CopyFrom(bac->backup_element().bobject());
 
             bac->set_sync(BackupRestore_SyncOrAsync_SYNC);
             res->set_sync(BackupRestore_SyncOrAsync_SYNC);
             if (rg.nextSmallNumber() < 4)
             {
-                bac_vals = bac->mutable_setting_values();
-                gen.generateSettingValues(rg, backupSettings, bac_vals);
+                bsett = bac->mutable_setting_values();
+                gen.generateSettingValues(rg, backupSettings, bsett);
+                SetValue * sv = bsett->has_set_value() ? bsett->add_other_values() : bsett->mutable_set_value();
+
+                /// Make sure to backup everything
+                sv->set_property("structure_only");
+                sv->set_value("0");
             }
             if (rg.nextSmallNumber() < 4)
             {
-                bac_vals = bac_vals ? bac_vals : bac->mutable_setting_values();
-                gen.generateSettingValues(rg, formatSettings, bac_vals);
+                bsett = bsett ? bsett : bac->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, bsett);
             }
             if (rg.nextSmallNumber() < 4)
             {
-                res_vals = res->mutable_setting_values();
-                gen.generateSettingValues(rg, restoreSettings, res_vals);
+                rsett = res->mutable_setting_values();
+                gen.generateSettingValues(rg, restoreSettings, rsett);
+                SetValue * sv = rsett->has_set_value() ? rsett->add_other_values() : rsett->mutable_set_value();
+
+                /// Make sure to recover everything
+                sv->set_property("structure_only");
+                sv->set_value("0");
             }
             if (rg.nextSmallNumber() < 4)
             {
-                res_vals = res_vals ? res_vals : res->mutable_setting_values();
-                gen.generateSettingValues(rg, formatSettings, res_vals);
+                rsett = rsett ? rsett : res->mutable_setting_values();
+                gen.generateSettingValues(rg, formatSettings, rsett);
             }
-            intermediate_queries.emplace_back(next1);
-            intermediate_queries.emplace_back(next2);
+
+            intermediate_queries.emplace_back(next);
+            if (baco->partitions_size() == 0)
+            {
+                /// Truncate table, so it is restored into an empty one
+                SQLQuery next2;
+                Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
+
+                t.setName(trunc->mutable_est(), false);
+                if (cluster.has_value())
+                {
+                    trunc->mutable_cluster()->set_cluster(cluster.value());
+                }
+                intermediate_queries.emplace_back(next2);
+            }
+            intermediate_queries.emplace_back(next3);
         }
         break;
+        case DumpOracleStrategy::ALTER_UPDATE: {
+            if (!t.areInsertsAppends() || rg.nextBool())
+            {
+                std::optional<String> acluster;
+                Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+
+                acluster = gen.alterSingleTable(rg, t, 1, false, t.areInsertsAppends(), false, at);
+                if (acluster.has_value())
+                {
+                    at->mutable_cluster()->set_cluster(acluster.value());
+                }
+                if (rg.nextSmallNumber() < 3)
+                {
+                    gen.generateSettingValues(rg, serverSettings, at->mutable_setting_values());
+                }
+            }
+            else
+            {
+                LightUpdate * upt = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_upt();
+
+                gen.generateNextUpdateOrDeleteOnTable<LightUpdate>(rg, t, upt);
+            }
+            intermediate_queries.emplace_back(next);
+        }
+        break;
+        case DumpOracleStrategy::INSERT_COUNT: {
+            SQLQuery next2;
+            Insert * ins = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
+
+            chassert(nrows);
+            next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_system_cmd()->set_flush_async_insert_queue(
+                true);
+            gen.generateInsertToTable(rg, t, false, nrows, ins);
+            intermediate_queries.emplace_back(next);
+            intermediate_queries.emplace_back(next2);
+        }
     }
+    gen.setAllowNotDetermistic(true);
 }
 
 void QueryOracle::generateImportQuery(
     RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const
 {
-    SettingValues * svs = nullptr;
     Insert * nins = sq4.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
@@ -444,22 +582,27 @@ void QueryOracle::generateImportQuery(
     if (!can_test_oracle_result && rg.nextSmallNumber() < 10)
     {
         /// If can't test success, swap settings sometimes
-        svs = nins->mutable_setting_values();
-        gen.generateSettingValues(rg, formatSettings, svs);
+        gen.generateSettingValues(rg, formatSettings, nins->mutable_setting_values());
     }
     else if (oins.has_setting_values())
     {
-        svs = nins->mutable_setting_values();
+        SettingValues * svs = nins->mutable_setting_values();
+
         svs->CopyFrom(oins.setting_values());
     }
     if (can_test_oracle_result && inf == InFormat::IN_CSV)
     {
-        svs = svs ? svs : nins->mutable_setting_values();
+        SettingValues * svs = nins->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
         /// The oracle expects to read all the lines from the file
         sv->set_property("input_format_csv_detect_header");
         sv->set_value("0");
+    }
+    if (can_test_oracle_result)
+    {
+        /// Ensure deleted mask and patch parts are applied
+        finishSettings(nins->mutable_setting_values());
     }
 }
 
@@ -682,31 +825,21 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
     }
+    SettingValues * svs = sel->mutable_setting_values();
 
-    /// Don't write statistics
-    if (!sel->has_setting_values())
-    {
-        const auto * news = sel->mutable_setting_values();
-        UNUSED(news);
-    }
-    SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
-    SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
-
-    sv->set_property("output_format_write_statistics");
-    sv->set_value("0");
+    finishSettings(svs);
     if (measure_performance)
     {
         /// Add tag to find query later on
-        SetValue * sv2 = svs.add_other_values();
-
-        sv2->set_property("log_comment");
-        sv2->set_value("'measure_performance'");
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+        sv->set_property("log_comment");
+        sv->set_value("'measure_performance'");
     }
     else if (indexes)
     {
         /// These settings are relevant to show index information
-        SetValue * sv2 = svs.add_other_values();
-        SetValue * sv3 = svs.add_other_values();
+        SetValue * sv2 = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+        SetValue * sv3 = svs->add_other_values();
 
         sv2->set_property("use_query_condition_cache");
         sv2->set_value("0");
@@ -715,144 +848,45 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
 }
 
-void QueryOracle::swapQuery(RandomGenerator & rg, StatementGenerator & gen, google::protobuf::Message & mes)
+void QueryOracle::iterateQuery(google::protobuf::Message & message, const std::vector<MatchHandler> & rules)
 {
+    const google::protobuf::Descriptor * desc = message.GetDescriptor();
+    const google::protobuf::Reflection * refl = message.GetReflection();
+
     checkStackSize();
-
-    if (mes.GetTypeName() == "BuzzHouse.Select")
+    for (const auto & rh : rules)
     {
-        auto & sel = static_cast<Select &>(mes);
+        if (rh.predicate(message))
+        {
+            /// If this message itself is the target type, mutate it.
+            rh.handler(message);
+        }
+    }
+    const int field_count = desc->field_count();
+    for (int i = 0; i < field_count; ++i)
+    {
+        const google::protobuf::FieldDescriptor * field = desc->field(i);
 
-        if (sel.has_select_core())
+        if (field->is_repeated())
         {
-            swapQuery(rg, gen, const_cast<SelectStatementCore &>(sel.select_core()));
-        }
-        else if (sel.has_set_query())
-        {
-            swapQuery(rg, gen, const_cast<SetQuery &>(sel.set_query()));
-        }
-        if (sel.has_ctes())
-        {
-            if (sel.ctes().cte().has_cte_query())
+            if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE)
             {
-                swapQuery(rg, gen, const_cast<Select &>(sel.ctes().cte().cte_query().query()));
-            }
-            for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
-            {
-                if (sel.ctes().other_ctes(i).has_cte_query())
+                const int n = refl->FieldSize(message, field);
+                for (int idx = 0; idx < n; ++idx)
                 {
-                    swapQuery(rg, gen, const_cast<Select &>(sel.ctes().other_ctes(i).cte_query().query()));
+                    google::protobuf::Message * sub = refl->MutableRepeatedMessage(&message, field, idx);
+                    iterateQuery(*sub, rules);
                 }
             }
         }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.SetQuery")
-    {
-        auto & setq = static_cast<SetQuery &>(mes);
-
-        swapQuery(rg, gen, const_cast<Select &>(setq.sel1().inner_query().select().sel()));
-        swapQuery(rg, gen, const_cast<Select &>(setq.sel2().inner_query().select().sel()));
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
-    {
-        auto & ssc = static_cast<SelectStatementCore &>(mes);
-
-        if (ssc.has_from())
+        else if (field->cpp_type() == google::protobuf::FieldDescriptor::CPPTYPE_MESSAGE)
         {
-            swapQuery(rg, gen, const_cast<JoinedQuery &>(ssc.from().tos()));
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.JoinedQuery")
-    {
-        auto & jquery = static_cast<JoinedQuery &>(mes);
-
-        for (int i = 0; i < jquery.tos_list_size(); i++)
-        {
-            swapQuery(rg, gen, const_cast<TableOrSubquery &>(jquery.tos_list(i)));
-        }
-        swapQuery(rg, gen, const_cast<JoinClause &>(jquery.join_clause()));
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.JoinClause")
-    {
-        auto & jclause = static_cast<JoinClause &>(mes);
-
-        for (int i = 0; i < jclause.clauses_size(); i++)
-        {
-            if (jclause.clauses(i).has_core())
+            if (!refl->HasField(message, field))
             {
-                swapQuery(rg, gen, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()));
+                continue;
             }
-        }
-        swapQuery(rg, gen, const_cast<TableOrSubquery &>(jclause.tos()));
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableOrSubquery")
-    {
-        auto & tos = static_cast<TableOrSubquery &>(mes);
-
-        if (tos.has_joined_table())
-        {
-            auto & jtf = const_cast<JoinedTableOrFunction &>(tos.joined_table());
-
-            swapQuery(rg, gen, const_cast<TableOrFunction &>(jtf.tof()));
-        }
-        else if (tos.has_joined_query())
-        {
-            swapQuery(rg, gen, const_cast<JoinedQuery &>(tos.joined_query()));
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableFunction")
-    {
-        auto & tfunc = static_cast<TableFunction &>(mes);
-
-        if (tfunc.has_loop())
-        {
-            swapQuery(rg, gen, const_cast<TableOrFunction &>(tfunc.loop()));
-        }
-        else if (tfunc.has_remote() || tfunc.has_cluster())
-        {
-            swapQuery(rg, gen, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()));
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableOrFunction")
-    {
-        auto & torfunc = static_cast<TableOrFunction &>(mes);
-
-        if (torfunc.has_est() && !compare_explain)
-        {
-            const ExprSchemaTable & est = torfunc.est();
-
-            if ((!est.has_database()
-                 || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
-                     && est.database().database() != "information_schema"))
-                && est.table().table().at(0) == 't')
-            {
-                const uint32_t tname = gen.getIdentifierFromString(est.table().table());
-
-                if (gen.tables.contains(tname))
-                {
-                    /// Replace table with table function call
-                    const SQLTable & t = gen.tables.at(tname);
-
-                    gen.setAllowNotDetermistic(false);
-                    if (t.isEngineReplaceable() && rg.nextSmallNumber() < 5)
-                    {
-                        gen.setTableFunction(rg, TableFunctionUsage::EngineReplace, t, torfunc.mutable_tfunc());
-                    }
-                    else if (rg.nextSmallNumber() < 3)
-                    {
-                        gen.setTableFunction(rg, TableFunctionUsage::RemoteCall, t, torfunc.mutable_tfunc());
-                    }
-                    gen.setAllowNotDetermistic(true);
-                }
-            }
-        }
-        else if (torfunc.has_tfunc())
-        {
-            swapQuery(rg, gen, const_cast<TableFunction &>(torfunc.tfunc()));
-        }
-        else if (torfunc.has_select())
-        {
-            swapQuery(rg, gen, const_cast<Select &>(torfunc.select().inner_query().select().sel()));
+            google::protobuf::Message * sub = refl->MutableMessage(&message, field);
+            iterateQuery(*sub, rules);
         }
     }
 }
@@ -864,173 +898,52 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGe
     if (rg.nextBool())
     {
         /// Swap query parts
+        std::vector<MatchHandler> rules;
         const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
         Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
 
-        swapQuery(rg, gen, nsel);
-    }
-}
-
-bool QueryOracle::findTablesWithPeersAndReplace(
-    RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, const bool replace)
-{
-    checkStackSize();
-
-    if (mes.GetTypeName() == "BuzzHouse.Select")
-    {
-        auto & sel = static_cast<Select &>(mes);
-
-        if (sel.has_select_core())
-        {
-            const auto u = findTablesWithPeersAndReplace(rg, const_cast<SelectStatementCore &>(sel.select_core()), gen, replace);
-            UNUSED(u);
-        }
-        else if (sel.has_set_query())
-        {
-            const auto u = findTablesWithPeersAndReplace(rg, const_cast<SetQuery &>(sel.set_query()), gen, replace);
-            UNUSED(u);
-        }
-        if (sel.has_ctes())
-        {
-            if (sel.ctes().cte().has_cte_query())
-            {
-                const auto u = findTablesWithPeersAndReplace(rg, const_cast<Select &>(sel.ctes().cte().cte_query().query()), gen, replace);
-                UNUSED(u);
-            }
-            for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
-            {
-                if (sel.ctes().other_ctes(i).has_cte_query())
+        rules.push_back(
+            MatchHandler{
+                .predicate
+                = [](const google::protobuf::Message & m) { return m.GetDescriptor()->full_name() == "BuzzHouse.TableOrFunction"; },
+                .handler =
+                    [&](google::protobuf::Message & message)
                 {
-                    const auto u = findTablesWithPeersAndReplace(
-                        rg, const_cast<Select &>(sel.ctes().other_ctes(i).cte_query().query()), gen, replace);
-                    UNUSED(u);
-                }
-            }
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.SetQuery")
-    {
-        auto & setq = static_cast<SetQuery &>(mes);
+                    TableOrFunction * tf = dynamic_cast<TableOrFunction *>(&message);
 
-        const auto u = findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel1().inner_query().select().sel()), gen, replace);
-        const auto w = findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel2().inner_query().select().sel()), gen, replace);
-
-        UNUSED(u);
-        UNUSED(w);
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
-    {
-        auto & ssc = static_cast<SelectStatementCore &>(mes);
-
-        if (ssc.has_from())
-        {
-            const auto u = findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(ssc.from().tos()), gen, replace);
-            UNUSED(u);
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.JoinedQuery")
-    {
-        auto & jquery = static_cast<JoinedQuery &>(mes);
-
-        for (int i = 0; i < jquery.tos_list_size(); i++)
-        {
-            const auto u = findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jquery.tos_list(i)), gen, replace);
-            UNUSED(u);
-        }
-        const auto u = findTablesWithPeersAndReplace(rg, const_cast<JoinClause &>(jquery.join_clause()), gen, replace);
-        UNUSED(u);
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.JoinClause")
-    {
-        auto & jclause = static_cast<JoinClause &>(mes);
-
-        for (int i = 0; i < jclause.clauses_size(); i++)
-        {
-            if (jclause.clauses(i).has_core())
-            {
-                const auto u
-                    = findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()), gen, replace);
-                UNUSED(u);
-            }
-        }
-        const auto u = findTablesWithPeersAndReplace(rg, const_cast<TableOrSubquery &>(jclause.tos()), gen, replace);
-        UNUSED(u);
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableOrSubquery")
-    {
-        auto & tos = static_cast<TableOrSubquery &>(mes);
-
-        if (tos.has_joined_table())
-        {
-            auto & jtf = const_cast<JoinedTableOrFunction &>(tos.joined_table());
-
-            const auto has_external_peer = findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(jtf.tof()), gen, replace);
-            /// Remove final for MySQL and PostgreSQL calls
-            jtf.set_final(jtf.final() && !has_external_peer);
-        }
-        else if (tos.has_joined_query())
-        {
-            return findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(tos.joined_query()), gen, replace);
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableFunction")
-    {
-        auto & tfunc = static_cast<TableFunction &>(mes);
-
-        if (tfunc.has_loop())
-        {
-            return findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(tfunc.loop()), gen, replace);
-        }
-        else if (tfunc.has_remote() || tfunc.has_cluster())
-        {
-            return findTablesWithPeersAndReplace(
-                rg, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()), gen, replace);
-        }
-    }
-    else if (mes.GetTypeName() == "BuzzHouse.TableOrFunction")
-    {
-        auto & torfunc = static_cast<TableOrFunction &>(mes);
-
-        if (torfunc.has_est())
-        {
-            bool res = false;
-            const ExprSchemaTable & est = torfunc.est();
-
-            if ((!est.has_database()
-                 || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
-                     && est.database().database() != "information_schema"))
-                && est.table().table().at(0) == 't')
-            {
-                const uint32_t tname = gen.getIdentifierFromString(est.table().table());
-
-                if (gen.tables.contains(tname))
-                {
-                    const SQLTable & t = gen.tables.at(tname);
-
-                    if (t.hasDatabasePeer())
+                    chassert(tf);
+                    if (tf && tf->has_est() && !compare_explain)
                     {
-                        if (replace)
+                        const ExprSchemaTable & est = tf->est();
+
+                        if ((!est.has_database()
+                             || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
+                                 && est.database().database() != "information_schema"))
+                            && est.table().table().at(0) == 't')
                         {
-                            insertOnTableOrCluster(rg, gen, t, true, &torfunc);
+                            const uint32_t tname = gen.getIdentifierFromString(est.table().table());
+
+                            if (gen.tables.contains(tname))
+                            {
+                                /// Replace table with table function call
+                                const SQLTable & t = gen.tables.at(tname);
+
+                                gen.setAllowNotDetermistic(false);
+                                if (t.isEngineReplaceable() && rg.nextSmallNumber() < 5)
+                                {
+                                    gen.setTableFunction(rg, TableFunctionUsage::EngineReplace, t, tf->mutable_tfunc());
+                                }
+                                else if (rg.nextSmallNumber() < 3)
+                                {
+                                    gen.setTableFunction(rg, TableFunctionUsage::RemoteCall, t, tf->mutable_tfunc());
+                                }
+                                gen.setAllowNotDetermistic(true);
+                            }
                         }
-                        found_tables.insert(tname);
-                        res = !t.hasClickHousePeer();
-                        can_test_oracle_result &= t.hasClickHousePeer();
                     }
-                }
-            }
-            return res;
-        }
-        else if (torfunc.has_tfunc())
-        {
-            return findTablesWithPeersAndReplace(rg, const_cast<TableFunction &>(torfunc.tfunc()), gen, replace);
-        }
-        else if (torfunc.has_select())
-        {
-            return findTablesWithPeersAndReplace(rg, const_cast<Select &>(torfunc.select().inner_query().select().sel()), gen, replace);
-        }
+                }});
+        iterateQuery(nsel, rules);
     }
-    return false;
 }
 
 void QueryOracle::truncatePeerTables(const StatementGenerator & gen)
@@ -1060,15 +973,64 @@ void QueryOracle::optimizePeerTables(const StatementGenerator & gen)
 void QueryOracle::replaceQueryWithTablePeers(
     RandomGenerator & rg, const SQLQuery & sq1, StatementGenerator & gen, std::vector<SQLQuery> & peer_queries, SQLQuery & sq2)
 {
+    std::vector<MatchHandler> rules;
     found_tables.clear();
     peer_queries.clear();
 
     sq2.CopyFrom(sq1);
     const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
     Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
+
     /// Replace references
-    const auto u = findTablesWithPeersAndReplace(rg, nsel, gen, peer_query != PeerQuery::ClickHouseOnly);
-    UNUSED(u);
+    rules.push_back(
+        MatchHandler{
+            .predicate = [](const google::protobuf::Message & m) { return m.GetDescriptor()->full_name() == "BuzzHouse.TableOrSubquery"; },
+            .handler =
+                [&](google::protobuf::Message & message)
+            {
+                TableOrSubquery * tos = dynamic_cast<TableOrSubquery *>(&message);
+
+                chassert(tos);
+                if (tos && tos->has_joined_table())
+                {
+                    bool res = false;
+                    JoinedTableOrFunction & jtf = const_cast<JoinedTableOrFunction &>(tos->joined_table());
+                    TableOrFunction & tf = const_cast<TableOrFunction &>(jtf.tof());
+
+                    if (tf.has_est())
+                    {
+                        const ExprSchemaTable & est = tf.est();
+
+                        if ((!est.has_database()
+                             || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
+                                 && est.database().database() != "information_schema"))
+                            && est.table().table().at(0) == 't')
+                        {
+                            const uint32_t tname = gen.getIdentifierFromString(est.table().table());
+
+                            if (gen.tables.contains(tname))
+                            {
+                                const SQLTable & t = gen.tables.at(tname);
+
+                                if (t.hasDatabasePeer())
+                                {
+                                    if (peer_query != PeerQuery::ClickHouseOnly)
+                                    {
+                                        insertOnTableOrCluster(rg, gen, t, true, &tf);
+                                    }
+                                    found_tables.insert(tname);
+                                    res = !t.hasClickHousePeer();
+                                    can_test_oracle_result &= t.hasClickHousePeer();
+                                }
+                            }
+                        }
+                    }
+                    /// Remove final for MySQL and PostgreSQL calls
+                    jtf.set_final(jtf.final() && !res);
+                }
+            }});
+    iterateQuery(nsel, rules);
+
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         /// Use a different file for the peer database
@@ -1085,7 +1047,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select()->mutable_select_core();
 
-        if (t.isMergeTreeFamily())
+        if (t.isMergeTreeFamily() && t.can_run_merges)
         {
             /// Apply delete mask
             SQLQuery next;
@@ -1099,15 +1061,11 @@ void QueryOracle::replaceQueryWithTablePeers(
                 alter->mutable_cluster()->set_cluster(cluster.value());
             }
             alter->mutable_alter()->mutable_delete_mask();
-            SetValue * sv = alter->mutable_setting_values()->mutable_set_value();
-            sv->set_property("mutations_sync");
-            sv->set_value("2");
             peer_queries.emplace_back(next);
         }
         /// Then insert the data
         insertOnTableOrCluster(rg, gen, t, true, ins->mutable_tof());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-
         insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
         jtf->set_final(t.supportsFinal());
         gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
@@ -1129,6 +1087,7 @@ void QueryOracle::resetOracleValues()
     first_errcode = 0;
     other_steps_sucess = true;
     can_test_oracle_result = fc.compare_success_results;
+    nrows = 0;
     res1 = PerformanceResult();
     res2 = PerformanceResult();
 }
@@ -1162,8 +1121,7 @@ void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalInte
     if (other_steps_sucess && can_test_oracle_result)
     {
         if (((first_errcode && !errcode) || (!first_errcode && errcode))
-            && (fc.oracle_ignore_error_codes.find(static_cast<uint32_t>(first_errcode ? first_errcode : errcode))
-                == fc.oracle_ignore_error_codes.end()))
+            && !fc.oracle_ignore_error_codes.contains(static_cast<uint32_t>(first_errcode ? first_errcode : errcode)))
         {
             throw DB::Exception(
                 DB::ErrorCodes::BUZZHOUSE,

@@ -236,7 +236,7 @@ void ColumnDynamic::insert(const Field & x)
     auto & variant_col = getVariantColumn();
     auto shared_variant_discr = getSharedVariantDiscriminator();
     /// Check if we can insert field into existing variants and avoid Variant extension.
-    for (size_t i = 0; i != variant_col.getNumVariants(); ++i)
+    for (ColumnVariant::Discriminator i = 0; i != variant_col.getNumVariants(); ++i)
     {
         if (i != shared_variant_discr && variant_col.getVariantByGlobalDiscriminator(i).tryInsert(x))
         {
@@ -727,7 +727,7 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
     shared_variant.getOffsets().push_back(chars.size());
 }
 
-std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
+std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
 {
     /// We cannot use Variant serialization here as it serializes discriminator + value,
     /// but Dynamic doesn't have fixed mapping discriminator <-> variant type
@@ -767,7 +767,7 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
     return {pos, sizeof(UInt8) + sizeof(size_t) + type_and_value.size()};
 }
 
-void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     auto & variant_col = getVariantColumn();
     UInt8 null_bit;
@@ -1423,6 +1423,15 @@ void ColumnDynamic::takeDynamicStructureFromColumn(const ColumnPtr & source_colu
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
         variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromColumn(source_variant_column.getVariantPtrByGlobalDiscriminator(i));
+}
+
+void ColumnDynamic::fixDynamicStructure()
+{
+    /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
+    /// to extend selected variants on inserts into this column.
+    /// -1 because we don't count shared variant in the limit.
+    max_dynamic_types = variant_info.variant_names.size() - 1;
+    getVariantColumn().fixDynamicStructure();
 }
 
 void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map)

@@ -1,15 +1,29 @@
 #pragma once
 
-#include <memory>
-#include <absl/container/inlined_vector.h>
+#include <vector>
+
+namespace DB
+{
+    class IAST;
+
+    void intrusive_ptr_add_ref(const IAST * p);
+    void intrusive_ptr_release(const IAST * p);
+}
+
+
+#include <boost/smart_ptr/intrusive_ref_counter.hpp>
+#include <boost/smart_ptr/intrusive_ptr.hpp>
 
 namespace DB
 {
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-/// sizeof(absl::InlinedVector<ASTPtr, N>) == 8 + N * 16.
-/// 7 elements take 120 Bytes which is ~128
-using ASTs = absl::InlinedVector<ASTPtr, 7>;
+using ASTPtr = boost::intrusive_ptr<IAST>;
+using ASTs = std::vector<ASTPtr>;
+
+template <typename T, typename ... Args>
+constexpr boost::intrusive_ptr<T> make_intrusive(Args && ... args)
+{
+    return boost::intrusive_ptr<T>(new T(std::forward<Args>(args)...));
+}
 
 }

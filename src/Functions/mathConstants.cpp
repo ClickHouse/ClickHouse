@@ -16,6 +16,9 @@ namespace
         static constexpr auto name = Impl::name;
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMathConstFloat64>(); }
         FunctionMathConstFloat64() : FunctionConstantBase<FunctionMathConstFloat64<Impl>, Float64, DataTypeFloat64>(Impl::value) {}
+
+        bool isDeterministic() const override { return true; }
+        bool isSuitableForConstantFolding() const override { return true; }
     };
 
 
@@ -48,7 +51,7 @@ Returns Euler's constant (e).
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT e();", "2.718281828459045"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionE>(documentation);
 }
@@ -64,7 +67,7 @@ Returns pi (π).
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT pi();", "3.141592653589793"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionPi>(documentation, FunctionFactory::Case::Insensitive);
 }

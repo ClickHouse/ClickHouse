@@ -51,14 +51,14 @@ enum class ExtractAllGroupsResultKind : uint8_t
 template <typename Impl>
 class FunctionExtractAllGroups : public IFunction
 {
-    ContextPtr context;
+    const UInt64 regexp_max_matches_per_row;
 
 public:
     static constexpr auto Kind = Impl::Kind;
     static constexpr auto name = Impl::Name;
 
-    explicit FunctionExtractAllGroups(ContextPtr context_)
-        : context(context_)
+    explicit FunctionExtractAllGroups(ContextPtr context)
+        : regexp_max_matches_per_row(context->getSettingsRef()[Setting::regexp_max_matches_per_row].value)
     {}
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionExtractAllGroups>(context); }
@@ -158,9 +158,6 @@ public:
         }
         else
         {
-            /// Additional limit to fail fast on supposedly incorrect usage.
-            const auto max_matches_per_row = context->getSettingsRef()[Setting::regexp_max_matches_per_row].value;
-
             PODArray<std::string_view, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.
             PODArray<size_t, 0> number_of_matches_per_row;
@@ -188,10 +185,11 @@ public:
                         all_matches.push_back(matched_groups[group]);
 
                     ++matches_per_row;
-                    if (matches_per_row > max_matches_per_row)
+                    /// Additional limit to fail fast on supposedly incorrect usage.
+                    if (matches_per_row > regexp_max_matches_per_row)
                         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
                                 "Too many matches per row (> {}) in the result of function {}",
-                                max_matches_per_row, getName());
+                                regexp_max_matches_per_row, getName());
 
                     pos = matched_groups[0].data() + std::max<size_t>(1, matched_groups[0].size());
                 }

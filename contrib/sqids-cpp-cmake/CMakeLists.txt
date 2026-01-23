@@ -11,4 +11,3 @@ add_library(_sqids INTERFACE)
 target_include_directories(_sqids SYSTEM INTERFACE ${SQIDS_INCLUDE_DIR})
 
 add_library(ch_contrib::sqids ALIAS _sqids)
-target_compile_definitions(_sqids INTERFACE ENABLE_SQIDS)

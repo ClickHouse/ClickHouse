@@ -95,7 +95,6 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
-
 std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForReading() const
 {
     return lockImpl(/* read= */true);
@@ -187,7 +186,7 @@ StorageBuffer::StorageBuffer(
             CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
             num_shards, 0, num_shards);
     }
-    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
+    flush_handle = bg_pool.createTask(getStorageID(), log->name() + "/Bg", [this]{ backgroundFlush(); });
 
     LOG_TRACE(log, "Buffer(flush: ({}), min: ({}), max: ({}))", flush_thresholds.toString(), min_thresholds.toString(), max_thresholds.toString());
 }
@@ -749,7 +748,7 @@ public:
         insertIntoBuffer(block, *least_busy_buffer, metadata_snapshot->metadata_version);
         least_busy_lock.unlock();
 
-        storage.reschedule();
+        storage.reschedule(0);
     }
 private:
     StorageBuffer & storage;
@@ -939,7 +938,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
     {
         if (runner)
         {
-            (*runner)([&]()
+            runner->enqueueAndKeepTrack([&]()
             {
                 flushBuffer(buf, check_thresholds, false);
             });
@@ -1049,7 +1048,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    auto insert = std::make_shared<ASTInsertQuery>();
+    auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = destination_id;
 
     /** We will insert columns that are the intersection set of columns of the buffer table and the subordinate table.
@@ -1084,11 +1083,11 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     if (block_to_write.columns() != block.columns())
         LOG_WARNING(log, "Not all columns from block in buffer exist in destination table {}. Some columns are discarded.", destination_id.getNameForLogs());
 
-    auto list_of_columns = std::make_shared<ASTExpressionList>();
+    auto list_of_columns = make_intrusive<ASTExpressionList>();
     insert->columns = list_of_columns;
     list_of_columns->children.reserve(block_to_write.columns());
     for (const auto & column : block_to_write)
-        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
+        list_of_columns->children.push_back(make_intrusive<ASTIdentifier>(column.name));
 
     auto insert_context = Context::createCopy(getContext());
     insert_context->makeQueryContext();
@@ -1120,10 +1119,10 @@ void StorageBuffer::backgroundFlush()
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    reschedule();
+    reschedule(BACKGROUND_RESCHEDULE_MIN_DELAY);
 }
 
-void StorageBuffer::reschedule()
+void StorageBuffer::reschedule(size_t min_delay)
 {
     time_t min_first_write_time = std::numeric_limits<time_t>::max();
     size_t rows = 0;
@@ -1162,12 +1161,17 @@ void StorageBuffer::reschedule()
     time_t current_time = time(nullptr);
     time_t time_passed = current_time - min_first_write_time;
 
-    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 0);
-    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 0);
+    /// checkThresholdsImpl() uses strict comparison (> not >=), so we need to add offset to original time values
+    static constexpr time_t THRESHOLD_COMPARISON_OFFSET = 1;
+
+    /// For minimal threshold min_delay is ignored, since otherwise it will be triggered too frequently, once it is reached
+    /// (while the Buffer cannot be flushed due to other min thresholds).
+    size_t min = std::max<ssize_t>(min_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, 1);
+    size_t max = std::max<ssize_t>(max_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, min_delay);
     size_t reschedule_sec = 0;
     if (flush_thresholds.time)
     {
-        size_t flush = std::max<ssize_t>(flush_thresholds.time - time_passed, 0);
+        size_t flush = std::max<ssize_t>(flush_thresholds.time + THRESHOLD_COMPARISON_OFFSET - time_passed, min_delay);
         reschedule_sec = std::min({min, max, flush});
     }
     else
