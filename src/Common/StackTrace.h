@@ -35,6 +35,7 @@ public:
         std::optional<std::string> object;
         std::optional<std::string> file;
         std::optional<UInt64> line;
+        std::optional<UInt64> column;
     };
 
     using Frames = std::array<Frame, FRAMEPOINTER_CAPACITY>;

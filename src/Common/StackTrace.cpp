@@ -373,6 +373,7 @@ void StackTrace::forEachFrame(
                 {
                     current_frame.file = location.file.toString();
                     current_frame.line = location.line;
+                    current_frame.column = location.column;
                 }
             }
         }
@@ -387,6 +388,7 @@ void StackTrace::forEachFrame(
 
             current_inline_frame.file = "inlined from " + file_for_inline_frame;
             current_inline_frame.line = frame.location.line;
+            current_inline_frame.column = frame.location.column;
             current_inline_frame.symbol = demangle(frame.name);
 
             callback(current_inline_frame);
@@ -562,7 +564,12 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         }
 
         if (frame.file.has_value() && frame.line.has_value())
-            out << *frame.file << ':' << *frame.line << ": ";
+        {
+            out << *frame.file << ':' << *frame.line;
+            if (frame.column.has_value() && *frame.column > 0)
+                out << ':' << *frame.column;
+            out << ": ";
+        }
 
         if (frame.symbol.has_value())
             out << collapseDemangledNames(frame.file, frame.symbol.value());
