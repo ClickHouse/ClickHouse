@@ -215,7 +215,7 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
 
 void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
-    auto query_settings = std::make_shared<ASTSetQuery>();
+    auto query_settings = make_intrusive<ASTSetQuery>();
     query_settings->is_standalone = false;
 
     /// Copy the fields of the RestoreSettings to the query.

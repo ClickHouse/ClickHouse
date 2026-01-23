@@ -86,7 +86,7 @@ private:
 
     void doBackup(
         BackupMutablePtr backup,
-        const std::shared_ptr<ASTBackupQuery> & backup_query,
+        const boost::intrusive_ptr<ASTBackupQuery> & backup_query,
         const BackupOperationID & backup_id,
         const BackupSettings & backup_settings,
         std::shared_ptr<IBackupCoordination> backup_coordination,
@@ -110,7 +110,7 @@ private:
 #endif
 
     void doRestore(
-        const std::shared_ptr<ASTBackupQuery> & restore_query,
+        const boost::intrusive_ptr<ASTBackupQuery> & restore_query,
         const BackupOperationID & restore_id,
         const BackupInfo & backup_info,
         RestoreSettings restore_settings,
