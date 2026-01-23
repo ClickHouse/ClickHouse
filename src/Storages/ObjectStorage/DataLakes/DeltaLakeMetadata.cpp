@@ -745,7 +745,7 @@ Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_ty
     {
         ReadBufferFromString in(value);
         DateTime64 time = 0;
-        readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
+        readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(check_type.get())->getTimeZone());
         return time;
     }
 
