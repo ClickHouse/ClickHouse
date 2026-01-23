@@ -2654,6 +2654,7 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "enable_mixed_granularity_parts"
         || name == "add_minmax_index_for_numeric_columns"
         || name == "add_minmax_index_for_string_columns"
+        || name == "add_minmax_index_for_temporal_columns"
         || name == "table_disk"
     ;
 }
