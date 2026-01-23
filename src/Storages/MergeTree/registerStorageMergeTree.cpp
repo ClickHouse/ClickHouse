@@ -46,6 +46,7 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
+    extern const SettingsBool force_primary_key_reverse_order;
 }
 
 namespace MergeTreeSetting
@@ -56,6 +57,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsBool allow_experimental_reverse_key;
 }
 
 namespace ServerSetting
@@ -835,6 +837,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->ttl_table && args.mode <= LoadingStrictnessLevel::CREATE)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
+
+    if (args.mode <= LoadingStrictnessLevel::CREATE && local_settings[Setting::force_primary_key_reverse_order])
+        (*storage_settings)[MergeTreeSetting::allow_experimental_reverse_key] = true;
 
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])

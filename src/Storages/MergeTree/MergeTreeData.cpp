@@ -199,6 +199,7 @@ namespace Setting
     extern const SettingsUInt64 max_table_size_to_drop;
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
+    extern const SettingsBool force_primary_key_reverse_order;
 }
 
 namespace MergeTreeSetting
@@ -656,7 +657,8 @@ MergeTreeData::MergeTreeData(
     bool sanity_checks = mode <= LoadingStrictnessLevel::CREATE;
 
     allow_nullable_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_nullable_key];
-    allow_reverse_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_experimental_reverse_key];
+    allow_reverse_key = !sanity_checks || (*settings)[MergeTreeSetting::allow_experimental_reverse_key]
+        || context_->getSettingsRef()[Setting::force_primary_key_reverse_order];
 
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
