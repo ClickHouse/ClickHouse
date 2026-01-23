@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
-    extern const int IP_ADDRESS_NOT_ALLOWED;
 }
 
 

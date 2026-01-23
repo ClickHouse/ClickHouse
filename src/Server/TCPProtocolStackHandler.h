@@ -72,6 +72,7 @@ public:
                 {
                     std::string message = Exception::getMessageForErrorLog(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "IP address not allowed") + "\n";
                     
+                    socket().setLinger(true, 10);
                     int sent = socket().sendBytes(message.data(), static_cast<int>(message.size()));
                     if (sent != static_cast<int>(message.size()))
                     {
