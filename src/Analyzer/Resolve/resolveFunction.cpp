@@ -320,12 +320,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_table_expression*/);
                 disable_constant_folding = current_do_not_execute;
 
-                chassert(dead_branch_argument_projection_names.size() == 1);
-
-                auto dead_branch_argument_projection_name =
-                    possibly_invalid_argument_node->getNodeType() == QueryTreeNodeType::IDENTIFIER ?
-                        possibly_invalid_argument_node->as<IdentifierNode>()->getIdentifier().getFullName() :
-                        dead_branch_argument_projection_names[0];
+                ProjectionName dead_branch_argument_projection_name;
+                if (possibly_invalid_argument_node->getNodeType() != QueryTreeNodeType::IDENTIFIER)
+                {
+                    chassert(dead_branch_argument_projection_names.size() == 1);
+                    dead_branch_argument_projection_name = dead_branch_argument_projection_names[0];
+                }
+                else
+                    dead_branch_argument_projection_name = possibly_invalid_argument_node->as<IdentifierNode>()->getIdentifier().getFullName();
 
                 auto result_projection_name = resolveExpressionNode(constant_if_result_node,
                     scope,
@@ -419,12 +421,14 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         false /*allow_table_expression*/);
                     disable_constant_folding = current_do_not_execute;
 
-                    chassert(second_argument_projection_names.size() == 1);
-
-                    auto second_argument_projection_name =
-                    if_function_arguments[1]->getNodeType() == QueryTreeNodeType::IDENTIFIER ?
-                        if_function_arguments[1]->as<IdentifierNode>()->getIdentifier().getFullName() :
-                        second_argument_projection_names[0];
+                    ProjectionName second_argument_projection_name;
+                    if (if_function_arguments[1]->getNodeType() != QueryTreeNodeType::IDENTIFIER)
+                    {
+                        chassert(second_argument_projection_names.size() == 1);
+                        second_argument_projection_name = second_argument_projection_names[0];
+                    }
+                    else
+                        second_argument_projection_name = if_function_arguments[1]->as<IdentifierNode>()->getIdentifier().getFullName();
 
                     auto multi_if_function = std::make_shared<FunctionNode>("multiIf");
                     for (size_t n = 2; n < if_function_arguments.size(); ++n)

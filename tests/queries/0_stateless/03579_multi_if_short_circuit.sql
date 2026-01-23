@@ -21,3 +21,9 @@ SELECT if(0, 1, (SELECT number FROM numbers(2))); -- { serverError INCORRECT_RES
 SELECT if(1, 1, (SELECT blahblah FROM numbers(1))); -- { serverError UNKNOWN_IDENTIFIER }
 
 SELECT if(1, 1, COLUMNS('num')) from numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT 0 ? not_existing_column : 1 FROM numbers(1);
+SELECT 1 ? not_existing_column : 1 FROM numbers(1); -- { serverError UNKNOWN_IDENTIFIER }
+
+SELECT multiIf(0, not_existing_column, 1, 1, 1) FROM numbers(1);
+SELECT multiIf(1, not_existing_column, 1, 1, 1) FROM numbers(1); -- { serverError UNKNOWN_IDENTIFIER }
