@@ -162,7 +162,7 @@ void MergeTreeReaderTextIndex::analyzeTokensCardinality()
         {
             const auto & settings = condition_text.getContext()->getSettingsRef();
             double selectivity_threshold = settings[Setting::text_index_hint_max_selectivity];
-            size_t num_rows_in_part = data_part_info_for_read->getRowCount();
+            size_t num_rows_in_part = data_part_info_for_read->getRowsCount();
             double cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_part);
 
             if (cardinality <= num_rows_in_part * selectivity_threshold)
@@ -257,7 +257,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         from_row = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
     }
 
-    size_t total_rows = data_part_info_for_read->getRowCount();
+    size_t total_rows = data_part_info_for_read->getRowsCount();
     if (from_row < total_rows)
         max_rows_to_read = std::min(max_rows_to_read, total_rows - from_row);
     else

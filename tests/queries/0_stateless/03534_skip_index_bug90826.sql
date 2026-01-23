@@ -13,7 +13,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY i
-SETTINGS index_granularity_bytes = 0;
+SETTINGS index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 
 INSERT INTO tab SELECT number, toString(number) FROM numbers(8194); -- The Last granule contained rows smaller than index_granularity.
 
@@ -29,7 +29,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY i
-SETTINGS index_granularity_bytes = 0;
+SETTINGS index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 
 INSERT INTO tab SELECT number, toString(number) FROM numbers(8193); -- The Last granule contained rows smaller than index_granularity.
 
