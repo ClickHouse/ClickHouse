@@ -74,6 +74,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_dynamic_subcolumns_in_json_type_parsing", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns during JSON type parsing regardless the parameters specified in the data type"},
             {"use_hash_table_stats_for_join_reordering", true, true, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."},
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
+            {"database_datalake_require_metadata_access", true, true, "New setting."},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
