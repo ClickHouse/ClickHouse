@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -10,6 +10,7 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
+#include <h3api.h>
 
 
 namespace DB
@@ -97,8 +98,10 @@ public:
             const UInt64 origin = data_hindex_origin[row];
             const UInt64 dest = data_hindex_dest[row];
 
-            validateH3Cell(origin);
-            validateH3Cell(dest);
+            if (!isValidCell(origin))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid origin H3 index: {}", origin);
+            if (!isValidCell(dest))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid dest H3 index: {}", dest);
 
             UInt64 res = getUnidirectionalEdge(origin, dest);
             dst_data[row] = res;

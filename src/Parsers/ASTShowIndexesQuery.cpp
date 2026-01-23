@@ -1,5 +1,6 @@
 #include <Parsers/ASTShowIndexesQuery.h>
 
+#include <iomanip>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 

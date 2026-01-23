@@ -1,4 +1,5 @@
 #include <Parsers/ASTInterpolateElement.h>
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 
 

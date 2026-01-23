@@ -5,8 +5,6 @@ import mmap
 import os
 import pathlib
 import random
-import re
-import subprocess
 import tempfile
 import time
 import signal
@@ -15,6 +13,7 @@ import sys
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+sys.path.append("..")
 from integration.helpers.cluster import ZOOKEEPER_CONTAINERS
 from sparkserver import (
     get_unique_free_ports,
@@ -37,7 +36,6 @@ from integration.helpers.s3_tools import (
 )
 from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 from generators import Generator, BuzzHouseGenerator
-from leaks import ElOracloDeLeaks
 from oracles import ElOraculoDeTablas
 from properties import (
     modify_server_settings,
@@ -227,7 +225,6 @@ parser.add_argument("--with-redis", action="store_true", help="With Redis integr
 parser.add_argument(
     "--with-arrowflight", action="store_true", help="With Arrow flight support"
 )
-parser.add_argument("--with-kafka", action="store_true", help="With Kafka integration")
 parser.add_argument(
     "--mem-limit", type=str, default="", help="Set a memory limit, e.g. '1g'"
 )
@@ -312,39 +309,6 @@ parser.add_argument(
     type=pathlib.Path,
     help="With Unity catalog for Spark, path to Unity dir",
 )
-parser.add_argument(
-    "--with-leak-detection", action="store_true", help="Check for memory leaks"
-)
-parser.add_argument(
-    "--time-between-leak-detections",
-    type=ordered_pair,
-    default=(20, 30),
-    help="In seconds. Two ordered integers separated by comma (e.g., 30,60)",
-)
-parser.add_argument(
-    "--set-shared-mergetree-disk",
-    action="store_true",
-    help="Set shared merge tree disk or policy",
-)
-parser.add_argument(
-    "--without-monitoring",
-    action="store_false",
-    dest="with_monitoring",
-    help="Remove periodic monitoring of the cluster",
-)
-parser.add_argument(
-    "--time-between-monitoring-runs",
-    type=ordered_pair,
-    default=(5, 10),
-    help="In seconds. Two ordered integers separated by comma (e.g., 30,60)",
-)
-UNSET = object()
-parser.add_argument(
-    "--timeout",
-    type=int,
-    default=UNSET,
-    help="Total time to run the test in minutes (the test will stop after this time)",
-)
 
 args = parser.parse_args()
 
@@ -371,43 +335,25 @@ if seed == 0:
 random.seed(seed)
 logger.info(f"Using seed: {seed}")
 
-sorted_binaries = []
-# Start the cluster, by using one of the server binaries
-if len(args.server_binaries) > 1 and random.randint(1, 100) <= 90:
-    # Pick the lowest version most of the times
-    def get_clickhouse_version(binary_path):
-        result = subprocess.run(
-            [binary_path, "--version"], capture_output=True, text=True
-        )
-        # Output like: "ClickHouse client version 24.3.1.2 (official build)."
-        match = re.search(r"version (\d+\.\d+\.\d+\.?\d*)", result.stdout)
-        if match:
-            return tuple(int(x) for x in match.group(1).split("."))
-        raise ValueError(f"Could not parse version from {binary_path}")
-
-    first_server = args.server_binaries[0]
-    lowest_version = get_clickhouse_version(first_server)
-    for val in args.server_binaries:
-        next_version = get_clickhouse_version(val)
-        if next_version < lowest_version:
-            first_server = val
-            lowest_version = next_version
-else:
-    first_server = random.choice(args.server_binaries)
-# Make sure the first server version is always first
-sorted_binaries.append(first_server)
-for val in args.server_binaries:
-    if val != first_server:
-        sorted_binaries.append(val)
+# Start the cluster, by using one the server binaries
+server_path = os.path.join(tempfile.gettempdir(), f"clickhouse{seed}")
+new_temp_server_path = os.path.join(tempfile.gettempdir(), f"clickhousetemp{seed}")
+try:
+    os.unlink(server_path)
+except FileNotFoundError:
+    pass
+current_server = random.choice(args.server_binaries)
+os.symlink(current_server, server_path)
+os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 
 # Find if private binary is being used
 is_private_binary = False
-with open(first_server, "rb") as f:
-    mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+with open(current_server, "r+") as f:
+    mm = mmap.mmap(f.fileno(), 0)
     is_private_binary = mm.find(b"isCoordinatedMergesTasksActivated") > -1
     mm.close()
 
-logger.info(f"Private binary {'' if is_private_binary else 'not '}detected")
+logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
 
 if args.with_minio:
@@ -428,13 +374,7 @@ if args.with_minio:
     os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
 
 cluster = ClickHouseCluster(
-    __file__,
-    name="dolor",
-    custom_keeper_configs=keeper_configs,
-    azurite_default_port=10000,
-    server_bin_path=first_server,
-    client_bin_path=args.client_binary,
-    server_binaries=sorted_binaries,
+    __file__, custom_keeper_configs=keeper_configs, azurite_default_port=10000
 )
 
 # Set environment variables such as locales and timezones
@@ -486,7 +426,6 @@ for i in range(0, len(args.replica_values)):
             with_glue_catalog=args.with_glue,
             with_hms_catalog=args.with_hms,
             with_arrowflight=args.with_arrowflight,
-            with_kafka=args.with_kafka,
             mem_limit=None if args.mem_limit == "" else args.mem_limit,
             main_configs=dolor_main_configs,
             user_configs=[user_settings] if user_settings is not None else [],
@@ -494,13 +433,9 @@ for i in range(0, len(args.replica_values)):
             macros={"replica": args.replica_values[i], "shard": args.shard_values[i]},
         )
     )
-# Copy the binaries into the containers
-server_versions = {}
-for server in servers:
-    server_versions[server.name] = first_server
 cluster.start()
 logger.info(
-    f"Starting cluster with {len(servers)} server(s) and server binary {first_server}"
+    f"Starting cluster with {len(servers)} server(s) and server binary {current_server} "
 )
 for i in range(0, len(args.replica_values)):
     logger.info(
@@ -533,57 +468,59 @@ if args.with_postgresql:
     cursor.close()
     postgres_conn.close()
 
+
 # Handler for HTTP server
 catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_variables)
 
 # Start the load generator, at the moment only BuzzHouse is available
 generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
 if args.generator == "buzzhouse":
-    generator = BuzzHouseGenerator(args, cluster, catalog_server, server_settings)
-logger.info("Starting load generator")
+    generator = BuzzHouseGenerator(args, cluster, catalog_server)
+logger.info("Start load generator")
 client = generator.run_generator(servers[0], logger, args)
-logger.info("Load generator started with PID %s", client.process.pid)
-everything_cleaned = False
 
 
 def dolor_cleanup():
-    global everything_cleaned
-    if not everything_cleaned:
-        if client.process.poll() is None:
-            client.process.kill()
-            client.process.wait()
-        logger.info(f"Load generator exited with code: {client.process.returncode}")
-
+    if client.process.poll() is None:
+        client.process.kill()
+        client.process.wait()
+    try:
+        cluster.shutdown(kill=True, ignore_fatal=True)
+    except:
+        pass
+    close_spark_http_server(catalog_server)
+    if modified_server_settings:
         try:
-            cluster.shutdown(kill=True, ignore_fatal=False)
-        except:
-            pass
-        close_spark_http_server(catalog_server)
-        if modified_server_settings:
-            try:
-                os.unlink(server_settings)
-            except FileNotFoundError:
-                pass
-        if modified_user_settings:
-            try:
-                os.unlink(user_settings)
-            except FileNotFoundError:
-                pass
-        try:
-            os.unlink(generator.temp.name)
+            os.unlink(server_settings)
         except FileNotFoundError:
             pass
-        if args.with_minio:
-            try:
-                os.unlink(credentials_file.name)
-            except FileNotFoundError:
-                pass
-        for entry in keeper_configs:
-            try:
-                os.unlink(entry)
-            except FileNotFoundError:
-                pass
-        everything_cleaned = True
+    if modified_user_settings:
+        try:
+            os.unlink(user_settings)
+        except FileNotFoundError:
+            pass
+    try:
+        os.unlink(server_path)
+    except FileNotFoundError:
+        pass
+    try:
+        os.unlink(new_temp_server_path)
+    except FileNotFoundError:
+        pass
+    try:
+        os.unlink(generator.temp.name)
+    except FileNotFoundError:
+        pass
+    if args.with_minio:
+        try:
+            os.unlink(credentials_file.name)
+        except FileNotFoundError:
+            pass
+    for entry in keeper_configs:
+        try:
+            os.unlink(entry)
+        except FileNotFoundError:
+            pass
 
 
 def my_signal_handler(sig, frame):
@@ -612,84 +549,33 @@ if args.with_mongodb:
     integrations.append("mongo")
 if args.with_redis:
     integrations.append("redis")
-if args.with_kafka:
-    integrations.append("kafka")
 
 # This is the main loop, run while client and server are running
 all_running = True
 tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
-# Shutdown info
 lower_bound, upper_bound = args.time_between_shutdowns
 integration_lower_bound, integration_upper_bound = (
     args.time_between_integration_shutdowns
 )
-monitoring_lower_bound, monitoring_upper_bound = args.time_between_monitoring_runs
-# Leak detection
-leak_detector: ElOracloDeLeaks = ElOracloDeLeaks()
-leak_lower_bound, leak_upper_bound = args.time_between_leak_detections
-if args.with_leak_detection:
-    leak_detector.reset_and_capture_baseline(cluster)
-# Test timeout if set
-test_limit = None if args.timeout is UNSET else time.time() + args.timeout * 60
-reached_limit = False
-
-
-def explain_returncode(rc: int) -> str:
-    if rc == 0:
-        return "successfully (0)."
-    if rc < 0:
-        sig = -rc
-        try:
-            name = signal.Signals(sig).name
-        except ValueError:
-            name = f"SIG{sig}"
-        try:
-            reason = signal.strsignal(sig)  # Py3.8+ (wording varies by platform)
-        except Exception:
-            reason = ""
-        extra = f" - {reason}" if reason else ""
-        return f"terminated by signal {sig} ({name}){extra}."
-    return f"with status {rc}."
-
-
-while all_running and (not reached_limit):
+while all_running:
     start = time.time()
     finish = start + random.randint(lower_bound, upper_bound)
-    next_leak_detection = start + random.randint(leak_lower_bound, leak_upper_bound)
-    next_monitoring = start + random.randint(
-        monitoring_lower_bound, monitoring_upper_bound
-    )
 
-    while all_running and (not reached_limit) and start < finish:
+    while all_running and start < finish:
+        interval = 1
         if client.process.poll() is not None:
-            logger.info(
-                f"Load generator finished {explain_returncode(client.process.returncode)}"
-            )
+            logger.info("Load generator finished")
             all_running = False
         for server in servers:
-            pid = server.get_process_pid("clickhouse")
-            if pid is None:
+            try:
+                server.query("SELECT 1;")
+            except:
                 logger.info(f"The server {server.name} is not running")
                 all_running = False
-        reached_limit = test_limit is not None and time.time() >= test_limit
-        if reached_limit:
-            logger.info("Test timeout reached, stopping the load generator and exiting")
-        if all_running and (not reached_limit):
-            if args.with_leak_detection and next_leak_detection < time.time():
-                leak_detector.run_next_leak_detection(cluster, client)
-                next_leak_detection += random.randint(
-                    leak_lower_bound, leak_upper_bound
-                )
-            if args.with_monitoring and next_monitoring < time.time():
-                tables_oracle.run_health_check(cluster, servers, logger)
-                next_monitoring += random.randint(
-                    monitoring_lower_bound, monitoring_upper_bound
-                )
-        interval = 1
         time.sleep(interval)
         start += interval
 
-    if (not all_running) or reached_limit:
+    if not all_running:
         break
 
     dump_table = (
@@ -703,40 +589,32 @@ while all_running and (not reached_limit):
     if random.randint(1, 100) <= args.restart_clickhouse_prob:
         next_pick = random.choice(servers)
         logger.info(
-            f"Restarting the server {next_pick.name} with {'kill' if kill_server else 'manual shutdown'}"
+            f"Restarting the server {next_pick.name} with {"kill" if kill_server else "manual shutdown"}"
         )
 
         next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
-        time.sleep(1)
-        # Replace server binary, using a new temporary symlink
+        # Replace server binary, using a new temporary symlink, then replace the old one
         if (
-            len(sorted_binaries) > 1
+            len(args.server_binaries) > 1
             and random.randint(1, 100) <= args.change_server_version_prob
         ):
-            if len(servers) == 1 and len(sorted_binaries) == 2:
-                # Pick the other server version
-                next_server = sorted_binaries[
-                    0 if server_versions[next_pick.name] == sorted_binaries[1] else 1
-                ]
+            if len(servers) == 1 and len(args.server_binaries) == 2:
+                current_server = (
+                    args.server_binaries[0]
+                    if current_server == args.server_binaries[1]
+                    else args.server_binaries[1]
+                )
             else:
-                next_server = random.choice(sorted_binaries)
-            logger.info(f"Picked the server binary {next_server} for restart")
-            # Update symlink in the container
-            next_pick.exec_in_container(
-                [
-                    "ln",
-                    "-sf",
-                    f"/usr/bin/clickhouse{sorted_binaries.index(next_server)}",
-                    "/usr/bin/clickhouse",
-                ],
-                user="root",
-            )
-            server_versions[next_pick.name] = next_server
-        time.sleep(3)  # Let the keeper session expire
+                current_server = random.choice(args.server_binaries)
+            logger.info(f"Using the server binary {current_server} after restart")
+            try:
+                os.unlink(new_temp_server_path)
+            except FileNotFoundError:
+                pass
+            os.symlink(current_server, new_temp_server_path)
+            os.rename(new_temp_server_path, server_path)
+        time.sleep(15)  # Let the zookeeper session expire
         next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
-        if args.with_leak_detection and next_pick.name == "node0":
-            # Has to reset leak detector
-            leak_detector.reset_and_capture_baseline(cluster)
     elif len(integrations) > 0:
         # Restart any other integration
         next_pick = random.choice(integrations)
@@ -750,7 +628,6 @@ while all_running and (not reached_limit):
             "mysql8": ["mysql80"],
             "mongo": ["mongo1", "mongo_no_cred", "mongo_secure"],
             "redis": ["redis1"],
-            "kafka": ["kafka1"],
         }
 
         restart_choices = list(available_options[next_pick])
@@ -758,7 +635,7 @@ while all_running and (not reached_limit):
         for i in range(0, random.randint(1, len(restart_choices))):
             choosen_instances.append(restart_choices[i])
         logger.info(
-            f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {'kill' if kill_server else 'manual shutdown'}"
+            f"Restarting {next_pick} instances {', '.join(choosen_instances)} with {"kill" if kill_server else "manual shutdown"}"
         )
 
         cluster.process_integration_nodes(

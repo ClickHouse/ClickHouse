@@ -213,20 +213,4 @@ ASTPtr ColumnStatisticsDescription::getAST() const
     return function_node;
 }
 
-String ColumnStatisticsDescription::getNameForLogs() const
-{
-    String ret;
-    for (const auto & [tp, desc] : types_to_desc)
-    {
-        ret += desc.getTypeName();
-        if (desc.is_implicit)
-            ret += "(auto)";
-        ret += ",";
-    }
-    if (!ret.empty())
-        ret.pop_back();
-    return ret;
-}
-
-
 }

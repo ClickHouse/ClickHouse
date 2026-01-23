@@ -22,13 +22,6 @@ struct JSONExtractInsertSettings
     bool try_existing_variants_in_dynamic_first = true;
     /// If true, during constructing the JSON path dots in keys will be escaped.
     bool escape_dots_in_json_keys = false;
-    /// If true, skip typed paths where type coercion fails instead of throwing error.
-    /// Skipped fields are treated as missing and use default/null values.
-    /// Only applies to JSON type columns with typed paths, not general JSON parsing.
-    bool skip_invalid_typed_paths = false;
-    /// Use partial match instead of full to skip paths using regular expressions specified
-    /// in JSON data type using SKIP REGEXP.
-    bool use_partial_match_to_skip_paths_by_regexp = true;
 };
 
 template <typename JSONParser>
