@@ -74,6 +74,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_dynamic_subcolumns_in_json_type_parsing", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns during JSON type parsing regardless the parameters specified in the data type"},
             {"use_hash_table_stats_for_join_reordering", true, true, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."},
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
+            {"use_skip_indexes_for_top_k", false, true, "Default enable."},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
@@ -95,8 +96,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
             {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
-            {"use_skip_indexes_for_top_k", false, false, "New setting."},
+            {"use_skip_indexes_for_top_k", false, true, "New setting."},
             {"use_top_k_dynamic_filtering", false, false, "New setting."},
+            {"use_skip_indexes_on_data_read", false, true, "Testing setting"},
             {"query_plan_max_limit_for_top_k_optimization", 0, 1000, "New setting."},
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
