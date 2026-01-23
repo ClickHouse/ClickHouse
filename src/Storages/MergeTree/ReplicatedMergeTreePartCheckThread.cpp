@@ -39,7 +39,7 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     , log(getLogger(log_name))
     , pausable_task(storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); }))
 {
-    getTask()->schedule();
+    getTask()->deactivate();
 }
 
 ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
