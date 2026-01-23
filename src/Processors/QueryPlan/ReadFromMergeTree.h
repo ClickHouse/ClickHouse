@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/TopKThresholdTracker.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB
 {
@@ -30,7 +31,7 @@ struct MergeTreeDataSelectSamplingData
     bool use_sampling = false;
     bool read_nothing = false;
     Float64 used_sample_factor = 1.0;
-    std::shared_ptr<ASTFunction> filter_function;
+    boost::intrusive_ptr<ASTFunction> filter_function;
     std::shared_ptr<const ActionsDAG> filter_expression;
 };
 
