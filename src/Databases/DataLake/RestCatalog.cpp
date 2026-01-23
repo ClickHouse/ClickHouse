@@ -378,6 +378,8 @@ bool RestCatalog::empty() const
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
+        if (!allowed_namespaces.isNamespaceAllowed(namespace_name, /*nested*/ false))
+            return false;
         const auto tables = getTables(namespace_name, /* limit */1);
         found_table = !tables.empty();
         return found_table;
@@ -402,6 +404,8 @@ DB::Names RestCatalog::getTables() const
         runner.enqueueAndKeepTrack(
         [=, &tables, &mutex, this]
         {
+            if (!allowed_namespaces.isNamespaceAllowed(current_namespace, /*nested*/ false))
+                return;
             auto tables_in_namespace = getTables(current_namespace);
             std::lock_guard lock(mutex);
             std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
