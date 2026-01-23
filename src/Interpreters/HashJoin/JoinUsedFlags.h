@@ -55,10 +55,10 @@ public:
             /// Mark all rows outside of selector as used.
             /// We should not emit them in RIGHT/FULL JOIN result,
             /// since they belongs to another shard, which will handle flags for these rows
-            for (auto & flag : per_row_flags[columns])
+            for (auto & flag : flags[columns])
                 flag.store(true);
             for (size_t index : selector)
-                per_row_flags[block_ptr][index].store(false);
+                flags[block_ptr][index].store(false);
         }
     }
 
