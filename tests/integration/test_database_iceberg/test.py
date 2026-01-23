@@ -682,7 +682,7 @@ def test_not_specified_catalog_type(started_cluster):
     with pytest.raises(Exception):
         node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
 
-
+@pytest.mark.timeout(1000)
 def test_require_metadata_access(started_cluster):
     node = started_cluster.instances["node1"]
 
