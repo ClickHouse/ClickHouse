@@ -787,8 +787,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
              return rg.pickRandomly(choices);
          },
          {"'read'", "'pread'", "'mmap'", "'pread_threadpool'", "'io_uring'"},
-         false)},
-    {"temporary_databases_cleanup_async", trueOrFalseSettingNoOracle}};
+         false)}};
 
 static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"local_filesystem_read_prefetch", trueOrFalseSetting},

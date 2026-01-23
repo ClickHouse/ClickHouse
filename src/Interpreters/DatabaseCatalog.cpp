@@ -62,7 +62,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 database_catalog_unused_dir_cleanup_period_sec;
     extern const ServerSettingsUInt64 database_catalog_unused_dir_hide_timeout_sec;
     extern const ServerSettingsUInt64 database_catalog_unused_dir_rm_timeout_sec;
-    extern const ServerSettingsBool temporary_databases_cleanup_async;
     extern const ServerSettingsUInt64 temporary_databases_cleanup_interval_sec;
 }
 
@@ -1140,8 +1139,6 @@ void DatabaseCatalog::dropTemporaryDatabasesTask()
 {
     try
     {
-        const auto sync = !getContext()->getServerSettings()[ServerSetting::temporary_databases_cleanup_async];
-
         std::vector<DatabasePtr> dbs;
         {
             std::lock_guard lock{drop_temporary_databases_mutex};
@@ -1161,7 +1158,7 @@ void DatabaseCatalog::dropTemporaryDatabasesTask()
                 auto query = std::make_shared<ASTDropQuery>();
                 query->setDatabase(name);
                 query->if_exists = true;
-                query->sync = sync;
+                query->sync = false;
                 InterpreterDropQuery(std::move(query), drop_ctx).execute();
 
                 LOG_INFO(log, "Temporary database {} has been dropped", name);

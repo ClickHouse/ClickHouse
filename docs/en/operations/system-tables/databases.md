@@ -42,7 +42,9 @@ SELECT * FROM system.databases;
 ```
 
 :::note
-Database with Memory engine != temporary database.
+Don’t confuse the Memory engine with temporary databases; it has no relation to temporary databases created with the `CREATE TEMPORARY DATABASE` query.
+You can check whether a database is temporary by looking at the `is_temporary` column.
+You may not see temporary databases from other sessions, depending on the [show_temporary_databases_from_other_sessions_in_system_tables](/operations/settings/settings.md#show_temporary_databases_from_other_sessions_in_system_tables) setting.
 :::
 
 **See also**

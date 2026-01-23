@@ -45,7 +45,6 @@ namespace
 
 BlockIO InterpreterBackupQuery::execute()
 {
-    const auto & context = getContext();
     auto & backup_query = query_ptr->as<ASTBackupQuery &>();
 
     /// Remove temporary databases from query: they can't be backed up.
