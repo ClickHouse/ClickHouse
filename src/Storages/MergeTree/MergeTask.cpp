@@ -1133,6 +1133,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
 {
     finalizeProjections();
+    global_ctx->to->finalizeIndexGranularity();
     global_ctx->merging_executor.reset();
     global_ctx->merged_pipeline.reset();
 
@@ -1437,6 +1438,7 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     global_ctx->checkOperationIsNotCanceled();
 
     ctx->executor.reset();
+    ctx->column_to->finalizeIndexGranularity();
     auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->checksums_gathered_columns);
     global_ctx->checksums_gathered_columns.add(std::move(changed_checksums));
     const auto & columns_substreams = ctx->column_to->getColumnsSubstreams();

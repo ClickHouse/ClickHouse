@@ -184,6 +184,11 @@ void MergedBlockOutputStream::finalizePart(
     finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums, additional_columns_substreams).finish();
 }
 
+void MergedBlockOutputStream::finalizeIndexGranularity()
+{
+    writer->finalizeIndexGranularity();
+}
+
 MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     const MergeTreeMutableDataPartPtr & new_part,
     bool sync,

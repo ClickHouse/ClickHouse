@@ -29,6 +29,8 @@ public:
 
     void write(const Block & block) override;
 
+    void finalizeIndexGranularity();
+
     MergeTreeData::DataPart::Checksums
     fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 

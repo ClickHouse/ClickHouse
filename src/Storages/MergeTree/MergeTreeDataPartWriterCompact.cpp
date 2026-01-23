@@ -321,7 +321,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
     }
 }
 
-void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksums & checksums)
+void MergeTreeDataPartWriterCompact::finalizeIndexGranularity()
 {
     if (columns_buffer.size() != 0)
     {
@@ -367,7 +367,10 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
 
         writeBinaryLittleEndian(static_cast<UInt64>(0), marks_out);
     }
+}
 
+void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksums & checksums)
+{
     for (const auto & [_, stream] : streams_by_codec)
     {
         stream->hashing_buf.finalize();

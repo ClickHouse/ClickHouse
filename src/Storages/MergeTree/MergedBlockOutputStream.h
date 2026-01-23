@@ -74,6 +74,8 @@ public:
         MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
         ColumnsSubstreams * additional_columns_substreams = nullptr);
 
+    void finalizeIndexGranularity();
+
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.
       * This is necessary to not keep the whole block in the RAM to sort it.

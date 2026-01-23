@@ -335,6 +335,7 @@ private:
         void prepareProjectionsToMergeAndRebuild() const;
         void calculateProjections(const Block & block, UInt64 starting_offset) const;
         void finalizeProjections() const;
+        void finalizeIndexGranularity() const;
         void constructTaskForProjectionPartsMerge() const;
         bool executeMergeProjections() const;
 

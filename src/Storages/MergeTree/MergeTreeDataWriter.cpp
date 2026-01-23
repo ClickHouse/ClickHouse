@@ -905,6 +905,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         }
     }
 
+    out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(
         new_data_part,
         (*data_settings)[MergeTreeSetting::fsync_after_insert],
@@ -1053,6 +1054,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
+    out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(new_data_part, false);
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});

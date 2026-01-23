@@ -80,6 +80,11 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     new_serialization_infos.add(block);
 }
 
+void MergedColumnOnlyOutputStream::finalizeIndexGranularity()
+{
+    writer->finalizeIndexGranularity();
+}
+
 MergeTreeData::DataPart::Checksums
 MergedColumnOnlyOutputStream::fillChecksums(
     MergeTreeData::MutableDataPartPtr & new_part,

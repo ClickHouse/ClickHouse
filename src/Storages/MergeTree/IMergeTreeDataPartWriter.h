@@ -45,6 +45,7 @@ public:
 
     virtual void write(const Block & block, const IColumnPermutation * permutation) = 0;
 
+    virtual void finalizeIndexGranularity() = 0;
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
 
     virtual void finish(bool sync) = 0;

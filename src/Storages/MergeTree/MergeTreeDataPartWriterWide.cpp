@@ -701,7 +701,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     }
 }
 
-void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove)
+void MergeTreeDataPartWriterWide::finalizeIndexGranularity()
 {
     auto serialize_settings = getSerializationSettings();
     WrittenOffsetColumns offset_columns;
@@ -733,7 +733,10 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
                 writeFinalMark(*it, offset_columns);
         }
     }
+}
 
+void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove)
+{
     for (auto & [stream_name, stream] : column_streams)
     {
         /// Remove checksums for old stream name if file was

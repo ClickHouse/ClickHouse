@@ -41,6 +41,7 @@ public:
 
     void write(const Block & block, const IColumnPermutation * permutation) override;
 
+    void finalizeIndexGranularity() final;
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
 
     void finish(bool sync) final;

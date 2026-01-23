@@ -1968,8 +1968,9 @@ private:
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
-        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(
-            ctx->new_data_part, ctx->need_sync, nullptr, &ctx->existing_indices_stats_checksums);
+        const auto & out = static_pointer_cast<MergedBlockOutputStream>(ctx->out);
+        out->finalizeIndexGranularity();
+        out->finalizePart(ctx->new_data_part, ctx->need_sync, nullptr, &ctx->existing_indices_stats_checksums);
         ctx->out.reset();
     }
 
@@ -2223,20 +2224,20 @@ private:
             ctx->mutating_executor.reset();
             ctx->mutating_pipeline.reset();
 
-            auto changed_checksums =
-                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
-                    ctx->new_data_part, ctx->new_data_part->checksums);
+            const auto & column_out = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
+            column_out->finalizeIndexGranularity();
+            auto changed_checksums = column_out->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
-                auto changed_columns_substreams = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->getColumnsSubstreams();
+                auto changed_columns_substreams = column_out->getColumnsSubstreams();
                 new_columns_substreams = ColumnsSubstreams::merge(changed_columns_substreams, ctx->new_data_part->getColumnsSubstreams(), ctx->new_data_part->getColumns().getNames());
                 ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
             }
 
-            static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
+            column_out->finish(ctx->need_sync);
 
             ctx->out.reset();
         }
