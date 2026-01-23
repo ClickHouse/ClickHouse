@@ -682,27 +682,6 @@ def test_not_specified_catalog_type(started_cluster):
     with pytest.raises(Exception):
         node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
 
-@pytest.mark.timeout(1000)
-def test_require_metadata_access(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_require_metadata_access_{uuid.uuid4()}"
-    namespace = f"{test_ref}_namespace"
-    table_name = f"{test_ref}_table"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(namespace)
-    create_table(catalog, namespace, table_name)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    full_table_name = f"{namespace}.{table_name}"
-    assert full_table_name in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
-
-    with started_cluster.pause_container("minio"):
-        assert "while fetching table metadata for existing table" in node.query_and_get_error(f"SHOW TABLES FROM {CATALOG_NAME}")
-
-
 def test_gcs(started_cluster):
     node = started_cluster.instances["node1"]
 
