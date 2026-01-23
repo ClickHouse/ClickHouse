@@ -59,7 +59,7 @@ sudo usermod -aG docker ubuntu
 2. Get a source code.
 
 ```
-git clone https://github.com/clickhouse/clickhouse
+git clone --single-branch https://github.com/clickhouse/clickhouse
 cd clickhouse
 ```
 
