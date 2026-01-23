@@ -125,10 +125,10 @@ class SourceMySQL(ExternalSource):
             self.internal_hostname = cluster.mysql8_ip
         self.create_mysql_conn()
         self.execute_mysql_query(
-            "drop database if exists test"
+            "create database if not exists test default character set 'utf8'"
         )
         self.execute_mysql_query(
-            "create database test default character set 'utf8'"
+            "drop table if exists test.{}".format(table_name)
         )
         fields_strs = []
         for field in (
