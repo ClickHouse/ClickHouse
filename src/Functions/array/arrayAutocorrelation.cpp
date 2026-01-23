@@ -106,7 +106,7 @@ public:
         {
             size_t array_size = next_offset - current_offset;
 
-            impl(&data[current_offset], array_size, res_data);
+            impl(data.data() + current_offset, array_size, res_data);
 
             res_offsets.push_back(res_data.size());
             current_offset = next_offset;
