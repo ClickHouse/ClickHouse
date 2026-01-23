@@ -1170,9 +1170,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 && right_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
                                 return false;
 
-                            if (current_table_expression.get() == left_table_expr.get())
-                                return false;
-
                             const auto * right_table = typeid_cast<const TableNode *>(join_node->getRightTableExpression().get());
                             if (!right_table)
                                 return false;
