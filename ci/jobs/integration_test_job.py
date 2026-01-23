@@ -663,6 +663,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 merge_cmd = f"{llvm_profdata} merge -sparse {' '.join(profdata_files)} -o {final_file} 2>&1"
                 Shell.get_output(merge_cmd, verbose=True)
                 print(f"Successfully created final coverage file: {final_file}")
+                
+                # Delete intermediate profdata files to save disk space
+                for profdata_file in profdata_files:
+                    try:
+                        Path(profdata_file).unlink()
+                    except Exception as e:
+                        print(f"  WARNING: Failed to delete {profdata_file}: {e}")
+                print(f"  Deleted {len(profdata_files)} intermediate profdata files")
             else:
                 print("No intermediate profdata files found")
 
