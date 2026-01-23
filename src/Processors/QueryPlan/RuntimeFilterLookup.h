@@ -103,9 +103,12 @@ public:
         UInt64 exact_values_limit_
     )
         : IRuntimeFilter(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
+        , argument_can_have_nulls(filter_column_target_type->isNullable() ||
+            filter_column_target_type->isLowCardinalityNullable() ||
+            WhichDataType(filter_column_target_type).isDynamic())
         , bytes_limit(bytes_limit_)
         , exact_values_limit(exact_values_limit_)
-        , exact_values(std::make_shared<Set>(SizeLimits{}, -1, false))
+        , exact_values(std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls))
     {
         ColumnsWithTypeAndName set_header = { ColumnWithTypeAndName(filter_column_target_type, String()) };
         exact_values->setHeader(set_header);
@@ -141,7 +144,8 @@ public:
         }
 
         /// If only 1 element in the set then use " == const" instead of set lookup
-        if (exact_values->getTotalRowCount() == 1)
+        /// But if the argument is Nullable we cannot use "==" so fallback to Set because it can handle NULLs
+        if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls)
         {
             values_count = ValuesCount::ONE;
             single_element_in_set = (*exact_values->getSetElements().front())[0];
@@ -176,6 +180,7 @@ private:
         MANY,
     };
 
+    const bool argument_can_have_nulls;
     const UInt64 bytes_limit;
     const UInt64 exact_values_limit;
 

@@ -1356,7 +1356,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, ContextPtr context_)
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     dropped_table.table.reset();
 
-    auto ast_attach = std::make_shared<ASTCreateQuery>();
+    auto ast_attach = make_intrusive<ASTCreateQuery>();
     ast_attach->attach = true;
     ast_attach->setDatabase(dropped_table.table_id.database_name);
     ast_attach->setTable(dropped_table.table_id.table_name);
