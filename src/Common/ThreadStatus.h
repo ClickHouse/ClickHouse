@@ -147,7 +147,7 @@ private:
     /// Peak threads count in the group
     size_t peak_threads_usage TSA_GUARDED_BY(mutex) = 0;
 
-    Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex);
+    Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
     UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
