@@ -19,52 +19,68 @@ public:
     bool primary_key_specifier = false;
 
 private:
-    static constexpr UInt8 kNotSet = 0xFF;
+    /// Pack 8 indices (4 bits each) into a single UInt32. 0xF means "not set".
+    static constexpr UInt8 kNotSet = 0xF;
+    static constexpr UInt32 kAllNotSet = 0xFFFFFFFF;
 
-    UInt8 type_idx = kNotSet;
-    UInt8 default_expression_idx = kNotSet;
-    UInt8 comment_idx = kNotSet;
-    UInt8 codec_idx = kNotSet;
-    UInt8 statistics_desc_idx = kNotSet;
-    UInt8 ttl_idx = kNotSet;
-    UInt8 collation_idx = kNotSet;
-    UInt8 settings_idx = kNotSet;
+    /// Bit positions for each index (4 bits each)
+    enum IndexSlot : UInt8
+    {
+        TYPE = 0,
+        DEFAULT_EXPR = 4,
+        COMMENT = 8,
+        CODEC = 12,
+        STATS = 16,
+        TTL = 20,
+        COLLATION = 24,
+        SETTINGS = 28
+    };
 
-    ASTPtr getChildOrNull(UInt8 idx) const { return idx == kNotSet ? nullptr : children[idx]; }
+    UInt32 packed_indices = kAllNotSet;
 
-    void setChild(UInt8 & idx, ASTPtr && node)
+    UInt8 getIndex(IndexSlot slot) const { return (packed_indices >> slot) & 0xF; }
+    void setIndex(IndexSlot slot, UInt8 val) { packed_indices = (packed_indices & ~(0xFU << slot)) | (static_cast<UInt32>(val) << slot); }
+
+    ASTPtr getChildOrNull(IndexSlot slot) const
+    {
+        UInt8 idx = getIndex(slot);
+        return idx == kNotSet ? nullptr : children[idx];
+    }
+
+    void setChild(IndexSlot slot, ASTPtr && node)
     {
         if (!node)
             return;
 
+        UInt8 idx = getIndex(slot);
         if (idx != kNotSet)
             children[idx] = std::move(node);
         else
         {
-            idx = static_cast<UInt8>(children.size());
+            setIndex(slot, static_cast<UInt8>(children.size()));
             children.push_back(std::move(node));
         }
     }
 
 public:
     bool hasChildren() const { return !children.empty(); }
-    ASTPtr getType() const { return getChildOrNull(type_idx); }
-    ASTPtr getDefaultExpression() const { return getChildOrNull(default_expression_idx); }
-    ASTPtr getComment() const { return getChildOrNull(comment_idx); }
-    ASTPtr getCodec() const { return getChildOrNull(codec_idx); }
-    ASTPtr getStatisticsDesc() const { return getChildOrNull(statistics_desc_idx); }
-    ASTPtr getTTL() const { return getChildOrNull(ttl_idx); }
-    ASTPtr getCollation() const { return getChildOrNull(collation_idx); }
-    ASTPtr getSettings() const { return getChildOrNull(settings_idx); }
+    ASTPtr getType() const { return getChildOrNull(TYPE); }
+    ASTPtr getDefaultExpression() const { return getChildOrNull(DEFAULT_EXPR); }
+    ASTPtr getComment() const { return getChildOrNull(COMMENT); }
+    ASTPtr getCodec() const { return getChildOrNull(CODEC); }
+    ASTPtr getStatisticsDesc() const { return getChildOrNull(STATS); }
+    ASTPtr getTTL() const { return getChildOrNull(TTL); }
+    ASTPtr getCollation() const { return getChildOrNull(COLLATION); }
+    ASTPtr getSettings() const { return getChildOrNull(SETTINGS); }
 
-    void setType(ASTPtr && node) { setChild(type_idx, std::move(node)); }
-    void setDefaultExpression(ASTPtr && node) { setChild(default_expression_idx, std::move(node)); }
-    void setComment(ASTPtr && node) { setChild(comment_idx, std::move(node)); }
-    void setCodec(ASTPtr && node) { setChild(codec_idx, std::move(node)); }
-    void setStatisticsDesc(ASTPtr && node) { setChild(statistics_desc_idx, std::move(node)); }
-    void setTTL(ASTPtr && node) { setChild(ttl_idx, std::move(node)); }
-    void setCollation(ASTPtr && node) { setChild(collation_idx, std::move(node)); }
-    void setSettings(ASTPtr && node) { setChild(settings_idx, std::move(node)); }
+    void setType(ASTPtr && node) { setChild(TYPE, std::move(node)); }
+    void setDefaultExpression(ASTPtr && node) { setChild(DEFAULT_EXPR, std::move(node)); }
+    void setComment(ASTPtr && node) { setChild(COMMENT, std::move(node)); }
+    void setCodec(ASTPtr && node) { setChild(CODEC, std::move(node)); }
+    void setStatisticsDesc(ASTPtr && node) { setChild(STATS, std::move(node)); }
+    void setTTL(ASTPtr && node) { setChild(TTL, std::move(node)); }
+    void setCollation(ASTPtr && node) { setChild(COLLATION, std::move(node)); }
+    void setSettings(ASTPtr && node) { setChild(SETTINGS, std::move(node)); }
 
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
 

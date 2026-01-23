@@ -10,14 +10,7 @@ ASTPtr ASTColumnDeclaration::clone() const
 {
     const auto res = make_intrusive<ASTColumnDeclaration>(*this);
     res->children.clear();
-    res->type_idx = kNotSet;
-    res->default_expression_idx = kNotSet;
-    res->comment_idx = kNotSet;
-    res->codec_idx = kNotSet;
-    res->statistics_desc_idx = kNotSet;
-    res->ttl_idx = kNotSet;
-    res->collation_idx = kNotSet;
-    res->settings_idx = kNotSet;
+    res->packed_indices = kAllNotSet;
 
     if (auto node = getType())
         res->setType(node->clone());
@@ -110,21 +103,19 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
 void ASTColumnDeclaration::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
 {
-    if (type_idx != kNotSet)
-        f(nullptr, &children[type_idx]);
-    if (default_expression_idx != kNotSet)
-        f(nullptr, &children[default_expression_idx]);
-    if (comment_idx != kNotSet)
-        f(nullptr, &children[comment_idx]);
-    if (codec_idx != kNotSet)
-        f(nullptr, &children[codec_idx]);
-    if (statistics_desc_idx != kNotSet)
-        f(nullptr, &children[statistics_desc_idx]);
-    if (ttl_idx != kNotSet)
-        f(nullptr, &children[ttl_idx]);
-    if (collation_idx != kNotSet)
-        f(nullptr, &children[collation_idx]);
-    if (settings_idx != kNotSet)
-        f(nullptr, &children[settings_idx]);
+    auto callIfSet = [&](IndexSlot slot)
+    {
+        UInt8 idx = getIndex(slot);
+        if (idx != kNotSet)
+            f(nullptr, &children[idx]);
+    };
+    callIfSet(TYPE);
+    callIfSet(DEFAULT_EXPR);
+    callIfSet(COMMENT);
+    callIfSet(CODEC);
+    callIfSet(STATS);
+    callIfSet(TTL);
+    callIfSet(COLLATION);
+    callIfSet(SETTINGS);
 }
 }
