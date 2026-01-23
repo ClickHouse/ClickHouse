@@ -321,7 +321,7 @@ SerializationPtr IDataType::getDefaultSerialization() const
     return doGetSerialization(SerializationInfoSettings{});
 }
 
-SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack kind_stack, const SerializationInfoSettings & settings) const
+SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack & kind_stack, const SerializationInfoSettings & settings) const
 {
     for (auto kind : kind_stack)
     {

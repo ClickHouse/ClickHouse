@@ -149,7 +149,7 @@ public:
 
     SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
 
-    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack kind_stack, const SerializationInfoSettings & settings) const;
+    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack & kind_stack, const SerializationInfoSettings & settings) const;
 
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
