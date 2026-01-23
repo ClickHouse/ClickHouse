@@ -951,6 +951,8 @@ RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ran
         /// The final mark may not be written under some situations e.g index_granularity_bytes = 0.
         if (!index_granularity->hasFinalMark())
         {
+            LOG_TRACE(logger, "use_skip_indexes_if_final_exact_mode processing could not find final mark in {}",
+                        ranges_in_data_parts[part_index].data_part->name);
             return skip_and_return_all_part_ranges();
         }
 
