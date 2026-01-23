@@ -24,5 +24,11 @@ SELECT ((SELECT 1) AS a1), NOT ((SELECT 1) AS a1);
 SELECT 'Test repeated alias for tuple after IN:';
 select tuple(1, 'a') as a1, tuple(1, 'a') IN (tuple(1, 'a') as a1);
 
+SELECT 'Alias in ON clause of JOIN:';
+CREATE TABLE t1 (x int);
+CREATE TABLE t2 (x int);
+SELECT * FROM t1 JOIN t2 ON ((t1.x = t2.x) AND (t1.x IS NULL) AS e2);
+DROP TABLE t1, t2;
+
 SELECT 'Test repeated alias for tuple after NOT fails cleanly:';
 select tuple(1, 'a') as a1, not (tuple(1, 'a') as a1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
