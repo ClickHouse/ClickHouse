@@ -626,6 +626,10 @@ void ReadManager::scheduleTasksIfNeeded(ReadStage stage_idx)
         if (row_group_idx != i)
             return false;
         const RowGroup & row_group = reader.row_groups[row_group_idx];
+        /// Only access next_subgroup_for_step if it has been initialized.
+        /// It is initialized during OffsetIndex stage.
+        if (row_group.stage.load() <= ReadStage::OffsetIndex)
+            return false;
         if (row_group.next_subgroup_for_step.empty())
             return false;
         return row_group.next_subgroup_for_step[0].load() == row_group.delivery_ptr.load();
