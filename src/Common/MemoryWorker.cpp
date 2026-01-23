@@ -337,7 +337,7 @@ void MemoryWorker::backgroundThread()
 {
     DB::setThreadName(ThreadName::MEMORY_WORKER);
 
-    /// Set the bigget priority for this thread to avoid drift
+    /// Set the biggest priority for this thread to avoid drift
     /// under the CPU starvation.
     OSThreadNiceValue::set(-20);
 
