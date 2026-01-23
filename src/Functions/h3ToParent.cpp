@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -9,10 +9,6 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
-
-#include <constants.h>
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -108,6 +104,7 @@ public:
                     getName(),
                     toString(MAX_H3_RES));
 
+            validateH3Cell(hindex);
             UInt64 res = cellToParent(hindex, resolution);
 
             dst_data[row] = res;

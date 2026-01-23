@@ -28,6 +28,7 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+
 namespace zkutil
 {
     class ZooKeeper;
@@ -114,7 +115,7 @@ public:
     IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
 
     /// Returns true if there is materialized index with specified name in part.
-    bool hasSecondaryIndex(const String & index_name) const;
+    bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;
@@ -363,9 +364,9 @@ public:
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
-        static void appendFiles(const MergeTreeData & data, Strings & files);
+        static void appendFiles(const MergeTreeData & data, Strings & files, const IDataPartStorage & data_part_storage);
         /// For Store
-        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_);
+        static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
         /// For Load
         static String getFileColumnName(const String & column_name, const Checksums & checksums_);
     };

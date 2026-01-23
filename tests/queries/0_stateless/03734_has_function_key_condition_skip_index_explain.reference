@@ -33,6 +33,7 @@ Expression ((Project names + Projection))
           Skip
             Name: idx_key_minmax
             Description: minmax GRANULARITY 4
+            Condition: (key_col in 3-element set)
             Parts: 1/1
             Granules: 80/100
           Ranges: 5
@@ -44,7 +45,7 @@ CREATE TABLE test_has_skip_set (
 )
 ENGINE = MergeTree
 ORDER BY event_time
-SETTINGS index_granularity = 1000;
+SETTINGS index_granularity = 1000, add_minmax_index_for_numeric_columns=0;
 INSERT INTO test_has_skip_set 
 SELECT 
     toUInt32(intDiv(number, 1000)) AS user_id,
@@ -67,6 +68,7 @@ Expression ((Project names + Projection))
           Skip
             Name: user_set_idx
             Description: set GRANULARITY 2
+            Condition: (user_id in 3-element set)
             Parts: 1/1
             Granules: 6/100
           Ranges: 3

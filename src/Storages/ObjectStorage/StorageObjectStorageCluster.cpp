@@ -66,7 +66,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     const ColumnsDescription & columns_in_table_or_function_definition,
     const ConstraintsDescription & constraints_,
     const ASTPtr & partition_by,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool is_table_function)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
@@ -80,6 +81,10 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         object_storage,
         context_,
         /* if_not_updated_before */ false);
+
+    // For tables need to update configuration on each read
+    // because data can be changed after previous update
+    update_configuration_on_read_write = !is_table_function;
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
     std::string sample_path;
@@ -274,6 +279,17 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         });
 
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+}
+
+void StorageObjectStorageCluster::updateConfigurationIfNeeded(ContextPtr context)
+{
+    if (update_configuration_on_read_write)
+    {
+        configuration->update(
+            object_storage,
+            context,
+            /* if_not_updated_before */false);
+    }
 }
 
 }

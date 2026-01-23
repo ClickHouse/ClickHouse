@@ -1085,7 +1085,7 @@ quit
             for cache_status_path in cache_status_files:
                 Shell.check(f"rm {cache_status_path}", verbose=True)
 
-        scrapping_system_table = Result(name=f"Scrapping system tables", status="OK")
+        scraping_system_table = Result(name=f"Scraping system tables", status="OK")
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res, stdout, stderr = Shell.get_res_stdout_stderr(
@@ -1094,7 +1094,7 @@ quit
             )
             if res != 0:
                 print(f"ERROR: Failed to dump system table: {table}\nError: {stderr}")
-                scrapping_system_table.set_info(
+                scraping_system_table.set_info(
                     f"Failed to dump system table: {table}\nError: {stderr}"
                 )
             if "minio" in table:
@@ -1110,7 +1110,7 @@ quit
                     print(
                         f"ERROR: Failed to dump system table from replica 1: {table}\nError: {stderr}"
                     )
-                    scrapping_system_table.set_info(
+                    scraping_system_table.set_info(
                         f"Failed to dump system table from replica 1: {table}\nError: {stderr}"
                     )
                     res = False
@@ -1124,13 +1124,13 @@ quit
                     print(
                         f"ERROR: Failed to dump system table from replica 2: {table}\nError: {stderr}"
                     )
-                    scrapping_system_table.set_info(
+                    scraping_system_table.set_info(
                         f"Failed to dump system table from replica 2: {table}\nError: {stderr}"
                     )
                     res = False
-        if scrapping_system_table.info:
-            scrapping_system_table.set_status(Result.StatusExtended.FAIL)
-            self.extra_tests_results.append(scrapping_system_table)
+        if scraping_system_table.info:
+            scraping_system_table.set_status(Result.StatusExtended.FAIL)
+            self.extra_tests_results.append(scraping_system_table)
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 
     @staticmethod

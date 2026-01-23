@@ -8,6 +8,7 @@
 #include <Core/Types.h>
 #include <Poco/Runnable.h>
 
+
 class BaseDaemon;
 
 /** Reset signal handler to the default and send signal to itself.
@@ -55,6 +56,11 @@ __attribute__((__weak__)) void collectCrashLog(
     const String & fault_access_type,
     const String & signal_description,
     const String & current_exception);
+
+
+/// Check if we are currently handing the fatal signal and going to terminate
+/// it does not make sense to accept new connections and queries in this case.
+bool isCrashed();
 
 
 void blockSignals(const std::vector<int> & signals);

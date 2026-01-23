@@ -25,7 +25,7 @@ def clone_submodules():
         "contrib/zlib-ng",
         "contrib/libxml2",
         "contrib/fmtlib",
-        "contrib/aklomp-base64",
+        "contrib/base64",
         "contrib/cctz",
         "contrib/libcpuid",
         "contrib/libdivide",
@@ -50,9 +50,9 @@ def clone_submodules():
         "contrib/morton-nd",
         "contrib/xxHash",
         "contrib/simdjson",
+        "contrib/simdcomp",
         "contrib/liburing",
         "contrib/libfiu",
-        "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
         "contrib/StringZilla",
@@ -128,7 +128,18 @@ def main():
         stages.insert(0, stage)
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
+
+    # Global sccache settings for local and CI runs
+    os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
+    os.environ["SCCACHE_CACHE_SIZE"] = "40G"
+    os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
+    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+    os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
+    os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
+    os.environ["SCCACHE_LOG"] = "info"
+
     if Info().is_local_run:
+        os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
         if clickhouse_bin_path.exists():
             print(
                 f"NOTE: It's a local run and clickhouse binary is found [{clickhouse_bin_path}] - skip the build"
@@ -151,11 +162,6 @@ def main():
         os.environ["CH_PASSWORD"] = chcache_secret.get_value()
         os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
-        os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-        os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
-        os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
-        Shell.check("sccache --show-stats", verbose=True)
-
     Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
 
     res = True
@@ -176,6 +182,8 @@ def main():
             )
         )
         res = results[-1].is_ok()
+
+    os.makedirs(build_dir, exist_ok=True)
 
     if res and JobStages.CMAKE in stages:
         results.append(

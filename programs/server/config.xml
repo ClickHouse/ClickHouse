@@ -1486,6 +1486,16 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </aggregated_zookeeper_log>
 
+    <!--
+    <zookeeper_log>
+        <database>system</database>
+        <table>zookeeper_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 30 DAY</ttl>
+        <duration_threshold_microseconds>0</duration_threshold_microseconds>
+    </zookeeper_log>
+    -->
+
     <!-- ZooKeeper connection log.
     -->
     <zookeeper_connection_log>
@@ -1655,7 +1665,7 @@
     <!-- <throw_on_unknown_workload>true</throw_on_unknown_workload> -->
 
     <!-- Workload scheduling: if enabled during CPU overloaded periods, long-running queries will downscale to lower number of threads dynamically.
-         Ensures more fair CPU resource distribution.
+         Ensures more fair CPU resource distribution. (Enabled by default)
     -->
     <!--
     <cpu_slot_preemption>true</cpu_slot_preemption>

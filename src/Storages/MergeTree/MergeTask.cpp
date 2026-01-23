@@ -131,6 +131,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool vertical_merge_optimize_lightweight_delete;
     extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_wide_part;
+    extern const MergeTreeSettingsUInt64Auto merge_max_dynamic_subcolumns_in_compact_part;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
@@ -367,9 +368,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 
     for (const auto * projection : global_ctx->projections_to_rebuild)
     {
-        Names projection_columns_vec = projection->getRequiredColumns();
-        std::copy(projection_columns_vec.cbegin(), projection_columns_vec.cend(),
-                  std::inserter(key_columns, key_columns.end()));
+        for (const auto & column : projection->getRequiredColumns())
+        {
+            if (projection->with_parent_part_offset && column == "_part_offset")
+                continue;
+
+            key_columns.insert(getColumnNameInStorage(column, storage_columns));
+        }
     }
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
@@ -961,19 +966,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 }
 
 
-void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Block & block) const
+void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjections(const Block & block, UInt64 starting_offset) const
 {
     for (size_t i = 0, size = global_ctx->projections_to_rebuild.size(); i < size; ++i)
     {
         const auto & projection = *global_ctx->projections_to_rebuild[i];
-        Block block_with_required_columns;
-        for (const auto & name : projection.getRequiredColumns())
-            if (name != "_part_offset")
-                block_with_required_columns.insert(block.getByName(name));
-        Block block_to_squash = projection.calculate(block_with_required_columns, global_ctx->context);
+        Block block_to_squash = projection.calculate(block, starting_offset, global_ctx->context);
         /// Avoid replacing the projection squash header if nothing was generated (it used to return an empty block)
         if (block_to_squash.rows() == 0)
-            return;
+            continue;
+
         auto & projection_squash_plan = ctx->projection_squashes[i];
         projection_squash_plan.setHeader(block_to_squash.cloneEmpty());
         Chunk squashed_chunk = Squashing::squash(
@@ -1092,6 +1094,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
             }
         }
 
+        size_t starting_offset = global_ctx->rows_written;
         global_ctx->rows_written += block.rows();
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
@@ -1101,7 +1104,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
                 block, MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey()));
         }
 
-        calculateProjections(block);
+        calculateProjections(block, starting_offset);
 
         UInt64 result_rows = 0;
         UInt64 result_bytes = 0;
@@ -1315,6 +1318,8 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
+        else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
+            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
         bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
         auto merge_step = std::make_unique<ColumnGathererStep>(
@@ -2444,8 +2449,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         }
 
         const bool is_vertical_merge = (global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical);
-        /// If merge is vertical we cannot calculate it
-        ctx->blocks_are_granules_size = is_vertical_merge;
 
         if (global_ctx->cleanup && !(*merge_tree_settings)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
@@ -2456,6 +2459,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         std::optional<size_t> max_dynamic_subcolumns = std::nullopt;
         if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Wide)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_wide_part].valueOrNullopt();
+        else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
+            max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),
@@ -2467,7 +2472,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size],
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             max_dynamic_subcolumns,
-            ctx->blocks_are_granules_size,
+            is_vertical_merge,
             cleanup,
             global_ctx->time_of_merge);
 
