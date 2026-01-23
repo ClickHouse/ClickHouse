@@ -8119,7 +8119,7 @@ void Settings::addToProgramOptions(std::string_view setting_name, boost::program
                 this->set(setting_name, value);
             });
     options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-            setting_name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), accessor.getDescription(index)))); // NOLINT
+            setting_name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), accessor.getDescription(index).data()))); // NOLINT
 }
 
 void Settings::addToProgramOptionsAsMultitokens(boost::program_options::options_description & options) const

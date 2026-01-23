@@ -2807,10 +2807,10 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     ASTCreateQuery create;
     create.set(create.select, query);
 
-    auto sql_security = std::make_shared<ASTSQLSecurity>();
+    auto sql_security = make_intrusive<ASTSQLSecurity>();
     sql_security->type = original_view_metadata->sql_security_type;
     if (original_view_metadata->definer)
-        sql_security->definer = std::make_shared<ASTUserNameWithHost>(*original_view_metadata->definer);
+        sql_security->definer = make_intrusive<ASTUserNameWithHost>(*original_view_metadata->definer);
     create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
