@@ -62,7 +62,6 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
-    extern const DatabaseDataLakeSettingsBool require_metadata_access;
 }
 
 namespace Setting
@@ -75,6 +74,7 @@ namespace Setting
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool require_metadata_access;
 
 }
 
@@ -761,7 +761,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
                     }
                     catch (...)
                     {
-                        if (settings[DatabaseDataLakeSetting::require_metadata_access].value)
+                        if (context_->getSettingsRef()[Setting::require_metadata_access])
                         {
                             auto error_code = getCurrentExceptionCode();
                             auto error_message = getCurrentExceptionMessage(true, false, true, true);

@@ -7191,6 +7191,9 @@ Max bytes of iceberg parquet data file on insert operation.
     DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
 Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0) \
+    DECLARE(Bool, require_metadata_access, true, R"(
+Either to throw error or not if we don't have rights to get table's metadata.
+)", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
     DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, R"(
