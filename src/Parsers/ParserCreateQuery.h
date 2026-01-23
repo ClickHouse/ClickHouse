@@ -189,7 +189,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
       *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS, COMMENT}
       */
     ASTPtr type;
-    String default_specifier;
+    ColumnDefaultSpecifier default_specifier = ColumnDefaultSpecifier::Empty;
     std::optional<bool> null_modifier;
     bool ephemeral_default = false;
     ASTPtr default_expression;
@@ -254,10 +254,25 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         && !collation_parser.parse(pos, collation_expression, expected))
         return false;
 
-    Pos pos_before_specifier = pos;
-    if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
+    if (s_default.ignore(pos, expected))
     {
-        default_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_before_specifier->end});
+        default_specifier = ColumnDefaultSpecifier::Default;
+
+        /// should be followed by an expression
+        if (!expr_parser.parse(pos, default_expression, expected))
+            return false;
+    }
+    else if (s_materialized.ignore(pos, expected))
+    {
+        default_specifier = ColumnDefaultSpecifier::Materialized;
+
+        /// should be followed by an expression
+        if (!expr_parser.parse(pos, default_expression, expected))
+            return false;
+    }
+    else if (s_alias.ignore(pos, expected))
+    {
+        default_specifier = ColumnDefaultSpecifier::Alias;
 
         /// should be followed by an expression
         if (!expr_parser.parse(pos, default_expression, expected))
@@ -265,7 +280,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
     else if (s_ephemeral.ignore(pos, expected))
     {
-        default_specifier = s_ephemeral.getName();
+        default_specifier = ColumnDefaultSpecifier::Ephemeral;
         if (s_comment.ignore(pos, expected))
             is_comment = true;
         if ((is_comment || !expr_parser.parse(pos, default_expression, expected)) && type)
@@ -285,7 +300,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
     else if (s_auto_increment.ignore(pos, expected))
     {
-        default_specifier = s_auto_increment.getName();
+        default_specifier = ColumnDefaultSpecifier::AutoIncrement;
         /// if type is not provided for a column with AUTO_INCREMENT then using INT by default
         if (!type)
         {

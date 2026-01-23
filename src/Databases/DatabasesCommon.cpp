@@ -8,6 +8,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -282,7 +283,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
 
                 if (auto column_default = metadata_ptr->columns.getDefault(column_name_and_type.name))
                 {
-                    ast_column_declaration->default_specifier = toString(column_default->kind);
+                    ast_column_declaration->default_specifier = toColumnDefaultSpecifier(column_default->kind);
                     ast_column_declaration->setDefaultExpression(column_default->expression->clone());
                 }
             }

@@ -230,7 +230,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
         {
             if (auto col_default_expression = col_ast->getDefaultExpression())
             {
-                default_desc.kind = columnDefaultKindFromString(col_ast->default_specifier);
+                default_desc.kind = toColumnDefaultKind(col_ast->default_specifier);
                 default_desc.expression = std::move(col_default_expression);
                 default_desc.ephemeral_default = col_ast->ephemeral_default;
             }

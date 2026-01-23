@@ -1,9 +1,26 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Storages/ColumnDefault.h>
 
 namespace DB
 {
+
+/// Default specifier for column declarations - compatible with ColumnDefaultKind plus Empty and AutoIncrement
+enum class ColumnDefaultSpecifier : UInt8
+{
+    Empty = 0,
+    Default,
+    Materialized,
+    Alias,
+    Ephemeral,
+    AutoIncrement
+};
+
+const char * toString(ColumnDefaultSpecifier kind);
+ColumnDefaultSpecifier columnDefaultSpecifierFromString(std::string_view str);
+ColumnDefaultSpecifier toColumnDefaultSpecifier(ColumnDefaultKind kind);
+ColumnDefaultKind toColumnDefaultKind(ColumnDefaultSpecifier specifier);
 
 /** Name, type, default-specifier, default-expression, comment-expression.
  *  The type is optional if default-expression is specified.
@@ -12,11 +29,11 @@ class ASTColumnDeclaration : public IAST
 {
 public:
     String name;
-    String default_specifier;
+    ColumnDefaultSpecifier default_specifier = ColumnDefaultSpecifier::Empty;
 
     std::optional<bool> null_modifier;
-    bool ephemeral_default = false;
-    bool primary_key_specifier = false;
+    bool ephemeral_default : 1 = false;
+    bool primary_key_specifier : 1 = false;
 
 private:
     /// Pack 8 indices (4 bits each) into a single UInt32. 0xF means "not set".

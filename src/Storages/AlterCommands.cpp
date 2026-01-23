@@ -111,7 +111,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         }
         if (ast_col_decl.getDefaultExpression())
         {
-            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
+            command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
             command.default_expression = ast_col_decl.getDefaultExpression();
         }
 
@@ -123,7 +123,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.getCodec())
         {
-            if (ast_col_decl.default_specifier == "ALIAS")
+            if (ast_col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             command.codec = ast_col_decl.getCodec();
         }
@@ -169,7 +169,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         if (ast_col_decl.getDefaultExpression())
         {
-            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
+            command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
             command.default_expression = ast_col_decl.getDefaultExpression();
         }
 

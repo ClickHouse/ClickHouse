@@ -776,7 +776,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 {
                     const auto & column_decl = command_col_decl->as<const ASTColumnDeclaration &>();
 
-                    if (column_decl.hasChildren() || column_decl.null_modifier.has_value() || !column_decl.default_specifier.empty()
+                    if (column_decl.hasChildren() || column_decl.null_modifier.has_value() || column_decl.default_specifier != ColumnDefaultSpecifier::Empty
                         || column_decl.ephemeral_default || column_decl.primary_key_specifier)
                     {
                         throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot specify column properties before '{}'", keyword);

@@ -6,6 +6,55 @@
 namespace DB
 {
 
+const char * toString(ColumnDefaultSpecifier kind)
+{
+    switch (kind)
+    {
+        case ColumnDefaultSpecifier::Empty: return "";
+        case ColumnDefaultSpecifier::Default: return "DEFAULT";
+        case ColumnDefaultSpecifier::Materialized: return "MATERIALIZED";
+        case ColumnDefaultSpecifier::Alias: return "ALIAS";
+        case ColumnDefaultSpecifier::Ephemeral: return "EPHEMERAL";
+        case ColumnDefaultSpecifier::AutoIncrement: return "AUTO_INCREMENT";
+    }
+}
+
+ColumnDefaultSpecifier columnDefaultSpecifierFromString(std::string_view str)
+{
+    if (str.empty()) return ColumnDefaultSpecifier::Empty;
+    if (str == "DEFAULT") return ColumnDefaultSpecifier::Default;
+    if (str == "MATERIALIZED") return ColumnDefaultSpecifier::Materialized;
+    if (str == "ALIAS") return ColumnDefaultSpecifier::Alias;
+    if (str == "EPHEMERAL") return ColumnDefaultSpecifier::Ephemeral;
+    if (str == "AUTO_INCREMENT") return ColumnDefaultSpecifier::AutoIncrement;
+    return ColumnDefaultSpecifier::Empty;
+}
+
+ColumnDefaultSpecifier toColumnDefaultSpecifier(ColumnDefaultKind kind)
+{
+    switch (kind)
+    {
+        case ColumnDefaultKind::Default: return ColumnDefaultSpecifier::Default;
+        case ColumnDefaultKind::Materialized: return ColumnDefaultSpecifier::Materialized;
+        case ColumnDefaultKind::Alias: return ColumnDefaultSpecifier::Alias;
+        case ColumnDefaultKind::Ephemeral: return ColumnDefaultSpecifier::Ephemeral;
+    }
+}
+
+ColumnDefaultKind toColumnDefaultKind(ColumnDefaultSpecifier specifier)
+{
+    switch (specifier)
+    {
+        case ColumnDefaultSpecifier::Empty:
+        case ColumnDefaultSpecifier::Default:
+        case ColumnDefaultSpecifier::AutoIncrement:
+            return ColumnDefaultKind::Default;
+        case ColumnDefaultSpecifier::Materialized: return ColumnDefaultKind::Materialized;
+        case ColumnDefaultSpecifier::Alias: return ColumnDefaultKind::Alias;
+        case ColumnDefaultSpecifier::Ephemeral: return ColumnDefaultKind::Ephemeral;
+    }
+}
+
 ASTPtr ASTColumnDeclaration::clone() const
 {
     const auto res = make_intrusive<ASTColumnDeclaration>(*this);
@@ -52,7 +101,7 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
 
     if (auto default_expression = getDefaultExpression())
     {
-        ostr << ' '  << default_specifier ;
+        ostr << ' ' << toString(default_specifier);
         if (!ephemeral_default)
         {
             ostr << ' ';

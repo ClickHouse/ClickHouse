@@ -311,7 +311,7 @@ boost::intrusive_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMat
     column_declaration->name = std::move(name);
     column_declaration->setType(makeASTDataType(type));
 
-    column_declaration->default_specifier = "MATERIALIZED";
+    column_declaration->default_specifier = ColumnDefaultSpecifier::Materialized;
     column_declaration->setDefaultExpression(make_intrusive<ASTLiteral>(default_value));
 
     return column_declaration;
@@ -352,7 +352,7 @@ StorageMaterializedPostgreSQL::getColumnsExpressionList(const NamesAndTypesList 
         if (auto it = defaults.find(name); it != defaults.end())
         {
             column_declaration->setDefaultExpression(std::move(it->second));
-            column_declaration->default_specifier = "DEFAULT";
+            column_declaration->default_specifier = ColumnDefaultSpecifier::Default;
         }
 
         columns_expression_list->children.emplace_back(column_declaration);

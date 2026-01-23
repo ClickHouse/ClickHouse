@@ -431,7 +431,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns, 
         const char * type_end = type_pos + type_name.size();
         column_declaration->setType(parseQuery(type_parser, type_pos, type_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
 
-        column_declaration->default_specifier = "ALIAS";
+        column_declaration->default_specifier = ColumnDefaultSpecifier::Alias;
 
         const auto & alias = alias_column.expression;
         const char * alias_pos = alias.data();
@@ -464,7 +464,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         if (column.default_desc.expression)
         {
-            column_declaration->default_specifier = toString(column.default_desc.kind);
+            column_declaration->default_specifier = toColumnDefaultSpecifier(column.default_desc.kind);
             column_declaration->setDefaultExpression(column.default_desc.expression->clone());
         }
 
@@ -562,7 +562,7 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
         column_type = makeNullable(column_type);
     }
     else if (auto default_expr = col_decl.getDefaultExpression();
-        !hasNullable(column_type) && col_decl.default_specifier == "DEFAULT" && default_expr
+        !hasNullable(column_type) && col_decl.default_specifier == ColumnDefaultSpecifier::Default && default_expr
         && default_expr->as<ASTLiteral>() && default_expr->as<ASTLiteral>()->value.isNull())
     {
         if (column_type->lowCardinality())
@@ -633,7 +633,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         column.name = col_decl.name;
 
         /// ignore or not other database extensions depending on compatibility settings
-        if (col_decl.default_specifier == "AUTO_INCREMENT"
+        if (col_decl.default_specifier == ColumnDefaultSpecifier::AutoIncrement
             && !context_->getSettingsRef()[Setting::compatibility_ignore_auto_increment_in_create_table])
         {
             throw Exception(ErrorCodes::SYNTAX_ERROR,
@@ -664,7 +664,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
                     column.type = makeNullable(column.type);
             }
 
-            column.default_desc.kind = columnDefaultKindFromString(col_decl.default_specifier);
+            column.default_desc.kind = toColumnDefaultKind(col_decl.default_specifier);
             column.default_desc.expression = default_expr;
             column.default_desc.ephemeral_default = col_decl.ephemeral_default;
         }
@@ -678,7 +678,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
         if (auto codec = col_decl.getCodec())
         {
-            if (col_decl.default_specifier == "ALIAS")
+            if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                 codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);

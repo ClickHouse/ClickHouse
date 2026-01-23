@@ -278,9 +278,9 @@ void TimeSeriesDefinitionNormalizer::addMissingDefaultForIDColumn(ASTCreateQuery
     auto & column_declaration = typeid_cast<ASTColumnDeclaration &>(**it);
 
     /// We add a DEFAULT for the 'id' column only if it's not specified yet.
-    if (column_declaration.default_specifier.empty() && !column_declaration.getDefaultExpression())
+    if (column_declaration.default_specifier == ColumnDefaultSpecifier::Empty && !column_declaration.getDefaultExpression())
     {
-        column_declaration.default_specifier = "DEFAULT";
+        column_declaration.default_specifier = ColumnDefaultSpecifier::Default;
         column_declaration.setDefaultExpression(chooseIDAlgorithm(column_declaration));
     }
 }
