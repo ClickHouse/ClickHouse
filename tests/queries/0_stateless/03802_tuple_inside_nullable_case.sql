@@ -1,3 +1,5 @@
+SET enable_analyzer = 1;
+
 -- { echo }
 
 SELECT CASE WHEN number = 0 THEN (SELECT 0) WHEN number = 1 THEN (SELECT 1) END as col, toTypeName(col) FROM numbers(2);
