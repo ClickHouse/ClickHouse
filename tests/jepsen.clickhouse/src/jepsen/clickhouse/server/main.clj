@@ -50,6 +50,25 @@
 (defn clickhouse-func-tests
   [opts]
   (info "Test opts\n" (with-out-str (pprint opts)))
+
+  ; Debug SSH agent socket accessibility from Jepsen process
+  (let [ssh-sock (System/getenv "SSH_AUTH_SOCK")]
+    (when ssh-sock
+      (info "SSH_AUTH_SOCK:" ssh-sock)
+      (try
+        (info "ls -l:" (:out (clojure.java.shell/sh "ls" "-l" ssh-sock)))
+        (catch Exception e (info "ls failed:" (.getMessage e))))
+      (try
+        (let [result (clojure.java.shell/sh "test" "-S" ssh-sock)]
+          (info "Socket test:" (if (= 0 (:exit result)) "OK" "BROKEN")))
+        (catch Exception e (info "test failed:" (.getMessage e))))
+      (try
+        (let [result (clojure.java.shell/sh "ssh-add" "-l")]
+          (info "ssh-add -l exit:" (:exit result))
+          (info "ssh-add -l output:" (:out result))
+          (info "ssh-add -l stderr:" (:err result)))
+        (catch Exception e (info "ssh-add failed:" (.getMessage e))))))
+
   (let [quorum (boolean (:quorum opts))
         workload  ((get workloads (:workload opts)) opts)
         current-nemesis (get ch-nemesis/custom-nemeses (:nemesis opts))]
