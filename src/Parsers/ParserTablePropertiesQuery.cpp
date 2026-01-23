@@ -26,7 +26,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     ASTPtr database;
     ASTPtr table;
-    std::shared_ptr<ASTQueryWithTableAndOutput> query;
+    boost::intrusive_ptr<ASTQueryWithTableAndOutput> query;
 
     bool parse_only_database_name = false;
     bool parse_show_create_view = false;
@@ -38,7 +38,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     {
         if (s_database.ignore(pos, expected))
         {
-            query = std::make_shared<ASTExistsDatabaseQuery>();
+            query = make_intrusive<ASTExistsDatabaseQuery>();
             parse_only_database_name = true;
         }
         else
@@ -48,15 +48,15 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
             if (s_view.ignore(pos, expected))
             {
-                query = std::make_shared<ASTExistsViewQuery>();
+                query = make_intrusive<ASTExistsViewQuery>();
                 exists_view = true;
             }
             else if (s_table.checkWithoutMoving(pos, expected))
-                query = std::make_shared<ASTExistsTableQuery>();
+                query = make_intrusive<ASTExistsTableQuery>();
             else if (s_dictionary.checkWithoutMoving(pos, expected))
-                query = std::make_shared<ASTExistsDictionaryQuery>();
+                query = make_intrusive<ASTExistsDictionaryQuery>();
             else
-                query = std::make_shared<ASTExistsTableQuery>();
+                query = make_intrusive<ASTExistsTableQuery>();
         }
     }
     else if (s_show.ignore(pos, expected))
@@ -76,13 +76,13 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (s_database.ignore(pos, expected))
         {
             parse_only_database_name = true;
-            query = std::make_shared<ASTShowCreateDatabaseQuery>();
+            query = make_intrusive<ASTShowCreateDatabaseQuery>();
         }
         else if (s_dictionary.checkWithoutMoving(pos, expected))
-            query = std::make_shared<ASTShowCreateDictionaryQuery>();
+            query = make_intrusive<ASTShowCreateDictionaryQuery>();
         else if (s_view.ignore(pos, expected))
         {
-            query = std::make_shared<ASTShowCreateViewQuery>();
+            query = make_intrusive<ASTShowCreateViewQuery>();
             parse_show_create_view = true;
         }
         else
@@ -91,7 +91,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             /// but do not support `SHOW tbl`, which is ambiguous
             /// with other statement like `SHOW PRIVILEGES`.
             if (has_create || s_table.checkWithoutMoving(pos, expected))
-                query = std::make_shared<ASTShowCreateTableQuery>();
+                query = make_intrusive<ASTShowCreateTableQuery>();
             else
                 return false;
         }

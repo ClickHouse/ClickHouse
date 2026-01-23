@@ -13,6 +13,11 @@ class ASTQueryParameter;
 class ASTWithAlias : public IAST
 {
 public:
+    ASTWithAlias();
+    ASTWithAlias(const ASTWithAlias &);
+    ~ASTWithAlias() override;
+    ASTWithAlias & operator=(const ASTWithAlias &);
+
     /// The alias, if any, or an empty string.
     String alias;
     /// If is true, getColumnName returns alias. Uses for aliases in former WITH section of SELECT query.
@@ -20,7 +25,7 @@ public:
     bool prefer_alias_to_column_name = false;
     // An alias can be defined as a query parameter,
     // in which case we can only resolve it during query execution.
-    std::shared_ptr<ASTQueryParameter> parametrised_alias;
+    boost::intrusive_ptr<ASTQueryParameter> parametrised_alias;
 
     using IAST::IAST;
 
