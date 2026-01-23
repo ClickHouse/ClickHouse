@@ -201,26 +201,30 @@ Chunk PostgreSQLSource<T>::generate()
 template<typename T>
 void PostgreSQLSource<T>::onCancel() noexcept
 {
-    LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel entering");
-    LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel cancelling query");
-    tx->conn().cancel_query();
-    if (stream)
+    /// The code is executed only if onStart() was not finished mainly due to freezing on pqxx::from_query
+    if (!started)
     {
-        LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel closing stream");
-        stream->close();
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel entering");
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel cancelling query");
+        tx->conn().cancel_query();
+        if (stream)
+        {
+            LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel closing stream");
+            stream->close();
 
+        }
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel aborting transcation");
+        tx->abort();
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel transaction aborted");
+        stream.reset();
+        tx.reset();
+        if (connection_holder)
+        {
+            LOG_DEBUG(getLogger("PostgreSQLSource"), "setBroken");
+            connection_holder->setBroken();
+        }
+        is_completed = true;
     }
-    LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel aborting transcation");
-    tx->abort();
-    LOG_DEBUG(getLogger("PostgreSQLSource"), "onCancel transaction aborted");
-    stream.reset();
-    tx.reset();
-    if (connection_holder)
-    {
-        LOG_DEBUG(getLogger("PostgreSQLSource"), "setBroken");
-        connection_holder->setBroken();
-    }
-    is_completed = true;
 }
 
 template<typename T>
