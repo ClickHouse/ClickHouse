@@ -98,9 +98,9 @@ ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, co
     /// changes how many rows satisfy the predicates of the subsequent commands).
     /// But we can be sure that if count = 0, then no rows will be touched.
 
-    auto select = std::make_shared<ASTSelectQuery>();
+    auto select = make_intrusive<ASTSelectQuery>();
 
-    select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+    select->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
     auto count_func = makeASTFunction("count");
     select->select()->children.push_back(count_func);
 
@@ -289,8 +289,8 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
 
         partition_predicate_as_ast_func = makeASTOperator("equals",
-                    std::make_shared<ASTIdentifier>("_partition_id"),
-                    std::make_shared<ASTLiteral>(partition_id)
+                    make_intrusive<ASTIdentifier>("_partition_id"),
+                    make_intrusive<ASTLiteral>(partition_id)
         );
     }
 
@@ -818,13 +818,13 @@ void MutationsInterpreter::prepare(bool dry_run)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown column {}", column_name);
                 }
 
-                auto type_literal = std::make_shared<ASTLiteral>(type->getName());
+                auto type_literal = make_intrusive<ASTLiteral>(type->getName());
                 ASTPtr condition = getPartitionAndPredicateExpressionForMutationCommand(command);
 
                 /// And new check validateNestedArraySizes for Nested subcolumns
                 if (isArray(type) && !Nested::splitName(column_name).second.empty())
                 {
-                    std::shared_ptr<ASTFunction> function = nullptr;
+                    boost::intrusive_ptr<ASTFunction> function = nullptr;
 
                     auto nested_update_exprs = getExpressionsOfUpdatedNestedSubcolumns(column_name, affected_materialized, all_columns, command.column_to_update_expression);
                     if (!nested_update_exprs)
@@ -832,7 +832,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         function = makeASTFunction("validateNestedArraySizes",
                             condition,
                             update_expr->clone(),
-                            std::make_shared<ASTIdentifier>(column_name));
+                            make_intrusive<ASTIdentifier>(column_name));
                         condition = makeASTOperator("and", condition, function);
                     }
                     else if (nested_update_exprs->size() > 1)
@@ -850,7 +850,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                         makeASTFunction("_CAST",
                             update_expr->clone(),
                             type_literal),
-                        std::make_shared<ASTIdentifier>(column_name)),
+                        make_intrusive<ASTIdentifier>(column_name)),
                     type_literal);
 
                 stages.back().column_to_updated.emplace(column_name, updated_column);
@@ -863,7 +863,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 {
                     if (column.default_desc.kind == ColumnDefaultKind::Materialized)
                     {
-                        auto type_literal = std::make_shared<ASTLiteral>(column.type->getName());
+                        auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
                         ASTPtr materialized_column = makeASTFunction("_CAST",
                             column.default_desc.expression->clone(),
@@ -906,7 +906,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                     "Cannot materialize column `{}` because it doesn't have default expression", column.name);
 
             auto materialized_column = makeASTFunction(
-                "_CAST", column.default_desc.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
+                "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
@@ -1146,7 +1146,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     {
         stages.emplace_back(context);
         for (auto & column_name : read_columns)
-            stages.back().column_to_updated.emplace(column_name, std::make_shared<ASTIdentifier>(column_name));
+            stages.back().column_to_updated.emplace(column_name, make_intrusive<ASTIdentifier>(column_name));
     }
 
     /// We care about affected indices and projections because we also need to rewrite them
@@ -1168,7 +1168,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             stages.emplace_back(context);
             for (const auto & column : changed_columns)
-                stages.back().column_to_updated.emplace(column, std::make_shared<ASTIdentifier>(column));
+                stages.back().column_to_updated.emplace(column, make_intrusive<ASTIdentifier>(column));
         }
 
         if (!unchanged_columns.empty())
@@ -1177,12 +1177,16 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 std::vector<Stage> stages_copy;
                 /// Copy all filled stages except index calculation stage.
+                /// We need to deep clone ASTs because prepareMutationStages may modify the ASTs in place
+                /// (e.g., replacing scalar subqueries with default values during dry_run).
                 for (const auto & stage : stages)
                 {
                     stages_copy.emplace_back(context);
-                    stages_copy.back().column_to_updated = stage.column_to_updated;
+                    for (const auto & [name, ast] : stage.column_to_updated)
+                        stages_copy.back().column_to_updated.emplace(name, ast->clone());
                     stages_copy.back().output_columns = stage.output_columns;
-                    stages_copy.back().filters = stage.filters;
+                    for (const auto & filter : stage.filters)
+                        stages_copy.back().filters.push_back(filter->clone());
                 }
 
                 prepareMutationStages(stages_copy, true);
@@ -1198,7 +1202,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             stages.back().is_readonly = true;
             for (const auto & column : unchanged_columns)
                 stages.back().column_to_updated.emplace(
-                    column, std::make_shared<ASTIdentifier>(column));
+                    column, make_intrusive<ASTIdentifier>(column));
         }
     }
 
@@ -1359,7 +1363,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
     {
         auto & stage = prepared_stages[i];
 
-        ASTPtr all_asts = std::make_shared<ASTExpressionList>();
+        ASTPtr all_asts = make_intrusive<ASTExpressionList>();
 
         for (const auto & ast : stage.filters)
             all_asts->children.push_back(ast);
@@ -1369,7 +1373,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
 
         /// Add all output columns to prevent ExpressionAnalyzer from deleting them from source columns.
         for (const auto & column : stage.output_columns)
-            all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
+            all_asts->children.push_back(make_intrusive<ASTIdentifier>(column));
 
         /// Executing scalar subquery on that stage can lead to deadlock
         /// e.g. ALTER referencing the same table in scalar subquery
@@ -1495,16 +1499,16 @@ void MutationsInterpreter::Source::read(
     }
     else
     {
-        auto select = std::make_shared<ASTSelectQuery>();
+        auto select = make_intrusive<ASTSelectQuery>();
         std::shared_ptr<const ActionsDAG> filter_actions_dag;
 
-        select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+        select->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
         for (const auto & column_name : first_stage.output_columns)
-            select->select()->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+            select->select()->children.push_back(make_intrusive<ASTIdentifier>(column_name));
 
         /// Don't let select list be empty.
         if (select->select()->children.empty())
-            select->select()->children.push_back(std::make_shared<ASTLiteral>(Field(0)));
+            select->select()->children.push_back(make_intrusive<ASTLiteral>(Field(0)));
 
         if (!first_stage.filters.empty())
         {
@@ -1516,9 +1520,9 @@ void MutationsInterpreter::Source::read(
             }
             else
             {
-                auto coalesced_predicates = std::make_shared<ASTFunction>();
+                auto coalesced_predicates = make_intrusive<ASTFunction>();
                 coalesced_predicates->name = "and";
-                coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
+                coalesced_predicates->arguments = make_intrusive<ASTExpressionList>();
                 coalesced_predicates->children.push_back(coalesced_predicates->arguments);
                 coalesced_predicates->arguments->children = first_stage.filters;
                 where_expression = std::move(coalesced_predicates);

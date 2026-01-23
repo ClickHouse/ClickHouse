@@ -147,6 +147,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     : table_metadata(table_metadata_)
     , storage_type(storage_type_)
     , mode(table_metadata.getMode())
+    , bucketing_mode(table_metadata.getBucketingMode())
     , partitioning_mode(table_metadata.getPartitioningMode())
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
@@ -278,6 +279,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                bucketing_mode,
                 partitioning_mode,
                 filename_parser.get(),
                 log);
@@ -300,12 +302,17 @@ bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
 
 ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path) const
 {
-    return getBucketForPath(path, buckets_num);
+    return getBucketForPath(path, buckets_num, bucketing_mode, partitioning_mode, filename_parser.get());
 }
 
-ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(const std::string & path, size_t buckets_num)
+ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
+    const std::string & path,
+    size_t buckets_num,
+    ObjectStorageQueueBucketingMode bucketing_mode,
+    ObjectStorageQueuePartitioningMode partitioning_mode,
+    const ObjectStorageQueueFilenameParser * parser)
 {
-    return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num);
+    return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num, bucketing_mode, partitioning_mode, parser);
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
@@ -572,6 +579,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
+                    table_metadata.getBucketingMode(),
                     table_metadata.getPartitioningMode(),
                     /* parser */nullptr,  /// Parser not needed for ZK metadata initialization
                     log).prepareProcessedAtStartRequests(requests);

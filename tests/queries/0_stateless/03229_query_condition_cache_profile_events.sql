@@ -14,7 +14,7 @@ SET allow_experimental_analyzer = 1;
 
 SELECT '--- with move to PREWHERE';
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 DROP TABLE IF EXISTS tab;
 
@@ -53,7 +53,7 @@ ORDER BY
 
 SELECT '--- without move to PREWHERE';
 
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
 

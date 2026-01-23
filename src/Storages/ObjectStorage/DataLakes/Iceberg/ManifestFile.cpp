@@ -185,9 +185,9 @@ ManifestFileContent::ManifestFileContent(
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
     DB::NamesAndTypesList partition_columns_description;
-    std::shared_ptr<DB::ASTFunction> partition_key_ast = std::make_shared<DB::ASTFunction>();
+    auto partition_key_ast = make_intrusive<ASTFunction>();
     partition_key_ast->name = "tuple";
-    partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
+    partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
     partition_key_ast->children.push_back(partition_key_ast->arguments);
 
     auto schema_json_string = manifest_file_deserializer.tryGetAvroMetadataValue(f_schema);
@@ -223,7 +223,7 @@ ManifestFileContent::ManifestFileContent(
         if (partition_ast == nullptr)
             continue;
 
-        partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
+        partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
         partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
 

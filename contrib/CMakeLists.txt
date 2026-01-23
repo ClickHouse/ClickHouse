@@ -220,6 +220,8 @@ add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobuf
 add_contrib (antlr4-cpp-runtime-cmake antlr4-cpp-runtime)
 add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
+add_contrib(simdcomp-cmake simdcomp)
+
 add_contrib (numactl-cmake numactl)
 
 # Google Cloud Cpp

@@ -219,13 +219,14 @@ LRUFileCachePriority::iterateImpl(
 
         //LOG_TEST(log, "Entry: {}", entry.toString());
 
-        auto is_evictable_state = [&](Entry::State entry_state) -> bool
+        auto is_evictable_state = [&]() -> bool
         {
-            switch (entry_state)
+            switch (entry.getState())
             {
                 case Entry::State::Active:
                 {
-                    return true;
+                    /// TODO: Inroduce a separate pre-Active state for zero size valid entries
+                    return entry.size > 0;
                 }
                 case Entry::State::Invalidated:
                 {
@@ -260,7 +261,7 @@ LRUFileCachePriority::iterateImpl(
         };
 
         /// Check state without locked key as an optimization.
-        if (!is_evictable_state(entry.getState()))
+        if (!is_evictable_state())
         {
             ++it;
             continue;
@@ -279,7 +280,7 @@ LRUFileCachePriority::iterateImpl(
         }
 
         /// Reread entry state under locked key.
-        if (!is_evictable_state(entry.getState()))
+        if (!is_evictable_state())
         {
             ++it;
             continue;

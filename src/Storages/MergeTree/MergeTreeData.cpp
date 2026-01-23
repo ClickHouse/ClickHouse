@@ -955,7 +955,7 @@ void MergeTreeData::checkProperties(
     Names new_primary_key_columns = new_primary_key.column_names;
     Names new_sorting_key_columns = new_sorting_key.column_names;
 
-    ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr added_key_column_expr_list = make_intrusive<ASTExpressionList>();
     const auto & old_sorting_key_columns = old_metadata.getSortingKeyColumns();
     for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
     {
