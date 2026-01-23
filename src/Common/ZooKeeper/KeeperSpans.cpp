@@ -29,12 +29,14 @@ namespace
         return nullptr;
     }
 
+#if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> getKeeperDispatcher()
     {
         if (const auto global_context = Context::getGlobalContextInstance())
             return global_context->tryGetKeeperDispatcher();
         return nullptr;
     }
+#endif
 }
 
 void ZooKeeperOpentelemetrySpans::maybeInitialize(
@@ -89,9 +91,11 @@ void ZooKeeperOpentelemetrySpans::maybeFinalize(
     maybe_span.span->status_code = status;
     maybe_span.span->status_message = error_message;
 
+#if USE_NURAFT
     static const auto keeper_dispatcher = getKeeperDispatcher();
     if (keeper_dispatcher)
         extra_attributes.emplace_back("raft.role", keeper_dispatcher->getRoleString());
+#endif
 
     maybe_span.span->attributes.insert(
         maybe_span.span->attributes.end(),
