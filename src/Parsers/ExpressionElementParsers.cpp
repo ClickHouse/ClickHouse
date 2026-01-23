@@ -44,6 +44,8 @@
 
 #include <Interpreters/StorageID.h>
 
+#include <boost/range/algorithm.hpp>
+#include <boost/range/algorithm_ext.hpp>
 
 namespace DB
 {
@@ -475,12 +477,10 @@ bool ParserFilterClause::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     {
         /// Remove child from function.arguments if it's '*' because countIf(*) is not supported.
         /// See https://github.com/ClickHouse/ClickHouse/issues/61004
-        function.arguments->children.erase(
-            std::remove_if(
-                function.arguments->children.begin(),
-                function.arguments->children.end(),
-                [](const ASTPtr & child)
-                { return typeid_cast<const ASTAsterisk *>(child.get()) || typeid_cast<const ASTQualifiedAsterisk *>(child.get()); }));
+        boost::range::remove_erase_if(function.arguments->children, [] (const ASTPtr & child)
+        {
+            return typeid_cast<const ASTAsterisk *>(child.get()) || typeid_cast<const ASTQualifiedAsterisk *>(child.get());
+        });
     }
 
     function.name += "If";
