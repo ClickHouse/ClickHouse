@@ -347,31 +347,35 @@ public:
     Strings getChildren(const std::string & path,
                         Coordination::Stat * stat = nullptr,
                         const Coordination::EventPtr & watch = nullptr,
-                        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+                        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+                        bool with_stat = false,
+                        bool with_data = false);
 
     Strings getChildrenWatch(const std::string & path,
                              Coordination::Stat * stat,
                              Coordination::WatchCallbackPtrOrEventPtr watch_callback,
-                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+                             Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+                             bool with_stat = false,
+                             bool with_data = false);
 
     using MultiGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, false>;
     using MultiTryGetChildrenResponse = MultiReadResponses<Coordination::ListResponse, true>;
 
     template <typename TIter>
     MultiGetChildrenResponse
-    getChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    getChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL, bool with_stat = false, bool with_data = false)
     {
         return multiRead<Coordination::ListResponse, false>(
             start,
             end,
-            [list_request_type](const auto & path) { return zkutil::makeListRequest(path, list_request_type); },
-            [&](const auto & path) { return asyncGetChildren(path, list_request_type); });
+            [list_request_type, with_stat, with_data](const auto & path) { return zkutil::makeListRequest(path, list_request_type, with_stat, with_data); },
+            [&](const auto & path) { return asyncGetChildren(path, list_request_type, with_stat, with_data); });
     }
 
     MultiGetChildrenResponse
-    getChildren(const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    getChildren(const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL, bool with_stat = false, bool with_data = false)
     {
-        return getChildren(paths.begin(), paths.end(), list_request_type);
+        return getChildren(paths.begin(), paths.end(), list_request_type, with_stat, with_data);
     }
 
     /// Doesn't not throw in the following cases:
@@ -381,30 +385,34 @@ public:
         Strings & res,
         Coordination::Stat * stat = nullptr,
         const Coordination::EventPtr & watch = nullptr,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+        bool with_stat = false,
+        bool with_data = false);
 
     Coordination::Error tryGetChildrenWatch(
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat,
         Coordination::WatchCallbackPtrOrEventPtr watch_callback,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+        bool with_stat = false,
+        bool with_data = false);
 
     template <typename TIter>
     MultiTryGetChildrenResponse
-    tryGetChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    tryGetChildren(TIter start, TIter end, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL, bool with_stat = false, bool with_data = false)
     {
         return multiRead<Coordination::ListResponse, true>(
             start,
             end,
-            [list_request_type](const auto & path) { return zkutil::makeListRequest(path, list_request_type); },
-            [&](const auto & path) { return asyncTryGetChildren(path, list_request_type); });
+            [list_request_type, with_stat, with_data](const auto & path) { return zkutil::makeListRequest(path, list_request_type, with_stat, with_data); },
+            [&](const auto & path) { return asyncTryGetChildren(path, list_request_type, with_stat, with_data); });
     }
 
     MultiTryGetChildrenResponse
-    tryGetChildren(const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL)
+    tryGetChildren(const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL, bool with_stat = false, bool with_data = false)
     {
-        return tryGetChildren(paths.begin(), paths.end(), list_request_type);
+        return tryGetChildren(paths.begin(), paths.end(), list_request_type, with_stat, with_data);
     }
 
     Coordination::ACLs getACL(const std::string & path, Coordination::Stat * stat = nullptr);
@@ -510,12 +518,16 @@ public:
     using FutureGetChildren = std::future<Coordination::ListResponse>;
     FutureGetChildren asyncGetChildren(
         const std::string & path,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+        bool with_stat = false,
+        bool with_data = false);
     /// Like the previous one but don't throw any exceptions on future.get()
     FutureGetChildren asyncTryGetChildrenNoThrow(
         const std::string & path,
         Coordination::WatchCallbackPtrOrEventPtr watch_callback = {},
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+        bool with_stat = false,
+        bool with_data = false);
 
     using FutureSet = std::future<Coordination::SetResponse>;
     FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
@@ -560,7 +572,9 @@ public:
     /// * The node doesn't exist
     FutureGetChildren asyncTryGetChildren(
         const std::string & path,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
+        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL,
+        bool with_stat = false,
+        bool with_data = false);
 
     using FutureReconfig = std::future<Coordination::ReconfigResponse>;
     FutureReconfig asyncReconfig(
@@ -618,7 +632,9 @@ private:
         Strings & res,
         Coordination::Stat * stat,
         Coordination::WatchCallbackPtrOrEventPtr watch_callback,
-        Coordination::ListRequestType list_request_type);
+        Coordination::ListRequestType list_request_type,
+        bool with_stat,
+        bool with_data);
     Coordination::Error getACLImpl(const std::string & path, Coordination::ACLs & res, Coordination::Stat * stat);
 
     /// returns error code with optional reason

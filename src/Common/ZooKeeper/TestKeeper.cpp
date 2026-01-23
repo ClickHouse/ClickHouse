@@ -2,6 +2,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/TestKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils.h>
 #include <base/types.h>
@@ -174,6 +175,12 @@ struct TestKeeperFilteredListRequest final : TestKeeperListRequest
     ListRequestType list_request_type;
 };
 
+struct TestKeeperFilteredListWithStatsAndDataRequest final : TestKeeperListRequest
+{
+    TestKeeperFilteredListWithStatsAndDataRequest() = default;
+    explicit TestKeeperFilteredListWithStatsAndDataRequest(const ZooKeeperFilteredListWithStatsAndDataRequest & base) : TestKeeperListRequest(base) {}
+};
+
 struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
 {
     TestKeeperCheckRequest() = default;
@@ -266,6 +273,11 @@ struct TestKeeperMultiRequest final : MultiRequest<RequestPtr>, TestKeeperReques
             {
                 validateOrSpecifyRequestType(/*is_read=*/true);
                 requests.push_back(std::make_shared<TestKeeperExistsRequest>(*concrete_request_exists));
+            }
+            else if (const auto * concrete_request_list_with_stats = dynamic_cast<const ZooKeeperFilteredListWithStatsAndDataRequest *>(generic_request.get()))
+            {
+                validateOrSpecifyRequestType(/*is_read=*/true);
+                requests.push_back(std::make_shared<TestKeeperFilteredListWithStatsAndDataRequest>(*concrete_request_list_with_stats));
             }
             else
                 throw Exception::fromMessage(Error::ZBADARGUMENTS, "Illegal command as part of multi ZooKeeper request");
@@ -770,6 +782,7 @@ TestKeeper::TestKeeper(const zkutil::ZooKeeperArgs & args_)
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::REMOVE_RECURSIVE);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::CHECK_STAT);
     keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::TRY_REMOVE);
+    keeper_feature_flags.enableFeatureFlag(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA);
 
     processing_thread = ThreadFromGlobalPool([this] { processingThread(); });
 }
@@ -1062,8 +1075,14 @@ void TestKeeper::list(
     const String & path,
     ListRequestType list_request_type,
     ListCallback callback,
-    WatchCallbackPtrOrEventPtr watch)
+    WatchCallbackPtrOrEventPtr watch,
+    bool with_stat,
+    bool with_data)
 {
+    /// TestKeeper doesn't support with_stat and with_data yet, just ignore them
+    (void)with_stat;
+    (void)with_data;
+
     TestKeeperFilteredListRequest request;
     request.path = path;
     request.list_request_type = list_request_type;
