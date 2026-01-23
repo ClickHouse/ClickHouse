@@ -679,17 +679,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIterator(
                     }
                     catch (...)
                     {
-                        auto error_code = getCurrentExceptionCode();
-                        auto error_message = getCurrentExceptionMessage(true, false, true, true);
-                        auto enhanced_message = fmt::format(
-                            "Received error {} while fetching table metadata for existing table '{}'. "
-                            "If you want this error to be ignored, use require_metadata_access=0. Error: {}",
-                            error_code,
-                            table_name,
-                            error_message);
-                        promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
-                            error_code,
-                            enhanced_message)));
+                        promise->set_exception(std::current_exception());
                     }
                 });
         }
@@ -773,7 +763,17 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
                     {
                         if (settings[DatabaseDataLakeSetting::require_metadata_access].value)
                         {
-                            promise->set_exception(std::current_exception());
+                            auto error_code = getCurrentExceptionCode();
+                            auto error_message = getCurrentExceptionMessage(true, false, true, true);
+                            auto enhanced_message = fmt::format(
+                                "Received error {} while fetching table metadata for existing table '{}'. "
+                                "If you want this error to be ignored, use require_metadata_access=0. Error: {}",
+                                error_code,
+                                table_name,
+                                error_message);
+                            promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
+                                error_code,
+                                enhanced_message)));
                             return;
                         }
                         else
