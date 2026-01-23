@@ -403,9 +403,9 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     if (insert_query.table_id)
         query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
 
-    insert_query.columns = std::make_shared<ASTExpressionList>();
+    insert_query.columns = make_intrusive<ASTExpressionList>();
     for (const auto & column : sample_block)
-        insert_query.columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
+        insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(column.name));
 }
 
 AsynchronousInsertQueue::PushResult

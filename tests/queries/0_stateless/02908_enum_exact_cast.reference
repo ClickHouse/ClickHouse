@@ -12,7 +12,7 @@ Null value
 \N
 Non-null values
 CAST
--- current behaviour
+-- legacy behaviour
 1
 2
 3
@@ -30,7 +30,7 @@ CAST
 4
 4
 4
--- new behaviour
+-- default behaviour
 1
 2
 3

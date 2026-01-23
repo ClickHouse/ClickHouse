@@ -237,7 +237,13 @@ static void writeDataFiles(
     for (auto & [_, data_file] : initial_plan.path_to_data_file)
     {
         auto delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
-            sample_block, data_file->data_object_info, object_storage, format_settings, context);
+            sample_block,
+            data_file->data_object_info,
+            object_storage,
+            format_settings,
+            // todo make compaction using same FormatParserSharedResources
+            std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), 1),
+            context);
 
         RelativePathWithMetadata relative_path(data_file->data_object_info->getPath());
         const auto read_format = data_file->data_object_info->getFileFormat().value_or(write_format);

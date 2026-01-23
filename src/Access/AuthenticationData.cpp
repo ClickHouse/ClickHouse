@@ -351,9 +351,9 @@ void AuthenticationData::addSSLCertificateSubject(X509Certificate::Subjects::Typ
 }
 #endif
 
-std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
+boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 {
-    auto node = std::make_shared<ASTAuthenticationData>();
+    auto node = make_intrusive<ASTAuthenticationData>();
     auto auth_type = getType();
     node->type = auth_type;
 
@@ -362,42 +362,42 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         case AuthenticationType::PLAINTEXT_PASSWORD:
         {
             node->contains_password = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPassword()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getPassword()));
             break;
         }
         case AuthenticationType::SHA256_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
 
             if (!getSalt().empty())
-                node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
+                node->children.push_back(make_intrusive<ASTLiteral>(getSalt()));
             break;
         }
         case AuthenticationType::SCRAM_SHA256_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
 
             if (!getSalt().empty())
-                node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
+                node->children.push_back(make_intrusive<ASTLiteral>(getSalt()));
             break;
         }
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getPasswordHashHex()));
             break;
         }
         case AuthenticationType::BCRYPT_PASSWORD:
         {
             node->contains_hash = true;
-            node->children.push_back(std::make_shared<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
+            node->children.push_back(make_intrusive<ASTLiteral>(AuthenticationData::Util::digestToString(getPasswordHashBinary())));
             break;
         }
         case AuthenticationType::LDAP:
         {
-            node->children.push_back(std::make_shared<ASTLiteral>(getLDAPServerName()));
+            node->children.push_back(make_intrusive<ASTLiteral>(getLDAPServerName()));
             break;
         }
         case AuthenticationType::JWT:
@@ -409,7 +409,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             const auto & realm = getKerberosRealm();
 
             if (!realm.empty())
-                node->children.push_back(std::make_shared<ASTLiteral>(realm));
+                node->children.push_back(make_intrusive<ASTLiteral>(realm));
 
             break;
         }
@@ -424,7 +424,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
 
             node->ssl_cert_subject_type = toString(cert_subject_type);
             for (const auto & name : getSSLCertificateSubjects().at(cert_subject_type))
-                node->children.push_back(std::make_shared<ASTLiteral>(name));
+                node->children.push_back(make_intrusive<ASTLiteral>(name));
 
             break;
 #else
@@ -435,7 +435,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         {
 #if USE_SSH
             for (const auto & key : getSSHKeys())
-                node->children.push_back(std::make_shared<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
+                node->children.push_back(make_intrusive<ASTPublicSSHKey>(key.getBase64(), key.getKeyType()));
 
             break;
 #else
@@ -444,8 +444,8 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         }
         case AuthenticationType::HTTP:
         {
-            node->children.push_back(std::make_shared<ASTLiteral>(getHTTPAuthenticationServerName()));
-            node->children.push_back(std::make_shared<ASTLiteral>(toString(getHTTPAuthenticationScheme())));
+            node->children.push_back(make_intrusive<ASTLiteral>(getHTTPAuthenticationServerName()));
+            node->children.push_back(make_intrusive<ASTLiteral>(toString(getHTTPAuthenticationScheme())));
             break;
         }
 
@@ -463,7 +463,7 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
         WriteBufferFromOwnString out;
         writeDateTimeText(valid_until, out);
 
-        node->valid_until = std::make_shared<ASTLiteral>(out.str());
+        node->valid_until = make_intrusive<ASTLiteral>(out.str());
     }
 
     return node;
