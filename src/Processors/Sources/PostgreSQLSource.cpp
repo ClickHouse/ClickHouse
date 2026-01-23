@@ -98,7 +98,10 @@ void PostgreSQLSource<T>::onStart()
         }
     }
 
+    LOG_TEST(getLogger("PostgreSQLSource"), "before from_query");
+    LOG_TEST(getLogger("PostgreSQLSource"), "Stream data from database");
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "after from_query");
 }
 
 template<typename T>
@@ -133,6 +136,8 @@ IProcessor::Status PostgreSQLSource<T>::prepare()
 template<typename T>
 Chunk PostgreSQLSource<T>::generate()
 {
+    LOG_DEBUG(getLogger("PostgreSQLSource"), "in generate()");
+    LOG_TEST(getLogger("PostgreSQLSource"), "Generate chuck from stream");
     /// Check if pqxx::stream_from is finished
     if (!stream || !(*stream))
         return {};
@@ -142,6 +147,7 @@ Chunk PostgreSQLSource<T>::generate()
 
     while (!isCancelled())
     {
+        LOG_DEBUG(getLogger("PostgreSQLSource"), "in while loop of generate()");
         const std::vector<pqxx::zview> * row{stream->read_row()};
 
         /// row is nullptr if pqxx::stream_from is finished
