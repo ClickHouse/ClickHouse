@@ -45,9 +45,9 @@ See `tests/clickhouse-test --help` for all options of `clickhouse-test`.
 You can run all tests or run subset of tests by providing a filter for test names: `./clickhouse-test substring`.
 There are also options to run tests in parallel or in random order.
 
-### Running all tests {#running-fast-tests}
+### Running all tests {#running-all-tests}
 
-You may need a relatively strong computer to run all tests. The following works on `t3.2xlarge` AWS ubuntu instance with 100 Gb storage.
+You may need a relatively strong computer to run all tests. The following works on `t3.2xlarge` AWS amd64 Ubuntu instance with 100 Gb storage.
 
 1. Install prerequisites and re-login.
 ```
@@ -59,11 +59,11 @@ sudo usermod -aG docker ubuntu
 2. Get a source code.
 
 ```
-git clone --single-branch https://github.com/clickhouse/clickhouse
+git clone --single-branch https://github.com/ClickHouse/ClickHouse
 cd clickhouse
 ```
 
-3. Build and run tests.
+3. Build code and run a subset of tests (named "Fast test").
 
 ```
 python3 -m ci.praktika run "Fast test"
@@ -74,25 +74,7 @@ python3 -m ci.praktika run "Fast test"
 Failed: 0, Passed: 7394, Skipped: 1795
 ```
 
-There is an alternative workflow when you want to test an existing binary.
-
-3. Get the latest source, the latest binary, and run the tests
-
-```
-git pull; curl https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse -o ci/tmp/clickhouse -z ci/tmp/clickhouse
-python3 -m ci.praktika run "Stateless tests (amd_debug, parallel)"
-python3 -m ci.praktika run "Stateless tests (amd_debug, sequential)"
-```
-
-4. You should get
-
-```
-Failed: 5, Passed: 8524, Skipped: 6 # for parallel
-# for sequential
-```
-
 If you leave the run anattended, you may use `nohup` or `disown` to keep it running after the `ssh` connection is lost.
-
 
 
 ### Adding a new test {#adding-a-new-test}
