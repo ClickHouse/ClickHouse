@@ -385,9 +385,9 @@ ObjectInfoPtr IcebergIterator::next(size_t)
             *manifest_file_entry, table_state_snapshot->schema_id, storage_to_use, resolved_key);
 
         for (const auto & position_delete :
-             defineDeletesSpan(manifest_file_entry, position_deletes_files, false, logger))
+             defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {
-            const auto & data_file_path = object_info->info.data_object_file_path_key;
+            const auto & data_file_path = object_info->info.data_object_file_path_from_metadata;
             const auto & lower = position_delete->lower_reference_data_file_path;
             const auto & upper = position_delete->upper_reference_data_file_path;
             bool can_contain_data_file_deletes

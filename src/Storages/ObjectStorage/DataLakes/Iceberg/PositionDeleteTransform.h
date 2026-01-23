@@ -38,6 +38,8 @@ public:
         , format_settings(format_settings_)
         , context(context_)
         , parser_shared_resources(parser_shared_resources_)
+        , table_location(table_location_)
+        , secondary_storages(secondary_storages_)
     {
         initializeDeleteSources();
     }
