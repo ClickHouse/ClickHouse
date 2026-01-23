@@ -137,22 +137,22 @@ namespace
 String PrometheusQueryTree::dumpTree() const
 {
     if (root)
-        return fmt::format("\nPrometheusQueryTree({}):\n{}\n", root->result_type, root->dumpNode(1));
+        return fmt::format("\nPrometheusQueryTree({}):\n{}\n", root->result_type, root->dumpNode(*this, 1));
     else
         return "\nPrometheusQueryTree(EMPTY)\n";
 }
 
-String PrometheusQueryTree::Scalar::dumpNode(size_t indent) const
+String PrometheusQueryTree::Scalar::dumpNode(const PrometheusQueryTree & /* tree */, size_t indent) const
 {
     return fmt::format("{}Scalar({})", makeIndent(indent), ::DB::toString(scalar));
 }
 
-String PrometheusQueryTree::StringLiteral::dumpNode(size_t indent) const
+String PrometheusQueryTree::StringLiteral::dumpNode(const PrometheusQueryTree & /* tree */, size_t indent) const
 {
     return fmt::format("{}StringLiteral({})", makeIndent(indent), quoteString(string));
 }
 
-String PrometheusQueryTree::InstantSelector::dumpNode(size_t indent) const
+String PrometheusQueryTree::InstantSelector::dumpNode(const PrometheusQueryTree & /* tree */, size_t indent) const
 {
     String str = fmt::format("{}InstantSelector:", makeIndent(indent));
     for (const auto & matcher : matchers)
@@ -160,53 +160,53 @@ String PrometheusQueryTree::InstantSelector::dumpNode(size_t indent) const
     return str;
 }
 
-String PrometheusQueryTree::RangeSelector::dumpNode(size_t indent) const
+String PrometheusQueryTree::RangeSelector::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}RangeSelector:", makeIndent(indent));
-    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range));
-    str += fmt::format("\n{}", getInstantSelector()->dumpNode(indent + 1));
+    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.timestamp_scale));
+    str += fmt::format("\n{}", getInstantSelector()->dumpNode(tree, indent + 1));
     return str;
 }
 
-String PrometheusQueryTree::Subquery::dumpNode(size_t indent) const
+String PrometheusQueryTree::Subquery::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}Subquery:", makeIndent(indent));
-    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range));
+    str += fmt::format("\n{}range: {}", makeIndent(indent + 1), ::DB::toString(range, tree.timestamp_scale));
     if (resolution)
-        str += fmt::format("\n{}resolution: {}", makeIndent(indent + 1), ::DB::toString(*resolution));
-    str += fmt::format("\n{}", getExpression()->dumpNode(indent + 1));
+        str += fmt::format("\n{}resolution: {}", makeIndent(indent + 1), ::DB::toString(*resolution, tree.timestamp_scale));
+    str += fmt::format("\n{}", getExpression()->dumpNode(tree, indent + 1));
     return str;
 }
 
-String PrometheusQueryTree::Offset::dumpNode(size_t indent) const
+String PrometheusQueryTree::Offset::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}Offset:", makeIndent(indent));
     if (at_timestamp)
-        str += fmt::format("\n{}at: {}", makeIndent(indent + 1), ::DB::toString(*at_timestamp));
+        str += fmt::format("\n{}at: {}", makeIndent(indent + 1), ::DB::toString(*at_timestamp, tree.timestamp_scale));
     if (offset_value)
-        str += fmt::format("\n{}offset: {}", makeIndent(indent + 1), ::DB::toString(*offset_value));
-    str += fmt::format("\n{}", getExpression()->dumpNode(indent + 1));
+        str += fmt::format("\n{}offset: {}", makeIndent(indent + 1), ::DB::toString(*offset_value, tree.timestamp_scale));
+    str += fmt::format("\n{}", getExpression()->dumpNode(tree, indent + 1));
     return str;
 }
 
-String PrometheusQueryTree::Function::dumpNode(size_t indent) const
+String PrometheusQueryTree::Function::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     const auto & arguments = getArguments();
     std::string_view maybe_colon = arguments.empty() ? "" : ":";
     String str = fmt::format("{}Function({}){}", makeIndent(indent), function_name, maybe_colon);
     for (const auto * argument : arguments)
-        str += fmt::format("\n{}", argument->dumpNode(indent + 1));
+        str += fmt::format("\n{}", argument->dumpNode(tree, indent + 1));
     return str;
 }
 
-String PrometheusQueryTree::UnaryOperator::dumpNode(size_t indent) const
+String PrometheusQueryTree::UnaryOperator::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}UnaryOperator({})", makeIndent(indent), operator_name);
-    str += fmt::format("\n{}", getArgument()->dumpNode(indent + 1));
+    str += fmt::format("\n{}", getArgument()->dumpNode(tree, indent + 1));
     return str;
 }
 
-String PrometheusQueryTree::BinaryOperator::dumpNode(size_t indent) const
+String PrometheusQueryTree::BinaryOperator::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}BinaryOperator({})", makeIndent(indent), operator_name);
     if (bool_modifier)
@@ -227,12 +227,12 @@ String PrometheusQueryTree::BinaryOperator::dumpNode(size_t indent) const
             joined_extra_labels += fmt::format(" {}", fmt::join(extra_labels, ", "));
         str += fmt::format("\n{}{}{}", makeIndent(indent + 1), group_left_or_right, joined_extra_labels);
     }
-    str += fmt::format("\n{}", getLeftArgument()->dumpNode(indent + 1));
-    str += fmt::format("\n{}", getRightArgument()->dumpNode(indent + 1));
+    str += fmt::format("\n{}", getLeftArgument()->dumpNode(tree, indent + 1));
+    str += fmt::format("\n{}", getRightArgument()->dumpNode(tree, indent + 1));
     return str;
 }
 
-String PrometheusQueryTree::AggregationOperator::dumpNode(size_t indent) const
+String PrometheusQueryTree::AggregationOperator::dumpNode(const PrometheusQueryTree & tree, size_t indent) const
 {
     String str = fmt::format("{}AggregationOperator({})", makeIndent(indent), operator_name);
     if (by || without)
@@ -244,7 +244,7 @@ String PrometheusQueryTree::AggregationOperator::dumpNode(size_t indent) const
         str += fmt::format("\n{}{}{}", makeIndent(indent + 1), by_or_without, joined_labels);
     }
     for (const auto * argument : getArguments())
-        str += fmt::format("\n{}", argument->dumpNode(indent + 1));
+        str += fmt::format("\n{}", argument->dumpNode(tree, indent + 1));
     return str;
 }
 

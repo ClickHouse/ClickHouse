@@ -610,7 +610,7 @@ private:
     {
         const auto * instant_selector = range_selector->getInstantSelector();
 
-        auto range = range_selector->range;
+        auto range = DecimalField<Decimal64>{range_selector->range, getPromQLTree().getTimestampScale()};
         if (range.getValue() <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range specified in a range selector must be positive, got {}", toString(range));
 
@@ -654,7 +654,7 @@ private:
             return getEmptyPiece(ResultType::RANGE_VECTOR);
 
         piece.result_type = ResultType::RANGE_VECTOR;
-        piece.window = subquery->range;
+        piece.window = DecimalField<Decimal64>{subquery->range, getPromQLTree().getTimestampScale()};
         return piece;
     }
 
@@ -878,14 +878,14 @@ private:
                 const auto * offset_node = typeid_cast<const PrometheusQueryTree::Offset *>(parent);
                 if (offset_node->at_timestamp)
                 {
-                    start_time = *offset_node->at_timestamp;
+                    start_time = DecimalField<DateTime64>{*offset_node->at_timestamp, getPromQLTree().getTimestampScale()};
                     end_time = start_time;
                     step = getZeroInterval();
                 }
                 if (offset_node->offset_value)
                 {
                     /// The "offset" modifier moves the evaluation time backward.
-                    auto offset = *offset_node->offset_value;
+                    auto offset = DecimalField<Decimal64>{*offset_node->offset_value, getPromQLTree().getTimestampScale()};
                     start_time = subtract(start_time, offset);
                     end_time = subtract(end_time, offset);
                 }
@@ -895,7 +895,7 @@ private:
                 const auto * subquery_node = typeid_cast<const PrometheusQueryTree::Subquery *>(parent);
                 if (subquery_node->resolution)
                 {
-                    step = *subquery_node->resolution;
+                    step = DecimalField<Decimal64>{*subquery_node->resolution, getPromQLTree().getTimestampScale()};
                     if (step.getValue() <= 0)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Resolution must be positive, got {}", toString(step));
                 }
@@ -905,7 +905,7 @@ private:
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The default resolution must be positive, got {}", toString(default_resolution));
                     step = default_resolution;
                 }
-                auto subquery_range = subquery_node->range;
+                auto subquery_range = DecimalField<Decimal64>{subquery_node->range, getPromQLTree().getTimestampScale()};
                 if (subquery_range.getValue() <= 0)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Subquery range must be positive, got {}", toString(subquery_range));
                 start_time = subtract(start_time, previous(subquery_range));

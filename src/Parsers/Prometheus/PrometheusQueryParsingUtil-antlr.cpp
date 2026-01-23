@@ -198,7 +198,7 @@ namespace
             DurationType duration;
             if (!parseDuration(ctx, duration))
                 return false;
-            result = TimestampType{duration.getValue(), duration.getScale()};
+            result = static_cast<TimestampType>(duration);
             return true;
         }
 
@@ -220,12 +220,12 @@ namespace
 
             if (scalar_or_interval.scalar)
             {
-                result = DurationType{static_cast<Int64>(*scalar_or_interval.scalar * DecimalUtils::scaleMultiplier<Decimal64>(timestamp_scale)), timestamp_scale};
+                result = static_cast<Int64>(*scalar_or_interval.scalar * DecimalUtils::scaleMultiplier<Decimal64>(timestamp_scale));
             }
             else
             {
                 const auto & decimal_field = *scalar_or_interval.interval;
-                result = DurationType{DecimalUtils::convertTo<Decimal64>(timestamp_scale, decimal_field.getValue(), decimal_field.getScale()), timestamp_scale};
+                result = DecimalUtils::convertTo<Decimal64>(timestamp_scale, decimal_field.getValue(), decimal_field.getScale());
             }
 
             return true;
@@ -497,7 +497,7 @@ namespace
                 auto & offset_value = new_node->offset_value.emplace();
                 ok &= parseDuration(number_ctx, offset_value);
                 if (ok && offset_value_ctx->SUB())
-                    offset_value = DurationType{-offset_value.getValue(), offset_value.getScale()};
+                    offset_value = -offset_value;
             }
 
             if (!ok)
