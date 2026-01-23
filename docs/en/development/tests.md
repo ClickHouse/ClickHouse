@@ -87,7 +87,7 @@ python3 -m ci.praktika run "Stateless tests (amd_debug, sequential)"
 4. You should get
 
 ```
-# for parallel
+Failed: 5, Passed: 8524, Skipped: 6 # for parallel
 # for sequential
 ```
 
