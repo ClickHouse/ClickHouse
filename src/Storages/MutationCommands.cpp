@@ -226,9 +226,9 @@ std::optional<MutationCommand> MutationCommand::parse(const ASTAlterCommand & co
 }
 
 
-std::shared_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata_commands) const
+boost::intrusive_ptr<ASTExpressionList> MutationCommands::ast(bool with_pure_metadata_commands) const
 {
-    auto res = std::make_shared<ASTExpressionList>();
+    auto res = make_intrusive<ASTExpressionList>();
     for (const MutationCommand & command : *this)
     {
         if (!command.isPureMetadataCommand() || with_pure_metadata_commands)

@@ -592,6 +592,10 @@ Possible values:
 + 0 — Disable (throw error on type mismatch).
 + 1 — Enable (skip field on type mismatch).
 )", 0) \
+    DECLARE(UInt64Auto, max_dynamic_subcolumns_in_json_type_parsing, "auto", R"(
+The maximum number of dynamic subcolumns that can be created in every column during parsing of JSON column.
+It allows to control the number of dynamic subcolumns during parsing regardless of dynamic parameters specified in the data type.
+)", 0) \
     DECLARE(Bool, input_format_try_infer_integers, true, R"(
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
 

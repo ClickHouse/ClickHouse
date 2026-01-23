@@ -1,5 +1,7 @@
 #include <atomic>
 #include <chrono>
+#include <ranges>
+
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
