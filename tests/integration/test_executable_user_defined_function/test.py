@@ -9,7 +9,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True, main_configs=[])
@@ -303,7 +302,6 @@ def test_executable_function_always_error_python(started_cluster):
         node.query("SELECT test_function_always_error_throw_python(1)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
-        assert "DB::Exception: User defined function 'test_function_always_error_throw_python' failed" in str(ex)
         assert "DB::Exception: Executable generates stderr: Fake error" in str(ex)
 
     query_id = uuid.uuid4().hex
@@ -343,100 +341,26 @@ def test_executable_function_always_error_python(started_cluster):
         node.query("SELECT test_function_exit_error_fail_python(1)")
         assert False, "Exception have to be thrown"
     except Exception as ex:
-        assert "DB::Exception: User defined function 'test_function_exit_error_fail_python' failed" in str(ex)
         assert "DB::Exception: Child process was exited with return code 1" in str(ex)
 
 def test_executable_function_query_cache(started_cluster):
-    '''Test for issues #77553 and #59988: Users should be able to specify if externally-defined are non-deterministic, and the query cache should treat them correspondingly.'''
+    '''Test for issue #77553: Externally-defined UDFs may be non-deterministic. The query cache should treat them as such, i.e. reject them.'''
     '''Also see tests/0_stateless/test_query_cache_udf_sql.sql'''
     skip_test_msan(node)
 
     node.query("SYSTEM DROP QUERY CACHE");
 
-    # we are each testing an UDF without explicit <deterministic> tag (to check the default behavior) and two queries with <deterministic> true respectively false </deterministic>.
-
     # query_cache_nondeterministic_function_handling = throw
-
     assert node.query_and_get_error("SELECT test_function_bash(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'")
     assert node.query("SELECT count(*) FROM system.query_cache") == "0\n"
-
-    assert node.query("SELECT test_function_bash_deterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'") == "Key 1\n"
-    assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
-
-    assert node.query_and_get_error("SELECT test_function_bash_nondeterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'")
-    assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
-
     node.query("SYSTEM DROP QUERY CACHE");
 
     # query_cache_nondeterministic_function_handling = save
-
     assert node.query("SELECT test_function_bash(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save'") == "Key 1\n"
     assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
-
-    assert node.query("SELECT test_function_bash_deterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save'") == "Key 1\n"
-    assert node.query("SELECT count(*) FROM system.query_cache") == "2\n"
-
-    assert node.query("SELECT test_function_bash_nondeterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save'") == "Key 1\n"
-    assert node.query("SELECT count(*) FROM system.query_cache") == "3\n"
-
     node.query("SYSTEM DROP QUERY CACHE");
 
     # query_cache_nondeterministic_function_handling = ignore
-
     assert node.query("SELECT test_function_bash(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore'") == "Key 1\n"
     assert node.query("SELECT count(*) FROM system.query_cache") == "0\n"
-
-    assert node.query("SELECT test_function_bash_deterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore'") == "Key 1\n"
-    assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
-
-    assert node.query("SELECT test_function_bash_nondeterministic(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore'") == "Key 1\n"
-    assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
-
     node.query("SYSTEM DROP QUERY CACHE");
-
-def test_executable_function_python_exception_in_query_log(started_cluster):
-    '''Test that Python exceptions with tracebacks appear in query_log when stderr_reaction defaults to throw'''
-    skip_test_msan(node)
-
-    # Clear query log
-    node.query("SYSTEM FLUSH LOGS")
-
-    # Generate a unique query_id for tracking
-    query_id = uuid.uuid4().hex
-
-    # Try to execute UDF that will raise Python exception
-    try:
-        node.query("SELECT test_function_python_exception_default(1)", query_id=query_id)
-        assert False, "Exception should have been thrown"
-    except Exception as ex:
-        # Verify exception is thrown
-        assert "DB::Exception" in str(ex)
-        assert "Executable generates stderr" in str(ex)
-
-    # Flush logs to ensure query_log is updated
-    node.query("SYSTEM FLUSH LOGS")
-
-    # Check query_log for the exception
-    # Note: type is 'ExceptionBeforeStart' because exception occurs during prepare(), not during block processing
-    result = node.query(f"""
-        SELECT exception
-        FROM system.query_log
-        WHERE query_id = '{query_id}'
-          AND type = 'ExceptionBeforeStart'
-        FORMAT TabSeparated
-    """)
-
-    # Parse result with TSV to ensure proper formatting
-    exception_text = TSV(result).lines[0]
-
-    # Verify specific exception components are present
-    # UDF stderr must contain complete Python traceback
-    required_components = [
-        "Executable generates stderr: Traceback (most recent call last):",
-        "in process_data",
-        "result = int(value) / 0",
-        "ZeroDivisionError: division by zero",
-    ]
-
-    for component in required_components:
-        assert component in exception_text, f"Missing required component: {component}"

@@ -1,5 +1,9 @@
 set(LIBCXXABI_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxxabi")
 
+set(LIBCXX_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libcxx")
+set(LIBCXX_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/llvm-project/libcxx")
+set(LIBCXX_GENERATED_INCLUDE_DIR "${LIBCXX_BINARY_DIR}/include/c++/v1")
+
 set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/abort_message.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_aux_runtime.cpp"
@@ -9,6 +13,7 @@ set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_exception_storage.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_guard.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_handlers.cpp"
+# "${LIBCXXABI_SOURCE_DIR}/src/cxa_noexception.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_personality.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_thread_atexit.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_vector.cpp"
@@ -31,16 +36,10 @@ target_include_directories(cxxabi SYSTEM BEFORE
     PUBLIC $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/include>
     PRIVATE $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/../libcxx/include>
     PRIVATE $<BUILD_INTERFACE:${LIBCXXABI_SOURCE_DIR}/../libcxx/src>
+    PRIVATE $<BUILD_INTERFACE:${LIBCXX_GENERATED_INCLUDE_DIR}>
 )
 target_compile_definitions(cxxabi PRIVATE -D_LIBCPP_BUILDING_LIBRARY -DHAS_THREAD_LOCAL)
-# If we don't disable UBSan, infinite recursion happens in dynamic_cast.
-target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined)
-# Demangling is very slow under MSan due to frame-pointers, it is OK to omit them for cxxabi anyway
-target_compile_options(cxxabi PRIVATE -fomit-frame-pointer -momit-leaf-frame-pointer)
-# We sacrifice origins tracking here to make demangling faster (unlikely that the origin will be here anyway)
-if (SANITIZE STREQUAL "memory")
-    target_compile_options(cxxabi PRIVATE -fno-sanitize-memory-track-origins)
-endif()
+target_compile_options(cxxabi PRIVATE -nostdinc++ -fno-sanitize=undefined -Wno-macro-redefined) # If we don't disable UBSan, infinite recursion happens in dynamic_cast.
 target_link_libraries(cxxabi PUBLIC unwind)
 
 # Enable capturing stack traces for all exceptions.
@@ -49,3 +48,11 @@ target_compile_definitions(cxxabi PUBLIC -DSTD_EXCEPTION_HAS_STACK_TRACE=1)
 if (USE_MUSL)
     target_compile_definitions(cxxabi PUBLIC -D_LIBCPP_HAS_MUSL_LIBC)
 endif()
+
+install(
+    TARGETS cxxabi
+    EXPORT global
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION lib
+    LIBRARY DESTINATION lib
+)

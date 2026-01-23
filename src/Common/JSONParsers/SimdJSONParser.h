@@ -6,7 +6,7 @@
 #    include <base/types.h>
 #    include <base/defines.h>
 #    include <simdjson.h>
-#    include <Common/JSONParsers/ElementTypes.h>
+#    include "ElementTypes.h"
 #    include <Common/PODArray_fwd.h>
 #    include <Common/PODArray.h>
 #    include <charconv>
@@ -118,7 +118,7 @@ public:
 
         // At least for long strings, the following should be fast. We could
         // do better by integrating the checks and the insertion.
-        buffer.insert(unescaped.data(), unescaped.data() + i); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        buffer.insert(unescaped.data(), unescaped.data() + i);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
         // We caught a control character if we enter this loop (slow).
         // Note that we are do not restart from the beginning, but rather we continue
         // from the point where we encountered something that requires escaping.
@@ -369,16 +369,6 @@ struct SimdJSONParser
         bool find(std::string_view key, Element & result) const
         {
             auto x = object.at_key(key);
-            if (x.error())
-                return false;
-
-            result = x.value_unsafe();
-            return true;
-        }
-
-        bool findCaseInsensitive(std::string_view key, Element & result) const
-        {
-            auto x = object.at_key_case_insensitive(key);
             if (x.error())
                 return false;
 

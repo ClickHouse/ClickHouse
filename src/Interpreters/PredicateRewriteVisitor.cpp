@@ -1,7 +1,5 @@
 #include <Interpreters/PredicateRewriteVisitor.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Core/Block.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTSubquery.h>
@@ -14,6 +12,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExtractExpressionInfoVisitor.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 
 namespace DB
@@ -108,7 +107,7 @@ void PredicateRewriteVisitorData::visitOtherInternalSelect(ASTSelectQuery & sele
     const Names & internal_columns = InterpreterSelectQuery(
         temp_internal_select,
         const_pointer_cast<Context>(getContext()),
-        SelectQueryOptions().analyze()).getSampleBlock()->getNames();
+        SelectQueryOptions().analyze()).getSampleBlock().getNames();
 
     if (rewriteSubquery(*temp_select_query, internal_columns))
     {
@@ -153,7 +152,7 @@ static void useAliasInsteadOfIdentifier(const ASTPtr & predicate)
     }
 }
 
-static void getConjunctionHashesFrom(const ASTPtr & ast, std::set<IASTHash> & hashes)
+static void getConjunctionHashesFrom(const ASTPtr & ast, std::set<IAST::Hash> & hashes)
 {
     for (const auto & pred : splitConjunctionsAst(ast))
     {
@@ -178,7 +177,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
 
     /// Do not add same conditions twice to avoid extra rewrites with exponential blowup
     /// (e.g. in case of deep complex query with lots of JOINs)
-    std::set<IASTHash> hashes;
+    std::set<IAST::Hash> hashes;
     getConjunctionHashesFrom(subquery.where(), hashes);
     getConjunctionHashesFrom(subquery.having(), hashes);
 
@@ -213,7 +212,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
         /// We only need to push all the predicates to subquery having
         /// The subquery optimizer will move the appropriate predicates from having to where
         subquery.setExpression(ASTSelectQuery::Expression::HAVING,
-            subquery.having() ? makeASTOperator("and", optimize_predicate, subquery.having()) : optimize_predicate);
+            subquery.having() ? makeASTFunction("and", optimize_predicate, subquery.having()) : optimize_predicate);
     }
 
     return is_changed;

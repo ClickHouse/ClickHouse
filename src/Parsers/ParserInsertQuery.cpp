@@ -43,7 +43,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p(true);
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserFunction table_function_p{false, true};
+    ParserFunction table_function_p{false};
     ParserStringLiteral infile_name_p;
     ParserExpressionWithOptionalAlias exp_elem_p(false);
 
@@ -309,7 +309,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->select = select;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
-    query->end = data ? end : nullptr;
+    query->end = end;
 
     if (columns)
         query->children.push_back(columns);

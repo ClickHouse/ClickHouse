@@ -1,15 +1,13 @@
 #include <TableFunctions/TableFunctionURL.h>
 
-#include <TableFunctions/registerTableFunctions.h>
+#include "registerTableFunctions.h"
 #include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
@@ -19,7 +17,6 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
-#include <Storages/HivePartitioningUtils.h>
 
 
 namespace DB
@@ -93,34 +90,29 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 }
 
 StoragePtr TableFunctionURL::getStorage(
-    const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr context,
+    const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_, bool is_insert_query) const
 {
-    const auto & settings = context->getSettingsRef();
-    const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    const auto & settings = global_context->getSettingsRef();
+    const auto is_secondary_query = global_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
-    const bool can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
+    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]
-        && context->canUseTaskBasedParallelReplicas()
-        && !context->isDistributed()
+        && global_context->canUseTaskBasedParallelReplicas()
+        && !global_context->isDistributed()
         && !is_secondary_query
         && !is_insert_query;
-
-    const auto & client_info = context->getClientInfo();
-    bool can_use_distributed_iterator =
-        client_info.collaborate_with_initiator &&
-        context->hasClusterFunctionReadTaskCallback();
 
     if (can_use_parallel_replicas)
     {
         return std::make_shared<StorageURLCluster>(
-            context,
+            global_context,
             parallel_replicas_cluster_name,
             source,
             format_,
             compression_method_,
             StorageID(getDatabaseName(), table_name),
-            getActualTableStructure(context, true),
+            getActualTableStructure(global_context, true),
             ConstraintsDescription{},
             configuration);
     }
@@ -133,49 +125,33 @@ StoragePtr TableFunctionURL::getStorage(
         columns,
         ConstraintsDescription{},
         String{},
-        context,
+        global_context,
         compression_method_,
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/can_use_distributed_iterator);
+        /*distributed_processing=*/ is_secondary_query);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     if (structure == "auto")
     {
-        ColumnsDescription columns;
-
-        if (const auto access_object = getSourceAccessObject())
-            context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(*access_object), getFunctionURINormalized());
+        context->checkAccess(getSourceAccessType());
         if (format == "auto")
-        {
-            columns = StorageURL::getTableStructureAndFormatFromData(
-                filename,
-                chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
-                configuration.headers,
-                std::nullopt,
-                context).first;
-        }
-        else
-        {
-            columns = StorageURL::getTableStructureFromData(format,
-                filename,
-                chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
-                configuration.headers,
-                std::nullopt,
-                context);
-        }
+            return StorageURL::getTableStructureAndFormatFromData(
+                       filename,
+                       chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
+                       configuration.headers,
+                       std::nullopt,
+                       context).first;
 
-        HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
-            columns,
+        return StorageURL::getTableStructureFromData(format,
             filename,
-            /* inferred_schema */ true,
-            /* format_settings */ std::nullopt,
+            chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
+            configuration.headers,
+            std::nullopt,
             context);
-
-        return columns;
     }
 
     return parseColumnsListFromString(structure, context);

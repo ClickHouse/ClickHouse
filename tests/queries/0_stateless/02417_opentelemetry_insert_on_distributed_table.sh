@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, distributed, long, no-async-insert
-# no-async-insert: sync and async inserts are tested
+# Tags: no-fasttest, distributed, long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
