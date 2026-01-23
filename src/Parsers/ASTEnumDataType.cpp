@@ -14,7 +14,7 @@ String ASTEnumDataType::getID(char delim) const
 
 ASTPtr ASTEnumDataType::clone() const
 {
-    auto res = std::make_shared<ASTEnumDataType>(*this);
+    auto res = make_intrusive<ASTEnumDataType>(*this);
     res->children.clear();
     /// values vector is copied by the copy constructor
     /// No arguments to clone since we don't use ASTLiteral children

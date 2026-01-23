@@ -82,7 +82,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             return false;
     }
 
-    auto query = std::make_shared<ASTOptimizeQuery>();
+    auto query = make_intrusive<ASTOptimizeQuery>();
     node = query;
 
     query->cluster = cluster_str;
