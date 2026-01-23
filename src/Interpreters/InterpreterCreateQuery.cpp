@@ -770,9 +770,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         if (create.columns_list->indices)
+        {
             for (const auto & index : create.columns_list->indices->children)
             {
-                IndexDescription index_desc = IndexDescription::getIndexFromAST(index->clone(), properties.columns, /* is_implicitly_created */ false, getContext());
+                constexpr bool is_implicitly_created = false;
+                constexpr bool escape_index_filenames = true; /// We don't care about this value because it won't be used
+                IndexDescription index_desc = IndexDescription::getIndexFromAST(
+                    index->clone(), properties.columns, is_implicitly_created, escape_index_filenames, getContext());
                 if (properties.indices.has(index_desc.name))
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
 
@@ -782,6 +786,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
                 properties.indices.push_back(index_desc);
             }
+        }
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)
@@ -1028,20 +1033,6 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
         DataTypeValidationSettings validation_settings(settings);
         for (const auto & name_and_type_pair : properties.columns.getAllPhysical())
             validateDataType(name_and_type_pair.type, validation_settings);
-    }
-}
-
-void validateVirtualColumns(const IStorage & storage)
-{
-    auto virtual_columns = storage.getVirtualsPtr();
-    for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
-    {
-        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))
-        {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
-                storage_column.name, storage.getName());
-        }
     }
 }
 
@@ -1773,7 +1764,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
-void checkForUnsupportedColumns(const IStorage & storage, LoadingStrictnessLevel mode)
+void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode)
 {
     if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumns())
     {
@@ -1782,6 +1773,42 @@ void checkForUnsupportedColumns(const IStorage & storage, LoadingStrictnessLevel
             "because storage {} doesn't support dynamic subcolumns",
             storage.getName());
     }
+}
+
+void validateVirtualColumns(IStorage & storage)
+{
+    auto virtual_columns = storage.getVirtualsPtr();
+    for (const auto & storage_column : storage.getInMemoryMetadataPtr()->getColumns())
+    {
+        if (virtual_columns->tryGet(storage_column.name, VirtualsKind::Persistent))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot create table with column '{}' for {} engines because it is reserved for persistent virtual column",
+                storage_column.name, storage.getName());
+        }
+    }
+}
+
+void validateStorage(IStorage & storage, LoadingStrictnessLevel mode)
+try
+{
+    validateVirtualColumns(storage);
+    checkForUnsupportedColumns(storage, mode);
+}
+catch (...)
+{
+    if (mode <= LoadingStrictnessLevel::CREATE)
+    {
+        try
+        {
+            storage.drop();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("validateStorage");
+        }
+    }
+    throw;
 }
 
 }
@@ -1808,8 +1835,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateVirtualColumns(*res);
-            checkForUnsupportedColumns(*res, mode);
+            validateStorage(*res, mode);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -1998,8 +2024,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateVirtualColumns(*res);
-    checkForUnsupportedColumns(*res, mode);
+    validateStorage(*res, mode);
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -2246,8 +2271,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateVirtualColumns(*res);
-        checkForUnsupportedColumns(*res, mode);
+        validateStorage(*res, mode);
         return res;
     };
 

@@ -821,6 +821,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
 
     - `round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads` CPU slots. One slot per thread. On contention CPU slot are granted to queries using round-robin. Note that the first slot is granted unconditionally, which could lead to unfairness and increased latency of queries having high `max_threads` in presence of high number of queries with `max_threads` = 1.
     - `fair_round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads - 1` CPU slots. Variation of `round_robin` that does not require a CPU slot for the first thread of every query. This way queries having `max_threads` = 1 do not require any slot and could not unfairly allocate all slots. There are no slots granted unconditionally.
+    - `max_min_fair` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads - 1` CPU slots. Similar to `fair_round_robin`, but released slots are always granted to the query with the minimum number of currently allocated slots. This provides better fairness under high oversubscription, where many queries compete for limited CPU slots. Short-running queries are not penalized by long-running queries that have accumulated more slots over time.
     )", 0) \
     DECLARE(UInt64, background_pool_size, 16, R"(
     Sets the number of threads performing background merges and mutations for tables with MergeTree engines.
