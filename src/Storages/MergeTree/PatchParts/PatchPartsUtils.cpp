@@ -69,9 +69,9 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
     StorageInMemoryMetadata part_metadata;
 
     /// Use hash of column names to put patch parts with different structure to different partitions.
-    auto part_identifier = std::make_shared<ASTIdentifier>("_part");
+    auto part_identifier = make_intrusive<ASTIdentifier>("_part");
     auto columns_hash = getColumnsHash(patch_part_desc.getNamesOfPhysical());
-    auto hash_literal = std::make_shared<ASTLiteral>(std::move(columns_hash));
+    auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));
 
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
     part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, local_context);
@@ -80,7 +80,7 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
     auto order_by_expression = makeASTOperator("tuple");
 
     for (const auto & [key_column_name, _] : key_columns)
-        order_by_expression->arguments->children.push_back(std::make_shared<ASTIdentifier>(key_column_name));
+        order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(key_column_name));
 
     addCodecsForPatchSystemColumns(patch_part_desc);
 

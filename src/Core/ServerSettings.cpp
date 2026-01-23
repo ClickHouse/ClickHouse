@@ -1580,13 +1580,14 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
-        const auto & path = setting.getPath();
+        String path {setting.getPath()};
+        const String * path_or_name = path.empty() ? &name : &path;
         try
         {
-            if (config.has(path))
-                set(name, config.getString(path));
-            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + path))
-                set(name, config.getString("profiles.default." + path));
+            if (config.has(*path_or_name))
+                set(name, config.getString(*path_or_name));
+            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
+                set(name, config.getString("profiles.default." + *path_or_name));
         }
         catch (Exception & e)
         {
@@ -1767,12 +1768,12 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
     for (const auto & setting : impl->all())
     {
         const auto & setting_name = setting.getName();
-        const auto & setting_path = setting.getPath();
+        String setting_path {setting.getPath()};
 
         const auto & changeable_settings_it = changeable_settings.find(setting_name);
         const bool is_changeable = (changeable_settings_it != changeable_settings.end());
 
-        res_columns[0]->insert(setting_path);
+        res_columns[0]->insert(setting_path.empty() ? setting_name : setting_path);
         res_columns[1]->insert(is_changeable ? changeable_settings_it->second.first : setting.getValueString());
         res_columns[2]->insert(setting.getDefaultValueString());
         res_columns[3]->insert(setting.isValueChanged());

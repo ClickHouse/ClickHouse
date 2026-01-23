@@ -86,7 +86,7 @@ class ASTExistsDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTExistsDa
 public:
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTExistsDatabaseQuery>(*this);
+        auto res = make_intrusive<ASTExistsDatabaseQuery>(*this);
         res->children.clear();
         cloneTableOptions(*res);
         return res;
@@ -108,7 +108,7 @@ class ASTShowCreateDatabaseQuery : public ASTQueryWithTableAndOutputImpl<ASTShow
 public:
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTShowCreateDatabaseQuery>(*this);
+        auto res = make_intrusive<ASTShowCreateDatabaseQuery>(*this);
         res->children.clear();
         cloneTableOptions(*res);
         return res;
@@ -132,7 +132,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTDescribeQuery>(*this);
+        auto res = make_intrusive<ASTDescribeQuery>(*this);
         res->children.clear();
         if (table_expression)
         {
