@@ -47,7 +47,7 @@ private:
     }
 
 public:
-    bool hasChildren() const { return children.size() != 0; }
+    bool hasChildren() const { return !children.empty(); }
     ASTPtr getType() const { return getChildOrNull(type_idx); }
     ASTPtr getDefaultExpression() const { return getChildOrNull(default_expression_idx); }
     ASTPtr getComment() const { return getChildOrNull(comment_idx); }

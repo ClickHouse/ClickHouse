@@ -25,7 +25,7 @@ ASTPtr ASTDataType::clone() const
 
 ASTPtr ASTDataType::getArguments() const
 {
-    if (children.size())
+    if (!children.empty())
         return children[0];
     return nullptr;
 }
