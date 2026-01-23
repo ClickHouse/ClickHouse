@@ -204,7 +204,7 @@ protected:
 
         Chunk result;
         /// source should return at least one row to start pipeline
-        result.addColumn(ColumnUInt8::create(1, 1));
+        result.addColumn(ColumnUInt8::create(1, static_cast<UInt8>(1)));
         /// actual data stored in chunk info
         result.getChunkInfos().add(std::move(current_check_task));
         return result;
@@ -395,7 +395,7 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextP
 static Strings getAllDatabases(const ContextPtr & context)
 {
     Strings res;
-    const auto & databases = DatabaseCatalog::instance().getDatabases();
+    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     res.reserve(databases.size());
     for (const auto & [database_name, _] : databases)
     {

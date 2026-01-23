@@ -50,6 +50,7 @@ struct MergeTreeDataPartChecksums
     FileChecksums files;
 
     void addFile(const String & file_name, UInt64 file_size, Checksum::uint128 file_hash);
+    void addFile(const String & file_name, const Checksum & checksum);
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
 

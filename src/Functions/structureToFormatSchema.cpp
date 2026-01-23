@@ -1,11 +1,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
-#include <Interpreters/Context.h>
 #include <IO/WriteBufferFromVector.h>
 #include <Formats/StructureToCapnProtoSchema.h>
 #include <Formats/StructureToProtobufSchema.h>
@@ -93,8 +91,8 @@ public:
                 "Number of arguments for function {} doesn't match: passed {}, expected 1 or 2",
                 getName(), arguments.size());
 
-        String structure = arguments[0].column->getDataAt(0).toString();
-        String message_name = arguments.size() == 2 ? arguments[1].column->getDataAt(0).toString() : "Message";
+        String structure{arguments[0].column->getDataAt(0)};
+        String message_name = arguments.size() == 2 ? std::string{arguments[1].column->getDataAt(0)} : "Message";
         auto columns_list = parseColumnsListFromString(structure, context);
         auto col_res = ColumnString::create();
         auto & data = assert_cast<ColumnString &>(*col_res).getChars();
@@ -144,24 +142,42 @@ Function that converts ClickHouse table structure to CapnProto format schema
 
 REGISTER_FUNCTION(StructureToProtobufSchema)
 {
+    FunctionDocumentation::Description structureToProtobufSchema_description = R"(
+Converts a ClickHouse table structure to Protobuf format schema.
+
+This function takes a ClickHouse table structure definition and converts it into a Protocol Buffers (Protobuf)
+schema definition in proto3 syntax. This is useful for generating Protobuf schemas that match your ClickHouse
+table structures for data interchange.
+    )";
+    FunctionDocumentation::Syntax structureToProtobufSchema_syntax = "structureToProtobufSchema(structure, message_name)";
+    FunctionDocumentation::Arguments structureToProtobufSchema_arguments =
+    {
+        {"structure", "ClickHouse table structure definition as a string (e.g., 'column1 Type1, column2 Type2').", {"String"}},
+        {"message_name", "Name for the Protobuf message type in the generated schema.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue structureToProtobufSchema_returned_value = {"Returns a Protobuf schema definition in proto3 syntax that corresponds to the input ClickHouse structure.", {"String"}};
+    FunctionDocumentation::Examples structureToProtobufSchema_examples = {{"Converting ClickHouse structure to Protobuf schema",
+        R"(
+SELECT structureToProtobufSchema('s String, x UInt32', 'MessageName') FORMAT TSVRaw;
+        )",
+        R"(
+syntax = "proto3";
+
+message MessageName
+{
+    bytes s = 1;
+    uint32 x = 2;
+}
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn structureToProtobufSchema_introduced_in = {23, 8};
+    FunctionDocumentation::Category structureToProtobufSchema_category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation structureToProtobufSchema_documentation = {structureToProtobufSchema_description, structureToProtobufSchema_syntax, structureToProtobufSchema_arguments, {}, structureToProtobufSchema_returned_value, structureToProtobufSchema_examples, structureToProtobufSchema_introduced_in, structureToProtobufSchema_category};
+
     factory.registerFunction(StructureToProtobufSchema::name,
         [](ContextPtr context){ return std::make_shared<FunctionStructureToFormatSchema>(Impl::Protobuf, std::move(context)); },
-        FunctionDocumentation
-        {
-            .description=R"(
-Function that converts ClickHouse table structure to Protobuf format schema
-)",
-            .examples{
-                {"random", "SELECT structureToProtobufSchema('s String, x UInt32', 'MessageName') format TSVRaw", "syntax = \"proto3\";\n"
-"\n"
-"message MessageName\n"
-"{\n"
-"    bytes s = 1;\n"
-"    uint32 x = 2;\n"
-"}"},
-            },
-            .category = FunctionDocumentation::Category::Other
-        });
+        structureToProtobufSchema_documentation);
 }
 
 }

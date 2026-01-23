@@ -138,7 +138,7 @@ jobs:
     name: "{JOB_NAME_GH}"
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
-      pipeline_status: ${{{{ steps.run.outputs.pipeline_status }}}}
+      pipeline_status: ${{{{ steps.run.outputs.pipeline_status || 'undefined' }}}}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -147,11 +147,14 @@ jobs:
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
-          rm -rf {INPUT_DIR} {OUTPUT_DIR} {TEMP_DIR}
-          mkdir -p {TEMP_DIR} {INPUT_DIR} {OUTPUT_DIR}
+          rm -rf {UNIQUE_WORK_DIRS}
+          mkdir -p {UNIQUE_WORK_DIRS}
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:{PYTHONPATH_EXTRA}
 {SETUP_ENVS}
+          cat > {WORKFLOW_JOB_FILE} << 'EOF'
+          ${{{{ toJson(job) }}}}
+          EOF
           cat > {WORKFLOW_STATUS_FILE} << 'EOF'
           ${{{{ toJson(needs) }}}}
           EOF
@@ -160,8 +163,7 @@ jobs:
       - name: Run
         id: run
         run: |
-          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
-          . {TEMP_DIR}/praktika_setup_env.sh
+          . {ENV_SETUP_SCRIPT}
           set -o pipefail
           if command -v ts &> /dev/null; then
             python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee {TEMP_DIR}/job.log
@@ -229,6 +231,10 @@ jobs:
 
         TEMPLATE_IF_EXPRESSION_NOT_CANCELLED = """
     if: ${{ !cancelled() }}\
+"""
+
+        TEMPLATE_IF_EXPRESSION_ALWAYS = """
+    if: ${{ always() }}\
 """
 
     def __init__(self):
@@ -314,6 +320,8 @@ class PullRequestPushYamlGen:
                 if_expression = (
                     YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_NOT_CANCELLED
                 )
+            if job.name == Settings.FINISH_WORKFLOW_JOB_NAME:
+                if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION_ALWAYS
 
             secrets_envs = []
             for secret in self.workflow_config.secret_names_gh:
@@ -350,10 +358,12 @@ class PullRequestPushYamlGen:
                 UPLOADS_GITHUB="\n".join(uploads_github),
                 RUN_LOG=Settings.RUN_LOG,
                 PYTHON=Settings.PYTHON_INTERPRETER,
+                WORKFLOW_JOB_FILE=Settings.WORKFLOW_JOB_FILE,
                 WORKFLOW_STATUS_FILE=Settings.WORKFLOW_STATUS_FILE,
                 TEMP_DIR=Settings.TEMP_DIR,
-                INPUT_DIR=Settings.INPUT_DIR,
-                OUTPUT_DIR=Settings.OUTPUT_DIR,
+                UNIQUE_WORK_DIRS=" ".join(
+                    {Settings.TEMP_DIR, Settings.INPUT_DIR, Settings.OUTPUT_DIR}
+                ),
                 PYTHONPATH_EXTRA=Settings.PYTHONPATHS,
             )
             job_items.append(job_item)

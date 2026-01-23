@@ -19,7 +19,7 @@ ON lhs.a = rhs.a
 FORMAT Null
 SETTINGS log_comment = '03593_any_join_swap_tables';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['JoinBuildTableRowCount'] AS build_table_size
 FROM system.query_log

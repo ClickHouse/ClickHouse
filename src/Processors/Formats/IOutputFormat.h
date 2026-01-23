@@ -6,6 +6,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/Stopwatch.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -54,7 +55,7 @@ public:
     /// Set initial progress values on initialization of the format, before it starts writing the data.
     void setProgress(Progress progress);
 
-    InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
+    InputPort & getPort(PortKind kind);
 
     /// Compatibility with old interface.
     /// TODO: separate formats and processors.
@@ -64,6 +65,7 @@ public:
     void finalize();
 
     virtual bool expectMaterializedColumns() const { return true; }
+    virtual bool supportsSpecialSerializationKinds() const { return false; }
 
     void setTotals(const Block & totals);
     void setExtremes(const Block & extremes);

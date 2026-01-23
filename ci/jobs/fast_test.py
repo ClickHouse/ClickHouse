@@ -12,7 +12,7 @@ from ci.praktika.settings import Settings
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
-build_dir = f"{current_directory}/ci/tmp/build"
+build_dir = f"{current_directory}/ci/tmp/fast_build"
 temp_dir = f"{current_directory}/ci/tmp/"
 
 
@@ -25,7 +25,7 @@ def clone_submodules():
         "contrib/zlib-ng",
         "contrib/libxml2",
         "contrib/fmtlib",
-        "contrib/aklomp-base64",
+        "contrib/base64",
         "contrib/cctz",
         "contrib/libcpuid",
         "contrib/libdivide",
@@ -50,11 +50,12 @@ def clone_submodules():
         "contrib/morton-nd",
         "contrib/xxHash",
         "contrib/simdjson",
+        "contrib/simdcomp",
         "contrib/liburing",
         "contrib/libfiu",
-        "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
+        "contrib/StringZilla",
         "contrib/rust_vendor",
     ]
 
@@ -127,7 +128,18 @@ def main():
         stages.insert(0, stage)
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
+
+    # Global sccache settings for local and CI runs
+    os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
+    os.environ["SCCACHE_CACHE_SIZE"] = "40G"
+    os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
+    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+    os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
+    os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
+    os.environ["SCCACHE_LOG"] = "info"
+
     if Info().is_local_run:
+        os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
         if clickhouse_bin_path.exists():
             print(
                 f"NOTE: It's a local run and clickhouse binary is found [{clickhouse_bin_path}] - skip the build"
@@ -150,11 +162,6 @@ def main():
         os.environ["CH_PASSWORD"] = chcache_secret.get_value()
         os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
-        os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-        os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
-        os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
-        Shell.check("sccache --show-stats", verbose=True)
-
     Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
 
     res = True
@@ -162,8 +169,12 @@ def main():
     attach_files = []
     job_info = ""
 
+    if os.getuid() == 0:
+        res = res and Shell.check(
+            f"git config --global --add safe.directory {current_directory}"
+        )
+
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
-        Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
         results.append(
             Result.from_commands_run(
                 name="Checkout Submodules",
@@ -171,6 +182,8 @@ def main():
             )
         )
         res = results[-1].is_ok()
+
+    os.makedirs(build_dir, exist_ok=True)
 
     if res and JobStages.CMAKE in stages:
         results.append(
@@ -185,8 +198,8 @@ def main():
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
-                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1",
-                workdir=build_dir,
+                -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
+                -B {build_dir}",
             )
         )
         res = results[-1].is_ok()
@@ -196,8 +209,8 @@ def main():
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
-                command="command time -v ninja clickhouse-bundle clickhouse-stripped lexer_test",
-                workdir=build_dir,
+                command=f"command time -v cmake --build {build_dir} --"
+                " clickhouse-bundle clickhouse-stripped lexer_test",
             )
         )
         Shell.check(f"{build_dir}/rust/chcache/chcache stats")
@@ -273,7 +286,7 @@ def main():
 
     if attach_debug:
         attach_files += [
-            Utils.compress_file(f"{temp_dir}/build/programs/clickhouse-stripped"),
+            clickhouse_bin_path,
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.err.log",
             f"{temp_dir}/var/log/clickhouse-server/clickhouse-server.log",
         ]

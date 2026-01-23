@@ -155,7 +155,8 @@ struct PageDecoderInfo
 };
 
 
-/// Input physical type: INT32 or INT64.
+/// Input physical type: BOOLEAN, INT32, or INT64.
+/// input_size in {1, 4, 8}.
 /// Output column type: [U]Int{8,16,32,64}.
 /// Output Field type: [U]Int64, IPv4, or Decimal{32,64}.
 struct IntConverter : public FixedSizeConverter

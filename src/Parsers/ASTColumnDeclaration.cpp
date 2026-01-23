@@ -1,4 +1,5 @@
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -8,7 +9,7 @@ namespace DB
 
 ASTPtr ASTColumnDeclaration::clone() const
 {
-    const auto res = std::make_shared<ASTColumnDeclaration>(*this);
+    const auto res = make_intrusive<ASTColumnDeclaration>(*this);
     res->children.clear();
 
     if (type)
@@ -111,7 +112,10 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
     if (ttl)
     {
         ostr << ' '  << "TTL"  << ' ';
-        ttl->format(ostr, format_settings, state, frame);
+        auto nested_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        ttl->format(ostr, format_settings, state, nested_frame);
     }
 
     if (collation)
@@ -128,27 +132,14 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
     }
 }
 
-void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
+void ASTColumnDeclaration::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
 {
-    auto visit_child = [&f](ASTPtr & member)
-    {
-        IAST * new_member_ptr = member.get();
-        f(reinterpret_cast<void **>(&new_member_ptr));
-        if (new_member_ptr != member.get())
-        {
-            if (new_member_ptr)
-                member = new_member_ptr->ptr();
-            else
-                member.reset();
-        }
-    };
-
-    visit_child(default_expression);
-    visit_child(comment);
-    visit_child(codec);
-    visit_child(statistics_desc);
-    visit_child(ttl);
-    visit_child(collation);
-    visit_child(settings);
+    f(nullptr, &default_expression);
+    f(nullptr, &comment);
+    f(nullptr, &codec);
+    f(nullptr, &statistics_desc);
+    f(nullptr, &ttl);
+    f(nullptr, &collation);
+    f(nullptr, &settings);
 }
 }

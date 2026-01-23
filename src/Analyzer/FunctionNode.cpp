@@ -174,6 +174,8 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
         || nulls_action != rhs_typed.nulls_action)
         return false;
 
+    /// is_operator is ignored here because it affects only AST formatting
+
     if (!compare_options.compare_types)
         return true;
 
@@ -204,6 +206,8 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
 
+    /// is_operator is ignored here because it affects only AST formatting
+
     if (!compare_options.compare_types)
         return;
 
@@ -225,16 +229,18 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->kind = kind;
     result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
+    result_function->is_operator = is_operator;
 
     return result_function;
 }
 
 ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto function_ast = std::make_shared<ASTFunction>();
+    auto function_ast = make_intrusive<ASTFunction>();
 
     function_ast->name = function_name;
     function_ast->nulls_action = nulls_action;
+    function_ast->is_operator = is_operator;
 
     if (isWindowFunction())
     {
@@ -262,7 +268,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     if (isNameOfInFunction(function_name) && argument_nodes.size() > 1 && argument_nodes[1]->getNodeType() == QueryTreeNodeType::CONSTANT
         && !static_cast<const ConstantNode *>(argument_nodes[1].get())->hasSourceExpression())
     {
-        auto expression_list_ast = std::make_shared<ASTExpressionList>();
+        auto expression_list_ast = make_intrusive<ASTExpressionList>();
 
         expression_list_ast->children.push_back(argument_nodes[0]->toAST(new_options));
 

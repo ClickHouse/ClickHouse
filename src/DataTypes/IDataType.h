@@ -139,13 +139,14 @@ public:
 
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
+
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
     SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
-    SerializationPtr getSparseSerialization(SerializationPtr override_default = {}) const;
 
-    /// Chooses serialization according to serialization kind.
-    SerializationPtr getSerialization(ISerialization::Kind kind, SerializationPtr override_default = {}) const;
+    /// Chooses serialization according to serialization kind stack.
+    SerializationPtr getSerialization(
+        ISerialization::KindStack kind_stack, const SerializationInfoSettings & settings, SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
@@ -170,6 +171,12 @@ public:
     /** Create empty column for corresponding type and default serialization.
       */
     virtual MutableColumnPtr createColumn() const = 0;
+
+    /** Creates a column with specified size, without initializing values.
+      * This is useful when you need to create a large column to fill later (e.g. the result of a function)
+      * Default implementation uses createColumn and cloneResized.
+      */
+    virtual MutableColumnPtr createUninitializedColumnWithSize(size_t size) const;
 
     /** Create empty column for corresponding type and serialization.
      */
@@ -332,9 +339,6 @@ public:
     /// Strings, Numbers, Date, DateTime, Nullable
     virtual bool canBeInsideLowCardinality() const { return false; }
 
-    /// Checks for deprecated Object type usage recursively: Object, Array(Object), Tuple(..., Object, ...)
-    virtual bool hasDynamicSubcolumnsDeprecated() const { return false; }
-
     /// Checks if column has dynamic subcolumns.
     virtual bool hasDynamicSubcolumns() const;
     /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnData can be called.
@@ -422,6 +426,7 @@ struct WhichDataType
     constexpr bool isNativeFloat() const { return isFloat32() || isFloat64(); }
     constexpr bool isFloat() const { return isNativeFloat() || isBFloat16(); }
 
+    constexpr bool isIntegerOrDecimal() const { return isInteger() || isDecimal(); }
     constexpr bool isNativeNumber() const { return isNativeInteger() || isNativeFloat(); }
     constexpr bool isNumber() const { return isInteger() || isFloat() || isDecimal(); }
 
@@ -454,7 +459,6 @@ struct WhichDataType
     constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
-    constexpr bool isObjectDeprecated() const { return idx == TypeIndex::ObjectDeprecated; }
 
     constexpr bool isNothing() const { return idx == TypeIndex::Nothing; }
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
@@ -503,6 +507,7 @@ bool isDecimal(TYPE data_type); \
 \
 bool isFloat(TYPE data_type); \
 \
+bool isIntegerOrDecimal(TYPE data_type); \
 bool isNativeNumber(TYPE data_type); \
 bool isNumber(TYPE data_type); \
 \
@@ -534,7 +539,6 @@ bool isTuple(TYPE data_type); \
 bool isQBit(TYPE data_type); \
 bool isMap(TYPE data_type); \
 bool isInterval(TYPE data_type); \
-bool isObjectDeprecated(TYPE data_type); \
 bool isVariant(TYPE data_type); \
 bool isDynamic(TYPE data_type); \
 bool isObject(TYPE data_type); \

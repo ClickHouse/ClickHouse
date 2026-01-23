@@ -8,7 +8,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/StorageXDBC.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <TableFunctions/ITableFunction.h>
@@ -17,10 +16,7 @@
 #include <Common/Exception.h>
 #include <TableFunctions/registerTableFunctions.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
-
-#include "config.h"
 
 
 namespace DB
@@ -61,8 +57,6 @@ class ITableFunctionXDBC : public ITableFunction
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     void startBridgeIfNot(ContextPtr context) const;
-
-    const String & getFunctionURI() const override { return connection_string; }
 
     String connection_string;
     String schema_name;

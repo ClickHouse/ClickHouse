@@ -655,7 +655,7 @@ def test_alters_from_different_replicas(started_cluster):
     )
 
     main_node.query(
-        "INSERT INTO alters_from_different_replicas.dist (CounterID, StartDate, UserID) SELECT number, addDays(toDate('2020-02-02'), number), intHash32(number) FROM numbers(10)"
+        "INSERT INTO alters_from_different_replicas.dist (CounterID, StartDate, UserID) SELECT number, addDays(toDate('2020-02-02'), number), intHash32(number) FROM numbers(10) ORDER BY ALL"
     )
 
     # test_replica_restart
@@ -753,7 +753,6 @@ def test_alters_from_different_replicas(started_cluster):
 def create_some_tables(db):
     settings = {
         "distributed_ddl_task_timeout": 0,
-        "allow_experimental_object_type": 1,
         "allow_suspicious_codecs": 1,
     }
     main_node.query(f"CREATE TABLE {db}.t1 (n int) ENGINE=Memory", settings=settings)
@@ -777,7 +776,7 @@ def create_some_tables(db):
         settings=settings,
     )
     main_node.query(
-        f"CREATE TABLE {db}.rmt3 (n int, json Object('json') materialized '') ENGINE=ReplicatedMergeTree order by n",
+        f"CREATE TABLE {db}.rmt3 (n int, json JSON materialized '{{}}') ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
     dummy_node.query(
@@ -1307,18 +1306,21 @@ def test_force_synchronous_settings(started_cluster):
     start_merges_thread = threading.Thread(target=start_merges_func)
     start_merges_thread.start()
 
-    settings = {
-        "mutations_sync": 2,
-        "database_replicated_enforce_synchronous_settings": 1,
-    }
-    main_node.query(
-        "ALTER TABLE test_force_synchronous_settings.t UPDATE n = n * 10 WHERE 1",
-        settings=settings,
-    )
-    assert "10\t450\n" == snapshotting_node.query(
-        "SELECT count(), sum(n) FROM test_force_synchronous_settings.t"
-    )
-    start_merges_thread.join()
+    try:
+        settings = {
+            "mutations_sync": 2,
+            "database_replicated_enforce_synchronous_settings": 1,
+        }
+        main_node.query(
+            "ALTER TABLE test_force_synchronous_settings.t UPDATE n = n * 10 WHERE 1",
+            settings=settings,
+        )
+        assert "10\t450\n" == snapshotting_node.query(
+            "SELECT count(), sum(n) FROM test_force_synchronous_settings.t"
+        )
+    finally:
+        # Ensure thread is killed even if assert fails
+        start_merges_thread.join()
 
     def select_func():
         dummy_node.query(
@@ -1328,14 +1330,16 @@ def test_force_synchronous_settings(started_cluster):
     select_thread = threading.Thread(target=select_func)
     select_thread.start()
 
-    settings = {"database_replicated_enforce_synchronous_settings": 1}
-    snapshotting_node.query(
-        "DROP TABLE test_force_synchronous_settings.t SYNC", settings=settings
-    )
-    main_node.query(
-        "CREATE TABLE test_force_synchronous_settings.t (n String) ENGINE=ReplicatedMergeTree('/test/same/path/{shard}', '{replica}') ORDER BY tuple()"
-    )
-    select_thread.join()
+    try:
+        settings = {"database_replicated_enforce_synchronous_settings": 1}
+        snapshotting_node.query(
+            "DROP TABLE test_force_synchronous_settings.t SYNC", settings=settings
+        )
+        main_node.query(
+            "CREATE TABLE test_force_synchronous_settings.t (n String) ENGINE=ReplicatedMergeTree('/test/same/path/{shard}', '{replica}') ORDER BY tuple()"
+        )
+    finally:
+        select_thread.join()
 
     main_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
     dummy_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
@@ -1746,7 +1750,7 @@ def test_system_database_replicas_with_ro(started_cluster):
 
     main_node.query(f"DETACH DATABASE {database_1}")
     main_node.query(f"ATTACH DATABASE {database_1}", ignore_error=True)
-    
+
     expected = TSV([
         [database_1, 1, 1],
     ])
@@ -1864,6 +1868,20 @@ def test_block_system_database_replicas(started_cluster):
     )
 
 
+def test_correct_skip_indexes(started_cluster):
+    competing_node.query("DROP DATABASE IF EXISTS correct_skip_indexes")
+    dummy_node.query("DROP DATABASE IF EXISTS correct_skip_indexes")
+
+    competing_node.query(
+        "CREATE DATABASE correct_skip_indexes ENGINE = Replicated('/clickhouse/databases/correct_skip_indexes', 'shard1', 'replica1');"
+        "CREATE TABLE correct_skip_indexes.test (`id` UInt64, `a` String, `b` String ALIAS a, INDEX bf_a assumeNotNull(b) TYPE bloom_filter(0.01) GRANULARITY 1) ENGINE = ReplicatedMergeTree ORDER BY (id);"
+    )
+    dummy_node.query(
+        "CREATE DATABASE correct_skip_indexes ENGINE = Replicated('/clickhouse/databases/correct_skip_indexes', 'shard1', 'replica2');"
+        "SYSTEM SYNC DATABASE REPLICA correct_skip_indexes;"
+    )
+
+
 def test_implicit_index(started_cluster):
     competing_node.query("DROP DATABASE IF EXISTS implicit_index")
     dummy_node.query("DROP DATABASE IF EXISTS implicit_index")
@@ -1884,7 +1902,7 @@ def test_timeseries(started_cluster):
         node.query("DROP DATABASE IF EXISTS ts_db SYNC")
 
     competing_node.query(
-        "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
+        "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '1', '3');"  # any fixed values, macros not defined here
     )
 
     main_node.query(
@@ -1909,3 +1927,63 @@ def test_timeseries(started_cluster):
             SELECT count() FROM system.tables WHERE database='ts_db';
             """, timeout=10
         ) == "4\n", f"Node {node.name} failed"
+
+
+def test_mv_false_cyclic_dependency(started_cluster):
+    # Use a specific test database name, NOT 'default'
+    db_name = "test_cyclic_db"
+
+    main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    dummy_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+    main_node.query(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
+        CREATE TABLE {db_name}.table_1 (id Int32) ENGINE = MergeTree ORDER BY id;
+        CREATE MATERIALIZED VIEW {db_name}.table_2 (id Int32) ENGINE = MergeTree ORDER BY id AS WITH table_3 AS (SELECT id AS id FROM {db_name}.table_1) SELECT * FROM table_3;
+        CREATE MATERIALIZED VIEW {db_name}.table_3 (id Int32) ENGINE = MergeTree ORDER BY id AS SELECT id AS id FROM {db_name}.table_2;
+        """
+    )
+    dummy_node.query(
+        f"""
+        DROP DATABASE IF EXISTS {db_name};
+        CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
+        SYSTEM SYNC DATABASE REPLICA {db_name};
+        DROP DATABASE {db_name} SYNC;
+        CREATE DATABASE {db_name};
+        """
+    )
+    main_node.query(
+        f"""
+        DROP DATABASE {db_name} SYNC;
+        CREATE DATABASE {db_name};
+        """
+    )
+    # Cleanup
+    main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_ignore_cluster_name_setting(started_cluster):
+    db_name = "test_cluster_name"
+
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+    for node in [main_node, dummy_node]:
+        node.query(f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}')")
+
+    create_query = f"""
+        CREATE TABLE {db_name}.replicated_table ON CLUSTER 'some_cluster' (d Date, k UInt64, i32 Int32)
+        ENGINE=ReplicatedMergeTree('/clickhouse/{db_name}/{{table}}/{{shard}}', '{{replica}}') ORDER BY k PARTITION BY toYYYYMM(d);
+        """
+
+    assert (
+        "Requested cluster 'some_cluster' not found"
+        in main_node.query_and_get_error(create_query)
+    )
+
+    node.query(create_query, settings={"ignore_on_cluster_for_replicated_database": 1})
+
+    # Cleanup
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")

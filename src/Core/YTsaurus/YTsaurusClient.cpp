@@ -60,7 +60,7 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     if (!json_ptr->has("type"))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'type'.");
 
-    if (json_ptr->getValue<String>("type") == "table")
+    if (json_ptr->getValue<String>("type") == "table" || json_ptr->getValue<String>("type") == "replicated_table")
     {
         if (!json_ptr->has("dynamic"))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'dynamic'.");
@@ -73,11 +73,24 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     }
 }
 
-ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path)
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const String & column_names_str = "*")
 {
-    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path));
+    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(cypress_path, column_names_str));
     return executeQuery(select_rows_query);
 }
+
+ReadBufferPtr YTsaurusClient::selectRows(const String & cypress_path, const ColumnsWithTypeAndName & columns)
+{
+    String columns_names_str;
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        columns_names_str += columns[i].name;
+        if (i + 1 != columns.size())
+            columns_names_str += ", ";
+    }
+    return selectRows(cypress_path, columns_names_str);
+}
+
 
 ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Block & lookup_block_input)
 {
@@ -205,56 +218,65 @@ Poco::Dynamic::Var YTsaurusClient::getTableAttribute(const String & cypress_path
     return json;
 }
 
-Poco::JSON::Array::Ptr YTsaurusClient::getTableSchema(const String & cypress_path)
+YTsaurusClient::SchemaDescription YTsaurusClient::getTableSchema(const String & cypress_path)
 {
     auto schema = getTableAttribute(cypress_path, "schema");
     const auto & schema_json = schema.extract<Poco::JSON::Object::Ptr>();
+
+    if (!schema_json->has("$attributes"))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "No \"$attributes\" property in yt table schema");
+
+    auto attributes = schema_json->get("$attributes").extract<Poco::JSON::Object::Ptr>();
+    if (!attributes->has("strict"))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Broken YtSaurus schema json. Missing `strict` field in attributes.");
+
+    bool is_strict = attributes->getValue<bool>("strict");
+
+    // Doesn't make sense to continue, schema isn't strict.
+    if (!is_strict)
+        return {is_strict, {}};
+
     if (!schema_json->has("$value"))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No \"$value\" property in yt table schema");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "No \"$value\" property in yt table schema");
     }
-    return schema_json->get("$value").extract<Poco::JSON::Array::Ptr>();
+
+    auto columns_array = schema_json->get("$value").extract<Poco::JSON::Array::Ptr>();
+    std::unordered_map<String, DataTypePtr> yt_columns;
+
+    for (const auto& yt_column : *columns_array) {
+        const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();
+        if (!yt_column_json->has("name"))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Broken YtSaurus schema json. Missing `name` field.");
+
+        auto yt_column_name = yt_column_json->getValue<String>("name");
+        auto data_type = convertYTSchema(yt_column_json);
+
+        yt_columns.insert({std::move(yt_column_name), data_type});
+    }
+    return {true, std::move(yt_columns)};
 }
 
-bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block)
+bool YTsaurusClient::checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason, bool allow_nullable)
 {
-    auto schema_json = getTableSchema(table_path);
-    chassert(schema_json);
-    for (const auto& yt_column : *schema_json) {
-        try
-        {
-            const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();
-            auto yt_column_name = yt_column_json->getValue<String>("name");
-            if (!sample_block->has(yt_column_name))
-            {
-                LOG_ERROR(log, "Table schema mismatch. No column {}", yt_column_name);
-                return false;
-            }
+    auto yt_schema = getTableSchema(table_path);
 
-            const auto & column_type_ptr = sample_block->getByName(yt_column_name).type;
+    if (!yt_schema.is_strict)
+        return true;
 
-            chassert(column_type_ptr != nullptr);
-            auto data_type = convertYTSchema(yt_column_json);
-            if (column_type_ptr->getName() != "Dynamic" &&
-                data_type->getName() != "Dynamic" &&
-                column_type_ptr->getName() != data_type->getName())
-            {
-                LOG_ERROR(log, "Table schema mismatch. Clickhouse expecting: {}, Real: {}", column_type_ptr->getName(), data_type->getName());
-                return false;
-            }
-        }
-        catch (const Exception & e)
+    for (const auto & column_type_with_name : sample_block->getColumnsWithTypeAndName())
+    {
+        auto iter = yt_schema.columns.find(column_type_with_name.name);
+        if (iter == yt_schema.columns.end())
         {
-            if (e.code() == ErrorCodes::INCORRECT_DATA)
-            {
-                LOG_DEBUG(log, "Couldn't extract schema from {}: {}", table_path, e.what());
-                return false;
-            }
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Something went wrong while parsing YT table schema: {}", e.what());
+            reason = fmt::format("There are no column with name {} in YtSaurus table", column_type_with_name.name);
+            return false;
         }
-        catch (const std::exception & e)
+        auto yt_column_type = iter->second;
+        if (!isYTSaurusTypesCompatible(column_type_with_name.type, yt_column_type, allow_nullable))
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Something went wrong while parsing YT table schema: {}", e.what());
+            reason = fmt::format("Column {} types mismatch. YtSaurus converted type {} table column type {}", column_type_with_name.name, yt_column_type->getName(), column_type_with_name.type->getName());
+            return false;
         }
     }
     return true;

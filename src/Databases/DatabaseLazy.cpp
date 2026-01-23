@@ -2,19 +2,14 @@
 
 #include <base/sort.h>
 #include <base/isSharedPtrUnique.h>
-#include <iomanip>
 #include <filesystem>
 #include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
-#include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
-#include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -44,7 +39,7 @@ namespace ErrorCodes
 
 
 DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, ContextPtr context_)
-    : DatabaseOnDisk(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
+    : DatabaseOnDisk(name_, metadata_path_, DatabaseCatalog::getDataDirPath(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)
 {
     createDirectories();
@@ -134,7 +129,7 @@ bool DatabaseLazy::isTableExist(const String & table_name) const
 {
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     std::lock_guard lock(mutex);
-    return tables_cache.find(table_name) != tables_cache.end();
+    return tables_cache.contains(table_name);
 }
 
 StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
@@ -156,7 +151,16 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
         }
     }
 
-    return loadTable(table_name);
+    try
+    {
+        return loadTable(table_name);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return {};
+        throw;
+    }
 }
 
 DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const

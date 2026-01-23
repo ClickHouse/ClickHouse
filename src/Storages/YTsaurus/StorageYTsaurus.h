@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include "config.h"
 
 #if USE_YTSAURUS
@@ -18,6 +19,7 @@ struct YTsaurusStorageConfiguration
     std::vector<String> http_proxy_urls{};
     String cypress_path{};
     String oauth_token{};
+    std::optional<String> ytsaurus_columns_description{};
 };
 
 /**
@@ -29,6 +31,9 @@ class StorageYTsaurus final : public IStorage
 public:
     static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, const YTsaurusSettings & settings, ContextPtr context);
 
+    static YTsaurusStorageConfiguration processNamedCollectionResult(const NamedCollection & named_collection, const YTsaurusSettings & setting, bool is_for_dictionary);
+
+
     StorageYTsaurus(
         const StorageID & table_id_,
         YTsaurusStorageConfiguration configuration_,
@@ -38,6 +43,7 @@ public:
 
     std::string getName() const override { return "YTsaurus"; }
     bool isRemote() const override { return true; }
+    bool isExternalDatabase() const override { return true; }
 
     Pipe read(
         const Names & column_names,

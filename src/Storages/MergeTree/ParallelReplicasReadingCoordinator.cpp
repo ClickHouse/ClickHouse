@@ -179,10 +179,18 @@ public:
     size_t received_initial_requests{0};
     ProgressCallback progress_callback;
 
+    struct ReplicaStatus
+    {
+        bool is_finished{false};
+        bool is_announcement_received{false};
+    };
+    std::vector<ReplicaStatus> replica_status;
+
     ImplInterface(size_t replicas_count_, CoordinationMode mode_)
         : stats{replicas_count_}
         , replicas_count(replicas_count_)
         , mode(mode_)
+        , replica_status(replicas_count_)
     {
     }
 
@@ -202,6 +210,11 @@ public:
         if (++received_initial_requests > replicas_count)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Initiator received more initial requests than there are replicas: replica_num={}", announcement.replica_num);
+
+        if (replica_status[announcement.replica_num].is_announcement_received)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate announcement received for replica number {}", announcement.replica_num);
+
+        replica_status[announcement.replica_num].is_announcement_received = true;
 
         doHandleInitialAllRangesAnnouncement(std::move(announcement));
     }
@@ -229,7 +242,6 @@ class DefaultCoordinator : public ParallelReplicasReadingCoordinator::ImplInterf
 public:
     DefaultCoordinator(size_t replicas_count_, CoordinationMode mode_)
         : ParallelReplicasReadingCoordinator::ImplInterface(replicas_count_, mode_)
-        , replica_status(replicas_count_)
         , distribution_by_hash_queue(replicas_count_)
     {
     }
@@ -252,13 +264,6 @@ private:
 
     bool state_initialized{false};
     size_t finished_replicas{0};
-
-    struct ReplicaStatus
-    {
-        bool is_finished{false};
-        bool is_announcement_received{false};
-    };
-    std::vector<ReplicaStatus> replica_status;
 
     LoggerPtr log = getLogger("DefaultCoordinator");
 
@@ -466,14 +471,9 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Replica number ({}) is bigger than total replicas count ({})", replica_num, stats.size());
 
-    if (replica_status[replica_num].is_announcement_received)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate announcement received for replica number {}", replica_num);
-
     initializeReadingState(std::move(announcement));
 
     ++stats[replica_num].number_of_requests;
-
-    replica_status[replica_num].is_announcement_received = true;
 
     LOG_TRACE(log, "Received initial requests: {} Replicas count: {}", received_initial_requests, replicas_count);
 
@@ -579,11 +579,14 @@ void DefaultCoordinator::tryToStealFromQueues(
     else
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasStealingLeftoversMicroseconds);
-        /// Check orphaned ranges
+        /// All replicas can steal orphaned ranges to reduce long-tail latency.
         tryToStealFromQueue(
             ranges_for_stealing_queue, /*owner=*/-1, replica_num, scan_mode, min_number_of_marks, current_marks_amount, description);
+
         /// Last hope. In case we haven't yet figured out that some node is unavailable its segments are still in the distribution queue.
-        steal_from_other_replicas();
+        /// Only the source replica steals from other replicas to preserve cache locality.
+        if (replica_num == source_replica_for_parts_snapshot)
+            steal_from_other_replicas();
     }
 }
 
@@ -798,12 +801,6 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         request.min_number_of_marks,
         stats[request.replica_num].number_of_requests);
 
-    if (replica_status[request.replica_num].is_finished)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Got request from replica {} after ranges assignment has been completed for the replica",
-            request.replica_num);
-
     ParallelReadResponse response;
     size_t current_mark_size = 0;
 
@@ -818,7 +815,7 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
     const size_t stolen_by_hash = current_mark_size - assigned_to_me;
 
     /// 3. Try to steal with no preference. We're trying to postpone it as much as possible.
-    if (current_mark_size == 0 && request.replica_num == source_replica_for_parts_snapshot)
+    if (current_mark_size == 0)
         selectPartsAndRanges(
             request.replica_num, ScanMode::TakeEverythingAvailable, request.min_number_of_marks, current_mark_size, response.description);
     const size_t stolen_unassigned = current_mark_size - stolen_by_hash - assigned_to_me;
@@ -837,8 +834,6 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
     if (response.description.empty())
     {
         response.finish = true;
-
-        replica_status[request.replica_num].is_finished = true;
 
         if (++finished_replicas == replicas_count - unavailable_replicas_count)
         {
@@ -1168,6 +1163,13 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
                 magic_enum::enum_name(pimpl->getCoordinationMode()));
 
         const auto replica_num = request.replica_num;
+
+        if (pimpl->replica_status[replica_num].is_finished)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Got request from replica {} after ranges assignment has been completed for the replica",
+                request.replica_num);
+
         response = pimpl->handleRequest(std::move(request));
         if (!response.finish)
         {
@@ -1178,6 +1180,8 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
         }
         else
         {
+            pimpl->replica_status[replica_num].is_finished = true;
+
             if (isReadingCompleted())
             {
                 reading_assignment_has_been_completed = !is_reading_completed.exchange(true);

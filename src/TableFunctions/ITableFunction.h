@@ -106,12 +106,28 @@ private:
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
+
+protected:
     /// The URI of function for permission checking. Can be empty string if not applicable.
     /// For example for url('https://foo.bar') URI would be 'https://foo.bar'.
     virtual const String & getFunctionURI() const
     {
         static const String empty;
         return empty;
+    }
+
+    String getFunctionURINormalized() const
+    {
+        try
+        {
+            Poco::URI uri(getFunctionURI());
+            uri.normalize();
+            return uri.toString();
+        }
+        catch (const Poco::Exception &)
+        {
+            return "";
+        }
     }
 };
 

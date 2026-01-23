@@ -8,16 +8,16 @@ title: 'QBit Data Type'
 doc_type: 'reference'
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import BetaBadge from '@theme/badges/BetaBadge';
 
-<ExperimentalBadge/>
+<BetaBadge/>
 
 The `QBit` data type reorganizes vector storage for faster approximate searches. Instead of storing each vector's elements together, it groups the same binary digit positions across all vectors.
 This stores vectors at full precision while letting you choose the fine-grained quantization level at search time: read fewer bits for less I/O and faster calculations, or more bits for higher accuracy. You get the speed benefits of reduced data transfer and computation from quantization, but all the original data remains available when needed.
 
 :::note
-`QBit` data type and distance functions associated with it are currently experimental.
-To enable them, please first run `SET allow_experimental_qbit_type = 1`.
+`QBit` data type and distance functions associated with it are Beta features.
+To enable them, please first run `SET enable_qbit_type = 1`.
 If you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
 :::
 
@@ -76,3 +76,4 @@ The number of accessible subcolumns depends on the element type:
 These are the distance functions for vector similarity search that use `QBit` data type:
 
 * [`L2DistanceTransposed`](../functions/distance-functions.md#L2DistanceTransposed)
+* [`cosineDistanceTransposed`](../functions/distance-functions.md#cosineDistanceTransposed)

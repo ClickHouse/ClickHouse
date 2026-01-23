@@ -1,5 +1,5 @@
 -- Tests for too large/small p, and type mismatches for vec and reference_vec
-SET allow_experimental_qbit_type = 1;
+SET enable_qbit_type = 1;
 
 
 {% for i in range(0, 2) -%}
@@ -13,10 +13,10 @@ INSERT INTO qbit VALUES (1, [0,1,2]);
 INSERT INTO qbit VALUES (2, [1,2,3]);
 INSERT INTO qbit VALUES (3, [2,3,4]);
 
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 0) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 17) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- Use rounding to avoid minor precision differences when using non-vectorized implementations of distance function
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 17), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 
@@ -27,10 +27,9 @@ INSERT INTO qbit VALUES (1, [0,1,2]);
 INSERT INTO qbit VALUES (2, [1,2,3]);
 INSERT INTO qbit VALUES (3, [2,3,4]);
 
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 0) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 33) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 33), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 
@@ -41,10 +40,9 @@ INSERT INTO qbit VALUES (1, [0,1,2]);
 INSERT INTO qbit VALUES (2, [1,2,3]);
 INSERT INTO qbit VALUES (3, [2,3,4]);
 
-WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 0) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toFloat64(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 65) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec, reference_vec, 1) AS dist FROM qbit ORDER BY dist; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 0), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 65), 5) AS dist FROM qbit ORDER BY id; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 1), 5) AS dist FROM qbit ORDER BY id;
 DROP TABLE qbit;
 
 
@@ -53,7 +51,7 @@ CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 9)) ENGINE = Memory;
 
 INSERT INTO qbit VALUES (1, [0,1,2,3,4,5,6,7,8]);
 
-WITH [toBFloat16(0), 1, 2, 3, 4, 5, 6, 7, 8, 9] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec.1, 9, reference_vec) AS dist FROM qbit ORDER BY dist; -- { serverError BAD_ARGUMENTS }
+WITH [0, 1, 2] AS reference_vec SELECT id, vec, L2DistanceTransposed(vec.1, reference_vec) AS dist FROM qbit ORDER BY id; -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
 DROP TABLE qbit;
 
 
@@ -62,7 +60,7 @@ CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 5)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [0,1,2,3,4]);
 INSERT INTO qbit VALUES (2, [1,2,3,4,5]);
 
-WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, L2DistanceTransposed(vec.1, vec.2, id, reference_vec) AS dist FROM qbit ORDER BY dist; -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, L2DistanceTransposed(vec.1, vec.2, id, reference_vec) AS dist FROM qbit ORDER BY id; -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
 DROP TABLE qbit;
 
 -- Check if full column as third argument throws
@@ -80,5 +78,8 @@ SELECT L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), range(rand() % 5 
 
 -- Do not allow non-constant size
 SELECT L2DistanceTransposed(''::FixedString(1), materialize(3), [1,2,3]::Array(Float32)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- https://github.com/ClickHouse/ClickHouse/issues/90401
+SELECT L2DistanceTransposed([2, 0, 0, 0, 0, 0, 0, 0]::QBit(Float32, 8), [42.], 33) AS dist; -- { serverError BAD_ARGUMENTS }
 
 {% endfor -%}

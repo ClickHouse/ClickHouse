@@ -26,7 +26,9 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/HivePartitioningUtils.h>
+
 
 namespace DB
 {
@@ -176,7 +178,7 @@ void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseA
     /// e.g. `s3(endpoint, ..., SETTINGS setting=value, ..., setting=value)`
     /// We do similarly for some other table functions
     /// whose storage implementation supports storage settings (for example, MySQL).
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    for (auto it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
@@ -268,7 +270,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
             columns,
             ConstraintsDescription{},
             partition_by,
-            context);
+            context,
+            /* is_table_function */true);
 
         storage->startup();
         return storage;
@@ -307,6 +310,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         /* is_datalake_query*/ false,
         /* distributed_processing */ can_use_distributed_iterator,
         /* partition_by */ partition_by,
+        /* order_by */ nullptr,
         /* is_table_function */true);
 
     storage->startup();
@@ -415,6 +419,10 @@ template class TableFunctionObjectStorage<HDFSDefinition, StorageHDFSConfigurati
 template class TableFunctionObjectStorage<HDFSClusterDefinition, StorageHDFSConfiguration>;
 #endif
 
+#if USE_AVRO
+template class TableFunctionObjectStorage<IcebergLocalClusterDefinition, StorageLocalIcebergConfiguration, true>;
+#endif
+
 #if USE_AVRO && USE_AWS_S3
 template class TableFunctionObjectStorage<IcebergS3ClusterDefinition, StorageS3IcebergConfiguration, true>;
 template class TableFunctionObjectStorage<IcebergClusterDefinition, StorageS3IcebergConfiguration, true>;
@@ -426,6 +434,19 @@ template class TableFunctionObjectStorage<IcebergAzureClusterDefinition, Storage
 
 #if USE_AVRO && USE_HDFS
 template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration, true>;
+#endif
+
+#if USE_AVRO && USE_AWS_S3
+template class TableFunctionObjectStorage<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration, true>;
+template class TableFunctionObjectStorage<PaimonClusterDefinition, StorageS3PaimonConfiguration, true>;
+#endif
+
+#if USE_AVRO && USE_AZURE_BLOB_STORAGE
+template class TableFunctionObjectStorage<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration, true>;
+#endif
+
+#if USE_AVRO && USE_HDFS
+template class TableFunctionObjectStorage<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration, true>;
 #endif
 
 #if USE_PARQUET && USE_AWS_S3 && USE_DELTA_KERNEL_RS
@@ -485,6 +506,49 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 #endif
 
 
+#if USE_AVRO
+void registerTableFunctionPaimon(TableFunctionFactory & factory)
+{
+#if USE_AWS_S3
+    factory.registerFunction<TableFunctionPaimon>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Paimon table stored on S3 object store. Alias to paimonS3)",
+            .examples{{"paimon", "SELECT * FROM paimon(url, access_key_id, secret_access_key)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
+    factory.registerFunction<TableFunctionPaimonS3>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Paimon table stored on S3 object store.)",
+            .examples{{"paimonS3", "SELECT * FROM paimonS3(url, access_key_id, secret_access_key)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
+
+#endif
+#if USE_AZURE_BLOB_STORAGE
+    factory.registerFunction<TableFunctionPaimonAzure>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Paimon table stored on Azure object store.)",
+            .examples{{"paimonAzure", "SELECT * FROM paimonAzure(url, access_key_id, secret_access_key)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
+#endif
+#if USE_HDFS
+    factory.registerFunction<TableFunctionPaimonHDFS>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem.)",
+            .examples{{"paimonHDFS", "SELECT * FROM paimonHDFS(url)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
+#endif
+    factory.registerFunction<TableFunctionPaimonLocal>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Paimon table stored locally.)",
+            .examples{{"paimonLocal", "SELECT * FROM paimonLocal(filename)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
+}
+#endif
+
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {
@@ -540,6 +604,10 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
     UNUSED(factory);
 #if USE_AVRO
     registerTableFunctionIceberg(factory);
+#endif
+
+#if USE_AVRO
+    registerTableFunctionPaimon(factory);
 #endif
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS

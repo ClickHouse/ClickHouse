@@ -124,7 +124,7 @@ std::optional<AuthenticationData> getClientPasswordAuthentication(const Poco::Ut
 
 }
 
-/// this function quite long because contains a lot of sanity checks in config:
+/// this function is quite long because it contains a lot of sanity checks in config:
 /// 1. No duplicate endpoints
 /// 2. No "localhost" or "127.0.0.1" or another local addresses mixed with normal addresses
 /// 3. Raft internal port is not equal to any other port for client

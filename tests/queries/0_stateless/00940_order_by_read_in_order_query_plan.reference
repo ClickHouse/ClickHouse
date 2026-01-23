@@ -373,7 +373,7 @@ select * from (select * from tab union all select * from tab5) order by (a + b) 
 0	0	0	0
 0	0	0	0
 select * from (explain plan actions = 1 select * from (select * from tab union all select * from tab5) order by (a + b) * c, sin(a / b) limit 3) where explain ilike '%sort description%' or explain like '%ReadType%' or explain like '%Limit%';
-  Limit (preliminary LIMIT (without OFFSET))
+  Limit (preliminary LIMIT)
   Limit 3
     Prefix sort description: multiply(plus(a, b), c) ASC, sin(divide(a, b)) ASC
     Result sort description: multiply(plus(a, b), c) ASC, sin(divide(a, b)) ASC
@@ -391,7 +391,7 @@ select * from (select * from tab union all select * from tab5 union all select *
 0	0	0	0
 0	0	0	0
 select * from (explain plan actions = 1 select * from (select * from tab union all select * from tab5 union all select * from tab4) order by (a + b) * c, sin(a / b), d limit 3) where explain ilike '%sort description%' or explain like '%ReadType%' or explain like '%Limit%';
-  Limit (preliminary LIMIT (without OFFSET))
+  Limit (preliminary LIMIT)
   Limit 3
     Prefix sort description: multiply(plus(a, b), c) ASC, sin(divide(a, b)) ASC
     Result sort description: multiply(plus(a, b), c) ASC, sin(divide(a, b)) ASC, d ASC

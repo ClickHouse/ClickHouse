@@ -147,8 +147,8 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
             }
             else
             {
-                s.def.push_back(1);
-                s.rep.push_back(1);
+                s.def.push_back(static_cast<UInt8>(1));
+                s.rep.push_back(static_cast<UInt8>(1));
                 s.def[i] = 0;
                 s.rep[i] = 0;
                 i += 1;
@@ -195,7 +195,7 @@ void updateRepDefLevelsForArray(ColumnChunkWriteState & s, const IColumn::Offset
         }
         else
         {
-            mask.push_back(1);
+            mask.push_back(static_cast<UInt8>(1));
             mask[i + empty_arrays] = 0;
             ++empty_arrays;
         }
@@ -454,6 +454,15 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             break;
         }
 
+        case TypeIndex::UUID:
+        {
+            parq::UUIDType uuid;
+            parq::LogicalType t;
+            t.__set_UUID(uuid);
+            fixed_string(16, std::nullopt, t);
+            break;
+        }
+
         /// Parquet doesn't have logical types for these.
         case TypeIndex::UInt128: fixed_string(16); break;
         case TypeIndex::UInt256: fixed_string(32); break;
@@ -523,6 +532,9 @@ void prepareColumnTuple(
     const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
     size_t num_elements = type_tuple->getElements().size();
 
+    /// We artificially disallow empty tuples because they're not widely supported.
+    /// But they're supported in clickhouse; if we remove this check, nothing breaks, and clickhouse
+    /// can write and read (only with input_format_parquet_use_native_reader_v3 = 1) such columns.
     if (num_elements == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parquet doesn't support empty tuples");
 
@@ -644,7 +656,7 @@ void prepareColumnRecursive(
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
     /// parquet dictionary-encoding.
-    column = column->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
 
     switch (type->getTypeId())
     {

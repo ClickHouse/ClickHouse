@@ -30,33 +30,31 @@ struct HasAllTokensTraits
 }
 
 /// Map needle into a position (for bitmap operations).
-using Needles = absl::flat_hash_map<String, UInt64>;
+using TokensWithPosition = absl::flat_hash_map<String, UInt64>;
 
-template <class SearchTraits>
+template <class HasTokensTraits>
 class FunctionHasAnyAllTokens : public IFunction
 {
 public:
-    static constexpr auto name = SearchTraits::name;
+    static constexpr auto name = HasTokensTraits::name;
 
     static FunctionPtr create(ContextPtr context);
-    explicit FunctionHasAnyAllTokens<SearchTraits>(ContextPtr context);
+    explicit FunctionHasAnyAllTokens<HasTokensTraits>(ContextPtr context);
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    void setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor_);
-    void setSearchTokens(const std::vector<String> & tokens);
+    void setTokenExtractor(std::unique_ptr<ITokenExtractor> new_token_extractor);
+    void setSearchTokens(const std::vector<String> & new_search_tokens);
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 
 private:
-    const bool allow_experimental_full_text_index;
+    const bool enable_full_text_index;
     std::unique_ptr<ITokenExtractor> token_extractor;
-    std::optional<Needles> needles;
-
-    inline static const std::unique_ptr<ITokenExtractor> token_default_extractor = std::make_unique<DefaultTokenExtractor>();
+    std::optional<TokensWithPosition> search_tokens;
 };
 }

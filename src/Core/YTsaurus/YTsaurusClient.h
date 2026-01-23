@@ -1,4 +1,6 @@
 #pragma once
+#include <unordered_map>
+#include <utility>
 #include "config.h"
 
 #if USE_YTSAURUS
@@ -58,13 +60,20 @@ public:
 
     ReadBufferPtr lookupRows(const String & cypress_path, const Block & lookup_block_input);
 
-    ReadBufferPtr selectRows(const String & cypress_path);
+    ReadBufferPtr selectRows(const String & cypress_path, const String& column_names_str);
+    ReadBufferPtr selectRows(const String & cypress_path, const ColumnsWithTypeAndName& columns);
 
     YTsaurusNodeType getNodeType(const String & cypress_path);
 
-    Poco::JSON::Array::Ptr getTableSchema(const String & cypress_path);
+    struct SchemaDescription
+    {
+        bool is_strict;
+        std::unordered_map<String, DataTypePtr> columns;
+    };
 
-    bool checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block);
+    SchemaDescription getTableSchema(const String & cypress_path);
+
+    bool checkSchemaCompatibility(const String & table_path, const SharedHeader & sample_block, String & reason, bool allow_nullable);
 private:
     Poco::JSON::Object::Ptr getTableInfo(const String & cypress_path);
 

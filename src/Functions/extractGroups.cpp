@@ -87,7 +87,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view current_row = column_haystack->getDataAt(i).toView();
+            std::string_view current_row = column_haystack->getDataAt(i);
 
             if (re2->Match({current_row.data(), current_row.size()},
                 0, current_row.size(), re2::RE2::UNANCHORED, matched_groups.data(),
@@ -137,8 +137,8 @@ SELECT extractAllGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionExtractGroups>(documentation);
 }
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/StorageID.h>
-#include <Storages/MergeTree/IExecutableTask.h>
+#include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeProgress.h>
@@ -11,12 +11,7 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-class MergeProjectionPartsTask : public IExecutableTask
+class MergeProjectionPartsTask : public MergeProjectionsIndexesTask
 {
 public:
 
@@ -33,7 +28,6 @@ public:
         MergeTreeData::MutableDataPartPtr new_data_part_,
         ReservationSharedPtr space_reservation_)
         : name(std::move(name_))
-        , parts(std::move(parts_))
         , projection(projection_)
         , block_num(block_num_)
         , context(context_)
@@ -45,24 +39,19 @@ public:
         , space_reservation(space_reservation_)
         , log(getLogger("MergeProjectionPartsTask"))
         {
-            LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
-            level_parts[current_level] = std::move(parts);
+            LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts_.size(), parts_.front()->name, parts_.back()->name);
+            level_parts[current_level] = std::move(parts_);
         }
 
-    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    void addToChecksums(MergeTreeDataPartChecksums &) override {}
     void cancel() noexcept override
     {
         /// FIXME: See `executeHere` from MergeTask.h called in executeStep
     }
-    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-
     bool executeStep() override;
 
 private:
     String name;
-    MergeTreeData::MutableDataPartsVector parts;
     const ProjectionDescription & projection;
     size_t & block_num;
 

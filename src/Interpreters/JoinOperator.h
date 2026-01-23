@@ -66,6 +66,7 @@ struct JoinSettings
     UInt64 max_joined_block_size_bytes;
     UInt64 min_joined_block_size_rows;
     UInt64 min_joined_block_size_bytes;
+    bool joined_block_split_single_row;
 
     OverflowMode join_overflow_mode;
     bool join_any_take_last_row;
@@ -86,6 +87,7 @@ struct JoinSettings
     /* Full sorting merge join settings */
     UInt64 max_rows_in_set_to_optimize_join;
     String temporary_files_codec;
+    UInt64 temporary_files_buffer_size;
 
     /* Hash/Parallel hash join settings */
     bool collect_hash_table_stats_during_joins;
@@ -98,6 +100,8 @@ struct JoinSettings
     bool allow_dynamic_type_in_join_keys;
 
     bool use_join_disjunctions_push_down;
+    bool enable_lazy_columns_replication;
+    bool use_hash_table_stats_for_join_reordering;
 
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);

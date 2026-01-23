@@ -114,7 +114,7 @@ SELECT currentRoles();
     };
     FunctionDocumentation::IntroducedIn introduced_in_currentRoles = {21, 9};
     FunctionDocumentation::Category category_currentRoles = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_currentRoles = {description_currentRoles, syntax_currentRoles, arguments_currentRoles, returned_value_currentRoles, examples_currentRoles, introduced_in_currentRoles, category_currentRoles};
+    FunctionDocumentation documentation_currentRoles = {description_currentRoles, syntax_currentRoles, arguments_currentRoles, {}, returned_value_currentRoles, examples_currentRoles, introduced_in_currentRoles, category_currentRoles};
 
     FunctionDocumentation::Description description_enabledRoles = R"(
 Returns an array of the roles which are enabled for the current user.
@@ -137,7 +137,7 @@ SELECT enabledRoles();
     };
     FunctionDocumentation::IntroducedIn introduced_in_enabledRoles = {21, 9};
     FunctionDocumentation::Category category_enabledRoles = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_enabledRoles = {description_enabledRoles, syntax_enabledRoles, arguments_enabledRoles, returned_value_enabledRoles, examples_enabledRoles, introduced_in_enabledRoles, category_enabledRoles};
+    FunctionDocumentation documentation_enabledRoles = {description_enabledRoles, syntax_enabledRoles, arguments_enabledRoles, {}, returned_value_enabledRoles, examples_enabledRoles, introduced_in_enabledRoles, category_enabledRoles};
 
     FunctionDocumentation::Description description_defaultRoles = R"(
 Returns an array of default roles for the current user.
@@ -160,7 +160,7 @@ SELECT defaultRoles();
     };
     FunctionDocumentation::IntroducedIn introduced_in_defaultRoles = {21, 9};
     FunctionDocumentation::Category category_defaultRoles = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_defaultRoles = {description_defaultRoles, syntax_defaultRoles, arguments_defaultRoles, returned_value_defaultRoles, examples_defaultRoles, introduced_in_defaultRoles, category_defaultRoles};
+    FunctionDocumentation documentation_defaultRoles = {description_defaultRoles, syntax_defaultRoles, arguments_defaultRoles, {}, returned_value_defaultRoles, examples_defaultRoles, introduced_in_defaultRoles, category_defaultRoles};
 
     factory.registerFunction<FunctionCurrentRoles<Kind::CURRENT_ROLES>>(documentation_currentRoles);
     factory.registerFunction<FunctionCurrentRoles<Kind::ENABLED_ROLES>>(documentation_enabledRoles);

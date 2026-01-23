@@ -5,6 +5,7 @@
 
 #include <Client/BuzzHouse/Generator/FuzzConfig.h>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
+#include <Client/BuzzHouse/Utils/BackgroundWorker.h>
 
 #if USE_MYSQL
 #    if __has_include(<mysql.h>)
@@ -49,7 +50,7 @@ public:
     {
     }
 
-    virtual void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *) { }
+    virtual void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *) { }
 
     virtual bool performDatabaseIntegration(RandomGenerator &, SQLDatabase &) { return false; }
 
@@ -57,7 +58,7 @@ public:
 
     virtual bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) { return false; }
 
-    virtual bool performExternalCommand(uint64_t, const String &, const String &) { return false; }
+    virtual bool performExternalCommand(uint64_t, bool, const String &, const String &, const String &) { return false; }
 
     virtual bool reRunCreateDatabase(const String &) { return false; }
 
@@ -352,7 +353,7 @@ public:
     {
     }
 
-    void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *, SettingValues *) override;
+    void setDatabaseDetails(RandomGenerator &, const SQLDatabase &, DatabaseEngine *) override;
 
     bool performDatabaseIntegration(RandomGenerator &, SQLDatabase &) override;
 
@@ -360,7 +361,7 @@ public:
 
     bool performTableIntegration(RandomGenerator &, SQLTable &, bool, std::vector<ColumnPathChain> &) override;
 
-    bool performExternalCommand(uint64_t, const String &, const String &) override;
+    bool performExternalCommand(uint64_t, bool, const String &, const String &, const String &) override;
 
     bool reRunCreateDatabase(const String &) override;
 
@@ -387,6 +388,8 @@ private:
     std::filesystem::path default_sqlite_path;
     size_t requires_external_call_check = 0;
     std::vector<bool> next_calls_succeeded;
+
+    BackgroundWorker worker;
 
     std::filesystem::path getDatabaseDataDir(PeerTableDatabase pt, bool server) const;
 
@@ -443,9 +446,10 @@ public:
 
     void createExternalDatabaseTable(RandomGenerator & rg, SQLTable & t, std::vector<ColumnPathChain> & entries, TableEngine * te);
 
-    void createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de, SettingValues * svs);
+    void createExternalDatabase(RandomGenerator & rg, SQLDatabase & d, DatabaseEngine * de);
 
-    bool performExternalCommand(uint64_t seed, IntegrationCall ic, const String & cname, const String & tname);
+    bool performExternalCommand(
+        uint64_t seed, bool async, IntegrationCall ic, const String & engine, const String & cname, const String & tname);
 
     bool reRunCreateDatabase(IntegrationCall ic, const String & body);
 

@@ -30,3 +30,11 @@ Test text(tokenizer = ngrams(2)) on UTF-8 data
 af	text
 102	clickhouse你好
 1
+Test text(tokenizer = sparseGrams(3, 100)) on UTF-8 data
+af	text
+102	clickhouse你好
+1
+Test text(tokenizer = sparseGrams(3, 100, 4)) on UTF-8 data
+af	text
+102	clickhouse你好
+1

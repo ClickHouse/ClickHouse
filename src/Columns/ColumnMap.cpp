@@ -88,27 +88,28 @@ void ColumnMap::get(size_t n, Field & res) const
         map.push_back(getNestedData()[offset + i]);
 }
 
-std::pair<String, DataTypePtr> ColumnMap::getValueNameAndType(size_t n) const
+DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
     size_t offset = offsets[n - 1];
     size_t size = offsets[n] - offsets[n - 1];
 
-    String value_name {"["};
+    if (options.notFull(name_buf))
+        name_buf << "[";
     DataTypes element_types;
     element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
-        const auto & [value, type] = getNestedData().getValueNameAndType(offset + i);
+        if (options.notFull(name_buf) && i > 0)
+            name_buf << ", ";
+        const auto & type = getNestedData().getValueNameAndTypeImpl(name_buf, offset + i, options);
         element_types.push_back(type);
-        if (i > 0)
-            value_name += ", ";
-        value_name += value;
     }
-    value_name += "]";
+    if (options.notFull(name_buf))
+        name_buf << "]";
 
-    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
+    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const
@@ -116,7 +117,7 @@ bool ColumnMap::isDefaultAt(size_t n) const
     return nested->isDefaultAt(n);
 }
 
-StringRef ColumnMap::getDataAt(size_t) const
+std::string_view ColumnMap::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -150,39 +151,29 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeValueIntoArena(n, arena, begin);
+    return nested->serializeValueIntoArena(n, arena, begin, settings);
 }
 
-StringRef ColumnMap::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeAggregationStateValueIntoArena(n, arena, begin);
+    return nested->serializeValueIntoMemory(n, memory, settings);
 }
 
-char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
+std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
 {
-    return nested->serializeValueIntoMemory(n, memory);
+    return nested->getSerializedValueSize(n, settings);
 }
 
-std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
+void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    return nested->getSerializedValueSize(n);
+    nested->deserializeAndInsertFromArena(in, settings);
 }
 
-const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
+void ColumnMap::skipSerializedInArena(ReadBuffer & in) const
 {
-    return nested->deserializeAndInsertFromArena(pos);
-}
-
-const char * ColumnMap::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
-{
-    return nested->deserializeAndInsertAggregationStateValueFromArena(pos);
-}
-
-const char * ColumnMap::skipSerializedInArena(const char * pos) const
-{
-    return nested->skipSerializedInArena(pos);
+    nested->skipSerializedInArena(in);
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
@@ -235,6 +226,11 @@ ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
     return ColumnMap::create(filtered);
 }
 
+void ColumnMap::filter(const Filter & filt)
+{
+    nested->filter(filt);
+}
+
 void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)
 {
     nested->expand(mask, inverted);
@@ -258,7 +254,7 @@ ColumnPtr ColumnMap::replicate(const Offsets & offsets) const
     return ColumnMap::create(std::move(replicated));
 }
 
-MutableColumns ColumnMap::scatter(ColumnIndex num_columns, const Selector & selector) const
+MutableColumns ColumnMap::scatter(size_t num_columns, const Selector & selector) const
 {
     auto scattered_columns = nested->scatter(num_columns, selector);
     MutableColumns res;
@@ -442,13 +438,13 @@ ColumnPtr ColumnMap::compress(bool force_compression) const
     });
 }
 
-void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
-    nested->takeDynamicStructureFromSourceColumns(nested_source_columns);
+    nested->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnMap::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

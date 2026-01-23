@@ -9,8 +9,6 @@ INSERT INTO t2 SELECT number*number FROM numbers(100);
 set enable_analyzer = 1;
 set allow_experimental_correlated_subqueries = 1;
 
-SET enable_parallel_replicas = 0;
-
 -- { echoOn }
 
 SELECT count(t1.c1) FROM t1

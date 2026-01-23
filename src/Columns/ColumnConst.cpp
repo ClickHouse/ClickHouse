@@ -39,8 +39,8 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
 #if defined(MEMORY_SANITIZER)
     if (data->isFixedAndContiguous())
     {
-        StringRef value = data->getDataAt(0);
-        __msan_check_mem_is_initialized(value.data, value.size);
+        auto value = data->getDataAt(0);
+        __msan_check_mem_is_initialized(value.data(), value.size());
     }
 #endif
 }
@@ -65,6 +65,15 @@ ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/)
 
     size_t new_size = countBytesInFilter(filt);
     return ColumnConst::create(data, new_size);
+}
+
+void ColumnConst::filter(const Filter & filt)
+{
+    if (s != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
+            filt.size(), toString(s));
+
+    s = countBytesInFilter(filt);
 }
 
 void ColumnConst::expand(const Filter & mask, bool inverted)
@@ -113,7 +122,7 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
-MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & selector) const
+MutableColumns ColumnConst::scatter(size_t num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",
@@ -155,7 +164,7 @@ void ColumnConst::compareColumn(
     const IColumn & rhs, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> & compare_results, int, int nan_direction_hint)
     const
 {
-    Int8 res = compareAt(1, 1, rhs, nan_direction_hint);
+    Int8 res = static_cast<Int8>(compareAt(1, 1, rhs, nan_direction_hint));
     std::fill(compare_results.begin(), compare_results.end(), res);
 }
 

@@ -122,10 +122,10 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
 
             __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
 
-            const uint16_t non_regular_width_mask = _mm_movemask_epi8(
+            const uint16_t non_regular_width_mask = static_cast<uint16_t>(_mm_movemask_epi8(
                 _mm_or_si128(
                     _mm_cmplt_epi8(bytes, lower_bound),
-                    _mm_cmpgt_epi8(bytes, upper_bound)));
+                    _mm_cmpgt_epi8(bytes, upper_bound))));
 
             if (non_regular_width_mask)
             {
@@ -219,6 +219,21 @@ size_t computeWidth(const UInt8 * data, size_t size, size_t prefix) noexcept
 size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
     return computeWidthImpl<BytesBeforeLimit>(data, size, prefix, limit);
+}
+
+
+size_t computeBytesBeforeCodePoint(const UInt8 * data, size_t size, size_t limit) noexcept
+{
+    size_t code_point = 0;
+    size_t bytes = 0;
+
+    while (bytes < size && code_point < limit)
+    {
+        bytes += seqLength(data[bytes]);
+        ++code_point;
+    }
+
+    return std::min(bytes, size);
 }
 
 

@@ -4,7 +4,7 @@
 -- Checks by the predicate evaluation order in EXPLAIN. This is quite fragile, a better approach would be helpful (maybe 'send_logs_level'?)
 
 SET allow_experimental_statistics = 1;
-SET allow_statistics_optimize = 1;
+SET use_statistics = 1;
 SET mutations_sync = 1;
 SET enable_analyzer = 1;
 
@@ -15,8 +15,7 @@ CREATE TABLE tab
     a Float64 STATISTICS(tdigest),
     b Int64 STATISTICS(tdigest)
 ) Engine = MergeTree() ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0,
-         min_bytes_for_full_part_storage = 0; -- DDL with statistics doesn't work reliably with packed parts
+SETTINGS auto_statistics_types = '';
 
 INSERT INTO tab select number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After insert';
