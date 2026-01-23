@@ -1505,7 +1505,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     /// Try to convert Float64 constants to Decimal when there's a Float+Decimal type mix.
     /// This allows float literals like 0. or 1.5 to work with Decimal types in if() function.
-    tryConvertFloatConstantsToDecimal(function_arguments, argument_columns, argument_types);
+    /// Only apply to if() function to avoid breaking existing behavior for other functions.
+    if (is_special_function_if)
+        tryConvertFloatConstantsToDecimal(function_arguments, argument_columns, argument_types);
 
     ConstantNodePtr constant_node;
 
