@@ -1,5 +1,6 @@
 #include <Poco/Timespan.h>
 #include <Common/NetException.h>
+#include <Common/StackTrace.h>
 #include <Common/config_version.h>
 #include "config.h"
 
@@ -460,6 +461,13 @@ void PocoHTTPClient::makeRequestInternalImpl(
     auto sdk_attempt = getSDKAttemptNumber(request);
     auto ch_attempt = getClickhouseAttemptNumber(request);
     bool first_attempt = ch_attempt == 1 && sdk_attempt == 1;
+
+    if (uri
+        == "https://iceberg-big-tables-experiments.s3.amazonaws.com/warehouse/db/big_chunks_table_3/data/"
+           "00000-883-6791f2b3-d124-4ad5-afac-2c8e83b533b3-00001-deletes.parquet")
+    {
+        LOG_DEBUG(log, "Printing out sample request. URI: {}, Method: {}, Stacktrace: {}", uri, method, StackTrace().toString());
+    }
 
     if (!first_attempt)
         LOG_DEBUG(

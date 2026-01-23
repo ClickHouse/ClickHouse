@@ -645,6 +645,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         builder.init(Pipe(input_format));
 
+        LOG_DEBUG(
+            &Poco::Logger::get("StorageObjectStorageSource::ReaderHolder Sherlock"),
+            "Adding delete transformers: {}, enable file system cache: {}",
+            object_info->getPath(),
+            context_->getReadSettings().enable_filesystem_cache);
+
         configuration->addDeleteTransformers(object_info, builder, format_settings, context_);
 
         if (object_info->data_lake_metadata
@@ -748,6 +754,16 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             && (object_storage->getType() == ObjectStorageType::Azure
                 || object_storage->getType() == ObjectStorageType::S3);
     }
+
+    LOG_DEBUG(
+        &Poco::Logger::get("StorageObjectStorageSource Sherlock"),
+        "use_distributed_cache: {}, use_filesystem_cache: {}, enable filesystem cache: {}, filesystem cache name: {}, object storage type: "
+        "{}",
+        use_distributed_cache,
+        use_filesystem_cache,
+        effective_read_settings.enable_filesystem_cache,
+        filesystem_cache_name,
+        object_storage->getType());
 
     /// We need object metadata for two cases:
     /// 1. object size suggests whether we need to use prefetch
@@ -860,7 +876,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (!use_async_buffer)
         return impl;
 
-    LOG_TRACE(log, "Downloading object of size {} with initial prefetch", object_size);
+    LOG_TRACE(log, "Downloading object of size {} with initial prefetch, file path: {}", object_size, object_info.getPath());
 
     bool prefer_bigger_buffer_size = effective_read_settings.filesystem_cache_prefer_bigger_buffer_size
         && impl->isCached();
