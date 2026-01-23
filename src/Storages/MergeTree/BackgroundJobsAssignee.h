@@ -6,6 +6,7 @@
 #include <Storages/IStorage.h>
 
 #include <pcg_random.hpp>
+#include "Interpreters/StorageID.h"
 
 
 namespace DB
@@ -32,14 +33,14 @@ struct BackgroundTaskSchedulingSettings
 class MergeTreeData;
 class BackgroundJobsAssignee;
 
-class IStorageWithBackgroundOperations : public IStorage
+class IBackgroundOperation
 {
 public:
-    explicit IStorageWithBackgroundOperations(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_ = nullptr);
-
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual Int32 getBiasBackoffSeconds() const { return 0; }
+
+    virtual ~IBackgroundOperation() = default;
 };
 
 class BackgroundJobsAssignee : public WithContext
@@ -71,12 +72,14 @@ public:
     ~BackgroundJobsAssignee();
 
     BackgroundJobsAssignee(
-        IStorageWithBackgroundOperations & data_,
+        IBackgroundOperation & data_,
+        const StorageID & storage_id_,
         Type type,
         ContextPtr global_context_);
 
 private:
-    IStorageWithBackgroundOperations & data;
+    IBackgroundOperation & data;
+    StorageID storage_id;
 
     /// Useful for random backoff timeouts generation
     pcg64 rng;

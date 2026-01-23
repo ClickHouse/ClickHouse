@@ -11,15 +11,11 @@
 namespace DB
 {
 
-IStorageWithBackgroundOperations::IStorageWithBackgroundOperations(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
-    : IStorage(storage_id_, std::move(metadata_))
-{
-}
-
-BackgroundJobsAssignee::BackgroundJobsAssignee(IStorageWithBackgroundOperations & data_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
+BackgroundJobsAssignee::BackgroundJobsAssignee(IBackgroundOperation & data_, const StorageID & storage_id_, BackgroundJobsAssignee::Type type_, ContextPtr global_context_)
     : WithContext(global_context_)
     , type(type_)
     , data(data_)
+    , storage_id(storage_id_)
     , rng(randomSeed())
     , sleep_settings(getSettings())
 {
@@ -117,7 +113,7 @@ void BackgroundJobsAssignee::start()
 {
     std::lock_guard lock(holder_mutex);
     if (!holder)
-        holder = getContext()->getSchedulePool().createTask(data.getStorageID(), "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+        holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
 
     holder->activateAndSchedule();
 }
@@ -128,8 +124,6 @@ void BackgroundJobsAssignee::finish()
     if (holder)
     {
         holder->deactivate();
-
-        auto storage_id = data.getStorageID();
 
         getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
         getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
