@@ -33,7 +33,7 @@ PartMovesBetweenShardsOrchestrator::PartMovesBetweenShardsOrchestrator(StorageRe
     , entries_znode_path(zookeeper_path + "/part_moves_shard")
 {
     /// Schedule pool is not designed for long-running tasks. TODO replace with a separate thread?
-    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), logger_name, [this]{ run(); });
+    task = storage.getContext()->getSchedulePool().createTask(logger_name, [this]{ run(); });
 }
 
 void PartMovesBetweenShardsOrchestrator::run()
@@ -475,17 +475,13 @@ PartMovesBetweenShardsOrchestrator::Entry PartMovesBetweenShardsOrchestrator::st
             /// Allocating block number in other replicas zookeeper path
             /// TODO Maybe we can do better.
             auto block_number_lock
-                = storage.allocateBlockNumber(
-                    part->info.getPartitionId(),
-                    zk,
-                    {attach_log_entry_barrier_path},
-                    entry.to_shard);
+                = storage.allocateBlockNumber(part->info.getPartitionId(), zk, attach_log_entry_barrier_path, entry.to_shard);
 
             ReplicatedMergeTreeLogEntryData log_entry;
 
-            if (block_number_lock.isLocked())
+            if (block_number_lock)
             {
-                auto block_number = block_number_lock.getNumber();
+                auto block_number = block_number_lock->getNumber();
 
                 auto part_info = part->info;
                 part_info.min_block = block_number;

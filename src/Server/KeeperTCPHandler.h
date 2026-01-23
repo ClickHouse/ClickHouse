@@ -92,8 +92,6 @@ private:
     std::optional<CompressedReadBuffer> compressed_in;
     std::optional<CompressedWriteBuffer> compressed_out;
 
-    size_t max_request_size = 0;
-
     std::atomic<bool> connected{false};
 
     void runImpl();
@@ -108,7 +106,7 @@ private:
     Poco::Timespan receiveHandshake(int32_t handshake_length, bool & use_compression);
 
     static bool isHandShake(int32_t handshake_length);
-    bool tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer & in);
+    bool tryExecuteFourLetterWordCmd(int32_t command);
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
 

@@ -40,8 +40,6 @@ namespace ErrorCodes
     M(Bool, allow_backup_broken_projections) \
     M(Bool, write_access_entities_dependents) \
     M(Bool, allow_checksums_from_remote_paths) \
-    M(BackupDataFileNameGeneratorType, data_file_name_generator) \
-    M(Bool, backup_data_from_refreshable_materialized_view_targets) \
     M(Bool, internal) \
     M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
@@ -59,8 +57,6 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         {
             if (setting.name == "compression_level")
                 res.compression_level = static_cast<int>(SettingFieldInt64{setting.value}.value);
-            else if (setting.name == "data_file_name_prefix_length")
-                res.data_file_name_prefix_length = setting.value.safeGet<UInt64>();
             else
 #define GET_BACKUP_SETTINGS_FROM_QUERY(TYPE, NAME) \
             if (setting.name == #NAME) \
@@ -173,7 +169,6 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
 
     auto res = std::make_shared<ASTFunction>();
     res->name = "array";
-    res->is_operator = true;
     auto res_replicas = std::make_shared<ASTExpressionList>();
     res->arguments = res_replicas;
     res->children.push_back(res_replicas);
