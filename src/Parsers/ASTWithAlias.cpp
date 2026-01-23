@@ -1,11 +1,17 @@
 #include <Common/SipHash.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTQueryParameter.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-
+#include <iostream>
 
 namespace DB
 {
+
+ASTWithAlias::ASTWithAlias() = default;
+ASTWithAlias::~ASTWithAlias() = default;
+ASTWithAlias::ASTWithAlias(const ASTWithAlias &) = default;
+ASTWithAlias & ASTWithAlias::operator=(const ASTWithAlias &) = default;
 
 static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAlias::FormatSettings & settings)
 {

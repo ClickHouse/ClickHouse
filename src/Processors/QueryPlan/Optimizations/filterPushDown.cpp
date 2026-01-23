@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -820,6 +821,15 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///       - Filter - Something
 
         return 3;
+    }
+
+    if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
+    {
+        // actual push down will be done when plan for local parallel replica will be optimized
+        FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};
+        parallel_replicas_local_plan->addFilter(std::move(info));
+        std::swap(*parent_node, *child_node);
+        return 1;
     }
 
     if (auto * read_from_merge = typeid_cast<ReadFromMerge *>(child.get()))

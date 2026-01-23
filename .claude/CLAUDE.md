@@ -36,3 +36,5 @@ grep "test_name" ci/tmp/pytest_parallel.jsonl | python3 -c "import sys,json; [pr
 You can build multiple versions of ClickHouse inside `build_*` directories, such as `build`, `build_debug`, `build_asan`, etc.
 
 You can run integration tests as in `tests/integration/README.md` using: `python -m ci.praktika run "integration" --test <selectors>` invoked from the repository root.
+
+When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly necessarily.
