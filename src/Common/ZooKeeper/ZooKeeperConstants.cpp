@@ -81,6 +81,7 @@ std::string_view opNumToString(OpNum op_num)
         case OpNum::RemoveWatch: return "RemoveWatch";
         case OpNum::SetWatch: return "SetWatch";
         case OpNum::SetWatch2: return "SetWatch2";
+        case OpNum::TryRemove: return "TryRemove";
     }
 }
 
