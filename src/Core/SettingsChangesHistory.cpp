@@ -1034,6 +1034,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
             {"merge_max_dynamic_subcolumns_in_compact_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Compact part after merge regardless the parameters specified in the data type"},
             {"materialize_statistics_on_merge", true, true, "New setting"},
+            {"escape_index_filenames", false, true, "Escape non-ascii characters in filenames created for indices"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {
