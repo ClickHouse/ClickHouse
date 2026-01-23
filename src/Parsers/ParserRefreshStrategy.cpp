@@ -25,7 +25,7 @@ bool ParserRefreshStrategy::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_depends_on{Keyword::DEPENDS_ON};
     ParserKeyword s_settings{Keyword::SETTINGS};
 
-    auto refresh = std::make_shared<ASTRefreshStrategy>();
+    auto refresh = make_intrusive<ASTRefreshStrategy>();
 
     if (s_after.ignore(pos, expected))
     {
