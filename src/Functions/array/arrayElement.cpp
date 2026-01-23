@@ -149,7 +149,7 @@ private:
 
     /** For a tuple array, the function is evaluated component-wise for each element of the tuple.
       */
-    ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
+    ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, ArrayImpl::NullMapBuilder<mode> &, size_t input_rows_count) const;
 
     /** For a map array, the function is evaluated component-wise for its keys and values
       */
@@ -1588,7 +1588,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap2(const ColumnsWithTypeAndName &
 }
 
 template <ArrayElementExceptionMode mode>
-ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName & arguments, ArrayImpl::NullMapBuilder<mode> & builder, size_t input_rows_count) const
 {
     const ColumnArray * col_array = typeid_cast<const ColumnArray *>(arguments[0].column.get());
     if (!col_array)
@@ -1597,6 +1597,142 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
     const ColumnTuple * col_nested = typeid_cast<const ColumnTuple *>(&col_array->getData());
     if (!col_nested)
         return nullptr;
+
+    if (builder)
+    {
+        const auto & offsets = col_array->getOffsets();
+        chassert(offsets.size() == input_rows_count);
+        if (input_rows_count != 0)
+            chassert(col_nested->size() == offsets.back());
+
+        builder.initSink(input_rows_count);
+
+        const IColumn * index_col = arguments[1].column.get();
+
+        /// Non-const numeric index vector (Int*/UInt*) path
+        auto fill_null_map_for_vector = [&](const auto * index_column) -> bool
+        {
+            if (!index_column)
+                return false;
+
+            using IndexColumn = std::decay_t<decltype(*index_column)>;
+            using IndexType = typename IndexColumn::ValueType;
+
+            const auto & indices = index_column->getData();
+            chassert(indices.size() == input_rows_count);
+
+            ColumnArray::Offset current_offset = 0;
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                const size_t array_size = offsets[row] - current_offset;
+                const IndexType idx = indices[row];
+
+                bool in_range = false;
+                UInt64 zero_based = 0;
+
+                if (idx > 0 && static_cast<UInt64>(idx) <= array_size)
+                {
+                    zero_based = static_cast<UInt64>(idx) - 1; /// 1-based to 0-based
+                    in_range = true;
+                }
+                else if constexpr (std::is_signed_v<IndexType>)
+                {
+                    if (idx < 0 && static_cast<UInt64>(-idx) <= array_size)
+                    {
+                        /// Negative index from the end: arr[-1] is last element
+                        zero_based = static_cast<UInt64>(array_size + idx);
+                        in_range = true;
+                    }
+                }
+
+                if (in_range)
+                {
+                    const size_t j = current_offset + zero_based; /// nested offset
+                    chassert(j < col_nested->size());
+                    builder.update(j);
+                }
+                else
+                {
+                    builder.update();
+                }
+
+                current_offset = offsets[row];
+            }
+
+            return true;
+        };
+
+        if (!isColumnConst(*index_col))
+        {
+            if (!(fill_null_map_for_vector(checkAndGetColumn<ColumnVector<Int8>>(index_col))
+                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<Int16>>(index_col))
+                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<Int32>>(index_col))
+                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<Int64>>(index_col))
+                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<UInt8>>(index_col))
+                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<UInt16>>(index_col))
+                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<UInt32>>(index_col))
+                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<UInt64>>(index_col))))
+            {
+                /// Index is not a plain integer vector; generic path will throw handle it
+                return nullptr;
+            }
+        }
+        else
+        {
+            /// Constant numeric index
+            Field index_field = (*index_col)[0];
+
+            /// All sizes of shorter widths are also covered because `Field` promotes them to Int64/UInt64
+            if (index_field.getType() != Field::Types::UInt64 && index_field.getType() != Field::Types::Int64)
+                return nullptr;
+
+            Int64 idx = 0;
+            if (index_field.getType() == Field::Types::UInt64)
+                idx = static_cast<Int64>(index_field.safeGet<UInt64>());
+            else
+                idx = index_field.safeGet<Int64>();
+
+            if constexpr (!is_null_mode)
+            {
+                /// Preserve historical behaviour
+                if (idx == 0)
+                    throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Array indices are 1-based");
+            }
+
+            ColumnArray::Offset current_offset = 0;
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                const size_t array_size = offsets[row] - current_offset;
+
+                bool in_range = false;
+                UInt64 zero_based = 0;
+
+                if (idx > 0 && static_cast<UInt64>(idx) <= array_size)
+                {
+                    zero_based = static_cast<UInt64>(idx) - 1;
+                    in_range = true;
+                }
+                else if (idx < 0 && static_cast<UInt64>(-idx) <= array_size)
+                {
+                    zero_based = static_cast<UInt64>(array_size + idx); /// idx < 0
+                    in_range = true;
+                }
+
+                if (in_range)
+                {
+                    const size_t j = current_offset + zero_based;
+                    chassert(j < col_nested->size());
+                    builder.update(j);
+                }
+                else
+                {
+                    builder.update();
+                }
+
+                current_offset = offsets[row];
+            }
+        }
+    }
 
     const auto & tuple_columns = col_nested->getColumns();
     size_t tuple_size = tuple_columns.size();
@@ -2100,7 +2236,7 @@ ColumnPtr FunctionArrayElement<mode>::perform(
     size_t input_rows_count) const
 {
     ColumnPtr res;
-    if ((res = executeTuple(arguments, input_rows_count)))
+    if ((res = executeTuple(arguments, builder, input_rows_count)))
         return res;
     if ((res = executeMap2(arguments, input_rows_count)))
         return res;

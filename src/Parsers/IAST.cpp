@@ -12,8 +12,85 @@
 
 #include <algorithm>
 
+namespace boost::sp_adl_block
+{
+    template<>
+    inline void intrusive_ptr_release(const intrusive_ref_counter< DB::IAST, boost::thread_safe_counter> * p) BOOST_SP_NOEXCEPT
+    {
+        if (thread_safe_counter::decrement(p->m_ref_counter) == 0)
+        {
+            struct LinkedList
+            {
+                DB::ASTs children;
+                LinkedList * next = nullptr;
+
+                static LinkedList * create(DB::IAST * ptr)
+                {
+                    if (ptr->children.empty())
+                    {
+                        delete ptr;
+                        return nullptr;
+                    }
+
+                    DB::ASTs children;
+                    children.swap(ptr->children);
+                    ptr->~IAST();
+                    LinkedList * elem = new (dynamic_cast<void *>(ptr)) LinkedList;
+                    elem->children.swap(children);
+                    return elem;
+                }
+            };
+
+            static_assert(sizeof(LinkedList) <= sizeof(DB::IAST));
+
+            const DB::IAST * const_ptr = static_cast<const DB::IAST *>(p);
+            DB::IAST * ptr = const_cast<DB::IAST *>(const_ptr);
+
+            LinkedList * list_head = LinkedList::create(ptr);
+
+            while (list_head)
+            {
+                DB::ASTs children;
+                children.swap(list_head->children);
+                {
+                    LinkedList * next = list_head->next;
+                    list_head->~LinkedList();
+                    operator delete(list_head);
+                    list_head = next;
+                }
+
+                for (auto & child : children)
+                {
+                    if (child == nullptr || child->use_count() != 1)
+                        continue;
+
+                    ptr = child.detach();
+                    chassert(thread_safe_counter::decrement(ptr->m_ref_counter) == 0);
+
+                    LinkedList * elem = LinkedList::create(ptr);
+                    if (elem)
+                    {
+                        elem->next = list_head;
+                        list_head = elem;
+                    }
+                }
+            }
+        }
+    }
+}
+
 namespace DB
 {
+
+void intrusive_ptr_add_ref(const IAST* p)
+{
+    boost::sp_adl_block::intrusive_ptr_add_ref<IAST, boost::thread_safe_counter>(p);
+}
+
+void intrusive_ptr_release(const IAST * p)
+{
+    intrusive_ptr_release<IAST, boost::thread_safe_counter>(p);
+}
 
 namespace ErrorCodes
 {
@@ -23,70 +100,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
-IAST::~IAST()
-{
-    /** Create intrusive linked list of children to delete.
-      * Each ASTPtr child contains pointer to next child to delete.
-      */
-    ASTPtr delete_list_head_holder = nullptr;
-    const bool delete_directly = next_to_delete_list_head == nullptr;
-    ASTPtr & delete_list_head_reference = next_to_delete_list_head ? *next_to_delete_list_head : delete_list_head_holder;
-
-    /// Move children into intrusive list
-    for (auto & child : children)
-    {
-        /** If two threads remove ASTPtr concurrently,
-          * it is possible that neither thead will see use_count == 1.
-          * It is ok. Will need one more extra stack frame in this case.
-          */
-        if (child.use_count() != 1)
-            continue;
-
-        ASTPtr child_to_delete;
-        child_to_delete.swap(child);
-
-        if (!delete_list_head_reference)
-        {
-            /// Initialize list first time
-            delete_list_head_reference = std::move(child_to_delete);
-            continue;
-        }
-
-        ASTPtr previous_head = std::move(delete_list_head_reference);
-        delete_list_head_reference = std::move(child_to_delete);
-        delete_list_head_reference->next_to_delete = std::move(previous_head);
-    }
-
-    if (!delete_directly)
-        return;
-
-    while (delete_list_head_reference)
-    {
-        /** Extract child to delete from current list head.
-          * Child will be destroyed at the end of scope.
-          */
-        ASTPtr child_to_delete;
-        child_to_delete.swap(delete_list_head_reference);
-
-        /// Update list head
-        delete_list_head_reference = std::move(child_to_delete->next_to_delete);
-
-        /** Pass list head into child before destruction.
-          * It is important to properly handle cases where subclass has member same as one of its children.
-          *
-          * class ASTSubclass : IAST
-          * {
-          *     ASTPtr first_child; /// Same as first child
-          * }
-          *
-          * In such case we must move children into list only in IAST destructor.
-          * If we try to move child to delete children into list before subclasses desruction,
-          * first child use count will be 2.
-          */
-        child_to_delete->next_to_delete_list_head = &delete_list_head_reference;
-    }
-}
+IAST::~IAST() = default;
 
 size_t IAST::size() const
 {

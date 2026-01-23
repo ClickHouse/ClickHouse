@@ -6,10 +6,10 @@
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ThreadProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/SignalHandlers.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -24,15 +24,12 @@
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
-#include <Parsers/ASTWatchQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
@@ -56,7 +53,6 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
@@ -207,6 +203,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int ABORTED;
 }
 
 namespace FailPoints
@@ -1037,7 +1034,7 @@ class ImplicitTransactionControlExecutor
 public:
     void begin(const ContextMutablePtr & query_context)
     {
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::BEGIN);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::BEGIN);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
         auto txn = query_context->getCurrentTransaction();
@@ -1056,7 +1053,7 @@ public:
 
         SCOPE_EXIT({ transaction_running = false; });
 
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::COMMIT);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::COMMIT);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }
@@ -1071,7 +1068,7 @@ public:
 
         SCOPE_EXIT({ transaction_running = false; });
 
-        ASTPtr tcl_ast = std::make_shared<ASTTransactionControl>(ASTTransactionControl::ROLLBACK);
+        ASTPtr tcl_ast = make_intrusive<ASTTransactionControl>(ASTTransactionControl::ROLLBACK);
         InterpreterTransactionControlQuery tc(tcl_ast, query_context);
         tc.execute();
     }
@@ -1934,10 +1931,14 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryFlags flags,
     QueryProcessingStage::Enum stage)
 {
+    if (isCrashed())
+        throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
+
     ProfileEvents::checkCPUOverload(context->getServerSettings()[ServerSetting::os_cpu_busy_time_threshold],
             context->getSettingsRef()[Setting::min_os_cpu_wait_time_ratio_to_throw],
             context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
+
     ASTPtr ast;
     BlockIO res;
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
@@ -1984,6 +1985,9 @@ void executeQuery(
     QueryFinishCallback query_finish_callback,
     HTTPContinueCallback http_continue_callback)
 {
+    if (isCrashed())
+        throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
+
     PODArray<char> parse_buf;
     const char * begin;
     const char * end;

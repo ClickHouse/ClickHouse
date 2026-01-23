@@ -21,17 +21,3 @@ SELECT
 SELECT
     tuple(1, 'a') AS a1,
     tuple(1, 'a') IN (a1)
-INSERT INTO tab2 SELECT (*)
-FROM tab
-EXCEPT
-SELECT (*)
-FROM tab
-SELECT
-    (1),
-    (2),
-    (3)
-EXCEPT
-SELECT
-    (1),
-    (2),
-    (3)
