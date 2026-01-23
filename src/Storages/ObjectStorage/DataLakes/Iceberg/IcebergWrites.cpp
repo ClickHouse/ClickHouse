@@ -718,6 +718,8 @@ void IcebergStorageSink::consume(Chunk & chunk)
         return;
     total_rows += chunk.getNumRows();
 
+    LOG_DEBUG(&Poco::Logger::get("IcebergStorageSink"), "Consuming chunk with chunk infos begin: {} ", chunk.getChunkInfos().debug());
+
     size_t start_columns_size = chunk.getNumColumns();
     if (!sort_description.column_names.empty())
     {
@@ -731,7 +733,9 @@ void IcebergStorageSink::consume(Chunk & chunk)
 
         for (size_t i = 0; i < block.columns(); ++i)
             column_name_to_column_index[block.getNames()[i]] = i;
-        chunk = Chunk(block.getColumns(), block.rows());
+        auto new_chunk = Chunk(block.getColumns(), block.rows());
+        new_chunk.setChunkInfos(chunk.getChunkInfos());
+        chunk = std::move(new_chunk);
     }
 
     std::vector<std::pair<ChunkPartitioner::PartitionKey, Chunk>> partition_result;
@@ -805,7 +809,10 @@ void IcebergStorageSink::consume(Chunk & chunk)
     }
     auto columns = chunk.getColumns();
     columns.resize(start_columns_size);
-    chunk = Chunk(columns, chunk.getNumRows());
+    auto new_chunk = Chunk(columns, chunk.getNumRows());
+    new_chunk.setChunkInfos(chunk.getChunkInfos());
+    chunk = std::move(new_chunk);
+    LOG_DEBUG(&Poco::Logger::get("IcebergStorageSink"), "Consuming chunk with chunk infos end: {} ", chunk.getChunkInfos().debug());
 }
 
 void IcebergStorageSink::onFinish()
