@@ -39,6 +39,7 @@ struct MemoryWorkerConfig
     double purge_dirty_pages_threshold_ratio = 0.0;
     double purge_total_memory_threshold_ratio = 0.0;
     bool correct_tracker = false;
+    uint64_t dirty_pages_decay_change_period_ms = 0;
     bool use_cgroup = true;
 };
 
@@ -69,6 +70,8 @@ private:
     void updateResidentMemoryThread();
     [[maybe_unused]] void purgeDirtyPagesThread();
 
+    void setDirtyDecayForAllArenas(size_t decay_ms);
+
     ThreadFromGlobalPool update_resident_memory_thread;
     ThreadFromGlobalPool purge_dirty_pages_thread;
 
@@ -85,9 +88,12 @@ private:
     bool correct_tracker = false;
 
     std::atomic<bool> purge_dirty_pages = false;
+    std::atomic<bool> disable_dirty_pages_decay = false;
     double purge_total_memory_threshold_ratio;
     double purge_dirty_pages_threshold_ratio;
     uint64_t page_size = 0;
+
+    uint64_t dirty_pages_decay_change_period_ms = 0;
 
     MemoryUsageSource source{MemoryUsageSource::None};
 
@@ -99,6 +105,7 @@ private:
     Jemalloc::MibCache<uint64_t> epoch_mib{"epoch"};
     Jemalloc::MibCache<size_t> resident_mib{"stats.resident"};
     Jemalloc::MibCache<size_t> pagesize_mib{"arenas.page"};
+    Jemalloc::MibCache<size_t> dirty_decay_ms_mib{"arenas.dirty_decay_ms"};
 
 #define STRINGIFY_HELPER(x) #x
 #define STRINGIFY(x) STRINGIFY_HELPER(x)
