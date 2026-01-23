@@ -34,7 +34,8 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
         data_part_storage_, index_granularity_info_, storage_settings_,
         columns_list_, metadata_snapshot_, virtual_columns_,
         indices_to_recalc_, stats_to_recalc, marks_file_extension_,
-        default_codec_, settings_, std::move(index_granularity_))
+        default_codec_, settings_, std::move(index_granularity_),
+        static_cast<WrittenOffsetSubstreams *>(nullptr))
     , plain_file(getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,

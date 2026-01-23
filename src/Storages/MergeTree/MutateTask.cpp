@@ -1949,7 +1949,8 @@ private:
             ctx->source_part->getBytesUncompressedOnDisk(),
             /*reset_columns=*/ true,
             /*blocks_are_granules_size=*/ false,
-            ctx->context->getWriteSettings());
+            ctx->context->getWriteSettings(),
+            static_cast<WrittenOffsetSubstreams *>(nullptr));
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -2202,7 +2203,8 @@ private:
                 ColumnsStatistics(ctx->stats_to_recalc.begin(), ctx->stats_to_recalc.end()),
                 ctx->compression_codec,
                 ctx->source_part->index_granularity,
-                ctx->source_part->getBytesUncompressedOnDisk());
+                ctx->source_part->getBytesUncompressedOnDisk(),
+                static_cast<WrittenOffsetSubstreams *>(nullptr));
 
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);

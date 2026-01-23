@@ -37,7 +37,8 @@ public:
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        MergeTreeIndexGranularityPtr index_granularity_);
+        MergeTreeIndexGranularityPtr index_granularity_,
+        WrittenOffsetSubstreams * written_offset_substreams_);
 
     void write(const Block & block, const IColumnPermutation * permutation) override;
 
@@ -63,14 +64,14 @@ private:
     void writeColumn(
         const NameAndTypePair & name_and_type,
         const IColumn & column,
-        WrittenOffsetColumns & offset_columns,
+        WrittenOffsetSubstreams & offset_substreams,
         const Granules & granules);
 
     /// Write single granule of one column.
     void writeSingleGranule(
         const NameAndTypePair & name_and_type,
         const IColumn & column,
-        WrittenOffsetColumns & offset_columns,
+        const WrittenOffsetSubstreams & offset_substreams,
         ISerialization::SerializeBinaryBulkStatePtr & serialization_state,
         ISerialization::SerializeBinaryBulkSettings & serialize_settings,
         const Granule & granule);
@@ -78,22 +79,20 @@ private:
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
         const NameAndTypePair & name_and_type,
-        WrittenOffsetColumns & offset_columns);
+        const WrittenOffsetSubstreams & offset_substreams);
 
     /// Write mark to disk using stream and rows count
-    void flushMarkToFile(
-        const StreamNameAndMark & stream_with_mark,
-        size_t rows_in_mark);
+    void flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark);
 
     /// Write mark for column taking offsets from column stream
     void writeSingleMark(
         const NameAndTypePair & name_and_type,
-        WrittenOffsetColumns & offset_columns,
+        const WrittenOffsetSubstreams & offset_substreams,
         size_t number_of_rows);
 
     void writeFinalMark(
         const NameAndTypePair & name_and_type,
-        WrittenOffsetColumns & offset_columns);
+        WrittenOffsetSubstreams & offset_substreams);
 
     void addStreams(
         const NameAndTypePair & name_and_type,
@@ -122,7 +121,8 @@ private:
 
     ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const;
 
-    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
+    ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column,
+        const WrittenOffsetSubstreams & offset_substreams) const;
     const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
@@ -150,6 +150,8 @@ private:
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
+
+    String already_written_stream_holder;
 };
 
 }

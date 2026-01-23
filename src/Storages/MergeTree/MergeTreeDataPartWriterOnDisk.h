@@ -43,7 +43,7 @@ using Granules = std::vector<Granule>;
 class MergeTreeDataPartWriterOnDisk : public IMergeTreeDataPartWriter
 {
 public:
-    using WrittenOffsetColumns = std::set<std::string>;
+    using WrittenOffsetSubstreams = std::set<std::string>;
 
     using StreamPtr = std::unique_ptr<MergeTreeWriterStream<false>>;
     using StatisticStreamPtr = std::unique_ptr<MergeTreeWriterStream<true>>;
@@ -63,12 +63,8 @@ public:
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        MergeTreeIndexGranularityPtr index_granularity_);
-
-    void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
-    {
-        written_offset_columns = written_offset_columns_;
-    }
+        MergeTreeIndexGranularityPtr index_granularity_,
+        WrittenOffsetSubstreams * written_offset_substreams_);
 
     void cancel() noexcept override;
 
@@ -143,8 +139,9 @@ protected:
 
     bool data_written = false;
 
-    /// To correctly write Nested elements column-by-column.
-    WrittenOffsetColumns * written_offset_columns = nullptr;
+    /// Substreams that should be ignored by this writer, due to they had been written by other writer (as part of vertical merge)
+    /// This is to correctly write Nested elements column-by-column.
+    WrittenOffsetSubstreams * written_offset_substreams;
 
     /// Data is already written up to this mark.
     size_t current_mark = 0;

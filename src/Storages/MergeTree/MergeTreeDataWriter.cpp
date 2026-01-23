@@ -881,7 +881,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        context->getWriteSettings());
+        context->getWriteSettings(),
+        static_cast<WrittenOffsetSubstreams *>(nullptr));
 
     out->writeWithPermutation(block, perm_ptr);
 
@@ -1051,7 +1052,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings());
+        data.getContext()->getWriteSettings(),
+        static_cast<WrittenOffsetSubstreams *>(nullptr));
 
     out->writeWithPermutation(block, perm_ptr);
     out->finalizeIndexGranularity();

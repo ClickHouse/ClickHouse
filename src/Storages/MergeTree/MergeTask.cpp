@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
@@ -49,10 +50,12 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
+#include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
@@ -772,7 +775,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
         /*reset_columns=*/ true,
         ctx->blocks_are_granules_size,
-        global_ctx->context->getWriteSettings());
+        global_ctx->context->getWriteSettings(),
+        &global_ctx->written_offset_substreams);
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -1403,7 +1407,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->compression_codec,
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
-        &global_ctx->written_offset_columns);
+        &global_ctx->written_offset_substreams);
 
     ctx->column_elems_written = 0;
 }

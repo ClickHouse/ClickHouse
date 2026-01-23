@@ -20,6 +20,8 @@ using IColumnPermutation = PaddedPODArray<size_t>;
 struct MergeTreeSettings;
 using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
+using WrittenOffsetSubstreams = std::set<std::string>;
+
 Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation);
 
 Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation);
@@ -109,6 +111,7 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        MergeTreeIndexGranularityPtr computed_index_granularity);
+        MergeTreeIndexGranularityPtr computed_index_granularity,
+        WrittenOffsetSubstreams * written_offset_substreams);
 
 }
