@@ -647,19 +647,19 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, const Acce
 
     if (!granted)
     {
-        auto access_denied_no_grant = [&]<typename... FmtArgs>(FmtArgs && ...fmt_args)
+        auto access_denied_no_grant = [&]()
         {
-            if (grant_option && acs->isGranted(flags, fmt_args...))
+            if (grant_option && acs->isGranted(flags, args...))
             {
                 return access_denied(ErrorCodes::ACCESS_DENIED,
                     "{}: Not enough privileges. "
                     "The required privileges have been granted, but without grant option. "
                     "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                    AccessRightsElement{flags, fmt_args...}.toStringWithoutOptions());
+                    AccessRightsElement{flags, args...}.toStringWithoutOptions());
             }
 
             AccessRights difference;
-            difference.grant(flags, fmt_args...);
+            difference.grant(flags, args...);
             AccessRights original_rights = difference;
             difference.makeDifference(*getAccessRights());
 
@@ -667,19 +667,19 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, const Acce
             {
                 return access_denied(ErrorCodes::ACCESS_DENIED,
                     "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                    AccessRightsElement{flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                    AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
             }
 
 
             return access_denied(ErrorCodes::ACCESS_DENIED,
                 "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
                 "(Missing permissions: {}){}",
-                AccessRightsElement{flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
+                AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
                 difference.getElements().toStringWithoutOptions(),
                 grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
         };
 
-        return access_denied_no_grant(args...);
+        return access_denied_no_grant();
     }
 
     struct PrecalculatedFlags
