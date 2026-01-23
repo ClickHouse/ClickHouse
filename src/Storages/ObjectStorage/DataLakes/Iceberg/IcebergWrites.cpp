@@ -718,8 +718,6 @@ void IcebergStorageSink::consume(Chunk & chunk)
         return;
     total_rows += chunk.getNumRows();
 
-    LOG_DEBUG(&Poco::Logger::get("IcebergStorageSink"), "Consuming chunk with chunk infos begin: {} ", chunk.getChunkInfos().debug());
-
     size_t start_columns_size = chunk.getNumColumns();
     if (!sort_description.column_names.empty())
     {
@@ -812,7 +810,6 @@ void IcebergStorageSink::consume(Chunk & chunk)
     auto new_chunk = Chunk(columns, chunk.getNumRows());
     new_chunk.setChunkInfos(chunk.getChunkInfos());
     chunk = std::move(new_chunk);
-    LOG_DEBUG(&Poco::Logger::get("IcebergStorageSink"), "Consuming chunk with chunk infos end: {} ", chunk.getChunkInfos().debug());
 }
 
 void IcebergStorageSink::onFinish()
