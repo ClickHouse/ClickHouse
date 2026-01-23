@@ -125,6 +125,12 @@
   [& args]
   (.setLevel
    (LoggerFactory/getLogger "org.apache.zookeeper") Level/OFF)
+  ; Enable DEBUG logging for SSHJ to diagnose SSH agent issues
+  (.setLevel
+   (LoggerFactory/getLogger "net.schmizz.sshj") Level/ALL)
+  (.setLevel
+   (LoggerFactory/getLogger "net.schmizz") Level/ALL)
+  (info "SSHJ debug logging enabled")
   (cli/run! (merge (cli/single-test-cmd {:test-fn clickhouse-server-test
                                          :opt-spec cli-opts})
                    (cli/test-all-cmd {:tests-fn (partial all-tests clickhouse-server-test)
