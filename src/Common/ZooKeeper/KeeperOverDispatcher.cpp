@@ -197,10 +197,8 @@ void KeeperOverDispatcher::list(
 {
     if (watch)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Watch is not implemented");
-
-    /// KeeperOverDispatcher doesn't support with_stat and with_data yet, just ignore them
-    (void)with_stat;
-    (void)with_data;
+    if (with_stat || with_data)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "with_stat and with_data are not implemented");
 
     const auto request = std::make_shared<ZooKeeperFilteredListRequest>();
     request->path = path;

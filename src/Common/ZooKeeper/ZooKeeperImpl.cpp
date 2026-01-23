@@ -1652,7 +1652,7 @@ void ZooKeeper::list(
 
     if (with_stat || with_data)
     {
-        if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA))
+        if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA) || !isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "List with stat/data cannot be used because it's not supported by the server");
 
         auto list_with_stats_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();

@@ -787,8 +787,8 @@ public:
         ListRequestType list_request_type,
         ListCallback callback,
         WatchCallbackPtrOrEventPtr watch,
-        bool with_stat = false,
-        bool with_data = false) = 0;
+        bool with_stat,
+        bool with_data) = 0;
 
     virtual void check(
         const String & path,

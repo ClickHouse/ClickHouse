@@ -2816,7 +2816,7 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
         {
             /// if list_request_type will read all the children, we don't have to read any meta, just list all the paths.
             if constexpr (Storage::use_rocksdb)
-                return std::optional{container.getChildren(zk_request.path, 
+                return std::optional{container.getChildren(zk_request.path,
                                                            list_request_type != Coordination::ListRequestType::ALL || with_stat || with_data,
                                                            with_data)};
             else
