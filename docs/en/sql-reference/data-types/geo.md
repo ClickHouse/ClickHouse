@@ -142,7 +142,7 @@ Result:
 
 ## Geometry {#geometry}
 
-`Geometry` is a common type for all the types above. It is equivalent to a Variant of those types. When using the Geometry type, you will need to enable the following setting: `SET allow_suspicious_variant_types = 1`
+`Geometry` is a common type for all the types above. It is equivalent to a Variant of those types.
 
 **Example**
 

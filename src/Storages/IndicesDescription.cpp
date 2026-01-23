@@ -237,7 +237,7 @@ IndicesDescription IndicesDescription::parse(const String & str, const ColumnsDe
 
 ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const ColumnsDescription & columns, ContextPtr context) const
 {
-    ASTPtr combined_expr_list = std::make_shared<ASTExpressionList>();
+    ASTPtr combined_expr_list = make_intrusive<ASTExpressionList>();
     for (const auto & index : *this)
         for (const auto & index_expr : index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
@@ -259,8 +259,8 @@ Names IndicesDescription::getAllRegisteredNames() const
 ASTPtr createImplicitMinMaxIndexAST(const String & column_name)
 {
     auto index_type = makeASTFunction("minmax");
-    auto index_ast = std::make_shared<ASTIndexDeclaration>(
-        std::make_shared<ASTIdentifier>(column_name), index_type,
+    auto index_ast = make_intrusive<ASTIndexDeclaration>(
+        make_intrusive<ASTIdentifier>(column_name), index_type,
         IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name);
 
     index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;

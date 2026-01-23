@@ -1,3 +1,4 @@
+#include <format>
 #include "config.h"
 
 #if USE_AVRO
@@ -8,9 +9,10 @@
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -103,7 +105,7 @@ namespace
 
             if (const auto * decimal_type = DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
             {
-                DB::DecimalField<DB::Decimal32> result(unscaled_value, decimal_type->getScale());
+                DB::DecimalField<DB::Decimal32> result(static_cast<Int32>(unscaled_value), decimal_type->getScale());
                 return result;
             }
             if (const auto * decimal_type = DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
@@ -184,9 +186,9 @@ ManifestFileContent::ManifestFileContent(
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
     DB::NamesAndTypesList partition_columns_description;
-    std::shared_ptr<DB::ASTFunction> partition_key_ast = std::make_shared<DB::ASTFunction>();
+    auto partition_key_ast = make_intrusive<ASTFunction>();
     partition_key_ast->name = "tuple";
-    partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
+    partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
     partition_key_ast->children.push_back(partition_key_ast->arguments);
 
     auto schema_json_string = manifest_file_deserializer.tryGetAvroMetadataValue(f_schema);
@@ -222,7 +224,7 @@ ManifestFileContent::ManifestFileContent(
         if (partition_ast == nullptr)
             continue;
 
-        partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
+        partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
         partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
 
@@ -320,7 +322,7 @@ ManifestFileContent::ManifestFileContent(
                 for (const auto & column_stats : values_count.safeGet<Array>())
                 {
                     const auto & column_number_and_count = column_stats.safeGet<Tuple>();
-                    Int32 number = column_number_and_count[0].safeGet<Int32>();
+                    Int32 number = static_cast<Int32>(column_number_and_count[0].safeGet<Int32>());
                     Int64 count = column_number_and_count[1].safeGet<Int64>();
                     if (path == c_data_file_value_counts)
                         columns_infos[number].rows_count = count;
@@ -332,30 +334,30 @@ ManifestFileContent::ManifestFileContent(
             }
         }
 
-        if (content_type == FileContentType::DATA)
+        std::unordered_map<Int32, std::pair<Field, Field>> value_for_bounds;
+        for (const auto & path : {c_data_file_lower_bounds, c_data_file_upper_bounds})
         {
-            std::unordered_map<Int32, std::pair<Field, Field>> value_for_bounds;
-            for (const auto & path : {c_data_file_lower_bounds, c_data_file_upper_bounds})
+            if (manifest_file_deserializer.hasPath(path))
             {
-                if (manifest_file_deserializer.hasPath(path))
+                Field bounds = manifest_file_deserializer.getValueFromRowByName(i, path);
+                for (const auto & column_stats : bounds.safeGet<Array>())
                 {
-                    Field bounds = manifest_file_deserializer.getValueFromRowByName(i, path);
-                    for (const auto & column_stats : bounds.safeGet<Array>())
-                    {
-                        const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
-                        Int32 number = column_number_and_bound[0].safeGet<Int32>();
-                        const Field & bound_value = column_number_and_bound[1];
+                    const auto & column_number_and_bound = column_stats.safeGet<Tuple>();
+                    Int32 number = static_cast<Int32>(column_number_and_bound[0].safeGet<Int32>());
+                    const Field & bound_value = column_number_and_bound[1];
 
-                        if (path == c_data_file_lower_bounds)
-                            value_for_bounds[number].first = bound_value;
-                        else
-                            value_for_bounds[number].second = bound_value;
+                    if (path == c_data_file_lower_bounds)
+                        value_for_bounds[number].first = bound_value;
+                    else
+                        value_for_bounds[number].second = bound_value;
 
-                        column_ids_which_have_bounds.insert(number);
-                    }
+                    column_ids_which_have_bounds.insert(number);
                 }
             }
+        }
 
+        if (content_type == FileContentType::DATA)
+        {
             for (const auto & [column_id, bounds] : value_for_bounds)
             {
                 auto field_characteristics = schema_processor.tryGetFieldCharacteristics(schema_id, column_id);
@@ -428,49 +430,62 @@ ManifestFileContent::ManifestFileContent(
         switch (content_type)
         {
             case FileContentType::DATA:
-                this->data_files_without_deleted.emplace_back(std::make_shared<ManifestFileEntry>(
-                    file_path_key,
-                    file_path,
-                    i,
-                    status,
-                    added_sequence_number,
-                    snapshot_id,
-                    schema_id,
-                    partition_key_value,
-                    common_partition_specification,
-                    columns_infos,
-                    file_format,
-                    /*reference_data_file = */ std::nullopt,
-                    /*equality_ids*/ std::nullopt,
-                    sort_order_id));
+                this->data_files_without_deleted.emplace_back(
+                    std::make_shared<ManifestFileEntry>(
+                        file_path_key,
+                        file_path,
+                        i,
+                        status,
+                        added_sequence_number,
+                        snapshot_id,
+                        schema_id,
+                        partition_key_value,
+                        common_partition_specification,
+                        columns_infos,
+                        file_format,
+                        /*lower_reference_data_file_path_ = */ std::nullopt,
+                        /*upper_reference_data_file_path_ = */ std::nullopt,
+                        /*equality_ids*/ std::nullopt,
+                        sort_order_id));
                 break;
             case FileContentType::POSITION_DELETE:
             {
                 /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
-                std::optional<String> reference_file_path = std::nullopt;
+                std::optional<String> lower_reference_data_file_path = std::nullopt;
+                std::optional<String> upper_reference_data_file_path = std::nullopt;
                 if (manifest_file_deserializer.hasPath(c_data_file_referenced_data_file))
                 {
                     Field reference_file_path_field = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_referenced_data_file);
                     if (!reference_file_path_field.isNull())
                     {
-                        reference_file_path = reference_file_path_field.safeGet<String>();
+                        lower_reference_data_file_path = reference_file_path_field.safeGet<String>();
+                        upper_reference_data_file_path = reference_file_path_field.safeGet<String>();
                     }
                 }
-                this->position_deletes_files_without_deleted.emplace_back(std::make_shared<ManifestFileEntry>(
-                    file_path_key,
-                    file_path,
-                    i,
-                    status,
-                    added_sequence_number,
-                    snapshot_id,
-                    schema_id,
-                    partition_key_value,
-                    common_partition_specification,
-                    columns_infos,
-                    file_format,
-                    reference_file_path,
-                    /*equality_ids*/ std::nullopt,
-                    /*sort_order_id = */ std::nullopt));
+                else if (auto it = value_for_bounds.find(IcebergPositionDeleteTransform::data_file_path_column_field_id);
+                         it != value_for_bounds.end())
+                {
+                    auto & [lower, upper] = it->second;
+                    lower_reference_data_file_path = lower.safeGet<String>();
+                    upper_reference_data_file_path = upper.safeGet<String>();
+                }
+                this->position_deletes_files_without_deleted.emplace_back(
+                    std::make_shared<ManifestFileEntry>(
+                        file_path_key,
+                        file_path,
+                        i,
+                        status,
+                        added_sequence_number,
+                        snapshot_id,
+                        schema_id,
+                        partition_key_value,
+                        common_partition_specification,
+                        columns_infos,
+                        file_format,
+                        lower_reference_data_file_path,
+                        upper_reference_data_file_path,
+                        /*equality_ids*/ std::nullopt,
+                        /*sort_order_id = */ std::nullopt));
                 break;
             }
             case FileContentType::EQUALITY_DELETE:
@@ -480,27 +495,29 @@ ManifestFileContent::ManifestFileContent(
                 {
                     Field equality_ids_field = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_equality_ids);
                     for (const Field & id : equality_ids_field.safeGet<Array>())
-                        equality_ids.push_back(id.safeGet<Int32>());
+                        equality_ids.push_back(static_cast<Int32>(id.safeGet<Int32>()));
                 }
                 else
                     throw Exception(
                             DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                             "Couldn't find field {} in equality delete file entry", c_data_file_equality_ids);
-                this->equality_deletes_files.emplace_back(std::make_shared<ManifestFileEntry>(
-                    file_path_key,
-                    file_path,
-                    i,
-                    status,
-                    added_sequence_number,
-                    snapshot_id,
-                    schema_id,
-                    partition_key_value,
-                    common_partition_specification,
-                    columns_infos,
-                    file_format,
-                    /*reference_data_file = */ std::nullopt,
-                    equality_ids,
-                    /*sort_order_id = */ std::nullopt));
+                this->equality_deletes_files.emplace_back(
+                    std::make_shared<ManifestFileEntry>(
+                        file_path_key,
+                        file_path,
+                        i,
+                        status,
+                        added_sequence_number,
+                        snapshot_id,
+                        schema_id,
+                        partition_key_value,
+                        common_partition_specification,
+                        columns_infos,
+                        file_format,
+                        /*lower_reference_data_file_path_ = */ std::nullopt,
+                        /*upper_reference_data_file_path_ = */ std::nullopt,
+                        equality_ids,
+                        /*sort_order_id = */ std::nullopt));
                 break;
             }
         }
@@ -660,6 +677,56 @@ std::weak_ordering operator<=>(const ManifestFileEntryPtr & lhs, const ManifestF
     return std::tie(lhs->common_partition_specification, lhs->partition_key_value, lhs->added_sequence_number)
         <=> std::tie(rhs->common_partition_specification, rhs->partition_key_value, rhs->added_sequence_number);
 }
+
+String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
+{
+    if (partition_specification.empty())
+        return "[empty]";
+    else
+    {
+        String answer{"["};
+        for (size_t i = 0; i < partition_specification.size(); ++i)
+        {
+            const auto & entry = partition_specification[i];
+            answer += fmt::format(
+                "(source id: {}, transform name: {}, partition name: {})", entry.source_id, entry.transform_name, entry.partition_name);
+            if (i != partition_specification.size() - 1)
+                answer += ", ";
+        }
+        answer += ']';
+        return answer;
+    }
 }
+
+String dumpPartitionKeyValue(const DB::Row & partition_key_value)
+{
+    if (partition_key_value.empty())
+        return "[empty]";
+    else
+    {
+        String answer{"["};
+        for (size_t i = 0; i < partition_key_value.size(); ++i)
+        {
+            const auto & entry = partition_key_value[i];
+            answer += entry.dump();
+            if (i != partition_key_value.size() - 1)
+                answer += ", ";
+        }
+        answer += ']';
+        return answer;
+    }
+}
+
+
+String ManifestFileEntry::dumpDeletesMatchingInfo() const
+{
+    return fmt::format(
+        "Partition specification: {}, partition key value: {}, added sequence number: {}",
+        dumpPartitionSpecification(common_partition_specification),
+        dumpPartitionKeyValue(partition_key_value),
+        added_sequence_number);
+}
+}
+
 
 #endif
