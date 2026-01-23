@@ -412,6 +412,7 @@ void MemoryWorker::updateResidentMemoryThread()
 
 void MemoryWorker::purgeDirtyPagesThread()
 {
+#if USE_JEMALLOC
     /// Instead of having completely separate logic for purging dirty pages,
     /// we rely on the main thread to notify us when we need to purge dirty pages.
     /// We do it to avoid reading RSS value in both threads. Even though they are fairly
@@ -436,6 +437,7 @@ void MemoryWorker::purgeDirtyPagesThread()
         ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
         ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
     }
+#endif
 }
 
 }
