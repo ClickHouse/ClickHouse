@@ -107,7 +107,8 @@ def merge_profraw_files(llvm_profdata: str, batch_num: int, loop: bool = False):
     from pathlib import Path
     import time
     
-    counter = 0
+    if not hasattr(merge_profraw_files, 'counter'):
+        merge_profraw_files.counter = 0
     
     while True:
         if loop:
@@ -117,8 +118,8 @@ def merge_profraw_files(llvm_profdata: str, batch_num: int, loop: bool = False):
         profraw_files = [str(p) for p in Path(".").rglob("*.profraw")]
         
         if profraw_files:
-            counter += 1
-            intermediate_file = f"./it-{batch_num}-part{counter}.profdata"
+            merge_profraw_files.counter += 1
+            intermediate_file = f"./it-{batch_num}-part{merge_profraw_files.counter}.profdata"
             print(f"Background merger: merging {len(profraw_files)} profraw files into {intermediate_file}", flush=True)
             
             result = subprocess.run(
