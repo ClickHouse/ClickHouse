@@ -1611,8 +1611,10 @@ INSTANTIATE_TEST_SUITE_P(ALPExceptionsOnly,
     ::testing::Combine(
         ::testing::Values(Codec("ALP", 1.01)),
         ::testing::Values(
-            generateSeq<Float64>(G(SameValueGenerator(std::numeric_limits<Float64>::quiet_NaN()))),
-            generateSeq<Float32>(G(SameValueGenerator(std::numeric_limits<Float32>::quiet_NaN())))
+            generateSeq<Float64>(G([](auto) { return std::numeric_limits<Float64>::quiet_NaN(); })),
+            generateSeq<Float32>(G([](auto) { return std::numeric_limits<Float32>::quiet_NaN(); })),
+            generateSeq<Float64>(G([](auto) { return M_PIf64; })),
+            generateSeq<Float32>(G([](auto) { return M_PIf32; }))
         )
     )
 );
@@ -1622,10 +1624,9 @@ INSTANTIATE_TEST_SUITE_P(ALPSameValuesF64,
     ::testing::Combine(
         ::testing::Values(Codec("ALP", 0.1)),
         ::testing::Values(
-            generateSeq<Float64>(G(SameValueGenerator(2.2))),
-            generateSeq<Float64>(G(SameValueGenerator(-2.2))),
-            generateSeq<Float64>(G(SameValueGenerator(0.0))),
-            generateSeq<Float64>(G(SameValueGenerator(M_PIf64)))
+            generateSeq<Float64>(G([](auto) { return 2.2; })),
+            generateSeq<Float64>(G([](auto) { return -2.2; })),
+            generateSeq<Float64>(G([](auto) { return 0.0; }))
         )
     )
 );
@@ -1635,10 +1636,9 @@ INSTANTIATE_TEST_SUITE_P(ALPSameValuesF32,
     ::testing::Combine(
         ::testing::Values(Codec("ALP", 0.1)),
         ::testing::Values(
-            generateSeq<Float32>(G(SameValueGenerator(2.2f))),
-            generateSeq<Float32>(G(SameValueGenerator(-2.2f))),
-            generateSeq<Float32>(G(SameValueGenerator(0.0f))),
-            generateSeq<Float32>(G(SameValueGenerator(M_PIf32)))
+            generateSeq<Float32>(G([](auto) { return 2.2f; })),
+            generateSeq<Float32>(G([](auto) { return -2.2f; })),
+            generateSeq<Float32>(G([](auto) { return 0.0f; }))
         )
     )
 );
