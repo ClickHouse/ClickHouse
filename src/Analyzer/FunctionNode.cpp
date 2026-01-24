@@ -174,6 +174,8 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
         || nulls_action != rhs_typed.nulls_action)
         return false;
 
+    /// is_operator is ignored here because it affects only AST formatting
+
     if (!compare_options.compare_types)
         return true;
 
@@ -203,6 +205,8 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
     hash_state.update(isAggregateFunction());
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
+
+    /// is_operator is ignored here because it affects only AST formatting
 
     if (!compare_options.compare_types)
         return;
