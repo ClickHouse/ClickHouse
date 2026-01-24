@@ -460,7 +460,10 @@ void performHubPruning(
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAndReset()
 {
-    /// Check experimental setting guard - if disabled, ignore leann_params for backward compatibility
+    /// Check experimental setting guard for backward compatibility.
+    /// Existing indexes (without 7th parameter) have enable_hub_pruning=false by default and work as before.
+    /// New indexes with 7th parameter are only enabled if allow_experimental_leann_optimization_for_hnsw is set.
+    /// This ensures existing indexes continue to load and the new parameter is ignored when the setting is disabled.
     bool leann_enabled = false;
     if (leann_params.enable_hub_pruning)
     {
