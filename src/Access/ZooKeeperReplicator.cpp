@@ -52,7 +52,8 @@ ZooKeeperReplicator::ZooKeeperReplicator(
     const String & zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
     AccessChangesNotifier & changes_notifier_,
-    MemoryAccessStorage & memory_storage_)
+    MemoryAccessStorage & memory_storage_,
+    bool throw_on_invalid_entities_)
     : storage_name(storage_name_)
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
@@ -63,6 +64,7 @@ ZooKeeperReplicator::ZooKeeperReplicator(
       }))
     , memory_storage(memory_storage_)
     , changes_notifier(changes_notifier_)
+    , throw_on_invalid_entities(throw_on_invalid_entities_)
 {
     if (zookeeper_path.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must be non-empty");
@@ -575,10 +577,17 @@ void ZooKeeperReplicator::refreshEntities(const zkutil::ZooKeeperPtr & zookeeper
     if (all)
     {
         /// all=true means we read & parse all access entities from ZooKeeper.
+        /// Throws on error on load depending on the throw_on_invalid_entities setting.
         std::vector<std::pair<UUID, AccessEntityPtr>> entities;
         for (const auto & uuid : entity_uuids)
         {
-            if (auto entity = tryReadEntityFromZooKeeper(zookeeper, uuid))
+            AccessEntityPtr entity;
+            if (throw_on_invalid_entities)
+                entity = readEntityFromZooKeeper(zookeeper, uuid);
+            else
+                entity = tryReadEntityFromZooKeeper(zookeeper, uuid);
+
+            if (entity)
                 entities.emplace_back(uuid, entity);
         }
         memory_storage.setAll(entities);
@@ -622,7 +631,7 @@ void ZooKeeperReplicator::refreshEntityNoLock(const zkutil::ZooKeeperPtr & zooke
         removeEntityNoLock(id);
 }
 
-AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
+AccessEntityPtr ZooKeeperReplicator::readEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
 {
     auto watch = zookeeper->createWatchFromRawCallback(makeWatchIdFromId(id), [&]() -> Coordination::WatchCallback
     {
@@ -640,9 +649,14 @@ AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::Zo
     if (!exists)
         return nullptr;
 
+    return deserializeAccessEntity(entity_definition, entity_path);
+}
+
+AccessEntityPtr ZooKeeperReplicator::tryReadEntityFromZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id) const
+{
     try
     {
-        return deserializeAccessEntity(entity_definition, entity_path);
+        return readEntityFromZooKeeper(zookeeper, id);
     }
     catch (...)
     {
