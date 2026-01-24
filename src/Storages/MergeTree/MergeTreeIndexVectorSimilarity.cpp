@@ -24,6 +24,7 @@
 #include <Common/CurrentThread.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
+#include <limits>
 #include <ranges>
 #include <random>
 #include <sstream>
@@ -336,12 +337,6 @@ namespace
 {
 
 /// Perform hub node pruning on the HNSW graph (LeaNN, Section 5 of https://arxiv.org/pdf/2506.08276).
-/// Hub nodes are highly connected nodes that span wide areas of the vector space.
-/// This function identifies and keeps only hub nodes, reducing graph size by ~50% with minimal recall loss.
-///
-/// Implementation approach (workaround without USearch API changes):
-/// 1. Use search-based sampling to identify frequently visited nodes (hub nodes)
-/// 2. Rebuild the index with only hub node vectors
 void performHubPruning(
     USearchIndexWithSerializationPtr & index,
     const std::vector<std::vector<Float32>> & stored_vectors,
@@ -358,27 +353,38 @@ void performHubPruning(
     LoggerPtr logger = getLogger("VectorSimilarityIndex");
     LOG_TRACE(logger, "Starting hub node pruning. Index size before pruning: {}", index->size());
 
-    /// Step 1: Identify hub nodes via search-based sampling
-    /// Perform multiple random searches and count how often each node is visited
+    if (stored_vectors.empty() || stored_vectors[0].empty())
+        return;
+
+    std::vector<Float32> min_values(dimensions, std::numeric_limits<Float32>::max());
+    std::vector<Float32> max_values(dimensions, std::numeric_limits<Float32>::lowest());
+
+    for (const auto & vec : stored_vectors)
+    {
+        if (vec.size() != dimensions)
+            continue;
+        for (size_t dim = 0; dim < dimensions; ++dim)
+        {
+            min_values[dim] = std::min(min_values[dim], vec[dim]);
+            max_values[dim] = std::max(max_values[dim], vec[dim]);
+        }
+    }
+
     const size_t num_samples = std::min(sample_size, index->size());
     std::unordered_map<USearchIndex::vector_key_t, size_t> node_visit_counts;
 
-    /// Use a subset of stored vectors as random query vectors
     pcg64_fast rng{randomSeed()};
-    std::uniform_int_distribution<size_t> dist(0, stored_vectors.size() - 1);
-
-    const size_t search_limit = std::min(static_cast<size_t>(50), index->size() / 2); /// Search for top 50 or half the index
+    std::vector<Float32> random_query_vector(dimensions);
+    const size_t search_limit = std::min(static_cast<size_t>(50), index->size() / 2);
 
     for (size_t i = 0; i < num_samples; ++i)
     {
-        /// Pick a random vector as query
-        size_t query_idx = dist(rng);
-        const auto & query_vector = stored_vectors[query_idx];
-
-        /// Perform search and count visited nodes
-        /// Note: USearch's search() doesn't expose visited nodes directly, but we can infer from results
-        /// For now, we'll use the search results as a proxy - nodes in top results are likely hubs
-        auto search_result = index->search(query_vector.data(), search_limit, USearchIndex::any_thread(), false, default_expansion_search);
+        for (size_t dim = 0; dim < dimensions; ++dim)
+        {
+            std::uniform_real_distribution<Float32> dim_dist(min_values[dim], max_values[dim]);
+            random_query_vector[dim] = dim_dist(rng);
+        }
+        auto search_result = index->search(random_query_vector.data(), search_limit, USearchIndex::any_thread(), false, default_expansion_search);
         if (search_result)
         {
             std::vector<USearchIndex::vector_key_t> result_keys(search_result.size());
@@ -392,7 +398,6 @@ void performHubPruning(
         }
     }
 
-    /// Step 2: Select hub nodes based on pruning ratio
     std::vector<std::pair<USearchIndex::vector_key_t, size_t>> node_scores;
     for (const auto & [key, count] : node_visit_counts)
     {
@@ -403,7 +408,6 @@ void performHubPruning(
     std::sort(node_scores.begin(), node_scores.end(),
               [](const auto & a, const auto & b) { return a.second > b.second; });
 
-    /// Calculate target number of hub nodes based on pruning ratio
     const size_t target_hub_nodes = std::max(static_cast<size_t>(1), static_cast<size_t>(index->size() * hub_pruning_ratio));
     const size_t num_hub_nodes = std::min(target_hub_nodes, node_scores.size());
     std::unordered_set<USearchIndex::vector_key_t> hub_node_keys;
@@ -412,8 +416,6 @@ void performHubPruning(
         hub_node_keys.insert(node_scores[i].first);
     }
 
-    /// Also include nodes that weren't sampled but might be hubs (nodes with high indices are often in higher layers)
-    /// In HNSW, nodes added later often end up in higher layers and are more likely to be hubs
     if (hub_node_keys.size() < target_hub_nodes)
     {
         /// Add nodes from the upper portion of the index (likely in higher layers)
@@ -426,7 +428,6 @@ void performHubPruning(
 
     LOG_TRACE(logger, "Identified {} hub nodes out of {} total nodes", hub_node_keys.size(), index->size());
 
-    /// Step 3: Rebuild index with only hub nodes
     auto pruned_index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 
     /// Reserve space for hub nodes
@@ -465,7 +466,7 @@ void performHubPruning(
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAndReset()
 {
-    /// Check experimental setting guard - if disabled, ignore leann_params for backward compatibility
+    /// Check experimental setting guard
     bool leann_enabled = false;
     if (leann_params.hub_pruning_ratio > 0.0)
     {
@@ -490,9 +491,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
 
     auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, metric_kind, scalar_kind, usearch_hnsw_params, index, effective_leann_params);
 
-    /// Clear stored vectors after use - memory is released via RAII when inner vectors are destroyed.
-    /// Vectors are accumulated during update() calls and used for hub pruning above, but are no longer
-    /// needed after the granule is created, so we release them immediately to free memory.
+    /// Clear stored vectors after use
     stored_vectors.clear();
     index = nullptr;
     return granule;
