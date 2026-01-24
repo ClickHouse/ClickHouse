@@ -97,8 +97,8 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 {
     /// Since ASTLiteral is different from ASTIdentifier, so we can use a special constant String Literal for this,
     /// and do not need to worry about it conflict with the name of the column in the table.
-    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>("__unused_group_by_column"));
+    select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, make_intrusive<ASTExpressionList>());
+    select_query->groupBy()->children.emplace_back(make_intrusive<ASTLiteral>("__unused_group_by_column"));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.

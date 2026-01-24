@@ -81,7 +81,7 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     /// Default expressions are only validated in level CREATE, so let's check them now
-    DefaultExpressionsInfo default_expr_info{std::make_shared<ASTExpressionList>()};
+    DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
 
     for (const auto & ast : columns.columns->children)
     {
@@ -101,10 +101,12 @@ void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
     if (default_expr_info.expr_list)
         validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc.getAll(), context);
 
+    constexpr bool escape_index_filenames = true; /// We don't care, we are only doing validation and discarding the result
+    bool is_implicitly_created = false; /// Same
     if (columns.indices)
     {
         for (const auto & child : columns.indices->children)
-            IndexDescription::getIndexFromAST(child, columns_desc, /* is_implicitly_created */ false, context);
+            IndexDescription::getIndexFromAST(child, columns_desc, is_implicitly_created, escape_index_filenames, context);
     }
     if (columns.constraints)
     {
@@ -173,11 +175,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 
     if (metadata.sql_security_type)
     {
-        auto new_sql_security = std::make_shared<ASTSQLSecurity>();
+        auto new_sql_security = make_intrusive<ASTSQLSecurity>();
         new_sql_security->type = metadata.sql_security_type;
 
         if (metadata.definer)
-            new_sql_security->definer = std::make_shared<ASTUserNameWithHost>(*metadata.definer);
+            new_sql_security->definer = make_intrusive<ASTUserNameWithHost>(*metadata.definer);
 
         ast_create_query.set(ast_create_query.sql_security, new_sql_security);
     }
@@ -222,7 +224,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     if (metadata.comment.empty())
         ast_create_query.reset(ast_create_query.comment);
     else
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(metadata.comment));
+        ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(metadata.comment));
 
     if (validate_new_create_query)
         validateCreateQuery(ast_create_query, context);
@@ -242,7 +244,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
         return nullptr;
     }
 
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
+    auto create_table_query = make_intrusive<ASTCreateQuery>();
     create_table_query->attach = false;
     create_table_query->setTable(table_id.table_name);
     create_table_query->setDatabase(table_id.database_name);
@@ -250,8 +252,8 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
 
     /// setup create table query columns info.
     {
-        auto ast_columns_list = std::make_shared<ASTColumns>();
-        auto ast_expression_list = std::make_shared<ASTExpressionList>();
+        auto ast_columns_list = make_intrusive<ASTColumns>();
+        auto ast_expression_list = make_intrusive<ASTExpressionList>();
         NamesAndTypesList columns;
         if (only_ordinary)
             columns = metadata_ptr->columns.getOrdinary();
@@ -259,7 +261,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
             columns = metadata_ptr->columns.getAll();
         for (const auto & column_name_and_type: columns)
         {
-            const auto ast_column_declaration = std::make_shared<ASTColumnDeclaration>();
+            const auto ast_column_declaration = make_intrusive<ASTColumnDeclaration>();
             ast_column_declaration->name = column_name_and_type.name;
             /// parser typename
             {
