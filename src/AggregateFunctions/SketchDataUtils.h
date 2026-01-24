@@ -1,7 +1,9 @@
 #pragma once
 
 #include <string_view>
+#include <string>
 #include <algorithm>
+#include <Common/Base64.h>
 
 namespace DB
 {
@@ -35,6 +37,41 @@ inline bool looksLikeBase64(std::string_view data)
             return false;
     }
     return true;
+}
+
+/// Decode base64 data if it looks like base64, otherwise return raw data
+/// Returns a pair of (data_ptr, data_size) and optionally fills decoded_storage
+/// Used by both aggregate functions and scalar functions for sketch deserialization
+inline std::pair<const uint8_t*, size_t> decodeSketchData(
+    std::string_view serialized_data,
+    std::string& decoded_storage)
+{
+    if (serialized_data.empty())
+        return {nullptr, 0};
+
+    /// Fast check: only attempt base64 decode if data looks like base64
+    /// This avoids expensive exception handling for raw binary data (the common case)
+    if (looksLikeBase64(serialized_data))
+    {
+        try
+        {
+            decoded_storage = base64Decode(std::string(serialized_data));
+            return {
+                reinterpret_cast<const uint8_t*>(decoded_storage.data()),
+                decoded_storage.size()
+            };
+        }
+        catch (...)
+        {
+            /// Looked like base64 but wasn't valid, use raw data
+        }
+    }
+
+    /// Doesn't look like base64, or decode failed - use raw data directly
+    return {
+        reinterpret_cast<const uint8_t*>(serialized_data.data()),
+        serialized_data.size()
+    };
 }
 
 }

@@ -7,7 +7,6 @@
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <hll.hpp>
-#include <Common/Base64.h>
 #include <AggregateFunctions/SketchDataUtils.h>
 
 namespace DB
@@ -58,33 +57,11 @@ public:
         if (serialized_data.empty())
             return;
 
-        std::string decoded_data;
-        const uint8_t * data_ptr;
-        size_t data_size;
+        std::string decoded_storage;
+        auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage);
 
-        /// Fast check: only attempt base64 decode if data looks like base64
-        /// This avoids expensive exception handling for raw binary data (the common case)
-        if (looksLikeBase64(serialized_data))
-        {
-            try
-            {
-                decoded_data = base64Decode(std::string(serialized_data));
-                data_ptr = reinterpret_cast<const uint8_t*>(decoded_data.data());
-                data_size = decoded_data.size();
-            }
-            catch (...)
-            {
-                /// Looked like base64 but wasn't valid, use raw data
-                data_ptr = reinterpret_cast<const uint8_t*>(serialized_data.data());
-                data_size = serialized_data.size();
-            }
-        }
-        else
-        {
-            /// Doesn't look like base64, use raw data directly
-            data_ptr = reinterpret_cast<const uint8_t*>(serialized_data.data());
-            data_size = serialized_data.size();
-        }
+        if (data_ptr == nullptr || data_size == 0)
+            return;
 
         /// Deserialize and merge the sketch
         try
