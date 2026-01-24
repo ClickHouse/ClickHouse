@@ -111,7 +111,7 @@ def merge_profraw_files(llvm_profdata: str, batch_num: int, loop: bool = False):
     
     while True:
         if loop:
-            time.sleep(120)
+            time.sleep(180)
         
         # Find all profraw files (already-merged ones were deleted)
         profraw_files = [str(p) for p in Path(".").rglob("*.profraw")]
