@@ -1083,7 +1083,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-    result.num_rows = result.numReadRows();
+    /// Use total_rows_per_granule because:
+    /// - In normal cases, after adjustLastGranule, it equals numReadRows()
+    /// - When no columns are read (e.g., constant PREWHERE), it has the correct value from index granularity
+    result.num_rows = result.total_rows_per_granule;
 
     updatePerformanceCounters(result.numReadRows());
 
