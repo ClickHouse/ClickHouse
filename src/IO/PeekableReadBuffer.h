@@ -1,10 +1,16 @@
 #pragma once
+
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <stack>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// Also allows to set checkpoint at some position in stream and come back to this position later.
 /// When next() is called, saves data between checkpoint and current position to own memory and loads next data to sub-buffer
