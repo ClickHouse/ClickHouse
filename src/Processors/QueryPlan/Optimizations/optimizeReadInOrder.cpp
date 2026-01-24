@@ -918,8 +918,15 @@ SortingInputOrder buildInputOrderFromSortDescription(
     const auto & sorting_key = reading->getStorageMetadata()->getSortingKey();
     const auto & pk_column_names = reading->getStorageMetadata()->getPrimaryKey().column_names;
 
+    /// When parallel replicas with local plan are enabled, each replica builds its own query plan
+    /// and may have different `fixed_columns` sets due to different filter pushdown optimizations.
+    /// This can lead to different read directions on different replicas, causing a coordination
+    /// mode mismatch (e.g., one replica chooses WithOrder, another chooses ReverseOrder).
+    /// To ensure all replicas use the same read direction, we ignore fixed columns in this case.
+    const FixedColumns & effective_fixed_columns = reading->isParallelReadingEnabled() ? FixedColumns{} : fixed_columns;
+
     return buildInputOrderFromSortDescription(
-        fixed_columns,
+        effective_fixed_columns,
         dag, description,
         sorting_key,
         pk_column_names,
