@@ -488,7 +488,9 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
 
     auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, metric_kind, scalar_kind, usearch_hnsw_params, index, effective_leann_params);
 
-    /// Clear stored vectors after use (they're no longer needed after index construction)
+    /// Clear stored vectors after use - memory is released via RAII when inner vectors are destroyed.
+    /// Vectors are accumulated during update() calls and used for hub pruning above, but are no longer
+    /// needed after the granule is created, so we release them immediately to free memory.
     stored_vectors.clear();
     index = nullptr;
     return granule;
