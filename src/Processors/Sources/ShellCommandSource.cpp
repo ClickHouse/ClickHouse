@@ -177,9 +177,21 @@ public:
                 {
                     std::string_view str(stderr_read_buf.get(), res);
                     if (stderr_reaction == ExternalCommandStderrReaction::THROW)
-                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Executable generates stderr: {}", str);
-                    if (stderr_reaction == ExternalCommandStderrReaction::LOG)
+                    {
+                        /// Accumulate stderr up to safety limit
+                        size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
+                        if (current_size < MAX_STDERR_SIZE)
+                        {
+                            if (!stderr_full_output)
+                                stderr_full_output.emplace();
+                            size_t bytes_to_append = std::min(static_cast<size_t>(res), MAX_STDERR_SIZE - current_size);
+                            stderr_full_output->append(str.begin(), str.begin() + bytes_to_append);
+                        }
+                    }
+                    else if (stderr_reaction == ExternalCommandStderrReaction::LOG)
+                    {
                         LOG_WARNING(getLogger("TimeoutReadBufferFromFileDescriptor"), "Executable generates stderr: {}", str);
+                    }
                     else if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST)
                     {
                         res = std::min(ssize_t(stderr_result_buf.reserve()), res);
@@ -201,7 +213,47 @@ public:
                     throw ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from pipe");
 
                 if (res == 0)
+                {
+                    /// EOF on stdout - drain remaining stderr before throwing
+                    if (stderr_reaction == ExternalCommandStderrReaction::THROW)
+                    {
+                        static constexpr int STDERR_DRAIN_TIMEOUT_MS = 100;  /// Short timeout for remaining stderr after stdout EOF
+
+                        /// Continue reading stderr until EOF or timeout
+                        size_t current_size = stderr_full_output ? stderr_full_output->size() : 0;
+                        while (current_size < MAX_STDERR_SIZE)
+                        {
+                            pfds[1].revents = 0;
+                            int stderr_events = pollWithTimeout(&pfds[1], 1, STDERR_DRAIN_TIMEOUT_MS);
+                            if (stderr_events <= 0)
+                                break;
+
+                            if (pfds[1].revents > 0)
+                            {
+                                if (stderr_read_buf == nullptr)
+                                    stderr_read_buf.reset(new char[BUFFER_SIZE]);
+                                ssize_t stderr_res = ::read(stderr_fd, stderr_read_buf.get(), BUFFER_SIZE);
+                                if (stderr_res <= 0)
+                                    break;
+
+                                if (!stderr_full_output)
+                                    stderr_full_output.emplace();
+                                std::string_view str(stderr_read_buf.get(), stderr_res);
+                                size_t bytes_to_append = std::min(static_cast<size_t>(stderr_res), MAX_STDERR_SIZE - current_size);
+                                stderr_full_output->append(str.begin(), str.begin() + bytes_to_append);
+                                current_size = stderr_full_output->size();
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+
+                        /// Don't throw here - let prepare() handle stderr exception after all reads complete
+                        /// This ensures we capture complete stderr and throw at the right time
+                    }
                     break;
+                }
 
                 if (res > 0)
                     bytes_read += res;
@@ -226,18 +278,29 @@ public:
         tryMakeFdBlocking(stdout_fd);
         tryMakeFdBlocking(stderr_fd);
 
+        // Handle LOG_FIRST and LOG_LAST cases with circular buffer
         if (!stderr_result_buf.empty())
         {
             String stderr_result;
             stderr_result.reserve(stderr_result_buf.size());
             stderr_result.append(stderr_result_buf.begin(), stderr_result_buf.end());
-            LOG_WARNING(
-                getLogger("ShellCommandSource"),
-                "Executable generates stderr at the {}: {}",
-                stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
-                stderr_result);
+
+            if (stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST || stderr_reaction == ExternalCommandStderrReaction::LOG_LAST)
+            {
+                LOG_WARNING(
+                    getLogger("ShellCommandSource"),
+                    "Executable generates stderr at the {}: {}",
+                    stderr_reaction == ExternalCommandStderrReaction::LOG_FIRST ? "beginning" : "end",
+                    stderr_result);
+            }
         }
     }
+
+    /// Check if stderr was accumulated (for THROW mode)
+    bool hasStderr() const { return stderr_full_output.has_value(); }
+
+    /// Get accumulated stderr content
+    const String & getStderr() const { return *stderr_full_output; }
 
 private:
     int stdout_fd;
@@ -246,10 +309,12 @@ private:
     ExternalCommandStderrReaction stderr_reaction;
 
     static constexpr size_t BUFFER_SIZE = 4_KiB;
+    static constexpr size_t MAX_STDERR_SIZE = 1_MiB;  /// Safety limit for stderr accumulation
     pollfd pfds[2];
     size_t num_pfds;
     std::unique_ptr<char[]> stderr_read_buf;
     boost::circular_buffer_space_optimized<char> stderr_result_buf{BUFFER_SIZE};
+    std::optional<String> stderr_full_output;  /// For THROW mode: accumulate stderr up to MAX_STDERR_SIZE
 };
 
 class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
@@ -501,6 +566,14 @@ namespace
                 for (auto & thread : send_data_threads)
                     if (thread.joinable())
                         thread.join();
+
+                /// Check if stderr was accumulated before checking exit code
+                /// This ensures stderr exceptions take priority over exit code exceptions
+                if (timeout_command_out.hasStderr())
+                {
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                                  "Executable generates stderr: {}", timeout_command_out.getStderr());
+                }
 
                 if (check_exit_code)
                 {
