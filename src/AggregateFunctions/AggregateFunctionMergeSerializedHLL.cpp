@@ -114,6 +114,50 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
 
 }
 
+/// mergeSerializedHLL - Merges multiple serialized HLL (HyperLogLog) sketches into a single sketch
+///
+/// This function combines multiple HLL sketches that were created by serializedHLL() into one unified sketch.
+/// This enables distributed cardinality estimation where sketches are computed on different nodes or time periods
+/// and then merged together.
+///
+/// Syntax: mergeSerializedHLL([assume_raw_binary])(sketch_column)
+///
+/// Parameters (optional):
+///   - assume_raw_binary: UInt8 (0 or 1, default: 1)
+///     * 1 (true): Assumes input is raw binary data, skips base64 detection (fastest, recommended for ClickHouse data)
+///     * 0 (false): Checks for base64 encoding and decodes if detected (for external/imported data)
+///
+/// Arguments:
+///   - sketch_column: String - Serialized HLL sketches (from serializedHLL() or previous mergeSerializedHLL())
+///
+/// Returns: String
+///   A merged serialized HLL sketch. Can be further merged or passed to cardinalityFromHLL().
+///
+/// Examples:
+///   -- Merge sketches from different partitions (default, optimized)
+///   SELECT mergeSerializedHLL(sketch) FROM daily_sketches;
+///
+///   -- Explicit parameter (same as default)
+///   SELECT mergeSerializedHLL(1)(sketch) FROM daily_sketches;
+///
+///   -- Enable base64 decoding for external data
+///   SELECT mergeSerializedHLL(0)(sketch) FROM imported_sketches;
+///
+///   -- Complete workflow: daily to monthly cardinality
+///   SELECT 
+///       toStartOfMonth(date) AS month,
+///       cardinalityFromHLL(mergeSerializedHLL(sketch)) AS monthly_unique_users
+///   FROM daily_sketches
+///   GROUP BY month;
+///
+/// Performance:
+///   - Very fast merging operation (logarithmic in sketch size)
+///   - Memory efficient: only needs to hold one merged sketch in memory
+///   - Use assume_raw_binary=1 (default) for best performance with ClickHouse-generated sketches
+///
+/// See also:
+///   - serializedHLL() - Create HLL sketches
+///   - cardinalityFromHLL() - Extract cardinality from merged sketch
 void registerAggregateFunctionMergeSerializedHLL(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };

@@ -114,6 +114,65 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
 
 }
 
+/// mergeSerializedDoubleSketch - Merges multiple serialized quantiles sketches into a single sketch
+///
+/// This function combines multiple quantiles sketches that were created by serializedDoubleSketch() into 
+/// one unified sketch. This enables distributed percentile/quantile estimation where sketches are computed 
+/// on different nodes or time periods and then merged together to get accurate percentiles across the 
+/// entire dataset.
+///
+/// Syntax: mergeSerializedDoubleSketch([assume_raw_binary])(sketch_column)
+///
+/// Parameters (optional):
+///   - assume_raw_binary: UInt8 (0 or 1, default: 1)
+///     * 1 (true): Assumes input is raw binary data, skips base64 detection (fastest, recommended for ClickHouse data)
+///     * 0 (false): Checks for base64 encoding and decodes if detected (for external/imported data)
+///
+/// Arguments:
+///   - sketch_column: String - Serialized quantiles sketches (from serializedDoubleSketch() or previous merges)
+///
+/// Returns: String
+///   A merged serialized quantiles sketch. Can be further merged or passed to percentileFromDoubleSketch().
+///
+/// Examples:
+///   -- Merge hourly latency sketches to get daily percentiles (default, optimized)
+///   SELECT 
+///       date,
+///       percentileFromDoubleSketch(mergeSerializedDoubleSketch(sketch), 0.5) AS p50_latency,
+///       percentileFromDoubleSketch(mergeSerializedDoubleSketch(sketch), 0.95) AS p95_latency,
+///       percentileFromDoubleSketch(mergeSerializedDoubleSketch(sketch), 0.99) AS p99_latency
+///   FROM hourly_latency_sketches
+///   GROUP BY toDate(hour) AS date;
+///
+///   -- Explicit parameter (same as default)
+///   SELECT mergeSerializedDoubleSketch(1)(sketch) FROM hourly_sketches;
+///
+///   -- Enable base64 decoding for external data
+///   SELECT mergeSerializedDoubleSketch(0)(sketch) FROM imported_sketches;
+///
+///   -- Merge across multiple dimensions
+///   SELECT 
+///       service,
+///       toStartOfWeek(hour) AS week,
+///       percentileFromDoubleSketch(mergeSerializedDoubleSketch(sketch), 0.95) AS weekly_p95
+///   FROM hourly_latency_sketches
+///   GROUP BY service, week;
+///
+/// Performance:
+///   - Efficient merging: O(k) where k is sketch size (typically ~1000 items)
+///   - Memory efficient: only holds merged sketch in memory
+///   - Use assume_raw_binary=1 (default) for best performance with ClickHouse-generated sketches
+///   - Significantly faster than re-computing percentiles from raw data
+///
+/// Use Cases:
+///   - Rollup latency percentiles from minute → hour → day → month
+///   - Combine sketches from distributed shards for global percentiles
+///   - Time-series percentile analysis with pre-computed sketches
+///
+/// See also:
+///   - serializedDoubleSketch() - Create quantiles sketches
+///   - percentileFromDoubleSketch() - Extract percentile from merged sketch
+///   - quantileMerge() - Alternative percentile aggregation method
 void registerAggregateFunctionMergeSerializedDoubleSketch(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };

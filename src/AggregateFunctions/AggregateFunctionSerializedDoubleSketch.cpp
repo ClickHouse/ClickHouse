@@ -97,6 +97,54 @@ AggregateFunctionPtr createAggregateFunctionSerializedDoubleSketch(
 }
 
 }
+
+/// serializedDoubleSketch - Creates a serialized quantiles sketch for percentile/quantile calculations
+///
+/// DataSketches Quantiles (DoublesSketch) is a probabilistic data structure for computing approximate
+/// quantiles and percentiles over a dataset. This function creates a serialized binary representation
+/// of the sketch that can be stored, transmitted, or merged with other sketches.
+///
+/// Syntax: serializedDoubleSketch(column)
+///
+/// Arguments:
+///   - column: Numeric (Int8/16/32/64, UInt8/16/32/64, Float32/64)
+///             The numeric values to add to the quantiles sketch
+///
+/// Returns: String
+///   A serialized binary quantiles sketch. This can be stored in a table, used with 
+///   mergeSerializedDoubleSketch(), or passed to percentileFromDoubleSketch() to extract percentiles.
+///
+/// Examples:
+///   -- Create quantiles sketch for response times
+///   SELECT serializedDoubleSketch(response_time_ms) AS latency_sketch FROM requests;
+///
+///   -- Store sketches by service and hour
+///   CREATE TABLE hourly_latency_sketches (
+///       service String,
+///       hour DateTime,
+///       sketch String
+///   ) ENGINE = MergeTree() ORDER BY (service, hour);
+///
+///   INSERT INTO hourly_latency_sketches 
+///   SELECT service, toStartOfHour(timestamp) AS hour, serializedDoubleSketch(latency)
+///   FROM requests
+///   GROUP BY service, hour;
+///
+/// Performance:
+///   - Memory: ~2-4KB per sketch (compact representation)
+///   - Accuracy: ~1-2% relative error for quantile estimation
+///   - Speed: Fast insertion and sketching, suitable for real-time analytics
+///   - Compression: Sketch size is independent of data size
+///
+/// Use Cases:
+///   - Computing percentiles (p50, p95, p99) for latency monitoring
+///   - Tracking distribution of values over time
+///   - Distributed quantile estimation across multiple nodes
+///
+/// See also:
+///   - mergeSerializedDoubleSketch() - Merge multiple quantiles sketches
+///   - percentileFromDoubleSketch() - Extract specific percentile from sketch
+///   - quantile() - Direct percentile calculation (non-sketched)
 void registerAggregateFunctionSerializedDoubleSketch(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };

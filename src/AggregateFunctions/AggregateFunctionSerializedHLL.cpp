@@ -100,6 +100,40 @@ AggregateFunctionPtr createAggregateFunctionSerializedHLL(
 }
 
 }
+
+/// serializedHLL - Creates a serialized HyperLogLog (HLL) sketch for cardinality estimation
+///
+/// HyperLogLog is a probabilistic data structure for estimating the cardinality (number of distinct elements)
+/// of a dataset. This function creates a serialized binary representation of the HLL sketch that can be
+/// stored, transmitted, or merged with other sketches.
+///
+/// Syntax: serializedHLL(column)
+///
+/// Arguments:
+///   - column: Numeric (Int8/16/32/64, UInt8/16/32/64, Float32/64) or String
+///             The values to add to the HLL sketch
+///
+/// Returns: String
+///   A serialized binary HLL sketch. This can be stored in a table, used with mergeSerializedHLL(),
+///   or passed to cardinalityFromHLL() to extract the cardinality estimate.
+///
+/// Example:
+///   -- Create HLL sketch for unique user IDs
+///   SELECT serializedHLL(user_id) AS user_sketch FROM events;
+///
+///   -- Store sketches by date
+///   CREATE TABLE daily_sketches (date Date, sketch String) ENGINE = MergeTree() ORDER BY date;
+///   INSERT INTO daily_sketches SELECT date, serializedHLL(user_id) FROM events GROUP BY date;
+///
+/// Performance:
+///   - Memory: ~1.5KB per sketch (fixed size, regardless of cardinality)
+///   - Accuracy: ~1.6% standard error for cardinality estimation
+///   - Speed: Very fast, suitable for real-time analytics
+///
+/// See also:
+///   - mergeSerializedHLL() - Merge multiple HLL sketches
+///   - cardinalityFromHLL() - Extract cardinality estimate from sketch
+///   - uniq() - Direct cardinality estimation (non-serialized)
 void registerAggregateFunctionSerializedHLL(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
