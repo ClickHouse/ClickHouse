@@ -74,6 +74,7 @@ namespace Setting
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool database_datalake_require_metadata_access;
 
 }
 
@@ -449,7 +450,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
         return nullptr;
-
     if (ignore_if_not_iceberg && !table_metadata.isDefaultReadableTable())
         return nullptr;
 
@@ -761,7 +761,23 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
                     }
                     catch (...)
                     {
-                        tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
+                        if (context_->getSettingsRef()[Setting::database_datalake_require_metadata_access])
+                        {
+                            auto error_code = getCurrentExceptionCode();
+                            auto error_message = getCurrentExceptionMessage(true, false, true, true);
+                            auto enhanced_message = fmt::format(
+                                "Received error {} while fetching table metadata for existing table '{}'. "
+                                "If you want this error to be ignored, use database_datalake_require_metadata_access=0. Error: {}",
+                                error_code,
+                                table_name,
+                                error_message);
+                            promise->set_exception(std::make_exception_ptr(Exception::createRuntime(
+                                error_code,
+                                enhanced_message)));
+                            return;
+                        }
+                        else
+                            tryLogCurrentException(log, fmt::format("Ignoring table {}", table_name));
                     }
                     promise->set_value(storage);
                 });
