@@ -820,7 +820,6 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
             metric_kind = unum::usearch::metric_kind_t::hamming_k;
 
         /// Parse LeaNN parameters (7th argument)
-    {
         String leann_arg = index.arguments[6].safeGet<String>();
 
         if (leann_arg == "true" || leann_arg == "enable_hub_pruning")
