@@ -53,5 +53,5 @@ void ParquetMetadataCache::onEntryRemoval(const size_t weight_loss, const Mapped
     LOG_DEBUG(log, "cache eviction");
     ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheWeightLost, weight_loss);
 }
-#endif
 }
+#endif

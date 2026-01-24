@@ -220,8 +220,8 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         && external_integrations && external_integrations->hasClickHouseExtraServerConnection();
     const bool try_measure_performance_in_loop
         = can_compare && fuzz_config->measure_performance && (orig_ast->as<ASTSelectQuery>() || orig_ast->as<ASTSelectWithUnionQuery>());
-    auto insert_into = std::make_shared<ASTInsertQuery>();
-    insert_into->table_function = makeASTFunction("file", std::make_shared<ASTLiteral>("/dev/null"), std::make_shared<ASTLiteral>("CSV"));
+    auto insert_into = make_intrusive<ASTInsertQuery>();
+    insert_into->table_function = makeASTFunction("file", make_intrusive<ASTLiteral>("/dev/null"), make_intrusive<ASTLiteral>("CSV"));
 #endif
 
     for (size_t fuzz_step = 0; fuzz_step < this_query_runs; ++fuzz_step)
@@ -264,7 +264,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
                 {
                     if (!select_query->settings())
                     {
-                        auto settings_query = std::make_shared<ASTSetQuery>();
+                        auto settings_query = make_intrusive<ASTSetQuery>();
                         SettingsChanges settings_changes;
                         settings_changes.setSetting("log_comment", "measure_performance");
 
