@@ -836,10 +836,22 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         else if (leann_arg.find('=') != String::npos)
         {
             /// Parse key-value pairs (e.g., "ratio=0.5,sample_size=200")
-            std::istringstream iss(leann_arg);
-            String pair;
-            while (std::getline(iss, pair, ','))
+            size_t start = 0;
+            while (start < leann_arg.size())
             {
+                size_t comma_pos = leann_arg.find(',', start);
+                String pair;
+                if (comma_pos == String::npos)
+                {
+                    pair = leann_arg.substr(start);
+                    start = leann_arg.size();
+                }
+                else
+                {
+                    pair = leann_arg.substr(start, comma_pos - start);
+                    start = comma_pos + 1;
+                }
+
                 size_t eq_pos = pair.find('=');
                 if (eq_pos == String::npos)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid key-value pair format in seventh argument: {}", pair);
@@ -967,10 +979,22 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             if (leann_arg.find('=') != String::npos)
             {
                 /// Validate key-value pairs
-                std::istringstream iss(leann_arg);
-                String pair;
-                while (std::getline(iss, pair, ','))
+                size_t start = 0;
+                while (start < leann_arg.size())
                 {
+                    size_t comma_pos = leann_arg.find(',', start);
+                    String pair;
+                    if (comma_pos == String::npos)
+                    {
+                        pair = leann_arg.substr(start);
+                        start = leann_arg.size();
+                    }
+                    else
+                    {
+                        pair = leann_arg.substr(start, comma_pos - start);
+                        start = comma_pos + 1;
+                    }
+
                     size_t eq_pos = pair.find('=');
                     if (eq_pos == String::npos)
                         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid key-value pair format in seventh argument: {}", pair);
