@@ -373,10 +373,17 @@ void MergeTreeRangeReader::ReadResult::addGranule(size_t num_rows_, GranuleOffse
 
 void MergeTreeRangeReader::ReadResult::adjustLastGranule()
 {
-    size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
-
     if (rows_per_granule.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't adjust last granule because no granules were added");
+
+    /// When no rows were physically read (e.g., all columns are defaults/missing,
+    /// or a constant PREWHERE expression like `PREWHERE 1`), the granule sizes
+    /// were determined directly from the index granularity and are already accurate.
+    /// No adjustment is needed in this case.
+    if (num_read_rows == 0)
+        return;
+
+    size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
 
     if (num_rows_to_subtract > rows_per_granule.back())
     {
