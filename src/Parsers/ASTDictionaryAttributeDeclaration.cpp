@@ -7,7 +7,7 @@ namespace DB
 {
 ASTPtr ASTDictionaryAttributeDeclaration::clone() const
 {
-    const auto res = make_intrusive<ASTDictionaryAttributeDeclaration>(*this);
+    const auto res = std::make_shared<ASTDictionaryAttributeDeclaration>(*this);
     res->children.clear();
 
     if (type)

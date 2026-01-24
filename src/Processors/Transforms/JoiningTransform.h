@@ -67,7 +67,6 @@ private:
     Chunk input_chunk;
     std::optional<Chunk> output_chunk;
     bool has_input = false;
-    bool has_virtual_row = false;
     bool stop_reading = false;
     bool process_non_joined = true;
 
