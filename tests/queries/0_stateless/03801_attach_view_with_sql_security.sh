@@ -18,21 +18,20 @@ EOF
 ${CLICKHOUSE_CLIENT} --user $user --query "
   CREATE VIEW $db.test_mv
   SQL SECURITY NONE
-  AS SELECT * FROM $db.test_table; -- { serverError ACCESS_DENIED }
-"
+  AS SELECT * FROM $db.test_table;
+" 2>&1 | grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED" || echo "NO ERROR"
 
 ${CLICKHOUSE_CLIENT} --user $user --query "
   ATTACH VIEW $db.test_mv UUID '8025ef9c-d735-4c16-ab4c-7f1f5110d049'
   (s String) SQL SECURITY NONE
-  AS SELECT * FROM $db.test_table
-  SETTINGS send_logs_level = 'error'; -- { serverError ACCESS_DENIED }
-"
+  AS SELECT * FROM $db.test_table;
+" 2>&1 | grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED" || echo "NO ERROR"
 
-${CLICKHOUSE_CLIENT} --query "GRANT SQL SECURITY NONE ON *.* TO $user;"
+${CLICKHOUSE_CLIENT} --query "GRANT ALLOW SQL SECURITY NONE ON *.* TO $user;"
 
 ${CLICKHOUSE_CLIENT} --user $user --query "
-  ATTACH VIEW $db.test_mv UUID '8025ef9c-d735-4c16-ab4c-7f1f5110d049'
+  ATTACH VIEW $db.test_mv UUID '7025ef9c-d735-4c16-ab4c-7f1f5110d049'
   (s String) SQL SECURITY NONE
   AS SELECT * FROM $db.test_table
-  SETTINGS send_logs_level = 'error'; -- { serverError ACCESS_DENIED }
+  SETTINGS send_logs_level = 'error';
 "
