@@ -11,7 +11,7 @@ namespace DB
 {
     namespace ErrorCodes
     {
-        extern const int LOGICAL_ERROR;
+        extern const int CANNOT_READ_ALL_DATA;
     }
 }
 
@@ -173,7 +173,7 @@ private:
     bool nextImpl() override
     {
         if (current_pos >= throw_after_bytes)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Test exception from ThrowingReadBuffer");
+            throw DB::Exception(DB::ErrorCodes::CANNOT_READ_ALL_DATA, "Test exception from ThrowingReadBuffer");
 
         if (current_pos >= data.size())
             return false;
