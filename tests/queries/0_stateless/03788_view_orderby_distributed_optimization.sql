@@ -35,11 +35,11 @@ SELECT id, val, ts FROM test_distributed_03788;
 
 -- Verify both direct query and view query have the merge sorted streams optimization
 SELECT 'Direct query has merge sort:',
-    (SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT id FROM test_distributed_03788 ORDER BY ts DESC LIMIT 10) 
+    (SELECT count() > 0 FROM (EXPLAIN SELECT id FROM test_distributed_03788 ORDER BY ts DESC LIMIT 10) 
      WHERE explain LIKE '%Merge sorted streams%') AS has_merge_sort;
 
 SELECT 'View query has merge sort:',
-    (SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT id FROM test_view_03788 ORDER BY ts DESC LIMIT 10)
+    (SELECT count() > 0 FROM (EXPLAIN SELECT id FROM test_view_03788 ORDER BY ts DESC LIMIT 10)
      WHERE explain LIKE '%Merge sorted streams%') AS has_merge_sort;
 
 -- Cleanup
