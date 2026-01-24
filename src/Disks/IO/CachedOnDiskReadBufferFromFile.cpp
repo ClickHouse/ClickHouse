@@ -1079,6 +1079,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     }
 
     state->buf->set(internal_buffer.begin(), internal_buffer.size());
+    SCOPE_EXIT({
+        state->buf->set(nullptr, 0);
+    });
 
     const auto size = readFromFileSegment(
         file_segment,
