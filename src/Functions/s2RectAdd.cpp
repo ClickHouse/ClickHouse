@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
+#include <Common/typeid_cast.h>
+#include <base/range.h>
 
 #include <Functions/s2_fwd.h>
 

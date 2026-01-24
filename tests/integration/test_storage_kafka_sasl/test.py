@@ -59,7 +59,6 @@ def test_kafka_sasl(kafka_cluster):
                      kafka_sasl_mechanism = 'PLAIN',
                      kafka_sasl_username = '{kafka_sasl_user}',
                      kafka_sasl_password = '{kafka_sasl_pass}',
-                     kafka_flush_interval_ms = 1000,
                      kafka_topic_list = 'topic1',
                      kafka_group_name = 'group1',
                      kafka_format = 'JSONEachRow';
@@ -75,13 +74,7 @@ def test_kafka_sasl(kafka_cluster):
     producer.send(topic="topic1", value='{"key":1, "value":"test123"}')
     producer.flush()
 
-    assert_eq_with_retry(
-        instance,
-        "SELECT value FROM test.messages",
-        "test123",
-        retry_count=120,
-        sleep_time=0.5,
-    )
+    assert_eq_with_retry(instance, "SELECT value FROM test.messages", "test123")
 
 
 def test_kafka_sasl_settings_precedence(kafka_cluster):
@@ -110,29 +103,3 @@ def test_kafka_sasl_settings_precedence(kafka_cluster):
             test_kafka_sasl(kafka_cluster)
     finally:
         instance.restart_clickhouse()
-
-
-# ClickHouse may crash when the table is created with an option to put
-# broken messages to a dead letter queue, while the table
-# system.dead_letter_queue is not configured.
-def test_dead_letter_segfault(kafka_cluster):
-    res = instance.query_and_get_error(
-        f"""
-        DROP DATABASE IF EXISTS segfault SYNC;
-        CREATE DATABASE segfault;
-
-        CREATE TABLE segfault.kafka_sasl (key int, value String)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka_sasl:19092',
-                     kafka_security_protocol = 'sasl_plaintext',
-                     kafka_sasl_mechanism = 'PLAIN',
-                     kafka_sasl_username = '{kafka_sasl_user}',
-                     kafka_sasl_password = '{kafka_sasl_pass}',
-                     kafka_topic_list = 'topic1',
-                     kafka_group_name = 'group1',
-                     kafka_format = 'JSONEachRow',
-                     kafka_handle_error_mode = 'dead_letter_queue';
-        """
-    )
-
-    assert "The table system.dead_letter_queue is not configured on the server" in res

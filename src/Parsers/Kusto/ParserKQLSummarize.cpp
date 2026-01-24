@@ -1,7 +1,13 @@
 #include <memory>
+#include <queue>
 #include <vector>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/IParserBase.h>
 #include <Parsers/Kusto/ParserKQLSummarize.h>
 #include <Parsers/Kusto/Utilities.h>
 

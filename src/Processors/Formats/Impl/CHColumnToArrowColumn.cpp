@@ -540,7 +540,7 @@ namespace DB
                 }
                 else
                 {
-                    std::string_view string_ref = internal_column.getDataAt(string_i);
+                    std::string_view string_ref = internal_column.getDataAt(string_i).toView();
                     status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 }
                 checkStatus(status, write_column->getName(), format_name);
@@ -550,7 +550,7 @@ namespace DB
         {
             for (size_t string_i = start; string_i < end; ++string_i)
             {
-                std::string_view string_ref = internal_column.getDataAt(string_i);
+                std::string_view string_ref = internal_column.getDataAt(string_i).toView();
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 checkStatus(status, write_column->getName(), format_name);
             }
@@ -1170,7 +1170,7 @@ namespace DB
                     column = recursiveRemoveLowCardinality(column);
 
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_schema->field(static_cast<int>(column_i))->type(), &array_builder);
+                arrow::Status status = MakeBuilder(arrow::default_memory_pool(), arrow_schema->field(column_i)->type(), &array_builder);
                 checkStatus(status, column->getName(), format_name);
 
                 fillArrowArray(

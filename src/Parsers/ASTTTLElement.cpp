@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 ASTPtr ASTTTLElement::clone() const
 {
-    auto clone = make_intrusive<ASTTTLElement>(*this);
+    auto clone = std::make_shared<ASTTTLElement>(*this);
     clone->children.clear();
     clone->ttl_expr_pos = -1;
     clone->where_expr_pos = -1;
@@ -51,7 +51,7 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     else if (mode == TTLMode::GROUP_BY)
     {
         ostr << " GROUP BY ";
-        for (auto it = group_by_key.begin(); it != group_by_key.end(); ++it)
+        for (const auto * it = group_by_key.begin(); it != group_by_key.end(); ++it)
         {
             if (it != group_by_key.begin())
                 ostr << ", ";
@@ -61,7 +61,7 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
         if (!group_by_assignments.empty())
         {
             ostr << " SET ";
-            for (auto it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
+            for (const auto * it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
             {
                 if (it != group_by_assignments.begin())
                     ostr << ", ";

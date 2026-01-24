@@ -148,7 +148,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
         sync = true;
 
-    auto query = make_intrusive<ASTDropQuery>();
+    auto query = std::make_shared<ASTDropQuery>();
     node = query;
 
     query->kind = kind;
@@ -178,7 +178,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->cluster = cluster_str;
 
     if (database_and_tables && database_and_tables->as<ASTExpressionList &>().children.size() == 1)
-        node = query->getRewrittenASTsOfSingleTable(query)[0];
+        node = query->getRewrittenASTsOfSingleTable()[0];
 
     return true;
 }

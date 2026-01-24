@@ -1,16 +1,14 @@
-#include "config.h"
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Poco/URI.h>
-
 
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/assert_cast.h>
-#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <azure/storage/common/storage_credential.hpp>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Formats/FormatFactory.h>
 #include <azure/storage/blobs.hpp>
@@ -154,7 +152,7 @@ AzureBlobStorage::ConnectionParams getAzureConnectionParams(
     return connection_params;
 }
 
-void AzureStorageParsedArguments::fillBlobsFromURLCommon(String & connection_url, const String & suffix, const String & full_suffix)
+void StorageAzureConfiguration::fillBlobsFromURLCommon(String & connection_url, const String & suffix, const String & full_suffix)
 {
     String container_name;
 
@@ -199,10 +197,11 @@ void AzureStorageParsedArguments::fillBlobsFromURLCommon(String & connection_url
         }
         connection_params.endpoint.container_name = container_name_abfss;
     }
+    blobs_paths = {blob_path};
 }
 
 
-void AzureStorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
@@ -250,13 +249,12 @@ void AzureStorageParsedArguments::fromNamedCollection(const NamedCollection & co
         partition_strategy_type = partition_strategy_type_opt.value();
     }
 
-    partition_columns_in_data_file = collection.getOrDefault<bool>(
-        "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
-
+    partition_columns_in_data_file = collection.getOrDefault<bool>("partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
+    blobs_paths = {blob_path};
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
-static ASTPtr extractExtraCredentials(ASTs & args)
+ASTPtr StorageAzureConfiguration::extractExtraCredentials(ASTs & args)
 {
     for (size_t i = 0; i != args.size(); ++i)
     {
@@ -271,8 +269,7 @@ static ASTPtr extractExtraCredentials(ASTs & args)
     return nullptr;
 }
 
-bool AzureStorageParsedArguments::collectCredentials(
-    ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context)
+bool StorageAzureConfiguration::collectCredentials(ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context)
 {
     if (!maybe_credentials)
         return false;
@@ -322,15 +319,19 @@ bool AzureStorageParsedArguments::collectCredentials(
     return true;
 }
 
-void AzureStorageParsedArguments::fromDisk(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
+void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
+    disk = context->getDisk(disk_name);
     const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*disk->getObjectStorage());
 
     connection_params = azure_object_storage.getConnectionParameters();
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
 
     blob_path = "/" + parsing_result.path_suffix;
+    setPathForRead(blob_path.path + "/");
+    setPaths({blob_path.path + "/"});
 
+    blobs_paths = {blob_path};
     if (parsing_result.format.has_value())
         format = *parsing_result.format;
     if (parsing_result.compression_method.has_value())
@@ -339,7 +340,7 @@ void AzureStorageParsedArguments::fromDisk(DiskPtr disk, ASTs & args, ContextPtr
         structure = *parsing_result.structure;
 }
 
-void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr context)
+void StorageAzureConfiguration::initializeForOneLake(ASTs & args, ContextPtr context)
 {
     if (args.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one argument should be provided in OneLake catalog");
@@ -347,24 +348,35 @@ void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr c
     String connection_url = checkAndGetLiteralArgument<String>(args[0], "connection_string/storage_account_url");
 
     fillBlobsFromURLCommon(connection_url, ".com", ".dfs.fabric.microsoft.com");
-
     connection_params.endpoint.additional_params = "resource=REDACTED&directory=REDACTED&recursive=REDACTED";
+
+    connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
+        onelake_tenant_id,
+        onelake_client_id,
+        onelake_client_secret
+    );
 
     auto request_settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     connection_params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
 }
 
-void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
+void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
+    if (!onelake_client_id.empty())
+    {
+        initializeForOneLake(engine_args, context);
+        return;
+    }
+
     auto extra_credentials = extractExtraCredentials(engine_args);
 
-    if (engine_args.empty() || engine_args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments(with_structure))
+    if (engine_args.empty() || engine_args.size() > getMaxNumberOfArguments(with_structure))
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage AzureBlobStorage requires 1 to {} arguments. All supported signatures:\n{}",
-            AzureStorageParsedArguments::getMaxNumberOfArguments(with_structure),
-            AzureStorageParsedArguments::getSignatures(with_structure));
+            getMaxNumberOfArguments(with_structure),
+            getSignatures(with_structure));
     }
 
     for (auto & engine_arg : engine_args)
@@ -374,8 +386,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
     /// for listing tables of Unity Catalog
     if (engine_args.size() == 1)
     {
-        connection_params.endpoint.storage_account_url
-            = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
+        connection_params.endpoint.storage_account_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
         connection_params.endpoint.container_already_exists = true;
         return;
     }
@@ -451,8 +462,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "partition_strategy/structure");
             if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive))
             {
-                partition_strategy_type
-                    = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive).value();
+                partition_strategy_type = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive).value();
             }
             else
             {
@@ -572,8 +582,7 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
             auto eighth_arg = checkAndGetLiteralArgument<String>(engine_args[7], "partition_strategy/structure");
             if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive))
             {
-                partition_strategy_type
-                    = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive).value();
+                partition_strategy_type = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive).value();
             }
             else
             {
@@ -644,48 +653,55 @@ void AzureStorageParsedArguments::fromAST(ASTs & engine_args, ContextPtr context
         partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
         structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
     }
-
+    blobs_paths = {blob_path};
     connection_params = getAzureConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
-void addStructureAndFormatToArgsIfNeededAzure(
-    ASTs & args,
-    const String & structure_,
-    const String & format_,
-    ContextPtr context,
-    bool with_structure)
+void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (disk)
+    {
+        if (format == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (structure == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
+    }
+    else if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
         if (collection->getOrDefault<String>("format", "auto") == "auto")
         {
-            ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
             auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
         if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
         {
-            ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
             auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
             args.push_back(structure_equal_func);
         }
     }
     else
     {
-        if (args.size() < 3 || args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected 3 to {} arguments in table function azureBlobStorage, got {}",
-                AzureStorageParsedArguments::getMaxNumberOfArguments(),
-                args.size());
+        if (args.size() < 3 || args.size() > getMaxNumberOfArguments())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 3 to {} arguments in table function azureBlobStorage, got {}", getMaxNumberOfArguments(), args.size());
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
-        auto structure_literal = make_intrusive<ASTLiteral>(structure_);
-        auto format_literal = make_intrusive<ASTLiteral>(format_);
+        auto structure_literal = std::make_shared<ASTLiteral>(structure_);
+        auto format_literal = std::make_shared<ASTLiteral>(format_);
         auto is_format_arg = [] (const std::string & s) -> bool
         {
             return s == "auto" || FormatFactory::instance().getAllFormats().contains(Poco::toLower(s));
@@ -698,7 +714,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
             if (with_structure)
             {
                 /// Add compression = "auto" before structure argument.
-                args.push_back(make_intrusive<ASTLiteral>("auto"));
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
                 args.push_back(structure_literal);
             }
         }
@@ -716,7 +732,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
                 if (with_structure)
                 {
                     /// Add compression=auto before structure argument.
-                    args.push_back(make_intrusive<ASTLiteral>("auto"));
+                    args.push_back(std::make_shared<ASTLiteral>("auto"));
                     args.push_back(structure_literal);
                 }
             }
@@ -726,7 +742,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
                 auto structure_arg = args.back();
                 args[3] = format_literal;
                 /// Add compression=auto before structure argument.
-                args.push_back(make_intrusive<ASTLiteral>("auto"));
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
                 if (fourth_arg == "auto")
                     args.push_back(structure_literal);
                 else
@@ -754,7 +770,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
                 if (with_structure)
                 {
                     /// Add compression=auto before structure argument.
-                    args.push_back(make_intrusive<ASTLiteral>("auto"));
+                    args.push_back(std::make_shared<ASTLiteral>("auto"));
                     args.push_back(structure_literal);
                 }
             }
@@ -783,7 +799,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
                 if (with_structure)
                 {
                     /// Add compression=auto before structure argument.
-                    args.push_back(make_intrusive<ASTLiteral>("auto"));
+                    args.push_back(std::make_shared<ASTLiteral>("auto"));
                     args.push_back(structure_literal);
                 }
             }
@@ -793,7 +809,7 @@ void addStructureAndFormatToArgsIfNeededAzure(
                 auto structure_arg = args.back();
                 args[5] = format_literal;
                 /// Add compression=auto before structure argument.
-                args.push_back(make_intrusive<ASTLiteral>("auto"));
+                args.push_back(std::make_shared<ASTLiteral>("auto"));
                 if (sixth_arg == "auto")
                     args.push_back(structure_literal);
                 else
@@ -820,73 +836,6 @@ void addStructureAndFormatToArgsIfNeededAzure(
     }
 }
 
-void StorageAzureConfiguration::initializeFromParsedArguments(const AzureStorageParsedArguments & parsed_arguments)
-{
-    StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
-    blob_path = parsed_arguments.blob_path;
-    connection_params = parsed_arguments.connection_params;
 }
 
-void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
-    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
-{
-    if (disk)
-    {
-        if (format == "auto")
-        {
-            ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
-            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
-            args.push_back(format_equal_func);
-        }
-        if (structure == "auto")
-        {
-            ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
-            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
-            args.push_back(structure_equal_func);
-        }
-        return;
-    }
-    addStructureAndFormatToArgsIfNeededAzure(args, structure_, format_, context, with_structure);
-}
-
-void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
-{
-    AzureStorageParsedArguments parsed_arguments;
-    parsed_arguments.fromNamedCollection(collection, context);
-    initializeFromParsedArguments(parsed_arguments);
-    setPaths({parsed_arguments.blob_path});
-}
-
-void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
-{
-    AzureStorageParsedArguments parsed_arguments;
-    if (!onelake_client_id.empty())
-    {
-        parsed_arguments.initializeForOneLake(engine_args, context);
-        parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
-            onelake_tenant_id,
-            onelake_client_id,
-            onelake_client_secret
-        );
-    }
-    else
-    {
-        parsed_arguments.fromAST(engine_args, context, with_structure);
-    }
-    initializeFromParsedArguments(parsed_arguments);
-    setPaths({parsed_arguments.blob_path});
-}
-
-void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
-{
-    AzureStorageParsedArguments parsed_arguments;
-    disk = context->getDisk(disk_name);
-    parsed_arguments.fromDisk(disk, args, context, with_structure);
-    initializeFromParsedArguments(parsed_arguments);
-    setPathForRead(parsed_arguments.blob_path.path + "/");
-    setPaths({parsed_arguments.blob_path.path + "/"});
-}
-
-
-}
 #endif

@@ -239,7 +239,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -712,12 +712,9 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
         if (jt != subcolumns.get<0>().end())
             return *jt;
 
-        if (options.with_dynamic_subcolumns)
-        {
-            /// Check for dynamic subcolumns.
-            if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
-                return dynamic_subcolumn;
-        }
+        /// Check for dynamic subcolumns.
+        if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
+            return dynamic_subcolumn;
     }
 
     return {};
@@ -936,13 +933,11 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
     IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
     {
         auto subcolumn = NameAndTypePair(name_in_storage, subname, type_in_storage, subdata.type);
-        /// Note, it is allowed to have columns with the same name as subcolumns, example:
-        ///
-        ///     `attribute.names` Array(LowCardinality(String)) ALIAS mapKeys(attribute),
-        ///     `attribute.values` Array(String) ALIAS mapValues(attribute),
-        ///     `attribute` Map(LowCardinality(String), String)
-        ///
-        /// Here, `attribute.values` is the column, **but**, `attribute` will have a `values` subcolumn.
+
+        if (has(subcolumn.name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
+
         subcolumns.get<0>().insert(std::move(subcolumn));
     }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage));
 }
@@ -998,7 +993,7 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
         const auto * data_type_ptr = data_type.get();
 
         info.expr_list->children.emplace_back(setAlias(
-            addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+            addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
         info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
     }

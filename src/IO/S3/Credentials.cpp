@@ -109,7 +109,7 @@ constexpr int AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS = 3;
 class CredentialsProviderCache : boost::noncopyable
 {
     using CredentialsProviderKey
-        = std::variant<AWSInstanceProfileCredentialsProvider::CacheKey, AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey, AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey>;
+        = std::variant<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey, AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey>;
 
     struct CredentialsKeyHash
     {
@@ -551,27 +551,6 @@ void AWSInstanceProfileCredentialsProvider::refreshIfExpired()
     Reload();
 }
 
-void AWSInstanceProfileCredentialsProvider::CacheKey::updateHash(SipHash & hash) const
-{
-    hash.update(endpoint);
-    hash.update(use_secure_pull);
-}
-
-std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AWSInstanceProfileCredentialsProvider::create(
-    const Aws::Client::ClientConfiguration & client_configuration, bool use_secure_pull)
-{
-    auto endpoint = getAWSMetadataEndpoint();
-
-    return CredentialsProviderCache::instance().getOrSet(
-        AWSInstanceProfileCredentialsProvider::CacheKey{endpoint, use_secure_pull},
-        [&]
-        {
-            auto ec2_metadata_client = std::make_shared<AWSEC2MetadataClient>(client_configuration, endpoint.c_str());
-            auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, use_secure_pull);
-            return std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader);
-        });
-}
-
 void AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey::updateHash(SipHash & hash) const
 {
     hash.update(role_arn);
@@ -608,7 +587,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
         }
     }
 
-    auto empty_credentials = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
+    auto empty_credentials = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(Aws::Auth::AWSCredentials());
     if (token_file.empty())
     {
         LOG_WARNING(logger, "Token file must be specified to use STS AssumeRole web identity creds provider.");
@@ -865,12 +844,12 @@ Aws::String SSOCredentialsProvider::loadAccessTokenFile(const Aws::String & sso_
 S3CredentialsProviderChain::S3CredentialsProviderChain(
         const DB::S3::PocoHTTPClientConfiguration & configuration,
         const Aws::Auth::AWSCredentials & credentials,
-        const CredentialsConfiguration & credentials_configuration)
+        CredentialsConfiguration credentials_configuration)
 {
     auto logger = getLogger("S3CredentialsProviderChain");
 
     /// we don't provide any credentials to avoid signing
-    if (credentials_configuration.no_sign_request || configuration.http_client == "gcp_oauth")
+    if (credentials_configuration.no_sign_request)
         return;
 
     /// add explicit credentials to the front of the chain
@@ -999,9 +978,10 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             aws_client_configuration.requestTimeoutMs = 1000;
 
             aws_client_configuration.retryStrategy = std::make_shared<Aws::Client::DefaultRetryStrategy>(1, 1000);
+            auto ec2_metadata_client = createEC2MetadataClient(aws_client_configuration);
+            auto config_loader = std::make_shared<AWSEC2InstanceProfileConfigLoader>(ec2_metadata_client, !credentials_configuration.use_insecure_imds_request);
 
-            AddProvider(AWSInstanceProfileCredentialsProvider::create(
-                aws_client_configuration, !credentials_configuration.use_insecure_imds_request));
+            AddProvider(std::make_shared<AWSInstanceProfileCredentialsProvider>(config_loader));
             LOG_INFO(logger, "Added EC2 metadata service credentials provider to the provider chain.");
         }
     }
@@ -1123,7 +1103,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
     std::string session_name_,
     uint64_t expiration_window_seconds_,
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider,
-    const DB::S3::PocoHTTPClientConfiguration & client_configuration,
+    DB::S3::PocoHTTPClientConfiguration & client_configuration,
     const std::string & sts_endpoint_override)
 {
     auto client = std::make_shared<AWSAssumeRoleClient>(credentials_provider, client_configuration, sts_endpoint_override);
@@ -1183,36 +1163,6 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     credentials.SetExpiration(result.getExpiration());
 
     LOG_TRACE(logger, "Successfully retrieved credentials");
-}
-
-std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
-    const DB::S3::PocoHTTPClientConfiguration & configuration,
-    const Aws::Auth::AWSCredentials & credentials,
-    const CredentialsConfiguration & credentials_configuration)
-{
-    std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
-    if (credentials_configuration.no_sign_request || configuration.http_client == "gcp_oauth")
-    {
-        credentials_provider = std::make_shared<Aws::Auth::AnonymousAWSCredentialsProvider>();
-    }
-    else
-    {
-        credentials_provider
-            = std::make_shared<S3CredentialsProviderChain>(configuration, credentials, credentials_configuration);
-    }
-
-    if (!credentials_configuration.role_arn.empty())
-    {
-        credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
-            credentials_configuration.role_arn,
-            credentials_configuration.role_session_name,
-            credentials_configuration.expiration_window_seconds,
-            std::move(credentials_provider),
-            configuration,
-            credentials_configuration.sts_endpoint_override);
-    }
-
-    return credentials_provider;
 }
 
 }
