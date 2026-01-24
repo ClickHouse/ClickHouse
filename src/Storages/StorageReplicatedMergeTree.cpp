@@ -10876,6 +10876,14 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             if (shutdown_called || partial_shutdown_called)
                 throw Exception(ErrorCodes::ABORTED, "Cannot create an empty part because shutdown called");
 
+            /// Replica may become readonly during the operation due to ZooKeeper issues.
+            /// In this case, we should not try to create an empty part.
+            if (is_readonly)
+            {
+                LOG_WARNING(log, "Cannot replace lost part {} with empty part because replica became readonly", lost_part_name);
+                return false;
+            }
+
             /// We should be careful when creating an empty part, because we are not sure that this part is still needed.
             /// For example, it's possible that part (or partition) was dropped (or replaced) concurrently.
             /// We can enqueue part for check from DataPartExchange or SelectProcessor
