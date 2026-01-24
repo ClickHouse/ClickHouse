@@ -367,9 +367,9 @@ bool MutationsInterpreter::Source::materializeTTLRecalculateOnly() const
     return data && (*data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
 }
 
-bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name) const
+bool MutationsInterpreter::Source::hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const
 {
-    return part && part->hasSecondaryIndex(name);
+    return part && part->hasSecondaryIndex(name, metadata);
 }
 
 bool MutationsInterpreter::Source::hasProjection(const String & name) const
@@ -702,7 +702,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             return source.hasProjection(name);
 
         if (kind == ColumnDependency::SKIP_INDEX)
-            return source.hasSecondaryIndex(name);
+            return source.hasSecondaryIndex(name, metadata_snapshot);
 
         return true;
     };
@@ -922,7 +922,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (it == std::cend(indices_desc))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown index: {}", command.index_name);
 
-            if (!source.hasSecondaryIndex(it->name))
+            if (!source.hasSecondaryIndex(it->name, metadata_snapshot))
             {
                 auto query = (*it).expression_list_ast->clone();
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
@@ -1208,7 +1208,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
-        if (!source.hasSecondaryIndex(index.name) || dropped_indices.contains(index.name))
+        if (!source.hasSecondaryIndex(index.name, metadata_snapshot) || dropped_indices.contains(index.name))
             continue;
 
         if (need_rebuild_indexes_for_update_delete || need_rebuild_indexes)
