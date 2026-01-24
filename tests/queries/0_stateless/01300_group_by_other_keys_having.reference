@@ -37,7 +37,7 @@ GROUP BY
     number % 3,
     number % 2
 HAVING avg(log(2) * number) > 3465735.3
-ORDER BY k ASC
+ORDER BY avg(log(2) * number) AS k ASC
 SETTINGS enable_analyzer = 0
 QUERY id: 0
   PROJECTION COLUMNS
@@ -120,7 +120,7 @@ SELECT avg(log(2) * number) AS k
 FROM numbers(10000000)
 WHERE ((number % 5) * (number % 5)) < 5
 GROUP BY number % 5
-ORDER BY k ASC
+ORDER BY avg(log(2) * number) AS k ASC
 SETTINGS enable_analyzer = 0
 QUERY id: 0
   PROJECTION COLUMNS
@@ -198,7 +198,7 @@ SELECT (number % 5) * (number % 5) AS k
 FROM numbers(10000000)
 WHERE ((number % 5) * (number % 5)) < 5
 GROUP BY number % 5
-ORDER BY k ASC
+ORDER BY (number % 5) * (number % 5) AS k ASC
 SETTINGS enable_analyzer = 0
 QUERY id: 0
   PROJECTION COLUMNS

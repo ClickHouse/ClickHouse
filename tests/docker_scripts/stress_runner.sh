@@ -270,6 +270,12 @@ if [ $(( $(date +%-d) % 2 )) -eq 0 ]; then
         > /etc/clickhouse-server/config.d/enable_async_load_databases.xml
 fi
 
+# Randomize concurrent_threads_scheduler (default is fair_round_robin)
+if [ $((RANDOM % 2)) -eq 1 ]; then
+    sudo echo "<concurrent_threads_scheduler>max_min_fair</concurrent_threads_scheduler>" \
+        > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
+fi
+
 start_server || { echo "Failed to start server"; exit 1; }
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there

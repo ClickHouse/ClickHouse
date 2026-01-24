@@ -116,10 +116,30 @@ DiskPtr VolumeJBOD::getDisk(size_t /* index */) const
 
 ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
 {
+    return reserveImpl(bytes, std::nullopt);
+}
+
+ReservationPtr VolumeJBOD::reserve(UInt64 bytes, const ReservationConstraints & constraints)
+{
+    return reserveImpl(bytes, constraints);
+}
+
+ReservationPtr VolumeJBOD::reserveImpl(UInt64 bytes, const std::optional<ReservationConstraints> & constraints)
+{
     /// This volume can not store data which size is greater than `max_data_part_size`
     /// to ensure that parts of size greater than that go to another volume(s).
     if (max_data_part_size != 0 && bytes > max_data_part_size)
         return {};
+
+    auto try_reserve = [&bytes, &constraints](const DiskPtr & disk) -> ReservationPtr
+    {
+        if (disk->isReadOnly())
+            return {};
+
+        return constraints.has_value()
+            ? disk->reserve(bytes, *constraints)
+            : disk->reserve(bytes);
+    };
 
     switch (load_balancing)
     {
@@ -131,11 +151,7 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
                 size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
                 size_t index = start_from % disks_num;
 
-                if (disks[index]->isReadOnly())
-                    continue;
-
-                auto reservation = disks[index]->reserve(bytes);
-
+                ReservationPtr reservation = try_reserve(disks[index]);
                 if (reservation)
                     return reservation;
             }
@@ -154,16 +170,14 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
                     least_used_update_watch.restart();
 
                     DiskWithSize disk = disks_by_size.top();
-                    if (!disk.disk->isReadOnly())
-                        reservation = disk.reserve(bytes);
+                    reservation = try_reserve(disk.disk);
                 }
                 else
                 {
                     DiskWithSize disk = disks_by_size.top();
                     disks_by_size.pop();
 
-                    if (!disk.disk->isReadOnly())
-                        reservation = disk.reserve(bytes);
+                    reservation = try_reserve(disk.disk);
                     disks_by_size.push(disk);
                 }
             }

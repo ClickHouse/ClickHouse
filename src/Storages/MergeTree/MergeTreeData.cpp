@@ -220,6 +220,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsBool table_disk;
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
+    extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_delay_insert;
@@ -4728,9 +4729,22 @@ void MergeTreeData::changeSettings(
         bool allow_beta = ac.getAllowBetaTierSettings();
         copy->sanityCheck(getContext()->getMergeMutateExecutor()->getMaxTasksCount(), allow_experimental, allow_beta);
 
+        bool has_escape_index_filenames_changed
+            = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
+
         storage_settings.set(std::move(copy));
         StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
         new_metadata.setSettingsChanges(new_settings);
+
+        if (has_escape_index_filenames_changed)
+        {
+            /// We need to update the metadata fields and indices so we use the new setting when reading indices
+            bool new_value = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames];
+            new_metadata.escape_index_filenames = new_value;
+            for (auto & idx : new_metadata.secondary_indices)
+                idx.escape_filenames = new_value;
+        }
+
         setInMemoryMetadata(new_metadata);
 
         if (has_storage_policy_changed)
@@ -6068,9 +6082,10 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
     }
 
+    const auto metadata_ptr = getInMemoryMetadataPtr();
     for (auto & [secondary_index_name, total_secondary_index_size] : secondary_index_sizes)
     {
-        if (!part->hasSecondaryIndex(secondary_index_name))
+        if (!part->hasSecondaryIndex(secondary_index_name, metadata_ptr))
             continue;
 
         IndexSize part_secondary_index_size = part->getSecondaryIndexSize(secondary_index_name);

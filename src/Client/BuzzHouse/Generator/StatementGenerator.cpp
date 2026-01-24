@@ -1376,8 +1376,8 @@ void StatementGenerator::generateInsertToTable(
 
             for (const auto & entry : this->entries)
             {
-                const String nval
-                    = entry.getBottomType()->insertNumberEntry(rg, *this, static_cast<uint32_t>(string_length_dist(rg.generator)), static_cast<uint32_t>(nested_nrows));
+                const String nval = entry.getBottomType()->insertNumberEntry(
+                    rg, *this, static_cast<uint32_t>(string_length_dist(rg.generator)), static_cast<uint32_t>(nested_nrows));
 
                 buf += fmt::format(
                     "{}{}{}{}",
@@ -5085,6 +5085,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             }
             if (!this->staged_tables[tname].random_engine)
             {
+                chassert(!this->staged_tables[tname].cols.empty());
                 this->tables[tname] = std::move(this->staged_tables[tname]);
             }
         }

@@ -1239,7 +1239,6 @@ void ZooKeeperCloseResponse::readImpl(ReadBuffer &)
 ZooKeeperResponsePtr ZooKeeperHeartbeatRequest::makeResponse() const { return std::make_shared<ZooKeeperHeartbeatResponse>(); }
 ZooKeeperResponsePtr ZooKeeperSyncRequest::makeResponse() const { return std::make_shared<ZooKeeperSyncResponse>(); }
 ZooKeeperResponsePtr ZooKeeperAuthRequest::makeResponse() const { return std::make_shared<ZooKeeperAuthResponse>(); }
-ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const { return std::make_shared<ZooKeeperRemoveResponse>(); }
 ZooKeeperResponsePtr ZooKeeperRemoveRecursiveRequest::makeResponse() const { return std::make_shared<ZooKeeperRemoveRecursiveResponse>(); }
 ZooKeeperResponsePtr ZooKeeperExistsRequest::makeResponse() const { return std::make_shared<ZooKeeperExistsResponse>(); }
 ZooKeeperResponsePtr ZooKeeperGetRequest::makeResponse() const { return std::make_shared<ZooKeeperGetResponse>(); }
@@ -1247,6 +1246,14 @@ ZooKeeperResponsePtr ZooKeeperSetRequest::makeResponse() const { return std::mak
 ZooKeeperResponsePtr ZooKeeperReconfigRequest::makeResponse() const { return std::make_shared<ZooKeeperReconfigResponse>(); }
 ZooKeeperResponsePtr ZooKeeperListRequest::makeResponse() const { return std::make_shared<ZooKeeperListResponse>(); }
 ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return std::make_shared<ZooKeeperSimpleListResponse>(); }
+
+ZooKeeperResponsePtr ZooKeeperRemoveRequest::makeResponse() const
+{
+    if (try_remove)
+        return std::make_shared<ZooKeeperTryRemoveResponse>();
+    else
+        return std::make_shared<ZooKeeperRemoveResponse>();
+}
 
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {

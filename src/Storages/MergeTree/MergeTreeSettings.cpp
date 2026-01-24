@@ -200,6 +200,11 @@ namespace ErrorCodes
     If the file name for column is too long (more than 'max_file_name_length'
     bytes) replace it to SipHash128
     )", 0) \
+    DECLARE(Bool, escape_index_filenames, true, R"(
+    Prior to 26.1 we didn't escape special symbols in filenames created for secondary indices, which could lead to issues with some
+    characters in index names producing broken parts. This is added purely for compatibility reasons. It should not be changed unless you
+    are reading old parts with indices using non-ascii characters in their names.
+    )", 0) \
     DECLARE(UInt64, max_file_name_length, 127, R"(
     The maximal length of the file name to keep it as is without hashing.
     Takes effect only if setting `replace_long_file_name_to_hash` is enabled.

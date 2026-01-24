@@ -1,23 +1,39 @@
-SELECT
-    [1] AS foo,
-    [1] IN (foo)
-SELECT
-    [isNaN(1)] AS foo,
-    [1] IN (foo)
-SELECT
-    -((-c1) AS a2),
-    NOT (-a2)
-FROM tab
-SELECT
-    (
-        SELECT [1, 2, 3]
-    ) AS a1,
-    [5] IN (a1)
-SELECT
-    (
-        SELECT 1
-    ) AS a1,
-    NOT a1
-SELECT
-    tuple(1, 'a') AS a1,
-    tuple(1, 'a') IN (a1)
+Original:  SELECT ([1] AS foo), [1] IN ([1] AS foo)
+Formatted: SELECT [1] AS foo, [1] IN ([1] AS foo)
+
+Original:  SELECT ([isNaN(1)] AS foo), [1] IN ([isNaN(1)] AS foo)
+Formatted: SELECT [isNaN(1)] AS foo, [1] IN ([isNaN(1)] AS foo)
+
+Original:  SELECT (-((-`c1`) AS `a2`)), NOT (-((-`c1`) AS `a2`)) from tab
+Formatted: SELECT -((-c1) AS a2), NOT (-((-c1) AS a2)) FROM tab
+
+Original:  SELECT ((SELECT [1,2,3]) AS a1), [5] IN ((SELECT [1,2,3]) AS a1)
+Formatted: SELECT (SELECT [1, 2, 3]) AS a1, [5] IN ((SELECT [1, 2, 3]) AS a1)
+
+Original:  SELECT ((SELECT 1) AS a1), NOT ((SELECT 1) AS a1)
+Formatted: SELECT (SELECT 1) AS a1, NOT ((SELECT 1) AS a1)
+
+Original:  SELECT tuple(1, 'a') as a1, tuple(1, 'a') IN (tuple(1, 'a') as a1)
+Formatted: SELECT tuple(1, 'a') AS a1, tuple(1, 'a') IN (tuple(1, 'a') AS a1)
+
+Original:  SELECT * FROM t1 JOIN t2 ON ((t1.x = t2.x) AND (t1.x IS NULL) AS e2)
+Formatted: SELECT * FROM t1 INNER JOIN t2 ON ((t1.x = t2.x) AND (t1.x IS NULL) AS e2)
+
+Original:  SELECT (1,1) c0, (1,(1)) c0
+Formatted: SELECT (1, 1) AS c0, (1, 1) AS c0
+
+Original:  SELECT (1, (1 AS c0, 1 AS c0) IS NULL AS c0), (1, (1, 1 AS c0) IS NULL AS c0) IS NULL AS c0
+Formatted: SELECT (1, (1 AS c0, 1 AS c0) IS NULL AS c0), (1, (1, 1 AS c0) IS NULL AS c0) IS NULL AS c0
+
+Original:  SELECT NOT ((1, 1, 1))
+Formatted: SELECT NOT ((1, 1, 1))
+
+Original:  select (((1), (2)))
+Formatted: SELECT (1, 2)
+
+Original:  select * from tuple('42', '3141592')
+Formatted: SELECT * FROM tuple('42', '3141592')
+
+Original:  SELECT 1 FROM VALUES (1, (NOT 1 IS NULL)) tx
+Formatted: SELECT 1 FROM VALUES(1, NOT (1 IS NULL)) AS tx
+

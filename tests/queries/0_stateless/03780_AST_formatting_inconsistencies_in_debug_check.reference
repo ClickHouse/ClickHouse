@@ -12,4 +12,5 @@ Test repeated alias in subquery after NOT:
 1	0
 Test repeated alias for tuple after IN:
 (1,'a')	1
+Alias in ON clause of JOIN:
 Test repeated alias for tuple after NOT fails cleanly:

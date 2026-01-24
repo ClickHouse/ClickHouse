@@ -71,9 +71,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_qbit_type", false, true, "QBit was moved to Beta"},
             {"enable_qbit_type", false, true, "QBit was moved to Beta. Added an alias for setting 'allow_experimental_qbit_type'."},
             {"use_variant_default_implementation_for_comparisons", false, true, "Enable default implementation for Variant type in comparison functions"},
+            {"use_variant_as_common_type", false, true, "Improves usability."},
             {"max_dynamic_subcolumns_in_json_type_parsing", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns during JSON type parsing regardless the parameters specified in the data type"},
             {"use_hash_table_stats_for_join_reordering", true, true, "New setting. Previously mirrored 'collect_hash_table_stats_during_joins' setting."},
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
+            {"database_datalake_require_metadata_access", true, true, "New setting."},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
         });
         addSettingsChanges(settings_changes_history, "25.12",
@@ -1034,6 +1036,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"min_columns_to_activate_adaptive_write_buffer", 500, 500, "New setting"},
             {"merge_max_dynamic_subcolumns_in_compact_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Compact part after merge regardless the parameters specified in the data type"},
             {"materialize_statistics_on_merge", true, true, "New setting"},
+            {"escape_index_filenames", false, true, "Escape non-ascii characters in filenames created for indices"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.12",
         {

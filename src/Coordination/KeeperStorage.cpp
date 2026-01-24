@@ -2019,11 +2019,7 @@ template <typename Storage>
 Coordination::ZooKeeperResponsePtr
 process(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t /*session_id*/)
 {
-    std::shared_ptr<Coordination::ZooKeeperRemoveResponse> response;
-    if (zk_request.try_remove)
-        response = std::make_shared<Coordination::ZooKeeperTryRemoveResponse>();
-    else
-        response = std::make_shared<Coordination::ZooKeeperRemoveResponse>();
+    auto response = zk_request.makeResponse();
 
     if (deltas.empty())
     {

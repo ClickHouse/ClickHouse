@@ -386,6 +386,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
     failed_tests_files = []
 
     has_error = False
+    if not is_targeted_check:
+        session_timeout = 5400
+    else:
+        # For targeted jobs, use a shorter session timeout to keep feedback fast.
+        # If this timeout is exceeded but all completed tests have passed, the
+        # targeted check will not fail solely because the session timed out.
+        session_timeout = 1200
     error_info = []
 
     module_repeat_cnt = 1
@@ -398,7 +405,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_parallel.log"
             test_result_parallel = Result.from_pytest_run(
-                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout=5400",
+                command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout}",
                 cwd="./tests/integration/",
                 env=test_env,
                 pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
@@ -416,15 +423,20 @@ tar -czf ./ci/tmp/logs.tar.gz \
         if test_result_parallel.files:
             failed_tests_files.extend(test_result_parallel.files)
         if test_result_parallel.is_error():
-            has_error = True
-            error_info.append(test_result_parallel.info)
+            if not is_targeted_check:
+                # In targeted checks we may overload the run with many or heavy tests
+                # (--count N is used). In this mode, a session-timeout is an expected risk
+                # rather than an infrastructure problem, so we do not treat such errors as job-level
+                # failures and avoid setting the error flag for targeted runs.
+                has_error = True
+                error_info.append(test_result_parallel.info)
 
     fail_num = len([r for r in test_results if not r.is_ok()])
     if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
         for attempt in range(module_repeat_cnt):
             log_file = f"{temp_path}/pytest_sequential.log"
             test_result_sequential = Result.from_pytest_run(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout=5400",
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout}",
                 env=test_env,
                 cwd="./tests/integration/",
                 pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
@@ -442,8 +454,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
         if test_result_sequential.files:
             failed_tests_files.extend(test_result_sequential.files)
         if test_result_sequential.is_error():
-            has_error = True
-            error_info.append(test_result_sequential.info)
+            if not is_targeted_check:
+                # In targeted checks we may overload the run with many or heavy tests
+                # (--count N is used). In this mode, a session-timeout is an expected risk
+                # rather than an infrastructure problem, so we do not treat such errors as job-level
+                # failures and avoid setting the error flag for targeted runs.
+                has_error = True
+                error_info.append(test_result_sequential.info)
 
     # Collect logs before re-run
     attached_files = []

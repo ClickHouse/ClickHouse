@@ -22,9 +22,9 @@ static void writeAlias(const String & name, WriteBuffer & ostr, const ASTWithAli
 
 void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
     /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
-    /// This is needed because the query can become extraordinary large after substitution of aliases.
-    if (!alias.empty() && !frame.ignore_printed_asts_with_alias && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)
+    if (settings.collapse_identical_nodes_to_aliases && !alias.empty() && !state.printed_asts_with_alias.emplace(frame.current_select, alias, getTreeHash(/*ignore_aliases=*/ true)).second)
     {
         settings.writeIdentifier(ostr, alias, /*ambiguous=*/false);
     }

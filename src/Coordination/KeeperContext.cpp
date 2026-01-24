@@ -53,7 +53,9 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
         KeeperFeatureFlag::CREATE_IF_NOT_EXISTS,
         KeeperFeatureFlag::REMOVE_RECURSIVE,
         KeeperFeatureFlag::MULTI_WATCHES,
+        KeeperFeatureFlag::CHECK_STAT,
         KeeperFeatureFlag::PERSISTENT_WATCHES,
+        KeeperFeatureFlag::TRY_REMOVE,
     };
 
     for (const auto feature_flag : enabled_by_default_feature_flags)

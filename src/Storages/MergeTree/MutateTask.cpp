@@ -985,8 +985,9 @@ static NameToNameVector collectFilesForRenames(
             {
                 for (const auto & extension : extensions)
                 {
-                    const String filename = INDEX_FILE_PREFIX + command.column_name + substream + extension;
-                    const String filename_mrk = INDEX_FILE_PREFIX + command.column_name + substream + mrk_extension;
+                    const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
+                    const String filename = index_filename + substream + extension;
+                    const String filename_mrk = index_filename + substream + mrk_extension;
 
                     if (source_part->checksums.has(filename))
                     {
@@ -1737,9 +1738,8 @@ private:
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
-            bool need_recalculate =
-                ctx->materialized_indices.contains(idx.name)
-                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name));
+            bool need_recalculate = ctx->materialized_indices.contains(idx.name)
+                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot));
 
             if (need_recalculate)
             {
@@ -1747,7 +1747,7 @@ private:
             }
             else
             {
-                auto prefix = fmt::format("{}{}.", INDEX_FILE_PREFIX, idx.name);
+                auto prefix = getIndexFileName(idx.name, idx.escape_filenames);
                 auto it = ctx->source_part->checksums.files.upper_bound(prefix);
                 while (it != ctx->source_part->checksums.files.end())
                 {
@@ -2534,8 +2534,8 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             continue;
         }
 
-        bool need_recalculate
-            = ctx->materialized_indices.contains(index.name) || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name));
+        bool need_recalculate = ctx->materialized_indices.contains(index.name)
+            || (!is_full_part_storage && source_part->hasSecondaryIndex(index.name, ctx->metadata_snapshot));
 
         if (need_recalculate)
         {

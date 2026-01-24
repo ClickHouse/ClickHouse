@@ -213,6 +213,8 @@ public:
         LiteralEscapingStyle literal_escaping_style;
         bool print_pretty_type_names;
         bool enforce_strict_identifier_format;
+        /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
+        bool collapse_identical_nodes_to_aliases;
 
         explicit FormatSettings(
             bool one_line_,
@@ -221,7 +223,8 @@ public:
             bool show_secrets_ = true,
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
             bool print_pretty_type_names_ = false,
-            bool enforce_strict_identifier_format_ = false)
+            bool enforce_strict_identifier_format_ = false,
+            bool collapse_identical_nodes_to_aliases_ = false)
             : one_line(one_line_)
             , identifier_quoting_rule(identifier_quoting_rule_)
             , identifier_quoting_style(identifier_quoting_style_)
@@ -230,6 +233,7 @@ public:
             , literal_escaping_style(literal_escaping_style_)
             , print_pretty_type_names(print_pretty_type_names_)
             , enforce_strict_identifier_format(enforce_strict_identifier_format_)
+            , collapse_identical_nodes_to_aliases(collapse_identical_nodes_to_aliases_)
         {
         }
 
@@ -242,6 +246,7 @@ public:
     {
         /** The SELECT query in which the alias was found; identifier of a node with such an alias.
           * It is necessary that when the node has met again, output only the alias.
+          * This is only needed for the old analyzer. Remove it after removing the old analyzer.
           */
         std::set<std::tuple<
             const IAST * /* SELECT query node */,
@@ -257,7 +262,6 @@ public:
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         bool surround_each_list_element_with_parens = false;
-        bool ignore_printed_asts_with_alias = false; /// Ignore FormatState::printed_asts_with_alias
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
         bool allow_moving_operators_before_parens = true; /// Allow moving operators like "-" before parents: (-...) -> -(...)
         size_t list_element_index = 0;

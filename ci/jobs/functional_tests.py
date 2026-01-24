@@ -520,13 +520,19 @@ def main():
                             collected_test_results.append(test_case_result)
                             seen_test_names.add(test_case_result.name)
 
+                # Control elapsed time for targeted checks: exit if >30 minutes
+                stop_by_elapsed_time = False
+                if is_targeted_check and cnt > 0:
+                    stop_by_elapsed_time = stop_watch_.duration / 60 > 30
+
                 # On final run, replace results with collected ones
-                if is_final_run:
+                if is_final_run or stop_by_elapsed_time:
                     test_result.results = collected_test_results
                     # Set overall status to failed if any collected test cases failed
                     has_failures = any(not t.is_ok() for t in collected_test_results)
                     if has_failures and test_result.is_ok():
                         test_result.set_failed()
+                    break
 
         if not info.is_local_run:
             CH.stop_log_exports()

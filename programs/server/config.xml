@@ -1665,7 +1665,7 @@
     <!-- <throw_on_unknown_workload>true</throw_on_unknown_workload> -->
 
     <!-- Workload scheduling: if enabled during CPU overloaded periods, long-running queries will downscale to lower number of threads dynamically.
-         Ensures more fair CPU resource distribution.
+         Ensures more fair CPU resource distribution. (Enabled by default)
     -->
     <!--
     <cpu_slot_preemption>true</cpu_slot_preemption>

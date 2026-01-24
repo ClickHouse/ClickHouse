@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int LOGICAL_ERROR;
 }
 
 class FunctionApplyFilter : public IFunction
@@ -85,6 +86,8 @@ public:
         /// Query context contains filter lookup where per-query filters are stored
         auto query_context = CurrentThread::get().getQueryContext();
         auto filter_lookup = query_context->getRuntimeFilterLookup();
+        if (!filter_lookup)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter lookup was not initialized");
         auto filter = filter_lookup->find(filter_name);
 
         /// If filter is not present all rows pass
