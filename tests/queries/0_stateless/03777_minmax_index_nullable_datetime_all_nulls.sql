@@ -73,7 +73,7 @@ CREATE TABLE test_nullable_datetime_partition
     event_time Nullable(DateTime)
 )
 ENGINE = MergeTree()
-PARTITION BY toYYYYMM(event_time)
+PARTITION BY event_time
 ORDER BY id
 SETTINGS allow_nullable_key = 1;
 
@@ -96,7 +96,7 @@ CREATE TABLE test_nullable_datetime64_partition
     event_time Nullable(DateTime64(3))
 )
 ENGINE = MergeTree()
-PARTITION BY toYYYYMM(event_time)
+PARTITION BY event_time
 ORDER BY id
 SETTINGS allow_nullable_key = 1;
 
