@@ -331,6 +331,12 @@ public:
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     bool isSymlinkSupported() const override { return delegate->isSymlinkSupported(); }
 
+    bool isReadOnly() const override { return delegate->isReadOnly(); }
+    bool isWriteOnce() const override { return delegate->isWriteOnce(); }
+    bool isPlain() const override { return delegate->isPlain(); }
+
+    ObjectStoragePtr getObjectStorage() override { return delegate->getObjectStorage(); }
+
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
 
     std::shared_ptr<DiskEncryptedTransaction> createEncryptedTransaction() const
