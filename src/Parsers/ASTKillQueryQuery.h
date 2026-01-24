@@ -24,7 +24,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = make_intrusive<ASTKillQueryQuery>(*this);
+        auto clone = std::make_shared<ASTKillQueryQuery>(*this);
         if (where_expression)
         {
             clone->where_expression = where_expression->clone();

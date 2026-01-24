@@ -102,10 +102,8 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
 {
     if (columns.empty())
         return rows_limit;
-
-    ColumnsWithRowNumbers columns_with_row_numbers;
-    auto & many_columns = columns_with_row_numbers.columns;
-    auto & row_nums = columns_with_row_numbers.row_numbers;
+    std::vector<const ColumnsInfo *> many_columns;
+    std::vector<UInt32> row_nums;
     many_columns.reserve(rows_limit);
     row_nums.reserve(rows_limit);
 
@@ -165,7 +163,7 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], columns_with_row_numbers);
+        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums);
     }
     return row_nums.size();
 }
@@ -176,10 +174,8 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
 {
     if (columns.empty())
         return;
-
-    ColumnsWithRowNumbers columns_with_row_numbers;
-    auto & many_columns = columns_with_row_numbers.columns;
-    auto & row_nums = columns_with_row_numbers.row_numbers;
+    std::vector<const ColumnsInfo *> many_columns;
+    std::vector<UInt32> row_nums;
     many_columns.reserve(size_to_reserve);
     row_nums.reserve(size_to_reserve);
     for (const UInt64 * row_ref_i = row_refs_begin; row_ref_i != row_refs_end; ++row_ref_i)
@@ -210,7 +206,7 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
     }
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], columns_with_row_numbers);
+        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums);
     }
 }
 
@@ -255,7 +251,7 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
         for (size_t j = 0; j < right_indexes_size; ++j)
         {
             const auto [column_from_block, row_num] = getBlockColumnAndRow(row_ref, lazy_output.right_indexes[j]);
-            columns[j]->insertFrom(*column_from_block, row_num);
+            columns[j]->insertFrom(*column_from_block, row_ref->row_num);
         }
     }
 }

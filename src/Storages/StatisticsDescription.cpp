@@ -195,10 +195,10 @@ ColumnStatisticsDescription ColumnStatisticsDescription::fromStatisticsDescripti
 
 ASTPtr ColumnStatisticsDescription::getAST() const
 {
-    auto function_node = make_intrusive<ASTFunction>();
+    auto function_node = std::make_shared<ASTFunction>();
     function_node->name = "STATISTICS";
     function_node->kind = ASTFunction::Kind::STATISTICS;
-    function_node->arguments = make_intrusive<ASTExpressionList>();
+    function_node->arguments = std::make_shared<ASTExpressionList>();
 
     for (const auto & [type, desc] : types_to_desc)
     {
@@ -212,21 +212,5 @@ ASTPtr ColumnStatisticsDescription::getAST() const
     function_node->children.push_back(function_node->arguments);
     return function_node;
 }
-
-String ColumnStatisticsDescription::getNameForLogs() const
-{
-    String ret;
-    for (const auto & [tp, desc] : types_to_desc)
-    {
-        ret += desc.getTypeName();
-        if (desc.is_implicit)
-            ret += "(auto)";
-        ret += ",";
-    }
-    if (!ret.empty())
-        ret.pop_back();
-    return ret;
-}
-
 
 }

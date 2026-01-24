@@ -1,0 +1,109 @@
+6931467.646716
+6931468.339864
+6931469.033011
+6931469.726158
+6931470.419305
+6931471.112452
+3465734.169932
+3465734.863079
+3465735.556226
+3465736.249373
+3465736.94252
+3465735.209653
+3465735.209653
+3465735.556226
+3465735.9028
+3465735.9028
+3465734.516505
+3465735.209653
+3465735.209653
+3465735.9028
+3465735.9028
+3465736.595947
+3465735.209653
+3465735.9028
+SELECT max(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY
+    number % 2,
+    number % 3,
+    ((number % 2) + (number % 3)) % 2
+ORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY number % 5
+ORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY
+    (number % 2) * (number % 3),
+    number % 3
+ORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY
+    number % 3,
+    number % 2
+ORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY
+    (number % 2) % 3,
+    number % 2
+ORDER BY k ASC
+6931467.646716
+6931468.339864
+6931469.033011
+6931469.726158
+6931470.419305
+6931471.112452
+3465734.169932
+3465734.863079
+3465735.556226
+3465736.249373
+3465736.94252
+3465735.209653
+3465735.209653
+3465735.556226
+3465735.9028
+3465735.9028
+3465734.516505
+3465735.209653
+3465735.209653
+3465735.9028
+3465735.9028
+3465736.595947
+3465735.209653
+3465735.9028
+SELECT max(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY
+    number % 2,
+    number % 3,
+    ((number % 2) + (number % 3)) % 2
+ORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY
+    number % 5,
+    (number % 5) * (number % 5)
+ORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY
+    (number % 2) * (number % 3),
+    number % 3
+ORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY
+    (number % 2) * (number % 3),
+    number % 3,
+    number % 2
+ORDER BY k ASC
+SELECT avg(log(2) * number) AS k
+FROM numbers(10000000)
+GROUP BY
+    (number % 2) % 3,
+    number % 2
+ORDER BY k ASC

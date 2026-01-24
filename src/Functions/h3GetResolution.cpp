@@ -78,7 +78,7 @@ public:
         {
             const UInt64 hindex = data[row];
 
-            auto res = static_cast<UInt8>(getResolution(hindex));
+            UInt8 res = getResolution(hindex);
 
             dst_data[row] = res;
         }
@@ -115,7 +115,7 @@ Returns the resolution of the [H3](#h3-index) index.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3GetResolution>(documentation);
 }
 

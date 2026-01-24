@@ -104,7 +104,7 @@ Instead a separate `INSERT ... SELECT` can be used.
 
 A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
 
-If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
+The execution of [ALTER](/sql-reference/statements/alter/view.md) queries on materialized views has limitations, for example, you can not update the `SELECT` query, so this might be inconvenient. If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
 
 Note that materialized view is influenced by [optimize_on_insert](/operations/settings/settings#optimize_on_insert) setting. The data is merged before the insertion into a view.
 
@@ -371,7 +371,7 @@ WATCH [db.]window_view
 [FORMAT format]
 ```
 
-A `LIMIT` can be specified to set the number of updates to receive before terminating the query. The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query watermark.
+`WATCH` query acts similar as in `LIVE VIEW`. A `LIMIT` can be specified to set the number of updates to receive before terminating the query. The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query watermark.
 
 ### Settings {#settings-1}
 
@@ -500,7 +500,7 @@ DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPOR
 ### Disallowed / limitations {#temporary-views-limitations}
 
 * `CREATE OR REPLACE TEMPORARY VIEW ...` → **not allowed** (use `DROP` + `CREATE`).
-* `CREATE TEMPORARY MATERIALIZED VIEW ...` / `WINDOW VIEW` → **not allowed**.
+* `CREATE TEMPORARY MATERIALIZED VIEW ...` / `LIVE VIEW` / `WINDOW VIEW` → **not allowed**.
 * `CREATE TEMPORARY VIEW db.view AS ...` → **not allowed** (no database qualifier).
 * `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **not allowed** (temporary objects are session-local).
 * `POPULATE`, `REFRESH`, `TO [db.table]`, inner engines, and all MV-specific clauses → **not applicable** to temporary views.

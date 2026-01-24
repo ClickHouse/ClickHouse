@@ -17,11 +17,7 @@ InterpreterShowFunctionsQuery::InterpreterShowFunctionsQuery(const ASTPtr & quer
 
 BlockIO InterpreterShowFunctionsQuery::execute()
 {
-    auto query_context = Context::createCopy(getContext());
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId({});
-
-    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
+    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
 }
 
 String InterpreterShowFunctionsQuery::getRewrittenQuery()
