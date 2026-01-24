@@ -13,6 +13,11 @@ enum class Keyword : size_t;
 /// See ASTViewTargets for more details.
 struct ViewTarget
 {
+    ~ViewTarget();
+    ViewTarget();
+    ViewTarget(const ViewTarget & other);
+    ViewTarget & operator=(const ViewTarget & other);
+
     enum Kind
     {
         /// If `kind == ViewTarget::To` then `ViewTarget` contains information about the "TO" table of a materialized view or a window view:
@@ -35,6 +40,8 @@ struct ViewTarget
         Metrics,
     };
 
+    explicit ViewTarget(Kind kind_);
+
     Kind kind = To;
 
     /// StorageID of the target table, if it's not inner.
@@ -48,7 +55,7 @@ struct ViewTarget
 
     /// Table engine of the target table, if it's inner.
     /// That engine can be seen for example after "ENGINE" in a statement like CREATE MATERIALIZED VIEW ... ENGINE ...
-    std::shared_ptr<ASTStorage> inner_engine;
+    ASTPtr inner_engine;
 
     /// Table's AST with query parameters
     ASTPtr table_ast;
@@ -101,8 +108,8 @@ public:
     /// Sets the table engine of the target table, if it's inner.
     /// That engine can be seen for example after "ENGINE" in a statement like CREATE MATERIALIZED VIEW ... ENGINE ...
     void setInnerEngine(ViewTarget::Kind kind, ASTPtr storage_def);
-    std::shared_ptr<ASTStorage> getInnerEngine(ViewTarget::Kind kind) const;
-    std::vector<std::shared_ptr<ASTStorage>> getInnerEngines() const;
+    ASTStorage * getInnerEngine(ViewTarget::Kind kind) const;
+    std::vector<ASTStorage *> getInnerEngines() const;
 
     /// Returns a list of all kinds of views in this ASTViewTargets.
     std::vector<ViewTarget::Kind> getKinds() const;
@@ -126,7 +133,7 @@ public:
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
-    void forEachPointerToChild(std::function<void(void**)> f) override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 }

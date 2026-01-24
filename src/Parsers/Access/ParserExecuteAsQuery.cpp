@@ -23,7 +23,7 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     if (!ParserUserNameWithHost(/*allow_query_parameter=*/ false).parse(pos, target_user, expected))
         return false;
 
-    auto query = std::make_shared<ASTExecuteAsQuery>();
+    auto query = make_intrusive<ASTExecuteAsQuery>();
     node = query;
 
     query->set(query->target_user, target_user);
