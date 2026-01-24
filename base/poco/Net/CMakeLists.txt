@@ -4,9 +4,9 @@ add_library (_poco_net ${SRCS})
 add_library (Poco::Net ALIAS _poco_net)
 
 if (OS_LINUX)
-    target_compile_definitions (_poco_net PUBLIC POCO_HAVE_FD_EPOLL)
+    target_compile_definitions (_poco_net PRIVATE POCO_HAVE_FD_EPOLL)
 elseif (OS_DARWIN OR OS_FREEBSD)
-    target_compile_definitions (_poco_net PUBLIC POCO_HAVE_FD_POLL)
+    target_compile_definitions (_poco_net PRIVATE POCO_HAVE_FD_POLL)
 endif ()
 
 if (OS_SUNOS)
@@ -37,6 +37,7 @@ target_compile_options (_poco_net
         -Wno-unused-macros
         -Wno-unused-parameter
         -Wno-zero-as-null-pointer-constant
+        -Wno-implicit-int-conversion
 )
 
 target_include_directories (_poco_net SYSTEM PUBLIC "include")

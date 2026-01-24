@@ -239,7 +239,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -635,13 +635,8 @@ bool ColumnsDescription::hasSubcolumn(const String & column_name) const
         return true;
 
     /// Check for dynamic subcolumns
-    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-    auto it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns() && !dynamic_subcolumn_name.empty())
-    {
-        if (auto /*dynamic_subcolumn_type*/ _ = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
-            return true;
-    }
+    if (tryGetDynamicSubcolumn(column_name))
+        return true;
 
     return false;
 }
@@ -717,13 +712,11 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
         if (jt != subcolumns.get<0>().end())
             return *jt;
 
-        /// Check for dynamic subcolumns.
-        auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-        it = columns.get<1>().find(ordinary_column_name);
-        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+        if (options.with_dynamic_subcolumns)
         {
-            if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
-                return NameAndTypePair(ordinary_column_name, dynamic_subcolumn_name, it->type, dynamic_subcolumn_type);
+            /// Check for dynamic subcolumns.
+            if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
+                return dynamic_subcolumn;
         }
     }
 
@@ -815,15 +808,6 @@ bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, cons
     auto it = columns.get<1>().find(column_name);
     if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(column_name))
         return true;
-
-    /// Check for dynamic subcolumns.
-    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-    it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
-    {
-        if (auto /*dynamic_subcolumn_type*/ _ = it->type->hasSubcolumn(dynamic_subcolumn_name))
-            return true;
-    }
 
     return false;
 }
@@ -952,11 +936,13 @@ void ColumnsDescription::addSubcolumns(const String & name_in_storage, const Dat
     IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
     {
         auto subcolumn = NameAndTypePair(name_in_storage, subname, type_in_storage, subdata.type);
-
-        if (has(subcolumn.name))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                "Cannot add subcolumn {}: column with this name already exists", subcolumn.name);
-
+        /// Note, it is allowed to have columns with the same name as subcolumns, example:
+        ///
+        ///     `attribute.names` Array(LowCardinality(String)) ALIAS mapKeys(attribute),
+        ///     `attribute.values` Array(String) ALIAS mapValues(attribute),
+        ///     `attribute` Map(LowCardinality(String), String)
+        ///
+        /// Here, `attribute.values` is the column, **but**, `attribute` will have a `values` subcolumn.
         subcolumns.get<0>().insert(std::move(subcolumn));
     }, ISerialization::SubstreamData(type_in_storage->getDefaultSerialization()).withType(type_in_storage));
 }
@@ -980,6 +966,22 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     return names;
 }
 
+std::optional<NameAndTypePair> ColumnsDescription::tryGetDynamicSubcolumn(const String & column_name) const
+{
+    for (auto [ordinary_column_name, dynamic_subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+    {
+        auto it = columns.get<1>().find(String(ordinary_column_name));
+        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+        {
+            if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
+                return NameAndTypePair(String(ordinary_column_name), String(dynamic_subcolumn_name), it->type, dynamic_subcolumn_type);
+        }
+    }
+
+    return std::nullopt;
+}
+
+
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info)
 {
     if (!col_decl.default_expression)
@@ -996,7 +998,7 @@ void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const D
         const auto * data_type_ptr = data_type.get();
 
         info.expr_list->children.emplace_back(setAlias(
-            addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+            addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
         info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
     }

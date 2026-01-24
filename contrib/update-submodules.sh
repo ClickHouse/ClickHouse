@@ -1,16 +1,26 @@
 #!/bin/sh
 set -e
 
+# Parse optional --max-procs argument (defaults to 64)
+MAX_PROCS=64
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --max-procs)
+            MAX_PROCS="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            echo "Usage: $0 [--max-procs NUM]"
+            exit 1
+            ;;
+    esac
+done
+
 SCRIPT_PATH=$(realpath "$0")
 SCRIPT_DIR=$(dirname "${SCRIPT_PATH}")
 GIT_DIR=$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)
 cd $GIT_DIR
-
-# Exclude from contribs some garbage subdirs that we don't need.
-# It reduces the checked out files size about 3 times and therefore speeds up indexing in IDEs and searching.
-# NOTE .git/ still contains everything that we don't check out (although, it's compressed)
-# See also https://git-scm.com/docs/git-sparse-checkout
-contrib/sparse-checkout/setup-sparse-checkout.sh
 
 git submodule init
 git submodule sync
@@ -19,12 +29,15 @@ git submodule sync
 #       It may cause unexpected behavior. Instead you need to commit a new SHA1 for a submodule.
 #
 #       [1] - https://git-scm.com/book/en/v2/Git-Tools-Submodules
-git config --file .gitmodules --get-regexp '.*path' | sed 's/[^ ]* //' | xargs -I _ --max-procs 64 git submodule update --depth=1 --single-branch _
+git config --file .gitmodules --get-regexp '.*path' | sed 's/[^ ]* //' | xargs -I _ --max-procs $MAX_PROCS git submodule update --depth=1 --single-branch _
 
 # We don't want to depend on any third-party CMake files.
 # To check it, find and delete them.
+# llvm-project: Used to build llvm. Could be replaced with our own cmake files
+# corrosion: Used to build rust (Does not make sense to replace)
+# rust_vendor: Used to build rust
 grep -o -P '"contrib/[^"]+"' .gitmodules |
-  grep -v -P 'contrib/(llvm-project|google-protobuf|grpc|abseil-cpp|corrosion|aws-crt-cpp|rust_vendor)' |
+  grep -v -P 'contrib/(llvm-project|corrosion|rust_vendor)' |
   xargs -I@ find @ \
     -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' \
     -delete

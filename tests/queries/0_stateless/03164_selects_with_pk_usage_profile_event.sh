@@ -8,6 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 table_id="$(random_str 10)"
 
+# Does additional index analysis round and affects profile events
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0"
+
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS table_$table_id;"
 

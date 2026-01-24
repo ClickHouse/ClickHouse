@@ -81,6 +81,11 @@ Float64 StatisticsMinMax::estimateLess(const Field & val) const
     return ((*val_as_float - min) / (max - min)) * row_count;
 }
 
+String StatisticsMinMax::getNameForLogs() const
+{
+    return fmt::format("MinMax: ({}, {})", min, max);
+}
+
 bool minMaxStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     auto inner_data_type = removeNullable(data_type);

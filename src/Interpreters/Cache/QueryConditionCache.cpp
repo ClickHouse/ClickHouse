@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 
 namespace ProfileEvents
@@ -52,6 +53,9 @@ void QueryConditionCache::write(
     const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
     const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
+    if (table_id == UUIDHelpers::Nil)
+        return; /// Issue #92863: Certain database engines provide no table UUIDs
+
     Key key = {table_id, part_name, condition_hash, condition};
 
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
@@ -106,6 +110,9 @@ void QueryConditionCache::write(
 
 std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash)
 {
+    if (table_id == UUIDHelpers::Nil)
+        return {}; /// Issue #92864: Certain database engines provide no table UUIDs
+
     Key key = {table_id, part_name, condition_hash, ""};
 
     if (auto entry = cache.get(key))

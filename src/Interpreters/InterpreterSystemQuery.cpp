@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <csignal>
 #include <filesystem>
+#include <variant>
 #include <unistd.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
@@ -14,48 +15,35 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/enableAllExperimentalSettings.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
-#include <IO/SharedThreadPools.h>
 #include <Interpreters/ActionLocksManager.h>
-#include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/BackupLog.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/FilesystemCacheLog.h>
-#include <Interpreters/IcebergMetadataLog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Interpreters/MetricLog.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/ProcessorsProfileLog.h>
-#include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/SessionLog.h>
-#include <Interpreters/TextLog.h>
-#include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionLog.h>
-#include <Interpreters/TransactionsInfoLog.h>
-#include <Interpreters/DeltaMetadataLog.h>
-#include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/Freeze.h>
@@ -70,7 +58,6 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
-#include <Storages/System/StorageSystemFilesystemCache.h>
 #include <base/coverage.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/ActionLock.h>
@@ -78,9 +65,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/FailPoint.h>
 #include <Common/HostResolvePool.h>
-#include <Common/PageCache.h>
 #include <Common/ShellCommand.h>
-#include <Common/SymbolIndex.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
@@ -372,11 +357,12 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::SYNC_FILE_CACHE:
         {
+            getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILE_CACHE);
             LOG_DEBUG(log, "Will perform 'sync' syscall (it can take time).");
             sync();
             break;
         }
-        case Type::DROP_DNS_CACHE:
+        case Type::CLEAR_DNS_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
@@ -385,7 +371,7 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->reloadClusterConfig();
             break;
         }
-        case Type::DROP_CONNECTIONS_CACHE:
+        case Type::CLEAR_CONNECTIONS_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
             HTTPConnectionPools::instance().dropCache();
@@ -401,11 +387,11 @@ BlockIO InterpreterSystemQuery::execute()
             prewarmPrimaryIndexCache();
             break;
         }
-        case Type::DROP_MARK_CACHE:
+        case Type::CLEAR_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearMarkCache();
             break;
-        case Type::DROP_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_ICEBERG_METADATA_CACHE:
 #if USE_AVRO
             getContext()->checkAccess(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
             system_context->clearIcebergMetadataFilesCache();
@@ -413,55 +399,61 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
-        case Type::DROP_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
             break;
-        case Type::DROP_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearUncompressedCache();
             break;
-        case Type::DROP_INDEX_MARK_CACHE:
+        case Type::CLEAR_INDEX_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearIndexMarkCache();
             break;
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearIndexUncompressedCache();
             break;
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
             system_context->clearVectorSimilarityIndexCache();
             break;
-        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_DICTIONARY_CACHE);
             system_context->clearTextIndexDictionaryBlockCache();
             break;
-        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
+        case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
             system_context->clearTextIndexHeaderCache();
             break;
-        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE);
             system_context->clearTextIndexPostingsCache();
             break;
-        case Type::DROP_MMAP_CACHE:
+        case Type::CLEAR_TEXT_INDEX_CACHES:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
+            system_context->clearTextIndexDictionaryBlockCache();
+            system_context->clearTextIndexHeaderCache();
+            system_context->clearTextIndexPostingsCache();
+            break;
+        case Type::CLEAR_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
             break;
-        case Type::DROP_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_QUERY_CONDITION_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
             getContext()->clearQueryConditionCache();
             break;
         }
-        case Type::DROP_QUERY_CACHE:
+        case Type::CLEAR_QUERY_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
             getContext()->clearQueryResultCache(query.query_result_cache_tag);
             break;
         }
-        case Type::DROP_COMPILED_EXPRESSION_CACHE:
+        case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
 #if USE_EMBEDDED_COMPILER
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
@@ -470,7 +462,7 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for JIT compilation");
 #endif
-        case Type::DROP_S3_CLIENT_CACHE:
+        case Type::CLEAR_S3_CLIENT_CACHE:
 #if USE_AWS_S3
             getContext()->checkAccess(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
             S3::ClientCacheRegistry::instance().clearCacheForAll();
@@ -479,7 +471,7 @@ BlockIO InterpreterSystemQuery::execute()
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AWS S3");
 #endif
 
-        case Type::DROP_FILESYSTEM_CACHE:
+        case Type::CLEAR_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
             const auto user_id = FileCache::getCommonUser().user_id;
@@ -565,7 +557,7 @@ BlockIO InterpreterSystemQuery::execute()
             result.pipeline = QueryPipeline(std::move(source));
             break;
         }
-        case Type::DROP_DISK_METADATA_CACHE:
+        case Type::CLEAR_DISK_METADATA_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
 
@@ -575,13 +567,13 @@ BlockIO InterpreterSystemQuery::execute()
 
             break;
         }
-        case Type::DROP_PAGE_CACHE:
+        case Type::CLEAR_PAGE_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PAGE_CACHE);
             system_context->clearPageCache();
             break;
         }
-        case Type::DROP_SCHEMA_CACHE:
+        case Type::CLEAR_SCHEMA_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
@@ -608,7 +600,7 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
             break;
         }
-        case Type::DROP_FORMAT_SCHEMA_CACHE:
+        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
             std::unordered_set<String> caches_to_drop;
@@ -875,7 +867,11 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
 
-            queue->flush(query.tables);
+            std::vector<StorageID> tables;
+            for (const auto & [database, table]: query.tables)
+                tables.push_back(getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
+
+            queue->flush(tables);
             break;
         }
         case Type::STOP_THREAD_FUZZER:
@@ -911,15 +907,33 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::WAIT_FAILPOINT:
         {
             getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            LOG_TRACE(log, "Waiting for failpoint {}", query.fail_point_name);
-            FailPointInjection::pauseFailPoint(query.fail_point_name);
-            LOG_TRACE(log, "Finished waiting for failpoint {}", query.fail_point_name);
+            if (query.fail_point_action == ASTSystemQuery::FailPointAction::PAUSE)
+            {
+                LOG_TRACE(log, "Waiting for failpoint {} to pause", query.fail_point_name);
+                FailPointInjection::waitForPause(query.fail_point_name);
+                LOG_TRACE(log, "Failpoint {} has paused", query.fail_point_name);
+            }
+            else
+            {
+                LOG_TRACE(log, "Waiting for failpoint {} to resume", query.fail_point_name);
+                FailPointInjection::waitForResume(query.fail_point_name);
+                LOG_TRACE(log, "Failpoint {} has resumed", query.fail_point_name);
+            }
+
+            break;
+        }
+        case Type::NOTIFY_FAILPOINT:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            LOG_TRACE(log, "Notifying failpoint {}", query.fail_point_name);
+            FailPointInjection::notifyFailPoint(query.fail_point_name);
             break;
         }
 #else // USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support");
 #endif // USE_LIBFIU
         case Type::RESET_COVERAGE:
@@ -937,7 +951,24 @@ BlockIO InterpreterSystemQuery::execute()
             unloadPrimaryKeys();
             break;
         }
-
+#if USE_XRAY
+        case Type::INSTRUMENT_ADD:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_ADD);
+            instrumentWithXRay(true, query);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_INSTRUMENT_REMOVE);
+            instrumentWithXRay(false, query);
+            break;
+        }
+#else
+        case Type::INSTRUMENT_ADD:
+        case Type::INSTRUMENT_REMOVE:
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without XRay support");
+#endif
 #if USE_JEMALLOC
         case Type::JEMALLOC_PURGE:
         {
@@ -955,7 +986,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_JEMALLOC);
-            auto filename = Jemalloc::flushProfile("/tmp/jemalloc_clickhouse");
+            auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
+            /// TODO: Next step - provide system.jemalloc_profile table, that will provide all the info inside ClickHouse
+            Jemalloc::symbolizeHeapProfile(filename, filename + ".symbolized");
+            filename += ".symbolized";
             auto col = ColumnString::create();
             col->insertData(filename.data(), filename.size());
             Columns columns;
@@ -1447,7 +1481,7 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
 
 std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_)
 {
-    fs::path metadata_dir_path("metadata");
+    auto metadata_dir_path = DatabaseCatalog::getMetadataDirPath();
     auto default_db_disk = getContext()->getDatabaseDisk();
     for (const auto it = default_db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
     {
@@ -1456,8 +1490,8 @@ std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(
             continue;
 
         String db_name = sub_path.filename().string();
-        if (fs::path(db_name).extension() == ".sql")
-            db_name = fs::path(db_name).stem();
+        if (sub_path.extension() == ".sql")
+            db_name = sub_path.stem();
 
         auto buf = default_db_disk->readFile(sub_path, getContext()->getReadSettings());
         std::string query;
@@ -1739,6 +1773,82 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
     }
 }
 
+#if USE_XRAY
+void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query)
+{
+    /// query.handler_name -- handler to be set for the function
+    /// query.function_name -- name of the function to be patched - rename in query to function name
+    /// query.entry_type -- entry type: None, Entry or Exit
+    /// query.parameters -- parameters for the handler. should be one of the following: string, int, float
+    try
+    {
+        if (add)
+        {
+            InstrumentationManager::instance().patchFunction(getContext(), query.instrumentation_function_name, query.instrumentation_handler_name, query.instrumentation_entry_type, query.instrumentation_parameters);
+        }
+        else
+        {
+            if (!query.instrumentation_subquery.empty())
+            {
+                auto subquery_context = Context::createCopy(getContext());
+                subquery_context->makeQueryContext();
+                subquery_context->setCurrentQueryId({});
+                auto [_, block_io] = executeQuery(query.instrumentation_subquery, subquery_context, QueryFlags{ .internal = true });
+
+                if (!block_io.pipeline.initialized())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to execute subquery");
+
+                PullingPipelineExecutor executor(block_io.pipeline);
+                Block block;
+
+                while (executor.pull(block))
+                {
+                    if (block.columns() != 1)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected only one column as result of the subquery, but {} were found", block.columns());
+
+                    const auto & column_with_type = block.getByPosition(0);
+                    const auto & column = column_with_type.column;
+                    if (!isUInt(column_with_type.type))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected non-UInt column as result of the subquery: {}", column_with_type.type);
+
+                    for (size_t i = 0; i < column->size(); ++i)
+                    {
+                        UInt64 id = column->getUInt(i);
+                        InstrumentationManager::instance().unpatchFunction(id);
+                    }
+                }
+            }
+            else
+            {
+                InstrumentationManager::instance().unpatchFunction(query.instrumentation_point.value());
+            }
+        }
+    }
+    catch (const DB::Exception & e)
+    {
+        String id;
+        if (query.instrumentation_point.has_value())
+        {
+            if (std::holds_alternative<Instrumentation::All>(query.instrumentation_point.value()))
+                id = " and ALL ids";
+            else if (std::holds_alternative<String>(query.instrumentation_point.value()))
+                id = fmt::format(" and ids with function_name containing '{}'", std::get<String>(query.instrumentation_point.value()));
+            else
+                id = fmt::format(" and id '{}'", std::get<UInt64>(query.instrumentation_point.value()));
+        }
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Failed to instrument function '{}' with handler '{}', entry type '{}'{}: {}",
+            query.instrumentation_function_name,
+            query.instrumentation_handler_name,
+            Instrumentation::entryTypeToString(query.instrumentation_entry_type),
+            id,
+            e.what());
+    }
+}
+#endif
+
 void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 {
     const auto database_name = query.getDatabase();
@@ -1864,34 +1974,35 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SHUTDOWN);
             break;
         }
-        case Type::DROP_DNS_CACHE:
-        case Type::DROP_CONNECTIONS_CACHE:
-        case Type::DROP_MARK_CACHE:
-        case Type::DROP_ICEBERG_METADATA_CACHE:
-        case Type::DROP_PRIMARY_INDEX_CACHE:
-        case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_CONDITION_CACHE:
-        case Type::DROP_QUERY_CACHE:
-        case Type::DROP_COMPILED_EXPRESSION_CACHE:
-        case Type::DROP_UNCOMPRESSED_CACHE:
-        case Type::DROP_INDEX_MARK_CACHE:
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
-        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
-        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
-        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
-        case Type::DROP_FILESYSTEM_CACHE:
-        case Type::DROP_DISTRIBUTED_CACHE:
+        case Type::CLEAR_DNS_CACHE:
+        case Type::CLEAR_CONNECTIONS_CACHE:
+        case Type::CLEAR_MARK_CACHE:
+        case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_MMAP_CACHE:
+        case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_QUERY_CACHE:
+        case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
+        case Type::CLEAR_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_INDEX_MARK_CACHE:
+        case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::CLEAR_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
+        case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_CACHES:
+        case Type::CLEAR_FILESYSTEM_CACHE:
+        case Type::CLEAR_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
-        case Type::DROP_PAGE_CACHE:
-        case Type::DROP_SCHEMA_CACHE:
-        case Type::DROP_FORMAT_SCHEMA_CACHE:
-        case Type::DROP_S3_CLIENT_CACHE:
+        case Type::CLEAR_PAGE_CACHE:
+        case Type::CLEAR_SCHEMA_CACHE:
+        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
+        case Type::CLEAR_S3_CLIENT_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
         }
-        case Type::DROP_DISK_METADATA_CACHE:
+        case Type::CLEAR_DISK_METADATA_CACHE:
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_DICTIONARIES:
@@ -2183,10 +2294,21 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::BACKUP);
             break;
         }
+        case Type::INSTRUMENT_ADD:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_ADD);
+            break;
+        }
+        case Type::INSTRUMENT_REMOVE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
+            break;
+        }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
+        case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
         case Type::UNKNOWN:

@@ -135,7 +135,7 @@ void DDLLoadingDependencyVisitor::visit(const ASTStorage & storage, Data & data)
 {
     if (storage.ttl_table)
     {
-        auto ttl_dependencies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.ttl_table->ptr(), data.default_database);
+        auto ttl_dependencies = getDependenciesFromCreateQuery(data.global_context, data.table_name, storage.getChild(*storage.ttl_table), data.default_database);
         data.dependencies.merge(ttl_dependencies.dependencies);
     }
 
@@ -222,7 +222,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
     }
     else
     {
-        assert(false);
+        /// Just return if the argument has unexpected type.
         return;
     }
 

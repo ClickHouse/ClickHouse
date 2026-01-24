@@ -57,6 +57,13 @@ struct GetColumnsOptions
     GetColumnsOptions & withSubcolumns(bool value = true)
     {
         with_subcolumns = value;
+        with_dynamic_subcolumns = value;
+        return *this;
+    }
+
+    GetColumnsOptions & withRegularSubcolumns(bool value = true)
+    {
+        with_subcolumns = value;
         return *this;
     }
 
@@ -70,6 +77,7 @@ struct GetColumnsOptions
     VirtualsKind virtuals_kind = VirtualsKind::None;
 
     bool with_subcolumns = false;
+    bool with_dynamic_subcolumns = false;
 };
 
 /// Description of a single table column (in CREATE TABLE for example).
@@ -259,6 +267,8 @@ private:
 
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
     void removeSubcolumns(const String & name_in_storage);
+
+    std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name) const;
 };
 
 class ASTColumnDeclaration;

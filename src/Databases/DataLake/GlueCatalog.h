@@ -11,6 +11,7 @@
 
 #include <Common/CacheBase.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 
 namespace Aws::Glue
 {
@@ -80,6 +81,17 @@ private:
     /// The Glue catalog does not store detailed information about the types of timestamp columns, such as whether the column is timestamp or timestamptz.
     /// This method allows to clarify the actual type of the timestamp column.
     bool classifyTimestampTZ(const String & column_name, const TableMetadata & table_metadata) const;
+
+    String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
+
+    struct ObjectStorageWithPath
+    {
+        DB::ObjectStoragePtr object_storage;
+        String bucket_name;
+        String table_path;  /// Path within bucket
+    };
+
+    ObjectStorageWithPath createObjectStorageForEarlyTableAccess(const String & s3_location, const TableMetadata & table_metadata) const;
 
     mutable DB::CacheBase<String, Poco::JSON::Object::Ptr> metadata_objects;
 };

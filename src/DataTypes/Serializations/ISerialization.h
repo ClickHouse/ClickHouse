@@ -192,6 +192,7 @@ public:
 
             NullableElements,
             NullMap,
+            SparseNullMap,
 
             TupleElement,
             NamedOffsets,
@@ -635,6 +636,14 @@ public:
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
 
+    /// Returns true if stream with specified path corresponds to Variant subcolumn.
+    static bool isVariantSubcolumn(const SubstreamPath & path);
+
+    /// In old versions we could escape file names for some specific substreams differently and it can lead
+    /// to not found stream file names in new versions. To keep compatibility, if we can't find stream file name
+    /// we are trying to change escaping (via StreamFileNameSettings) and try to find stream file name again.
+    static bool tryToChangeStreamFileNameSettingsForNotFoundStream(const SubstreamPath & substream_path, StreamFileNameSettings & stream_file_name_settings);
+
     /// Return true if the specified path contains prefix that should be deserialized in deserializeBinaryBulkStatePrefix.
     static bool hasPrefix(const SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams = false);
 
@@ -642,7 +651,7 @@ public:
     /// into resulting column and return true, otherwise do nothing and return false.
     static bool insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column);
     /// Perform insertion from column found in substreams cache.
-    static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows);
+    static void insertDataFromCachedColumn(const DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert = false);
 
 protected:
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;

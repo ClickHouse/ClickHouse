@@ -107,7 +107,7 @@ Replace mainClass with your actual class name in the configuration below
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-table-runtime</artifactId>
             <version>1.20.1</version>
-            <scope>compile</scope> <!-- 或 runtime，取决于部署方式 -->
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
@@ -125,14 +125,14 @@ Replace mainClass with your actual class name in the configuration below
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-clients</artifactId>
-            <version>1.20.1</version> <!-- 与你的 Flink 版本完全一致 -->
-            <scope>runtime</scope> <!-- 运行时必须存在 -->
+            <version>1.20.1</version>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>
             <groupId>commons-io</groupId>
             <artifactId>commons-io</artifactId>
-            <version>2.11.0</version> <!-- 使用最新稳定版本 -->
+            <version>2.11.0</version>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>

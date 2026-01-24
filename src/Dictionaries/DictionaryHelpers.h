@@ -229,7 +229,7 @@ static inline void insertDefaultValuesIntoColumns( /// NOLINT
 static inline void deserializeAndInsertIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
-    const char * place_for_serialized_columns)
+    ReadBuffer & in)
 {
     size_t columns_size = columns.size();
 
@@ -238,18 +238,18 @@ static inline void deserializeAndInsertIntoColumns( /// NOLINT
         const auto & column = columns[column_index];
 
         if (fetch_request.shouldFillResultColumnWithIndex(column_index))
-            place_for_serialized_columns = column->deserializeAndInsertFromArena(place_for_serialized_columns);
+            column->deserializeAndInsertFromArena(in, nullptr);
         else
-            place_for_serialized_columns = column->skipSerializedInArena(place_for_serialized_columns);
+            column->skipSerializedInArena(in);
     }
 }
 
 /**
- * In Dictionaries implementation String attribute is stored in arena and StringRefs are pointing to it.
+ * In Dictionaries implementation String attribute is stored in arena and std::string_views are pointing to it.
  */
 template <typename DictionaryAttributeType>
 using DictionaryValueType =
-    std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, StringRef, DictionaryAttributeType>;
+    std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, std::string_view, DictionaryAttributeType>;
 
 /**
  * Used to create column with right type for DictionaryAttributeType.
@@ -428,7 +428,7 @@ template <DictionaryKeyType key_type>
 class DictionaryKeysExtractor
 {
 public:
-    using KeyType = std::conditional_t<key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     explicit DictionaryKeysExtractor(const Columns & key_columns_, Arena * complex_key_arena_)
         : key_columns(key_columns_)
@@ -478,12 +478,12 @@ public:
 
             for (const auto & column : key_columns)
             {
-                StringRef serialized_data = column->serializeValueIntoArena(current_key_index, *complex_key_arena, block_start);
-                allocated_size_for_columns += serialized_data.size;
+                std::string_view serialized_data = column->serializeValueIntoArena(current_key_index, *complex_key_arena, block_start, nullptr);
+                allocated_size_for_columns += serialized_data.size();
             }
 
             ++current_key_index;
-            current_complex_key = StringRef{block_start, allocated_size_for_columns};
+            current_complex_key = std::string_view{block_start, allocated_size_for_columns};
             return  current_complex_key;
         }
     }
@@ -491,7 +491,7 @@ public:
     void rollbackCurrentKey() const
     {
         if constexpr (key_type == DictionaryKeyType::Complex)
-            complex_key_arena->rollback(current_complex_key.size);
+            complex_key_arena->rollback(current_complex_key.size());
     }
 
     PaddedPODArray<KeyType> extractAllKeys()
@@ -525,14 +525,14 @@ private:
 /// Deserialize columns from keys array using dictionary structure
 MutableColumns deserializeColumnsFromKeys(
     const DictionaryStructure & dictionary_structure,
-    const PaddedPODArray<StringRef> & keys,
+    const PaddedPODArray<std::string_view> & keys,
     size_t start,
     size_t end);
 
 /// Deserialize columns with type and name from keys array using dictionary structure
 ColumnsWithTypeAndName deserializeColumnsWithTypeAndNameFromKeys(
     const DictionaryStructure & dictionary_structure,
-    const PaddedPODArray<StringRef> & keys,
+    const PaddedPODArray<std::string_view> & keys,
     size_t start,
     size_t end);
 
@@ -546,7 +546,7 @@ Block mergeBlockWithPipe(
     const Block & block_to_update,
     BlockIO && io)
 {
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     Columns saved_block_key_columns;
     saved_block_key_columns.reserve(key_columns_size);
@@ -594,10 +594,10 @@ Block mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    PullingPipelineExecutor executor(io.pipeline);
-
     io.executeWithCallbacks([&]()
     {
+        PullingPipelineExecutor executor(io.pipeline);
+
         Block block;
         while (executor.pull(block))
         {

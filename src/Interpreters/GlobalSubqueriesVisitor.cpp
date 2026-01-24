@@ -103,7 +103,7 @@ void GlobalSubqueriesMatcher::Data::addExternalStorage(ASTPtr & ast, const Names
         *  TODO We can do better than using alias to name external tables
         */
 
-    auto database_and_table_name = std::make_shared<ASTTableIdentifier>(external_table_name);
+    auto database_and_table_name = make_intrusive<ASTTableIdentifier>(external_table_name);
     if (set_alias)
     {
         if (auto * table_name = subquery_or_table_name->as<ASTTableIdentifier>())
