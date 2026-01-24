@@ -811,10 +811,9 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
     UsearchHnswParams usearch_hnsw_params;
     LeaNNParams leann_params;
 
-    /// Optional parameters:
-    const bool has_six_args = (index.arguments.size() == 6);
+    /// Optional parameters (only when 7 arguments are provided):
     const bool has_seven_args = (index.arguments.size() == 7);
-    if (has_six_args || has_seven_args)
+    if (has_seven_args)
     {
         scalar_kind = quantizationToScalarKind.at(index.arguments[3].safeGet<String>());
         usearch_hnsw_params = {.connectivity  = index.arguments[4].safeGet<UInt64>(),
@@ -823,10 +822,8 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         /// Special handling for binary quantization:
         if (scalar_kind == unum::usearch::scalar_kind_t::b1x8_k)
             metric_kind = unum::usearch::metric_kind_t::hamming_k;
-    }
 
-    /// Parse LeaNN parameters (7th argument)
-    if (has_seven_args)
+        /// Parse LeaNN parameters (7th argument)
     {
         String leann_arg = index.arguments[6].safeGet<String>();
 
@@ -862,19 +859,18 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* attach */)
 {
     const bool has_three_args = (index.arguments.size() == 3);
-    const bool has_six_args = (index.arguments.size() == 6);
     const bool has_seven_args = (index.arguments.size() == 7);
 
     /// Check number and type of arguments
-    if (!has_three_args && !has_six_args && !has_seven_args)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have three, six, or seven arguments");
+    if (!has_three_args && !has_seven_args)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Vector similarity index must have three or seven arguments");
     if (index.arguments[0].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "First argument of vector similarity index (method) must be of type String");
     if (index.arguments[1].getType() != Field::Types::String)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Second argument of vector similarity index (metric) must be of type String");
     if (index.arguments[2].getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Third argument of vector similarity index (dimensions) must be of type UInt64");
-    if (has_six_args || has_seven_args)
+    if (has_seven_args)
     {
         if (index.arguments[3].getType() != Field::Types::String)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Fourth argument of vector similarity index (quantization) must be of type String");
@@ -891,7 +887,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         throw Exception(ErrorCodes::INCORRECT_DATA, "Second argument (distance function) of vector similarity index is not supported. Supported distance function are: {}", joinByComma(distanceFunctionToMetricKind));
     if (index.arguments[2].safeGet<UInt64>() == 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Third argument (dimensions) of vector similarity index must be > 0");
-    if (has_six_args)
+    if (has_seven_args)
     {
         if (!quantizationToScalarKind.contains(index.arguments[3].safeGet<String>()))
             throw Exception(ErrorCodes::INCORRECT_DATA, "Fourth argument (quantization) of vector similarity index is not supported. Supported quantizations are: {}", joinByComma(quantizationToScalarKind));
