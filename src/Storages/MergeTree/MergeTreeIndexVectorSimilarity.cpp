@@ -119,6 +119,26 @@ String joinByComma(const T & t)
     std::unreachable();
 }
 
+template <typename ScheduleFunc>
+void runBuildIndexTasks(ScheduleFunc && schedule_tasks)
+{
+    auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
+
+    schedule_tasks(runner);
+
+    runner.waitForAllToFinishAndRethrowFirstError();
+}
+
+inline void reserveIndexForSize(USearchIndexWithSerializationPtr & index, size_t target_size)
+{
+    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
+    if (max_thread_pool_size == 0)
+        max_thread_pool_size = getNumberOfCPUCoresToUse();
+    unum::usearch::index_limits_t limits(roundUpToPowerOfTwoOrZero(target_size), max_thread_pool_size);
+    index->reserve(limits);
+}
+
 }
 
 USearchIndexWithSerialization::USearchIndexWithSerialization(
@@ -405,33 +425,28 @@ void performHubPruning(
     auto pruned_index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 
     /// Reserve space for hub nodes
-    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
-    if (max_thread_pool_size == 0)
-        max_thread_pool_size = getNumberOfCPUCoresToUse();
-    unum::usearch::index_limits_t limits(roundUpToPowerOfTwoOrZero(hub_node_keys.size()), max_thread_pool_size);
-    pruned_index->reserve(limits);
+    reserveIndexForSize(pruned_index, hub_node_keys.size());
 
     /// Add hub nodes to new index
-    auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
-
-    size_t hub_index = 0;
-    for (auto key : hub_node_keys)
+    runBuildIndexTasks([&](auto & runner)
     {
-        if (key >= stored_vectors.size())
-            continue;
+        size_t hub_index = 0;
+        for (auto key : hub_node_keys)
+        {
+            if (key >= stored_vectors.size())
+                continue;
 
-        const auto & vector = stored_vectors[key];
-        auto new_key = static_cast<USearchIndex::vector_key_t>(hub_index++);
+            const auto & vector = stored_vectors[key];
+            auto new_key = static_cast<USearchIndex::vector_key_t>(hub_index++);
 
-        runner.enqueueAndKeepTrack([&pruned_index, &vector, new_key] {
-            auto result = pruned_index->add(new_key, vector.data());
-            if (!result)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add hub node to pruned index. Error: {}", result.error.release());
-        });
-    }
-
-    runner.waitForAllToFinishAndRethrowFirstError();
+            runner.enqueueAndKeepTrack([&pruned_index, &vector, new_key]
+            {
+                auto result = pruned_index->add(new_key, vector.data());
+                if (!result)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Could not add hub node to pruned index. Error: {}", result.error.release());
+            });
+        }
+    });
 
     /// Replace original index with pruned index
     index = pruned_index;
@@ -492,17 +507,10 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
             throw Exception(ErrorCodes::INCORRECT_DATA, "All arrays in column with vector similarity index must have equal length");
 
     /// Reserving space is mandatory
-    size_t max_thread_pool_size = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_build_vector_similarity_index_thread_pool_size];
-    if (max_thread_pool_size == 0)
-        max_thread_pool_size = getNumberOfCPUCoresToUse();
-    unum::usearch::index_limits_t limits(roundUpToPowerOfTwoOrZero(index->size() + rows), max_thread_pool_size);
-    index->reserve(limits);
+    reserveIndexForSize(index, index->size() + rows);
 
     /// Vector index creation is slooooow. Add the new rows in parallel. The threadpool is global to avoid oversubscription when multiple
     /// indexes are build simultaneously (e.g. multiple merges run at the same time).
-    auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
-
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];
@@ -531,13 +539,14 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
 
     size_t index_size = index->size();
 
-    for (size_t row = 0; row < rows; ++row)
+    runBuildIndexTasks([&](auto & runner)
     {
-        auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
-        runner.enqueueAndKeepTrack([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
-    }
-
-    runner.waitForAllToFinishAndRethrowFirstError();
+        for (size_t row = 0; row < rows; ++row)
+        {
+            auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
+            runner.enqueueAndKeepTrack([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
+        }
+    });
 }
 
 }
