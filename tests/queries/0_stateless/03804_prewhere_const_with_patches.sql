@@ -18,6 +18,9 @@ SETTINGS
     enable_block_number_column = 1,
     enable_block_offset_column = 1;
 
+-- Stop merges to ensure patch parts are preserved
+SYSTEM STOP MERGES t_prewhere_const_patches;
+
 INSERT INTO t_prewhere_const_patches SELECT number, 0, 0, 0 FROM numbers(10000);
 
 -- Apply some lightweight updates to create patch parts
