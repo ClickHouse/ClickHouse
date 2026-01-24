@@ -38,11 +38,14 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
@@ -809,6 +812,43 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         table_expression_query_info.table_expression = table_expression;
         if (const auto & filter_actions = table_expression_data.getFilterActions())
             table_expression_query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(filter_actions->clone());
+
+        /// Push ORDER BY/LIMIT into VIEW's inner query for distributed table optimization.
+        ///
+        /// When a VIEW wraps a Distributed table, queries like:
+        ///   SELECT * FROM view ORDER BY col LIMIT 10
+        /// would normally perform a full sort on the coordinator after gathering all data,
+        /// because the Distributed table doesn't see the ORDER BY clause.
+        ///
+        /// By pushing ORDER BY into the VIEW's inner query, the Distributed table can:
+        /// 1. Have each shard sort its data locally
+        /// 2. Merge the pre-sorted streams on the coordinator (merge-sorted-streams optimization)
+        /// This is significantly faster than a full sort, especially with LIMIT.
+        ///
+        /// We only do this for simple views (single SELECT, no JOIN) to avoid semantic changes.
+        if (storage->isView() && select_query_info.has_order_by)
+        {
+            if (const auto * outer_query = select_query_info.query_tree->as<QueryNode>();
+                outer_query && outer_query->hasOrderBy())
+            {
+                if (ASTPtr inner_query = storage_snapshot->metadata->getSelectQuery().inner_query)
+                {
+                    ASTPtr modified = inner_query->clone();
+                    if (auto * union_ast = modified->as<ASTSelectWithUnionQuery>();
+                        union_ast && union_ast->list_of_selects && union_ast->list_of_selects->children.size() == 1)
+                    {
+                        if (auto * select = union_ast->list_of_selects->children[0]->as<ASTSelectQuery>();
+                            select && !select->hasJoin())
+                        {
+                            select->setExpression(ASTSelectQuery::Expression::ORDER_BY, outer_query->getOrderBy().toAST());
+                            if (outer_query->hasLimit())
+                                select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, outer_query->getLimit()->toAST());
+                            table_expression_query_info.view_query = modified;
+                        }
+                    }
+                }
+            }
+        }
 
         size_t max_streams = settings[Setting::max_threads];
         size_t max_threads_execute_query = settings[Setting::max_threads];

@@ -33,9 +33,6 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Parsers/QueryParameterVisitor.h>
 
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-
 namespace DB
 {
 namespace Setting
@@ -144,7 +141,7 @@ StorageView::StorageView(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
     SelectQueryDescription description;
 
-    description.inner_query = query.getChild(*query.select);
+    description.inner_query = query.select->ptr();
 
     NormalizeSelectWithUnionQueryVisitor::Data data{SetOperationMode::Unspecified};
     NormalizeSelectWithUnionQueryVisitor{data}.visit(description.inner_query);
@@ -152,94 +149,6 @@ StorageView::StorageView(
     is_parameterized_view = is_parameterized_view_ || query.isParameterizedView();
     storage_metadata.setSelectQuery(description);
     setInMemoryMetadata(storage_metadata);
-}
-
-QueryProcessingStage::Enum StorageView::getQueryProcessingStage(
-    ContextPtr context,
-    QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info) const
-{
-    /// The whole analysis is done on top of the query tree.
-    /// If the query tree is not available, then the analyzer is disabled.
-    if (!query_info.query_tree)
-        return QueryProcessingStage::FetchColumns;
-
-    /// For simple views over a single table (no UNION, no JOIN), we can delegate
-    /// to the underlying storage for ORDER BY optimization (merge sorted streams).
-    ///
-    /// However, we must NOT delegate when the outer query requires aggregation,
-    /// because:
-    /// - Stages like WithMergeableState expect partial aggregate function states
-    /// - The VIEW's inner query produces raw columns, not aggregate states
-    /// - This would cause type conversion errors (e.g., UInt64 -> AggregateFunction)
-
-    if (query_info.need_aggregate)
-        return QueryProcessingStage::FetchColumns;
-
-    /// Check outer query properties using the query tree
-    const auto * query_node = query_info.query_tree->as<QueryNode>();
-    if (query_node && query_node->isDistinct())
-        return QueryProcessingStage::FetchColumns;
-
-    /// Get the view's inner query from metadata to find the underlying table
-    ASTPtr inner_query = storage_snapshot->metadata->getSelectQuery().inner_query;
-
-    auto * select_with_union = inner_query->as<ASTSelectWithUnionQuery>();
-    if (!select_with_union)
-        return QueryProcessingStage::FetchColumns;
-
-    /// Only handle simple views: single SELECT, no UNION
-    if (select_with_union->list_of_selects->children.size() != 1)
-        return QueryProcessingStage::FetchColumns;
-
-    auto * inner_select = select_with_union->list_of_selects->children[0]->as<ASTSelectQuery>();
-    if (!inner_select)
-        return QueryProcessingStage::FetchColumns;
-
-    /// Skip views with JOINs - they have complex semantics
-    if (hasJoin(*inner_select))
-        return QueryProcessingStage::FetchColumns;
-
-    /// Try to get the underlying table
-    if (!inner_select->tables() || inner_select->tables()->children.empty())
-        return QueryProcessingStage::FetchColumns;
-
-    auto * select_element = inner_select->tables()->children[0]->as<ASTTablesInSelectQueryElement>();
-    if (!select_element || !select_element->table_expression)
-        return QueryProcessingStage::FetchColumns;
-
-    auto * table_expression = select_element->table_expression->as<ASTTableExpression>();
-    if (!table_expression || !table_expression->database_and_table_name)
-        return QueryProcessingStage::FetchColumns;
-
-    auto * table_id_ast = table_expression->database_and_table_name->as<ASTTableIdentifier>();
-    if (!table_id_ast)
-        return QueryProcessingStage::FetchColumns;
-
-    try
-    {
-        /// Resolve database name (use current database if not specified)
-        StorageID table_id = table_id_ast->getTableId();
-        if (table_id.database_name.empty())
-            table_id.database_name = context->getCurrentDatabase();
-
-        /// Get the underlying storage
-        auto underlying_storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
-        if (!underlying_storage)
-            return QueryProcessingStage::FetchColumns;
-
-        /// Delegate to the underlying storage
-        auto underlying_snapshot = underlying_storage->getStorageSnapshot(
-            underlying_storage->getInMemoryMetadataPtr(), context);
-        return underlying_storage->getQueryProcessingStage(
-            context, to_stage, underlying_snapshot, query_info);
-    }
-    catch (...)
-    {
-        /// If table lookup fails, fall back to default behavior
-        return QueryProcessingStage::FetchColumns;
-    }
 }
 
 void StorageView::read(
