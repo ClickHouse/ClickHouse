@@ -72,12 +72,15 @@ public:
         {
             double mean = centroid.get_mean();
             long long weight = centroid.get_weight();
-            if (!first) {
+            if (!first)
+            {
                 ss << ",";
-            } else {
+            }
+            else
+            {
                 first = false;
             }
-            ss << "\"" << mean << "\":" << weight ;
+            ss << "\"" << mean << "\":" << weight;
         }
         ss << "}";
         return ss.str();
@@ -85,6 +88,8 @@ public:
 
     void merge(const TDigestSketchData & rhs)
     {
+        if (!rhs.tdigest)
+            return;
         datasketches::tdigest<double> * u = getTDigest();
         u->merge(*const_cast<TDigestSketchData &>(rhs).tdigest);
     }

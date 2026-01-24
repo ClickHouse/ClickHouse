@@ -7,6 +7,8 @@
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <quantiles_sketch.hpp>
+#include <Common/Base64.h>
+#include <AggregateFunctions/SketchDataUtils.h>
 
 namespace DB
 {
@@ -40,6 +42,52 @@ public:
         getDoubleSketch()->update(value);
     }
 
+    void insertSerialized(std::string_view serialized_data)
+    {
+        if (serialized_data.empty())
+            return;
+
+        std::string decoded_data;
+        const uint8_t * data_ptr;
+        size_t data_size;
+
+        /// Fast check: only attempt base64 decode if data looks like base64
+        /// This avoids expensive exception handling for raw binary data (the common case)
+        if (looksLikeBase64(serialized_data))
+        {
+            try
+            {
+                decoded_data = base64Decode(std::string(serialized_data));
+                data_ptr = reinterpret_cast<const uint8_t*>(decoded_data.data());
+                data_size = decoded_data.size();
+            }
+            catch (...)
+            {
+                /// Looked like base64 but wasn't valid, use raw data
+                data_ptr = reinterpret_cast<const uint8_t*>(serialized_data.data());
+                data_size = serialized_data.size();
+            }
+        }
+        else
+        {
+            /// Doesn't look like base64, use raw data directly
+            data_ptr = reinterpret_cast<const uint8_t*>(serialized_data.data());
+            data_size = serialized_data.size();
+        }
+
+        /// Deserialize and merge the sketch
+        try
+        {
+            auto sk = datasketches::quantiles_sketch<double>::deserialize(data_ptr, data_size);
+            getDoubleSketch()->merge(sk);
+        }
+        catch (...)
+        {
+            /// If deserialization fails (corrupted or invalid data), skip this value.
+            /// This allows graceful handling of bad input data rather than failing the entire aggregation.
+        }
+    }
+
     String serializedData()
     {
         if (!quantile_sketch)
@@ -50,10 +98,10 @@ public:
         return String(bytes.begin(), bytes.end());
     }
 
-	String getValuesAndWeights()
+    String getValuesAndWeights()
     {
         if (!quantile_sketch)
-		{
+        {
             return "{}";
         }
 
@@ -64,9 +112,12 @@ public:
         {
             double value = node.first;
             long long weight = node.second;
-            if (!first) {
+            if (!first)
+            {
                 ss << ",";
-            } else {
+            }
+            else
+            {
                 first = false;
             }
             ss << "\"" << value << "\":" << weight;
@@ -77,6 +128,8 @@ public:
 
     void merge(const DoubleSketchData & rhs)
     {
+        if (!rhs.quantile_sketch)
+            return;
         datasketches::quantiles_sketch<double> * u = getDoubleSketch();
         u->merge(*const_cast<DoubleSketchData &>(rhs).quantile_sketch);
     }
