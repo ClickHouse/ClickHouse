@@ -29,7 +29,7 @@ void ASTTableExpression::updateTreeHashImpl(SipHash & hash_state, bool ignore_al
 
 ASTPtr ASTTableExpression::clone() const
 {
-    auto res = make_intrusive<ASTTableExpression>(*this);
+    auto res = std::make_shared<ASTTableExpression>(*this);
     res->children.clear();
 
     CLONE(database_and_table_name);
@@ -51,7 +51,7 @@ void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
 
 ASTPtr ASTTableJoin::clone() const
 {
-    auto res = make_intrusive<ASTTableJoin>(*this);
+    auto res = std::make_shared<ASTTableJoin>(*this);
     res->children.clear();
 
     CLONE(using_expression_list);
@@ -60,10 +60,27 @@ ASTPtr ASTTableJoin::clone() const
     return res;
 }
 
-void ASTTableJoin::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+void ASTTableJoin::forEachPointerToChild(std::function<void(void **)> f)
 {
-    f(nullptr, &using_expression_list);
-    f(nullptr, &on_expression);
+    IAST * new_using_expression_list = using_expression_list.get();
+    f(reinterpret_cast<void **>(&new_using_expression_list));
+    if (new_using_expression_list != using_expression_list.get())
+    {
+        if (new_using_expression_list)
+            using_expression_list = new_using_expression_list->ptr();
+        else
+            using_expression_list.reset();
+    }
+
+    IAST * new_on_expression = on_expression.get();
+    f(reinterpret_cast<void **>(&new_on_expression));
+    if (new_on_expression != on_expression.get())
+    {
+        if (new_on_expression)
+            on_expression = new_on_expression->ptr();
+        else
+            on_expression.reset();
+    }
 }
 
 void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
@@ -74,7 +91,7 @@ void ASTArrayJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
 
 ASTPtr ASTArrayJoin::clone() const
 {
-    auto res = make_intrusive<ASTArrayJoin>(*this);
+    auto res = std::make_shared<ASTArrayJoin>(*this);
     res->children.clear();
 
     CLONE(expression_list);
@@ -84,7 +101,7 @@ ASTPtr ASTArrayJoin::clone() const
 
 ASTPtr ASTTablesInSelectQueryElement::clone() const
 {
-    auto res = make_intrusive<ASTTablesInSelectQueryElement>(*this);
+    auto res = std::make_shared<ASTTablesInSelectQueryElement>(*this);
     res->children.clear();
 
     CLONE(table_join);
@@ -96,7 +113,7 @@ ASTPtr ASTTablesInSelectQueryElement::clone() const
 
 ASTPtr ASTTablesInSelectQuery::clone() const
 {
-    const auto res = make_intrusive<ASTTablesInSelectQuery>(*this);
+    const auto res = std::make_shared<ASTTablesInSelectQuery>(*this);
     res->children.clear();
 
     for (const auto & child : children)
@@ -240,15 +257,11 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
     {
         ostr << " ON ";
         /// If there is an alias for the whole expression parens should be added, otherwise it will be invalid syntax
-        auto on_alias = on_expression->tryGetAlias();
-        /// If this alias was alerady defined before, parens should be omitted, because only alias will be printed
-        auto on_need_parens = !on_alias.empty() && !frame.ignore_printed_asts_with_alias &&
-            !state.printed_asts_with_alias.contains({frame.current_select, on_alias, on_expression->getTreeHash(/*ignore_aliases=*/ true)});
-
-        if (on_need_parens)
+        bool on_has_alias = !on_expression->tryGetAlias().empty();
+        if (on_has_alias)
             ostr << "(";
         on_expression->format(ostr, settings, state, frame);
-        if (on_need_parens)
+        if (on_has_alias)
             ostr << ")";
     }
 }

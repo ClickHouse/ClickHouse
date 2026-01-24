@@ -37,9 +37,9 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreePartCheckThread)")
     , log(getLogger(log_name))
-    , pausable_task(storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); }))
 {
-    getTask()->schedule();
+    task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
+    task->schedule();
 }
 
 ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
@@ -51,7 +51,7 @@ void ReplicatedMergeTreePartCheckThread::start()
 {
     std::lock_guard lock(start_stop_mutex);
     need_stop = false;
-    getTask()->activateAndSchedule();
+    task->activateAndSchedule();
 }
 
 void ReplicatedMergeTreePartCheckThread::stop()
@@ -61,7 +61,7 @@ void ReplicatedMergeTreePartCheckThread::stop()
 
     std::lock_guard lock(start_stop_mutex);
     need_stop = true;
-    getTask()->deactivate();
+    task->deactivate();
 }
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
@@ -74,17 +74,13 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     LOG_TRACE(log, "Enqueueing {} for check after {}s", name, delay_to_check_seconds);
     parts_queue.emplace_back(name, std::chrono::steady_clock::now() + std::chrono::seconds(delay_to_check_seconds));
     parts_set.insert(name);
-    getTask()->schedule();
+    task->schedule();
 }
 
-BackgroundSchedulePoolTaskHolder & ReplicatedMergeTreePartCheckThread::getTask()
+std::unique_lock<std::mutex> ReplicatedMergeTreePartCheckThread::pausePartsCheck()
 {
-    return pausable_task.getTask();
-}
-
-BackgroundSchedulePoolPausableTask::PauseHolderPtr ReplicatedMergeTreePartCheckThread::temporaryPause()
-{
-    return pausable_task.pause();
+    /// Wait for running tasks to finish and temporarily stop checking
+    return task->getExecLock();
 }
 
 void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
@@ -595,7 +591,7 @@ void ReplicatedMergeTreePartCheckThread::run()
                 if (next_it != parts_queue.end())
                 {
                     auto delay = next_it->time - current_time;
-                    getTask()->scheduleAfter(duration_cast<std::chrono::milliseconds>(delay).count());
+                    task->scheduleAfter(duration_cast<std::chrono::milliseconds>(delay).count());
                 }
                 return;
             }
@@ -632,7 +628,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
         storage.checkBrokenDisks();
 
-        getTask()->schedule();
+        task->schedule();
     }
     catch (const Coordination::Exception & e)
     {
@@ -641,12 +637,12 @@ void ReplicatedMergeTreePartCheckThread::run()
         if (Coordination::isHardwareError(e.code))
             return;
 
-        getTask()->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
+        task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
     }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        getTask()->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
+        task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
     }
 }
 
