@@ -720,7 +720,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             ++insert_it;
         }
 
-        metadata.secondary_indices.emplace(insert_it, IndexDescription::getIndexFromAST(index_decl, metadata.columns, /* is_implicitly_created */ false, context));
+        metadata.secondary_indices.emplace(
+            insert_it,
+            IndexDescription::getIndexFromAST(
+                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
     }
     else if (type == DROP_INDEX)
     {
@@ -1275,7 +1278,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     {
         try
         {
-            index = IndexDescription::getIndexFromAST(index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), context);
+            index = IndexDescription::getIndexFromAST(
+                index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), index.escape_filenames, context);
         }
         catch (const Exception & exception)
         {
