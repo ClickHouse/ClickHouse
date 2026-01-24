@@ -390,7 +390,6 @@ void performHubPruning(
             std::vector<USearchIndex::vector_key_t> result_keys(search_result.size());
             search_result.dump_to(result_keys.data());
 
-            /// Count visits (nodes in search results)
             for (auto key : result_keys)
             {
                 node_visit_counts[key]++;
@@ -418,8 +417,6 @@ void performHubPruning(
 
     if (hub_node_keys.size() < target_hub_nodes)
     {
-        /// Add nodes from the upper portion of the index (likely in higher layers)
-        /// Start from the end and work backwards to fill up to target_hub_nodes
         for (size_t i = index->size(); i > 0 && hub_node_keys.size() < target_hub_nodes; --i)
         {
             hub_node_keys.insert(static_cast<USearchIndex::vector_key_t>(i - 1));
@@ -430,10 +427,8 @@ void performHubPruning(
 
     auto pruned_index = std::make_shared<USearchIndexWithSerialization>(dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
 
-    /// Reserve space for hub nodes
     reserveIndexForSize(pruned_index, hub_node_keys.size());
 
-    /// Add hub nodes to new index
     runBuildIndexTasks([&](auto & runner)
     {
         size_t hub_index = 0;
@@ -479,7 +474,6 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
         }
     }
 
-    /// Perform hub pruning if enabled
     if (leann_enabled && index && index->size() > 0 && !stored_vectors.empty())
     {
         performHubPruning(index, stored_vectors, dimensions, metric_kind, scalar_kind, usearch_hnsw_params, leann_params.hub_pruning_ratio, leann_params.sample_size);
