@@ -73,6 +73,8 @@ struct ConvertToASTOptions
     /// Add _CAST if constant literal type is different from column type
     bool add_cast_for_constants = true;
 
+    bool use_source_expression_for_constants = false;
+
     /// Identifiers are fully qualified (`database.table.column`), otherwise names are just column names (`column`)
     bool fully_qualified_identifiers = true;
 
