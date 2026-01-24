@@ -303,8 +303,8 @@ class SourceClickHouse(ExternalSource):
 
     def prepare(self, structure, table_name, cluster):
         self.node = cluster.instances[self.docker_hostname]
-        self.node.query("DROP DATABASE IF EXISTS test")
-        self.node.query("CREATE DATABASE test")
+        self.node.query("CREATE DATABASE IF NOT EXISTS test")
+        self.node.query("DROP TABLE IF EXISTS test.{}".format(table_name))
         fields_strs = []
         for field in (
             structure.keys + structure.ordinary_fields + structure.range_fields
