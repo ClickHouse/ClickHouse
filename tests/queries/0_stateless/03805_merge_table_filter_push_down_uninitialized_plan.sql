@@ -1,5 +1,4 @@
 -- Test case for fix: QueryPlan was not initialized error when pushing down filter to Merge table
--- https://github.com/ClickHouse/ClickHouse/issues/XXXXX
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
