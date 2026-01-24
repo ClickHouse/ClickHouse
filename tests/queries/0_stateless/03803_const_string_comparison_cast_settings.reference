@@ -23,6 +23,10 @@ SELECT CAST(1 AS Bool) = 'yess' SETTINGS bool_true_representation='yess', bool_f
 1
 SELECT CAST(1 AS Bool) = 'yes' SETTINGS bool_true_representation='yess', bool_false_representation='noo';
 1
+SELECT CAST(0 AS Bool) = 'noo' SETTINGS bool_true_representation='yess', bool_false_representation='noo';
+1
+SELECT CAST(0 AS Bool) = 'no' SETTINGS bool_true_representation='yess', bool_false_representation='noo';
+1
 SELECT tuple(1, 0) = '(1, NULL)' SETTINGS input_format_null_as_default=0; -- { serverError CANNOT_PARSE_INPUT_ASSERTION_FAILED }
 SELECT tuple(1, 0) = '(1, NULL)' SETTINGS input_format_null_as_default=1;
 1
