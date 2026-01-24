@@ -399,7 +399,7 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
-        case Type::DROP_PARQUET_METADATA_CACHE:
+        case Type::CLEAR_PARQUET_METADATA_CACHE:
 # if USE_PARQUET
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
             system_context->clearParquetMetadataCache();
