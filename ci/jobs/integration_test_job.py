@@ -436,7 +436,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "JAVA_PATH": java_path,
     }
     if is_llvm_coverage:
-        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%3m.profraw"
+        test_env["LLVM_PROFILE_FILE"] = f"it-{batch_num}-%p.profraw"
         print(
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
