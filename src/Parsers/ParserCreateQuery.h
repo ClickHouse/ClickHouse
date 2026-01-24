@@ -61,7 +61,7 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
     if (name_parser.parse(pos, name, expected)
         && type_parser.parse(pos, type, expected))
     {
-        auto name_type_pair = std::make_shared<ASTNameTypePair>();
+        auto name_type_pair = make_intrusive<ASTNameTypePair>();
         tryGetIdentifierNameInto(name, name_type_pair->name);
         name_type_pair->type = type;
         name_type_pair->children.push_back(type);
@@ -166,7 +166,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (!name_parser.parse(pos, name, expected))
         return false;
 
-    const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
+    const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
     tryGetIdentifierNameInto(name, column_declaration->name);
 
     /// This keyword may occur only in MODIFY COLUMN query. We check it here
@@ -272,11 +272,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         {
             ephemeral_default = true;
 
-            auto default_function = std::make_shared<ASTFunction>();
+            auto default_function = make_intrusive<ASTFunction>();
             default_function->name = "defaultValueOfTypeName";
-            default_function->arguments = std::make_shared<ASTExpressionList>();
+            default_function->arguments = make_intrusive<ASTExpressionList>();
             /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
-            default_function->arguments->children.emplace_back(std::make_shared<ASTLiteral>(type->as<ASTDataType>()->formatForLogging()));
+            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->as<ASTDataType>()->formatForLogging()));
             default_expression = default_function;
         }
 

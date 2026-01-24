@@ -1,10 +1,10 @@
 #pragma once
 
 #include <memory>
-#include <string>
 #include <vector>
 #include <deque>
 
+#include <Parsers/IAST_fwd.h>
 #include <Common/TypePromotion.h>
 
 #include <city.h>
@@ -18,9 +18,6 @@ namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
 }
-
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
