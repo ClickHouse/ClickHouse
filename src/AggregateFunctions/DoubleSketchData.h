@@ -41,13 +41,16 @@ public:
         getDoubleSketch()->update(value);
     }
 
-    void insertSerialized(std::string_view serialized_data)
+    void insertSerialized(std::string_view serialized_data, bool force_raw = true)
     {
         if (serialized_data.empty())
             return;
 
         std::string decoded_storage;
-        auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage);
+        /// When merging internally-generated sketches (from serializedDoubleSketch),
+        /// we know the data is raw binary, not base64. Use force_raw=true for performance.
+        /// For external data sources that might send base64, set force_raw=false.
+        auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage, force_raw);
 
         if (data_ptr == nullptr || data_size == 0)
             return;

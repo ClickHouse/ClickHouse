@@ -56,6 +56,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        /// Fast path for empty blocks (common in parallel pipeline execution after aggregation)
+        if (input_rows_count == 0)
+            return ColumnUInt64::create();
+        
         const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
         if (!col_str)
             throw Exception(
@@ -79,9 +83,12 @@ public:
 
             try
             {
-                /// Decode base64 if needed, otherwise use raw data
+                /// ClickHouse aggregate functions (serializedHLL, mergeSerializedHLL) always
+                /// return raw binary data, never base64. Skip base64 detection for performance.
+                /// If users need to decode base64 sketch data from external sources, they should
+                /// use base64Decode() explicitly before calling this function.
                 std::string decoded_storage;
-                auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage);
+                auto [data_ptr, data_size] = decodeSketchData(serialized_data, decoded_storage, /* force_raw= */ true);
 
                 if (data_ptr == nullptr || data_size == 0)
                 {

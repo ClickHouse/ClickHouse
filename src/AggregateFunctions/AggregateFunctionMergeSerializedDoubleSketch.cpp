@@ -26,13 +26,18 @@ template <typename T>
 class AggregationFunctionMergeSerializedDoubleSketch final
     : public IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionMergeSerializedDoubleSketch<T>>
 {
+private:
+    bool assume_raw_binary;  /// If true, skip base64 decoding (default for performance)
+
 public:
-    AggregationFunctionMergeSerializedDoubleSketch(const DataTypes & arguments, const Array & params)
+    AggregationFunctionMergeSerializedDoubleSketch(const DataTypes & arguments, const Array & params, bool assume_raw_binary_)
         : IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionMergeSerializedDoubleSketch<T>>{arguments, params, createResultType()}
+        , assume_raw_binary(assume_raw_binary_)
     {}
 
     AggregationFunctionMergeSerializedDoubleSketch()
         : IAggregateFunctionDataHelper<DoubleSketchData<T>, AggregationFunctionMergeSerializedDoubleSketch<T>>{}
+        , assume_raw_binary(true)
     {}
 
     String getName() const override { return "mergeSerializedDoubleSketch"; }
@@ -45,7 +50,7 @@ public:
     {
         const auto & column = assert_cast<const ColumnString &>(*columns[0]);
         auto serialized_data = column.getDataAt(row_num);
-        this->data(place).insertSerialized(serialized_data);
+        this->data(place).insertSerialized(serialized_data, assume_raw_binary);
     }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -76,7 +81,19 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
     const Array & params,
     const Settings *)
 {
-    assertNoParameters(name, params);
+    /// Optional parameter: assume_raw_binary (default: true)
+    /// - true (1): Skip base64 decoding, treat as raw binary (faster, for ClickHouse-generated data)
+    /// - false (0): Check for base64 encoding and decode if detected (for external data)
+    bool assume_raw_binary = true;  // Default: assume raw binary for performance
+    
+    if (params.size() > 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {} takes at most 1 parameter (assume_raw_binary: 0 or 1)", name);
+    
+    if (params.size() == 1)
+    {
+        assume_raw_binary = params[0].safeGet<bool>();
+    }
 
     if (argument_types.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -92,7 +109,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedDoubleSketch(
             argument_types[0]->getName(), name);
 
     // Use Float64 as template parameter since DoubleSketch works with doubles
-    return std::make_shared<AggregationFunctionMergeSerializedDoubleSketch<Float64>>(argument_types, params);
+    return std::make_shared<AggregationFunctionMergeSerializedDoubleSketch<Float64>>(argument_types, params, assume_raw_binary);
 }
 
 }

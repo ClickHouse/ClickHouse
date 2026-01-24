@@ -26,13 +26,18 @@ template <typename T>
 class AggregationFunctionMergeSerializedHLL final
     : public IAggregateFunctionDataHelper<HLLSketchData<T>, AggregationFunctionMergeSerializedHLL<T>>
 {
+private:
+    bool assume_raw_binary;  /// If true, skip base64 decoding (default for performance)
+
 public:
-    AggregationFunctionMergeSerializedHLL(const DataTypes & arguments, const Array & params)
+    AggregationFunctionMergeSerializedHLL(const DataTypes & arguments, const Array & params, bool assume_raw_binary_)
         : IAggregateFunctionDataHelper<HLLSketchData<T>, AggregationFunctionMergeSerializedHLL<T>>{arguments, params, createResultType()}
+        , assume_raw_binary(assume_raw_binary_)
     {}
 
     AggregationFunctionMergeSerializedHLL()
         : IAggregateFunctionDataHelper<HLLSketchData<T>, AggregationFunctionMergeSerializedHLL<T>>{}
+        , assume_raw_binary(true)
     {}
 
     String getName() const override { return "mergeSerializedHLL"; }
@@ -45,7 +50,7 @@ public:
     {
         const auto & column = assert_cast<const ColumnString &>(*columns[0]);
         auto serialized_data = column.getDataAt(row_num);
-        this->data(place).insertSerialized(serialized_data);
+        this->data(place).insertSerialized(serialized_data, assume_raw_binary);
     }
 
     void NO_SANITIZE_UNDEFINED ALWAYS_INLINE merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -76,7 +81,19 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
     const Array & params,
     const Settings *)
 {
-    assertNoParameters(name, params);
+    /// Optional parameter: assume_raw_binary (default: true)
+    /// - true (1): Skip base64 decoding, treat as raw binary (faster, for ClickHouse-generated data)
+    /// - false (0): Check for base64 encoding and decode if detected (for external data)
+    bool assume_raw_binary = true;  // Default: assume raw binary for performance
+    
+    if (params.size() > 1)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "Aggregate function {} takes at most 1 parameter (assume_raw_binary: 0 or 1)", name);
+    
+    if (params.size() == 1)
+    {
+        assume_raw_binary = params[0].safeGet<bool>();
+    }
 
     if (argument_types.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -92,7 +109,7 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedHLL(
             argument_types[0]->getName(), name);
 
     // Use uint64_t as template parameter since we're working with serialized data, not raw values
-    return std::make_shared<AggregationFunctionMergeSerializedHLL<uint64_t>>(argument_types, params);
+    return std::make_shared<AggregationFunctionMergeSerializedHLL<uint64_t>>(argument_types, params, assume_raw_binary);
 }
 
 }
