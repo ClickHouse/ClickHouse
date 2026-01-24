@@ -47,7 +47,7 @@ There are also options to run tests in parallel or in random order.
 
 ### Running all tests {#running-all-tests}
 
-You may need a relatively strong computer to run all tests. The following works on `t3.2xlarge` AWS amd64 Ubuntu instance with 100 Gb storage.
+You may need a decently powerful machine to run all tests. The following works on `t3.2xlarge` AWS amd64 Ubuntu instance with 100 GB storage.
 
 1. Install prerequisites and re-login.
 ```
