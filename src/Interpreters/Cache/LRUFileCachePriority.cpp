@@ -167,6 +167,7 @@ LRUFileCachePriority::LRUIterator::LRUIterator(
     LRUQueue::iterator iterator_)
     : cache_priority(cache_priority_)
     , iterator(iterator_)
+    , entry(*iterator)
 {
 }
 
@@ -581,12 +582,12 @@ bool LRUFileCachePriority::tryIncreasePriority(
 IFileCachePriority::EntryPtr LRUFileCachePriority::LRUIterator::getEntry() const
 {
     assertValid();
-    return *iterator;
+    return entry;
 }
 
-bool LRUFileCachePriority::LRUIterator::isValid(const CachePriorityGuard::WriteLock &)
+bool LRUFileCachePriority::LRUIterator::isValid(const CachePriorityGuard::WriteLock &) const
 {
-    return iterator != LRUQueue::iterator{};
+    return entry != nullptr && iterator != LRUQueue::iterator{};
 }
 
 void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::WriteLock & lock)
@@ -598,28 +599,27 @@ void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::WriteLo
 
 void LRUFileCachePriority::LRUIterator::invalidate()
 {
-    assertValid();
-
-    const auto & entry = *iterator;
-    if (entry->size)
-    {
-        cache_priority->state->sub(entry->size, 1);
-        entry->size = 0;
-    }
+    chassert(entry);
 
     LOG_TEST(cache_priority->log,
              "Invalidating entry in LRU queue {}: {}",
              entry->toString(), cache_priority->getApproxStateInfoForLog());
 
+    size_t entry_size = entry->size;
+    entry->size = 0;
     entry->setInvalidatedFlag();
+
+    if (entry_size)
+        cache_priority->state->sub(entry_size, 1);
 }
 
-void LRUFileCachePriority::LRUIterator::incrementSize(size_t size, const CacheStateGuard::Lock & lock)
+void LRUFileCachePriority::LRUIterator::incrementSize(
+    size_t size,
+    const CacheStateGuard::Lock & lock)
 {
     chassert(size);
     assertValid();
 
-    const auto & entry = *iterator;
     size_t elements = entry->size > 0 ? 0 : 1;
 
     if (!cache_priority->canFit(size, elements, lock))
@@ -644,7 +644,6 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
 {
     assertValid();
 
-    const auto & entry = *iterator;
     chassert(entry->size >= 0);
     chassert(entry->size >= size);
 
@@ -658,8 +657,9 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
 
 bool LRUFileCachePriority::LRUIterator::assertValid() const
 {
-    if (iterator == LRUQueue::iterator{})
+    if (!entry || iterator == LRUQueue::iterator{})
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to use invalid iterator");
+    chassert(entry == *iterator);
     return true;
 }
 

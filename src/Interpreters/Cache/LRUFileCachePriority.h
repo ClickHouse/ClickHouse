@@ -244,7 +244,7 @@ public:
 
     EntryPtr getEntry() const override;
 
-    bool isValid(const CachePriorityGuard::WriteLock &) override;
+    bool isValid(const CachePriorityGuard::WriteLock &) const override;
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 
@@ -262,7 +262,9 @@ private:
     bool assertValid() const;
 
     LRUFileCachePriority * cache_priority;
-    mutable LRUQueue::iterator iterator;
+
+    LRUQueue::iterator iterator;
+    EntryPtr entry;
 };
 
 }
