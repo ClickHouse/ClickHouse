@@ -56,7 +56,7 @@ sudo apt-get install docker.io
 sudo usermod -aG docker ubuntu
 ```
 
-2. Get a source code.
+2. Get the source code.
 
 ```
 git clone --single-branch https://github.com/ClickHouse/ClickHouse
