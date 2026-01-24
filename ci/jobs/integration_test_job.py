@@ -127,16 +127,32 @@ def merge_profraw_files(llvm_profdata: str, batch_num: int, loop: bool = False):
             )
             
             corrupted_count = result.stderr.count("invalid instrumentation profile") + result.stderr.count("file header is corrupt")
+            corrupted_files = set()
             if corrupted_count > 0:
                 print(f"  WARNING: Found {corrupted_count} corrupted profraw files", flush=True)
+                # Extract and display corrupted filenames from stderr
+                for line in result.stderr.split('\n'):
+                    if "invalid instrumentation profile" in line or "file header is corrupt" in line or "error:" in line.lower():
+                        print(f"    {line.strip()}", flush=True)
+                        # Extract filename from error message (format: "error: file.profraw: ..." or "warning: file.profraw: ...")
+                        parts = line.split(':')
+                        if len(parts) >= 2:
+                            potential_file = parts[1].strip()
+                            if potential_file.endswith('.profraw'):
+                                corrupted_files.add(potential_file)
             
-            # Delete merged profraw files to save disk space
+            # Delete merged profraw files to save disk space, but keep corrupted ones for retry
+            deleted_count = 0
             for profraw_file in profraw_files:
+                if profraw_file in corrupted_files:
+                    print(f"  Keeping corrupted file for retry: {profraw_file}", flush=True)
+                    continue
                 try:
                     Path(profraw_file).unlink()
+                    deleted_count += 1
                 except Exception as e:
                     print(f"  WARNING: Failed to delete {profraw_file}: {e}", flush=True)
-            print(f"  Deleted {len(profraw_files)} merged profraw files", flush=True)
+            print(f"  Deleted {deleted_count} merged profraw files (kept {len(corrupted_files)} corrupted for retry)", flush=True)
         
         if not loop:
             break
