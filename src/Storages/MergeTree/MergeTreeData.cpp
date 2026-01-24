@@ -33,6 +33,7 @@
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
@@ -1248,6 +1249,7 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     /// Add all columns used in the partition key to the min-max index.
     DataTypes minmax_idx_columns_types = getMinMaxColumnsTypes(new_partition_key);
 
+
     /// Try to find the date column in columns used by the partition key (a common case).
     /// If there are no - DateTime or DateTime64 would also suffice.
 
@@ -1256,7 +1258,9 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
 
     for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
     {
-        if (isDate(minmax_idx_columns_types[i]))
+        const auto & type = minmax_idx_columns_types[i];
+        const auto non_nullable_type = removeNullable(type);
+        if (isDate(non_nullable_type))
         {
             if (!has_date_column)
             {
@@ -1274,8 +1278,10 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
     {
         for (size_t i = 0; i < minmax_idx_columns_types.size(); ++i)
         {
-            if (isDateTime(minmax_idx_columns_types[i])
-                || isDateTime64(minmax_idx_columns_types[i])
+            const auto & type = minmax_idx_columns_types[i];
+            const auto non_nullable_type = removeNullable(type);
+            if (isDateTime(non_nullable_type)
+                || isDateTime64(non_nullable_type)
             )
             {
                 if (!has_datetime_column)
@@ -1291,6 +1297,7 @@ void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_pa
             }
         }
     }
+
 }
 
 
