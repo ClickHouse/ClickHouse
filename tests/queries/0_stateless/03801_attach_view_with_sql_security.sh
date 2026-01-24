@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -35,3 +36,6 @@ ${CLICKHOUSE_CLIENT} --user $user --query "
   AS SELECT * FROM $db.test_table
   SETTINGS send_logs_level = 'error';
 "
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.test_mv;"
+${CLICKHOUSE_CLIENT} --query "DROP USER $user;"
