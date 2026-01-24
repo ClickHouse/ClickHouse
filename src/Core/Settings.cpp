@@ -6561,7 +6561,7 @@ Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows
     DECLARE(Bool, optimize_uniq_to_count, true, R"(
 Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.
 )", 0) \
-    DECLARE(Bool, use_variant_as_common_type, false, R"(
+    DECLARE(Bool, use_variant_as_common_type, true, R"(
 Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
 
 Example:
