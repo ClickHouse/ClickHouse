@@ -70,13 +70,26 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
-        if (!col_str)
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal column {} of first argument of function {}, should be ColumnString",
-                arguments[0].column->getName(),
-                getName());
+        /// Handle both ColumnString and ColumnConst<ColumnString>
+        const ColumnString * col_str = nullptr;
+        bool is_sketch_const = false;
+        std::string_view const_sketch_data;
+        
+        if (const auto * col_const_sketch = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+        {
+            const_sketch_data = col_const_sketch->getDataAt(0);
+            is_sketch_const = true;
+        }
+        else
+        {
+            col_str = checkAndGetColumn<ColumnString>(arguments[0].column.get());
+            if (!col_str)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal column {} of first argument of function {}, should be ColumnString",
+                    arguments[0].column->getName(),
+                    getName());
+        }
 
         /// Cast percentile argument to Float64 if needed
         Float64 const_percentile_value = 0.0;
@@ -128,7 +141,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            std::string_view serialized_data = col_str->getDataAt(i);
+            std::string_view serialized_data = is_sketch_const ? const_sketch_data : col_str->getDataAt(i);
             Float64 percentile = is_percentile_const ? const_percentile_value : col_percentile->getFloat64(i);
 
             /// Validate percentile range (skip if already validated constant)

@@ -26,6 +26,7 @@
 #pragma clang diagnostic ignored "-Wold-style-cast"
 #pragma clang diagnostic ignored "-Wimplicit-fallthrough"
 #pragma clang diagnostic ignored "-Wextra-semi-stmt"
+#pragma clang diagnostic ignored "-Wreserved-macro-identifier"
 
 #if __has_include("../../contrib/datasketches-cpp/common/include/MurmurHash3.h")
     #include "../../contrib/datasketches-cpp/common/include/MurmurHash3.h"

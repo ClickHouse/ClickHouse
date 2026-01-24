@@ -1,0 +1,42 @@
+Test 1: serializedHLL with integers
+1
+Test 2: serializedHLL with strings
+1
+Test 3: serializedHLL with UInt64
+1
+Test 4: mergeSerializedHLL basic
+1
+Test 5: mergeSerializedHLL multiple sketches
+1
+Test 6: mergeSerializedHLL with assume_raw_binary=1
+1
+Test 7: mergeSerializedHLL with assume_raw_binary=0
+1
+Test 8: cardinalityFromHLL basic
+1
+Test 9: cardinalityFromHLL with merged sketch
+1
+Test 10: cardinalityFromHLL empty sketch
+0
+Test 11: Cardinality accuracy for 1000 distinct values
+1031	1
+Test 12: Cardinality accuracy for 10000 distinct values
+10486	1
+Test 13: GROUP BY with serializedHLL
+0	1
+1	1
+2	1
+Test 14: Merge sketches from groups
+1
+Test 15: Handle NULL values
+1
+Test 16: Determinism check
+1
+Test 17: Union of disjoint sets
+1
+Test 18: Union of overlapping sets
+1
+Test 19: Large cardinality (100K distinct values)
+1
+Test 20: Sketch size is bounded
+52	552	1

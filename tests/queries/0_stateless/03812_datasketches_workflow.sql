@@ -1,0 +1,254 @@
+-- Tags: no-fasttest
+-- no-fasttest: requires datasketches library
+
+-- Integration test: Complete HLL workflow
+SELECT 'Test 1: Complete HLL workflow - daily to weekly aggregation';
+
+DROP TABLE IF EXISTS daily_user_sketches;
+CREATE TABLE daily_user_sketches (
+    date Date,
+    sketch String
+) ENGINE = Memory;
+
+-- Simulate 7 days of user activity
+INSERT INTO daily_user_sketches
+SELECT 
+    toDate('2024-01-01') + outer.number AS date,
+    serializedHLL(outer.number * 1000 + inner.number) AS sketch
+FROM numbers(7) AS outer, numbers(1000) AS inner
+GROUP BY date;
+
+-- Get weekly cardinality
+SELECT 
+    cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 6500 AND 7500 AS weekly_cardinality_ok
+FROM daily_user_sketches;
+
+DROP TABLE daily_user_sketches;
+
+-- Integration test: Complete Quantiles workflow
+SELECT 'Test 2: Complete Quantiles workflow - hourly to daily percentiles';
+
+DROP TABLE IF EXISTS hourly_latency_sketches;
+CREATE TABLE hourly_latency_sketches (
+    hour DateTime,
+    service String,
+    sketch String
+) ENGINE = Memory;
+
+-- Simulate 24 hours of latency data for 3 services
+INSERT INTO hourly_latency_sketches
+SELECT 
+    toDateTime('2024-01-01 00:00:00') + toIntervalHour(h.number) AS hour,
+    s.service AS service,
+    serializedDoubleSketch(rand() % 1000) AS sketch
+FROM numbers(24) AS h, (SELECT arrayJoin(['api', 'db', 'cache']) AS service) AS s
+GROUP BY hour, service;
+
+-- Get daily percentiles per service
+WITH daily_sketches AS (
+    SELECT 
+        service,
+        mergeSerializedDoubleSketch(sketch) AS merged
+    FROM hourly_latency_sketches
+    GROUP BY service
+)
+SELECT 
+    service,
+    percentileFromDoubleSketch(merged, 0.5) BETWEEN 0 AND 1000 AS p50_ok,
+    percentileFromDoubleSketch(merged, 0.95) BETWEEN 0 AND 1000 AS p95_ok,
+    percentileFromDoubleSketch(merged, 0.99) BETWEEN 0 AND 1000 AS p99_ok
+FROM daily_sketches
+ORDER BY service;
+
+DROP TABLE hourly_latency_sketches;
+
+-- Test: Incremental sketch updates
+SELECT 'Test 3: Incremental sketch updates';
+
+DROP TABLE IF EXISTS incremental_sketches;
+CREATE TABLE incremental_sketches (
+    id UInt64,
+    sketch String
+) ENGINE = Memory;
+
+-- Initial sketch
+INSERT INTO incremental_sketches
+SELECT 1 AS id, serializedHLL(number) AS sketch FROM numbers(1000);
+
+-- Merge with new data
+INSERT INTO incremental_sketches
+SELECT 1 AS id, serializedHLL(number + 500) AS sketch FROM numbers(1000);
+
+-- Get final cardinality (should be around 1500 due to overlap)
+SELECT 
+    cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 1400 AND 1600 AS incremental_ok
+FROM incremental_sketches;
+
+DROP TABLE incremental_sketches;
+
+-- Test: Multi-dimensional aggregation
+SELECT 'Test 4: Multi-dimensional aggregation';
+
+DROP TABLE IF EXISTS multi_dim_sketches;
+CREATE TABLE multi_dim_sketches (
+    region String,
+    product String,
+    sketch String
+) ENGINE = Memory;
+
+INSERT INTO multi_dim_sketches
+SELECT 
+    arrayJoin(['US', 'EU', 'ASIA']) AS region,
+    arrayJoin(['A', 'B', 'C']) AS product,
+    serializedHLL(number) AS sketch
+FROM numbers(100)
+GROUP BY region, product;
+
+-- Aggregate by region only
+SELECT 
+    region,
+    cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 90 AND 110 AS cardinality_ok
+FROM multi_dim_sketches
+GROUP BY region
+ORDER BY region;
+
+-- Aggregate by product only
+SELECT 
+    product,
+    cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 90 AND 110 AS cardinality_ok
+FROM multi_dim_sketches
+GROUP BY product
+ORDER BY product;
+
+-- Global aggregate
+SELECT 
+    cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 90 AND 110 AS global_cardinality_ok
+FROM multi_dim_sketches;
+
+DROP TABLE multi_dim_sketches;
+
+-- Test: Time series rollup
+SELECT 'Test 5: Time series rollup (minute -> hour -> day)';
+
+DROP TABLE IF EXISTS minute_sketches;
+CREATE TABLE minute_sketches (
+    timestamp DateTime,
+    sketch String
+) ENGINE = Memory;
+
+-- Simulate 1 day of minute-level data
+INSERT INTO minute_sketches
+SELECT 
+    toDateTime('2024-01-01 00:00:00') + toIntervalMinute(outer.number) AS timestamp,
+    serializedHLL(outer.number % 1000 + inner.number) AS sketch
+FROM numbers(1440) AS outer, numbers(10) AS inner
+GROUP BY timestamp;
+
+-- Hourly rollup
+WITH hourly AS (
+    SELECT 
+        toStartOfHour(timestamp) AS hour,
+        mergeSerializedHLL(sketch) AS hourly_sketch
+    FROM minute_sketches
+    GROUP BY hour
+)
+SELECT 
+    count() = 24 AS has_24_hours,
+    cardinalityFromHLL(mergeSerializedHLL(hourly_sketch)) BETWEEN 900 AND 1100 AS daily_cardinality_ok
+FROM hourly;
+
+DROP TABLE minute_sketches;
+
+-- Test: Sketch persistence and retrieval
+SELECT 'Test 6: Sketch persistence and retrieval';
+
+DROP TABLE IF EXISTS persistent_sketches;
+CREATE TABLE persistent_sketches (
+    id UInt64,
+    sketch_hll String,
+    sketch_quantiles String
+) ENGINE = Memory;
+
+INSERT INTO persistent_sketches
+SELECT 
+    1 AS id,
+    serializedHLL(number) AS sketch_hll,
+    serializedDoubleSketch(number) AS sketch_quantiles
+FROM numbers(10000);
+
+-- Retrieve and use stored sketches
+SELECT 
+    cardinalityFromHLL(sketch_hll) BETWEEN 9500 AND 10500 AS hll_ok,
+    percentileFromDoubleSketch(sketch_quantiles, 0.5) BETWEEN 4500 AND 5500 AS quantile_ok
+FROM persistent_sketches
+WHERE id = 1;
+
+DROP TABLE persistent_sketches;
+
+-- Test: Combining sketches from different time periods
+SELECT 'Test 7: Union of sketches from different time periods';
+
+WITH 
+    week1 AS (SELECT serializedHLL(number) AS sketch FROM numbers(1000)),
+    week2 AS (SELECT serializedHLL(number + 500) AS sketch FROM numbers(1000)),
+    week3 AS (SELECT serializedHLL(number + 1000) AS sketch FROM numbers(1000)),
+    all_weeks AS (
+        SELECT sketch FROM week1
+        UNION ALL SELECT sketch FROM week2
+        UNION ALL SELECT sketch FROM week3
+    )
+SELECT 
+    cardinalityFromHLL(mergeSerializedHLL(sketch)) BETWEEN 1800 AND 2200 AS union_cardinality_ok
+FROM all_weeks;
+
+-- Test: Sketch size efficiency
+SELECT 'Test 8: Sketch size efficiency';
+
+WITH 
+    small_sketch AS (SELECT length(serializedHLL(number)) AS s FROM numbers(100)),
+    medium_sketch AS (SELECT length(serializedHLL(number)) AS s FROM numbers(10000)),
+    large_sketch AS (SELECT length(mergeSerializedHLL(sketch)) AS s FROM (SELECT serializedHLL(number) AS sketch FROM numbers(1000000)))
+SELECT 
+    (SELECT s FROM small_sketch) AS size_small,
+    (SELECT s FROM medium_sketch) AS size_medium,
+    (SELECT s FROM large_sketch) AS size_large,
+    size_large < 2000 AS size_bounded
+FROM (SELECT 1);
+
+-- Test: Quantiles with different distributions
+SELECT 'Test 9: Quantiles with different distributions';
+
+DROP TABLE IF EXISTS test_distributions;
+CREATE TABLE test_distributions (
+    dist_type String,
+    sketch String
+) ENGINE = Memory;
+
+INSERT INTO test_distributions
+SELECT 'uniform' AS dist_type, mergeSerializedDoubleSketch(sketch) AS sketch
+FROM (SELECT serializedDoubleSketch(number) AS sketch FROM numbers(1000));
+
+INSERT INTO test_distributions
+SELECT 'skewed' AS dist_type, mergeSerializedDoubleSketch(sketch) AS sketch
+FROM (SELECT serializedDoubleSketch(pow(number, 2)) AS sketch FROM numbers(100));
+
+SELECT 
+    percentileFromDoubleSketch((SELECT sketch FROM test_distributions WHERE dist_type = 'uniform'), 0.5) BETWEEN 400 AND 600 AS uniform_median_ok,
+    percentileFromDoubleSketch((SELECT sketch FROM test_distributions WHERE dist_type = 'skewed'), 0.95) > 
+    percentileFromDoubleSketch((SELECT sketch FROM test_distributions WHERE dist_type = 'skewed'), 0.5) AS skewed_increasing
+FROM (SELECT 1);
+
+DROP TABLE test_distributions;
+
+-- Test: Error handling with empty results
+SELECT 'Test 10: Empty result handling';
+
+SELECT 
+    cardinalityFromHLL(mergeSerializedHLL(sketch)) = 0 AS hll_empty_ok,
+    isNaN(percentileFromDoubleSketch(mergeSerializedDoubleSketch(q_sketch), 0.5)) AS quantile_empty_ok
+FROM (
+    SELECT 
+        serializedHLL(number) AS sketch,
+        serializedDoubleSketch(number) AS q_sketch
+    FROM numbers(0)
+);

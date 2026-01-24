@@ -1,0 +1,155 @@
+-- Tags: no-fasttest
+-- no-fasttest: requires datasketches library
+
+-- Test edge cases and error conditions
+
+SELECT 'Test 1: Single value HLL';
+SELECT cardinalityFromHLL(serializedHLL(42)) = 1;
+
+SELECT 'Test 2: Single value quantile';
+SELECT abs(percentileFromDoubleSketch(serializedDoubleSketch(42), 0.5) - 42) < 1;
+
+SELECT 'Test 3: Two identical values';
+SELECT cardinalityFromHLL(serializedHLL(if(number < 1000, 42, 42))) = 1
+FROM numbers(1000);
+
+SELECT 'Test 4: Very small dataset (1 value)';
+SELECT cardinalityFromHLL(serializedHLL(number)) = 1 FROM numbers(1);
+
+SELECT 'Test 5: Very small dataset (2 values)';
+SELECT cardinalityFromHLL(serializedHLL(number)) BETWEEN 1 AND 3 FROM numbers(2);
+
+SELECT 'Test 6: Extreme percentiles';
+WITH sketch AS (SELECT serializedDoubleSketch(number) AS s FROM numbers(1000))
+SELECT 
+    percentileFromDoubleSketch(s, 0.001) < percentileFromDoubleSketch(s, 0.999) AS extremes_ordered
+FROM sketch;
+
+SELECT 'Test 7: All percentiles between 0 and 1';
+DROP TABLE IF EXISTS test_percentile_range;
+CREATE TABLE test_percentile_range (sketch String) ENGINE = Memory;
+INSERT INTO test_percentile_range SELECT serializedDoubleSketch(number) AS s FROM numbers(100);
+SELECT 
+    percentileFromDoubleSketch((SELECT sketch FROM test_percentile_range), number / 100.0) BETWEEN 0 AND 100 AS in_range
+FROM numbers(101)
+WHERE number <= 100
+LIMIT 1;
+DROP TABLE test_percentile_range;
+
+SELECT 'Test 8: Large integers (UInt64)';
+SELECT cardinalityFromHLL(serializedHLL(toUInt64(18446744073709551615 - number))) BETWEEN 90 AND 110
+FROM numbers(100);
+
+SELECT 'Test 9: Negative numbers in quantiles';
+WITH sketch AS (SELECT serializedDoubleSketch(toInt64(number) - 5000) AS s FROM numbers(10000))
+SELECT 
+    percentileFromDoubleSketch(s, 0.5) BETWEEN -500 AND 500 AS median_around_zero
+FROM sketch;
+
+SELECT 'Test 10: Very small floating point numbers';
+WITH sketch AS (SELECT serializedDoubleSketch(number / 1000000.0) AS s FROM numbers(1000))
+SELECT 
+    percentileFromDoubleSketch(s, 0.5) BETWEEN 0.0004 AND 0.0006 AS small_floats_ok
+FROM sketch;
+
+SELECT 'Test 11: Mixed positive and negative';
+WITH sketch AS (SELECT serializedDoubleSketch(number - 500) AS s FROM numbers(1000))
+SELECT 
+    percentileFromDoubleSketch(s, 0.0) < 0 AS min_negative,
+    percentileFromDoubleSketch(s, 1.0) > 0 AS max_positive
+FROM sketch;
+
+SELECT 'Test 12: Sparse data (many NULLs)';
+SELECT cardinalityFromHLL(serializedHLL(if(number % 100 = 0, number, NULL))) BETWEEN 5 AND 15
+FROM numbers(1000);
+
+SELECT 'Test 13: All NULLs HLL';
+SELECT cardinalityFromHLL(serializedHLL(NULL::Nullable(UInt64))) = 0
+FROM numbers(100);
+
+SELECT 'Test 14: All NULLs quantiles';
+SELECT isNaN(percentileFromDoubleSketch(serializedDoubleSketch(NULL::Nullable(Float64)), 0.5))
+FROM numbers(100);
+
+SELECT 'Test 15: String with special characters';
+SELECT cardinalityFromHLL(serializedHLL(concat('user_', toString(number), '_テスト'))) BETWEEN 90 AND 110
+FROM numbers(100);
+
+SELECT 'Test 16: Empty string';
+SELECT cardinalityFromHLL(serializedHLL('')) = 1
+FROM numbers(100);
+
+SELECT 'Test 17: Very long strings';
+SELECT cardinalityFromHLL(serializedHLL(repeat('a', toUInt64(number % 1000)))) BETWEEN 90 AND 110
+FROM numbers(100);
+
+SELECT 'Test 18: Identical sketches produce identical results';
+WITH 
+    s1 AS (SELECT serializedHLL(number) AS sketch FROM numbers(100)),
+    s2 AS (SELECT serializedHLL(number) AS sketch FROM numbers(100))
+SELECT 
+    cardinalityFromHLL((SELECT sketch FROM s1)) = 
+    cardinalityFromHLL((SELECT sketch FROM s2)) AS identical_results;
+
+SELECT 'Test 19: Merging order independence';
+WITH 
+    s1 AS (SELECT serializedHLL(number) AS sketch FROM numbers(100)),
+    s2 AS (SELECT serializedHLL(number + 50) AS sketch FROM numbers(100)),
+    merge1 AS (SELECT mergeSerializedHLL(sketch) AS m FROM (SELECT sketch FROM s1 UNION ALL SELECT sketch FROM s2)),
+    merge2 AS (SELECT mergeSerializedHLL(sketch) AS m FROM (SELECT sketch FROM s2 UNION ALL SELECT sketch FROM s1))
+SELECT 
+    cardinalityFromHLL((SELECT m FROM merge1)) = 
+    cardinalityFromHLL((SELECT m FROM merge2)) AS order_independent;
+
+SELECT 'Test 20: Quantile monotonicity';
+WITH sketch AS (SELECT serializedDoubleSketch(number) AS s FROM numbers(1000))
+SELECT 
+    percentileFromDoubleSketch(s, 0.1) <= percentileFromDoubleSketch(s, 0.2) AS p10_le_p20,
+    percentileFromDoubleSketch(s, 0.2) <= percentileFromDoubleSketch(s, 0.3) AS p20_le_p30,
+    percentileFromDoubleSketch(s, 0.3) <= percentileFromDoubleSketch(s, 0.4) AS p30_le_p40,
+    percentileFromDoubleSketch(s, 0.4) <= percentileFromDoubleSketch(s, 0.5) AS p40_le_p50,
+    percentileFromDoubleSketch(s, 0.5) <= percentileFromDoubleSketch(s, 0.6) AS p50_le_p60,
+    percentileFromDoubleSketch(s, 0.6) <= percentileFromDoubleSketch(s, 0.7) AS p60_le_p70,
+    percentileFromDoubleSketch(s, 0.7) <= percentileFromDoubleSketch(s, 0.8) AS p70_le_p80,
+    percentileFromDoubleSketch(s, 0.8) <= percentileFromDoubleSketch(s, 0.9) AS p80_le_p90
+FROM sketch;
+
+SELECT 'Test 21: Assume_raw_binary parameter equivalence';
+WITH 
+    sketch AS (SELECT serializedHLL(number) AS s FROM numbers(1000)),
+    merge_default AS (SELECT mergeSerializedHLL(s) AS m FROM sketch),
+    merge_explicit_1 AS (SELECT mergeSerializedHLL(1)(s) AS m FROM sketch),
+    merge_explicit_0 AS (SELECT mergeSerializedHLL(0)(s) AS m FROM sketch)
+SELECT 
+    abs(cardinalityFromHLL((SELECT m FROM merge_default)) - 
+        cardinalityFromHLL((SELECT m FROM merge_explicit_1))) < 10 AS default_eq_1,
+    abs(cardinalityFromHLL((SELECT m FROM merge_default)) - 
+        cardinalityFromHLL((SELECT m FROM merge_explicit_0))) < 10 AS default_eq_0
+FROM (SELECT 1);
+
+SELECT 'Test 22: DoubleSketch assume_raw_binary parameter';
+WITH 
+    sketch AS (SELECT serializedDoubleSketch(number) AS s FROM numbers(1000)),
+    merge_default AS (SELECT mergeSerializedDoubleSketch(s) AS m FROM sketch),
+    merge_explicit_1 AS (SELECT mergeSerializedDoubleSketch(1)(s) AS m FROM sketch)
+SELECT 
+    abs(percentileFromDoubleSketch((SELECT m FROM merge_default), 0.5) - 
+        percentileFromDoubleSketch((SELECT m FROM merge_explicit_1), 0.5)) < 10 AS parameters_equivalent
+FROM (SELECT 1);
+
+SELECT 'Test 23: Very high cardinality';
+SELECT cardinalityFromHLL(mergeSerializedHLL(sketch)) > 950000 AS high_cardinality_ok
+FROM (SELECT serializedHLL(number) AS sketch FROM numbers(1000000));
+
+SELECT 'Test 24: Percentile with uniform distribution';
+WITH sketch AS (SELECT serializedDoubleSketch(rand() % 1000) AS s FROM numbers(100000))
+SELECT 
+    abs(percentileFromDoubleSketch(s, 0.5) - 500) / 500.0 < 0.1 AS uniform_median_ok
+FROM sketch;
+
+SELECT 'Test 25: Multiple aggregations in same query';
+SELECT 
+    cardinalityFromHLL(serializedHLL(number)) BETWEEN 90 AND 110 AS card1,
+    cardinalityFromHLL(serializedHLL(number + 1000)) BETWEEN 90 AND 110 AS card2,
+    percentileFromDoubleSketch(serializedDoubleSketch(number), 0.5) BETWEEN 40 AND 60 AS p50
+FROM numbers(100);
