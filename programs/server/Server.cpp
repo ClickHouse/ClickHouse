@@ -623,13 +623,13 @@ void Server::createServer(
     auto port = config.getInt(port_name);
     try
     {
-        servers.push_back(func(port));
+        servers.push_back(func(static_cast<UInt16>(port)));
         if (start_server)
         {
             servers.back().start();
             LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
         }
-        global_context->registerServerPort(port_name, port);
+        global_context->registerServerPort(port_name, static_cast<UInt16>(port));
     }
     catch (const Poco::Exception &)
     {
@@ -1766,7 +1766,7 @@ try
         else
         {
             rlim_t old = rlim.rlim_cur;
-            rlim.rlim_cur = server_settings[ServerSetting::max_open_files].changed ? server_settings[ServerSetting::max_open_files] : static_cast<unsigned>(rlim.rlim_max);
+            rlim.rlim_cur = server_settings[ServerSetting::max_open_files].changed ? static_cast<rlim_t>(server_settings[ServerSetting::max_open_files]) : rlim.rlim_max;
             int rc = setrlimit(RLIMIT_NOFILE, &rlim);
             if (rc != 0)
                 LOG_WARNING(log, "Cannot set max number of file descriptors to {}. Try to specify max_open_files according to your system limits. error: {}", rlim.rlim_cur, errnoToString());
@@ -1891,12 +1891,12 @@ try
                     host_tag, this_host);
             }
 
-            int port = port_setting.value;
+            UInt64 port = port_setting.value;
 
-            if (port < 0 || port > 0xFFFF)
+            if (port > 0xFFFF)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Out of range '{}': {}", String(port_tag), port);
 
-            global_context->setInterserverIOAddress(this_host, port);
+            global_context->setInterserverIOAddress(this_host, static_cast<UInt16>(port));
             global_context->setInterserverScheme(scheme);
         }
     }
@@ -2068,7 +2068,7 @@ try
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;
     try
     {
-        auto wait_time = server_settings[ServerSetting::cgroups_memory_usage_observer_wait_time];
+        const auto & wait_time = server_settings[ServerSetting::cgroups_memory_usage_observer_wait_time];
         if (wait_time != 0)
             cgroups_memory_usage_observer.emplace(std::chrono::seconds(wait_time));
     }
@@ -2272,27 +2272,27 @@ try
             /// This is done for backward compatibility.
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings[ServerSetting::background_pool_size];
-                auto new_ratio = new_server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
+                const auto & new_pool_size = new_server_settings[ServerSetting::background_pool_size];
+                const auto & new_ratio = new_server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
                 global_context->getMergeMutateExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, static_cast<size_t>(new_pool_size * new_ratio));
                 global_context->getMergeMutateExecutor()->updateSchedulingPolicy(new_server_settings[ServerSetting::background_merges_mutations_scheduling_policy].toString());
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings[ServerSetting::background_move_pool_size];
+                const auto & new_pool_size = new_server_settings[ServerSetting::background_move_pool_size];
                 global_context->getMovesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings[ServerSetting::background_fetches_pool_size];
+                const auto & new_pool_size = new_server_settings[ServerSetting::background_fetches_pool_size];
                 global_context->getFetchesExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 
             if (global_context->areBackgroundExecutorsInitialized())
             {
-                auto new_pool_size = new_server_settings[ServerSetting::background_common_pool_size];
+                const auto & new_pool_size = new_server_settings[ServerSetting::background_common_pool_size];
                 global_context->getCommonExecutor()->increaseThreadsAndMaxTasksCount(new_pool_size, new_pool_size);
             }
 

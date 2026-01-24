@@ -516,6 +516,11 @@ target_link_libraries(dbms PUBLIC
     ch_contrib::pdqsort)
 
 target_link_libraries(dbms PRIVATE ch_contrib::zstd)
+
+if (TARGET ch_contrib::simdcomp)
+    target_link_libraries (dbms PRIVATE ch_contrib::simdcomp)
+endif()
+
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::zstd)
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::xz)
 
@@ -746,6 +751,10 @@ if (ENABLE_TESTS)
 
     if (TARGET ch_contrib::simdjson)
         target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdjson)
+    endif()
+    
+    if (TARGET ch_contrib::simdcomp)
+        target_link_libraries(unit_tests_dbms PRIVATE ch_contrib::simdcomp)
     endif()
 
     if (TARGET ch_contrib::yaml_cpp)

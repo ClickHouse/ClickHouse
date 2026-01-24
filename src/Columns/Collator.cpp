@@ -32,8 +32,8 @@ AvailableCollationLocales::AvailableCollationLocales()
 {
 #if USE_ICU
     static const size_t MAX_LANG_LENGTH = 128;
-    size_t available_locales_count = ucol_countAvailable();
-    for (size_t i = 0; i < available_locales_count; ++i)
+    int32_t available_locales_count = ucol_countAvailable();
+    for (int32_t i = 0; i < available_locales_count; ++i)
     {
         std::string locale_name = ucol_getAvailable(i);
         UChar lang_buffer[MAX_LANG_LENGTH];
@@ -41,7 +41,7 @@ AvailableCollationLocales::AvailableCollationLocales()
         UErrorCode status = U_ZERO_ERROR;
 
         /// All names will be in English language
-        size_t lang_length = uloc_getDisplayLanguage(
+        int32_t lang_length = uloc_getDisplayLanguage(
             locale_name.c_str(), "en", lang_buffer, MAX_LANG_LENGTH, &status);
         std::optional<std::string> lang;
 
@@ -131,8 +131,8 @@ int Collator::compare(const char * str1, size_t length1, const char * str2, size
 #if USE_ICU
     UCharIterator iter1;
     UCharIterator iter2;
-    uiter_setUTF8(&iter1, str1, length1);
-    uiter_setUTF8(&iter2, str2, length2);
+    uiter_setUTF8(&iter1, str1, static_cast<int32_t>(length1));
+    uiter_setUTF8(&iter2, str2, static_cast<int32_t>(length2));
 
     UErrorCode status = U_ZERO_ERROR;
     UCollationResult compare_result = ucol_strcollIter(collator, &iter1, &iter2, &status);

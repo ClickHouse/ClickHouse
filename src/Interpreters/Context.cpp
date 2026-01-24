@@ -9,7 +9,6 @@
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
-#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/Macros.h>
@@ -47,16 +46,15 @@
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
+#include <IO/AsynchronousReader.h>
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
 #include <Disks/IO/getIOUringReader.h>
-#include <IO/SynchronousReader.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -100,8 +98,6 @@
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/WriteSettings.h>
@@ -116,7 +112,6 @@
 #include <Common/Config/ConfigReloader.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ShellCommand.h>
 #include <Common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/HTTPHeaderFilter.h>
@@ -700,6 +695,19 @@ struct ContextSharedPart : boost::noncopyable
 
     ~ContextSharedPart()
     {
+        /// Shutdown must be called first to stop all background tasks (like loadOutdatedDataParts)
+        /// that may be using the thread pool readers. Otherwise there is a data race between
+        /// background tasks calling getThreadPoolReader() and the destructor resetting the readers.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/62143
+        try
+        {
+            shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
 #if USE_NURAFT
         if (keeper_dispatcher)
         {
@@ -798,15 +806,6 @@ struct ContextSharedPart : boost::noncopyable
             {
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
-        }
-
-        try
-        {
-            shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
 
@@ -1179,6 +1178,7 @@ ContextData::ContextData(const ContextData &o) :
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
+    runtime_filter_lookup(o.runtime_filter_lookup),
     kitchen_sink(o.kitchen_sink),
     part_uuids(o.part_uuids),
     ignored_part_uuids(o.ignored_part_uuids),
@@ -2406,20 +2406,20 @@ void Context::addQueryAccessInfo(
     addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
 }
 
-ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector()
+std::shared_ptr<ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector()
 {
     {
         SharedLockGuard lock(mutex);
         if (time_series_tags_collector)
-            return *time_series_tags_collector;
+            return time_series_tags_collector;
     }
     std::lock_guard lock(mutex);
     if (!time_series_tags_collector)
         time_series_tags_collector = std::make_shared<ContextTimeSeriesTagsCollector>();
-    return *time_series_tags_collector;
+    return time_series_tags_collector;
 }
 
-const ContextTimeSeriesTagsCollector & Context::getTimeSeriesTagsCollector() const
+std::shared_ptr<const ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector() const
 {
     return const_cast<Context *>(this)->getTimeSeriesTagsCollector();
 }
@@ -2576,7 +2576,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
 
             ASTCreateQuery create;
-            create.select = query->as<ASTSelectWithUnionQuery>();
+            create.set(create.select, query);
             auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
@@ -2807,13 +2807,13 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     StorageView::replaceQueryParametersIfParameterizedView(query, param_values);
 
     ASTCreateQuery create;
-    create.select = query->as<ASTSelectWithUnionQuery>();
+    create.set(create.select, query);
 
-    auto sql_security = std::make_shared<ASTSQLSecurity>();
+    auto sql_security = make_intrusive<ASTSQLSecurity>();
     sql_security->type = original_view_metadata->sql_security_type;
     if (original_view_metadata->definer)
-        sql_security->definer = std::make_shared<ASTUserNameWithHost>(*original_view_metadata->definer);
-    create.sql_security = sql_security;
+        sql_security->definer = make_intrusive<ASTUserNameWithHost>(*original_view_metadata->definer);
+    create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
@@ -5054,7 +5054,7 @@ const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
 UInt16 Context::getTCPPort() const
 {
     const auto & config = getConfigRef();
-    return config.getInt("tcp_port", DBMS_DEFAULT_PORT);
+    return static_cast<UInt16>(config.getInt("tcp_port", DBMS_DEFAULT_PORT));
 }
 
 std::optional<UInt16> Context::getTCPPortSecure() const
@@ -5297,25 +5297,32 @@ void Context::startClusterDiscovery()
 /// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
 void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
-    std::lock_guard lock(shared->clusters_mutex);
-    if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
     {
-        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
+        std::lock_guard lock(shared->clusters_mutex);
+        if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
+        {
+            shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
+        }
+
+        /// Do not update clusters if this part of config wasn't changed.
+        if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
+            return;
+
+        auto old_clusters_config = shared->clusters_config;
+        shared->clusters_config = config;
+
+        if (!shared->clusters)
+            shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
+        else
+            shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
+
+        ++shared->clusters_version;
     }
-
-    /// Do not update clusters if this part of config wasn't changed.
-    if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
-        return;
-
-    auto old_clusters_config = shared->clusters_config;
-    shared->clusters_config = config;
-
-    if (!shared->clusters)
-        shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
-    else
-        shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
-
-    ++shared->clusters_version;
+    {
+        SharedLockGuard lock(shared->mutex);
+        if (shared->ddl_worker)
+            shared->ddl_worker->notifyHostIDsUpdated();
+    }
 }
 
 size_t Context::getClustersVersion() const

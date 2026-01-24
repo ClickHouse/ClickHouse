@@ -45,13 +45,13 @@ public:
             /// at the end of arguments to override existed format and structure with "auto" values.
             if (collection->getOrDefault<String>("format", "auto") == "auto")
             {
-                ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+                ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
                 auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
                 args.push_back(format_equal_func);
             }
             if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
             {
-                ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+                ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
                 auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
                 args.push_back(structure_equal_func);
             }
