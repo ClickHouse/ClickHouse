@@ -8,10 +8,11 @@ CREATE TABLE test_stats_nan (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMMDD(dt)
 ORDER BY tuple()
-SETTINGS auto_statistics_types = 'minmax';
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = 'minmax';
 
 SET use_statistics_for_part_pruning = 1;
 SET enable_analyzer = 1;
+SET parallel_replicas_local_plan = 1;
 
 -- =============================================================================
 -- Case 1: Float64 with NaN values

@@ -9,11 +9,12 @@ CREATE TABLE test_stats_pruning_partial (
 ) ENGINE = MergeTree()
 PARTITION BY toInt32(id / 100)
 ORDER BY id
-SETTINGS auto_statistics_types = '';
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = '';
 
 SET use_statistics_for_part_pruning = 1;
 SET allow_experimental_statistics = 1;
 SET enable_analyzer = 1;
+SET parallel_replicas_local_plan = 1;
 
 -- Part 1 (OLD): id [0, 99], value [0, 99] - Partition 0
 INSERT INTO test_stats_pruning_partial SELECT number, number FROM numbers(100);
