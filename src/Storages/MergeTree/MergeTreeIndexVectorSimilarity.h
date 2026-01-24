@@ -34,6 +34,7 @@ struct UsearchHnswParams
 struct LeaNNParams
 {
     double hub_pruning_ratio = 0.0;  /// Ratio of hub nodes to keep (0.0 = disabled, 0.5 = keep 50%, etc.). Controls aggressiveness of pruning.
+    size_t sample_size = 100;  /// Number of random search samples to use for identifying hub nodes.
 };
 
 using USearchIndex = unum::usearch::index_dense_t;

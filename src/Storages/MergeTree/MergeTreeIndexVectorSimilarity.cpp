@@ -26,6 +26,7 @@
 
 #include <ranges>
 #include <random>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -348,7 +349,8 @@ void performHubPruning(
     unum::usearch::metric_kind_t metric_kind,
     unum::usearch::scalar_kind_t scalar_kind,
     UsearchHnswParams usearch_hnsw_params,
-    double hub_pruning_ratio)
+    double hub_pruning_ratio,
+    size_t sample_size)
 {
     if (!index || index->size() == 0 || stored_vectors.empty() || stored_vectors.size() != index->size())
         return;
@@ -358,7 +360,7 @@ void performHubPruning(
 
     /// Step 1: Identify hub nodes via search-based sampling
     /// Perform multiple random searches and count how often each node is visited
-    const size_t num_samples = std::min(static_cast<size_t>(100), index->size()); /// Sample up to 100 random queries
+    const size_t num_samples = std::min(sample_size, index->size());
     std::unordered_map<USearchIndex::vector_key_t, size_t> node_visit_counts;
 
     /// Use a subset of stored vectors as random query vectors
@@ -479,7 +481,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
     /// Perform hub pruning if enabled
     if (leann_enabled && index && index->size() > 0 && !stored_vectors.empty())
     {
-        performHubPruning(index, stored_vectors, dimensions, metric_kind, scalar_kind, usearch_hnsw_params, leann_params.hub_pruning_ratio);
+        performHubPruning(index, stored_vectors, dimensions, metric_kind, scalar_kind, usearch_hnsw_params, leann_params.hub_pruning_ratio, leann_params.sample_size);
     }
 
     LeaNNParams effective_leann_params = leann_params;
@@ -838,9 +840,57 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         {
             leann_params.hub_pruning_ratio = 0.0;
         }
+        else if (leann_arg.find('=') != String::npos)
+        {
+            /// Parse key-value pairs (e.g., "ratio=0.5,sample_size=200")
+            std::istringstream iss(leann_arg);
+            String pair;
+            while (std::getline(iss, pair, ','))
+            {
+                size_t eq_pos = pair.find('=');
+                if (eq_pos == String::npos)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid key-value pair format in seventh argument: {}", pair);
+
+                String key = pair.substr(0, eq_pos);
+                String value = pair.substr(eq_pos + 1);
+
+                if (key == "ratio")
+                {
+                    try
+                    {
+                        double ratio = std::stod(value);
+                        if (ratio < 0.0 || ratio > 1.0)
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "hub_pruning_ratio must be between 0.0 and 1.0");
+                        leann_params.hub_pruning_ratio = ratio;
+                    }
+                    catch (const std::exception &)
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid numeric value for hub_pruning_ratio: {}", value);
+                    }
+                }
+                else if (key == "sample_size")
+                {
+                    try
+                    {
+                        size_t sample_size = std::stoull(value);
+                        if (sample_size == 0)
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "sample_size must be greater than 0");
+                        leann_params.sample_size = sample_size;
+                    }
+                    catch (const std::exception &)
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid numeric value for sample_size: {}", value);
+                    }
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown parameter in seventh argument: {}", key);
+                }
+            }
+        }
         else
         {
-            /// Try to parse as numeric ratio (0.0 to 1.0)
+            /// Try to parse as numeric ratio (0.0 to 1.0) for backward compatibility
             try
             {
                 double ratio = std::stod(leann_arg);
@@ -850,7 +900,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
             }
             catch (const std::exception &)
             {
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (hub_pruning_ratio) must be a numeric value between 0.0 and 1.0, or 'true'/'enable_hub_pruning'/'false'");
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument must be a numeric value between 0.0 and 1.0, key-value pairs (e.g., 'ratio=0.5,sample_size=200'), or 'true'/'enable_hub_pruning'/'false'");
             }
         }
     }
@@ -921,16 +971,65 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
         String leann_arg = index.arguments[6].safeGet<String>();
         if (leann_arg != "enable_hub_pruning" && leann_arg != "true" && leann_arg != "false" && !leann_arg.empty())
         {
-            /// Check if it's a valid numeric value
-            try
+            if (leann_arg.find('=') != String::npos)
             {
-                double ratio = std::stod(leann_arg);
-                if (ratio < 0.0 || ratio > 1.0)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (hub_pruning_ratio) must be between 0.0 and 1.0");
+                /// Validate key-value pairs
+                std::istringstream iss(leann_arg);
+                String pair;
+                while (std::getline(iss, pair, ','))
+                {
+                    size_t eq_pos = pair.find('=');
+                    if (eq_pos == String::npos)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid key-value pair format in seventh argument: {}", pair);
+
+                    String key = pair.substr(0, eq_pos);
+                    String value = pair.substr(eq_pos + 1);
+
+                    if (key == "ratio")
+                    {
+                        try
+                        {
+                            double ratio = std::stod(value);
+                            if (ratio < 0.0 || ratio > 1.0)
+                                throw Exception(ErrorCodes::INCORRECT_DATA, "hub_pruning_ratio must be between 0.0 and 1.0");
+                        }
+                        catch (const std::exception &)
+                        {
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid numeric value for hub_pruning_ratio: {}", value);
+                        }
+                    }
+                    else if (key == "sample_size")
+                    {
+                        try
+                        {
+                            size_t sample_size = std::stoull(value);
+                            if (sample_size == 0)
+                                throw Exception(ErrorCodes::INCORRECT_DATA, "sample_size must be greater than 0");
+                        }
+                        catch (const std::exception &)
+                        {
+                            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid numeric value for sample_size: {}", value);
+                        }
+                    }
+                    else
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown parameter in seventh argument: {}", key);
+                    }
+                }
             }
-            catch (const std::exception &)
+            else
             {
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (hub_pruning_ratio) must be a numeric value between 0.0 and 1.0, or 'true'/'enable_hub_pruning'/'false'");
+                /// Check if it's a valid numeric value (backward compatibility)
+                try
+                {
+                    double ratio = std::stod(leann_arg);
+                    if (ratio < 0.0 || ratio > 1.0)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (hub_pruning_ratio) must be between 0.0 and 1.0");
+                }
+                catch (const std::exception &)
+                {
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument must be a numeric value between 0.0 and 1.0, key-value pairs (e.g., 'ratio=0.5,sample_size=200'), or 'true'/'enable_hub_pruning'/'false'");
+                }
             }
         }
     }
