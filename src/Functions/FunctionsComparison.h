@@ -51,6 +51,9 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsString bool_true_representation;
+    extern const SettingsString bool_false_representation;
+    extern const SettingsBool input_format_null_as_default;
     extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsBool use_variant_default_implementation_for_comparisons;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
@@ -722,12 +725,18 @@ struct ComparisonParams
     bool validate_enum_literals_in_operators = false;
     bool use_variant_default_implementation = true;
     FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode = FormatSettings::DateTimeInputFormat::Basic;
+    String bool_true_representation = "true";
+    String bool_false_representation = "false";
+    bool null_as_default = true;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
         , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
         , use_variant_default_implementation(context->getSettingsRef()[Setting::use_variant_default_implementation_for_comparisons])
         , cast_string_to_date_time_mode(context->getSettingsRef()[Setting::cast_string_to_date_time_mode])
+        , bool_true_representation(context->getSettingsRef()[Setting::bool_true_representation])
+        , bool_false_representation(context->getSettingsRef()[Setting::bool_false_representation])
+        , null_as_default(context->getSettingsRef()[Setting::input_format_null_as_default])
     {}
 
     ComparisonParams() = default;
@@ -1002,6 +1011,9 @@ private:
         }
 
         FormatSettings format_settings;
+        format_settings.bool_true_representation = params.bool_true_representation;
+        format_settings.bool_false_representation = params.bool_false_representation;
+        format_settings.null_as_default = params.null_as_default;
         format_settings.date_time_input_format = params.cast_string_to_date_time_mode;
         Field converted = convertFieldToType(string_value, *type_to_compare, type_string, format_settings);
 
