@@ -225,6 +225,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->kind = kind;
     result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
+    result_function->is_operator = is_operator;
 
     return result_function;
 }
