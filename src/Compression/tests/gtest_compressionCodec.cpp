@@ -1554,6 +1554,7 @@ INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF64,
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::infinity(), 0.1))),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, -std::numeric_limits<Float64>::infinity(), 0.1))),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::quiet_NaN(), 0.1))),
+            generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::signaling_NaN(), 0.1))),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::bit_cast<Float64>(0x8000000000000000ULL), 0.1))), // negative zero
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::max(), 0.1))),
             generateSeq<Float64>(G(ALPSequentialGenerator.template operator()<Float64>(0, std::numeric_limits<Float64>::min(), 0.1))),
@@ -1572,6 +1573,7 @@ INSTANTIATE_TEST_SUITE_P(ALPSpecialFloatsF32,
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::infinity(), 0.1))),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, -std::numeric_limits<Float32>::infinity(), 0.1))),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::quiet_NaN(), 0.1))),
+            generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::signaling_NaN(), 0.1))),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::bit_cast<Float32>(0x80000000U), 0.1))), // negative zero
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::max(), 0.1))),
             generateSeq<Float32>(G(ALPSequentialGenerator.template operator()<Float32>(0, std::numeric_limits<Float32>::min(), 0.1))),
@@ -1641,22 +1643,217 @@ INSTANTIATE_TEST_SUITE_P(ALPSameValuesF32,
     )
 );
 
-TEST(CodecTest, ALPUnsupportedTypes)
+class ALPTest : public ::testing::Test
+{
+protected:
+    static std::vector<UInt8> constructSourceWithHeader(const std::vector<UInt8> & source, UInt32 dest_size)
+    {
+        UInt32 source_size = static_cast<UInt32>(source.size());
+
+        std::vector<UInt8> data = {
+            // General codec header
+            static_cast<UInt8>(CompressionMethodByte::ALP), // method byte
+            static_cast<UInt8>(source_size & 0xFF),         // compressed size (byte 0)
+            static_cast<UInt8>((source_size >> 8) & 0xFF),  // compressed size (byte 1)
+            static_cast<UInt8>((source_size >> 16) & 0xFF), // compressed size (byte 2)
+            static_cast<UInt8>((source_size >> 24) & 0xFF), // compressed size (byte 3)
+            static_cast<UInt8>(dest_size & 0xFF),           // decompressed size (byte 0)
+            static_cast<UInt8>((dest_size >> 8) & 0xFF),    // decompressed size (byte 1)
+            static_cast<UInt8>((dest_size >> 16) & 0xFF),   // decompressed size (byte 2)
+            static_cast<UInt8>((dest_size >> 24) & 0xFF),   // decompressed size (byte 3)
+        };
+        data.append_range(source);
+
+        return data;
+    }
+
+    template <typename T = DataTypeFloat64>
+    static auto verifyDecompressExpectedException(const std::vector<UInt8> & source, const std::string & expectedMessage, UInt32 dest_size = 8192)
+    {
+        try
+        {
+            std::vector<UInt8> source_with_header = constructSourceWithHeader(source, dest_size);
+            auto codec = makeCodec("ALP", std::make_shared<T>());
+            std::vector<char> dest(dest_size);
+
+            codec->decompress(reinterpret_cast<const char *>(source_with_header.data()), static_cast<UInt32>(source_with_header.size()), dest.data());
+
+            FAIL() << "Expected Exception with message: " << expectedMessage;
+        }
+        catch (const Exception& e)
+        {
+            EXPECT_EQ(expectedMessage, e.message());
+        }
+    }
+};
+
+TEST_F(ALPTest, SupportedFloatTypes)
+{
+    std::vector<DataTypePtr> supported_types = {
+        std::make_shared<DataTypeFloat32>(),
+        std::make_shared<DataTypeFloat64>()
+    };
+
+    for (const auto & type : supported_types)
+        ASSERT_NO_THROW(makeCodec("ALP", type)) << "ALP codec should accept " << type->getName();
+}
+
+TEST_F(ALPTest, UnsupportedFloatTypes)
 {
     std::vector<DataTypePtr> unsupported_types = {
-        std::make_shared<DataTypeInt8>(),
-        std::make_shared<DataTypeInt16>(),
-        std::make_shared<DataTypeInt32>(),
-        std::make_shared<DataTypeInt64>(),
-        std::make_shared<DataTypeUInt8>(),
-        std::make_shared<DataTypeUInt16>(),
         std::make_shared<DataTypeUInt32>(),
+        std::make_shared<DataTypeInt32>(),
         std::make_shared<DataTypeUInt64>(),
+        std::make_shared<DataTypeInt64>(),
         std::make_shared<DataTypeBFloat16>()
     };
 
     for (const auto & type : unsupported_types)
         ASSERT_THROW(makeCodec("ALP", type), Exception) << "ALP codec should reject " << type->getName();
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithTruncatedHeader)
+{
+    const std::vector<UInt8> source = {
+        0x01, // meta byte
+        0x08  // float width
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, data has wrong header");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidFloatWidth)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x01,       // float width (invalid, should be 4 or 8)
+        0x00, 0x04  // block float count
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, unsupported float width 1");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidBlockFloatCount)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x08  // block float count equal to 2048 (invalid, should be 1024)
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, supported block float count is 1024, got 2048");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithTruncatedBlockHeader)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x02,       // exponent
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, incomplete block header (encoded)");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidExponent)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x7F,       // exponent
+        0x00,       // fraction
+        0x00, 0x00, // exception count = 0
+        0x01,       // bits = 1
+        // FOR base (8 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid exponent value: 127, max allowed: 17");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidFraction)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x00,       // exponent
+        0x7F,       // fraction
+        0x00, 0x00, // exception count = 0
+        0x01,       // bits = 1
+        // FOR base (8 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid fraction value: 127, max allowed: 17");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithTruncatedBlockData)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x02,       // exponent
+        0x00,       // fraction
+        0x00, 0x00, // exception count = 0
+        0x01,       // bits = 1
+        // FOR base (8 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        // Bitpacked data (incomplete)
+        0xFF, 0xFF, 0xFF, 0xFF // only 2 bytes instead of 128 bytes
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, incomplete block payload, available size: 4, bit-width: 1, exceptions: 0");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidExceptionsCount)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x02,       // exponent
+        0x00,       // fraction
+        0x01, 0x00, // exception count = 1
+        0x01,       // bits = 1
+        // FOR base (8 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        // Bitpacked data (128 bytes for 1024 values with 1 bit each)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        // No exceptions data, expected 1 exception
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, incomplete block payload, available size: 128, bit-width: 1, exceptions: 1");
+}
+
+TEST_F(ALPTest, DecompressMalformedInputWithInvalidExceptionIndex)
+{
+    const std::vector<UInt8> source = {
+        0x01,       // meta byte
+        0x08,       // float width
+        0x00, 0x04, // block float count
+        0x02,       // exponent
+        0x00,       // fraction
+        0x01, 0x00, // exception count = 1
+        0x01,       // bits = 1
+        // FOR base (8 bytes)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        // Bitpacked data (128 bytes for 1024 values with 1 bit each)
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        // Exception indices (invalid index 1025)
+        0x00, 0x04,                                     // exception index (1024 bigger than max allowed index 1023)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  // exception value
+    };
+    verifyDecompressExpectedException(source, "Cannot decompress ALP-encoded data, invalid exception index, index: 1024, float count: 1024");
 }
 
 }

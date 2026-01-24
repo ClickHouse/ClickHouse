@@ -1,22 +1,22 @@
-# Positive Numbers
+# Positive Numbers Test
 3000	0
 3000	0
-# Positive and Negative Numbers
+# Positive and Negative Numbers Test
 3000	0
 3000	0
-# Negative Numbers
+# Negative Numbers Test
 3000	0
 3000	0
-# Same Numbers Repeatedly (All Values Same)
+# All Same Values Test
 3000	0
 3000	0
-# Mix Rational and Irrational Numbers
+# Mix Rational and Irrational Numbers Test
 3000	0
 3000	0
-# Special Values: NaN, Inf, Zeros, Subnormals, Clamp Bounds
+# Special Values Test (NaN, Inf, Zeros, Subnormals, Clamp Bounds)
 4000	0
 4000	0
-# Block Size Tests (Float64)
+# Block Size Test (Float64)
 Size 0	0	0
 Size 1	1	0
 Size 2	2	0
@@ -26,13 +26,13 @@ Size 1025	1025	0
 Size 2047	2047	0
 Size 2048	2048	0
 Size 2049	2049	0
-# Block Size Tests (Float32)
+# Block Size Test (Float32)
 Size 1023	1023	0
 Size 1025	1025	0
-# All Not Rational Float Test
+# All Non-Rational Floats Test
 Irrational	1000	0
 NaN/Infinite	1000	0
-# Mixed Blocks Test (per-block parameters)
+# Mixed Per-Blocks Parameters Test
 4096	0
 # Aggregations Test
 1501	1	1	1	1

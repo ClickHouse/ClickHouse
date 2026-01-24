@@ -560,7 +560,7 @@ public:
     UInt32 decode(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size)
     {
         if (uncompressed_size % sizeof(T) != 0)
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data. Invalid uncompressed size");
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data, invalid uncompressed size");
 
         const char * source_end = source + source_size;
         const char * dest_start = dest;
@@ -573,7 +573,7 @@ public:
         }
 
         if (source != source_end || dest != dest_end)
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data. Stream size mismatch");
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data, stream size mismatch");
 
         return static_cast<UInt32>(dest - dest_start);
     }
@@ -589,9 +589,9 @@ private:
 
     void decodeBlock(const char * & source, const char * source_end, char * & dest, const char * dest_end, const UInt16 float_count)
     {
-        if (source + ALP_UNENCODED_BLOCK_HEADER_SIZE > source_end)
+        if (unlikely(source + ALP_UNENCODED_BLOCK_HEADER_SIZE > source_end))
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-                "Cannot decompress ALP-encoded data. Incomplete block header");
+                "Cannot decompress ALP-encoded data, incomplete block header");
 
         // Read exponent byte and check for unencoded block marker
         const UInt8 exponent = static_cast<UInt8>(*source++);
@@ -600,13 +600,21 @@ private:
             processUnencodedBlock(source, source_end, dest, dest_end, float_count);
             return;
         }
-
-        if (source + (ALP_BLOCK_HEADER_SIZE - ALP_UNENCODED_BLOCK_HEADER_SIZE) > source_end)
+        if (unlikely(exponent >= ALPFloatTraits<T>::EXPONENT_COUNT))
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-                "Cannot decompress ALP-encoded data. Incomplete block header (encoded).");
+                "Cannot decompress ALP-encoded data, invalid exponent value: {}, max allowed: {}",
+                static_cast<UInt32>(exponent), static_cast<UInt32>(ALPFloatTraits<T>::EXPONENT_COUNT - 1));
+
+        if (unlikely(source + (ALP_BLOCK_HEADER_SIZE - ALP_UNENCODED_BLOCK_HEADER_SIZE) > source_end))
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                "Cannot decompress ALP-encoded data, incomplete block header (encoded)");
 
         // Read fraction
         const UInt8 fraction = static_cast<UInt8>(*source++);
+        if (unlikely(fraction >= ALPFloatTraits<T>::EXPONENT_COUNT))
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
+                "Cannot decompress ALP-encoded data, invalid fraction value: {}, max allowed: {}",
+                static_cast<UInt32>(fraction), static_cast<UInt32>(ALPFloatTraits<T>::EXPONENT_COUNT - 1));
 
         // Read exception count
         const UInt16 exception_count = unalignedLoadLittleEndian<UInt16>(source);
@@ -622,9 +630,9 @@ private:
 
         // Validate block payload size
         const size_t total_encoded_size = bitpacked_size + exception_count * (sizeof(UInt16) + sizeof(T));
-        if (source + total_encoded_size > source_end)
+        if (unlikely(source + total_encoded_size > source_end))
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-                "Cannot decompress ALP-encoded data. Incomplete block payload. Available size: {}. Bit-width: {}, exceptions: {}.",
+                "Cannot decompress ALP-encoded data, incomplete block payload, available size: {}, bit-width: {}, exceptions: {}",
                 source_end - source, static_cast<UInt32>(bits), static_cast<UInt32>(exception_count));
 
         // Read bit-packed values into temporary buffer and decode
@@ -649,7 +657,7 @@ private:
 
             if (unlikely(exception_index >= float_count))
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-                    "Cannot decompress ALP-encoded data. Invalid exception index. Index: {}, float count: {}.",
+                    "Cannot decompress ALP-encoded data, invalid exception index, index: {}, float count: {}",
                     exception_index, float_count);
 
             const UInt32 dest_offset = exception_index * sizeof(T);
@@ -669,7 +677,7 @@ private:
     {
         const size_t block_size = float_count * sizeof(T);
         if (source + block_size > source_end || dest + block_size > dest_end)
-            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data. Incomplete uncompressed block");
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data, incomplete uncompressed block");
 
         memcpy(dest, source, block_size);
         source += block_size;
@@ -727,7 +735,7 @@ UInt32 CompressionCodecALP::doCompressData(const char * source, UInt32 source_si
         break;
     default:
         throw Exception(ErrorCodes::CANNOT_COMPRESS,
-            "Cannot compress with codec ALP. Unsupported float width {}",
+            "Cannot compress with codec ALP, unsupported float width {}",
             static_cast<size_t>(float_width));
     }
 
@@ -737,7 +745,7 @@ UInt32 CompressionCodecALP::doCompressData(const char * source, UInt32 source_si
 UInt32 CompressionCodecALP::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
     if (source_size < ALP_CODEC_HEADER_SIZE)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data. File has wrong header");
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ALP-encoded data, data has wrong header");
 
     const UInt8 meta_byte = static_cast<UInt8>(*source++);
     const UInt8 codec_version = meta_byte & 0x0F;
@@ -745,12 +753,12 @@ UInt32 CompressionCodecALP::doDecompressData(const char * source, UInt32 source_
 
     if (codec_version != ALP_CODEC_VERSION)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-            "Cannot decompress ALP-encoded data. Unsupported codec version {}",
+            "Cannot decompress ALP-encoded data, unsupported codec version {}",
             static_cast<UInt32>(codec_version));
 
     if (codec_variant != 0)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-            "Cannot decompress ALP-encoded data. Unsupported codec variant {}",
+            "Cannot decompress ALP-encoded data, unsupported codec variant {}",
             static_cast<UInt32>(codec_variant));
 
     const UInt8 data_float_width = static_cast<UInt8>(*source++);
@@ -759,8 +767,8 @@ UInt32 CompressionCodecALP::doDecompressData(const char * source, UInt32 source_
     source += sizeof(UInt16);
     if (block_float_count != ALP_BLOCK_MAX_FLOAT_COUNT)
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-            "Cannot decompress ALP-encoded data. Supported block float count is {}",
-            ALP_BLOCK_MAX_FLOAT_COUNT);
+            "Cannot decompress ALP-encoded data, supported block float count is {}, got {}",
+            ALP_BLOCK_MAX_FLOAT_COUNT, block_float_count);
 
     source_size -= ALP_CODEC_HEADER_SIZE;
     UInt32 dest_size;
@@ -775,7 +783,7 @@ UInt32 CompressionCodecALP::doDecompressData(const char * source, UInt32 source_
         break;
     default:
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
-            "Cannot decompress ALP-encoded data. Unsupported float width {}",
+            "Cannot decompress ALP-encoded data, unsupported float width {}",
             static_cast<size_t>(data_float_width));
     }
 
