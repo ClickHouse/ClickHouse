@@ -26,6 +26,7 @@
 
 #include <ranges>
 #include <random>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
@@ -346,7 +347,8 @@ void performHubPruning(
     size_t dimensions,
     unum::usearch::metric_kind_t metric_kind,
     unum::usearch::scalar_kind_t scalar_kind,
-    UsearchHnswParams usearch_hnsw_params)
+    UsearchHnswParams usearch_hnsw_params,
+    double hub_pruning_ratio)
 {
     if (!index || index->size() == 0 || stored_vectors.empty() || stored_vectors.size() != index->size())
         return;
@@ -388,7 +390,7 @@ void performHubPruning(
         }
     }
 
-    /// Step 2: Select hub nodes (top 50% most frequently visited)
+    /// Step 2: Select hub nodes based on pruning ratio
     std::vector<std::pair<USearchIndex::vector_key_t, size_t>> node_scores;
     for (const auto & [key, count] : node_visit_counts)
     {
@@ -399,8 +401,9 @@ void performHubPruning(
     std::sort(node_scores.begin(), node_scores.end(),
               [](const auto & a, const auto & b) { return a.second > b.second; });
 
-    /// Keep top 50% as hub nodes
-    const size_t num_hub_nodes = std::max(static_cast<size_t>(1), node_scores.size() / 2);
+    /// Calculate target number of hub nodes based on pruning ratio
+    const size_t target_hub_nodes = std::max(static_cast<size_t>(1), static_cast<size_t>(index->size() * hub_pruning_ratio));
+    const size_t num_hub_nodes = std::min(target_hub_nodes, node_scores.size());
     std::unordered_set<USearchIndex::vector_key_t> hub_node_keys;
     for (size_t i = 0; i < num_hub_nodes && i < node_scores.size(); ++i)
     {
@@ -409,13 +412,13 @@ void performHubPruning(
 
     /// Also include nodes that weren't sampled but might be hubs (nodes with high indices are often in higher layers)
     /// In HNSW, nodes added later often end up in higher layers and are more likely to be hubs
-    const size_t additional_hub_candidates = index->size() - hub_node_keys.size();
-    if (additional_hub_candidates > 0)
+    if (hub_node_keys.size() < target_hub_nodes)
     {
-        /// Add nodes from the upper half of the index (likely in higher layers)
-        for (size_t i = index->size() / 2; i < index->size() && hub_node_keys.size() < index->size() / 2; ++i)
+        /// Add nodes from the upper portion of the index (likely in higher layers)
+        /// Start from the end and work backwards to fill up to target_hub_nodes
+        for (size_t i = index->size(); i > 0 && hub_node_keys.size() < target_hub_nodes; --i)
         {
-            hub_node_keys.insert(static_cast<USearchIndex::vector_key_t>(i));
+            hub_node_keys.insert(static_cast<USearchIndex::vector_key_t>(i - 1));
         }
     }
 
@@ -462,7 +465,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
 {
     /// Check experimental setting guard - if disabled, ignore leann_params for backward compatibility
     bool leann_enabled = false;
-    if (leann_params.enable_hub_pruning)
+    if (leann_params.hub_pruning_ratio > 0.0)
     {
         auto query_context = CurrentThread::get().getQueryContext();
         if (query_context)
@@ -476,12 +479,12 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
     /// Perform hub pruning if enabled
     if (leann_enabled && index && index->size() > 0 && !stored_vectors.empty())
     {
-        performHubPruning(index, stored_vectors, dimensions, metric_kind, scalar_kind, usearch_hnsw_params);
+        performHubPruning(index, stored_vectors, dimensions, metric_kind, scalar_kind, usearch_hnsw_params, leann_params.hub_pruning_ratio);
     }
 
     LeaNNParams effective_leann_params = leann_params;
     if (!leann_enabled)
-        effective_leann_params.enable_hub_pruning = false;
+        effective_leann_params.hub_pruning_ratio = 0.0;
 
     auto granule = std::make_shared<MergeTreeIndexGranuleVectorSimilarity>(index_name, metric_kind, scalar_kind, usearch_hnsw_params, index, effective_leann_params);
 
@@ -605,7 +608,7 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     WhichDataType which(nested_type_index);
 
     /// Store vectors for hub pruning if enabled
-    if (leann_params.enable_hub_pruning)
+    if (leann_params.hub_pruning_ratio > 0.0)
     {
         stored_vectors.reserve(stored_vectors.size() + rows);
 
@@ -828,7 +831,29 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
         String leann_arg = index.arguments[6].safeGet<String>();
 
         if (leann_arg == "true" || leann_arg == "enable_hub_pruning")
-            leann_params.enable_hub_pruning = true;
+        {
+            /// Default to 0.5 (50%) for backward compatibility
+            leann_params.hub_pruning_ratio = 0.5;
+        }
+        else if (leann_arg == "false" || leann_arg.empty())
+        {
+            leann_params.hub_pruning_ratio = 0.0;
+        }
+        else
+        {
+            /// Try to parse as numeric ratio (0.0 to 1.0)
+            try
+            {
+                double ratio = std::stod(leann_arg);
+                if (ratio < 0.0 || ratio > 1.0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (hub_pruning_ratio) must be between 0.0 and 1.0");
+                leann_params.hub_pruning_ratio = ratio;
+            }
+            catch (const std::exception &)
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (hub_pruning_ratio) must be a numeric value between 0.0 and 1.0, or 'true'/'enable_hub_pruning'/'false'");
+            }
+        }
     }
 
     return std::make_shared<MergeTreeIndexVectorSimilarity>(index, dimensions, metric_kind, scalar_kind, usearch_hnsw_params, leann_params);
@@ -893,11 +918,23 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     if (has_seven_args)
     {
         if (index.arguments[6].getType() != Field::Types::String)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Seventh argument of vector similarity index (leann_mode) must be of type String");
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Seventh argument of vector similarity index (hub_pruning_ratio) must be of type String");
 
         String leann_arg = index.arguments[6].safeGet<String>();
         if (leann_arg != "enable_hub_pruning" && leann_arg != "true" && leann_arg != "false" && !leann_arg.empty())
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (leann_mode) of vector similarity index must be 'enable_hub_pruning', 'true', 'false', or empty string");
+        {
+            /// Check if it's a valid numeric value
+            try
+            {
+                double ratio = std::stod(leann_arg);
+                if (ratio < 0.0 || ratio > 1.0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (hub_pruning_ratio) must be between 0.0 and 1.0");
+            }
+            catch (const std::exception &)
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Seventh argument (hub_pruning_ratio) must be a numeric value between 0.0 and 1.0, or 'true'/'enable_hub_pruning'/'false'");
+            }
+        }
     }
 
     /// Check that the index is created on a single column

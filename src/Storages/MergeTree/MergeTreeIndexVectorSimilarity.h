@@ -33,7 +33,7 @@ struct UsearchHnswParams
 /// Parameters for LeaNN (LeanNN) optimization techniques.
 struct LeaNNParams
 {
-    bool enable_hub_pruning = false;  /// Aggressively prune graph to keep only hub nodes, reducing index size by ~50%
+    double hub_pruning_ratio = 0.0;  /// Ratio of hub nodes to keep (0.0 = disabled, 0.5 = keep 50%, etc.). Controls aggressiveness of pruning.
 };
 
 using USearchIndex = unum::usearch::index_dense_t;
@@ -149,7 +149,7 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
     const LeaNNParams leann_params;
     USearchIndexWithSerializationPtr index;
 
-    /// Store vectors for hub pruning (if enable_hub_pruning is true)
+    /// Store vectors for hub pruning (if hub_pruning_ratio > 0.0)
     /// We store vectors as Float32 for simplicity, converting from original type as needed
     std::vector<std::vector<Float32>> stored_vectors;
 };
