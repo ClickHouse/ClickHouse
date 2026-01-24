@@ -526,7 +526,9 @@ static const String & health_check_cmd = "--Health check";
 bool Client::buzzHouse()
 {
     String full_query;
+    bool no_eof = true;
     bool server_up = true;
+    bool no_timeout = true;
     static const String & rerun_database = "--External database ";
     static const RE2 rerun_database_re(R"((?i)^--External\s+database\s+(.*)$)");
     static const String & rerun_table = "--External table ";
@@ -544,7 +546,8 @@ bool Client::buzzHouse()
     {
         std::ifstream infile(fuzz_config->log_path);
 
-        while (server_up && (!deadline || clock::now() < *deadline) && std::getline(infile, full_query))
+        while (server_up && (no_timeout = (!deadline || clock::now() < *deadline))
+               && (no_eof = static_cast<bool>(std::getline(infile, full_query))))
         {
             String async_flag;
             String seed_str;
@@ -628,7 +631,7 @@ bool Client::buzzHouse()
         full_query2.reserve(8192);
         BuzzHouse::StatementGenerator gen(rg, *fuzz_config, *external_integrations, has_cloud_features);
         BuzzHouse::QueryOracle qo(*fuzz_config);
-        while (server_up && (!deadline || clock::now() < *deadline))
+        while (server_up && (no_timeout = (!deadline || clock::now() < *deadline)))
         {
             sq1.Clear();
             full_query.resize(0);
@@ -917,6 +920,18 @@ bool Client::buzzHouse()
                 }
             }
         }
+    }
+    if (!server_up)
+    {
+        LOG_INFO(fuzz_config->log, "The server is not responding, stopping fuzzing");
+    }
+    if (!no_timeout)
+    {
+        LOG_INFO(fuzz_config->log, "The fuzzing time limit has been reached, stopping fuzzing");
+    }
+    if (!no_eof)
+    {
+        LOG_INFO(fuzz_config->log, "End of fuzzing log file reached, stopping fuzzing");
     }
     return server_up;
 }
