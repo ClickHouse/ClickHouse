@@ -334,7 +334,7 @@ MergeTreeIndexAggregatorVectorSimilarity::MergeTreeIndexAggregatorVectorSimilari
 namespace
 {
 
-/// Perform hub node pruning on the HNSW graph (LeaNN Technique 2).
+/// Perform hub node pruning on the HNSW graph (LeaNN, Section 5 of https://arxiv.org/pdf/2506.08276).
 /// Hub nodes are highly connected nodes that span wide areas of the vector space.
 /// This function identifies and keeps only hub nodes, reducing graph size by ~50% with minimal recall loss.
 ///
