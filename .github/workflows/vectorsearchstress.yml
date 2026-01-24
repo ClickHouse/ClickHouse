@@ -16,7 +16,7 @@ env:
 jobs:
 
   config_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: []
     name: "Config Workflow"
     outputs:
@@ -55,7 +55,7 @@ jobs:
           fi
 
   dockers_build_amd:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, amd-2xsmall]
     needs: [config_workflow]
     name: "Dockers Build (amd)"
     outputs:
@@ -94,7 +94,7 @@ jobs:
           fi
 
   dockers_build_arm:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: [config_workflow]
     name: "Dockers Build (arm)"
     outputs:
@@ -172,7 +172,7 @@ jobs:
           fi
 
   finish_workflow:
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: [self-hosted, arm-2xsmall]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm, vector_search_stress]
     if: ${{ always() }}
     name: "Finish Workflow"
