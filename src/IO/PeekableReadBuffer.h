@@ -25,6 +25,9 @@ public:
     /// Sets checkpoint at current position
     ALWAYS_INLINE inline void setCheckpoint()
     {
+        if (canceled)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set a checkpoint on a canceled buffer");
+
         if (checkpoint)
         {
             /// Recursive checkpoints. We just remember offset from the
