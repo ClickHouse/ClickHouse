@@ -10807,6 +10807,12 @@ bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & p
 
 bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name)
 {
+    if (is_readonly)
+    {
+        LOG_WARNING(log, "Cannot replace lost part {} with empty part because replica is readonly", lost_part_name);
+        return false;
+    }
+
     LOG_INFO(log, "Going to replace lost part {} with empty part", lost_part_name);
 
     auto new_part_info = MergeTreePartInfo::fromPartName(lost_part_name, format_version);
