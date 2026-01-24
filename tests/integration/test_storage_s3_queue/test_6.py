@@ -206,13 +206,31 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
         "3,1,3",
         "3,1,4",
     ]
+
+    # Wait for expected count, then ensure count stabilizes (stops changing)
+    def get_count():
+        count = 0
+        for node in instances:
+            count += int(node.query(f"SELECT count() FROM {dst_table_name}"))
+        return count
+
     wait_for_data(dst_table_name, len(expected_data))
 
-    # With buckets we can get some files from the middle, if those files are last in bucket, but not global last.
-    # It depends of hashes of file paths.
-    # This sleep is for additional time for processing.
+    # Ensure processing has fully completed by verifying count doesn't change
+    # With buckets, files may still be processing after count reaches threshold
     if not is_single_thread:
-        time.sleep(10)
+        stable_checks = 0
+        prev_count = get_count()
+        for _ in range(10):
+            time.sleep(1)
+            curr_count = get_count()
+            if curr_count == prev_count:
+                stable_checks += 1
+                if stable_checks >= 3:  # Stable for 3 consecutive checks
+                    break
+            else:
+                stable_checks = 0
+                prev_count = curr_count
 
     data = ""
     for node in instances:
