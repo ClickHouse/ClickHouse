@@ -317,7 +317,6 @@ public:
     bool canPerformReplicatedDDLQueries() const;
 
     void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
-    bool hasDatalakeCatalogs() const;
     bool isDatalakeCatalog(const String & database_name) const;
 
 private:
@@ -371,6 +370,8 @@ private:
     mutable std::mutex databases_mutex;
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
+    Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
+    std::atomic_size_t temporary_databases_count TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"
