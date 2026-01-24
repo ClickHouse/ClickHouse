@@ -33,7 +33,7 @@ ANY LEFT JOIN
         1 AS b
     FROM system.one
 ) USING (a)
-WHERE b = 0
+WHERE equals(b, 0)
 SELECT
     a,
     b
@@ -49,7 +49,7 @@ ANY RIGHT JOIN
     SELECT 1 AS a
     FROM system.one
 ) USING (a)
-WHERE b = 0
+WHERE equals(b, 0)
 SELECT
     a,
     b
@@ -65,7 +65,7 @@ ANY FULL OUTER JOIN
         1 AS b
     FROM system.one
 ) USING (a)
-WHERE b = 0
+WHERE equals(b, 0)
 SELECT
     a,
     b
@@ -81,7 +81,7 @@ ANY FULL OUTER JOIN
     SELECT 1 AS a
     FROM system.one
 ) USING (a)
-WHERE b = 0
+WHERE equals(b, 0)
 -------Need push down-------
 SELECT toString(value) AS value
 FROM

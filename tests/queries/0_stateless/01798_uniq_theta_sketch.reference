@@ -37,7 +37,7 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(x + y)
+SELECT uniqTheta(plus(x, y))
 FROM
 (
     SELECT
@@ -75,7 +75,7 @@ FROM
     SELECT number % 2 AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(x + y)
+SELECT uniqTheta(plus(x, y))
 FROM
 (
     SELECT
