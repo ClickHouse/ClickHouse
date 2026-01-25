@@ -369,40 +369,66 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
     auto result_type = function.getResultType();
 
     /** The function was resolved during query analysis with specific argument types.
-      * However, the actual argument types in the DAG may differ (e.g., columns became Nullable
-      * due to join_use_nulls setting after JOIN operations).
+      * However, the actual argument types in the DAG may differ due to various reasons:
       *
-      * If some arguments became nullable while the original arguments were not,
-      * we need to wrap the result type in Nullable to match what the function
-      * will actually return at execution time (via defaultImplementationForNulls).
+      * 1. Columns became Nullable due to join_use_nulls setting after JOIN operations.
+      *    If some arguments became nullable while the original arguments were not,
+      *    we need to wrap the result type in Nullable to match what the function
+      *    will actually return at execution time (via defaultImplementationForNulls).
+      *
+      * 2. The FunctionNode's result type was marked as Nullable (via wrap_with_nullable flag)
+      *    during query analysis, but the actual arguments in the DAG are not nullable.
+      *    This can happen with analyzer_compatibility_join_using_top_level_identifier setting
+      *    when using aliased expressions in USING clause. In this case, we need to remove
+      *    the Nullable wrapper because the function will return non-nullable result.
       *
       * Most functions use default implementation for nulls (useDefaultImplementationForNulls() = true),
       * which wraps results in Nullable when any argument is nullable.
       */
-    if (function_base && !result_type->isNullable())
+    if (function_base)
     {
-        const auto & original_arg_types = function.getArgumentTypes();
-        bool has_new_nullable = false;
-
-        for (size_t i = 0; i < arguments.size() && i < original_arg_types.size(); ++i)
+        auto is_nullable_type = [](const DataTypePtr & type)
         {
-            bool current_is_nullable = arguments[i].type->isNullable()
-                || (arguments[i].type->lowCardinality()
-                    && typeid_cast<const DataTypeLowCardinality *>(arguments[i].type.get())->getDictionaryType()->isNullable());
+            return type->isNullable()
+                || (type->lowCardinality()
+                    && typeid_cast<const DataTypeLowCardinality *>(type.get())->getDictionaryType()->isNullable());
+        };
 
-            bool original_is_nullable = original_arg_types[i]->isNullable()
-                || (original_arg_types[i]->lowCardinality()
-                    && typeid_cast<const DataTypeLowCardinality *>(original_arg_types[i].get())->getDictionaryType()->isNullable());
-
-            if (current_is_nullable && !original_is_nullable)
+        bool any_current_arg_nullable = false;
+        for (const auto & arg : arguments)
+        {
+            if (is_nullable_type(arg.type))
             {
-                has_new_nullable = true;
+                any_current_arg_nullable = true;
                 break;
             }
         }
 
-        if (has_new_nullable)
-            result_type = makeNullable(result_type);
+        if (!result_type->isNullable())
+        {
+            /// Case 1: Arguments became nullable, need to make result nullable
+            const auto & original_arg_types = function.getArgumentTypes();
+            bool has_new_nullable = false;
+
+            for (size_t i = 0; i < arguments.size() && i < original_arg_types.size(); ++i)
+            {
+                if (is_nullable_type(arguments[i].type) && !is_nullable_type(original_arg_types[i]))
+                {
+                    has_new_nullable = true;
+                    break;
+                }
+            }
+
+            if (has_new_nullable)
+                result_type = makeNullable(result_type);
+        }
+        else if (!any_current_arg_nullable)
+        {
+            /// Case 2: Result type is nullable but no arguments are nullable.
+            /// This can happen when wrap_with_nullable was set during analysis but
+            /// actual arguments are non-nullable. Remove the nullable wrapper.
+            result_type = removeNullable(result_type);
+        }
     }
 
     return addFunctionImpl(

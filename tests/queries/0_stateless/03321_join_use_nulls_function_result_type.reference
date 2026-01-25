@@ -1,8 +1,4 @@
-Alice_suffix	1
-Bob_suffix	2
-\N	3
-Nullable(String)
-ALICE	1
-BOB	2
-\N	3
-Nullable(String)
+a_1	1
+b_1	2
+a_suffix	Nullable(String)
+\N	Nullable(String)
