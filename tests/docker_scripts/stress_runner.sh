@@ -83,6 +83,8 @@ fi
 
 start_server || { echo "Failed to start server"; exit 1; }
 
+clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
+
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM test"
 
@@ -194,6 +196,8 @@ clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDat
     ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
     SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
 
+# Might fail in sanitizer runs, not very important
+set +e
 clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
@@ -202,8 +206,8 @@ clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
 
 clickhouse-client --query "SHOW TABLES FROM test"
+set -e
 
-clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
 
 stop_server
 
