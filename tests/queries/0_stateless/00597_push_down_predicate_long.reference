@@ -16,7 +16,7 @@ FROM
 ARRAY JOIN
     a,
     b
-WHERE NOT ignore(a + b)
+WHERE NOT ignore(plus(a, b))
 1
 SELECT
     a,
@@ -109,7 +109,7 @@ WHERE equals(id, 1)
 SELECT *
 FROM
 (
-    SELECT arrayJoin(_CAST([1, 2, 3], \'Array(UInt8)\')) AS id
+    SELECT arrayJoin(cast([1, 2, 3], \'Array(UInt8)\')) AS id
     FROM system.one
 )
 WHERE equals(id, 1)
@@ -117,7 +117,7 @@ WHERE equals(id, 1)
 SELECT id
 FROM
 (
-    SELECT arrayJoin(_CAST([1, 2, 3], \'Array(UInt8)\')) AS id
+    SELECT arrayJoin(cast([1, 2, 3], \'Array(UInt8)\')) AS id
     FROM system.one
 )
 WHERE equals(id, 1)
@@ -419,5 +419,5 @@ FROM
     FROM test_00597 AS t0
     ALL FULL OUTER JOIN test_00597 AS t1 USING (date)
 )
-WHERE expr < 3
+WHERE less(expr, 3)
 2
