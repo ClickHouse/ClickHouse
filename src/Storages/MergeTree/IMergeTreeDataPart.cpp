@@ -1887,14 +1887,8 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
     chassert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && (version.removal_tid.isPrehistoric() || version.removal_tid.isEmpty())));
     chassert(!(which_csn == VersionMetadata::WhichCSN::REMOVAL && version.removal_csn == 0));
 
-    /// Small enough appends to file are usually atomic,
-    /// so we append new metadata instead of rewriting file to reduce number of fsyncs.
-    /// We don't need to do fsync when writing CSN, because in case of hard restart
-    /// we will be able to restore CSN from transaction log in Keeper.
-
-    auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
-    version.writeCSN(*out, which_csn);
-    out->finalize();
+    /// Rewrite the version metadata file with the new CSN.
+    writeVersionMetadata(version, /*fsync_part_dir=*/ true);
 }
 
 void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
@@ -1918,17 +1912,21 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
     }
 
     if (clear)
+    {
         LOG_TEST(storage.log, "Clearing removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
+
+        /// Rewrite the version metadata file without removal_tid.
+        VersionMetadata version_without_removal;
+        version_without_removal.creation_tid = version.creation_tid;
+        version_without_removal.creation_csn = version.creation_csn.load();
+
+        writeVersionMetadata(version_without_removal, /*fsync_part_dir=*/ true);
+    }
     else
-        LOG_TEST(storage.log, "Appending removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
-
-    auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
-    version.writeRemovalTID(*out, clear);
-    out->finalize();
-
-    /// fsync is not required when we clearing removal TID, because after hard restart we will fix metadata
-    if (!clear)
-        out->sync();
+    {
+        LOG_TEST(storage.log, "Writing removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
+        writeVersionMetadata(version, /*fsync_part_dir=*/ true);
+    }
 }
 
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const IDataPartStorage & part_storage, const String & filename)
