@@ -233,7 +233,7 @@ public:
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
@@ -282,7 +282,7 @@ protected:
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override;
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override;
 };
 
 }
