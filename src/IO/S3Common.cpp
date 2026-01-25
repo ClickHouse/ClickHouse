@@ -45,6 +45,11 @@ bool S3Exception::isRetryableError() const
     return !unretryable_errors.contains(code);
 }
 
+bool S3Exception::isAccessTokenExpiredError() const
+{
+    return code == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID;
+}
+
 }
 namespace DB::ErrorCodes
 {

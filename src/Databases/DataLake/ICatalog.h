@@ -130,6 +130,7 @@ class ICatalog
 {
 public:
     using Namespaces = std::vector<std::string>;
+    using CredentialsRefreshCallback = std::function<std::shared_ptr<DataLake::IStorageCredentials>()>;
 
     explicit ICatalog(const std::string & warehouse_) : warehouse(warehouse_) {}
 
@@ -180,6 +181,14 @@ public:
     /// So the REST catalog is transactional.
     /// The Glue catalog does not support such operation.
     virtual bool isTransactional() const { return false; }
+
+    virtual CredentialsRefreshCallback getCredentialsConfigurationCallback()
+    {
+        return [] () -> std::shared_ptr<DataLake::IStorageCredentials>
+        {
+            return nullptr;
+        };
+    }
 
 protected:
     /// Name of the warehouse,

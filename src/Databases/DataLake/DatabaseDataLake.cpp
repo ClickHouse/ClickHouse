@@ -583,7 +583,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         auto storage_cluster = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
             configuration,
-            configuration->createObjectStorage(context_copy, /* is_readonly */ false),
+            configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback()),
             StorageID(getDatabaseName(), name),
             columns,
             ConstraintsDescription{},
@@ -603,7 +603,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context_copy, /* is_readonly */ false),
+        configuration->createObjectStorage(context_copy, /* is_readonly */ false, catalog->getCredentialsConfigurationCallback()),
         context_copy,
         StorageID(getDatabaseName(), name),
         /* columns */columns,

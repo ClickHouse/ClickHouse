@@ -68,6 +68,8 @@ private:
         const std::string & namespace_name,
         const std::string & table_name,
         TableMetadata & result) const;
+
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback() override;
 };
 
 }
