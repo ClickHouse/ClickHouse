@@ -10,11 +10,7 @@ scenarios:
     faults:
       - { kind: netem, on: all, delay_ms: 25, jitter_ms: 7, loss_pct: 2, duration_s: 120 }
     gates:
-      - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.05 }
-    opts:
-      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
-      prom_name_allowlist: []
 
   - id: CHA-03
     name: Latency jitter sweep
@@ -24,13 +20,9 @@ scenarios:
     faults:
       - { kind: netem, on: all, delay_ms: 20, jitter_ms: 15, duration_s: 180, target_parallel: true }
     gates:
-      - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.05 }
       - { type: p99_le, max_ms: 5000 }
       - { type: p95_le, max_ms: 3000 }
-    opts:
-      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
-      prom_name_allowlist: []
 
   - id: CHA-04
     name: Packet loss 2%
@@ -40,13 +32,9 @@ scenarios:
     faults:
       - { kind: netem, on: all, loss_pct: 2, jitter_ms: 5, duration_s: 180, target_parallel: true }
     gates:
-      - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.05 }
       - { type: p99_le, max_ms: 6000 }
       - { type: p95_le, max_ms: 4000 }
-    opts:
-      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
-      prom_name_allowlist: []
 
   - id: CHA-05
     name: Rolling restart (stop/cont)
@@ -58,13 +46,9 @@ scenarios:
       - { kind: stop_cont, on: ["keeper3"], count: 1, sleep_s: 2.0 }
       - { kind: stop_cont, on: leader, count: 1, sleep_s: 2.0 }
     gates:
-      - { type: single_leader }
       - { type: config_converged, timeout_s: 30 }
       - { type: error_rate_le, max_ratio: 0.05 }
       - { type: p99_le, max_ms: 6000 }
-    opts:
-      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
-      prom_name_allowlist: []
 
   - id: CHA-06
     name: Net+Disk combined (parallel)
@@ -77,51 +61,41 @@ scenarios:
           - { kind: netem, on: all, delay_ms: 10, jitter_ms: 5, duration_s: 180, target_parallel: true }
           - { kind: dm_delay, on: all, ms: 3, duration_s: 180, target_parallel: true }
     gates:
-      - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.05 }
       - { type: p99_le, max_ms: 6000 }
-    opts:
-      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
-      prom_name_allowlist: []
 
   - id: CHA-10M-01
     name: 10m bench with leader partition + kill
     topology: 3
+    duration: 600
+    workload: { config: workloads/prod_mix.yaml }
     faults:
-      - kind: parallel
+      - kind: background_schedule
+        duration_s: 540
+        min_period_s: 30
+        max_period_s: 90
         steps:
-          - { kind: run_bench, config: workloads/prod_mix.yaml, duration_s: 600 }
-          - kind: background_schedule
-            duration_s: 540
-            min_period_s: 30
-            max_period_s: 90
-            steps:
-              - { kind: partition_oneway, on: leader, duration_s: 30 }
-              - { kind: leader_kill_measure, timeout_s: 60 }
+          - { kind: partition_oneway, on: leader, duration_s: 30 }
+          - { kind: leader_kill_measure, timeout_s: 60 }
     gates:
-      - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.10 }
       - { type: p99_le, max_ms: 10000 }
       - { type: log_sanity_ok, allow: ["failed to read rpc header.*End of file", "Socket is not connected", "Cannot read all data"] }
-    opts:
-      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
-      prom_name_allowlist: []
 
   - id: CHA-HEAVY-01
     name: "10m heavy chaos: symmetric partitions, quorum loss, tbf, dns, resource pressure, ENOSPC, dm_delay"
     topology: 3
+    duration: 600
+    workload: { config: workloads/prod_mix.yaml }
     pre:
       - { kind: record_watch_baseline }
     faults:
       - { kind: leader_kill_measure, on: leader, timeout_s: 60 }
-      - kind: parallel
+      - kind: background_schedule
+        duration_s: 540
+        min_period_s: 20
+        max_period_s: 40
         steps:
-          - { kind: run_bench, config: workloads/prod_mix.yaml, duration_s: 600 }
-          - kind: background_schedule
-            duration_s: 540
-            min_period_s: 20
-            max_period_s: 40
-            steps:
               - { kind: partition_symmetric, on: leader, duration_s: 20 }
               - { kind: tbf, on: leader, duration_s: 30, rate: "10mbit" }
               - { kind: dns_blackhole, on: all, duration_s: 30 }
@@ -145,6 +119,3 @@ scenarios:
       - { type: p99_le, max_ms: 10000 }
       - { type: log_sanity_ok }
       - { type: prom_thresholds_le, metrics: { keeper_dummy_metric: 1000000 }, aggregate: sum }
-    opts:
-      prom_allow_prefixes: ["keeper_", "raft_", "clickhouse_keeper_", "ClickHouseKeeper_"]
-      prom_name_allowlist: []

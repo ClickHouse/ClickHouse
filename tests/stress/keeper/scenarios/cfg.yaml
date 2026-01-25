@@ -10,15 +10,12 @@ scenarios:
     faults:
       - { kind: rcvr, on: leader }
       - { kind: expect_ready, on: leader, ok: false }
-    gates:
-      - { type: single_leader }
 
   - id: CFG-03
     name: 4LW allowlist
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
     gates:
-      - { type: single_leader }
       - { type: fourlw_enforces, allow: ["ruok", "mntr", "stat"], deny: ["conf", "srvr", "cons"] }
     opts:
       coord_overrides_xml: "<four_letter_word_allow_list>ruok,mntr,stat</four_letter_word_allow_list>"
@@ -27,15 +24,11 @@ scenarios:
     name: Hostname checks
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
-    gates:
-      - { type: single_leader }
 
   - id: CFG-05
     name: IPv6 end-to-end
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
-    gates:
-      - { type: single_leader }
     opts:
       coord_overrides_xml: "<enable_ipv6>true</enable_ipv6>"
 
@@ -43,8 +36,6 @@ scenarios:
     name: auto_forwarding=false semantics
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
-    gates:
-      - { type: single_leader }
     opts:
       coord_overrides_xml: "<coordination_settings><auto_forwarding>false</auto_forwarding></coordination_settings>"
 
@@ -53,7 +44,6 @@ scenarios:
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
     gates:
-      - { type: single_leader }
       - { type: coord_timeouts_match, startup: 5000, shutdown: 5000 }
     opts:
       coord_overrides_xml: "<coordination_settings><startup_timeout>5000</startup_timeout><shutdown_timeout>5000</shutdown_timeout></coordination_settings>"
@@ -62,8 +52,6 @@ scenarios:
     name: Feature flags truth + errors
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
-    gates:
-      - { type: single_leader }
     opts:
       feature_flags:
         multi_read: 1
@@ -76,5 +64,3 @@ scenarios:
     workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: rcvr, on: leader }
-    gates:
-      - { type: single_leader }

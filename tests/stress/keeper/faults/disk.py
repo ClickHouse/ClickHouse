@@ -4,7 +4,7 @@ import threading
 import time as _time
 from contextlib import contextmanager
 
-from keeper.framework.core.registry import register_fault
+from keeper.faults.registry import register_fault
 from keeper.framework.core.settings import DEFAULT_FAULT_DURATION_S
 from keeper.framework.core.util import (
     for_each_target,
@@ -41,11 +41,7 @@ def _loop_device_for_image(node, img, size_mb):
 def _safe_dm_token(s):
     if not s:
         return ""
-    try:
-        s = str(s)
-    except Exception:
-        return ""
-    s = re.sub(r"[^A-Za-z0-9_.-]+", "_", s)
+    s = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(s))
     return s.strip("_")
 
 
@@ -53,8 +49,7 @@ def _dm_name(prefix, node):
     suffix = getattr(node, "name", "node")
     run = _safe_dm_token(os.environ.get("KEEPER_CLUSTER_NAME", ""))
     if run:
-        run = run[:32]
-        return f"{prefix}_{run}_{suffix}"
+        return f"{prefix}_{run[:32]}_{suffix}"
     return f"{prefix}_{suffix}"
 
 
@@ -62,9 +57,41 @@ def _dm_img(prefix, node):
     suffix = getattr(node, "name", "node")
     run = _safe_dm_token(os.environ.get("KEEPER_CLUSTER_NAME", ""))
     if run:
-        run = run[:32]
-        return f"/var/lib/keeper_{prefix}_{run}_{suffix}.img"
+        return f"/var/lib/keeper_{prefix}_{run[:32]}_{suffix}.img"
     return f"/var/lib/keeper_{prefix}_{suffix}.img"
+
+
+def _kill_clickhouse(node, signal="STOP"):
+    """Send signal to clickhouse processes."""
+    try:
+        sh(
+            node,
+            f'PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n "$PIDS" ] && kill -{signal} $PIDS || true',
+            timeout=30,
+        )
+    except Exception:
+        pass
+
+
+def _wait_dm_removed(node, dm_name, max_iter=80):
+    """Wait for dm device to be removed."""
+    sh_root_strict(
+        node,
+        f"i=0; while dmsetup info {dm_name} >/dev/null 2>&1 && [ $i -lt {max_iter} ]; do sleep 0.1; i=$((i+1)); done; true",
+        timeout=30,
+    )
+
+
+def _check_dm_exists(node, dm_name):
+    """Check if dm device exists."""
+    try:
+        r = sh_root(node, f"dmsetup info {dm_name} >/dev/null 2>&1; echo $?", timeout=10)
+        if not str((r or {}).get("out", "")).strip().endswith("0"):
+            return False
+        r2 = sh_root(node, f"test -e /dev/mapper/{dm_name}; echo $?", timeout=10)
+        return str((r2 or {}).get("out", "")).strip().endswith("0")
+    except Exception:
+        return False
 
 
 @contextmanager
@@ -72,66 +99,30 @@ def dm_delay(node, ms=3):
     try:
         dm_name = _dm_name("kdelay", node)
         img = _dm_img("delay", node)
-        backend_dev = ""
-        pids = ""
         # Prefer RAM block device if present inside container
         ram = _ram_block_device(node)
-        if ram:
-            backend_dev = ram
-        else:
-            backend_dev = _loop_device_for_image(node, img, 256)
+        backend_dev = ram if ram else _loop_device_for_image(node, img, 256)
         if not backend_dev:
             raise AssertionError("dm_delay: cannot create loop device")
-        sz = sh_root_strict(node, f"blockdev --getsz {backend_dev}", timeout=30)[
-            "out"
-        ].strip()
-        try:
-            sh(
-                node,
-                "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -STOP $PIDS || true",
-                timeout=30,
-            )
-        except Exception:
-            pass
+        sz = sh_root_strict(node, f"blockdev --getsz {backend_dev}", timeout=30)["out"].strip()
+        
+        _kill_clickhouse(node, "STOP")
         sh_root_strict(
             node,
             f"umount /var/lib/clickhouse/coordination || true; umount /mnt/{dm_name} || true",
             timeout=90,
         )
         sh_root_strict(node, f"dmsetup remove --retry -f {dm_name} || true", timeout=60)
-        sh_root_strict(
-            node,
-            f"i=0; while dmsetup info {dm_name} >/dev/null 2>&1 && [ $i -lt 80 ]; do sleep 0.1; i=$((i+1)); done; true",
-            timeout=30,
-        )
-        try:
-            still = sh_root(
-                node, f"dmsetup info {dm_name} >/dev/null 2>&1; echo $?", timeout=10
-            )
-            if not str((still or {}).get("out", "")).strip().endswith("0"):
-                still = None
-        except Exception:
-            still = None
-        if still is not None:
+        _wait_dm_removed(node, dm_name, 80)
+        
+        # Force remove if still exists
+        if _check_dm_exists(node, dm_name):
             sh_root_strict(node, f"dmsetup remove -f {dm_name} || true", timeout=60)
-            sh_root_strict(
-                node,
-                f"i=0; while dmsetup info {dm_name} >/dev/null 2>&1 && [ $i -lt 80 ]; do sleep 0.1; i=$((i+1)); done; true",
-                timeout=30,
-            )
-            chk = sh_root(
-                node, f"dmsetup info {dm_name} >/dev/null 2>&1; echo $?", timeout=10
-            )
-            if str((chk or {}).get("out", "")).strip().endswith("0"):
+            _wait_dm_removed(node, dm_name, 80)
+            if _check_dm_exists(node, dm_name):
                 raise AssertionError("dm_delay: dm device still exists after remove")
-        try:
-            sh(
-                node,
-                "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -CONT $PIDS || true",
-                timeout=30,
-            )
-        except Exception:
-            pass
+        
+        _kill_clickhouse(node, "CONT")
         try:
             sh_root_strict(
                 node,
@@ -140,23 +131,16 @@ def dm_delay(node, ms=3):
             )
         except Exception as e:
             raise AssertionError(f"dm_delay: dmsetup create failed: {e}") from e
+        
         try:
-            sh(
-                node,
-                "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -STOP $PIDS || true",
-                timeout=30,
-            )
-            sh_root_strict(
-                node, f"dmsetup mknodes {dm_name} || dmsetup mknodes", timeout=60
-            )
+            _kill_clickhouse(node, "STOP")
+            sh_root_strict(node, f"dmsetup mknodes {dm_name} || dmsetup mknodes", timeout=60)
             sh(
                 node,
                 f"i=0; while [ ! -e /dev/mapper/{dm_name} ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done; [ -e /dev/mapper/{dm_name} ] && echo ok || (dmsetup info {dm_name} && false)",
                 timeout=30,
             )
-            sh_root_strict(
-                node, "umount /var/lib/clickhouse/coordination || true", timeout=60
-            )
+            sh_root_strict(node, "umount /var/lib/clickhouse/coordination || true", timeout=60)
             sh_root_strict(
                 node,
                 f"mkdir -p /var/lib/clickhouse/coordination /mnt/{dm_name} || true",
@@ -200,26 +184,12 @@ def dm_delay(node, ms=3):
         except Exception as e:
             raise AssertionError(f"dm_delay: mount failed: {e}") from e
         finally:
-            try:
-                sh(
-                    node,
-                    "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -CONT $PIDS || true",
-                    timeout=30,
-                )
-            except Exception:
-                pass
+            _kill_clickhouse(node, "CONT")
         yield
     finally:
         dm_name = _dm_name("kdelay", node)
         img = _dm_img("delay", node)
-        try:
-            sh(
-                node,
-                "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -STOP $PIDS || true",
-                timeout=30,
-            )
-        except Exception:
-            pass
+        _kill_clickhouse(node, "STOP")
         sh_root(
             node,
             (
@@ -234,15 +204,7 @@ def dm_delay(node, ms=3):
             ),
             timeout=180,
         )
-        try:
-            sh(
-                node,
-                "PIDS=$(pidof clickhouse clickhouse-server 2>/dev/null || true); [ -n \"$PIDS\" ] && kill -CONT $PIDS || true",
-                timeout=30,
-            )
-        except Exception:
-            pass
-        # Detach only our loop device (if any) and remove image
+        _kill_clickhouse(node, "CONT")
         _detach_loop_for_image(node, img)
         sh_root(node, f"rm -f {img} || true", timeout=30)
 
@@ -252,35 +214,21 @@ def dm_error(node):
     try:
         dm_name = _dm_name("kerr", node)
         img = _dm_img("err", node)
-        backend_dev = ""
         ram = _ram_block_device(node)
-        if ram:
-            backend_dev = ram
-        else:
-            backend_dev = _loop_device_for_image(node, img, 128)
+        backend_dev = ram if ram else _loop_device_for_image(node, img, 128)
         if not backend_dev:
             raise AssertionError("dm_error: cannot create loop device")
-        sz = sh_root_strict(node, f"blockdev --getsz {backend_dev}", timeout=30)[
-            "out"
-        ].strip()
-        sh_root_strict(
-            node, "umount /var/lib/clickhouse/coordination || true", timeout=60
-        )
+        sz = sh_root_strict(node, f"blockdev --getsz {backend_dev}", timeout=30)["out"].strip()
+        sh_root_strict(node, "umount /var/lib/clickhouse/coordination || true", timeout=60)
         sh_root_strict(node, f"dmsetup remove --retry -f {dm_name} || true", timeout=60)
-        sh(
-            node,
-            f"i=0; while dmsetup info {dm_name} >/dev/null 2>&1 && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done",
-            timeout=30,
-        )
+        _wait_dm_removed(node, dm_name, 50)
         try:
             sh_root_strict(
                 node, f"dmsetup create {dm_name} --table '0 {sz} error'", timeout=60
             )
         except Exception as e:
             raise AssertionError(f"dm_error: dmsetup create failed: {e}") from e
-        sh_root_strict(
-            node, "umount /var/lib/clickhouse/coordination || true", timeout=60
-        )
+        sh_root_strict(node, "umount /var/lib/clickhouse/coordination || true", timeout=60)
         yield
     finally:
         dm_name = _dm_name("kerr", node)
@@ -317,18 +265,28 @@ def volume_attach(node):
     sh_root(node, "mkdir -p /var/lib/clickhouse/coordination && mount -o remount,rw /")
 
 
-@register_fault("dm_delay")
-def _f_dm_delay(ctx, nodes, leader, step):
-    dur = int(step.get("duration_s", DEFAULT_FAULT_DURATION_S))
-    ms = step.get("ms", 3)
+def _coord_mounted(node):
+    """Check if coordination directory is mounted."""
+    try:
+        r = sh_root(
+            node,
+            "mountpoint -q /var/lib/clickhouse/coordination >/dev/null 2>&1; echo $?",
+            timeout=10,
+        )
+        return str((r or {}).get("out", "")).strip().endswith("0")
+    except Exception:
+        return False
 
+
+def _create_emit_fn(kind, ctx):
+    """Create an emit function for fault events."""
     lock = threading.Lock()
-
+    
     def _emit(node, phase, extra=None):
         try:
             ev = {
                 "ts": ts_ms(),
-                "kind": "dm_delay",
+                "kind": kind,
                 "node": str(getattr(node, "name", "")),
                 "phase": str(phase),
             }
@@ -338,30 +296,14 @@ def _f_dm_delay(ctx, nodes, leader, step):
                 (ctx.setdefault("fault_events", [])).append(ev)
         except Exception:
             pass
+    return _emit
 
-    def _dm_present(node, dm_name):
-        try:
-            r = sh_root(
-                node, f"dmsetup info {dm_name} >/dev/null 2>&1; echo $?", timeout=10
-            )
-            ok = str((r or {}).get("out", "")).strip().endswith("0")
-            if not ok:
-                return False
-            r2 = sh_root(node, f"test -e /dev/mapper/{dm_name}; echo $?", timeout=10)
-            return str((r2 or {}).get("out", "")).strip().endswith("0")
-        except Exception:
-            return False
 
-    def _coord_mounted(node):
-        try:
-            r = sh_root(
-                node,
-                "mountpoint -q /var/lib/clickhouse/coordination >/dev/null 2>&1; echo $?",
-                timeout=10,
-            )
-            return str((r or {}).get("out", "")).strip().endswith("0")
-        except Exception:
-            return False
+@register_fault("dm_delay")
+def _f_dm_delay(ctx, nodes, leader, step):
+    dur = int(step.get("duration_s", DEFAULT_FAULT_DURATION_S))
+    ms = step.get("ms", 3)
+    _emit = _create_emit_fn("dm_delay", ctx)
 
     def _run_one(t):
         dm_name = _dm_name("kdelay", t)
@@ -372,7 +314,7 @@ def _f_dm_delay(ctx, nodes, leader, step):
             if dur >= 4:
                 early = min(2.0, float(dur) / 4.0)
                 _time.sleep(max(0.0, early))
-                if not _dm_present(t, dm_name):
+                if not _check_dm_exists(t, dm_name):
                     _emit(t, "active_verify_failed", {"when": "early"})
                     raise AssertionError("dm_delay active verify failed (early)")
                 _emit(t, "active_ok", {"when": "early"})
@@ -380,14 +322,14 @@ def _f_dm_delay(ctx, nodes, leader, step):
                 remaining = max(0.0, float(dur) - early)
                 late = min(2.0, max(0.0, remaining / 2.0))
                 _time.sleep(max(0.0, remaining - late))
-                if not _dm_present(t, dm_name):
+                if not _check_dm_exists(t, dm_name):
                     _emit(t, "active_verify_failed", {"when": "late"})
                     raise AssertionError("dm_delay active verify failed (late)")
                 _emit(t, "active_ok", {"when": "late"})
                 _time.sleep(max(0.0, late))
             else:
                 _time.sleep(dur)
-        if _dm_present(t, dm_name):
+        if _check_dm_exists(t, dm_name):
             _emit(t, "cleanup_verify_failed")
             raise AssertionError("dm_delay cleanup verify failed")
         if _coord_mounted(t):
@@ -401,60 +343,24 @@ def _f_dm_delay(ctx, nodes, leader, step):
         targets = resolve_targets(step.get("on", "leader"), nodes, leader)
     except Exception:
         targets = []
-    try:
-        evs = (ctx or {}).get("fault_events") or []
-        cleaned = {
-            e.get("node")
-            for e in evs
-            if e.get("kind") == "dm_delay" and e.get("phase") == "cleanup_ok"
-        }
-        expected = {
-            str(getattr(t, "name", ""))
-            for t in (targets or [])
-            if str(getattr(t, "name", ""))
-        }
-        missing = sorted([n for n in expected if n and n not in cleaned])
-        if missing:
-            raise AssertionError(
-                "dm_delay did not complete cleanup for targets: " + ", ".join(missing)
-            )
-    except Exception:
-        raise
+    evs = (ctx or {}).get("fault_events") or []
+    cleaned = {
+        e.get("node")
+        for e in evs
+        if e.get("kind") == "dm_delay" and e.get("phase") == "cleanup_ok"
+    }
+    expected = {str(getattr(t, "name", "")) for t in (targets or []) if str(getattr(t, "name", ""))}
+    missing = sorted([n for n in expected if n and n not in cleaned])
+    if missing:
+        raise AssertionError(
+            "dm_delay did not complete cleanup for targets: " + ", ".join(missing)
+        )
 
 
 @register_fault("dm_error")
 def _f_dm_error(ctx, nodes, leader, step):
     dur = int(step.get("duration_s", DEFAULT_FAULT_DURATION_S))
-
-    lock = threading.Lock()
-
-    def _emit(node, phase, extra=None):
-        try:
-            ev = {
-                "ts": ts_ms(),
-                "kind": "dm_error",
-                "node": str(getattr(node, "name", "")),
-                "phase": str(phase),
-            }
-            if isinstance(extra, dict) and extra:
-                ev.update(extra)
-            with lock:
-                (ctx.setdefault("fault_events", [])).append(ev)
-        except Exception:
-            pass
-
-    def _dm_present(node, dm_name):
-        try:
-            r = sh_root(
-                node, f"dmsetup info {dm_name} >/dev/null 2>&1; echo $?", timeout=10
-            )
-            ok = str((r or {}).get("out", "")).strip().endswith("0")
-            if not ok:
-                return False
-            r2 = sh_root(node, f"test -e /dev/mapper/{dm_name}; echo $?", timeout=10)
-            return str((r2 or {}).get("out", "")).strip().endswith("0")
-        except Exception:
-            return False
+    _emit = _create_emit_fn("dm_error", ctx)
 
     def _run_one(t):
         dm_name = _dm_name("kerr", t)
@@ -465,7 +371,7 @@ def _f_dm_error(ctx, nodes, leader, step):
             if dur >= 4:
                 early = min(2.0, float(dur) / 4.0)
                 _time.sleep(max(0.0, early))
-                if not _dm_present(t, dm_name):
+                if not _check_dm_exists(t, dm_name):
                     _emit(t, "active_verify_failed", {"when": "early"})
                     raise AssertionError("dm_error active verify failed (early)")
                 _emit(t, "active_ok", {"when": "early"})
@@ -473,14 +379,14 @@ def _f_dm_error(ctx, nodes, leader, step):
                 remaining = max(0.0, float(dur) - early)
                 late = min(2.0, max(0.0, remaining / 2.0))
                 _time.sleep(max(0.0, remaining - late))
-                if not _dm_present(t, dm_name):
+                if not _check_dm_exists(t, dm_name):
                     _emit(t, "active_verify_failed", {"when": "late"})
                     raise AssertionError("dm_error active verify failed (late)")
                 _emit(t, "active_ok", {"when": "late"})
                 _time.sleep(max(0.0, late))
             else:
                 _time.sleep(dur)
-        if _dm_present(t, dm_name):
+        if _check_dm_exists(t, dm_name):
             _emit(t, "cleanup_verify_failed")
             raise AssertionError("dm_error cleanup verify failed")
         _emit(t, "cleanup_ok", {"elapsed_s": _time.time() - t0})
@@ -491,30 +397,18 @@ def _f_dm_error(ctx, nodes, leader, step):
         targets = resolve_targets(step.get("on", "leader"), nodes, leader)
     except Exception:
         targets = []
-    try:
-        evs = (ctx or {}).get("fault_events") or []
-        cleaned = {
-            e.get("node")
-            for e in evs
-            if e.get("kind") == "dm_error" and e.get("phase") == "cleanup_ok"
-        }
-        expected = {
-            str(getattr(t, "name", ""))
-            for t in (targets or [])
-            if str(getattr(t, "name", ""))
-        }
-        missing = sorted([n for n in expected if n and n not in cleaned])
-        if missing:
-            raise AssertionError(
-                "dm_error did not complete cleanup for targets: " + ", ".join(missing)
-            )
-    except Exception:
-        raise
-
-
-def _run_with_ctx(ctx_mgr, dur):
-    with ctx_mgr:
-        _time.sleep(dur)
+    evs = (ctx or {}).get("fault_events") or []
+    cleaned = {
+        e.get("node")
+        for e in evs
+        if e.get("kind") == "dm_error" and e.get("phase") == "cleanup_ok"
+    }
+    expected = {str(getattr(t, "name", "")) for t in (targets or []) if str(getattr(t, "name", ""))}
+    missing = sorted([n for n in expected if n and n not in cleaned])
+    if missing:
+        raise AssertionError(
+            "dm_error did not complete cleanup for targets: " + ", ".join(missing)
+        )
 
 
 @register_fault("enospc")

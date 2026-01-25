@@ -6,10 +6,10 @@ from pathlib import Path
 from kazoo.client import KazooClient
 from keeper.framework.core.settings import (
     DEFAULT_ERROR_RATE,
+    DEFAULT_P95_MS,
     DEFAULT_P99_MS,
-    parse_bool,
 )
-from keeper.framework.core.util import leader_or_first, wait_until
+from keeper.framework.core.util import leader_or_first, parse_bool, wait_until
 from keeper.framework.io.probes import (
     any_ephemerals,
     ch_trace_log,
@@ -25,8 +25,29 @@ from keeper.framework.io.probes import (
 )
 from keeper.framework.io.prom_parse import parse_prometheus_text
 from keeper.workloads.adapter import servers_arg
-from keeper.workloads.keeper_bench import KeeperBench
 
+
+# Gate registry
+_GATE_HANDLERS = {}
+
+
+def register_gate(name):
+    """Decorator to register a gate handler function."""
+    def decorator(func):
+        _GATE_HANDLERS[name] = func
+        return func
+    return decorator
+
+
+def _extract_param(g, key, default=None, type_fn=None):
+    """Helper to extract and optionally convert a parameter from gate config."""
+    val = g.get(key, default)
+    if val is None or val is default:
+        return default
+    return type_fn(val) if type_fn else val
+
+
+# Core gate functions (used directly and by handlers)
 
 def single_leader(nodes, timeout_s=180):
     wait_until(
@@ -130,11 +151,8 @@ def coord_timeouts_match(nodes, ctx, startup=None, shutdown=None):
         cluster = ctx.get("cluster")
         if cluster is None:
             return
-        import os
-        import pathlib
-
         cname = os.environ.get("KEEPER_CLUSTER_NAME", "")
-        inst_dir = pathlib.Path(getattr(cluster, "instances_dir", ""))
+        inst_dir = Path(getattr(cluster, "instances_dir", ""))
         conf_dir = inst_dir / "configs" / (cname or "")
         if not conf_dir.exists():
             return
@@ -143,8 +161,6 @@ def coord_timeouts_match(nodes, ctx, startup=None, shutdown=None):
         if not paths:
             return
         txt = paths[0].read_text(encoding="utf-8")
-        # Use simple substring/regex search to avoid xml deps
-        import re
 
         if startup is not None:
             exp = int(startup)
@@ -167,6 +183,7 @@ def coord_timeouts_match(nodes, ctx, startup=None, shutdown=None):
 
 def error_rate_le(summary, max_ratio=DEFAULT_ERROR_RATE):
     """Assert error rate is below threshold."""
+    summary = summary or {}
     errs = float(summary.get("errors", 0) or 0)
     ops = float(summary.get("ops", 0) or 0)
     if ops <= 0:
@@ -200,6 +217,7 @@ def srvr_thresholds_le(nodes, metrics, aggregate="sum"):
 
 def rps_ge(summary, min_rps=0.0):
     """Assert requests per second is above threshold."""
+    summary = summary or {}
     dur = float(summary.get("duration_s", 0) or 0)
     ops = float(summary.get("ops", 0) or 0)
     rps = ops / dur if dur > 0 else 0.0
@@ -209,6 +227,7 @@ def rps_ge(summary, min_rps=0.0):
 
 def ops_ge(summary, min_ops=0.0):
     """Assert total ops is above threshold."""
+    summary = summary or {}
     ops = float(summary.get("ops", 0) or 0)
     if ops < float(min_ops):
         raise AssertionError(f"ops_ge: {ops:.0f} < {min_ops:.0f}")
@@ -315,15 +334,11 @@ def log_sanity_ok(nodes, allow=None, limit_rows=1000):
         raise AssertionError(f"log_sanity_ok: found severe log lines: {sample}")
 
 
-def _latency_le(summary, key, max_ms, label):
-    val = float(summary.get(key, 0) or 0)
-    if val > float(max_ms):
-        raise AssertionError(f"{label}: {val:.3f}ms exceeds {float(max_ms):.3f}ms")
-
-
 def _max_latency(summary, keys):
+    """Get maximum latency value from summary for given keys."""
     try:
-        vals = [float((summary or {}).get(k, 0) or 0) for k in (keys or [])]
+        summary = summary or {}
+        vals = [float(summary.get(k, 0) or 0) for k in (keys or [])]
         return max(vals) if vals else 0.0
     except Exception:
         return 0.0
@@ -331,13 +346,15 @@ def _max_latency(summary, keys):
 
 def p99_le(summary, max_ms=DEFAULT_P99_MS):
     """Assert p99 latency is below threshold."""
+    summary = summary or {}
     val = _max_latency(summary, ["read_p99_ms", "write_p99_ms"])
     if val > float(max_ms):
         raise AssertionError(f"p99_le: {val:.3f}ms exceeds {float(max_ms):.3f}ms")
 
 
-def p95_le(summary, max_ms=DEFAULT_P99_MS):
+def p95_le(summary, max_ms=DEFAULT_P95_MS):
     """Assert p95 latency is below threshold."""
+    summary = summary or {}
     val = _max_latency(summary, ["read_p95_ms", "write_p95_ms"])
     if val > float(max_ms):
         raise AssertionError(f"p95_le: {val:.3f}ms exceeds {float(max_ms):.3f}ms")
@@ -500,59 +517,6 @@ def prom_thresholds_le(nodes, metrics, aggregate="sum"):
             )
 
 
-def replay_repeatable(
-    nodes,
-    leader,
-    ctx,
-    current_summary,
-    duration_s=120,
-    max_error_rate_delta=0.05,
-    max_p99_delta_ms=500,
-):
-    wl = ctx.get("workload") or {}
-    replay_path = wl.get("replay")
-    if not replay_path:
-        return
-    node = ctx.get("bench_node") or (nodes[0] if nodes else None)
-    if not node:
-        return
-    servers = ctx.get("bench_servers") or servers_arg(nodes)
-    secure = bool(ctx.get("bench_secure"))
-    try:
-        bench = KeeperBench(
-            node,
-            servers,
-            cfg_path=None,
-            duration_s=int(duration_s),
-            replay_path=replay_path,
-            secure=secure,
-        )
-        summary2 = bench.run()
-
-        # Compare error-rate and p99 deltas
-        def _err_ratio(s):
-            try:
-                return float(s.get("errors", 0) or 0) / max(
-                    1.0, float(s.get("ops", 0) or 0)
-                )
-            except Exception:
-                return 0.0
-
-        r1 = _err_ratio(current_summary or {})
-        r2 = _err_ratio(summary2 or {})
-        if abs(r2 - r1) > float(max_error_rate_delta):
-            return
-        try:
-            p99_1 = _max_latency(current_summary or {}, ["read_p99_ms", "write_p99_ms"])
-            p99_2 = _max_latency(summary2 or {}, ["read_p99_ms", "write_p99_ms"])
-            if abs(p99_2 - p99_1) > int(max_p99_delta_ms):
-                return
-        except Exception:
-            return
-    except Exception:
-        return
-
-
 def _gate_mntr_print(nodes):
     """Print mntr stats for each node."""
     for n in nodes or []:
@@ -611,157 +575,228 @@ def _gate_print_summary(summary):
         out.write_text(content + "\n", encoding="utf-8")
 
 
+# Gate handlers (registered with decorators)
+
+@register_gate("single_leader")
 def _gate_single_leader(g, nodes, leader, ctx, summary):
-    return single_leader(nodes, timeout_s=int(g.get("timeout_s", 180)))
+    return single_leader(nodes, timeout_s=_extract_param(g, "timeout_s", 180, int))
 
 
+@register_gate("backlog_drains")
 def _gate_backlog_drains(g, nodes, leader, ctx, summary):
-    return backlog_drains(nodes, max_s=int(g.get("max_s", 120)))
+    return backlog_drains(nodes, max_s=_extract_param(g, "max_s", 120, int))
 
 
+@register_gate("error_rate_le")
 def _gate_error_rate_le(g, nodes, leader, ctx, summary):
-    return error_rate_le(
-        summary or {}, max_ratio=float(g.get("max_ratio", DEFAULT_ERROR_RATE))
-    )
+    return error_rate_le(summary, max_ratio=_extract_param(g, "max_ratio", DEFAULT_ERROR_RATE, float))
 
 
+@register_gate("p99_le")
 def _gate_p99_le(g, nodes, leader, ctx, summary):
-    return p99_le(summary or {}, max_ms=int(g.get("max_ms", DEFAULT_P99_MS)))
+    return p99_le(summary, max_ms=_extract_param(g, "max_ms", DEFAULT_P99_MS, int))
 
 
+@register_gate("p95_le")
 def _gate_p95_le(g, nodes, leader, ctx, summary):
-    return p95_le(summary or {}, max_ms=int(g.get("max_ms", DEFAULT_P99_MS)))
+    return p95_le(summary, max_ms=_extract_param(g, "max_ms", DEFAULT_P95_MS, int))
 
 
+@register_gate("watch_delta_within")
 def _gate_watch_delta_within(g, nodes, leader, ctx, summary):
-    md = int(g["max_delta"]) if g.get("max_delta") is not None else None
-    pct = float(g["pct"]) if g.get("pct") is not None else None
+    md_val = g.get("max_delta")
+    md = int(md_val) if md_val is not None else None
+    pct_val = g.get("pct")
+    pct = float(pct_val) if pct_val is not None else None
     return watch_delta_within(nodes, ctx, max_delta=md, pct=pct)
 
 
+@register_gate("no_watcher_hotspot")
 def _gate_no_watcher_hotspot(g, nodes, leader, ctx, summary):
-    mps = float(g["max_path_share"]) if g.get("max_path_share") else None
+    mps_val = g.get("max_path_share")
+    mps = float(mps_val) if mps_val is not None else None
     return no_watcher_hotspot(
-        nodes, ctx, max_share=float(g.get("max_share", 0.95)), max_path_share=mps
+        nodes, ctx, max_share=_extract_param(g, "max_share", 0.95, float), max_path_share=mps
     )
 
 
+@register_gate("ephemerals_gone_within")
 def _gate_ephemerals_gone_within(g, nodes, leader, ctx, summary):
-    return ephemerals_gone_within(nodes, max_s=int(g.get("max_s", 60)))
+    return ephemerals_gone_within(nodes, max_s=_extract_param(g, "max_s", 60, int))
 
 
+@register_gate("ready_expect")
 def _gate_ready_expect(g, nodes, leader, ctx, summary):
     return ready_expect(
-        nodes, leader, ok=bool(g.get("ok", True)), timeout_s=int(g.get("timeout_s", 60))
+        nodes, leader,
+        ok=_extract_param(g, "ok", True, bool),
+        timeout_s=_extract_param(g, "timeout_s", 60, int)
     )
 
 
+@register_gate("lgif_monotone")
 def _gate_lgif_monotone(g, nodes, leader, ctx, summary):
     return lgif_monotone(nodes, ctx)
 
 
+@register_gate("fourlw_enforces")
 def _gate_fourlw_enforces(g, nodes, leader, ctx, summary):
     return fourlw_enforces(nodes, allow=g.get("allow"), deny=g.get("deny"))
 
 
+@register_gate("health_precheck")
 def _gate_health_precheck(g, nodes, leader, ctx, summary):
-    return health_precheck(nodes, timeout_s=int(g.get("timeout_s", 30)))
+    return health_precheck(nodes, timeout_s=_extract_param(g, "timeout_s", 30, int))
 
 
-def _gate_replay_repeatable(g, nodes, leader, ctx, summary):
-    return replay_repeatable(
-        nodes,
-        leader,
-        ctx,
-        summary or {},
-        duration_s=int(g.get("duration_s", 120)),
-        max_error_rate_delta=float(g.get("max_error_rate_delta", 0.05)),
-        max_p99_delta_ms=int(g.get("max_p99_delta_ms", 500)),
-    )
-
-
+@register_gate("prom_thresholds_le")
 def _gate_prom_thresholds_le(g, nodes, leader, ctx, summary):
     return prom_thresholds_le(
         nodes, g.get("metrics") or {}, aggregate=str(g.get("aggregate", "sum"))
     )
 
 
+@register_gate("srvr_thresholds_le")
 def _gate_srvr_thresholds_le(g, nodes, leader, ctx, summary):
     return srvr_thresholds_le(
         nodes, g.get("metrics") or {}, aggregate=str(g.get("aggregate", "sum"))
     )
 
 
+@register_gate("rps_ge")
 def _gate_rps_ge(g, nodes, leader, ctx, summary):
-    return rps_ge(summary or {}, min_rps=float(g.get("min_rps", 0)))
+    return rps_ge(summary, min_rps=_extract_param(g, "min_rps", 0, float))
 
 
+@register_gate("ops_ge")
 def _gate_ops_ge(g, nodes, leader, ctx, summary):
-    return ops_ge(summary or {}, min_ops=float(g.get("min_ops", 0)))
+    return ops_ge(summary, min_ops=_extract_param(g, "min_ops", 0, float))
 
 
+@register_gate("count_paths")
 def _gate_count_paths(g, nodes, leader, ctx, summary):
     return count_paths(nodes, g.get("prefixes") or [])
 
 
+@register_gate("config_converged")
 def _gate_config_converged(g, nodes, leader, ctx, summary):
-    return config_converged(nodes, timeout_s=int(g.get("timeout_s", 30)))
+    return config_converged(nodes, timeout_s=_extract_param(g, "timeout_s", 30, int))
 
 
+@register_gate("config_members_len_eq")
 def _gate_config_members_len_eq(g, nodes, leader, ctx, summary):
-    return config_members_len_eq(nodes, expected=int(g.get("expected", 3)))
+    return config_members_len_eq(nodes, expected=_extract_param(g, "expected", 3, int))
 
 
+@register_gate("election_time_le")
 def _gate_election_time_le(g, nodes, leader, ctx, summary):
-    return election_time_le(ctx, max_s=float(g.get("max_s", 10)))
+    return election_time_le(ctx, max_s=_extract_param(g, "max_s", 10, float))
 
 
+@register_gate("log_sanity_ok")
 def _gate_log_sanity_ok(g, nodes, leader, ctx, summary):
     return log_sanity_ok(nodes, allow=g.get("allow"))
 
 
+@register_gate("coord_timeouts_match")
 def _gate_coord_timeouts_match(g, nodes, leader, ctx, summary):
     return coord_timeouts_match(
         nodes, ctx, startup=g.get("startup"), shutdown=g.get("shutdown")
     )
 
 
+@register_gate("mntr_print")
 def _gate_dispatch_mntr_print(g, nodes, leader, ctx, summary):
     return _gate_mntr_print(nodes)
 
 
+@register_gate("print_summary")
 def _gate_dispatch_print_summary(g, nodes, leader, ctx, summary):
     return _gate_print_summary(summary)
 
 
-# Gate dispatch map
-_GATE_HANDLERS = {
-    "single_leader": _gate_single_leader,
-    "backlog_drains": _gate_backlog_drains,
-    "error_rate_le": _gate_error_rate_le,
-    "p99_le": _gate_p99_le,
-    "p95_le": _gate_p95_le,
-    "watch_delta_within": _gate_watch_delta_within,
-    "no_watcher_hotspot": _gate_no_watcher_hotspot,
-    "ephemerals_gone_within": _gate_ephemerals_gone_within,
-    "ready_expect": _gate_ready_expect,
-    "lgif_monotone": _gate_lgif_monotone,
-    "fourlw_enforces": _gate_fourlw_enforces,
-    "health_precheck": _gate_health_precheck,
-    "replay_repeatable": _gate_replay_repeatable,
-    "prom_thresholds_le": _gate_prom_thresholds_le,
-    "srvr_thresholds_le": _gate_srvr_thresholds_le,
-    "rps_ge": _gate_rps_ge,
-    "ops_ge": _gate_ops_ge,
-    "count_paths": _gate_count_paths,
-    "mntr_print": _gate_dispatch_mntr_print,
-    "print_summary": _gate_dispatch_print_summary,
-    "config_converged": _gate_config_converged,
-    "config_members_len_eq": _gate_config_members_len_eq,
-    "election_time_le": _gate_election_time_le,
-    "log_sanity_ok": _gate_log_sanity_ok,
-    "coord_timeouts_match": _gate_coord_timeouts_match,
-}
+@register_gate("sync_read_barrier")
+def _gate_sync_read_barrier(g, nodes, leader, ctx, summary):
+    """Test sync read barrier semantics.
+    
+    This gate verifies that sync operations create a read barrier ensuring
+    all previous writes are visible to subsequent reads.
+    
+    TODO: Implement sync read barrier test logic.
+    """
+    iterations = int(g.get("iterations", 3))
+    path_prefix = str(g.get("path_prefix", "/sem01")).strip()
+    raise NotImplementedError(
+        f"sync_read_barrier gate not yet implemented. "
+        f"Required: iterations={iterations}, path_prefix={path_prefix}"
+    )
+
+
+@register_gate("linearizable_reads_ok")
+def _gate_linearizable_reads_ok(g, nodes, leader, ctx, summary):
+    """Test linearizable read guarantees.
+    
+    This gate verifies that reads are linearizable (consistent ordering)
+    when quorum_reads is enabled.
+    
+    TODO: Implement linearizable reads test logic.
+    """
+    iterations = int(g.get("iterations", 10))
+    base = str(g.get("base", "/sem02")).strip()
+    raise NotImplementedError(
+        f"linearizable_reads_ok gate not yet implemented. "
+        f"Required: iterations={iterations}, base={base}"
+    )
+
+
+@register_gate("acl_matrix_ok")
+def _gate_acl_matrix_ok(g, nodes, leader, ctx, summary):
+    """Test ACL (Access Control List) matrix correctness.
+    
+    This gate verifies that ACL permissions are correctly enforced
+    across different authentication schemes (world, auth, digest).
+    
+    TODO: Implement ACL matrix test logic.
+    """
+    raise NotImplementedError(
+        "acl_matrix_ok gate not yet implemented. "
+        "This gate should test ACL permission enforcement across auth schemes."
+    )
+
+
+@register_gate("acl_digest_rotate_ok")
+def _gate_acl_digest_rotate_ok(g, nodes, leader, ctx, summary):
+    """Test ACL digest rotation correctness.
+    
+    This gate verifies that ACL digest rotation works correctly
+    and doesn't break existing permissions.
+    
+    TODO: Implement ACL digest rotation test logic.
+    """
+    raise NotImplementedError(
+        "acl_digest_rotate_ok gate not yet implemented. "
+        "This gate should test ACL digest rotation functionality."
+    )
+
+
+@register_gate("lin_register_ok")
+def _gate_lin_register_ok(g, nodes, leader, ctx, summary):
+    """Test linearizable register semantics.
+    
+    This gate verifies that register operations (read/write) maintain
+    linearizability guarantees under concurrent access and faults.
+    
+    TODO: Implement linearizable register test logic.
+    """
+    duration_s = int(g.get("duration_s", 10))
+    writers = int(g.get("writers", 2))
+    readers = int(g.get("readers", 4))
+    path = str(g.get("path", "/lin/reg")).strip()
+    raise NotImplementedError(
+        f"lin_register_ok gate not yet implemented. "
+        f"Required: duration_s={duration_s}, writers={writers}, "
+        f"readers={readers}, path={path}"
+    )
 
 
 def apply_gate(gate, nodes, leader, ctx, summary):

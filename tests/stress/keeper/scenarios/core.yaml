@@ -4,12 +4,35 @@ defaults:
   topology: 3
 scenarios:
   - id: CHA-01
-    preset: gp3_jitter
     name: Baseline gp3
     topology: 3
-    preset_args: {duration_s: 120, delay_ms: 10, jitter_ms: 5, disk_ms: 3}
+    duration: 120
+    workload: { config: workloads/prod_mix.yaml }
+    pre:
+      - { kind: ensure_paths, on: leader, paths: ["/e2e/prod", "/e2e/prod/create", "/e2e/prod/set"] }
+    faults:
+      - { kind: netem, on: all, delay_ms: 10, jitter_ms: 5, loss_pct: 0, duration_s: 120, target_parallel: true }
+      - { kind: dm_delay, on: all, ms: 3, duration_s: 120, target_parallel: true }
+    gates:
+      - { type: single_leader }
+      - { type: error_rate_le }
+      - { type: p99_le }
+      - { type: log_sanity_ok }
+      - { type: print_summary }
+      - { type: mntr_print }
+      - { type: count_paths, prefixes: ["/e2e/prod", "/e2e/prod/create", "/e2e/prod/set"] }
 
   - id: RCFG-06
-    preset: partition_during_reconfig
     name: Reconfig while minority refused
     topology: 3
+    duration: 120
+    workload: { config: workloads/prod_mix.yaml }
+    faults:
+      - kind: partition_symmetric_during
+        on: leader
+        steps:
+          - { kind: reconfig, on: leader, operation: remove, server_id: 3, ok: false }
+    gates:
+      - { type: single_leader }
+      - { type: config_converged, timeout_s: 60 }
+      - { type: log_sanity_ok }

@@ -1,8 +1,17 @@
 import uuid
 
 from kazoo.client import KazooClient
-from keeper.framework.core.registry import register_fault
+from keeper.faults.registry import register_fault
 from keeper.workloads.adapter import servers_arg
+
+
+def _close_client(zk):
+    """Safely close a ZooKeeper client."""
+    try:
+        zk.stop()
+        zk.close()
+    except Exception:
+        pass
 
 
 @register_fault("create_ephemerals")
@@ -13,13 +22,10 @@ def _f_create_ephemerals(ctx, nodes, leader, step):
     hosts = [h.strip() for h in (servers_arg(nodes) or "").split() if h.strip()]
     hostlist = ",".join(hosts) if hosts else "localhost:9181"
 
-    zk = None
     try:
         zk = KazooClient(hosts=hostlist, timeout=10.0)
         zk.start(timeout=10.0)
     except Exception:
-        zk = None
-    if zk is None:
         return
 
     try:
@@ -31,15 +37,9 @@ def _f_create_ephemerals(ctx, nodes, leader, step):
                 zk.create(p, uuid.uuid4().hex.encode("utf-8"), ephemeral=True)
             except Exception:
                 pass
-        arr = ctx.get("_ephem_clients") or []
-        arr.append(zk)
-        ctx["_ephem_clients"] = arr
+        ctx.setdefault("_ephem_clients", []).append(zk)
     except Exception:
-        try:
-            zk.stop()
-            zk.close()
-        except Exception:
-            pass
+        _close_client(zk)
 
 
 @register_fault("stop_ephemeral_client")
@@ -48,15 +48,11 @@ def _f_stop_ephemeral_client(ctx, nodes, leader, step):
     if not arr:
         return
     # Stop one or all ephemeral-holding clients to trigger expiry
-    if bool(step.get("all", False)):
+    if step.get("all", False):
         clients = list(arr)
         arr.clear()
     else:
         clients = [arr.pop(0)]
     for zk in clients:
-        try:
-            zk.stop()
-            zk.close()
-        except Exception:
-            pass
+        _close_client(zk)
     ctx["_ephem_clients"] = arr

@@ -5917,6 +5917,8 @@ class ClickHouseInstance:
         except Exception:
             ports_mappings = ""
 
+        is_priv = os.environ.get("KEEPER_PRIVILEGED", "") == "1"
+
         with open(self.docker_compose_path, "w") as docker_compose:
             docker_compose.write(
                 DOCKER_COMPOSE_TEMPLATE.format(
@@ -5952,13 +5954,9 @@ class ClickHouseInstance:
                     init_flag="true" if self.docker_init_flag else "false",
                     HELPERS_DIR=HELPERS_DIR,
                     CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
-                    privileged=(
-                        "true"
-                        if os.environ.get("KEEPER_PRIVILEGED", "") == "1"
-                        else "false"
-                    ),
+                    privileged="true" if is_priv else "false",
                     dev_mount=(
-                        "- /dev:/dev" if os.environ.get("KEEPER_PRIVILEGED", "") == "1" else ""
+                        "- /dev:/dev" if is_priv else ""
                     ),
                     ports_mappings=ports_mappings,
                 )

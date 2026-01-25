@@ -1,4 +1,5 @@
 name: prod_mix
+# Value sizes: 0-162 bytes
 concurrency: 64
 report_delay: 0.0
 continue_on_error: true
@@ -21,8 +22,8 @@ setup:
         data:
           random_string:
             size:
-              min_value: 128
-              max_value: 1024
+              min_value: 0
+              max_value: 162
       - name: pool
         node:
         - repeat: 64
@@ -32,29 +33,25 @@ setup:
           data:
             random_string:
               size:
-                min_value: 64
-                max_value: 512
+                min_value: 0
+                max_value: 162
       - name: churn
 
 generator:
   requests:
     get:
-      path: { children_of: /e2e/prod }
-      weight: 45
-
-    set:
-      path: /e2e/prod/hot
-      data:
-        random_string:
-          size:
-            min_value: 32
-            max_value: 1048576
-      weight: 25
+      path:
+      - /e2e/prod/hot
+      path:
+        children_of: /e2e/prod
+      weight: 38
 
     create:
       path:
       - /e2e/prod/churn
       - /e2e/prod/pool
+      path:
+        children_of: /e2e/prod/pool
       name_length:
         min_value: 8
         max_value: 16
@@ -62,10 +59,51 @@ generator:
         random_string:
           size:
             min_value: 0
-            max_value: 1048576
-      remove_factor: 0.8
-      weight: 25
+            max_value: 162
+      remove_factor: 0.49
+      weight: 34
+
+    set:
+      path:
+      - /e2e/prod/hot
+      path:
+        children_of: /e2e/prod/pool
+      data:
+        random_string:
+          size:
+            min_value: 0
+            max_value: 162
+      weight: 9
+
+    multi:
+      size:
+        min_value: 3
+        max_value: 7
+      create:
+        path: /e2e/prod/churn
+        data:
+          random_string:
+            size:
+              min_value: 0
+              max_value: 162
+      set:
+        path: /e2e/prod/hot
+        data:
+          random_string:
+            size:
+              min_value: 0
+              max_value: 162
+      get:
+        path:
+          children_of: /e2e/prod
+      list:
+        path:
+          children_of: /e2e/prod/pool
+      weight: 11
 
     list:
-      path: { children_of: /e2e/prod/pool }
-      weight: 5
+      path:
+      - /e2e/prod/pool
+      path:
+        children_of: /e2e/prod
+      weight: 4

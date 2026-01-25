@@ -1,67 +1,52 @@
 import json
 import os
 
-from keeper.framework.core.settings import CLIENT_PORT, PROM_PORT
-from keeper.framework.core.util import has_bin, sh
-
-
-def _ch_query_timeout_s():
-    """Timeout for best-effort ClickHouse queries (metrics snapshots)."""
-    try:
-        v = int(os.environ.get("KEEPER_CH_QUERY_TIMEOUT", "5") or "5")
-        return max(1, min(v, 60))
-    except Exception:
-        return 5
+from keeper.framework.core.settings import (
+    CLIENT_PORT,
+    KEEPER_CH_QUERY_TIMEOUT,
+    PROM_PORT,
+)
+from keeper.framework.core.util import sh
 
 
 def four(node, cmd):
-    try:
-        if has_bin(node, "nc"):
-            out = sh(
-                node, f"printf '{cmd}\\n' | nc -w1 127.0.0.1 {CLIENT_PORT}", timeout=5
-            )["out"]
-            if str(out).strip():
-                return out
-    except Exception:
-        pass
-    fb = [
+    """Execute 4LW command on keeper node using clickhouse keeper-client or bash fallback."""
+    methods = [
         f"HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{cmd}' 2>&1",
         f"HOME=/tmp clickhouse keeper-client -p {CLIENT_PORT} -q '{cmd}' 2>&1",
+        f'bash -lc "exec 3<>/dev/tcp/127.0.0.1/{CLIENT_PORT}; printf \'{cmd}\\n\' >&3; cat <&3; exec 3<&-; exec 3>&-"',
     ]
-    devtcp_inner = (
-        f"exec 3<>/dev/tcp/127.0.0.1/{CLIENT_PORT}; "
-        f"printf '{cmd}\\n' >&3; "
-        f"cat <&3; "
-        f"exec 3<&-; exec 3>&-"
-    )
-    fb.append(f'bash -lc "{devtcp_inner}"')
-    for c in fb:
+    for method in methods:
         try:
-            out = sh(node, c, timeout=5)["out"]
+            out = sh(node, method, timeout=5)["out"]
             if str(out).strip():
                 return out
-        except Exception:
-            continue
+        except Exception as e:
+            print(f"[keeper][four] error executing command {cmd} for node {node.name}: {e}. Skipping.")
+    print(f"[keeper][four] error executing command {cmd} for node {node.name}: failed to execute command. Skipping.")
     return ""
 
 
 def is_leader(node):
-    # Prefer 'stat' which always includes Mode: <role>
-    out = four(node, "stat")
-    out_l = str(out or "").lower()
-    if "mode: leader" in out_l:
+    """Check if node is the leader using multiple fallback methods."""
+    def _has_mode(text, mode):
+        return f"mode: {mode}" in str(text or "").lower()
+    
+    # Try 'stat' first (most reliable)
+    stat_out = four(node, "stat")
+    if _has_mode(stat_out, "leader"):
         return True
-    if "mode: follower" in out_l or "mode: standalone" in out_l:
+    if _has_mode(stat_out, "follower") or _has_mode(stat_out, "standalone"):
         return False
-    # Fallback to 'srvr' (some builds also include Mode)
-    out2 = four(node, "srvr")
-    out2_l = str(out2 or "").lower()
-    if "mode: leader" in out2_l:
+    
+    # Fallback to 'srvr'
+    srvr_out = four(node, "srvr")
+    if _has_mode(srvr_out, "leader"):
         return True
-    # Final fallback: parse mntr key
+    
+    # Final fallback: parse mntr
     try:
-        state = mntr(node).get("zk_server_state", "").strip().lower()
-        return state == "leader"
+        return mntr(node).get("zk_server_state", "").strip().lower() == "leader"
     except Exception:
         return False
 
@@ -69,6 +54,13 @@ def is_leader(node):
 def count_leaders(nodes):
     return sum(1 for n in nodes if is_leader(n))
 
+def _get_current_leader(nodes):
+    """Get current leader node, return None if not found."""
+    try:
+        return next(n for n in nodes if is_leader(n))
+    except Exception:
+        print(f"[keeper] no leader found in nodes: {nodes}")
+        return None
 
 def ready(node):
     try:
@@ -80,20 +72,24 @@ def ready(node):
 
 def mntr(node):
     kv = {}
-    for line in four(node, "mntr").splitlines():
-        s = line.strip()
-        if not s:
+    out = four(node, "mntr")
+    if not out:
+        print(f"[keeper][mntr] error getting mntr for node {node.name}: {out}. Skipping.")
+        return {}
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
             continue
-        if "\t" in s:
-            k, v = s.split("\t", 1)
+        if "\t" in line:
+            k, v = line.split("\t", 1)
             kv[k.strip()] = v.strip()
-            continue
-        parts = s.split()
-        if len(parts) >= 2:
-            k = parts[0].strip()
-            v = parts[1].strip()
-            if k:
-                kv[k] = v
+        else:
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                k, v = parts
+                k, v = k.strip(), v.strip()
+                if k:
+                    kv[k] = v
     return kv
 
 
@@ -155,61 +151,32 @@ def lgif(node):
 
 def srvr_kv(node):
     out = four(node, "srvr")
+    keys = ("connections", "outstanding", "received", "sent")
     kv = {}
     for line in out.splitlines():
         if ":" not in line:
             continue
         k, v = line.split(":", 1)
-        k = k.strip().lower()
-        v = v.strip().split()[0]
+        k_clean = k.strip().lower()
+        v_clean = v.strip().split()[0]
         try:
-            val = float(v)
+            val = float(v_clean)
         except Exception:
             continue
-        if k.startswith("connections"):
-            kv["connections"] = val
-        elif k.startswith("outstanding"):
-            kv["outstanding"] = val
-        elif k.startswith("received"):
-            kv["received"] = val
-        elif k.startswith("sent"):
-            kv["sent"] = val
+        for key in keys:
+            if k_clean.startswith(key):
+                kv[key] = val
+                break
     return kv
 
 
 def prom_metrics(node):
+    """Fetch Prometheus metrics from node using curl (guaranteed by preflight)."""
     url = f"http://127.0.0.1:{PROM_PORT}/metrics"
-    try:
-        if has_bin(node, "curl"):
-            return sh(node, f"curl -sf --max-time 2 {url}", timeout=4)["out"]
-    except Exception:
-        pass
-    try:
-        if has_bin(node, "wget"):
-            return sh(node, f"wget -qO- {url}", timeout=4)["out"]
-    except Exception:
-        pass
-    try:
-        if has_bin(node, "nc"):
-            cmd = (
-                "printf 'GET /metrics HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' "
-                f"| nc -w2 127.0.0.1 {PROM_PORT}"
-            )
-            return sh(node, cmd, timeout=4)["out"]
-    except Exception:
-        pass
-    try:
-        if has_bin(node, "bash"):
-            inner = (
-                f"exec 3<>/dev/tcp/127.0.0.1/{PROM_PORT}; "
-                "printf 'GET /metrics HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3; "
-                "cat <&3; "
-                "exec 3<&-; exec 3>&-"
-            )
-            return sh(node, f'bash -lc "{inner}"', timeout=4)["out"]
-    except Exception:
-        pass
-    return ""
+    result = sh(node, f"curl -sf --max-time 2 {url}", timeout=4)["out"]
+    if not result:
+        raise AssertionError(f"Failed to fetch prometheus metrics for node {node.name}")
+    return result
 
 
 def ch_metrics(node):
@@ -227,7 +194,7 @@ def ch_async_metrics(node):
 
 def _query_json_each_row(node, sql):
     try:
-        txt = node.query(sql, timeout=_ch_query_timeout_s(), ignore_error=True)
+        txt = node.query(sql, timeout=KEEPER_CH_QUERY_TIMEOUT, ignore_error=True)
         return [json.loads(l) for l in txt.strip().splitlines() if l.strip()]
     except Exception:
         return []
@@ -236,7 +203,7 @@ def _query_json_each_row(node, sql):
 def ch_trace_log(node, limit_rows=500):
     try:
         q = f"SELECT * FROM system.trace_log ORDER BY event_time DESC LIMIT {int(limit_rows)} FORMAT JSONEachRow"
-        return node.query(q, timeout=_ch_query_timeout_s(), ignore_error=True)
+        return node.query(q, timeout=KEEPER_CH_QUERY_TIMEOUT, ignore_error=True)
     except Exception:
         return ""
 

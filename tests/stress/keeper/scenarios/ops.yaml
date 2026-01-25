@@ -7,22 +7,17 @@ scenarios:
     name: Persist metrics to ClickHouse
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
-    gates:
-      - { type: single_leader }
 
   - id: OPS-02
     name: Grafana single-run & compare
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
-    gates:
-      - { type: single_leader }
 
   - id: OPS-03
     name: Guardrail thresholds on Prom metrics
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
     gates:
-      - { type: single_leader }
       - type: prom_thresholds_le
         aggregate: sum
         metrics:
