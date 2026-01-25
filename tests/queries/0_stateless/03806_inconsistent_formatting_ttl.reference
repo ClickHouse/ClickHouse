@@ -1,0 +1,3 @@
+ALTER TABLE t340
+    (MODIFY TTL CAST('-999:59:59', 'Time') AS a0)
+SETTINGS ignore_cold_parts_seconds = 60, hdfs_create_new_file_on_insert = 0, dictionary_validate_primary_key_type = 1, min_bytes_to_use_direct_io = 3512074, load_marks_asynchronously = 0
