@@ -361,6 +361,7 @@ public:
     std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
+    bool needsDeterministicFixedColumns() const;
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
     void disableMergeTreePartsSnapshotRemoval() { enable_remove_parts_from_snapshot_optimization = false; }
 
@@ -398,10 +399,6 @@ public:
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
-
-    /// Returns true if we need deterministic (AST-based) fixed column detection for parallel replicas.
-    /// This is required when using parallel_replicas_local_plan to ensure all replicas compute the same read order.
-    bool needsDeterministicFixedColumns() const;
 
 private:
     MergeTreeSettingsPtr data_settings;

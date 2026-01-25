@@ -2502,7 +2502,7 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
 bool ReadFromMergeTree::needsDeterministicFixedColumns() const
 {
     /// For parallel replicas with local plan, we need deterministic (AST-based) fixed column detection
-    /// on both initiator and followers to ensure they compute the same read order.
+    /// to ensure all replicas compute the same read order.
     return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan];
 }
 

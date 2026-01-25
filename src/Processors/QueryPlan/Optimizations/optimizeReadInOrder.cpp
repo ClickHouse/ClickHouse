@@ -315,17 +315,8 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
 
 /// Add more functions to fixed columns.
 /// Functions result is fixed if all arguments are fixed or constants.
-/// For parallel replicas, use AST-based detection instead of DAG for deterministic ordering across all replicas.
-void enrichFixedColumns(
-    const ActionsDAG & dag,
-    FixedColumns & fixed_columns,
-    const ReadFromMergeTree * reading = nullptr)
+void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
 {
-    /// For parallel replicas with local plan, skip the DAG enrichment step to avoid non-deterministic
-    /// detection across replicas. The initial fixed columns from buildSortingDAG (via appendFixedColumnsFromFilterExpression)
-    /// are deterministic, but propagating through ALIAS/FUNCTION nodes in the DAG can differ between replicas.
-    /// We still need to normalize INPUT nodes (first loop below), but skip the propagation (second loop).
-    bool skip_dag_propagation = reading && reading->needsDeterministicFixedColumns();
 
     /// First, collect names of all fixed INPUT nodes.
     /// This is needed because after DAG merging, there can be multiple INPUT nodes
@@ -344,10 +335,6 @@ void enrichFixedColumns(
         if (node.type == ActionsDAG::ActionType::INPUT && fixed_input_names.contains(node.result_name))
             fixed_columns.insert(&node);
     }
-
-    /// For parallel replicas, skip the DAG propagation to avoid non-deterministic results.
-    if (skip_dag_propagation)
-        return;
 
     struct Frame
     {
@@ -448,6 +435,37 @@ struct SortingInputOrder
     std::optional<ActionsDAG> virtual_row_conversion{};
 };
 
+/// Check if a column is fixed (constant) for read-in-order optimization.
+/// For parallel replicas with local plan, uses AST-based detection for determinism.
+/// Otherwise uses DAG-based detection for full optimization.
+bool isFixedColumnForReadInOrder(
+    const ActionsDAG::Node * sort_node,
+    const SortColumnDescription & sort_column_description,
+    const FixedColumns & fixed_columns,
+    const KeyDescription & sorting_key,
+    const ReadFromMergeTree * reading)
+{
+    if (reading && reading->needsDeterministicFixedColumns())
+    {
+        /// Use AST-based detection for deterministic results across parallel replicas
+        const auto * select_query = reading->getQueryInfo().query->as<ASTSelectQuery>();
+        if (select_query)
+        {
+            auto fixed_names = getFixedSortingColumns(
+                *select_query, 
+                sorting_key.column_names, 
+                reading->getContext());
+            return fixed_names.contains(sort_column_description.column_name);
+        }
+        return false;
+    }
+    else
+    {
+        /// Use DAG-based detection for full optimization
+        return fixed_columns.contains(sort_node);
+    }
+}
+
 /// For the case when the order of keys is important (ORDER BY keys).
 SortingInputOrder buildInputOrderFromSortDescription(
     const FixedColumns & fixed_columns,
@@ -455,7 +473,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
     const SortDescription & description,
     const KeyDescription & sorting_key,
     const Names & pk_column_names,
-    size_t limit)
+    size_t limit,
+    const ReadFromMergeTree * reading = nullptr)
 {
     //std::cerr << "------- buildInputOrderInfo " << std::endl;
     SortDescription order_key_prefix_descr;
@@ -572,7 +591,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
                 /// don't let it determine read direction - skip to next columns.
                 /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
                 /// tenant is constant, so read direction should come from event_time DESC.
-                if (fixed_columns.contains(sort_node))
+                if (isFixedColumnForReadInOrder(sort_node, sort_column_description, fixed_columns, sorting_key, reading))
                 {
                     /// Virtual row for fixed column from order by is not supported now.
                     can_optimize_virtual_row = false;
@@ -624,7 +643,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
             else
             {
                 //std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
-                bool is_fixed_column = sort_node->column || fixed_columns.contains(sort_node);
+                bool is_fixed_column = static_cast<bool>(sort_node->column) 
+                    || isFixedColumnForReadInOrder(sort_node, sort_column_description, fixed_columns, sorting_key, reading);
                 if (!is_fixed_column)
                     break;
 
@@ -939,7 +959,8 @@ SortingInputOrder buildInputOrderFromSortDescription(
         dag, description,
         sorting_key,
         pk_column_names,
-        limit);
+        limit,
+        reading);
 }
 
 SortingInputOrder buildInputOrderFromSortDescription(
@@ -1085,7 +1106,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
     auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
 
     if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns, reading);
+        enrichFixedColumns(*dag, fixed_columns);
 
     if (reading)
     {
@@ -1198,7 +1219,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
 
     if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns, reading);
+        enrichFixedColumns(*dag, fixed_columns);
 
     if (reading)
     {
@@ -1316,7 +1337,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
 
     if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns, reading);
+        enrichFixedColumns(*dag, fixed_columns);
 
     if (reading)
     {
