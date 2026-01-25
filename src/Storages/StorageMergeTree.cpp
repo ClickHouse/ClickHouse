@@ -105,7 +105,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
-    extern const MergeTreeSettingsBool readonly;
+    extern const MergeTreeSettingsBool is_readonly;
 }
 
 namespace ErrorCodes
@@ -2984,7 +2984,7 @@ PreparedSetsCachePtr StorageMergeTree::getPreparedSetsCache(Int64 mutation_id)
 
 void StorageMergeTree::assertNotReadonly() const
 {
-    if (isStaticStorage() || (*getSettings())[MergeTreeSetting::readonly])
+    if (isStaticStorage() || (*getSettings())[MergeTreeSetting::is_readonly])
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode");
 }
 
