@@ -256,6 +256,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString storage_policy;
     extern const MergeTreeSettingsFloat zero_copy_concurrent_part_removal_max_postpone_ratio;
     extern const MergeTreeSettingsUInt64 zero_copy_concurrent_part_removal_max_split_times;
+    extern const MergeTreeSettingsBool read_only;
     extern const MergeTreeSettingsBool use_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
@@ -2272,6 +2273,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     /// For iteration to be completed
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    /// If the table is explicitly marked as read-only, treat it as if all disks are readonly.
+    if ((*settings)[MergeTreeSetting::read_only])
+        all_disks_are_readonly = true;
 
     PartLoadingTree::PartLoadingInfos parts_to_load;
     for (auto & disk_parts : parts_to_load_by_disk)
