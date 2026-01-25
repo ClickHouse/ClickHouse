@@ -261,8 +261,9 @@ def test_simple_alter_table(started_cluster, engine):
     assert_create_query([main_node, dummy_node], name, expected)
 
     # test_create_replica_after_delay
+    competing_node.query(f"DROP DATABASE IF EXISTS {database}")
     competing_node.query(
-        f"CREATE DATABASE IF NOT EXISTS {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica3');"
+        f"CREATE DATABASE {database} ENGINE = Replicated('/test/{database}', 'shard1', 'replica3');"
     )
 
     main_node.query("ALTER TABLE {} ADD COLUMN Added3 UInt32;".format(name))
@@ -1013,13 +1014,13 @@ def test_recover_staled_replica_many_mvs(started_cluster):
     dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
 
     main_node.query_with_retry(
-        "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
+        "CREATE DATABASE recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica1');"
     )
     started_cluster.get_kazoo_client("zoo1").set(
         "/clickhouse/databases/recover_mvs/logs_to_keep", b"10"
     )
     dummy_node.query_with_retry(
-        "CREATE DATABASE IF NOT EXISTS recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica2');"
+        "CREATE DATABASE recover_mvs ENGINE = Replicated('/clickhouse/databases/recover_mvs', 'shard1', 'replica2');"
     )
 
     settings = {"distributed_ddl_task_timeout": 0}

@@ -38,3 +38,5 @@ You can build multiple versions of ClickHouse inside `build_*` directories, such
 You can run integration tests as in `tests/integration/README.md` using: `python -m ci.praktika run "integration" --test <selectors>` invoked from the repository root.
 
 When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly necessarily.
+
+When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
