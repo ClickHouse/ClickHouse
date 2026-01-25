@@ -36,9 +36,10 @@ SELECT '-- left join t1, t0';
 SELECT count()
 FROM t1 LEFT JOIN t0 ON t1.EventId = t0.Id;
 
-SELECT '-- right join t0, t1 : NOT_FOUND_COLUMN_IN_BLOCK';
+-- parallel replicas is not supported currently for RIGHT JOIN with non_mt_table on left side, but it should work w/o error
+SELECT '-- right join t0, t1';
 SELECT count()
-FROM t0 RIGHT JOIN t1 ON t1.EventId = t0.Id; -- {serverError NOT_FOUND_COLUMN_IN_BLOCK}
+FROM t0 RIGHT JOIN t1 ON t1.EventId = t0.Id;
 
 SELECT '-- right join t1, t0';
 SELECT count()

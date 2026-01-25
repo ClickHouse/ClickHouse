@@ -1115,6 +1115,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
                     && parallel_replicas_enabled_for_storage(storage, settings))
                 {
+                    /// we need to decide if parallel replicas is supported for join tree while visiting left table expression
+                    /// therefore, here both join sides are analysed
                     auto allow_parallel_replicas_for_join_tree
                         = [&parallel_replicas_enabled_for_storage](const QueryTreeNodePtr & join_tree_node, const Settings & query_settings)
                     {
@@ -1126,7 +1128,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             return true;
 
                         const auto & left_table_expr = join_node->getLeftTableExpression();
-
                         const auto * left_table = typeid_cast<const TableNode *>(left_table_expr.get());
                         if (left_table && left_table->getStorage()->isView())
                             return false;
@@ -1159,15 +1160,22 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 return false;
 
                             const auto & right_table_expr = join_node->getRightTableExpression();
-                            if (right_table_expr->getNodeType() != QueryTreeNodeType::TABLE
-                                && right_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
+                            const auto * right_table = right_table_expr->as<TableNode>();
+                            const auto * right_table_function = right_table_expr->as<TableFunctionNode>();
+                            if (!right_table && !right_table_function)
                                 return false;
 
-                            const auto * right_table = typeid_cast<const TableNode *>(join_node->getRightTableExpression().get());
-                            if (!right_table)
-                                return false;
+                            const auto right_storage = right_table ? right_table->getStorage() : right_table_function->getStorage();
+                            if (parallel_replicas_enabled_for_storage(right_storage, query_settings))
+                            {
+                                const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
+                                const auto left_storage = (left_table ? left_table->getStorage() : left_table_function->getStorage());
+                                if (!parallel_replicas_enabled_for_storage(left_storage, query_settings))
+                                    // TODO: support parallel replicas for (non_mt_table RIGHT JOIN mt_table) later
+                                    return false;
 
-                            return parallel_replicas_enabled_for_storage(right_table->getStorage(), query_settings);
+                                return true;
+                            }
                         }
 
                         return false;
@@ -2662,7 +2670,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     /** If left most table expression query plan is planned to stage that is not equal to fetch columns,
       * then left most table expression is responsible for providing valid JOIN TREE part of final query plan.
       *
-      * Examples: Distributed, Merge storages.
+      * Examples: Distributed, Merge storages, Parallel Replicas
       */
     auto left_table_expression = table_expressions_stack.front();
     auto left_table_expression_query_plan = buildQueryPlanForTableExpression(

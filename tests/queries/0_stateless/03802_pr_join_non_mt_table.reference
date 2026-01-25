@@ -10,6 +10,7 @@
 10
 -- left join t1, t0
 1
--- right join t0, t1 : NOT_FOUND_COLUMN_IN_BLOCK
+-- right join t0, t1
+1
 -- right join t1, t0
 10
