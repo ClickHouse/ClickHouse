@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
@@ -8,6 +9,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -313,8 +315,35 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
 
 /// Add more functions to fixed columns.
 /// Functions result is fixed if all arguments are fixed or constants.
-void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
+/// For parallel replicas, use AST-based detection instead of DAG for deterministic ordering across all replicas.
+void enrichFixedColumns(
+    const ActionsDAG & dag,
+    FixedColumns & fixed_columns,
+    const ReadFromMergeTree * reading = nullptr)
 {
+    /// For parallel replicas with local plan, use AST-based detection for deterministic ordering across all replicas
+    if (reading && reading->needsDeterministicFixedColumns())
+    {
+        fixed_columns.clear();  /// Clear DAG-based results
+
+        const auto & query_info = reading->getQueryInfo();
+        const auto * select_query = query_info.query ? query_info.query->as<ASTSelectQuery>() : nullptr;
+
+        if (select_query)
+        {
+            const auto & sorting_key_columns = reading->getStorageMetadata()->getSortingKeyColumns();
+            auto fixed_names = getFixedSortingColumns(*select_query, sorting_key_columns, reading->getContext());
+
+            /// Convert column names to DAG INPUT nodes
+            for (const auto & node : dag.getNodes())
+            {
+                if (node.type == ActionsDAG::ActionType::INPUT && fixed_names.contains(node.result_name))
+                    fixed_columns.insert(&node);
+            }
+        }
+        return;
+    }
+
     /// First, collect names of all fixed INPUT nodes.
     /// This is needed because after DAG merging, there can be multiple INPUT nodes
     /// with the same column name (e.g., one from filter expression and one from SELECT).
@@ -1066,10 +1095,12 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
 
-    if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+    auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
 
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns, reading);
+
+    if (reading)
     {
         auto order_info = buildInputOrderFromSortDescription(
             reading,
@@ -1177,10 +1208,12 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
 
-    if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+    auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
 
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns, reading);
+
+    if (reading)
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
@@ -1293,10 +1326,12 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
 
-    if (dag && !fixed_columns.empty())
-        enrichFixedColumns(*dag, fixed_columns);
+    auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
 
-    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
+    if (dag && !fixed_columns.empty())
+        enrichFixedColumns(*dag, fixed_columns, reading);
+
+    if (reading)
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
