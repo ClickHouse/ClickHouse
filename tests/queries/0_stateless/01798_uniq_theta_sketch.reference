@@ -57,7 +57,7 @@ FROM
     SELECT modulo(number, 2) AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(bitNot(-x))
+SELECT uniqTheta(bitNot(negate(x)))
 FROM
 (
     SELECT modulo(number, 2) AS x
@@ -95,7 +95,7 @@ FROM
     SELECT modulo(number, 2) AS x
     FROM numbers(10)
 )
-SELECT uniqTheta(bitNot(-x))
+SELECT uniqTheta(bitNot(negate(x)))
 FROM
 (
     SELECT modulo(number, 2) AS x
