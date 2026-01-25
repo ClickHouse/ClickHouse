@@ -22,9 +22,11 @@ function filter_expected_errors()
 {
     # Filter out expected errors during race conditions:
     # - "is currently dropped or renamed" - table being dropped
-    # - "UNKNOWN_TABLE" - table doesn't exist (code 60)
+    # - "Unknown table" - table doesn't exist (code 60)
     # - "does not exist" - table was dropped
-    grep -F "Code: " | grep -Fv "is currently dropped or renamed" | grep -Fv "UNKNOWN_TABLE" | grep -Fv "does not exist" || true
+    # - "All connection tries failed" - remote query failed because table dropped (code 279)
+    # - "Can't connect to any replica" - remote query failed because table dropped (code 279)
+    grep -F "Code: " | grep -Fv "is currently dropped or renamed" | grep -Fv "Unknown table" | grep -Fv "does not exist" | grep -Fv "All connection tries failed" | grep -Fv "connect to any replica" || true
 }
 
 function create_and_fill()
