@@ -109,6 +109,10 @@ struct QueryLogElement
 
     QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::Unknown;
 
+    /// Hybrid row-column storage usage
+    bool used_hybrid_storage = false;
+    String hybrid_storage_mode; /// 'row' or 'column' when hybrid storage is used, empty otherwise
+
     static std::string name() { return "QueryLog"; }
 
     static ColumnsDescription getColumnsDescription();
