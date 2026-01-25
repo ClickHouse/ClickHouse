@@ -1,0 +1,8 @@
+Alice_suffix	1
+Bob_suffix	2
+\N	3
+Nullable(String)
+ALICE	1
+BOB	2
+\N	3
+Nullable(String)

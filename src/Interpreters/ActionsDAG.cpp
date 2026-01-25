@@ -3,6 +3,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -364,12 +365,52 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
 {
     auto [arguments, all_const] = getFunctionArguments(children);
 
+    auto function_base = function.getFunction();
+    auto result_type = function.getResultType();
+
+    /** The function was resolved during query analysis with specific argument types.
+      * However, the actual argument types in the DAG may differ (e.g., columns became Nullable
+      * due to join_use_nulls setting after JOIN operations).
+      *
+      * If some arguments became nullable while the original arguments were not,
+      * we need to wrap the result type in Nullable to match what the function
+      * will actually return at execution time (via defaultImplementationForNulls).
+      *
+      * Most functions use default implementation for nulls (useDefaultImplementationForNulls() = true),
+      * which wraps results in Nullable when any argument is nullable.
+      */
+    if (function_base && !result_type->isNullable())
+    {
+        const auto & original_arg_types = function.getArgumentTypes();
+        bool has_new_nullable = false;
+
+        for (size_t i = 0; i < arguments.size() && i < original_arg_types.size(); ++i)
+        {
+            bool current_is_nullable = arguments[i].type->isNullable()
+                || (arguments[i].type->lowCardinality()
+                    && typeid_cast<const DataTypeLowCardinality *>(arguments[i].type.get())->getDictionaryType()->isNullable());
+
+            bool original_is_nullable = original_arg_types[i]->isNullable()
+                || (original_arg_types[i]->lowCardinality()
+                    && typeid_cast<const DataTypeLowCardinality *>(original_arg_types[i].get())->getDictionaryType()->isNullable());
+
+            if (current_is_nullable && !original_is_nullable)
+            {
+                has_new_nullable = true;
+                break;
+            }
+        }
+
+        if (has_new_nullable)
+            result_type = makeNullable(result_type);
+    }
+
     return addFunctionImpl(
-        function.getFunction(),
+        function_base,
         std::move(children),
         std::move(arguments),
         std::move(result_name),
-        function.getResultType(),
+        result_type,
         all_const);
 }
 
