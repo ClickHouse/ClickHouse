@@ -786,25 +786,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     {
         /// Union does not change header.
         /// We can push down filter and update header.
-        /// But first we need to verify that applying the filter to all branches
-        /// would produce the same output header. If branches have different headers
-        /// (e.g., due to different constant folding), the filter could produce
-        /// different results, causing a "Block structure mismatch" error.
         auto union_input_headers = child->getInputHeaders();
-        const auto & filter_dag = filter->getExpression();
         auto expected_output = filter->getOutputHeader();
-
-        for (size_t i = 1; i < union_input_headers.size(); ++i)
-        {
-            auto branch_output = std::make_shared<const Block>(
-                ExpressionTransform::transformHeader(*union_input_headers[i], filter_dag));
-            if (!blocksHaveEqualStructure(*branch_output, *expected_output))
-            {
-                /// Branches would produce different headers after applying the filter.
-                /// Skip this optimization to avoid "Block structure mismatch" errors.
-                return 0;
-            }
-        }
 
         for (auto & input_header : union_input_headers)
             input_header = expected_output;
