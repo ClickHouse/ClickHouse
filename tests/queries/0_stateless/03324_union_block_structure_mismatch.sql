@@ -1,7 +1,8 @@
 -- Test for "Block structure mismatch in UnionStep" bug
--- When liftUpUnion optimization pushes Expression through Union,
--- branches with different headers (due to projection vs non-projection reads)
--- could produce different output structures.
+-- When projection optimization creates a Union between projection and non-projection reads,
+-- the branches may have different headers (e.g., due to different query DAGs being applied).
+-- Without the fix, this would cause an assertion failure / crash in debug builds.
+-- With the fix, the projection optimization is safely skipped when headers don't match.
 
 DROP TABLE IF EXISTS t0;
 
@@ -10,9 +11,9 @@ INSERT INTO t0 SELECT number FROM numbers(1);
 ALTER TABLE t0 ADD PROJECTION x (SELECT i ORDER BY i) SETTINGS mutations_sync = 2;
 INSERT INTO t0 SELECT number FROM numbers(1);
 
--- Without the fix, this query would fail with "Block structure mismatch in UnionStep"
--- when projection and non-projection parts are combined.
--- With the fix, the optimization is safely skipped when headers don't match.
-SELECT 1 FROM t0 WHERE materialize(1) SETTINGS optimize_use_projections = 1;
+-- With force_optimize_projection=1, the projection code path is exercised.
+-- The fix causes it to safely skip the optimization and return PROJECTION_NOT_USED error
+-- instead of crashing with "Block structure mismatch in UnionStep".
+SELECT 1 FROM t0 WHERE materialize(1) SETTINGS force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
 
 DROP TABLE t0;
