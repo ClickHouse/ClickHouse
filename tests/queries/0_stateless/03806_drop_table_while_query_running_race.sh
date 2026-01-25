@@ -18,6 +18,15 @@ function cleanup()
 }
 trap cleanup EXIT
 
+function filter_expected_errors()
+{
+    # Filter out expected errors during race conditions:
+    # - "is currently dropped or renamed" - table being dropped
+    # - "UNKNOWN_TABLE" - table doesn't exist (code 60)
+    # - "does not exist" - table was dropped
+    grep -F "Code: " | grep -Fv "is currently dropped or renamed" | grep -Fv "UNKNOWN_TABLE" | grep -Fv "does not exist" || true
+}
+
 function create_and_fill()
 {
     ${CLICKHOUSE_CLIENT} -q "
@@ -29,7 +38,7 @@ function create_and_fill()
         PARTITION BY date
         ORDER BY id
         SETTINGS use_primary_key_cache = 1, primary_key_lazy_load = 1
-    " 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed" || true
+    " 2>&1 | filter_expected_errors
 
     ${CLICKHOUSE_CLIENT} -q "
         INSERT INTO ${TEST_TABLE} SELECT
@@ -37,26 +46,26 @@ function create_and_fill()
             number,
             'value_' || toString(number)
         FROM numbers(10000)
-    " 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed" || true
+    " 2>&1 | filter_expected_errors
 }
 
 function select_query()
 {
     ${CLICKHOUSE_CLIENT} -q "
         SELECT count() FROM ${TEST_TABLE} WHERE value LIKE '%5%'
-    " 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed" || true
+    " 2>&1 | filter_expected_errors
 }
 
 function select_distributed()
 {
     ${CLICKHOUSE_CLIENT} -q "
         SELECT count() FROM remote('127.0.0.1', '${TEST_TABLE}')
-    " 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed" || true
+    " 2>&1 | filter_expected_errors
 }
 
 function drop_table()
 {
-    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${TEST_TABLE}" 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed" || true
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${TEST_TABLE}" 2>&1 | filter_expected_errors
 }
 
 # Run multiple iterations to increase chance of hitting the race
