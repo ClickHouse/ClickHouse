@@ -22,8 +22,6 @@ namespace ErrorCodes
 extern const int INCORRECT_ELEMENT_OF_SET;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int UNKNOWN_ELEMENT_OF_ENUM;
-extern const int LOGICAL_ERROR;
-
 }
 
 namespace
