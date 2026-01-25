@@ -115,7 +115,7 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
     auto it = serializations.find(column_name);
     if (it == serializations.end())
         throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-            "There is no column or subcolumn {} in part {}", column_name, data_part_name);
+            "WRITER: There is no column or subcolumn {} in part {}", column_name, data_part_name);
 
     return it->second;
 }

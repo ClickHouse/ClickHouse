@@ -73,6 +73,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
+    extern const MergeTreeSettingsBool enable_hybrid_storage;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
@@ -883,6 +884,18 @@ static NameSet collectFilesToSkip(
 
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
+
+    /// Do not hardlink __row files during partial mutations when hybrid storage is enabled.
+    /// The __row column contains serialized row data which would become stale after updating
+    /// any columns. Since we can't regenerate __row during partial mutations (we don't have
+    /// all columns available), we skip these files so the new part won't have hybrid storage.
+    /// Readers will fall back to column-based reading for such parts.
+    auto storage_settings = source_part->storage.getSettings();
+    if ((*storage_settings)[MergeTreeSetting::enable_hybrid_storage])
+    {
+        files_to_skip.insert(RowDataColumn::name + ".bin");
+        files_to_skip.insert(RowDataColumn::name + mrk_extension);
+    }
 
     auto skip_index = [&files_to_skip, &mrk_extension](const MergeTreeIndexPtr & index)
     {
