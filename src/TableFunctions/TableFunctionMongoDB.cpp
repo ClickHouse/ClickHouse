@@ -148,7 +148,7 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory)
                     .examples = {
                         {"Fetch collection by URI", "SELECT * FROM mongodb('mongodb://root:clickhouse@localhost:27017/database', 'example_collection', 'key UInt64, data String')", ""},
                         {"Fetch collection over TLS", "SELECT * FROM mongodb('localhost:27017', 'database', 'example_collection', 'root', 'clickhouse', 'key UInt64, data String', 'tls=true')", ""},
-                        {"Fetch collection over TLS", "SELECT * FROM mongodb(host='localhost', port='27017', database='database', collection='example_collection', user='root', password='clickhouse', structure='key UInt64, data String', options='tls=true')", ""},
+                        {"Let's add examples with named collections and overrides", "SELECT * FROM mongodb(mongodb_creds, database='database', collection='example_collection', user='root', password='clickhouse', structure='key UInt64, data String', options='tls=true')", ""},
                     },
                     .category = FunctionDocumentation::Category::TableFunction
             },
