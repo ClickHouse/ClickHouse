@@ -67,6 +67,8 @@ ASTPtr getFixedPoint(const ASTPtr & ast, const ContextPtr & context)
     return argument->as<ASTIdentifier>() ? argument : nullptr;
 }
 
+} /// end anonymous namespace
+
 NameSet getFixedSortingColumns(
     const ASTSelectQuery & query, const Names & sorting_key_columns, const ContextPtr & context)
 {
@@ -108,6 +110,9 @@ NameSet getFixedSortingColumns(
 
     return fixed_points;
 }
+
+namespace
+{
 
 struct MatchResult
 {
