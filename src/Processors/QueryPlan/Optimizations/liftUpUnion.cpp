@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 
@@ -24,9 +25,28 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
     {
         /// Union does not change header.
         /// We can push down expression and update header.
+        /// But first we need to verify that applying the expression to all branches
+        /// would produce the same output header. If branches have different headers
+        /// (e.g., due to different constant folding), the expression could produce
+        /// different results, causing a "Block structure mismatch" error.
         auto union_input_headers = child->getInputHeaders();
+        const auto & expression_dag = expression->getExpression();
+        auto expected_output = expression->getOutputHeader();
+
+        for (size_t i = 1; i < union_input_headers.size(); ++i)
+        {
+            auto branch_output = std::make_shared<const Block>(
+                ExpressionTransform::transformHeader(*union_input_headers[i], expression_dag));
+            if (!blocksHaveEqualStructure(*branch_output, *expected_output))
+            {
+                /// Branches would produce different headers after applying the expression.
+                /// Skip this optimization to avoid "Block structure mismatch" errors.
+                return 0;
+            }
+        }
+
         for (auto & input_header : union_input_headers)
-            input_header = expression->getOutputHeader();
+            input_header = expected_output;
 
         ///                    - Something
         /// Expression - Union - Something
