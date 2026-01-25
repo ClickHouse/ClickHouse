@@ -1,5 +1,6 @@
 #include <Parsers/ASTTupleDataType.h>
 #include <Common/SipHash.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 
@@ -52,9 +53,12 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
     {
         ostr << '(';
 
-        /// Pretty print with newlines for unnamed tuples (same as ASTDataType)
-        if (!settings.one_line && settings.print_pretty_type_names && element_names.empty())
+        /// Pretty print with newlines only for tuples with more than 1 column
+        bool use_multiline = !settings.one_line && settings.print_pretty_type_names && arguments->children.size() > 1;
+
+        if (use_multiline && element_names.empty())
         {
+            /// Unnamed tuple with multiple elements - use multiline format
             ++frame.indent;
             std::string indent_str = "\n" + std::string(4 * frame.indent, ' ');
             for (size_t i = 0; i < arguments->children.size(); ++i)
@@ -65,8 +69,28 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
                 arguments->children[i]->format(ostr, settings, state, frame);
             }
         }
+        else if (use_multiline && !element_names.empty())
+        {
+            /// Named tuple with multiple elements - use multiline format
+            ++frame.indent;
+            std::string indent_str = "\n" + std::string(4 * frame.indent, ' ');
+            for (size_t i = 0; i < arguments->children.size(); ++i)
+            {
+                if (i != 0)
+                    ostr << ',';
+                ostr << indent_str;
+
+                /// Print element name if present
+                if (i < element_names.size())
+                    ostr << backQuoteIfNeed(element_names[i]) << ' ';
+
+                /// Print the type
+                arguments->children[i]->format(ostr, settings, state, frame);
+            }
+        }
         else
         {
+            /// Single-line format (for single-element tuples or when one_line is true)
             for (size_t i = 0; i < arguments->children.size(); ++i)
             {
                 if (i > 0)
@@ -74,7 +98,7 @@ void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
                 /// Print element name if present
                 if (i < element_names.size())
-                    ostr << element_names[i] << ' ';
+                    ostr << backQuoteIfNeed(element_names[i]) << ' ';
 
                 /// Print the type
                 arguments->children[i]->format(ostr, settings, state, frame);
