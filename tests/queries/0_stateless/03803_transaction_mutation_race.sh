@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-random-merge-tree-settings
+# Tags: no-ordinary-database, no-random-merge-tree-settings, no-encrypted-storage
 
 # Test for the race condition where a transaction commits before all mutations
 # started by that transaction have been applied to all parts.
