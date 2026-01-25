@@ -178,7 +178,19 @@ def test_cluster_recovery(started_cluster):
         # new nodes can achieve quorum without the recovery node (cluster should work properly from now on)
         nodes[0].stop_clickhouse()
 
-        add_data(node_zks[-2], "/test_force_recovery_last", "somedatalast")
+        # we potentially killed the leader node so we give time for election and refresh the connection
+        for _ in range(100):
+            try:
+                node_zks[-2] = get_fake_zk(nodes[-2].name, timeout=30.0)
+                add_data(node_zks[-2], "/test_force_recovery_last", "somedatalast")
+                break
+            except Exception as ex:
+                time.sleep(0.5)
+                print(f"Retrying create on {nodes[-2].name}, exception {ex}")
+        else:
+            raise Exception(f"Failed creating a node on {nodes[-2].name}")
+
+        node_zks[-1] = get_fake_zk(nodes[-1].name, timeout=30.0)
         wait_and_assert_data(node_zks[-1], "/test_force_recovery_last", "somedatalast")
 
         nodes[0].start_clickhouse()
