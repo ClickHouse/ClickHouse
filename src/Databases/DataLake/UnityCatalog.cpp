@@ -1,5 +1,4 @@
 #include <Databases/DataLake/UnityCatalog.h>
-#include "Databases/DataLake/StorageCredentials.h"
 
 #if USE_PARQUET
 
@@ -12,6 +11,7 @@
 #include <IO/Operators.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <Databases/DataLake/StorageCredentials.h>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes

@@ -49,7 +49,7 @@ public:
 
     const String & getSecretAccessKey() const
     {
-        return secret_access_key;   
+        return secret_access_key;
     }
 
     const String & getSessionToken() const

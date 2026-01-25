@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Parsers/IParser.h"
 #include "config.h"
 
 #if USE_AWS_S3
@@ -12,6 +11,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <IO/ReadBufferFromS3.h>
+#include <Parsers/IParser.h>
 
 namespace DB
 {
