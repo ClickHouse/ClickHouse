@@ -435,11 +435,17 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
             if (has_new_nullable)
                 result_type = makeNullable(result_type);
         }
-        else if (!any_current_arg_nullable)
+        else if (!any_current_arg_nullable && !function_base->getResultType()->isNullable())
         {
-            /// Case 2: Result type is nullable but no arguments are nullable.
+            /// Case 2: Result type is nullable but no arguments are nullable AND the
+            /// function_base's actual result type is non-nullable.
             /// This can happen when wrap_with_nullable was set during analysis but
             /// actual arguments are non-nullable. Remove the nullable wrapper.
+            ///
+            /// We must also check function_base->getResultType() because some functions
+            /// (like arrayElement) return nullable based on nested types (e.g., array element type),
+            /// not just top-level argument nullability. For such functions, the result type
+            /// should remain nullable even if no arguments are nullable at the top level.
             result_type = removeNullable(result_type);
         }
     }
