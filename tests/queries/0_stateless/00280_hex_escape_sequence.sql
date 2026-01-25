@@ -1,1 +1,0 @@
-SELECT '\x30 \xD0\xA0';

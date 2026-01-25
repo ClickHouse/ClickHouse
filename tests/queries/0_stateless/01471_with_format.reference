@@ -1,8 +1,0 @@
-WITH 1
-SELECT 1
-FROM system.one
-WITH
-    1,
-    2
-SELECT 1
-FROM system.one

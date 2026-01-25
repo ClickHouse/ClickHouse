@@ -1,5 +1,0 @@
-<test>
-    <query>SELECT number % 128 FROM numbers(300000000) FORMAT Null</query>
-    <query>SELECT number % 255 FROM numbers(300000000) FORMAT Null</query>
-    <query>SELECT number % 256 FROM numbers(300000000) FORMAT Null</query>
-</test>

@@ -1,8 +1,0 @@
-
-<clickhouse>
-    <http_server_default_response>Default server response</http_server_default_response>
-
-    <http_handlers>
-        <defaults/>
-    </http_handlers>
-</clickhouse>

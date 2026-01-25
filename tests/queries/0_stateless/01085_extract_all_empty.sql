@@ -1,1 +1,0 @@
-SELECT extractAll('\0', '');

@@ -1,9 +1,0 @@
-EventDate	Date					
-UTCEventTime	DateTime					
-MoscowEventDate	Date	DEFAULT	toDate(UTCEventTime)			
-EventDate	Date					
-UTCEventTime	DateTime					
-MoscowEventDate	Date	DEFAULT	toDate(UTCEventTime)			
-2015-06-09	2015-06-09 01:02:03	2015-06-09
-2015-06-09	2015-06-09 01:02:03	2015-06-09
-2015-06-09	2015-06-09 01:02:03	2015-06-09

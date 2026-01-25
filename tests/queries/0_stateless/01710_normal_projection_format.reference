@@ -1,1 +1,0 @@
-CREATE TABLE default.test\n(\n    `uuid` FixedString(16),\n    `id` Int32,\n    `ns` FixedString(16),\n    `dt` DateTime64(6),\n    PROJECTION mtlog_proj_source_reference\n    (\n        SELECT *\n        ORDER BY substring(ns, 1, 5)\n    )\n)\nENGINE = MergeTree\nORDER BY (id, dt, uuid)\nSETTINGS index_granularity = 8192

@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <distributed_background_insert_batch>0</distributed_background_insert_batch>
-        </default>
-    </profiles>
-</clickhouse>

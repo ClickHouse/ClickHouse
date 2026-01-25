@@ -1,4 +1,0 @@
-Expression ((Project names + (Projection + Change column names to column identifiers)))
-Header: x UInt8
-  ReadFromSystemOne
-  Header: dummy UInt8

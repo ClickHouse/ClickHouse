@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-set -e
-
-i=0
-while IFS= read line; do
-	echo "$i,$line"
-	i=$((i+1))
-done

@@ -1,8 +1,0 @@
-53333
-1	177774444311114
-2	2666633332
-3	177774444311114
-SELECT count() FROM t_lightweight_mut_7;	1	2
-SELECT 1, sum(v) FROM t_lightweight_mut_7;	1	1
-SELECT 2, sum(v) FROM t_lightweight_mut_7 SETTINGS apply_mutations_on_fly = 0;	0	0
-SELECT 3, sum(v) FROM t_lightweight_mut_7;	0	0

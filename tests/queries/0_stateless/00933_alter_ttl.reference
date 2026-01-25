@@ -1,5 +1,0 @@
-CREATE TABLE default.ttl\n(\n    `d` Date,\n    `a` Int32\n)\nENGINE = MergeTree\nPARTITION BY toDayOfMonth(d)\nORDER BY a\nTTL d + toIntervalDay(1)\nSETTINGS remove_empty_parts = 0, index_granularity = 8192
-2100-10-10	3
-2100-10-10	4
-d	Date					
-a	Int32					d + toIntervalDay(1)

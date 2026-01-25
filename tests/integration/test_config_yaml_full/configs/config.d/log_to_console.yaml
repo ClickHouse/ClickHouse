@@ -1,7 +1,0 @@
-logger:
-  console: true
-  log:
-    "@remove": remove
-  errorlog:
-    "@remove": remove
-

@@ -1,9 +1,0 @@
-<clickhouse>
-    <profiles replace="replace">
-        <default>
-            <max_memory_usage>a</max_memory_usage>
-            <load_balancing>nearest_hostname</load_balancing>
-            <replication_alter_partitions_sync>0</replication_alter_partitions_sync>
-        </default>
-    </profiles>
-</clickhouse>

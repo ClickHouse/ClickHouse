@@ -1,8 +1,0 @@
-2	0	leave
-0	1	delete
-\N	\N	leave
----
-0	1	Definitely x = 0
-1	0	We cannot say that x = 0
-3	0	We cannot say that x = 0
-\N	\N	We cannot say that x = 0

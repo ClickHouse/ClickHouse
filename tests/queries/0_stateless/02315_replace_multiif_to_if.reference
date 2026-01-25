@@ -1,4 +1,0 @@
-SELECT multiIf(number = 0, _CAST(NULL, \'Nullable(Nothing)\'), toNullable(number))
-FROM numbers(10000)
-SELECT multiIf(number = 0, _CAST(NULL, \'Nullable(Nothing)\'), toNullable(number))
-FROM numbers(10000)

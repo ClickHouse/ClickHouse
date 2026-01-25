@@ -1,6 +1,0 @@
-SELECT arr1, arr2, count() AS c FROM (SELECT emptyArrayUInt8() AS arr1, [1] AS arr2 UNION ALL SELECT [1], emptyArrayUInt8()) GROUP BY arr1, arr2 ORDER BY c DESC, arr1, arr2;
-SELECT arr1, arr2, count() AS c FROM (SELECT range(number) AS arr1, range(toUInt64(10 - number)) AS arr2 FROM system.numbers LIMIT 11) GROUP BY arr1, arr2 ORDER BY c DESC, arr1, arr2;
-SELECT arr1, arr2, count() AS c FROM (SELECT arrayMap(x -> toString(x), range(number)) AS arr1, range(toUInt64(10 - number)) AS arr2 FROM system.numbers LIMIT 11) GROUP BY arr1, arr2 ORDER BY c DESC, arr1, arr2;
-SELECT arr1, arr2, count() AS c FROM (SELECT arrayMap(x -> toString(x), range(number)) AS arr1, arrayMap(x -> toString(x), range(toUInt64(10 - number))) AS arr2 FROM system.numbers LIMIT 11) GROUP BY arr1, arr2 ORDER BY c DESC, arr1, arr2;
-SELECT arr1, arr2, count() AS c FROM (SELECT arrayMap(x -> toString(x), range(number)) AS arr1, replicate(range(toUInt64(10 - number)), arr1) AS arr2 FROM system.numbers LIMIT 11) GROUP BY arr1, arr2 ORDER BY c DESC, arr1, arr2;
-SELECT arr1, arr2, count() AS c FROM (SELECT arrayMap(x -> toString(x), range(number)) AS arr1, replicate(range(toUInt64(10 - number)), arr1) AS arr2 FROM (SELECT number % 11 AS number FROM system.numbers LIMIT 30)) GROUP BY arr1, arr2 ORDER BY c DESC, arr1, arr2;

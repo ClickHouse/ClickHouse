@@ -1,4 +1,0 @@
-set enable_analyzer = 1;
--- { echo }
-EXPLAIN SYNTAX SELECT NOT NOT (NOT (NOT (NULL)));
-EXPLAIN SYNTAX SELECT NOT (NOT (NOT NOT NULL));

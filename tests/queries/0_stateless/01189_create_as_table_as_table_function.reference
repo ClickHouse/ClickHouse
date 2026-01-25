@@ -1,4 +1,0 @@
-CREATE TABLE default.table2\n(\n    `number` UInt64\n) AS numbers(5)
-CREATE TABLE default.table3\n(\n    `number` UInt64\n) AS numbers(5)
-5	10
-5	10

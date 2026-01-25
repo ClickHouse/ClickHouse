@@ -1,6 +1,0 @@
-<clickhouse>
-    <users_config>/etc/clickhouse-server/users2.xml</users_config>
-    <access_control_path>/var/lib/clickhouse/access2/</access_control_path>
-    
-    <user_directories remove="remove"/>
-</clickhouse>

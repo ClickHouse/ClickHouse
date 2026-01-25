@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <distributed_background_insert_split_batch_on_failure>1</distributed_background_insert_split_batch_on_failure>
-        </default>
-    </profiles>
-</clickhouse>

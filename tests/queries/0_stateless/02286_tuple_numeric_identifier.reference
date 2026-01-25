@@ -1,7 +1,0 @@
-CREATE TABLE default.t_tuple_numeric\n(\n    `t` Tuple(\n        `1` Tuple(\n            `2` Int32,\n            `3` Int32),\n        `4` Int32)\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
-{"t":{"1":{"2":2,"3":3},"4":4}}
-2	3	4
-2	3	4
-2	3	4
-2	3	4
-(('value'))

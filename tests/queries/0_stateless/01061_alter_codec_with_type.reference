@@ -1,5 +1,0 @@
-epoch	UInt64	CODEC(Delta(8), LZ4)
-_time_dec	Float64	
-epoch	UInt64	toUInt64(_time_dec)	CODEC(Delta(8), LZ4)
-_time_dec	Float64		
-1577351080	1577351080

@@ -1,8 +1,0 @@
-<clickhouse>
-    <zookeeper_log>
-        <database>system</database>
-        <table>zookeeper_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <ttl>event_date + INTERVAL 1 WEEK DELETE</ttl>
-    </zookeeper_log>
-</clickhouse>

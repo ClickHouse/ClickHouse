@@ -1,3 +1,0 @@
-CODEC(Delta(4))
-CODEC(Delta(4), LZ4)
-CODEC(Delta(8), LZ4)

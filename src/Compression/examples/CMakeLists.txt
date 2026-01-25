@@ -1,5 +1,0 @@
-clickhouse_add_executable (compressed_buffer compressed_buffer.cpp)
-target_link_libraries (compressed_buffer PRIVATE dbms clickhouse_common_io clickhouse_common_config clickhouse_compression)
-
-clickhouse_add_executable (decompress_perf decompress_perf.cpp)
-target_link_libraries(decompress_perf PRIVATE clickhouse_compression ch_contrib::lz4)

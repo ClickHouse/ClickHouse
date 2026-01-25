@@ -1,6 +1,0 @@
-[8,9,10]
-['a','b','c']
-CREATE TABLE default.table_for_rename_nested\n(\n    `date` Date,\n    `key` UInt64,\n    `n.x` Array(UInt32),\n    `n.y` Array(String),\n    `value1` String\n)\nENGINE = MergeTree\nPARTITION BY date\nORDER BY key\nSETTINGS index_granularity = 8192
-CREATE TABLE default.table_for_rename_nested\n(\n    `date` Date,\n    `key` UInt64,\n    `n.renamed_x` Array(UInt32),\n    `n.renamed_y` Array(String),\n    `value1` String\n)\nENGINE = MergeTree\nPARTITION BY date\nORDER BY key\nSETTINGS index_granularity = 8192
-7	[8,9,10]
-7	['a','b','c']

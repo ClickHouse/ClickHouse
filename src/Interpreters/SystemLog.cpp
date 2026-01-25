@@ -21,6 +21,7 @@
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
@@ -46,10 +47,12 @@
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -796,6 +799,40 @@ void SystemLog<LogElement>::prepareTable()
 
             InterpreterRenameQuery(rename, query_context).execute();
 
+            /// Mark the old (renamed) table as readonly if it's MergeTree.
+            /// This prevents the old table from wasting CPU on background operations.
+            {
+                StorageID old_table_id(table_id.database_name, table_id.table_name + "_" + toString(suffix));
+                auto old_table = DatabaseCatalog::instance().tryGetTable(old_table_id, getContext());
+                if (old_table && old_table->isMergeTree())
+                {
+                    auto alter_context = Context::createCopy(context);
+                    alter_context->makeQueryContext();
+                    addSettingsForQuery(alter_context, IAST::QueryKind::Alter);
+
+                    auto alter_command = make_intrusive<ASTAlterCommand>();
+                    alter_command->type = ASTAlterCommand::MODIFY_SETTING;
+
+                    auto settings_changes = make_intrusive<ASTSetQuery>();
+                    settings_changes->is_standalone = false;
+                    settings_changes->changes.push_back({"readonly", Field(true)});
+                    alter_command->settings_changes = settings_changes.get();
+                    alter_command->children.push_back(settings_changes);
+
+                    auto alter_commands = make_intrusive<ASTExpressionList>();
+                    alter_commands->children.push_back(alter_command);
+
+                    auto alter_query = make_intrusive<ASTAlterQuery>();
+                    alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
+                    alter_query->setDatabase(old_table_id.database_name);
+                    alter_query->setTable(old_table_id.table_name);
+                    alter_query->command_list = alter_commands.get();
+                    alter_query->children.push_back(alter_commands);
+
+                    InterpreterAlterQuery(alter_query, alter_context).execute();
+                }
+            }
+
             /// The required table will be created.
             table = nullptr;
         }
@@ -838,6 +875,10 @@ void SystemLog<LogElement>::addSettingsForQuery(ContextMutablePtr & mutable_cont
         /// As this operation is performed automatically we don't want it to fail because of user dependencies on log tables
         mutable_context->setSetting("check_table_dependencies", Field{false});
         mutable_context->setSetting("check_referential_table_dependencies", Field{false});
+    }
+    else if (query_kind == IAST::QueryKind::Alter)
+    {
+        /// No special settings needed for ALTER, but we need to handle this case
     }
 }
 

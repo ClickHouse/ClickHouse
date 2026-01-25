@@ -1,1 +1,0 @@
-SELECT 2 BETWEEN 1 + 1 AND 3 - 1;

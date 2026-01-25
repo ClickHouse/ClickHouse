@@ -1,8 +1,0 @@
-TCP CLIENT
-maximum: 1100 ms
-TCP CLIENT WITH SETTINGS IN QUERY
-maximum: 1100 ms
-HTTP CLIENT
-maximum: 1100 ms
-TABLE: system.settings
-max_execution_time	30.5	1

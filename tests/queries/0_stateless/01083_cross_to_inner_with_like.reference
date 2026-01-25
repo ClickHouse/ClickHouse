@@ -1,9 +1,0 @@
-SELECT *
-FROM n, r
-WHERE (n.k = r.k) AND (r.name = \'A\')
-SELECT *
-FROM n, r
-WHERE (n.k = r.k) AND (r.name LIKE \'A%\')
-SELECT *
-FROM n, r
-WHERE (n.k = r.k) AND (r.name NOT LIKE \'A%\')

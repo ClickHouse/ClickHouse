@@ -1,4 +1,0 @@
-CREATE TABLE `02111_modify_table_comment`.t\n(\n    `n` Int8\n)\nENGINE = MergeTree\nORDER BY n\nSETTINGS index_granularity = 8192\nCOMMENT \'this is a MergeTree table\'
-CREATE TABLE `02111_modify_table_comment`.t\n(\n    `n` Int8\n)\nENGINE = MergeTree\nORDER BY n\nSETTINGS index_granularity = 8192\nCOMMENT \'MergeTree Table\'
-CREATE TABLE `02111_modify_table_comment`.t_merge\n(\n    `n` Int8\n)\nENGINE = Merge(\'02111_modify_table_comment\', \'t\')\nCOMMENT \'this is a Merge table\'
-CREATE TABLE `02111_modify_table_comment`.t_merge\n(\n    `n` Int8\n)\nENGINE = Merge(\'02111_modify_table_comment\', \'t\')\nCOMMENT \'Merge Table\'

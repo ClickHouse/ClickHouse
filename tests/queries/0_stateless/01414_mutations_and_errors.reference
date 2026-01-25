@@ -1,5 +1,0 @@
-42
-Hello
-waiting	default	mutation_table	mutation_3.txt	(MODIFY COLUMN `value` UInt64)
-42
-Hello

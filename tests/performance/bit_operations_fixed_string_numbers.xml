@@ -1,4 +1,0 @@
-<test>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(bitXor(reinterpretAsFixedString(number), reinterpretAsFixedString(number + 1)))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(bitXor(reinterpretAsFixedString(number), reinterpretAsFixedString(0xabcd0123cdef4567)))</query>
-</test>

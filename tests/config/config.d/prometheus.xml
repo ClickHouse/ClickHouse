@@ -1,6 +1,0 @@
-<clickhouse>
-    <prometheus>
-        <endpoint>/metrics</endpoint>
-        <port>9988</port>
-    </prometheus>
-</clickhouse>

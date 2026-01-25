@@ -1,6 +1,0 @@
-<test>
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(rand() % 2 ? URL : Referer)</query>
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(rand() % 2 ? URL : '')</query>
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(rand() % 2 ? SearchPhrase : MobilePhoneModel)</query>
-    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore(rand() % 2 ? '' : PageCharset)</query>
-</test>

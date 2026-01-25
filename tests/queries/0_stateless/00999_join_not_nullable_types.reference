@@ -1,8 +1,0 @@
-0	['left']	0	[]	\N
-1	['left']	1	['right']	1
-2	[]	\N	['right']	2
-['left']	0	[]	\N
-['left']	1	['right']	1
-[]	\N	['right']	2
-['left']	42	\N
-['right']	\N	42

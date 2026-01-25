@@ -1,5 +1,0 @@
-To obtain the build trace in Chrome-trace format you need to do the following:
-- ninja -C ${BUILD_DIR}
-- ninjatrace ${BUILD_DIR}/.ninja_log > ninja_trace.json
-
-You can get `ninjatrace` from https://github.com/nico/ninjatracing.git - also there is a more detailed instruction.

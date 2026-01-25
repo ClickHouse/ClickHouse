@@ -1,5 +1,0 @@
-Server was built in debug mode. It will work slowly.
-0
-Obsolete setting [\'multiple_joins_rewriter_version\'] is changed. Please check \'SELECT * FROM system.settings WHERE changed AND is_obsolete\' and read the changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md
-1
-1

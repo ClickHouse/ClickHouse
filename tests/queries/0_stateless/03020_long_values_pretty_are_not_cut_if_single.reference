@@ -1,4 +1,0 @@
-COMMENT 'Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.\n\nIt is safe to truncate or drop this table at any time.' │
-COMMENT 'Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.\n\nIt is safe to truncate or drop this table at any time.' │
-COMMENT 'Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.\n\nIt is safe to truncate or drop this table at any time.' 
-\nCOMMENT \'Contains history of metrics values from tables system.metrics and system.events, periodically flushed to disk.\\n\\nIt is safe to truncate or drop this table at any time.\'

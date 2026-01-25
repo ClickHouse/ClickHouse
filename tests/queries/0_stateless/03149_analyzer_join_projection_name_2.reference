@@ -1,6 +1,0 @@
-   ┌──uid─┬─name───┬─gid─┬─gname──┐
-1. │ 1231 │ John   │ 1   │ Group1 │
-2. │ 1234 │ Test   │ 2   │ Group1 │
-3. │ 6666 │ Ksenia │ 1   │ Group1 │
-4. │ 8888 │ Alice  │ 1   │ Group1 │
-   └──────┴────────┴─────┴────────┘

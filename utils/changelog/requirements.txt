@@ -1,4 +1,0 @@
-thefuzz
-PyGitHub
-tqdm
-boto3

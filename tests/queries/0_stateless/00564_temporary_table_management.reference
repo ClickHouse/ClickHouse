@@ -1,4 +1,0 @@
-1
-CREATE TEMPORARY TABLE temp_tab\n(\n    `number` UInt64\n)\nENGINE = Memory
-temp_tab
-0

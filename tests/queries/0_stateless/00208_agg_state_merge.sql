@@ -1,1 +1,0 @@
-SELECT k % 7 AS k2, finalizeAggregation(uniqMergeState(state)), uniqMerge(state) FROM (SELECT k, uniqState(x) AS state FROM (SELECT number % 11 AS k, intDiv(number, 7)  AS x FROM system.numbers LIMIT 100) GROUP BY k) GROUP BY k2 ORDER BY k2;

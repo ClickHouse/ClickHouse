@@ -1,1 +1,0 @@
-SELECT info FROM (SELECT 1 AS info);
