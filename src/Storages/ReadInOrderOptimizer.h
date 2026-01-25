@@ -12,11 +12,6 @@ namespace DB
  *   common prefix, which is needed for
  *   performing reading in order of PK.
  */
-/// Get set of sorting key columns that are fixed (constant) due to WHERE/PREWHERE conditions.
-/// Used for deterministic read-in-order optimization across parallel replicas.
-NameSet getFixedSortingColumns(
-    const ASTSelectQuery & query, const Names & sorting_key_columns, const ContextPtr & context);
-
 class ReadInOrderOptimizer
 {
 public:

@@ -399,10 +399,6 @@ public:
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
-    /// Returns true if we need deterministic (AST-based) fixed column detection for parallel replicas.
-    /// This is required when using parallel_replicas_local_plan to ensure all replicas compute the same read order.
-    bool needsDeterministicFixedColumns() const;
-
 private:
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
