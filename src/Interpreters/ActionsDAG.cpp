@@ -382,10 +382,23 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
       *    when using aliased expressions in USING clause. In this case, we need to remove
       *    the Nullable wrapper because the function will return non-nullable result.
       *
-      * Most functions use default implementation for nulls (useDefaultImplementationForNulls() = true),
-      * which wraps results in Nullable when any argument is nullable.
+      * These adjustments only apply to functions that use the default implementation for nulls.
+      * Functions with useDefaultImplementationForNulls() = false handle nullable types themselves
+      * and their result type should not be automatically modified.
+      *
+      * We check useDefaultImplementationForNulls() by trying to access the underlying IFunction
+      * via FunctionToFunctionBaseAdaptor. Functions using this adaptor pattern are simple functions
+      * that implement IFunction. For complex functions (like CAST) that implement IFunctionBase
+      * directly, we assume they handle nullable types correctly and don't modify their result type.
       */
+    bool uses_default_implementation_for_nulls = false;
     if (function_base)
+    {
+        if (const auto * adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(function_base.get()))
+            uses_default_implementation_for_nulls = adaptor->getFunction()->useDefaultImplementationForNulls();
+    }
+
+    if (function_base && uses_default_implementation_for_nulls)
     {
         auto is_nullable_type = [](const DataTypePtr & type)
         {
