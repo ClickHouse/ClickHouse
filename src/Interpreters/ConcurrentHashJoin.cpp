@@ -822,7 +822,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             {
                 /// In case flag per row is used, we need to merge flags, rows in different slots can differ.
                 auto current_used_flags = hash_joins[i]->data->getUsedFlags();
-                common_used_flags->per_row_flags.merge(current_used_flags->per_row_flags);
+                common_used_flags->per_row_flags.insert(current_used_flags->per_row_flags.begin(), current_used_flags->per_row_flags.end());
                 if (!current_used_flags->per_row_flags.empty())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "ConcurrentHashJoin: unexpected non-disjoint per_row_flags in slot {}", i);
             }
