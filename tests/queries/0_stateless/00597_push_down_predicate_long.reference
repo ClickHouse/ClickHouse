@@ -109,7 +109,7 @@ WHERE equals(id, 1)
 SELECT *
 FROM
 (
-    SELECT arrayJoin(cast([1, 2, 3], \'Array(UInt8)\')) AS id
+    SELECT arrayJoin(_CAST([1, 2, 3], \'Array(UInt8)\')) AS id
     FROM system.one
 )
 WHERE equals(id, 1)
@@ -117,7 +117,7 @@ WHERE equals(id, 1)
 SELECT id
 FROM
 (
-    SELECT arrayJoin(cast([1, 2, 3], \'Array(UInt8)\')) AS id
+    SELECT arrayJoin(_CAST([1, 2, 3], \'Array(UInt8)\')) AS id
     FROM system.one
 )
 WHERE equals(id, 1)

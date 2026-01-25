@@ -1,18 +1,18 @@
 SELECT
-    sumplus(n, 1),
-    sumplus(1, n),
-    summinus(n, 1),
-    summinus(1, n)
+    sum(plus(n, 1)),
+    sum(plus(1, n)),
+    sum(minus(n, 1)),
+    sum(minus(1, n))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    summultiply(n, 2),
-    summultiply(2, n),
-    sumdivide(n, 2),
-    sumdivide(1, n)
+    sum(multiply(n, 2)),
+    sum(multiply(2, n)),
+    sum(divide(n, 2)),
+    sum(divide(1, n))
 FROM
 (
     SELECT number AS n
@@ -29,30 +29,30 @@ FROM
     FROM numbers(10)
 )
 SELECT
-    minmultiply(n, 2),
-    minmultiply(2, n),
-    mindivide(n, 2),
-    mindivide(1, n)
+    min(multiply(n, 2)),
+    min(multiply(2, n)),
+    min(divide(n, 2)),
+    min(divide(1, n))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    maxplus(n, 1),
-    maxplus(1, n),
-    maxminus(n, 1),
-    maxminus(1, n)
+    max(plus(n, 1)),
+    max(plus(1, n)),
+    max(minus(n, 1)),
+    max(minus(1, n))
 FROM
 (
     SELECT number AS n
     FROM numbers(10)
 )
 SELECT
-    maxmultiply(n, 2),
-    maxmultiply(2, n),
-    maxdivide(n, 2),
-    maxdivide(1, n)
+    max(multiply(n, 2)),
+    max(multiply(2, n)),
+    max(divide(n, 2)),
+    max(divide(1, n))
 FROM
 (
     SELECT number AS n
