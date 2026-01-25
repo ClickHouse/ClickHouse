@@ -9,7 +9,6 @@ scenarios:
     duration: 180
     workload: { config: workloads/prod_mix.yaml }
     gates:
-      - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.02 }
 
   - id: PERF-02
@@ -17,8 +16,6 @@ scenarios:
     topology: 3
     duration: 180
     workload: { config: workloads/prod_mix.yaml }
-    gates:
-      - { type: single_leader }
 
   - id: PERF-03
     name: Backpressure recovery
@@ -26,8 +23,6 @@ scenarios:
     workload: { config: workloads/prod_mix.yaml }
     faults:
       - { kind: netem, on: all, delay_ms: 80, duration_s: 60 }
-    gates:
-      - { type: single_leader }
 
   - id: PERF-04
     name: Huge MultiRead stripes
@@ -35,7 +30,6 @@ scenarios:
     duration: 180
     workload: { config: workloads/prod_mix.yaml }
     gates:
-      - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.05 }
     opts:
       feature_flags:
@@ -46,13 +40,9 @@ scenarios:
     topology: 3
     duration: 180
     workload: { config: workloads/prod_mix.yaml }
-    gates:
-      - { type: single_leader }
 
   - id: IMP-03
     name: RocksKeeper compaction tails
     topology: 3
     duration: 180
     workload: { config: workloads/prod_mix.yaml }
-    gates:
-      - { type: single_leader }

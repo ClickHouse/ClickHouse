@@ -4,33 +4,43 @@ import shutil
 
 from keeper.framework.core.settings import (
     CLIENT_PORT,
+    CONTROL_PORT,
+    DEFAULT_READY_TIMEOUT,
     ID_BASE,
     PROM_PORT,
     RAFT_PORT,
+    keeper_node_names,
 )
 from tests.integration.helpers.cluster import ClickHouseCluster
+
+from ci.jobs.keeper_stress_job import env_bool, env_int
 
 
 def _feature_flags_xml(flags):
     """Generate XML for feature flags."""
     if not flags:
         return ""
-    parts = []
-    for k, v in flags.items():
-        val = (
-            int(v)
-            if isinstance(v, (bool, int)) or (isinstance(v, float) and v.is_integer())
-            else v
-        )
-        parts.append(f"<{k}>{val}</{k}>")
-    return "<feature_flags>" + "".join(parts) + "</feature_flags>"
+    def xml_val(v):
+        if isinstance(v, bool):
+            return int(v)
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float) and v.is_integer():
+            return int(v)
+        return v
+    return (
+        "<feature_flags>"
+        + "".join(f"<{k}>{xml_val(v)}</{k}>" for k, v in flags.items())
+        + "</feature_flags>"
+    )
 
 
-def _coord_settings_xml(rocks_backend):
-    """Generate XML for coordination settings matching cloud production (RFC #41415).
+def _coord_settings_xml(rocks_backend, overrides_xml=None):
+    """Generate XML for coordination settings.
 
     Args:
         rocks_backend: If True, enable RocksDB backend
+        overrides_xml: Optional XML fragment or full <coordination_settings> block to merge
     """
     rocks = (
         "<experimental_use_rocksdb>1</experimental_use_rocksdb>"
@@ -38,8 +48,7 @@ def _coord_settings_xml(rocks_backend):
         else ""
     )
 
-    # Cloud production settings from RFC #41415 - these should match cloud config
-    cloud_settings = (
+    settings = (
         "<async_replication>1</async_replication>"
         "<compress_logs>false</compress_logs>"
         "<max_log_file_size>209715200</max_log_file_size>"
@@ -49,13 +58,31 @@ def _coord_settings_xml(rocks_backend):
         "<reserved_log_items>500000</reserved_log_items>"
     )
 
+    # Extract inner content from overrides if it's a full <coordination_settings> block
+    overrides_content = ""
+    if overrides_xml:
+        overrides_xml = overrides_xml.strip()
+        if overrides_xml.startswith("<coordination_settings>"):
+            # Extract content between tags
+            end_tag = "</coordination_settings>"
+            if overrides_xml.endswith(end_tag):
+                overrides_content = overrides_xml[
+                    len("<coordination_settings>") : -len(end_tag)
+                ]
+            else:
+                raise ValueError(f"Invalid coordination settings XML: {overrides_xml}")
+        else:
+            # use as-is
+            overrides_content = overrides_xml
+
     return (
         "<coordination_settings>"
         "<operation_timeout_ms>10000</operation_timeout_ms>"
         "<session_timeout_ms>30000</session_timeout_ms>"
         "<heart_beat_interval_ms>500</heart_beat_interval_ms>"
         "<shutdown_timeout>5000</shutdown_timeout>"
-        f"{cloud_settings}"
+        f"{settings}"
+        f"{overrides_content}"
         f"{rocks}</coordination_settings>"
     )
 
@@ -81,28 +108,22 @@ def _prometheus_xml():
     )
 
 
+def _http_control_xml():
+    """Generate XML for HTTP control port."""
+    if env_bool("KEEPER_ENABLE_HTTP_CONTROL", False):
+        return f"<http_control><port>{CONTROL_PORT}</port></http_control>"
+    return ""
+
+
 def _normalize_backend(backend):
     return (backend or "default").strip().lower()
 
 
-def _sanitize_cluster_name(name):
-    # Docker-compose project/network names and DNS safe-ish
-    safe = "".join((ch.lower() if ch.isalnum() or ch in "-_" else "_") for ch in name)
-    return safe.strip("_") or "keeper"
-
-
-def _cluster_name_from_env():
-    worker = os.environ.get("PYTEST_XDIST_WORKER", "").strip()
-    cbase = os.environ.get("KEEPER_CLUSTER_NAME", "keeper").strip() or "keeper"
-    cname = f"{cbase}_{worker}" if worker else cbase
-    return _sanitize_cluster_name(cname)
-
-
 def _build_feature_flags(feature_flags):
-    ff = dict(feature_flags or {})
+    ff = feature_flags
     # Do not allow experimental_use_rocksdb under <feature_flags>; it belongs to coordination_settings
     ff.pop("experimental_use_rocksdb", None)
-    # Cloud feature flags from RFC #41415 - should match cloud config
+    
     ff.setdefault("check_not_exists", "1")
     ff.setdefault("create_if_not_exists", "1")
     ff.setdefault("remove_recursive", "1")
@@ -118,14 +139,12 @@ def _build_peers_xml(names, start_sid):
     )
 
 
-def _configure_startup_wait():
-    ready_timeout = os.environ.get("KEEPER_READY_TIMEOUT", "300")
-    os.environ.setdefault("KEEPER_START_TIMEOUT_SEC", ready_timeout)
-    os.environ.setdefault(
-        "KEEPER_CONNECT_TIMEOUT_SEC", str(int(ready_timeout or 300) + 180)
-    )
-    # Only wait for Keeper client port (and control port if enabled)
-    os.environ.setdefault("CH_WAIT_START_PORTS", f"{CLIENT_PORT}")
+def _configure_startup_timeouts():
+    """Configure start and connection timeouts from KEEPER_READY_TIMEOUT."""
+    ready_timeout = env_int("KEEPER_READY_TIMEOUT", DEFAULT_READY_TIMEOUT)
+    os.environ.setdefault("KEEPER_START_TIMEOUT_SEC", str(ready_timeout))
+    os.environ.setdefault("KEEPER_CONNECT_TIMEOUT_SEC", str(ready_timeout + 180))
+    os.environ.setdefault("CH_WAIT_START_PORTS", str(CLIENT_PORT))
 
 
 def _keeper_server_xml(
@@ -151,92 +170,106 @@ def _keeper_server_xml(
     )
 
 
-def _write_keeper_config(conf_dir, base_dir, cname, name, full_xml):
+def _write_keeper_config(conf_dir, name, full_xml):
     cfg_path = (conf_dir / f"keeper_config_{name}.xml").resolve()
     cfg_path.write_text(full_xml)
-    try:
-        legacy_dir = base_dir / "configs" / cname
-        legacy_dir.mkdir(parents=True, exist_ok=True)
-        (legacy_dir / f"keeper_config_{name}.xml").write_text(full_xml)
-    except Exception:
-        pass
     return cfg_path
 
 
+def _build_node_config_xml(server_id, peers_xml, coord_settings, feature_flags_xml):
+    """Build complete XML config for a single Keeper node."""
+    path_block = (
+        "<log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>"
+        "<snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>"
+    )
+    keeper_server = _keeper_server_xml(
+        server_id, peers_xml, path_block, _http_control_xml(), coord_settings, feature_flags_xml
+    )
+    return (
+        "<clickhouse>"
+        + keeper_server
+        + _prometheus_xml()
+        + _listen_hosts_xml()
+        + "</clickhouse>"
+    )
+
+
 class ClusterBuilder:
-    def __init__(self, file_anchor):
+    def __init__(self, cname, file_anchor):
+        self.cname = cname
         self.file_anchor = file_anchor
+        self.cluster = None
+        self.conf_dir = None
+        self.base_dir = None
 
     def build(self, topology, backend, opts):
         opts = opts or {}
-        feature_flags = dict(opts.get("feature_flags", {}) or {})
-        rocks_backend = _normalize_backend(backend) == "rocks"
-        coord_overrides_xml = opts.get("coord_overrides_xml", "")
-        cname = _cluster_name_from_env()
+        self.cluster = ClickHouseCluster(self.file_anchor, name=self.cname)
+        self.base_dir = pathlib.Path(self.cluster.base_dir)
+        self.conf_dir = self.base_dir / "_keeper_configs" / self.cname
+        if self.conf_dir.exists():
+            shutil.rmtree(self.conf_dir, ignore_errors=True)
+        self.conf_dir.mkdir(parents=True, exist_ok=True)
 
-        cluster = ClickHouseCluster(self.file_anchor, name=cname)
-        base_dir = pathlib.Path(cluster.base_dir)
-        conf_dir = base_dir / "_keeper_configs" / cname
-        if conf_dir.exists():
-            shutil.rmtree(conf_dir, ignore_errors=True)
-        conf_dir.mkdir(parents=True, exist_ok=True)
+        _configure_startup_timeouts()
 
-        _configure_startup_wait()
+        # Build shared XML fragments
+        feature_flags = dict(opts.get("feature_flags", {}))
+        _build_feature_flags(feature_flags)
+        feature_flags_xml = _feature_flags_xml(feature_flags)
+        # Always build base settings with backend support, merge overrides if provided
+        coord_settings = _coord_settings_xml(
+            _normalize_backend(backend) == "rocks",
+            overrides_xml=opts.get("coord_overrides_xml"),
+        )
 
-        # Precompute names and server ids
-        names = [f"keeper{i}" for i in range(1, topology + 1)]
-
-        # Build shared fragments in-memory (no more separate files)
-        # Feature flags and coordination settings
-        # Only include explicit feature_flags from scenarios/backends
-        ff = _build_feature_flags(feature_flags)
-        # Coordination settings matching cloud production (RFC #41415)
-        coord_settings = _coord_settings_xml(rocks_backend)
-        # If scenario provides a full coordination_settings block, use it as-is
-        if coord_overrides_xml:
-            coord_settings = coord_overrides_xml
-        feature_flags_xml = _feature_flags_xml(ff)
-
-        # Per-instance configs and add instances
-        nodes = []
-        # Use 1-based server ids by default for raft members
+        # Create nodes
+        names = keeper_node_names(topology)
         start_sid = 1 if ID_BASE <= 0 else ID_BASE
         peers_xml = _build_peers_xml(names, start_sid)
 
-        for i, name in enumerate(names, start=start_sid):
-            # Build a single per-node config file with all required sections (minimal to avoid collisions)
-            path_block = (
-                "<log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>"
-                "<snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>"
+        nodes = []
+        for server_id, name in enumerate(names, start=start_sid):
+            full_xml = _build_node_config_xml(
+                server_id, peers_xml, coord_settings, feature_flags_xml
             )
-            keeper_server = _keeper_server_xml(
-                i,
-                peers_xml,
-                path_block,
-                "",
-                coord_settings,
-                feature_flags_xml,
+            cfg_path = _write_keeper_config(self.conf_dir, name, full_xml)
+            nodes.append(
+                self.cluster.add_instance(
+                    name,
+                    main_configs=[str(cfg_path)],
+                    with_zookeeper=False,
+                    stay_alive=True,
+                    hostname=name,
+                )
             )
-            # Ensure server listens on container IPs; do not duplicate tcp_port
-            net_block = _listen_hosts_xml()
-            prom_block = _prometheus_xml()
-            full_xml = (
-                "<clickhouse>"
-                + keeper_server
-                + prom_block
-                + net_block
-                + "</clickhouse>"
-            )
-            cfg_path = _write_keeper_config(conf_dir, base_dir, cname, name, full_xml)
-            cfgs = [str(cfg_path)]
-            inst = cluster.add_instance(
-                name,
-                main_configs=cfgs,
-                with_zookeeper=False,
-                stay_alive=True,
-                hostname=name,
-            )
-            nodes.append(inst)
 
-        cluster.start()
-        return cluster, nodes
+        self.cluster.start()
+        return self.cluster, nodes
+
+    def cleanup(self, clean_artifacts=True):
+        """Clean up cluster and associated files.
+        
+        Args:
+            clean_artifacts: If True, also remove instance directories and config directories
+        """
+        if not self.cluster:
+            return
+        
+        try:
+            # Shutdown cluster (stops containers, removes networks, etc.)
+            self.cluster.shutdown()
+        except Exception:
+            pass
+        
+        if clean_artifacts:
+            try:
+                # Remove config directory
+                if self.conf_dir and self.conf_dir.exists():
+                    shutil.rmtree(self.conf_dir, ignore_errors=True)
+                # Remove instance directory
+                if self.cluster:
+                    if self.cluster.instances_dir.exists():
+                        shutil.rmtree(self.cluster.instances_dir, ignore_errors=True)
+            except Exception:
+                pass

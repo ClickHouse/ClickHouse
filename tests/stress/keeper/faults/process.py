@@ -153,43 +153,41 @@ def _f_ydld(ctx, nodes, leader, step):
 
 @register_fault("cpu_hog")
 def _f_cpu_hog(ctx, nodes, leader, step):
-    secs = int(step.get("seconds", DEFAULT_FAULT_DURATION_S))
+    secs = int(step.get("seconds") or DEFAULT_FAULT_DURATION_S)
     for_each_target(step, nodes, leader, lambda t: cpu_hog(t, secs))
 
 
 @register_fault("fd_pressure")
 def _f_fd_pressure(ctx, nodes, leader, step):
-    secs, fds = int(step.get("seconds", DEFAULT_FAULT_DURATION_S)), int(
-        step.get("fds", 5000)
-    )
+    secs = int(step.get("seconds") or DEFAULT_FAULT_DURATION_S)
+    fds = int(step.get("fds") or 5000)
     for_each_target(step, nodes, leader, lambda t: fd_pressure(t, fds, secs))
 
 
 @register_fault("mem_hog")
 def _f_mem_hog(ctx, nodes, leader, step):
-    mb, secs = int(step.get("mb", 512)), int(
-        step.get("seconds", DEFAULT_FAULT_DURATION_S)
-    )
+    mb = int(step.get("mb") or 512)
+    secs = int(step.get("seconds") or DEFAULT_FAULT_DURATION_S)
     for_each_target(step, nodes, leader, lambda t: mem_hog_block(t, mb, secs))
 
 
 @register_fault("clock_skew")
 def _f_clock_skew(ctx, nodes, leader, step):
-    secs = int(step.get("seconds", 500))
+    secs = int(step.get("seconds") or 500)
     for_each_target(step, nodes, leader, lambda t: clock_skew(t, secs))
 
 
 @register_fault("nic_flap")
 def _f_nic_flap(ctx, nodes, leader, step):
-    down_s = int(step.get("down_s", 5))
+    down_s = int(step.get("down_s") or 5)
     for_each_target(step, nodes, leader, lambda t: nic_flap(t, down_s))
 
 
 @register_fault("time_strobe")
 def _f_time_strobe(ctx, nodes, leader, step):
-    swings = int(step.get("swings", 6))
-    step_s = int(step.get("step_s", 500))
-    interval_s = int(step.get("interval_s", 5))
+    swings = int(step.get("swings") or 6)
+    step_s = int(step.get("step_s") or 500)
+    interval_s = int(step.get("interval_s") or 5)
 
     def _run_one(t):
         time_strobe(t, swings=swings, step_s=step_s, interval_s=interval_s)
@@ -200,8 +198,8 @@ def _f_time_strobe(ctx, nodes, leader, step):
 @register_fault("stop_cont")
 def _f_stop_cont(ctx, nodes, leader, step):
     target = resolve_targets(step.get("on", "leader"), nodes, leader)
-    sleep_s = step.get("sleep_s", 1.0)
-    for _ in range(step.get("count", 10)):
+    sleep_s = float(step.get("sleep_s") or 1.0)
+    for _ in range(int(step.get("count") or 10)):
         for t in target:
             stop(t)
         time.sleep(sleep_s)
@@ -212,11 +210,11 @@ def _f_stop_cont(ctx, nodes, leader, step):
 
 @register_fault("stress_ng")
 def _f_stress_ng(ctx, nodes, leader, step):
-    secs = int(step.get("seconds", DEFAULT_FAULT_DURATION_S))
+    secs = int(step.get("seconds") or DEFAULT_FAULT_DURATION_S)
     stress_args = [
-        f"--{k} {int(step.get(k, 0))}"
+        f"--{k} {int(step.get(k) or 0)}"
         for k in ("cpu", "vm", "io", "hdd", "sched")
-        if int(step.get(k, 0)) > 0
+        if int(step.get(k) or 0) > 0
     ]
     if step.get("vm_bytes"):
         stress_args.append(f"--vm-bytes {step['vm_bytes']}")

@@ -4,7 +4,7 @@ import time
 import uuid
 
 from kazoo.client import KazooClient
-from keeper.framework.core.registry import register_fault
+from keeper.faults.registry import register_fault
 from keeper.workloads.adapter import servers_arg
 
 

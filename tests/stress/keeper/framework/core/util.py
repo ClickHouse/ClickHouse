@@ -1,6 +1,5 @@
 import os
 import shlex
-import shutil
 import subprocess
 import sys
 import threading
@@ -69,24 +68,10 @@ def has_bin(node, name):
 
 
 def host_sh(cmd, timeout=None):
-    """Execute a command on the host (not inside container). Returns {"out": ...}."""
+    """Execute a command on the host"""
     try:
-        if timeout is None:
-            to_env = os.environ.get("KEEPER_HOST_EXEC_TIMEOUT")
-            if to_env:
-                try:
-                    timeout = max(5, min(int(to_env), 3600))
-                except Exception:
-                    timeout = 300
-            else:
-                timeout = 300
-        else:
-            try:
-                timeout = float(timeout)
-            except Exception:
-                timeout = 300
-
-        args = cmd if isinstance(cmd, list) else ["bash", "-lc", cmd]
+        args = cmd if isinstance(cmd, list) else ["bash", "-c", cmd]
+        print(f"[keeper][host_sh] cmd={cmd} timeout={timeout}")
         res = subprocess.run(
             args,
             stdout=subprocess.PIPE,
@@ -95,6 +80,7 @@ def host_sh(cmd, timeout=None):
             check=False,
             text=True,
         )
+        print(f"[keeper][host_sh] cmd={cmd} res={res.returncode} stdout={res.stdout} stderr={res.stderr}")
         return {"out": res.stdout}
     except subprocess.TimeoutExpired as ex:
         print(f"[keeper][host_sh] timeout={timeout} cmd={cmd}")
@@ -103,17 +89,7 @@ def host_sh(cmd, timeout=None):
         return {"out": ""}
 
 
-def host_has_bin(name):
-    """Check if binary exists on host PATH."""
-    try:
-        return shutil.which(str(name)) is not None
-    except Exception:
-        return False
-
-
 def _env_value(name):
-    import os
-
     return os.environ.get(name)
 
 
@@ -133,7 +109,13 @@ def parse_bool(v):
         return v
     if v is None:
         return False
-    return str(v).strip() == "1"
+    if isinstance(v, str):
+        v = v.strip()
+    if v.lower() == "true":
+        return True
+    if v.lower() == "false":
+        return False
+    return v == "1"
 
 
 def resolve_targets(spec, nodes, leader):
@@ -159,26 +141,29 @@ def resolve_targets(spec, nodes, leader):
 
 
 def wait_until(cond, timeout_s=60.0, interval=0.5, desc=""):
-    """Block until cond() returns True or timeout."""
-    start = time.time()
+    """Efficiently block until cond() returns True or timeout."""
+    deadline = time.time() + float(timeout_s)
     while True:
         try:
             if cond():
                 return True
         except Exception:
             pass
-        if time.time() - start > float(timeout_s):
+        now = time.time()
+        if now >= deadline:
             raise AssertionError(desc or "timeout")
-        time.sleep(float(interval))
+        remaining = deadline - now
+        # Sleep only as much as needed for next check or max interval
+        time.sleep(min(float(interval), max(0.0, remaining)))
 
 
 def ts_ms():
     """Return UTC timestamp string with ms precision."""
     t = time.time()
-    return (
-        time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(t))
-        + f".{int((t % 1) * 1000):03d}"
-    )
+    int_t = int(t)
+    ms = int((t - int_t) * 1000)
+    utc_tuple = time.gmtime(t)
+    return f"{utc_tuple.tm_year:04d}-{utc_tuple.tm_mon:02d}-{utc_tuple.tm_mday:02d} {utc_tuple.tm_hour:02d}:{utc_tuple.tm_min:02d}:{utc_tuple.tm_sec:02d}.{ms:03d}"
 
 
 def leader_or_first(nodes):
@@ -278,19 +263,6 @@ def for_each_target(step, nodes, leader, run_one):
 def env_int(name, default=0):
     """Get environment variable as int with default."""
     return _env_coerce(name, default, int)
-
-
-def env_float(name, default=0.0):
-    """Get environment variable as float with default."""
-    return _env_coerce(name, default, float)
-
-
-def env_str(name, default=""):
-    """Get environment variable as stripped string with default."""
-    val = _env_value(name)
-    if val in (None, ""):
-        return str(default)
-    return str(val).strip()
 
 
 def env_bool(name, default=False):

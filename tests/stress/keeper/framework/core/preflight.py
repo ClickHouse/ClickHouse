@@ -1,13 +1,11 @@
 import os
 
-import pytest
-from keeper.framework.core.settings import parse_bool
 from keeper.framework.core.util import has_bin, sh_root
 
 # Map tool names to apt packages that provide them
 _TOOL_TO_PACKAGE = {
     "dmsetup": "dmsetup",
-    "losetup": "mount",  # losetup is in util-linux, but 'mount' package on most systems
+    "losetup": "mount",
     "tc": "iproute2",
     "ip": "iproute2",
     "iptables": "iptables",
@@ -25,7 +23,7 @@ def _fault_kinds(faults):
 
     def _walk(obj):
         if isinstance(obj, dict):
-            k = str(obj.get("kind", "") or "").strip().lower()
+            k = str(obj.get("kind", "")).strip().lower()
             if k:
                 kinds.add(k)
             subs = obj.get("steps")
@@ -62,7 +60,12 @@ def _tools_for_faults(faults):
 
 
 def _install_missing_tools(nodes, missing_tools):
-    """Attempt to install missing tools via apt-get on all nodes."""
+    """Attempt to install missing tools via apt-get inside Docker containers.
+    
+    Installation happens INSIDE containers (not on host), so host OS (Mac/Ubuntu/ARM)
+    doesn't matter. ClickHouse integration test containers use Ubuntu/Debian on all
+    architectures (AMD64/ARM64), so apt-get should work everywhere.
+    """
     if not missing_tools or not nodes:
         return True
     # Dedupe packages to install
@@ -75,6 +78,10 @@ def _install_missing_tools(nodes, missing_tools):
     pkg_list = " ".join(sorted(packages))
     try:
         for n in nodes:
+            # Check if apt-get is available (containers should be Ubuntu/Debian)
+            if not has_bin(n, "apt-get"):
+                print(f"[keeper][preflight] apt-get not available on {getattr(n, 'name', 'node')}, skipping package install")
+                raise AssertionError(f"apt-get not available on {getattr(n, 'name', 'node')}")
             # Update apt cache and install packages (non-interactive)
             sh_root(n, "apt-get update -qq >/dev/null 2>&1 || true")
             sh_root(
@@ -84,73 +91,6 @@ def _install_missing_tools(nodes, missing_tools):
     except Exception as e:
         print(f"[keeper][preflight] Failed to install packages: {e}")
         return False
-
-
-def _bench_present(node):
-    try:
-        if has_bin(node, "keeper-bench"):
-            return True
-        # Many images ship keeper-bench as a clickhouse subcommand; treat clickhouse presence as sufficient
-        return has_bin(node, "clickhouse")
-    except Exception:
-        return False
-
-
-def _install_bench_from_url(nodes):
-    url = os.environ.get("KEEPER_BENCH_URL", "").strip()
-    if not url:
-        return False
-    try:
-        for n in nodes or []:
-            sh_root(
-                n,
-                f"curl -sfL {url} -o /usr/local/bin/keeper-bench && chmod +x /usr/local/bin/keeper-bench",
-            )
-        return True
-    except Exception:
-        return False
-
-
-def _ensure_replay_if_requested(node0, scenario):
-    wl = (scenario or {}).get("workload") or {}
-    replay_path = wl.get("replay")
-    if not replay_path:
-        return
-
-    from .util import sh
-
-    r2 = sh(node0, f"test -f {replay_path} >/dev/null 2>&1; echo $?", timeout=5)
-    if not str(r2.get("out", " ")).strip().endswith("0"):
-        raise AssertionError(
-            f"replay file not found inside container at {replay_path} "
-            f"(mount it, e.g. bind-mount host log to /artifacts)"
-        )
-
-
-def _ensure_bench(nodes, scenario):
-    # keeper-bench runs on host; validate CLICKHOUSE_BINARY early.
-    env_bin = str(os.environ.get("CLICKHOUSE_BINARY", "")).strip()
-    if not env_bin:
-        raise AssertionError(
-            "keeper-bench must run on host: env var CLICKHOUSE_BINARY must point to clickhouse binary"
-        )
-    if not os.path.exists(env_bin) or not os.access(env_bin, os.X_OK):
-        raise AssertionError(
-            f"keeper-bench must run on host: CLICKHOUSE_BINARY is not an executable file: {env_bin}"
-        )
-
-    if isinstance(scenario, dict) and scenario.get("workload") and nodes:
-        n0 = nodes[0]
-        bench_ok = _bench_present(n0)
-        if not bench_ok and _install_bench_from_url(nodes):
-            bench_ok = _bench_present(n0)
-        if not bench_ok:
-            msg = (
-                f"keeper-bench not available on {getattr(n0, 'name', 'node')}: "
-                f"install utils/keeper-bench or provide clickhouse keeper-bench"
-            )
-            raise AssertionError(msg)
-        _ensure_replay_if_requested(n0, scenario)
 
 
 def _collect_missing_tools(nodes, req):
@@ -170,9 +110,8 @@ def _flatten_missing(missing):
 
 
 def ensure_environment(nodes, scenario):
-    faults = (scenario or {}).get("faults") or []
+    faults = scenario.get("faults")
     req = _tools_for_faults(faults) or set()
-    _ensure_bench(nodes, scenario)
 
     # Check for missing tools
     missing = _collect_missing_tools(nodes, req)
@@ -184,17 +123,5 @@ def ensure_environment(nodes, scenario):
         print(
             f"[keeper][preflight] Missing tools: {all_missing}, attempting install..."
         )
-        if _install_missing_tools(nodes, all_missing):
-            # Re-check after installation
-            still_missing = _collect_missing_tools(nodes, req)
-            if not still_missing:
-                print(f"[keeper][preflight] Successfully installed: {all_missing}")
-                return None
-            missing = still_missing
-
-        # Still missing after install attempt - skip gracefully
-        msg = ", ".join(
-            f"{name}: {', '.join(tools)}" for name, tools in missing.items()
-        )
-        pytest.skip(f"Missing required tools (install failed): {msg}")
+        _install_missing_tools(nodes, all_missing)
     return None

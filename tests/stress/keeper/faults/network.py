@@ -2,7 +2,7 @@ import threading
 import time
 from contextlib import contextmanager
 
-from keeper.framework.core.registry import register_fault
+from keeper.faults.registry import register_fault
 from keeper.framework.core.settings import DEFAULT_FAULT_DURATION_S, RAFT_PORT
 from keeper.framework.core.util import (
     for_each_target,
@@ -14,6 +14,69 @@ from keeper.framework.core.util import (
     sh_strict,
     ts_ms,
 )
+
+
+def _get_ipv4(node, hostname=None):
+    """Get IPv4 address for a node or hostname."""
+    if hostname:
+        ip = sh(
+            node,
+            f"getent ahosts {hostname} | awk '{{print $1}}' | grep -v ':' | head -n1 || true",
+        )["out"].strip()
+        return ip if ip else None
+    return sh(node, "hostname -i")["out"].split()[0]
+
+
+def _get_ipv6_list(node, hostname):
+    """Get list of IPv6 addresses for a hostname."""
+    out = sh(
+        node,
+        f"getent ahosts {hostname} | awk '{{print $1}}' | grep ':' | sort -u || true",
+    )
+    return [line for line in out.get("out", "\n").split() if ":" in line]
+
+
+def _create_iptables_chain(node, cname):
+    """Create and hook iptables chain for both IPv4 and IPv6."""
+    sh_root(node, f"iptables -w 2 -t filter -N {cname} || true")
+    sh_root(
+        node,
+        f"(iptables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname}') || iptables -w 2 -t filter -I OUTPUT 1 -j {cname}",
+    )
+    sh_root(node, f"ip6tables -w 2 -t filter -N {cname} || true")
+    sh_root(
+        node,
+        f"(ip6tables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname}') || ip6tables -w 2 -t filter -I OUTPUT 1 -j {cname}",
+    )
+
+
+def _check_iptables_chain(node, cname):
+    """Check if iptables chain exists and is hooked."""
+    v1 = sh(node, f"iptables -w 2 -t filter -S {cname} >/dev/null 2>&1; echo $?")
+    v2 = sh(
+        node,
+        f"iptables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname}' ; echo $?",
+    )
+    return str(v1.get("out", " ")).strip().endswith("0") and str(
+        v2.get("out", " ")
+    ).strip().endswith("0")
+
+
+def _remove_iptables_chain(node, cname):
+    """Remove iptables chain for both IPv4 and IPv6."""
+    sh_root(
+        node,
+        f"iptables -w 2 -t filter -D OUTPUT -j {cname} || true; iptables -w 2 -t filter -F {cname} || true; iptables -w 2 -t filter -X {cname} || true",
+    )
+    sh_root(
+        node,
+        f"ip6tables -w 2 -t filter -D OUTPUT -j {cname} || true; ip6tables -w 2 -t filter -F {cname} || true; ip6tables -w 2 -t filter -X {cname} || true",
+    )
+
+
+def _check_cmd_success(result):
+    """Check if command result indicates success (exit code 0)."""
+    return str((result or {}).get("out", "")).strip().endswith("0")
 
 
 @contextmanager
@@ -30,36 +93,31 @@ def netem(
     try:
         args = []
         if delay_ms:
-            args += [
-                (
-                    f"delay {int(delay_ms)}ms {int(jitter_ms)}ms"
-                    if jitter_ms
-                    else f"delay {int(delay_ms)}ms"
-                )
-            ]
+            args.append(
+                f"delay {int(delay_ms)}ms {int(jitter_ms)}ms"
+                if jitter_ms
+                else f"delay {int(delay_ms)}ms"
+            )
         if loss_pct:
-            args += [f"loss {int(loss_pct)}%"]
+            args.append(f"loss {int(loss_pct)}%")
         if reorder:
-            args += [f"reorder {int(reorder)}% 50%"]
+            args.append(f"reorder {int(reorder)}% 50%")
         if duplicate:
-            args += [f"duplicate {int(duplicate)}%"]
+            args.append(f"duplicate {int(duplicate)}%")
         if corrupt:
-            args += [f"corrupt {int(corrupt)}%"]
-        try:
-            sh_root_strict(
-                node,
-                f"tc qdisc replace dev eth0 root netem {' '.join(args) if args else 'delay 0ms'}",
-                timeout=20,
-            )
-            applied = True
-            v = sh_strict(
-                node, "tc qdisc show dev eth0 | grep -q netem; echo $?", timeout=10
-            )
-            ok = str(v.get("out", " ")).strip().endswith("0")
-            if not ok:
-                raise AssertionError("netem verify failed")
-        except Exception as e:
-            raise AssertionError(f"netem apply failed: {e}")
+            args.append(f"corrupt {int(corrupt)}%")
+        
+        sh_root_strict(
+            node,
+            f"tc qdisc replace dev eth0 root netem {' '.join(args) if args else 'delay 0ms'}",
+            timeout=20,
+        )
+        applied = True
+        v = sh_strict(
+            node, "tc qdisc show dev eth0 | grep -q netem; echo $?", timeout=10
+        )
+        if not _check_cmd_success(v):
+            raise AssertionError("netem verify failed")
         yield
     finally:
         if applied:
@@ -78,7 +136,7 @@ def tbf(node, rate="10mbit"):
         timeout=20,
     )
     v = sh_strict(node, "tc qdisc show dev eth0 | grep -q tbf; echo $?", timeout=10)
-    if not str(v.get("out", "")).strip().endswith("0"):
+    if not _check_cmd_success(v):
         raise AssertionError("tbf verify failed")
     try:
         yield
@@ -90,190 +148,120 @@ def tbf(node, rate="10mbit"):
 def partition_symmetric(leader, peers):
     try:
         ips = []
-        ip_l = sh(leader, "hostname -i")["out"].split()[0]
+        ip_l = _get_ipv4(leader)
         chains = {}
         used_method = "iptables"
         routes = []
         routes6 = []
+        tc_used = False
+        
+        # Setup iptables chains
         cname_l = f"CH_KEEPER_{int(time.time()*1000)}"
         chains[leader] = cname_l
-        sh_root(leader, f"iptables -w 2 -t filter -N {cname_l} || true")
-        sh_root(
-            leader,
-            f"(iptables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname_l}') || iptables -w 2 -t filter -I OUTPUT 1 -j {cname_l}",
-        )
-        sh_root(leader, f"ip6tables -w 2 -t filter -N {cname_l} || true")
-        sh_root(
-            leader,
-            f"(ip6tables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname_l}') || ip6tables -w 2 -t filter -I OUTPUT 1 -j {cname_l}",
-        )
+        _create_iptables_chain(leader, cname_l)
+        
         for p in peers:
-            ip_p = sh(
-                leader,
-                f"getent ahosts {p.name} | awk '{{print $1}}' | grep -v ':' | head -n1 || true",
-            )["out"].strip()
-            if not ip_p:
-                ip_p = sh(p, "hostname -i")["out"].split()[0]
+            ip_p = _get_ipv4(leader, p.name) or _get_ipv4(p)
             ips.append((p, ip_p))
             sh_root(
                 leader,
                 f"iptables -w 2 -t filter -A {cname_l} -p tcp --dport {RAFT_PORT} -d {ip_p} -j DROP",
             )
-            sh_root(
-                leader,
-                f"for ip6 in $(getent ahosts {p.name} | awk '{{print $1}}' | grep ':' | sort -u); do ip6tables -w 2 -t filter -A {cname_l} -p tcp --dport {RAFT_PORT} -d $ip6 -j DROP; done",
-            )
-        v1 = sh(
-            leader, f"iptables -w 2 -t filter -S {cname_l} >/dev/null 2>&1; echo $?"
-        )
-        v2 = sh(
-            leader,
-            f"iptables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname_l}' ; echo $?",
-        )
-        ok_l = str(v1.get("out", " ")).strip().endswith("0") and str(
-            v2.get("out", " ")
-        ).strip().endswith("0")
-        if not ok_l:
+            for ip6 in _get_ipv6_list(leader, p.name):
+                sh_root(
+                    leader,
+                    f"ip6tables -w 2 -t filter -A {cname_l} -p tcp --dport {RAFT_PORT} -d {ip6} -j DROP",
+                )
+        
+        if not _check_iptables_chain(leader, cname_l):
             used_method = "iproute"
+        
         for p, ip_p in ips:
             cname_p = f"CH_KEEPER_{int(time.time()*1000)}"
             chains[p] = cname_p
-            sh_root(p, f"iptables -w 2 -t filter -N {cname_p} || true")
-            sh_root(
-                p,
-                f"(iptables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname_p}') || iptables -w 2 -t filter -I OUTPUT 1 -j {cname_p}",
-            )
-            ip_l_peer = (
-                sh(
-                    p,
-                    f"getent ahosts {leader.name} | awk '{{print $1}}' | grep -v ':' | head -n1 || true",
-                )["out"].strip()
-                or ip_l
-            )
+            _create_iptables_chain(p, cname_p)
+            ip_l_peer = _get_ipv4(p, leader.name) or ip_l
             sh_root(
                 p,
                 f"iptables -w 2 -t filter -A {cname_p} -p tcp --dport {RAFT_PORT} -d {ip_l_peer} -j DROP",
             )
-            sh_root(p, f"ip6tables -w 2 -t filter -N {cname_p} || true")
-            sh_root(
-                p,
-                f"(ip6tables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname_p}') || ip6tables -w 2 -t filter -I OUTPUT 1 -j {cname_p}",
-            )
-            sh_root(
-                p,
-                f"for ip6 in $(getent ahosts {leader.name} | awk '{{print $1}}' | grep ':' | sort -u); do ip6tables -w 2 -t filter -A {cname_p} -p tcp --dport {RAFT_PORT} -d $ip6 -j DROP; done",
-            )
-            w1 = sh(p, f"iptables -w 2 -t filter -S {cname_p} >/dev/null 2>&1; echo $?")
-            w2 = sh(
-                p,
-                f"iptables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname_p}' ; echo $?",
-            )
-            ok_p = str(w1.get("out", " ")).strip().endswith("0") and str(
-                w2.get("out", " ")
-            ).strip().endswith("0")
-            if not ok_p:
+            for ip6 in _get_ipv6_list(p, leader.name):
+                sh_root(
+                    p,
+                    f"ip6tables -w 2 -t filter -A {cname_p} -p tcp --dport {RAFT_PORT} -d {ip6} -j DROP",
+                )
+            if not _check_iptables_chain(p, cname_p):
                 used_method = "iproute"
-        all_blocked = True
-        for p, ip_p in ips:
-            if _tcp_connect_ok(leader, ip_p, RAFT_PORT, timeout_s=1):
-                all_blocked = False
-                break
-            if _tcp_connect_ok(p, ip_l, RAFT_PORT, timeout_s=1):
-                all_blocked = False
-                break
+        # Verify blocking
+        all_blocked = all(
+            not _tcp_connect_ok(leader, ip_p, RAFT_PORT, timeout_s=1)
+            and not _tcp_connect_ok(p, ip_l, RAFT_PORT, timeout_s=1)
+            for p, ip_p in ips
+        )
+        
         if used_method == "iptables" and not all_blocked:
             used_method = "iproute"
+        
         if used_method == "iproute":
+            # Clean up iptables chains
             for n, cname in chains.items():
                 try:
-                    sh_root(
-                        n,
-                        f"iptables -w 2 -t filter -D OUTPUT -j {cname} || true; iptables -w 2 -t filter -F {cname} || true; iptables -w 2 -t filter -X {cname} || true",
-                    )
-                    sh_root(
-                        n,
-                        f"ip6tables -w 2 -t filter -D OUTPUT -j {cname} || true; ip6tables -w 2 -t filter -F {cname} || true; ip6tables -w 2 -t filter -X {cname} || true",
-                    )
+                    _remove_iptables_chain(n, cname)
                 except Exception:
                     pass
+            
+            # Add blackhole routes
             for p, ip_p in ips:
                 sh_root(leader, f"ip route add blackhole {ip_p}/32 || true")
                 routes.append((leader, f"{ip_p}/32"))
-                sh_root(
-                    leader,
-                    f"for ip6 in $(getent ahosts {p.name} | awk '{{print $1}}' | grep ':' | sort -u); do ip -6 route add blackhole $ip6/128 || true; echo $ip6; done",
-                )
-                out6 = sh(
-                    leader,
-                    f"getent ahosts {p.name} | awk '{{print $1}}' | grep ':' | sort -u || true",
-                )
-                for line in out6.get("out", "\n").split():
-                    if ":" in line:
-                        routes6.append((leader, f"{line}/128"))
+                for ip6 in _get_ipv6_list(leader, p.name):
+                    sh_root(leader, f"ip -6 route add blackhole {ip6}/128 || true")
+                    routes6.append((leader, f"{ip6}/128"))
+            
             for p, ip_p in ips:
                 sh_root(p, f"ip route add blackhole {ip_l}/32 || true")
                 routes.append((p, f"{ip_l}/32"))
-                out6 = sh(
-                    p,
-                    f"getent ahosts {leader.name} | awk '{{print $1}}' | grep ':' | sort -u || true",
-                )
-                sh_root(
-                    p,
-                    f"for ip6 in $(getent ahosts {leader.name} | awk '{{print $1}}' | grep ':' | sort -u); do ip -6 route add blackhole $ip6/128 || true; done",
-                )
-                for line in out6.get("out", "\n").split():
-                    if ":" in line:
-                        routes6.append((p, f"{line}/128"))
+                for ip6 in _get_ipv6_list(p, leader.name):
+                    sh_root(p, f"ip -6 route add blackhole {ip6}/128 || true")
+                    routes6.append((p, f"{ip6}/128"))
+            
             sh(leader, "sleep 0.2")
-            all_blocked = True
-            for p, ip_p in ips:
-                if _tcp_connect_ok(leader, ip_p, RAFT_PORT, timeout_s=1):
-                    all_blocked = False
-                    break
-                if _tcp_connect_ok(p, ip_l, RAFT_PORT, timeout_s=1):
-                    all_blocked = False
-                    break
+            all_blocked = all(
+                not _tcp_connect_ok(leader, ip_p, RAFT_PORT, timeout_s=1)
+                and not _tcp_connect_ok(p, ip_l, RAFT_PORT, timeout_s=1)
+                for p, ip_p in ips
+            )
+            
             if not all_blocked:
+                # Fallback to tc
                 tc_used = True
-                try:
-                    sh_root(leader, "tc qdisc add dev eth0 root handle 1: prio || true")
-                    for p, ip_p in ips:
-                        sh_root(
-                            leader,
-                            f"tc filter add dev eth0 protocol ip parent 1: prio 1 u32 match ip dst {ip_p} flowid 1:1 police rate 1bit burst 1 drop flowid :1 || true",
-                        )
-                    for p, _ip in ips:
-                        ip_l_peer = (
-                            sh(
-                                p,
-                                f"getent ahosts {leader.name} | awk '{{print $1}}' | grep -v ':' | head -n1 || true",
-                            )["out"].strip()
-                            or ip_l
-                        )
-                        sh_root(p, "tc qdisc add dev eth0 root handle 1: prio || true")
-                        sh_root(
-                            p,
-                            f"tc filter add dev eth0 protocol ip parent 1: prio 1 u32 match ip dst {ip_l_peer} flowid 1:1 police rate 1bit burst 1 drop flowid :1 || true",
-                        )
-                    sh(leader, "sleep 0.2")
-                    all_blocked = True
-                    for p, ip_p in ips:
-                        if _tcp_connect_ok(leader, ip_p, RAFT_PORT, timeout_s=1):
-                            all_blocked = False
-                            break
-                        if _tcp_connect_ok(p, ip_l, RAFT_PORT, timeout_s=1):
-                            all_blocked = False
-                            break
-                    if not all_blocked:
-                        raise AssertionError(
-                            "partition_symmetric verify failed: traffic still flows"
-                        )
-                    used_method = "tc"
-                except Exception:
-                    raise
+                sh_root(leader, "tc qdisc add dev eth0 root handle 1: prio || true")
+                for p, ip_p in ips:
+                    sh_root(
+                        leader,
+                        f"tc filter add dev eth0 protocol ip parent 1: prio 1 u32 match ip dst {ip_p} flowid 1:1 police rate 1bit burst 1 drop flowid :1 || true",
+                    )
+                for p, _ip in ips:
+                    ip_l_peer = _get_ipv4(p, leader.name) or ip_l
+                    sh_root(p, "tc qdisc add dev eth0 root handle 1: prio || true")
+                    sh_root(
+                        p,
+                        f"tc filter add dev eth0 protocol ip parent 1: prio 1 u32 match ip dst {ip_l_peer} flowid 1:1 police rate 1bit burst 1 drop flowid :1 || true",
+                    )
+                sh(leader, "sleep 0.2")
+                all_blocked = all(
+                    not _tcp_connect_ok(leader, ip_p, RAFT_PORT, timeout_s=1)
+                    and not _tcp_connect_ok(p, ip_l, RAFT_PORT, timeout_s=1)
+                    for p, ip_p in ips
+                )
+                if not all_blocked:
+                    raise AssertionError(
+                        "partition_symmetric verify failed: traffic still flows"
+                    )
+                used_method = "tc"
         yield
     finally:
-        if "tc_used" in locals() and used_method == "tc":
+        if tc_used and used_method == "tc":
             try:
                 sh_root(leader, "tc qdisc del dev eth0 root || true")
             except Exception:
@@ -285,14 +273,7 @@ def partition_symmetric(leader, peers):
                     pass
         elif used_method == "iptables":
             for n, cname in chains.items():
-                sh_root(
-                    n,
-                    f"iptables -w 2 -t filter -D OUTPUT -j {cname} || true; iptables -w 2 -t filter -F {cname} || true; iptables -w 2 -t filter -X {cname} || true",
-                )
-                sh_root(
-                    n,
-                    f"ip6tables -w 2 -t filter -D OUTPUT -j {cname} || true; ip6tables -w 2 -t filter -F {cname} || true; ip6tables -w 2 -t filter -X {cname} || true",
-                )
+                _remove_iptables_chain(n, cname)
         else:
             for n, cidr in routes:
                 sh_root(n, f"ip route del blackhole {cidr} || true")
@@ -302,12 +283,7 @@ def partition_symmetric(leader, peers):
 
 @contextmanager
 def partition_oneway(src, dst):
-    ip = sh(
-        src,
-        f"getent ahosts {dst.name} | awk '{{print $1}}' | grep -v ':' | head -n1 || true",
-    )["out"].strip()
-    if not ip:
-        ip = sh(dst, "hostname -i")["out"].split()[0]
+    ip = _get_ipv4(src, dst.name) or _get_ipv4(dst)
     method = None
     cname = None
     has_ipt = has_bin(src, "iptables")
@@ -317,33 +293,17 @@ def partition_oneway(src, dst):
         if has_ipt:
             method = "iptables"
             cname = f"CH_KEEPER_{int(time.time()*1000)}"
-            sh_root(src, f"iptables -w 2 -t filter -N {cname} || true")
-            sh_root(
-                src,
-                f"(iptables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname}') || iptables -w 2 -t filter -I OUTPUT 1 -j {cname}",
-            )
+            _create_iptables_chain(src, cname)
             sh_root(
                 src,
                 f"iptables -w 2 -t filter -A {cname} -p tcp --dport {RAFT_PORT} -d {ip} -j DROP",
             )
-            sh_root(src, f"ip6tables -w 2 -t filter -N {cname} || true")
-            sh_root(
-                src,
-                f"(ip6tables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname}') || ip6tables -w 2 -t filter -I OUTPUT 1 -j {cname}",
-            )
-            sh_root(
-                src,
-                f"for ip6 in $(getent ahosts {dst.name} | awk '{{print $1}}' | grep ':' | sort -u); do ip6tables -w 2 -t filter -A {cname} -p tcp --dport {RAFT_PORT} -d $ip6 -j DROP; done",
-            )
-            c1 = sh(src, f"iptables -w 2 -t filter -S {cname} >/dev/null 2>&1; echo $?")
-            c2 = sh(
-                src,
-                f"iptables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname}' ; echo $?",
-            )
-            ok = str(c1.get("out", " ")).strip().endswith("0") and str(
-                c2.get("out", " ")
-            ).strip().endswith("0")
-            if not ok:
+            for ip6 in _get_ipv6_list(src, dst.name):
+                sh_root(
+                    src,
+                    f"ip6tables -w 2 -t filter -A {cname} -p tcp --dport {RAFT_PORT} -d {ip6} -j DROP",
+                )
+            if not _check_iptables_chain(src, cname):
                 if has_ip:
                     method = "iproute"
                     host = f"{ip}/32"
@@ -379,8 +339,7 @@ def partition_oneway(src, dst):
                     method = "tc"
                     sh_root(src, f"tc qdisc replace dev eth0 root netem loss 100%")
                     v = sh(src, "tc qdisc show dev eth0 | grep -q netem; echo $?")
-                    ok_tc = str(v.get("out", " ")).strip().endswith("0")
-                    if not ok_tc or _tcp_connect_ok(src, ip, RAFT_PORT, timeout_s=1):
+                    if not _check_cmd_success(v) or _tcp_connect_ok(src, ip, RAFT_PORT, timeout_s=1):
                         raise AssertionError("partition_oneway verify failed: tc")
                     yield
                     return
@@ -422,8 +381,7 @@ def partition_oneway(src, dst):
             method = "tc"
             sh_root(src, f"tc qdisc replace dev eth0 root netem loss 100%")
             v = sh(src, "tc qdisc show dev eth0 | grep -q netem; echo $?")
-            ok = str(v.get("out", " ")).strip().endswith("0")
-            if not ok:
+            if not _check_cmd_success(v):
                 raise AssertionError("partition_oneway verify failed: tc")
             if _tcp_connect_ok(src, ip, RAFT_PORT, timeout_s=1):
                 raise AssertionError(
@@ -436,10 +394,7 @@ def partition_oneway(src, dst):
             )
     finally:
         if method == "iptables" and cname:
-            sh_root(
-                src,
-                f"iptables -w 2 -t filter -D OUTPUT -j {cname} || true; iptables -w 2 -t filter -F {cname} || true; iptables -w 2 -t filter -X {cname} || true",
-            )
+            _remove_iptables_chain(src, cname)
         elif method == "iproute":
             host = f"{ip}/32"
             sh_root(
@@ -454,18 +409,9 @@ def partition_oneway(src, dst):
 def dns_blackhole(node):
     try:
         cname = f"CH_KEEPER_{int(time.time()*1000)}"
-        sh_root(node, f"iptables -w 2 -t filter -N {cname} || true")
-        sh_root(
-            node,
-            f"(iptables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname}') || iptables -w 2 -t filter -I OUTPUT 1 -j {cname}",
-        )
+        _create_iptables_chain(node, cname)
         sh_root(node, f"iptables -w 2 -t filter -A {cname} -p udp --dport 53 -j DROP")
         sh_root(node, f"iptables -w 2 -t filter -A {cname} -p tcp --dport 53 -j DROP")
-        sh_root(node, f"ip6tables -w 2 -t filter -N {cname} || true")
-        sh_root(
-            node,
-            f"(ip6tables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname}') || ip6tables -w 2 -t filter -I OUTPUT 1 -j {cname}",
-        )
         sh_root(node, f"ip6tables -w 2 -t filter -A {cname} -p udp --dport 53 -j DROP")
         sh_root(node, f"ip6tables -w 2 -t filter -A {cname} -p tcp --dport 53 -j DROP")
         c1 = sh(
@@ -476,9 +422,7 @@ def dns_blackhole(node):
             node,
             f"export PATH=\"$PATH:/usr/sbin:/sbin\"; iptables -w 2 -t filter -S OUTPUT | grep -q -- ' -j {cname}' ; echo $?",
         )
-        ok = str(c1.get("out", " ")).strip().endswith("0") and str(
-            c2.get("out", " ")
-        ).strip().endswith("0")
+        ok = _check_cmd_success(c1) and _check_cmd_success(c2)
         if not ok:
             bkp = "/etc/resolv.conf.keep"
             try:
@@ -504,10 +448,7 @@ def dns_blackhole(node):
                 raise AssertionError("dns_blackhole verify failed")
         yield
     finally:
-        sh_root(
-            node,
-            f"iptables -w 2 -t filter -D OUTPUT -j {cname} || true; iptables -w 2 -t filter -F {cname} || true; iptables -w 2 -t filter -X {cname} || true",
-        )
+        _remove_iptables_chain(node, cname)
         try:
             sh_root(
                 node,
@@ -523,24 +464,21 @@ def _tcp_connect_ok(node, ip, port, timeout_s=1):
         node,
         f"timeout {timeout_s} bash -c '</dev/tcp/{ip}/{port}' >/dev/null 2>&1; echo $?",
     )
-    return str(r.get("out", "")).strip().endswith("0")
+    return _check_cmd_success(r)
 
 
 _NETEM_KEYS = ("delay_ms", "jitter_ms", "loss_pct", "reorder", "duplicate", "corrupt")
 
 
-@register_fault("netem")
-def _f_netem(ctx, nodes, leader, step):
-    dur = int(step.get("duration_s", DEFAULT_FAULT_DURATION_S))
-    netem_args = {k: v for k, v in step.items() if k in _NETEM_KEYS}
-
+def _create_emit_fn(kind, ctx):
+    """Create an emit function for fault events."""
     lock = threading.Lock()
-
+    
     def _emit(node, phase, extra=None):
         try:
             ev = {
                 "ts": ts_ms(),
-                "kind": "netem",
+                "kind": kind,
                 "node": str(getattr(node, "name", "")),
                 "phase": str(phase),
             }
@@ -550,12 +488,20 @@ def _f_netem(ctx, nodes, leader, step):
                 (ctx.setdefault("fault_events", [])).append(ev)
         except Exception:
             pass
+    return _emit
+
+
+@register_fault("netem")
+def _f_netem(ctx, nodes, leader, step):
+    dur = int(step.get("duration_s", DEFAULT_FAULT_DURATION_S))
+    netem_args = {k: v for k, v in step.items() if k in _NETEM_KEYS}
+    _emit = _create_emit_fn("netem", ctx)
 
     def _qdisc_has_netem(node):
         r = sh_strict(
             node, "tc qdisc show dev eth0 | grep -q netem; echo $?", timeout=10
         )
-        return str((r or {}).get("out", "")).strip().endswith("0")
+        return _check_cmd_success(r)
 
     def _run_one(t):
         t0 = time.time()
@@ -588,21 +534,18 @@ def _f_netem(ctx, nodes, leader, step):
     targets = resolve_targets(step.get("on", "leader"), nodes, leader)
     for_each_target(step, nodes, leader, _run_one)
 
-    try:
-        evs = (ctx or {}).get("fault_events") or []
-        cleaned = {
-            e.get("node")
-            for e in evs
-            if e.get("kind") == "netem" and e.get("phase") == "cleanup_ok"
-        }
-        expected = {str(getattr(t, "name", "")) for t in targets}
-        missing = sorted([n for n in expected if n and n not in cleaned])
-        if missing:
-            raise AssertionError(
-                "netem did not complete cleanup for targets: " + ", ".join(missing)
-            )
-    except Exception:
-        raise
+    evs = (ctx or {}).get("fault_events") or []
+    cleaned = {
+        e.get("node")
+        for e in evs
+        if e.get("kind") == "netem" and e.get("phase") == "cleanup_ok"
+    }
+    expected = {str(getattr(t, "name", "")) for t in targets}
+    missing = sorted([n for n in expected if n and n not in cleaned])
+    if missing:
+        raise AssertionError(
+            "netem did not complete cleanup for targets: " + ", ".join(missing)
+        )
 
 
 @register_fault("tbf")
@@ -630,7 +573,11 @@ def _f_partition_oneway(ctx, nodes, leader, step):
     dur = int(step.get("duration_s", DEFAULT_FAULT_DURATION_S))
 
     def _run_one(src):
-        dst = [n for n in nodes if n.name != src.name][0]
+        others = [n for n in nodes if n.name != src.name]
+        if not others:
+            # Skip if no other nodes (can't partition with only one node)
+            return
+        dst = others[0]
         with partition_oneway(src, dst):
             time.sleep(dur)
 

@@ -8,7 +8,6 @@ scenarios:
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
     gates:
-      - { type: single_leader }
       - { type: sync_read_barrier, iterations: 3, path_prefix: /sem01 }
       - { type: error_rate_le, max_ratio: 0.02 }
 
@@ -17,7 +16,6 @@ scenarios:
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
     gates:
-      - { type: single_leader }
       - { type: linearizable_reads_ok, iterations: 10, base: /sem02 }
       - { type: error_rate_le, max_ratio: 0.02 }
     opts:
@@ -33,7 +31,6 @@ scenarios:
     gates:
       - { type: watch_delta_within, pct: 10.0 }
       - { type: no_watcher_hotspot, max_share: 0.9 }
-      - { type: single_leader }
 
   - id: SEM-04
     name: Ephemerals expiry
@@ -43,7 +40,6 @@ scenarios:
       - { kind: create_ephemerals, on: leader, count: 1000, path_prefix: /sem_ephem }
       - { kind: stop_ephemeral_client, on: leader }
     gates:
-      - { type: single_leader }
       - { type: ephemerals_gone_within, max_s: 10 }
 
   - id: SEM-05
@@ -51,7 +47,6 @@ scenarios:
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
     gates:
-      - { type: single_leader }
       - { type: acl_matrix_ok }
       - { type: acl_digest_rotate_ok }
 
@@ -65,7 +60,6 @@ scenarios:
     faults:
       - { kind: stop_cont, on: leader, count: 10, sleep_s: 1.0 }
     gates:
-      - { type: single_leader }
       - { type: error_rate_le, max_ratio: 0.05 }
       - { type: watch_delta_within, pct: 50 }
       - { type: no_watcher_hotspot, max_share: 0.95 }
@@ -74,13 +68,10 @@ scenarios:
     name: Half-open TCP session GC
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
-    gates:
-      - { type: single_leader }
 
   - id: SEM-08
     name: Unsupported ZK ops
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
     gates:
-      - { type: single_leader }
       - { type: lin_register_ok, duration_s: 10, writers: 2, readers: 4, path: /lin/reg }

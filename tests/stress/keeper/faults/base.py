@@ -1,11 +1,8 @@
 import copy
 import os
 import random
-import sys
-import tempfile
-import threading
+import shlex
 import time
-import traceback
 
 import yaml
 from keeper.framework.core.registry import fault_registry
@@ -37,122 +34,14 @@ def _get_duration(step, default=None):
         subs = (step or {}).get("steps") or []
     except Exception:
         subs = []
-    if kind in ("sequence", "parallel") and subs:
+    if kind == "sequence" and subs:
         ds = [_get_duration(s, 0) for s in subs]
-        if kind == "sequence":
-            return int(sum([d for d in ds if d and d > 0]))
-        return int(max([d for d in ds if d and d > 0] or [0]))
+        return int(sum([d for d in ds if d and d > 0]))
     if step.get("duration_s") is not None:
         return int(step["duration_s"])
     if step.get("seconds") is not None:
         return int(step["seconds"])
     return env_int("KEEPER_DURATION", default)
-
-
-def _step_parallel(step, nodes, leader, ctx):
-    """Execute sub-steps in parallel threads."""
-    subs = step.get("steps") or []
-    if not subs:
-        return
-    errors = []
-
-    def _step_label(sub, idx):
-        try:
-            kind = str(sub.get("kind") or sub.get("type") or "").strip()
-            cfg = str(sub.get("config") or "").strip()
-            on = str(sub.get("on") or "").strip()
-            dur = sub.get("duration_s")
-            parts = [
-                p
-                for p in [
-                    kind,
-                    (f"cfg={cfg}" if cfg else ""),
-                    (f"on={on}" if on else ""),
-                    (f"dur={dur}" if dur is not None else ""),
-                ]
-                if p
-            ]
-            base = " ".join(parts) if parts else "step"
-            return f"parallel[{idx}] {base}".strip()
-        except Exception:
-            return f"parallel[{idx}]"
-
-    def _run(sub):
-        try:
-            apply_step(sub, nodes, leader, ctx)
-        except Exception as e:
-            errors.append(e)
-
-    # Compute deadline from max child duration
-    durs = []
-    for s in subs:
-        d = _get_duration(s, 0)
-        if d > 0:
-            durs.append(d)
-    exp = max(durs) if durs else DEFAULT_FAULT_DURATION_S
-    # Bench and some faults use nested timeouts (e.g. `timeout -k` + Python timeouts).
-    # Keep a generous but still bounded slack to avoid false positives.
-    slack = 120
-    deadline = time.time() + exp + slack
-
-    threads = []
-    thread_to_sub = {}
-    for i, s in enumerate(subs):
-        t = threading.Thread(
-            target=_run, args=(s,), daemon=True, name=_step_label(s, i)
-        )
-        threads.append(t)
-        thread_to_sub[t] = s
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=max(0.0, deadline - time.time()))
-
-    alive = [t for t in threads if t.is_alive()]
-    if alive:
-        frames = {}
-        try:
-            frames = sys._current_frames() or {}
-        except Exception:
-            frames = {}
-        details = []
-        for t in alive:
-            sub = thread_to_sub.get(t) or {}
-            try:
-                sub_brief = {
-                    k: sub.get(k)
-                    for k in (
-                        "kind",
-                        "type",
-                        "config",
-                        "on",
-                        "duration_s",
-                        "ms",
-                        "delay_ms",
-                        "jitter_ms",
-                    )
-                    if sub.get(k) is not None
-                }
-            except Exception:
-                sub_brief = {}
-            stack_txt = ""
-            try:
-                fr = frames.get(t.ident)
-                if fr is not None:
-                    stack_txt = "".join(traceback.format_stack(fr)[-12:])
-            except Exception:
-                stack_txt = ""
-            entry = f"thread={t.name} ident={t.ident} step={sub_brief}"
-            if stack_txt:
-                entry += "\n" + stack_txt
-            details.append(entry)
-        msg = (
-            f"parallel: exceeded deadline {exp+slack}s; alive_threads={len(alive)}\n"
-            + "\n---\n".join(details)
-        )
-        raise AssertionError(msg)
-    if errors:
-        raise errors[0]
 
 
 def _step_sequence(step, nodes, leader, ctx):
@@ -227,7 +116,7 @@ def _step_ensure_paths(step, nodes, leader, ctx):
             for _ in range(2):
                 r = sh_strict(
                     node,
-                    f"HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch '{full}'\" >/dev/null 2>&1; echo $?",
+                    f"HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q \"touch {shlex.quote(full)}\" >/dev/null 2>&1; echo $?",
                     timeout=5,
                 )
                 last_out = str((r or {}).get("out", "") or "").strip()
@@ -251,293 +140,31 @@ def _step_ensure_paths(step, nodes, leader, ctx):
             pass
 
 
-def _step_run_bench(step, nodes, leader, ctx):
-    """Run keeper-bench workload."""
-    from ..workloads.adapter import servers_arg
-    from ..workloads.keeper_bench import KeeperBench
-
-    duration = _get_duration(step, 60)
-    clients = int(step["clients"]) if step.get("clients") is not None else None
-    cfg_main = step.get("config")
-    cfg_list = step.get("configs") or []
-    replay_path = step.get("replay")
-    replicas = 1
-    try:
-        replicas = int(step.get("replicas", step.get("instances", 1)) or 1)
-    except Exception:
-        replicas = 1
-
-    def _materialize_cfg_item(item):
-        if isinstance(item, str) and item.strip():
-            return item.strip()
-        if isinstance(item, dict) and item:
-            try:
-                with tempfile.NamedTemporaryFile(
-                    "w", suffix=".yaml", delete=False
-                ) as tf:
-                    yaml.safe_dump(item, tf, sort_keys=False)
-                    return tf.name
-            except Exception:
-                return None
-        return None
-
-    cfg_paths = []
-    if cfg_list:
-        cfg_paths = [p for p in (_materialize_cfg_item(it) for it in cfg_list) if p]
-    else:
-        base = cfg_main or ""
-        cfg_paths = [base for _ in range(max(1, int(replicas)))]
-
-    results = []
-    configs_dump = []
-    lock = threading.Lock()
-    errors = []
-
-    def _run_one(path):
-        # keeper-bench must execute on host, using CLICKHOUSE_BINARY=<path-to-clickhouse>.
-        # KeeperBench enforces CLICKHOUSE_BINARY presence and will fail fast otherwise.
-        kb = KeeperBench(
-            nodes[0],
-            servers_arg(nodes),
-            cfg_path=path if path else None,
-            duration_s=duration,
-            replay_path=replay_path,
-            secure=False,
-            clients=clients,
-        )
-        try:
-            s = kb.run()
-        except Exception as e:
-            tb = traceback.format_exc()
-            with lock:
-                errors.append({"error": repr(e), "traceback": tb})
-                try:
-                    p = getattr(kb, "last_config_path", None)
-                    if p:
-                        (ctx.setdefault("bench_config_paths", [])).append(str(p))
-                except Exception:
-                    pass
-                try:
-                    op = getattr(kb, "last_output_path", None)
-                    if op:
-                        (ctx.setdefault("bench_output_paths", [])).append(str(op))
-                except Exception:
-                    pass
-                try:
-                    sp = getattr(kb, "last_stdout_path", None)
-                    if sp:
-                        (ctx.setdefault("bench_stdout_paths", [])).append(str(sp))
-                except Exception:
-                    pass
-            return
-
-        with lock:
-            results.append(s or {})
-            try:
-                y = getattr(kb, "last_config_yaml", None)
-                if y:
-                    configs_dump.append(y)
-            except Exception:
-                pass
-            try:
-                p = getattr(kb, "last_config_path", None)
-                if p:
-                    (ctx.setdefault("bench_config_paths", [])).append(str(p))
-            except Exception:
-                pass
-            try:
-                op = getattr(kb, "last_output_path", None)
-                if op:
-                    (ctx.setdefault("bench_output_paths", [])).append(str(op))
-            except Exception:
-                pass
-            try:
-                sp = getattr(kb, "last_stdout_path", None)
-                if sp:
-                    (ctx.setdefault("bench_stdout_paths", [])).append(str(sp))
-            except Exception:
-                pass
-
-    threads = [
-        threading.Thread(target=_run_one, args=(p,), daemon=True) for p in cfg_paths
-    ]
-    for t in threads:
-        t.start()
-
-    # KeeperBench.run uses a hard cap of (duration + 60) and host-side execution
-    # may add a bit of extra time (e.g. timeout wrapper + cleanup).
-    slack = 120
-    deadline = time.time() + float(duration) + float(slack)
-    for t in threads:
-        t.join(timeout=max(0.0, deadline - time.time()))
-
-    alive = [t for t in threads if t.is_alive()]
-    if alive:
-        frames = {}
-        try:
-            frames = sys._current_frames() or {}
-        except Exception:
-            frames = {}
-        details = []
-        for t in alive:
-            stack_txt = ""
-            try:
-                fr = frames.get(t.ident)
-                if fr is not None:
-                    stack_txt = "".join(traceback.format_stack(fr)[-12:])
-            except Exception:
-                stack_txt = ""
-            entry = f"thread={t.name} ident={t.ident}"
-            if stack_txt:
-                entry += "\n" + stack_txt
-            details.append(entry)
-        msg = (
-            f"run_bench: exceeded deadline {int(duration) + slack}s; alive_threads={len(alive)}"
-            f"; configs={cfg_paths}\n"
-            + "\n---\n".join(details)
-        )
-        raise AssertionError(msg)
-
-    if errors:
-        # Preserve minimal bench context for metrics even on failure.
-        try:
-            ctx["bench_summary"] = {
-                "ops": 0,
-                "errors": 0,
-                "duration_s": int(duration),
-                "has_latency": False,
-                "failed": 1,
-            }
-        except Exception:
-            pass
-        msg = "\n\n".join(
-            [
-                "keeper-bench failed in background thread: "
-                + (e.get("error") or "")
-                + "\n"
-                + (e.get("traceback") or "")
-                for e in errors
-            ]
-        )
-        raise AssertionError(msg)
-
-    if not results:
-        ctx["bench_summary"] = {}
-    else:
-        agg = {
-            "ops": 0,
-            "errors": 0,
-            "duration_s": 0,
-            "reads": 0,
-            "writes": 0,
-            "read_rps": 0.0,
-            "read_bps": 0.0,
-            "write_rps": 0.0,
-            "write_bps": 0.0,
-            "read_p50_ms": 0.0,
-            "read_p95_ms": 0.0,
-            "read_p99_ms": 0.0,
-            "write_p50_ms": 0.0,
-            "write_p95_ms": 0.0,
-            "write_p99_ms": 0.0,
-            "read_percentiles_ms": {},
-            "write_percentiles_ms": {},
-            "has_latency": False,
-        }
-        for r in results:
-            try:
-                agg["ops"] += int(r.get("ops") or 0)
-                agg["errors"] += int(r.get("errors") or 0)
-                agg["duration_s"] = max(
-                    agg["duration_s"], int(r.get("duration_s") or 0)
-                )
-                agg["reads"] += int(r.get("reads") or 0)
-                agg["writes"] += int(r.get("writes") or 0)
-                agg["read_rps"] += float(r.get("read_rps") or 0.0)
-                agg["read_bps"] += float(r.get("read_bps") or 0.0)
-                agg["write_rps"] += float(r.get("write_rps") or 0.0)
-                agg["write_bps"] += float(r.get("write_bps") or 0.0)
-                agg["read_p50_ms"] = max(
-                    agg["read_p50_ms"], float(r.get("read_p50_ms") or 0)
-                )
-                agg["read_p95_ms"] = max(
-                    agg["read_p95_ms"], float(r.get("read_p95_ms") or 0)
-                )
-                agg["read_p99_ms"] = max(
-                    agg["read_p99_ms"], float(r.get("read_p99_ms") or 0)
-                )
-                agg["write_p50_ms"] = max(
-                    agg["write_p50_ms"], float(r.get("write_p50_ms") or 0)
-                )
-                agg["write_p95_ms"] = max(
-                    agg["write_p95_ms"], float(r.get("write_p95_ms") or 0)
-                )
-                agg["write_p99_ms"] = max(
-                    agg["write_p99_ms"], float(r.get("write_p99_ms") or 0)
-                )
-                agg["has_latency"] = agg["has_latency"] or bool(r.get("has_latency"))
-
-                try:
-                    rpm = r.get("read_percentiles_ms")
-                    if isinstance(rpm, dict) and rpm:
-                        for k, v in rpm.items():
-                            try:
-                                fk = float(k)
-                                fv = float(v)
-                            except Exception:
-                                continue
-                            prev = agg["read_percentiles_ms"].get(fk)
-                            if prev is None:
-                                agg["read_percentiles_ms"][fk] = fv
-                            else:
-                                agg["read_percentiles_ms"][fk] = max(float(prev), fv)
-                except Exception:
-                    pass
-                try:
-                    wpm = r.get("write_percentiles_ms")
-                    if isinstance(wpm, dict) and wpm:
-                        for k, v in wpm.items():
-                            try:
-                                fk = float(k)
-                                fv = float(v)
-                            except Exception:
-                                continue
-                            prev = agg["write_percentiles_ms"].get(fk)
-                            if prev is None:
-                                agg["write_percentiles_ms"][fk] = fv
-                            else:
-                                agg["write_percentiles_ms"][fk] = max(float(prev), fv)
-                except Exception:
-                    pass
-            except Exception:
-                continue
-        tot = float(agg.get("reads") or 0) + float(agg.get("writes") or 0)
-        if tot > 0:
-            agg["read_ratio"] = float(agg.get("reads") or 0) / tot
-            agg["write_ratio"] = float(agg.get("writes") or 0) / tot
-        ctx["bench_summary"] = agg
-    try:
-        if configs_dump:
-            ctx["bench_config_yaml"] = "\n\n---\n".join(configs_dump)
-    except Exception:
-        pass
 
 
 def _step_leader_kill_measure(step, nodes, leader, ctx):
     """Kill leader and measure re-election time."""
     from .process import kill as _kill
 
-    start = time.time()
-    target = leader_or_first(nodes)
-    _kill(target)
-    timeout = int(step.get("timeout_s", 60))
-    wait_until(
-        lambda: count_leaders(nodes) == 1,
-        timeout_s=timeout,
-        interval=0.5,
-        desc="re-election",
-    )
-    ctx["election_time_s"] = time.time() - start
+    if ctx is not None:
+        ctx["_fault_recovered"] = False
+    try:
+        start = time.time()
+        target = leader_or_first(nodes)
+        if not target:
+            raise AssertionError("leader_kill_measure: no target node")
+        _kill(target)
+        timeout = int(step.get("timeout_s") or 60)
+        wait_until(
+            lambda: count_leaders(nodes) == 1,
+            timeout_s=timeout,
+            interval=0.5,
+            desc="re-election",
+        )
+        ctx["election_time_s"] = time.time() - start
+    finally:
+        if ctx is not None:
+            ctx["_fault_recovered"] = True
 
 
 def _step_record_watch_baseline(step, nodes, leader, ctx):
@@ -549,18 +176,18 @@ def _step_record_watch_baseline(step, nodes, leader, ctx):
 
 def _step_reconfig(step, nodes, leader, ctx):
     """Dynamic cluster reconfiguration via 4lw."""
-    op = str(step.get("operation", "")).strip().lower()
-    ok_expected = bool(step.get("ok", True))
+    op = str(step.get("operation") or "").strip().lower()
+    ok_expected = bool(step.get("ok") if step.get("ok") is not None else True)
     target = leader_or_first(nodes)
     if not target:
         raise AssertionError("reconfig: no target node")
 
-    spec = str(step.get("spec", "")).strip()
+    spec = str(step.get("spec") or "").strip()
     if not spec and op in ("add", "set"):
         sid, host = step.get("server_id"), step.get("host")
-        port = step.get("port", RAFT_PORT)
+        port = int(step.get("port") or RAFT_PORT)
         if sid and host:
-            spec = f"server.{int(sid)}={host}:{int(port)}"
+            spec = f"server.{int(sid)}={host}:{port}"
     if op == "add" and not spec:
         raise AssertionError("reconfig add: missing spec or server_id/host")
     if op == "remove" and not spec:
@@ -595,8 +222,10 @@ def _step_sql(step, nodes, leader, ctx):
 
 def _step_expect_ready(step, nodes, leader, ctx):
     """Wait for ready state to match expected value."""
-    ok = bool(step.get("ok", True))
-    timeout_s = int(step.get("timeout_s", 30))
+    if not leader:
+        raise AssertionError("expect_ready: no leader")
+    ok = bool(step.get("ok") if step.get("ok") is not None else True)
+    timeout_s = int(step.get("timeout_s") or 30)
     end = time.time() + timeout_s
     while time.time() < end:
         try:
@@ -626,33 +255,62 @@ def _step_gate(step, nodes, leader, ctx):
     return apply_gate(gate, nodes, leader, ctx, summary)
 
 
-# Step dispatcher mapping
+# Step kinds used by scenarios/presets:
+#   sequence, background_schedule (cha, test_scenarios), ensure_paths (presets),
+#   leader_kill_measure, record_watch_baseline, reconfig, sql, expect_ready.
+# gate = inline gate step (no YAML use); checkpoint removed (was alias, unused).
 _STEP_HANDLERS = {
-    "parallel": _step_parallel,
     "sequence": _step_sequence,
     "background_schedule": _step_background_schedule,
     "ensure_paths": _step_ensure_paths,
-    "run_bench": _step_run_bench,
     "leader_kill_measure": _step_leader_kill_measure,
     "record_watch_baseline": _step_record_watch_baseline,
     "reconfig": _step_reconfig,
     "sql": _step_sql,
     "expect_ready": _step_expect_ready,
     "gate": _step_gate,
-    "checkpoint": _step_gate,
 }
 
 
 def apply_step(step, nodes, leader, ctx):
-    """Apply a fault injection or orchestration step."""
-    kind = (step or {}).get("kind")
+    """
+    Apply a fault injection or orchestration step.
+
+    Priority:
+    1. Use a registered fault handler from fault_registry if available.
+    2. Otherwise, use a built-in step handler from _STEP_HANDLERS if defined.
+    3. Otherwise, handle 'run_bench' step via workloads module.
+
+    Fault recovery: fault handlers signal recovery via ctx["_fault_recovered"].
+    For fault_registry handlers, we set _fault_recovered=False before the call
+    and _fault_recovered=True in a finally after the call (when the handler
+    returns, the fault has cleaned up). Built-in fault-like steps (e.g.
+    leader_kill_measure) set it themselves. Callers that need to wait for
+    "fault recovered" should use this instead of inferring from cluster state
+    (e.g. count_leaders).
+
+    Returns:
+        The result of the handler function, or None if no handler applies.
+    """
+    kind = step.get("kind")
     if not kind:
         return
-    # Try registered fault first
-    fn = fault_registry.get(kind)
-    if callable(fn):
-        return fn(ctx, nodes, leader, step)
-    # Try built-in handler
-    handler = _STEP_HANDLERS.get(kind)
-    if handler:
-        return handler(step, nodes, leader, ctx)
+
+    # 1. Try registered fault handler
+    fault_fn = fault_registry.get(kind)
+    if callable(fault_fn):
+        if ctx is not None:
+            ctx["_fault_recovered"] = False
+        try:
+            return fault_fn(ctx, nodes, leader, step)
+        finally:
+            if ctx is not None:
+                ctx["_fault_recovered"] = True
+
+    # 2. Try built-in handler
+    builtin_handler = _STEP_HANDLERS.get(kind)
+    if callable(builtin_handler):
+        return builtin_handler(step, nodes, leader, ctx)
+
+    # No handler found for this step kind; do nothing
+    return

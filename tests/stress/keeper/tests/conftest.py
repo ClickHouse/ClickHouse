@@ -4,9 +4,10 @@ import time
 
 import pytest
 from keeper.framework.core.cluster import ClusterBuilder
-from keeper.framework.core.settings import parse_bool
-from keeper.framework.core.util import env_int, wait_until
-from keeper.framework.io.probes import count_leaders
+from keeper.framework.core.settings import DEFAULT_READY_TIMEOUT
+from keeper.framework.core.util import env_int, env_bool, parse_bool, wait_until
+from keeper.framework.io.probes import count_leaders, four, mntr
+from keeper.framework.core.settings import keeper_node_names
 
 pytest_plugins = ["keeper.pytest_plugins.scenario_loader"]
 
@@ -17,7 +18,6 @@ def pytest_configure(config):
         f"/tmp/keeper_metrics_{int(time.time())}_{os.getpid()}.jsonl",
     )
 
-
 def pytest_addoption(parser):
     pa = parser.addoption
     pa("--commit-sha", action="store", default=os.environ.get("COMMIT_SHA", "local"))
@@ -26,37 +26,33 @@ def pytest_addoption(parser):
     pa(
         "--matrix-backends",
         action="store",
-        default=os.environ.get("KEEPER_MATRIX_BACKENDS", ""),
+        default=os.environ.get("KEEPER_MATRIX_BACKENDS", "default"),
     )
     pa(
         "--matrix-topologies",
         action="store",
-        default=os.environ.get("KEEPER_MATRIX_TOPOLOGIES", ""),
+        default=os.environ.get("KEEPER_MATRIX_TOPOLOGIES", 3),
     )
     pa(
         "--seed",
         type=int,
-        default=(int(os.environ["KEEPER_SEED"]) if os.environ.get("KEEPER_SEED") else None),
+        default=env_int("KEEPER_SEED", int.from_bytes(os.urandom(4), "big")),
     )
     pa(
         "--keep-containers-on-fail",
         action="store_true",
-        default=parse_bool(os.environ.get("KEEPER_KEEP_ON_FAIL")),
+        default=env_bool("KEEPER_KEEP_ON_FAIL", False),
     )
     pa(
         "--faults",
-        choices=("on", "off"),
-        default=os.environ.get("KEEPER_FAULTS", "on"),
+        type=parse_bool,
+        default=env_bool("KEEPER_FAULTS", True),
+        help="Enable fault injection (true/false/1/0, default from KEEPER_FAULTS env var)",
     )
     pa(
         "--keeper-include-ids",
         action="store",
         default=os.environ.get("KEEPER_INCLUDE_IDS", ""),
-    )
-    pa(
-        "--seed-list",
-        action="store",
-        default=os.environ.get("KEEPER_SEEDS", ""),
     )
 
 
@@ -67,144 +63,91 @@ def run_meta(request):
     }
 
 
+def _merge_env_opts(opts):
+    """Merge environment-provided feature flags into opts."""
+    opts = dict(opts or {})
+    # Feature flags from env
+    ff_env = (os.environ.get("KEEPER_FEATURE_FLAGS") or "").strip()
+    if ff_env:
+        flags = {}
+        for part in ff_env.split(","):
+            if not part.strip():
+                continue
+            if "=" in part:
+                k, v = part.split("=", 1)
+            else:
+                raise ValueError(f"Invalid feature flag: {part}")
+            flags[k.strip()] = 1 if v.strip() == "1" else 0
+        opts["feature_flags"] = dict(opts.get("feature_flags", {})) | flags
+    return opts
+
+
+def _print_failure_diagnostics(topology, builder):
+    """Print diagnostics from instance directory on failure.
+    
+    Args:
+        topology: Number of nodes in the cluster
+        builder: ClusterBuilder instance to get instances_dir from
+    """
+    try:
+        if not builder or not builder.cluster:
+            raise ValueError("ClusterBuilder instance is required")
+        inst_dir = builder.cluster.instances_dir
+
+        for name in keeper_node_names(topology):
+            # Print config
+            cfg = builder.conf_dir / f"keeper_config_{name}.xml"
+            if cfg.exists():
+                print(f"==== {name} config ====\n{cfg.read_text()[:800]}")
+
+            # Print logs
+            for log_type, suffix in [("err", "clickhouse-server.err.log"), ("log", "clickhouse-server.log")]:
+                log_path = inst_dir / name / "logs" / suffix
+                if log_path.exists():
+                    try:
+                        txt = log_path.read_text()
+                        print(f"==== {name} {log_type} ====\n" + "\n".join(txt.splitlines()[-200:]))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+
+def _print_ready_failure_diagnostics(nodes):
+    """Print diagnostics when cluster ready check fails."""
+    for n in nodes:
+        # Run probes: stat, srvr, mntr
+        for probe_name, probe_fn in (("stat", four), ("srvr", four)):
+            try:
+                result = probe_fn(n, probe_name)
+                print(f"==== {n.name} {probe_name} ====\n{str(result)[:2000]}")
+            except Exception:
+                continue
+        try:
+            m = mntr(n) or {}
+            print(f"==== {n.name} mntr zk_server_state ====\n{m.get('zk_server_state', '')}")
+        except Exception:
+            continue
+
+
 @pytest.fixture(scope="function")
 def cluster_factory(request):
-    def _make(topology, backend, opts):
-        anchor = __file__  # stable anchor in tests dir
-        builder = ClusterBuilder(anchor)
-        # Merge environment-provided feature flags / coordination overrides into scenario opts
+    def _make(cname, topology, backend, opts):
+        builder = ClusterBuilder(cname, __file__)
+        opts = _merge_env_opts(opts)
         try:
-            ff_env = os.environ.get("KEEPER_FEATURE_FLAGS", "").strip()
-            if ff_env:
-                flags = {}
-                for part in ff_env.split(","):
-                    if not part.strip():
-                        continue
-                    if "=" in part:
-                        k, v = part.split("=", 1)
-                    else:
-                        k, v = part, "1"
-                    k = k.strip()
-                    v = v.strip()
-                    flags[k] = 1 if v == "1" else 0
-                base_opts = dict(opts or {})
-                cur_ff = dict((base_opts.get("feature_flags") or {}))
-                cur_ff.update(flags)
-                base_opts["feature_flags"] = cur_ff
-                opts = base_opts
-        except Exception:
-            pass
-        try:
-            coord_xml = os.environ.get("KEEPER_COORD_OVERRIDES_XML", "")
-            if coord_xml:
-                base_opts = dict(opts or {})
-                base_opts["coord_overrides_xml"] = coord_xml
-                opts = base_opts
-        except Exception:
-            pass
-        try:
-            cluster, nodes = builder.build(
-                topology=topology, backend=backend, opts=opts
-            )
+            cluster, nodes = builder.build(topology=topology, backend=backend, opts=opts)
         except Exception as e:
-            try:
-                base = pathlib.Path(__file__).parent
-                inst_dirs = sorted(
-                    base.glob("_instances-*"),
-                    key=lambda p: p.stat().st_mtime,
-                    reverse=True,
-                )
-                if inst_dirs:
-                    inst = inst_dirs[0]
-                    try:
-                        cfg_root = next((inst / "configs").glob("*/"))
-                    except StopIteration:
-                        cfg_root = None
-                    for i in range(1, 4):
-                        if cfg_root:
-                            cfg = cfg_root / f"keeper_config_keeper{i}.xml"
-                            if cfg.exists():
-                                print(
-                                    f"==== keeper{i} config ====\n{cfg.read_text()[:800]}"
-                                )
-                        err = inst / f"keeper{i}" / "logs" / "clickhouse-server.err.log"
-                        if err.exists():
-                            try:
-                                txt = err.read_text()
-                                print(
-                                    "==== keeper"
-                                    + str(i)
-                                    + " err ====\n"
-                                    + "\n".join(txt.splitlines()[-200:])
-                                )
-                            except Exception:
-                                pass
-                        lg = inst / f"keeper{i}" / "logs" / "clickhouse-server.log"
-                        if lg.exists():
-                            try:
-                                txt = lg.read_text()
-                                print(
-                                    "==== keeper"
-                                    + str(i)
-                                    + " log ====\n"
-                                    + "\n".join(txt.splitlines()[-200:])
-                                )
-                            except Exception:
-                                pass
-            except Exception:
-                pass
+            _print_failure_diagnostics(topology, builder)
             raise e
+        # Wait for cluster ready
+        timeout = float(env_int("KEEPER_READY_TIMEOUT", DEFAULT_READY_TIMEOUT))
         try:
-            if parse_bool(os.environ.get("KEEPER_PRINT_KEEPER_CONFIG")):
-                cname = os.environ.get("KEEPER_CLUSTER_NAME", "")
-                conf_root = (
-                    pathlib.Path(getattr(cluster, "instances_dir", ""))
-                    / "configs"
-                    / (cname or "")
-                )
-                for i in range(1, topology + 1):
-                    p = conf_root / f"keeper_config_keeper{i}.xml"
-                    if p.exists():
-                        try:
-                            print(f"==== keeper{i} config ====\n" + p.read_text()[:800])
-                        except Exception:
-                            pass
-        except Exception:
-            pass
-        to = float(env_int("KEEPER_READY_TIMEOUT", 120))
-        try:
-            wait_until(
-                lambda: count_leaders(nodes) == 1,
-                timeout_s=to,
-                interval=0.5,
-                desc="cluster ready",
-            )
+            wait_until(lambda: count_leaders(nodes) == 1, timeout_s=timeout, interval=0.5, desc="cluster ready")
         except Exception as e:
-            try:
-                from keeper.framework.io.probes import four, mntr
-
-                for n in nodes:
-                    try:
-                        print(f"==== {n.name} stat ====\n" + str(four(n, "stat"))[:2000])
-                    except Exception:
-                        pass
-                    try:
-                        print(f"==== {n.name} srvr ====\n" + str(four(n, "srvr"))[:2000])
-                    except Exception:
-                        pass
-                    try:
-                        m = mntr(n) or {}
-                        print(
-                            f"==== {n.name} mntr zk_server_state ====\n"
-                            + str(m.get("zk_server_state", ""))
-                        )
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            _print_ready_failure_diagnostics(nodes)
             raise e
         return cluster, nodes
-
     return _make
 
 

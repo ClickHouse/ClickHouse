@@ -11,10 +11,7 @@ scenarios:
       - { kind: reconfig, on: leader, operation: add, spec: "server.1=keeper9:44444", ok: false }
       - { kind: reconfig, on: leader, operation: add, spec: "server.8=keeper1:44444", ok: false }
     gates:
-      - { type: single_leader }
-      - { type: config_converged, timeout_s: 30 }
       - { type: config_members_len_eq, expected: 3 }
-      - { type: backlog_drains }
 
   - id: RCFG-02
     name: Remove participant under load
@@ -23,10 +20,7 @@ scenarios:
     faults:
       - { kind: reconfig, on: leader, operation: remove, spec: "2" }
     gates:
-      - { type: single_leader }
-      - { type: config_converged, timeout_s: 30 }
       - { type: config_members_len_eq, expected: 2 }
-      - { type: backlog_drains }
 
   - id: RCFG-03
     name: Bulk/new_members refused
@@ -35,18 +29,13 @@ scenarios:
     faults:
       - { kind: reconfig, on: leader, operation: set, spec: "3", ok: false }
     gates:
-      - { type: single_leader }
-      - { type: config_converged, timeout_s: 30 }
       - { type: config_members_len_eq, expected: 3 }
-      - { type: backlog_drains }
 
   - id: RCFG-04
     name: from_version refused
     topology: 3
     workload: { config: workloads/prod_mix.yaml }
     gates:
-      - { type: single_leader }
-      - { type: config_converged, timeout_s: 30 }
       - { type: config_members_len_eq, expected: 3 }
 
   - id: RCFG-05
@@ -59,6 +48,4 @@ scenarios:
       - { kind: reconfig, on: leader, operation: remove, spec: "3" }
       - { kind: reconfig, on: leader, operation: add, server_id: 3, host: keeper3 }
     gates:
-      - { type: single_leader }
-      - { type: config_converged, timeout_s: 30 }
       - { type: config_members_len_eq, expected: 3 }

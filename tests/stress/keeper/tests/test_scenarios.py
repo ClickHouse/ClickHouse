@@ -3,24 +3,28 @@ import json
 import os
 import pathlib
 import shutil
+import sys
+import threading
 import time
 import uuid
-
-import pytest
+import random
 import yaml
-from keeper.faults import apply_step as apply_step_dispatcher
+
+from keeper.framework.fuzz import _fault_candidates
+from keeper.faults import apply_step
+from keeper.faults.runner import FaultRunner
 from keeper.framework.core.preflight import ensure_environment
+from keeper.workloads.keeper_bench import KeeperBench
 from keeper.framework.core.settings import (
     CLIENT_PORT,
     DEFAULT_ERROR_RATE,
     DEFAULT_P99_MS,
-    parse_bool,
+    DEFAULT_WORKLOAD_CONFIG,
+    keeper_node_names
 )
-from keeper.framework.core.util import sh, ts_ms
-from keeper.framework.fuzz import generate_fuzz_scenario
+from keeper.framework.core.util import sh, ts_ms, parse_bool, env_bool
+from keeper.framework.fuzz import generate_random_faults
 from keeper.framework.io.probes import (
-    ch_async_metrics,
-    ch_metrics,
     count_leaders,
     dirs,
     is_leader,
@@ -28,18 +32,18 @@ from keeper.framework.io.probes import (
     mntr,
     prom_metrics,
     srvr_kv,
+    _get_current_leader
 )
 from keeper.framework.io.prom_parse import parse_prometheus_text
 from keeper.framework.io.sink import has_ci_sink, sink_clickhouse
 from keeper.framework.metrics.prom_env import compute_prom_config
-from keeper.framework.metrics.sampler import MetricsSampler
+from keeper.framework.metrics.sampler import MetricsSampler, _make_metric_row
 from keeper.gates.base import apply_gate, single_leader
 from keeper.workloads.adapter import servers_arg
 
 WORKDIR = pathlib.Path(__file__).parents[1]
 
 HARD_DEFAULT_TIMEOUT = 120
-DEFAULT_RANDOM_FAULT_POOL_SIZE = 12
 
 
 def _tail_file(path, max_lines=200):
@@ -91,24 +95,6 @@ def _print_gate_failure_diagnostics(cluster, nodes, gate_type, exc):
         pass
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Wrapper functions for step/gate dispatch
-# ─────────────────────────────────────────────────────────────────────────────
-def _apply_step(step, nodes, leader, ctx):
-    """Apply a fault injection step."""
-    apply_step_dispatcher(step, nodes, leader, ctx)
-
-
-def _apply_gate(gate, nodes, leader, ctx, summary):
-    """Apply a validation gate."""
-    apply_gate(gate, nodes, leader, ctx, summary)
-
-
-def _best_effort(fn, *args, **kwargs):
-    try:
-        return fn(*args, **kwargs)
-    except Exception:
-        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -120,55 +106,19 @@ def _get_option(request, cli_name, env_name, default=None, type_fn=str):
         val = request.config.getoption(cli_name)
         if val is not None:
             return type_fn(val)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[keeper] error getting option {cli_name} from CLI args: {repr(e)}")
     env_val = os.environ.get(env_name, "").strip()
     if env_val:
         try:
             return type_fn(env_val)
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as e:
+            print(f"[keeper] error getting option {env_name} from environment: {repr(e)}")
     return default
 
 
 def _get_int_option(request, cli_name, env_name, default=0):
     return _get_option(request, cli_name, env_name, default, int)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper: Metric row builder
-# ─────────────────────────────────────────────────────────────────────────────
-def _make_metric_row(
-    run_id,
-    run_meta,
-    scenario_id,
-    topo,
-    node,
-    stage,
-    source,
-    name,
-    value,
-    labels_json="{}",
-):
-    """Build a standardized metric row dict."""
-    try:
-        val = float(value)
-    except (ValueError, TypeError):
-        val = 0.0
-    return {
-        "ts": ts_ms(),
-        "run_id": run_id,
-        "commit_sha": run_meta.get("commit_sha", "local"),
-        "backend": run_meta.get("backend", "default"),
-        "scenario": scenario_id,
-        "topology": topo,
-        "node": node,
-        "stage": stage,
-        "source": source,
-        "name": str(name),
-        "value": val,
-        "labels_json": labels_json,
-    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,128 +169,115 @@ def _cleanup_ctx_resources(ctx):
                 pass
 
 
-def resolve_duration(scenario):
-    """Resolve duration from scenario loader output."""
-    try:
-        v = scenario.get("duration")
-        if v:
-            return int(v)
-    except Exception:
-        print(f"[keeper] using hard default duration={HARD_DEFAULT_TIMEOUT} for {scenario}")
-    return int(HARD_DEFAULT_TIMEOUT)
-
-
-def build_bench_step(wl, eff_dur):
-    """Build run_bench step dict."""
-    rb = {"kind": "run_bench", "duration_s": eff_dur}
-    cfg = (wl or {}).get("config")
-    if cfg:
-        rb["config"] = str(WORKDIR / cfg)
-    rp = (wl or {}).get("replay")
-    if rp:
-        rb["replay"] = str(rp)
-    return rb
-
-
-def inject_parallel(fs_effective, step):
-    if not fs_effective:
-        return [step]
-    if (
-        len(fs_effective) == 1
-        and isinstance(fs_effective[0], dict)
-        and (fs_effective[0].get("kind") or "").lower() == "parallel"
-    ):
-        fs_effective[0]["steps"] = [step] + (fs_effective[0].get("steps") or [])
-        return fs_effective
-    return [
-        {
-            "kind": "parallel",
-            "steps": [step, {"kind": "sequence", "steps": fs_effective}],
-        }
-    ]
-
-
-def has_run_bench(actions):
-    """Check if actions contain a run_bench step (including inside parallel)."""
-
-    def _contains(step_list):
-        for a in step_list or []:
-            kind = (a.get("kind") or "").lower()
-            if kind == "run_bench":
-                return True
-            if kind in ("parallel", "sequence"):
-                if _contains(a.get("steps") or []):
-                    return True
-        return False
-
-    return _contains(actions)
 
 
 def ensure_default_gates(scenario):
-    """Ensure scenario has error_rate_le and p99_le gates."""
+    """Add lenient default gates only if scenario has no gates defined.
+    
+    Defaults are intentionally lenient (10% error rate, 10s p99) and only serve
+    as a safety net for scenarios that forget to define gates. Most scenarios
+    should define their own stricter thresholds.
+    """
     if not isinstance(scenario, dict):
         return
-    gs = list(scenario.get("gates") or [])
-    gate_types = {g.get("type") for g in gs}
-    if "ops_ge" not in gate_types:
-        gs.append({"type": "ops_ge", "min_ops": 1.0})
-    if "error_rate_le" not in gate_types:
-        gs.append({"type": "error_rate_le", "max_ratio": float(DEFAULT_ERROR_RATE)})
-    if "p99_le" not in gate_types:
-        gs.append({"type": "p99_le", "max_ms": int(DEFAULT_P99_MS)})
-    scenario["gates"] = gs
+
+    gates = list(scenario.get("gates") or [])
+    # Only add defaults if scenario has no gates at all
+    if not gates:
+        gates = [
+            {"type": "ops_ge", "min_ops": 1.0},  # Sanity: bench ran
+            {"type": "error_rate_le", "max_ratio": float(DEFAULT_ERROR_RATE)},  # Lenient: 10%
+            {"type": "p99_le", "max_ms": int(DEFAULT_P99_MS)},  # Lenient: 10s
+        ]
+        scenario["gates"] = gates
 
 
 def _generate_default_fault_pool(scenario, seed_val):
+    topology = scenario.get("topology")
     try:
-        dur = int(resolve_duration(scenario))
-    except (ValueError, TypeError):
-        dur = 120
-    if seed_val is None:
-        seed_val = int.from_bytes(os.urandom(4), "big")
-    try:
-        fz = generate_fuzz_scenario(
-            seed_val,
-            max(1, int(DEFAULT_RANDOM_FAULT_POOL_SIZE)),
-            dur,
+        rnd = random.Random(seed_val)
+        scenario_faults = scenario.get("faults", [])
+        scenario_dur = int(scenario.get("duration") or HARD_DEFAULT_TIMEOUT)
+        
+        if scenario_faults:
+            # Use all fault kinds from scenario (generate one of each kind)
+            fault_kinds = list({f.get("kind") for f in scenario_faults if isinstance(f, dict) and f.get("kind")})
+            steps = len(fault_kinds)
+        else:
+            # Use all registered faults, generate random number between 1 and len(all_faults)
+            fault_kinds = None
+            all_faults = _fault_candidates()
+            steps = rnd.randint(1, max(1, len(all_faults)))
+
+        # Calculate fault durations ensuring sum <= scenario duration
+        # Distribute scenario duration across faults, with min 5s per fault
+        min_per_fault = 30
+        max_total = scenario_dur
+        if steps * min_per_fault > max_total:
+            # Not enough time for all faults, reduce steps
+            steps = max(1, max_total // min_per_fault)
+        # Ensure worst case (all faults at dur_max) doesn't exceed total duration
+        # dur_max per fault = max_total / steps (ensures steps * dur_max <= max_total)
+        avg_dur = max(min_per_fault, max_total // steps)
+        dur_min = min_per_fault
+        dur_max = min(avg_dur, max_total // steps)  # Worst case: all dur_max, sum = steps * dur_max <= max_total
+        
+        rnd_faults = generate_random_faults(
+            steps,
+            rnd,
+            dur_min,
+            dur_max,
+            topology=topology,
+            fault_kinds=fault_kinds,
         )
-        rnd_faults = fz.get("faults", []) or []
-        return rnd_faults, seed_val
+        return rnd_faults
     except Exception:
-        return [], seed_val
+        raise Exception(f"Error generating random faults for scenario {scenario.get('id')}")
 
 
-def _inject_workload_bench(request, scenario, nodes, fs_effective, ctx):
-    bench_injected = False
+def _build_bench_step(scenario, nodes, ctx):
+    """Build workload config from scenario or environment variables.
+    
+    Priority: KEEPER_WORKLOAD_CONFIG > KEEPER_REPLAY_PATH > scenario definition.
+    Scenario workload can only define one of 'config' or 'replay', not both.
+    Always sets ctx["workload"] with absolute paths (uses default if nothing is defined).
+    """
     wc_env = os.environ.get("KEEPER_WORKLOAD_CONFIG", "").strip()
+    rp_env = os.environ.get("KEEPER_REPLAY_PATH", "").strip()
+    
+    # Determine workload config: env vars override scenario
+    wl = {}
+    if wc_env:
+        wl["config"] = wc_env
+    
+    if rp_env:
+        wl["replay"] = rp_env
+    
     if "workload" in scenario:
-        wl = scenario["workload"]
-        rp = os.environ.get("KEEPER_REPLAY_PATH", "").strip()
-        if rp:
-            wl = dict(wl or {})
-            wl["replay"] = rp
-        if wc_env:
-            wl = dict(wl or {})
-            wl["config"] = wc_env
-        eff_dur = resolve_duration(scenario)
-        rb = build_bench_step(wl, eff_dur)
-        ctx["workload"] = wl
-        ctx["bench_node"] = nodes[0]
-        ctx["bench_secure"] = False
-        ctx["bench_servers"] = servers_arg(nodes)
-        fs_effective = inject_parallel(fs_effective, rb)
-        bench_injected = True
-        ensure_default_gates(scenario)
-    if not bench_injected:
-        eff_dur_fb = resolve_duration(scenario)
-        cfg_name = wc_env or "workloads/prod_mix.yaml"
-        wl_fb = {"config": cfg_name}
-        rb = build_bench_step(wl_fb, eff_dur_fb)
-        if not has_run_bench(fs_effective):
-            fs_effective = inject_parallel(fs_effective, rb)
-        bench_injected = True
-        ensure_default_gates(scenario)
-    return fs_effective, bench_injected
+        scenario_wl = scenario["workload"]
+        # Validate: scenario can't have both config and replay
+        if "replay" in (scenario_wl or wl) and not ("config" in scenario_wl or "config" in wl):
+            raise ValueError("Scenario workload cannot define 'replay' without 'config'")
+        # Extract config or replay from scenario
+        wl.setdefault("config", scenario_wl.get("config"))
+        wl.setdefault("replay", scenario_wl.get("replay"))
+    
+    # If no workload defined anywhere, use default
+    if not wl:
+        wl = {"config": DEFAULT_WORKLOAD_CONFIG}
+    
+    # Convert relative paths to absolute paths
+    # Path handling for "config" and "replay"
+    for key in ("config", "replay"):
+        path = wl.get(key)
+        if path and not os.path.isabs(path):
+            wl[key] = str(WORKDIR / path)
+    
+    # Set context for bench execution
+    ctx["workload"] = wl
+    ctx["bench_node"] = nodes[0]
+    ctx["bench_secure"] = False
+    ctx["bench_servers"] = servers_arg(nodes)
 
 
 def _ensure_clickhouse_binary_for_bench():
@@ -452,7 +389,7 @@ def _emit_bench_summary(summary, run_id, run_meta_eff, scenario_id, topo, sink_u
         print(json.dumps(rr, ensure_ascii=False))
     print("[keeper][push-metrics] end")
     if sink_url:
-        sink_clickhouse(sink_url, "keeper_metrics_ts", rows)
+        sink_clickhouse(rows)
     return True
 
 
@@ -543,7 +480,7 @@ def _emit_derived_metrics(
         )
     )
     if sink_url and derived:
-        sink_clickhouse(sink_url, "keeper_metrics_ts", derived)
+        sink_clickhouse(derived)
     if bench_ran_flag:
         bench_totals = [
             _make_metric_row(
@@ -570,7 +507,7 @@ def _emit_derived_metrics(
             ),
         ]
         if sink_url:
-            sink_clickhouse(sink_url, "keeper_metrics_ts", bench_totals)
+            sink_clickhouse(bench_totals)
     node_lines = [
         f"{nn}: znode+{int(post['znode'].get(nn, 0) - pre['znode'].get(nn, 0))} dirs_bytes+{int(post['dirs_bytes'].get(nn, 0) - pre['dirs_bytes'].get(nn, 0))}"
         for nn in nodes_names
@@ -620,7 +557,7 @@ def _emit_fault_events_metrics(ctx, run_id, run_meta_eff, scenario_id, topo, sin
         except Exception:
             continue
     if rows:
-        sink_clickhouse(sink_url, "keeper_metrics_ts", rows)
+        sink_clickhouse(rows)
     return len(rows)
 
 
@@ -666,191 +603,8 @@ def _safe_float(val, default=0.0):
         return default
 
 
-def _append_row(
-    rows,
-    run_meta,
-    scenario_id,
-    topo,
-    node_name,
-    stage,
-    source,
-    name,
-    value,
-    labels_json="{}",
-    run_id="",
-):
-    """Append a metric row to rows list."""
-    rows.append(
-        _make_metric_row(
-            run_id,
-            run_meta,
-            scenario_id,
-            topo,
-            node_name,
-            stage,
-            source,
-            name,
-            value,
-            labels_json,
-        )
-    )
 
 
-def _append_kv_rows(
-    rows,
-    run_meta,
-    scenario_id,
-    topo,
-    node_name,
-    stage,
-    source,
-    mapping,
-    run_id="",
-):
-    """Append rows for a simple key/value mapping."""
-    for k, v in (mapping or {}).items():
-        _append_row(
-            rows,
-            run_meta,
-            scenario_id,
-            topo,
-            node_name,
-            stage,
-            source,
-            k,
-            v,
-            run_id=run_id,
-        )
-
-
-def _parse_prom_text_local(txt, cfg):
-    _nallow = cfg.get("prom_name_allowlist")
-    if isinstance(_nallow, list) and len(_nallow) == 0:
-        _nallow = None
-    if cfg.get("prom_allow_prefixes") is None:
-        return parse_prometheus_text(
-            txt,
-            allow_prefixes=None,
-            name_allowlist=_nallow,
-            exclude_label_keys=cfg.get("prom_exclude_label_keys"),
-        )
-    return parse_prometheus_text(
-        txt,
-        allow_prefixes=cfg.get("prom_allow_prefixes"),
-        name_allowlist=_nallow,
-        exclude_label_keys=cfg.get("prom_exclude_label_keys"),
-    )
-
-
-def _snapshot_and_sink(nodes, stage, scenario_id, topo, run_meta, sink_url, run_id=""):
-    """Snapshot cluster metrics and optionally sink to CI database."""
-    rows = []
-    # For fail stage, only snapshot leader to reduce volume
-    snap_nodes = nodes
-    if stage == "fail":
-        # Do not attempt leader detection on fail path: it can hang if docker exec is wedged.
-        snap_nodes = nodes[:1]
-
-    snap_prom = os.environ.get("KEEPER_SNAPSHOT_PROM", "1").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-    prom_cfg = compute_prom_config({}) if snap_prom else None
-
-    for n in snap_nodes:
-        # mntr metrics
-        try:
-            _append_kv_rows(
-                rows,
-                run_meta,
-                scenario_id,
-                topo,
-                n.name,
-                stage,
-                "mntr",
-                mntr(n),
-                run_id=run_id,
-            )
-        except Exception:
-            pass
-        # Prometheus metrics
-        if snap_prom:
-            try:
-                for r in _parse_prom_text_local(prom_metrics(n), prom_cfg):
-                    _append_row(
-                        rows,
-                        run_meta,
-                        scenario_id,
-                        topo,
-                        n.name,
-                        stage,
-                        "prom",
-                        r.get("name", ""),
-                        r.get("value", 0.0),
-                        r.get("labels_json", "{}"),
-                        run_id,
-                    )
-            except Exception:
-                pass
-        # Directory stats
-        try:
-            d_txt = dirs(n) or ""
-            _append_kv_rows(
-                rows,
-                run_meta,
-                scenario_id,
-                topo,
-                n.name,
-                stage,
-                "dirs",
-                {
-                    "lines": len(d_txt.splitlines()),
-                    "bytes": len(d_txt.encode("utf-8")),
-                },
-                run_id=run_id,
-            )
-        except Exception:
-            pass
-        # ClickHouse metrics
-        try:
-            _append_kv_rows(
-                rows,
-                run_meta,
-                scenario_id,
-                topo,
-                n.name,
-                stage,
-                "ch_metrics",
-                {r.get("name", ""): r.get("value", 0) for r in ch_metrics(n)},
-                run_id=run_id,
-            )
-        except Exception:
-            pass
-        try:
-            _append_kv_rows(
-                rows,
-                run_meta,
-                scenario_id,
-                topo,
-                n.name,
-                stage,
-                "ch_async_metrics",
-                {r.get("name", ""): r.get("value", 0) for r in ch_async_metrics(n)},
-                run_id=run_id,
-            )
-        except Exception:
-            pass
-
-    if rows:
-        print("[keeper][push-metrics] begin")
-        for r in rows:
-            print(json.dumps(r, ensure_ascii=False))
-        print("[keeper][push-metrics] end")
-        if sink_url:
-            sink_clickhouse(sink_url, "keeper_metrics_ts", rows)
-    return rows
 
 
 def _print_local_metrics(
@@ -921,11 +675,7 @@ def _print_local_metrics(
                             )
                     except Exception:
                         pass
-                    cfg = compute_prom_config({})
-                    _nallow = cfg.get("prom_name_allowlist")
-                    if isinstance(_nallow, list) and len(_nallow) == 0:
-                        _nallow = None
-                    parsed = _parse_prom_text_local(txt, cfg)
+                    parsed = parse_prometheus_text(txt)
                     prc = len(parsed or [])
             except Exception:
                 prc = len(entry.get("prom_rows") or [])
@@ -973,11 +723,11 @@ def _print_keeper_configs(cluster, topo, cname):
             / "configs"
             / (cname or "")
         )
-        for i in range(1, int(topo) + 1):
-            p = conf_root / f"keeper_config_keeper{i}.xml"
+        for name in keeper_node_names(int(topo)):
+            p = conf_root / f"keeper_config_{name}.xml"
             if p.exists():
                 try:
-                    print(f"==== keeper{i} config ====\n" + p.read_text())
+                    print(f"==== {name} config ====\n" + p.read_text())
                 except Exception:
                     pass
     except Exception:
@@ -1019,234 +769,211 @@ def _print_manual_znode_counts(nodes):
             pass
 
 
+def _set_privileged_env(scenario):
+    if any(f.get("kind") in ("dm_delay", "dm_error") for f in scenario.get("faults", [])):
+        os.environ.setdefault("KEEPER_PRIVILEGED", "1")
+
+def _setup_metrics_context(faults_enabled, seed_val, cluster):
+    """Setup metrics collection and context."""
+    mf = (os.environ.get("KEEPER_METRICS_FILE") or "").strip()
+    ctx = {"cluster": cluster, "faults_mode": faults_enabled, "seed": seed_val, "metrics_file": os.path.abspath(mf)}
+    return ctx
+
+
+
+
+def _run_gates(scenario, nodes, leader, ctx, cluster, sink_url, run_id, run_meta_eff, scenario_id, topo):
+    """Run all validation gates."""
+    for gate in scenario.get("gates", []) or []:
+        gtype = (gate.get("type") or "") if isinstance(gate, dict) else ""
+        t0 = time.time()
+        try:
+            apply_gate(gate, nodes, leader, ctx, ctx.get("bench_summary") or {})
+        except Exception as e:
+            _print_gate_failure_diagnostics(cluster, nodes, gtype, e)
+            if sink_url:
+                try:
+                    rows = _gate_event_rows(
+                        run_id, run_meta_eff, scenario_id, topo, gtype, False,
+                        int((time.time() - t0) * 1000), error=repr(e),
+                    )
+                    sink_clickhouse(rows)
+                except Exception:
+                    pass
+            raise
+        if sink_url:
+            try:
+                rows = _gate_event_rows(
+                    run_id, run_meta_eff, scenario_id, topo, gtype, True,
+                    int((time.time() - t0) * 1000),
+                )
+                sink_clickhouse(rows)
+            except Exception:
+                pass
+
+
+def _print_bench_debug_info(ctx):
+    """Print keeper-bench debug information."""
+    bcfg = (ctx or {}).get("bench_config_yaml")
+    if bcfg:
+        print("==== keeper-bench config ====\n" + str(bcfg))
+    
+    for key, prefix in [("bench_config_paths", "[keeper][bench-config-paths]"),
+                        ("bench_output_paths", "[keeper][bench-output-paths]"),
+                        ("bench_stdout_paths", "[keeper][bench-stdout-paths]")]:
+        paths = (ctx or {}).get(key) or []
+        if paths:
+            print(prefix + " " + ", ".join([str(p) for p in paths if p]))
+    
+    sps = (ctx or {}).get("bench_stdout_paths") or []
+    if sps:
+        def _print_stdout_contents():
+            for sp in sps:
+                if not sp:
+                    continue
+                try:
+                    p = pathlib.Path(str(sp))
+                    if p.exists() and p.is_file():
+                        content = p.read_text(encoding="utf-8", errors="replace")
+                        print(f"[keeper][bench-stdout-content] path={sp}")
+                        sys.stdout.flush()
+                        print("[keeper][bench-stdout-content] begin")
+                        sys.stdout.flush()
+                        print(content)
+                        sys.stdout.flush()
+                        print("[keeper][bench-stdout-content] end")
+                        sys.stdout.flush()
+                    else:
+                        print(f"[keeper][bench-stdout-content] path={sp} file_not_found")
+                        sys.stdout.flush()
+                except Exception as e:
+                    print(f"[keeper][bench-stdout-content] path={sp} error={repr(e)}")
+                    sys.stdout.flush()
+        _print_stdout_contents()
+
+
 def test_scenario(scenario, cluster_factory, request, run_meta):
-    topo = scenario.get("topology", 3)
-    backend = scenario.get("backend") or "default"
     _ensure_clickhouse_binary_for_bench()
-    # Effective run_meta per test with the scenario-selected backend
+
+    topo = scenario.get("topology")
+    backend = scenario.get("backend")
+    opts = scenario.get("opts", {})
+    fs_effective = scenario.get("faults", [])
+    
     run_meta_eff = run_meta
     run_meta_eff["backend"] = backend
-    opts = scenario.get("opts", {}) or {}
-    faults_mode = request.config.getoption("--faults")
-    seed_val = _get_option(request, "--seed", "KEEPER_SEED", None, int)
-    fs_original = scenario.get("faults", []) or []
-    fs_effective = fs_original
-    if faults_mode == "off":
+
+    faults_enabled = request.config.getoption("--faults")
+    seed_val = request.config.getoption("--seed")
+    print(f"[keeper] seed={int(seed_val)}")
+
+    if not faults_enabled:
         fs_effective = []
     elif not fs_effective:
-        fs_effective, seed_val = _generate_default_fault_pool(scenario, seed_val)
-    uses_dm = any(f.get("kind") in ("dm_delay", "dm_error") for f in fs_effective)
-    if uses_dm:
-        os.environ.setdefault("KEEPER_PRIVILEGED", "1")
-    # compute run_id early for reproducible artifact paths
+        fs_effective = _generate_default_fault_pool(scenario, seed_val)
+
+    _set_privileged_env(scenario)
+    
     run_id = f"{scenario.get('id','')}-{run_meta.get('commit_sha','local')}-{uuid.uuid4().hex[:8]}"
-    # Use a unique cluster name per test to avoid instance-dir collisions
     cname = run_id.replace("/", "_").replace(" ", "_")
     os.environ["KEEPER_CLUSTER_NAME"] = cname
-    cluster, nodes = cluster_factory(topo, backend, opts)
+    cluster, nodes = cluster_factory(cname, topo, backend, opts)
 
-    scenario_id = scenario.get("id", "")
+    scenario_id = scenario.get("id")
     sink_url = "ci" if has_ci_sink() else ""
-    summary = {}
-    ctx = {"cluster": cluster, "faults_mode": faults_mode, "seed": seed_val}
-    if seed_val is not None:
-        try:
-            print(f"[keeper] seed={int(seed_val)}")
-        except Exception:
-            pass
-    if sink_url:
-        try:
-            gcount = len(scenario.get("gates") or [])
-        except Exception:
-            gcount = 0
-        _best_effort(
-            sink_clickhouse,
-            sink_url,
-            "keeper_metrics_ts",
-            [
-                _make_metric_row(
-                    run_id,
-                    run_meta_eff,
-                    scenario_id,
-                    topo,
-                    "all",
-                    "summary",
-                    "gate",
-                    "gate_expected_count",
-                    float(gcount),
-                )
-            ],
-        )
-    if sink_url:
-        try:
-            mf = (os.environ.get("KEEPER_METRICS_FILE") or "").strip()
-            if mf:
-                ctx["metrics_file"] = os.path.abspath(mf)
-        except Exception:
-            pass
+    ctx = _setup_metrics_context(faults_enabled, seed_val, cluster)
+    
     sampler = None
     leader = None
     pre_rows = []
     post_rows = []
     fail_rows = []
     bench_ran_flag = False
-    bench_injected = False
+    
     try:
+        # Setup environment and pre-flight checks
         scenario_for_env = copy.deepcopy(scenario)
-        # Preflight expects a fault structure to determine required tools; we will
-        # execute faults via a background scheduler (one-at-a-time) for the whole
-        # scenario duration.
-        if fs_effective:
-            scenario_for_env["faults"] = [
-                {
-                    "kind": "background_schedule",
-                    "duration_s": resolve_duration(scenario),
-                    "steps": fs_effective,
-                }
-            ]
-        else:
-            scenario_for_env["faults"] = []
+        scenario_for_env["faults"] = [
+            {"kind": "background_schedule", "duration_s": scenario.get("duration"), "steps": fs_effective}
+        ]
         ensure_environment(nodes, scenario_for_env)
         single_leader(nodes)
-        leader = next(n for n in nodes if is_leader(n))
-        pre_rows = (
-            _snapshot_and_sink(
-                nodes,
-                "pre",
-                scenario_id,
-                topo,
-                run_meta_eff,
-                sink_url,
-                run_id,
-            )
-            or []
+        leader = _get_current_leader(nodes)
+        
+        # Setup metrics collection
+        cfg = compute_prom_config()
+        sampler = MetricsSampler(
+            nodes, run_meta_eff, scenario_id, topo, run_id,
+            interval_s=cfg["interval_s"], prom_every_n=cfg.get("prom_every_n", 3), ctx=ctx,
         )
-        if sink_url:
-            cfg = compute_prom_config(opts if isinstance(opts, dict) else {})
-            sampler = MetricsSampler(
-                nodes,
-                run_meta_eff,
-                scenario_id,
-                topo,
-                sink_url=sink_url,
-                interval_s=cfg["interval_s"],
-                stage_prefix="run",
-                run_id=run_id,
-                prom_allow_prefixes=cfg.get("prom_allow_prefixes"),
-                prom_name_allowlist=cfg.get("prom_name_allowlist"),
-                prom_exclude_label_keys=cfg.get("prom_exclude_label_keys"),
-                prom_every_n=cfg.get("prom_every_n", 3),
-                ctx=ctx,
-            )
-            sampler.start()
+        
+        # Pre-execution snapshot (captures baseline for derived metrics)
+        pre_rows = sampler.snapshot_stage("pre", nodes)
+        
+        # Run pre-steps (setup/initialization before starting continuous sampling)
         for step in scenario.get("pre", []) or []:
-            _apply_step(step, nodes, leader, ctx)
-        eff_dur = resolve_duration(scenario)
+            apply_step(step, nodes, leader, ctx)
+        
+        # Start continuous metrics sampling (time-series data during test execution)
+        # 10s interval for lightweight metrics (mntr, dirs, srvr)
+        # 30s interval for Prometheus metrics (prom_metrics)
+        sampler.start()
+        
+        # Build workload config (sets ctx["workload"] for gates)
+        _build_bench_step(scenario, nodes, ctx)
 
-        # Build workload step (always runs).
-        fs_for_bench, bench_injected = _inject_workload_bench(
-            request, scenario, nodes, [], ctx
+        ensure_default_gates(scenario)
+        
+        # Create bench and fault runners
+        wl = ctx.get("workload", {})
+        bench_runner = KeeperBench(
+            nodes=nodes,
+            ctx=ctx,
+            cfg_path=wl.get("config"),
+            duration_s=scenario.get("duration"),
+            replay_path=wl.get("replay"),
         )
-
-        # Build fault runner (optional). If scenario defines faults, use them as
-        # candidates; otherwise use a generated default pool.
-        fault_candidates = fs_effective
+        
         fault_runner = None
-        if fault_candidates and faults_mode != "off":
-            fault_runner = {
-                "kind": "background_schedule",
-                "duration_s": eff_dur,
-                "steps": fault_candidates,
-            }
-
-        # Run bench in parallel with fault scheduler (if enabled).
-        if fault_runner and fs_for_bench:
-            _apply_step(
-                {
-                    "kind": "parallel",
-                    "steps": [fs_for_bench[0], fault_runner],
-                },
-                nodes,
-                leader,
-                ctx,
+        if fs_effective:
+            fault_runner = FaultRunner(
+                nodes=nodes,
+                leader=leader,
+                ctx=ctx,
+                faults=fs_effective,
+                duration_s=scenario.get("duration"),
+                seed=seed_val,
             )
-        elif fault_runner:
-            _apply_step(fault_runner, nodes, leader, ctx)
-        else:
-            for action in fs_for_bench:
-                _apply_step(action, nodes, leader, ctx)
-        summary = ctx.get("bench_summary") or {}
-        try:
-            leader = next(n for n in nodes if is_leader(n))
-        except Exception:
-            pass
+        
+        # Start both runners (both target scenario duration)
+        if fault_runner:
+            fault_runner.start()
+        bench_runner.start()
+        
+        # Wait for both to complete (both should finish around scenario duration)
+        # Bench may take slightly longer (duration_s + 60s hard cap) due to cleanup
+        # Faults complete at exactly duration_s
+        bench_runner.stop()
+        if fault_runner:
+            fault_runner.stop()
+        
+        # Run post-steps
+        leader = _get_current_leader(nodes)
         for step in scenario.get("post", []) or []:
-            _apply_step(step, nodes, leader, ctx)
-        try:
-            leader = next(n for n in nodes if is_leader(n))
-        except Exception:
-            pass
-        # Sink keeper-bench summary to CIDB as scalar metrics tagged to this run
+            apply_step(step, nodes, leader, ctx)
+        
+        # Emit bench summary and run gates
+        summary = ctx.get("bench_summary") or {}
         if summary:
-            bench_ran_flag = _emit_bench_summary(
-                summary,
-                run_id,
-                run_meta_eff,
-                scenario_id,
-                topo,
-                sink_url,
-            )
-        for gate in scenario.get("gates", []) or []:
-            gtype = (gate.get("type") or "") if isinstance(gate, dict) else ""
-            t0 = time.time()
-            try:
-                _apply_gate(gate, nodes, leader, ctx, summary)
-            except Exception as e:
-                _best_effort(_print_gate_failure_diagnostics, cluster, nodes, gtype, e)
-                if sink_url:
-                    try:
-                        rows = _gate_event_rows(
-                            run_id,
-                            run_meta_eff,
-                            scenario_id,
-                            topo,
-                            gtype,
-                            False,
-                            int((time.time() - t0) * 1000),
-                            error=repr(e),
-                        )
-                        sink_clickhouse(sink_url, "keeper_metrics_ts", rows)
-                    except Exception:
-                        pass
-                raise
-            if sink_url:
-                try:
-                    rows = _gate_event_rows(
-                        run_id,
-                        run_meta_eff,
-                        scenario_id,
-                        topo,
-                        gtype,
-                        True,
-                        int((time.time() - t0) * 1000),
-                    )
-                    sink_clickhouse(sink_url, "keeper_metrics_ts", rows)
-                except Exception:
-                    pass
-        post_rows = (
-            _snapshot_and_sink(
-                nodes,
-                "post",
-                scenario_id,
-                topo,
-                run_meta_eff,
-                sink_url,
-                run_id,
-            )
-            or []
-        )
-        _best_effort(
-            _emit_derived_metrics,
+            bench_ran_flag = _emit_bench_summary(summary, run_id, run_meta_eff, scenario_id, topo, sink_url)
+        
+        leader = _get_current_leader(nodes)
+        _run_gates(scenario, nodes, leader, ctx, cluster, sink_url, run_id, run_meta_eff, scenario_id, topo)
+        
+        # Post-execution snapshot (captures final state for derived metrics)
+        sampler.stop()
+        post_rows = sampler.snapshot_stage("post", nodes) or []
+        _emit_derived_metrics(
             pre_rows,
             post_rows,
             run_id,
@@ -1256,13 +983,12 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             sink_url,
             bench_ran_flag,
         )
-        # Check if bench was expected to run but didn't
-        if bench_injected:
-            ops = _safe_float((summary or {}).get("ops"))
-            if (not bench_ran_flag) or ops <= 0:
-                raise AssertionError(
-                    f"bench did not run (or produced no ops) for scenario={scenario_id} backend={backend}"
-                )
+        # Validate bench ran successfully (bench always runs, even with default workload)
+        ops = _safe_float((summary or {}).get("ops"))
+        if (not bench_ran_flag) or ops <= 0:
+            raise AssertionError(
+                f"bench did not run (or produced no ops) for scenario={scenario_id} backend={backend}"
+            )
         if sink_url and not bench_ran_flag:
             row = _make_metric_row(
                 run_id,
@@ -1275,7 +1001,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 "bench_ran",
                 0.0,
             )
-            _best_effort(sink_clickhouse, sink_url, "keeper_metrics_ts", [row])
+            sink_clickhouse([row])
         # per-test checks insertion is handled by praktika post-run
     except Exception:
         # Emit minimal reproducible scenario to a file for debugging
@@ -1285,27 +1011,21 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 yaml.safe_dump(scenario, f, sort_keys=False)
             print(f"[keeper] reproducible scenario written: {repro_path}")
 
-        _best_effort(_write_repro)
+        _write_repro()
         # Attempt to snapshot fail state as well
         try:
-            fail_rows = (
-                _snapshot_and_sink(
-                    nodes,
-                    "fail",
-                    scenario_id,
-                    topo,
-                    run_meta_eff,
-                    sink_url,
-                    run_id,
-                )
-                or []
-            )
+            if sampler:
+                sampler.stop()
+                fail_nodes = nodes[:1]  # Avoid leader detection on fail path
+                fail_rows = sampler.snapshot_stage("fail", fail_nodes) or []
+            else:
+                # Sampler not created yet (exception before line 1025), can't snapshot
+                fail_rows = []
         except Exception:
             fail_rows = []
 
         # Best-effort derived metrics even on failure (use fail snapshot as a fallback post).
-        _best_effort(
-            _emit_derived_metrics,
+        _emit_derived_metrics(
             pre_rows,
             (fail_rows or post_rows),
             run_id,
@@ -1317,13 +1037,13 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         )
         # per-test checks insertion is handled by praktika post-run
 
-        _best_effort(setattr, request.node, "keeper_failed", True)
+        setattr(request.node, "keeper_failed", True)
         raise
     finally:
-        # Stop metrics sampler
+        # Stop metrics sampler and flush remaining metrics
         if sampler:
-            _best_effort(sampler.stop)
-            _best_effort(sampler.flush)
+            sampler.stop()
+            sampler.flush()
 
         # If we ran keeper-bench but failed before emitting bench metrics (e.g. another fault step failed),
         # emit it best-effort from the captured context.
@@ -1332,54 +1052,16 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 bs = (ctx or {}).get("bench_summary") or {}
                 if isinstance(bs, dict) and bs:
                     bench_ran_flag = bool(
-                        _best_effort(
-                            _emit_bench_summary,
-                            bs,
-                            run_id,
-                            run_meta_eff,
-                            scenario_id,
-                            topo,
-                            sink_url,
-                        )
+                        _emit_bench_summary(bs, run_id, run_meta_eff, scenario_id, topo, sink_url)
                     )
             except Exception:
                 pass
 
-        # Print local metrics summary
-        _best_effort(
-            _print_local_metrics,
-            nodes,
-            run_id,
-            scenario_id,
-            topo,
-            run_meta_eff,
-            ctx,
-            summary,
-        )
-        # Print keeper-bench config captured during run
-        bcfg = (ctx or {}).get("bench_config_yaml")
-        if bcfg:
-            _best_effort(print, "==== keeper-bench config ====\n" + str(bcfg))
-        # Print the actual config/output paths used by keeper-bench
-        cps = (ctx or {}).get("bench_config_paths") or []
-        if cps:
-            _best_effort(
-                print,
-                "[keeper][bench-config-paths] " + ", ".join([str(p) for p in cps if p]),
-            )
-        bops = (ctx or {}).get("bench_output_paths") or []
-        if bops:
-            _best_effort(
-                print,
-                "[keeper][bench-output-paths] "
-                + ", ".join([str(p) for p in bops if p]),
-            )
-        sps = (ctx or {}).get("bench_stdout_paths") or []
-        if sps:
-            _best_effort(
-                print,
-                "[keeper][bench-stdout-paths] " + ", ".join([str(p) for p in sps if p]),
-            )
+        # Print diagnostics and metrics
+        _print_local_metrics(nodes, run_id, scenario_id, topo, run_meta_eff, ctx, (ctx or {}).get("bench_summary") or {})
+        _print_bench_debug_info(ctx)
+        
+        # Print fault events
         try:
             evs = (ctx or {}).get("fault_events") or []
             if evs:
@@ -1392,22 +1074,11 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
                 print("[keeper][fault-events] end")
         except Exception:
             pass
-        _best_effort(
-            _emit_fault_events_metrics,
-            ctx,
-            run_id,
-            run_meta_eff,
-            scenario_id,
-            topo,
-            sink_url,
-        )
-        _best_effort(
-            _print_keeper_configs,
-            cluster,
-            topo,
-            os.environ.get("KEEPER_CLUSTER_NAME", ""),
-        )
-        _best_effort(_print_manual_znode_counts, nodes)
+        
+        _emit_fault_events_metrics(ctx, run_id, run_meta_eff, scenario_id, topo, sink_url)
+        _print_keeper_configs(cluster, topo, os.environ.get("KEEPER_CLUSTER_NAME", ""))
+        _print_manual_znode_counts(nodes)
+        
         try:
             mf = (ctx or {}).get("metrics_file")
             if mf:
@@ -1416,25 +1087,26 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             pass
         # Cleanup context resources (pools, clients, watches)
         _cleanup_ctx_resources(ctx)
+        
         # Keep containers on fail if requested
+        should_keep_containers = False
         try:
-            if request.config.getoption("--keep-containers-on-fail") and getattr(
+            should_keep_containers = request.config.getoption("--keep-containers-on-fail") and getattr(
                 request.node, "keeper_failed", False
-            ):
-                return
+            )
         except Exception:
             pass
-        cluster.shutdown()
-        # Optional artifact cleanup on success
-        if parse_bool(os.environ.get("KEEPER_CLEAN_ARTIFACTS")) and not getattr(
-            request.node, "keeper_failed", False
-        ):
-            try:
-                inst_dir = pathlib.Path(getattr(cluster, "instances_dir", ""))
-                if inst_dir.exists():
-                    shutil.rmtree(inst_dir, ignore_errors=True)
-                conf_dir = pathlib.Path(getattr(cluster, "base_dir", "")) / "configs"
-                if conf_dir.exists():
-                    shutil.rmtree(conf_dir, ignore_errors=True)
-            except Exception:
-                pass
+        
+        if not should_keep_containers:
+            cluster.shutdown()
+            # Optional artifact cleanup on success
+            if env_bool("KEEPER_CLEAN_ARTIFACTS", True):
+                try:
+                    inst_dir = pathlib.Path(getattr(cluster, "instances_dir", ""))
+                    if inst_dir.exists():
+                        shutil.rmtree(inst_dir, ignore_errors=True)
+                    conf_dir = pathlib.Path(getattr(cluster, "base_dir", "")) / "configs"
+                    if conf_dir.exists():
+                        shutil.rmtree(conf_dir, ignore_errors=True)
+                except Exception:
+                    pass

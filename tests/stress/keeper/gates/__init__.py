@@ -15,7 +15,6 @@ from keeper.gates.base import (
     p99_le,
     prom_thresholds_le,
     ready_expect,
-    replay_repeatable,
     single_leader,
     watch_delta_within,
 )
@@ -34,7 +33,6 @@ __all__ = [
     "fourlw_enforces",
     "health_precheck",
     "prom_thresholds_le",
-    "replay_repeatable",
     "config_converged",
     "config_members_len_eq",
     "election_time_le",
