@@ -33,7 +33,6 @@
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
-#include <Core/Settings.h>
 
 #include <stack>
 
@@ -42,6 +41,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool optimize_read_in_order;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
@@ -317,7 +317,6 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
 /// Functions result is fixed if all arguments are fixed or constants.
 void enrichFixedColumns(const ActionsDAG & dag, FixedColumns & fixed_columns)
 {
-
     /// First, collect names of all fixed INPUT nodes.
     /// This is needed because after DAG merging, there can be multiple INPUT nodes
     /// with the same column name (e.g., one from filter expression and one from SELECT).
@@ -445,15 +444,18 @@ bool isFixedColumnForReadInOrder(
     const KeyDescription & sorting_key,
     const ReadFromMergeTree * reading)
 {
-    if (reading && reading->needsDeterministicFixedColumns())
+    /// For parallel replicas with local plan, we need deterministic (AST-based) fixed column detection
+    /// to ensure all replicas compute the same read order.
+    if (reading && reading->isParallelReadingFromReplicas()
+        && reading->getContext()->getSettingsRef()[Setting::parallel_replicas_local_plan])
     {
         /// Use AST-based detection for deterministic results across parallel replicas
         const auto * select_query = reading->getQueryInfo().query->as<ASTSelectQuery>();
         if (select_query)
         {
             auto fixed_names = getFixedSortingColumns(
-                *select_query, 
-                sorting_key.column_names, 
+                *select_query,
+                sorting_key.column_names,
                 reading->getContext());
             return fixed_names.contains(sort_column_description.column_name);
         }
@@ -643,7 +645,7 @@ SortingInputOrder buildInputOrderFromSortDescription(
             else
             {
                 //std::cerr << "====== Check for fixed const : " << bool(sort_node->column) << " fixed : " << fixed_columns.contains(sort_node) << std::endl;
-                bool is_fixed_column = static_cast<bool>(sort_node->column) 
+                bool is_fixed_column = static_cast<bool>(sort_node->column)
                     || isFixedColumnForReadInOrder(sort_node, sort_column_description, fixed_columns, sorting_key, reading);
                 if (!is_fixed_column)
                     break;
@@ -1103,12 +1105,10 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
 
-    auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
-
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
 
-    if (reading)
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromSortDescription(
             reading,
@@ -1216,12 +1216,10 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
 
-    auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
-
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
 
-    if (reading)
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,
@@ -1334,12 +1332,10 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     FixedColumns fixed_columns;
     buildSortingDAG(node, dag, fixed_columns, limit);
 
-    auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
-
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
 
-    if (reading)
+    if (auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get()))
     {
         auto order_info = buildInputOrderFromUnorderedKeys(
             reading,

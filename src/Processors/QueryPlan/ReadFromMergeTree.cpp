@@ -2499,13 +2499,6 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForInitiator() const
         && context->canUseParallelReplicasOnInitiator();
 }
 
-bool ReadFromMergeTree::needsDeterministicFixedColumns() const
-{
-    /// For parallel replicas with local plan, we need deterministic (AST-based) fixed column detection
-    /// to ensure all replicas compute the same read order.
-    return is_parallel_reading_from_replicas && context->getSettingsRef()[Setting::parallel_replicas_local_plan];
-}
-
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit)
 {
     /// if dirction is not set, use current one

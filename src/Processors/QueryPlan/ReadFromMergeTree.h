@@ -361,7 +361,6 @@ public:
     std::optional<VectorSearchParameters> getVectorSearchParameters() const { return vector_search_parameters; }
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
-    bool needsDeterministicFixedColumns() const;
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
     void disableMergeTreePartsSnapshotRemoval() { enable_remove_parts_from_snapshot_optimization = false; }
 
