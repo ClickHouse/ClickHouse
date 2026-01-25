@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
