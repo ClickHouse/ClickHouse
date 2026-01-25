@@ -9,7 +9,7 @@ FROM
 (
     SELECT
         [number] AS a,
-        [number * 2] AS b
+        [multiply(number, 2)] AS b
     FROM system.numbers
     LIMIT 1
 ) AS t
@@ -89,7 +89,7 @@ FROM
     SELECT 1 AS value
     FROM system.one
 )
-WHERE value = \'1\'
+WHERE equals(value, \'1\')
 1
 SELECT *
 FROM
@@ -104,7 +104,7 @@ FROM
         FROM system.one
     )
 )
-WHERE id = 1
+WHERE equals(id, 1)
 1
 SELECT *
 FROM
@@ -112,7 +112,7 @@ FROM
     SELECT arrayJoin(_CAST([1, 2, 3], \'Array(UInt8)\')) AS id
     FROM system.one
 )
-WHERE id = 1
+WHERE equals(id, 1)
 1
 SELECT id
 FROM
@@ -120,7 +120,7 @@ FROM
     SELECT arrayJoin(_CAST([1, 2, 3], \'Array(UInt8)\')) AS id
     FROM system.one
 )
-WHERE id = 1
+WHERE equals(id, 1)
 1
 SELECT *
 FROM
@@ -143,7 +143,7 @@ FROM
         sum(id) AS b
     FROM test_00597
 )
-WHERE a = 3
+WHERE equals(a, 3)
 3	3
 SELECT
     date,
@@ -163,7 +163,7 @@ FROM
         name,
         value
 )
-WHERE id = 1
+WHERE equals(id, 1)
 2000-01-01	1	test string 1	1
 SELECT *
 FROM
@@ -173,7 +173,7 @@ FROM
         sum(id) AS b
     FROM test_00597 AS table_alias
 ) AS outer_table_alias
-WHERE outer_table_alias.b = 3
+WHERE equals(outer_table_alias.b, 3)
 3	3
 SELECT *
 FROM
@@ -181,7 +181,7 @@ FROM
     SELECT *
     FROM test_00597
 )
-WHERE id = 1
+WHERE equals(id, 1)
 2000-01-01	1	test string 1	1
 SELECT *
 FROM
@@ -193,7 +193,7 @@ FROM
         FROM test_00597
     )
 )
-WHERE id = 1
+WHERE equals(id, 1)
 2000-01-01	1	test string 1	1
 SELECT *
 FROM
@@ -205,7 +205,7 @@ FROM
         FROM test_00597
     ) AS b
 )
-WHERE id = 1
+WHERE equals(id, 1)
 2000-01-01	1	test string 1	1
 SELECT *
 FROM
@@ -217,7 +217,7 @@ FROM
         value
     FROM test_00597
 )
-WHERE id = 1
+WHERE equals(id, 1)
 2000-01-01	1	test string 1	1
 SELECT *
 FROM
@@ -237,7 +237,7 @@ FROM
         FROM test_00597
     )
 )
-WHERE id = 1
+WHERE equals(id, 1)
 2000-01-01	1	test string 1	1
 SELECT *
 FROM
@@ -271,7 +271,7 @@ FROM
         id,
         date
 )
-WHERE id = 1
+WHERE equals(id, 1)
 1	2000-01-01	1
 SELECT *
 FROM
@@ -286,7 +286,7 @@ FROM
         FROM test_00597
     )
 )
-WHERE id = 1
+WHERE equals(id, 1)
 2000-01-01	1	test string 1	1
 2000-01-01	1	test string 1	1
 SELECT *
@@ -300,7 +300,7 @@ ANY LEFT JOIN
     SELECT *
     FROM test_00597
 ) USING (id)
-WHERE id = 1
+WHERE equals(id, 1)
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
 ------- enable_analyzer=1 -------
 1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
@@ -311,7 +311,7 @@ FROM
     FROM system.one
 )
 ANY LEFT JOIN test_00597 USING (id)
-WHERE value = 1
+WHERE equals(value, 1)
 1	2000-01-01	test string 1	1
 SELECT b.value
 FROM
@@ -320,7 +320,7 @@ FROM
     FROM system.one
 )
 ANY LEFT JOIN test_00597 AS b USING (id)
-WHERE value = 1
+WHERE equals(value, 1)
 1
 SELECT *
 FROM
@@ -337,7 +337,7 @@ FROM
         FROM test_00597
     ) USING (id)
 )
-WHERE id = 1
+WHERE equals(id, 1)
 2000-01-01	1	test string 1	1
 ------- enable_analyzer=1 -------
 1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
@@ -370,7 +370,7 @@ ANY LEFT JOIN
     SELECT *
     FROM test_00597
 ) AS b USING (date, id)
-WHERE b.date = toDate(\'2000-01-01\')
+WHERE equals(b.date, toDate(\'2000-01-01\'))
 1	2000-01-01	test string 1	1
 ------- enable_analyzer=1 -------
 2000-01-01	1	test string 1	1
@@ -387,9 +387,9 @@ FROM
     (
         SELECT *
         FROM test_00597
-    ) AS b ON a.id = b.id
+    ) AS b ON equals(a.id, b.id)
 )
-WHERE id = 1
+WHERE equals(id, 1)
 2000-01-01	1	test string 1	1	2000-01-01	1	test string 1	1
 SELECT *
 FROM
@@ -406,11 +406,11 @@ SEMI LEFT JOIN
         FROM test_00597
     )
 ) AS r USING (id)
-WHERE r.id = 1
+WHERE equals(r.id, 1)
 2000-01-01	1	test string 1	1	2000-01-01	test string 1	1
 ------- enable_analyzer=1 -------
 1	2000-01-01	test string 1	1	2000-01-01	test string 1	1
-SELECT value + t1.value AS expr
+SELECT plus(value, t1.value) AS expr
 FROM
 (
     SELECT
