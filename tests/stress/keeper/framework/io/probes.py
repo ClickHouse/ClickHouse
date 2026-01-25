@@ -1,29 +1,32 @@
 import json
 import os
+import shlex
 
 from keeper.framework.core.settings import (
     CLIENT_PORT,
     KEEPER_CH_QUERY_TIMEOUT,
     PROM_PORT,
 )
-from keeper.framework.core.util import sh
+from keeper.framework.core.util import _exec, sh
 
 
 def four(node, cmd):
-    """Execute 4LW command on keeper node using clickhouse keeper-client or bash fallback."""
+    """Execute 4LW command on keeper node using clickhouse keeper-client, bash /dev/tcp, or raw nc."""
     methods = [
-        f"HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q '{cmd}' 2>&1",
-        f"HOME=/tmp clickhouse keeper-client -p {CLIENT_PORT} -q '{cmd}' 2>&1",
-        f'bash -lc "exec 3<>/dev/tcp/127.0.0.1/{CLIENT_PORT}; printf \'{cmd}\\n\' >&3; cat <&3; exec 3<&-; exec 3>&-"',
+        f"HOME=/tmp clickhouse keeper-client --host 127.0.0.1 --port {CLIENT_PORT} -q {shlex.quote(cmd)} 2>&1",
+        f"HOME=/tmp clickhouse keeper-client -p {CLIENT_PORT} -q {shlex.quote(cmd)} 2>&1",
+        f'bash -lc "exec 3<>/dev/tcp/127.0.0.1/{CLIENT_PORT}; printf \'{cmd}\\n\' >&3; cat <&3; exec 3<&-; exec 3>&-" 2>&1',
+        # Raw 4LW over TCP (works when keeper-client is missing or -q does not support 4LW)
+        f"printf '%s\\n' {shlex.quote(cmd)} | timeout 2 nc 127.0.0.1 {CLIENT_PORT} 2>&1",
     ]
     for method in methods:
         try:
-            out = sh(node, method, timeout=5)["out"]
-            if str(out).strip():
+            out = _exec(node, method, nothrow=True, timeout=5)
+            if isinstance(out, str) and out.strip():
                 return out
         except Exception as e:
             print(f"[keeper][four] error executing command {cmd} for node {node.name}: {e}. Skipping.")
-    print(f"[keeper][four] error executing command {cmd} for node {node.name}: failed to execute command. Skipping.")
+    print(f"[keeper][four] error executing command {cmd} for node {node.name}: all methods returned empty. Skipping.")
     return ""
 
 
@@ -74,7 +77,7 @@ def mntr(node):
     kv = {}
     out = four(node, "mntr")
     if not out:
-        print(f"[keeper][mntr] error getting mntr for node {node.name}: {out}. Skipping.")
+        print(f"[keeper][mntr] error getting mntr for node {node.name}: (empty). Skipping.")
         return {}
     for line in out.splitlines():
         line = line.strip()
@@ -173,9 +176,11 @@ def srvr_kv(node):
 def prom_metrics(node):
     """Fetch Prometheus metrics from node using curl (guaranteed by preflight)."""
     url = f"http://127.0.0.1:{PROM_PORT}/metrics"
-    result = sh(node, f"curl -sf --max-time 2 {url}", timeout=4)["out"]
-    if not result:
-        raise AssertionError(f"Failed to fetch prometheus metrics for node {node.name}")
+    # 2>&1: merge stderr so connection refused, timeouts, etc. are visible when stdout is empty
+    result = sh(node, f"curl -sf --max-time 2 {url} 2>&1", timeout=4)["out"]
+    if not result or not result.strip():
+        msg = (result or "").strip() or "empty response"
+        raise AssertionError(f"Failed to fetch prometheus metrics for node {node.name}: {msg}")
     return result
 
 

@@ -35,9 +35,8 @@ from keeper.framework.io.probes import (
     _get_current_leader
 )
 from keeper.framework.io.prom_parse import parse_prometheus_text
-from keeper.framework.io.sink import has_ci_sink, sink_clickhouse
-from keeper.framework.metrics.prom_env import compute_prom_config
-from keeper.framework.metrics.sampler import MetricsSampler, _make_metric_row
+from keeper.framework.io.sink import sink_clickhouse
+from keeper.framework.metrics.sampler import MetricsSampler, _make_metric_row, compute_prom_config
 from keeper.gates.base import apply_gate, single_leader
 from keeper.workloads.adapter import servers_arg
 
@@ -235,23 +234,23 @@ def _generate_default_fault_pool(scenario, seed_val):
         raise Exception(f"Error generating random faults for scenario {scenario.get('id')}")
 
 
-def _build_bench_step(scenario, nodes, ctx):
-    """Build workload config from scenario or environment variables.
+def _build_bench_step(scenario, nodes, ctx, replay_path=""):
+    """Build workload config from scenario, --replay / KEEPER_REPLAY_PATH, or env.
     
-    Priority: KEEPER_WORKLOAD_CONFIG > KEEPER_REPLAY_PATH > scenario definition.
+    Priority: --replay > KEEPER_REPLAY_PATH > KEEPER_WORKLOAD_CONFIG / scenario.
     Scenario workload can only define one of 'config' or 'replay', not both.
     Always sets ctx["workload"] with absolute paths (uses default if nothing is defined).
     """
     wc_env = os.environ.get("KEEPER_WORKLOAD_CONFIG", "").strip()
-    rp_env = os.environ.get("KEEPER_REPLAY_PATH", "").strip()
-    
-    # Determine workload config: env vars override scenario
+    rp = (replay_path or "").strip()
+
+    # Determine workload config: env / option override scenario
     wl = {}
     if wc_env:
         wl["config"] = wc_env
-    
-    if rp_env:
-        wl["replay"] = rp_env
+
+    if rp:
+        wl["replay"] = rp
     
     if "workload" in scenario:
         scenario_wl = scenario["workload"]
@@ -266,12 +265,13 @@ def _build_bench_step(scenario, nodes, ctx):
     if not wl:
         wl = {"config": DEFAULT_WORKLOAD_CONFIG}
     
-    # Convert relative paths to absolute paths
-    # Path handling for "config" and "replay"
+    # Convert relative paths to absolute. Paths starting with "tests/" are
+    # relative to the project root (cwd); others (e.g. "workloads/...") to WORKDIR.
     for key in ("config", "replay"):
         path = wl.get(key)
         if path and not os.path.isabs(path):
-            wl[key] = str(WORKDIR / path)
+            base = pathlib.Path.cwd() if path.startswith("tests/") else WORKDIR
+            wl[key] = str((base / path).resolve())
     
     # Set context for bench execution
     ctx["workload"] = wl
@@ -292,71 +292,23 @@ def _emit_bench_summary(summary, run_id, run_meta_eff, scenario_id, topo, sink_u
     if not summary:
         return False
     s = summary
+
+    # Use summary as-is; emit all scalar values (keeper-bench _parse_output_json has everything)
+    names_vals = {}
+    for k, v in s.items():
+        if isinstance(v, (dict, list)):
+            continue
+        names_vals[k] = _safe_float(v)
+
+    # Override or add only the few computed fields
+    dur = names_vals.get("duration_s", 0)
+    ops = names_vals.get("ops", 0)
+    err = names_vals.get("errors", 0)
+    names_vals["rps"] = ops / dur if dur > 0 else 0.0
+    names_vals["error_rate"] = err / ops if ops > 0 else 0.0
     failed = 1.0 if (s.get("failed") or s.get("bench_failed")) else 0.0
-    dur, ops, err = (
-        _safe_float(s.get("duration_s")),
-        _safe_float(s.get("ops")),
-        _safe_float(s.get("errors")),
-    )
-    rps = ops / dur if dur > 0 else 0.0
-    names_vals = {
-        "ops": ops,
-        "errors": err,
-        "duration_s": dur,
-        "rps": rps,
-        "reads": _safe_float(s.get("reads")),
-        "writes": _safe_float(s.get("writes")),
-        "read_rps": _safe_float(s.get("read_rps")),
-        "read_bps": _safe_float(s.get("read_bps")),
-        "write_rps": _safe_float(s.get("write_rps")),
-        "write_bps": _safe_float(s.get("write_bps")),
-        # Keep keeper-bench stdout field names as aliases (useful when consumers expect them).
-        "read_total_requests": _safe_float(s.get("reads")),
-        "read_requests_per_second": _safe_float(s.get("read_rps")),
-        "read_bytes_per_second": _safe_float(s.get("read_bps")),
-        "write_total_requests": _safe_float(s.get("writes")),
-        "write_requests_per_second": _safe_float(s.get("write_rps")),
-        "write_bytes_per_second": _safe_float(s.get("write_bps")),
-        "read_ratio": _safe_float(s.get("read_ratio")),
-        "write_ratio": _safe_float(s.get("write_ratio")),
-        "error_rate": err / ops if ops > 0 else 0.0,
-        "bench_has_latency": 1.0 if s.get("has_latency") else 0.0,
-        "read_p50_ms": _safe_float(s.get("read_p50_ms")),
-        "read_p95_ms": _safe_float(s.get("read_p95_ms")),
-        "read_p99_ms": _safe_float(s.get("read_p99_ms")),
-        "write_p50_ms": _safe_float(s.get("write_p50_ms")),
-        "write_p95_ms": _safe_float(s.get("write_p95_ms")),
-        "write_p99_ms": _safe_float(s.get("write_p99_ms")),
-        "bench_failed": failed,
-    }
-    # Emit full percentile maps (if present) as additional scalar metrics.
-    # We keep the existing *_p50/p95/p99 fields above for backwards compatibility.
-    try:
-        for kind, key in (
-            ("read", "read_percentiles_ms"),
-            ("write", "write_percentiles_ms"),
-        ):
-            pm = s.get(key)
-            if not isinstance(pm, dict) or not pm:
-                continue
-            for p, v in pm.items():
-                try:
-                    fp = float(p)
-                    fv = float(v)
-                except Exception:
-                    continue
-                if fp < 0 or fp > 100:
-                    continue
-                ps = (
-                    f"{fp:.2f}".rstrip("0").rstrip(".")
-                )
-                nm = f"{kind}_p{ps}_ms".replace(".", "_")
-                # Avoid duplicates for the canonical ones already emitted above.
-                if nm in names_vals:
-                    continue
-                names_vals[nm] = fv
-    except Exception:
-        pass
+    names_vals["bench_failed"] = failed
+
     rows = [
         _make_metric_row(
             run_id,
@@ -384,10 +336,10 @@ def _emit_bench_summary(summary, run_id, run_meta_eff, scenario_id, topo, sink_u
             0.0 if failed else 1.0,
         )
     )
-    print("[keeper][push-metrics] begin")
+    print("[keeper][push-bench-metrics] begin")
     for rr in rows:
         print(json.dumps(rr, ensure_ascii=False))
-    print("[keeper][push-metrics] end")
+    print("[keeper][push-bench-metrics] end")
     if sink_url:
         sink_clickhouse(rows)
     return True
@@ -880,7 +832,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
     cluster, nodes = cluster_factory(cname, topo, backend, opts)
 
     scenario_id = scenario.get("id")
-    sink_url = "ci" if has_ci_sink() else ""
+    sink_url = "ci"
     ctx = _setup_metrics_context(faults_enabled, seed_val, cluster)
     
     sampler = None
@@ -920,7 +872,8 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         sampler.start()
         
         # Build workload config (sets ctx["workload"] for gates)
-        _build_bench_step(scenario, nodes, ctx)
+        replay_path = (request.config.getoption("--replay", "") or "").strip()
+        _build_bench_step(scenario, nodes, ctx, replay_path=replay_path)
 
         ensure_default_gates(scenario)
         
@@ -963,6 +916,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             apply_step(step, nodes, leader, ctx)
         
         # Emit bench summary and run gates
+        print("[keeper][emit_bench_summary] begin")
         summary = ctx.get("bench_summary") or {}
         if summary:
             bench_ran_flag = _emit_bench_summary(summary, run_id, run_meta_eff, scenario_id, topo, sink_url)
@@ -1082,7 +1036,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
         try:
             mf = (ctx or {}).get("metrics_file")
             if mf:
-                print(f"[keeper][metrics] jsonl={mf}")
+                print(f"[keeper][metrics] jsonl = {mf}")
         except Exception:
             pass
         # Cleanup context resources (pools, clients, watches)

@@ -6,9 +6,17 @@ _METRIC_RE = re.compile(
 )
 _LABEL_RE = re.compile(r"\s*([a-zA-Z_][a-zA-Z0-9_]*)=\"([^\"]*)\"\s*")
 
+# Keeper's PrometheusMetricsWriter emits: ClickHouseProfileEvents_*, ClickHouseMetrics_*,
+# ClickHouseAsyncMetrics_*, ClickHouseHistogramMetrics_*, ClickHouseDimensionalMetrics_*.
+# Also allow legacy/alternative prefixes.
 DEFAULT_PREFIXES = (
     "clickhouse_keeper_",
     "ClickHouseKeeper_",
+    "ClickHouseProfileEvents_",
+    "ClickHouseMetrics_",
+    "ClickHouseAsyncMetrics_",
+    "ClickHouseHistogramMetrics_",
+    "ClickHouseDimensionalMetrics_",
     "keeper_",
     "raft_",
 )

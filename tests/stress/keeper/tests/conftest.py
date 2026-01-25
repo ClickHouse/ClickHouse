@@ -54,6 +54,12 @@ def pytest_addoption(parser):
         action="store",
         default=os.environ.get("KEEPER_INCLUDE_IDS", ""),
     )
+    pa(
+        "--replay",
+        action="store",
+        default=os.environ.get("KEEPER_REPLAY_PATH", ""),
+        help="Path to request log for keeper-bench replay; falls back to KEEPER_REPLAY_PATH",
+    )
 
 
 @pytest.fixture(scope="session")

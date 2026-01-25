@@ -1,6 +1,6 @@
 import time
 
-from keeper.framework.core.registry import register_fault
+from keeper.faults.registry import register_fault
 from keeper.framework.core.settings import CLIENT_PORT, DEFAULT_FAULT_DURATION_S
 from keeper.framework.core.util import (
     for_each_target,

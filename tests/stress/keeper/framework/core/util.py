@@ -1,5 +1,6 @@
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import threading
@@ -68,23 +69,35 @@ def has_bin(node, name):
 
 
 def host_sh(cmd, timeout=None):
-    """Execute a command on the host"""
+    """Execute a command on the host. On timeout, kills the whole process tree
+    (bash + child e.g. keeper-bench); subprocess.run only kills the direct child
+    so keeper-bench would keep running.
+    """
     try:
         args = cmd if isinstance(cmd, list) else ["bash", "-c", cmd]
         print(f"[keeper][host_sh] cmd={cmd} timeout={timeout}")
-        res = subprocess.run(
+        with subprocess.Popen(
             args,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=timeout,
-            check=False,
             text=True,
-        )
-        print(f"[keeper][host_sh] cmd={cmd} res={res.returncode} stdout={res.stdout} stderr={res.stderr}")
-        return {"out": res.stdout}
-    except subprocess.TimeoutExpired as ex:
-        print(f"[keeper][host_sh] timeout={timeout} cmd={cmd}")
-        raise ex
+            start_new_session=True,  # new session/process group so we can kill the whole tree on timeout
+        ) as p:
+            try:
+                out, _ = p.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                # Kill entire process group (bash + keeper-bench and any other children)
+                try:
+                    os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+                except OSError:
+                    p.kill()
+                p.wait()
+                print(f"[keeper][host_sh] timeout={timeout} cmd={cmd} (killed process group)")
+                raise
+        print(f"[keeper][host_sh] cmd={cmd} res={p.returncode} stdout={out}")
+        return {"out": out or ""}
+    except subprocess.TimeoutExpired:
+        raise
     except Exception:
         return {"out": ""}
 

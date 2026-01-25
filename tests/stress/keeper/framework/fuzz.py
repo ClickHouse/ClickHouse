@@ -1,8 +1,5 @@
-import random
-
-from keeper.framework.core.registry import fault_registry
+from keeper.faults.registry import fault_registry
 from keeper.framework.core.settings import keeper_node_names
-import keeper.faults
 
 _EXCLUDE = {
     "parallel", "background_schedule", "partition_symmetric_during", "download", "sql",
