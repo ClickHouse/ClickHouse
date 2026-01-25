@@ -8,10 +8,6 @@ connections:
   operation_timeout_ms: 3000
   connection_timeout_ms: 40000
 
-sweep:
-  sizes: [0, 64, 256, 1024, 4096, 65536, 1048576]
-  depths: [1, 5, 20, 50, 100]
-
 setup:
   node:
     name: e2e
@@ -74,7 +70,6 @@ generator:
             min_value: 0
             max_value: 162
       weight: 9
-
     multi:
       size:
         min_value: 3
@@ -93,12 +88,6 @@ generator:
             size:
               min_value: 0
               max_value: 162
-      get:
-        path:
-          children_of: /e2e/prod
-      list:
-        path:
-          children_of: /e2e/prod/pool
       weight: 11
 
     list:

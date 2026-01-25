@@ -13,7 +13,7 @@ from keeper.framework.core.settings import (
 )
 from tests.integration.helpers.cluster import ClickHouseCluster
 
-from ci.jobs.keeper_stress_job import env_bool, env_int
+from keeper.framework.core.util import env_bool, env_int
 
 
 def _feature_flags_xml(flags):
@@ -145,6 +145,8 @@ def _configure_startup_timeouts():
     os.environ.setdefault("KEEPER_START_TIMEOUT_SEC", str(ready_timeout))
     os.environ.setdefault("KEEPER_CONNECT_TIMEOUT_SEC", str(ready_timeout + 180))
     os.environ.setdefault("CH_WAIT_START_PORTS", str(CLIENT_PORT))
+    os.environ.setdefault("KEEPER_PUBLISH_CLIENT", "1")
+    os.environ.setdefault("KEEPER_PUBLISH_CLIENT_BASE", "19181")
 
 
 def _keeper_server_xml(

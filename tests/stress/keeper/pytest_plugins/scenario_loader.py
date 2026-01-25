@@ -178,7 +178,6 @@ def _resolve_scenario_files():
 def _load_scenarios_from_files(files):
     scenarios_raw = []
     for f in files:
-        print(f"loading scenarios from file: {f}")
         if not f.exists():
             print(f"file not found: {f}")
             continue
@@ -211,6 +210,8 @@ def _resolve_matrix_backends(cfg):
 
 def _resolve_matrix_topologies(cfg):
     mtops_raw = _getopt(cfg, "--matrix-topologies")
+    if isinstance(mtops_raw, int):
+        return [mtops_raw]
     return [int(x.strip()) for x in mtops_raw.split(",") if x.strip()]
 
 

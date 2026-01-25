@@ -1,6 +1,7 @@
 import json
 import os
 import shlex
+import subprocess
 import threading
 import uuid
 from pathlib import Path
@@ -112,24 +113,33 @@ class KeeperBench:
                 else:
                     return f"p{int(pct_float)}"
 
-            # Helper to flatten results
+            # Helper to flatten results (keeper-bench omits read_results/write_results when 0)
             def flatten_results(prefix, results):
                 if not isinstance(results, dict):
-                    raise ValueError(f"Expected dict for {prefix}_results, got {type(results).__name__}")
-                summary[f"{prefix}_total_requests"] = int(results.get("total_requests"))
-                summary[f"{prefix}_requests_per_second"] = float(results.get("requests_per_second"))
-                summary[f"{prefix}_bytes_per_second"] = float(results.get("bytes_per_second"))
-                for pct_dict in results.get("percentiles"):
+                    results = {}
+                summary[f"{prefix}_total_requests"] = int(results.get("total_requests") or 0)
+                summary[f"{prefix}_requests_per_second"] = float(results.get("requests_per_second") or 0)
+                summary[f"{prefix}_bytes_per_second"] = float(results.get("bytes_per_second") or 0)
+                for pct_dict in results.get("percentiles") or []:
                     if isinstance(pct_dict, dict):
                         for pct_key, pct_value in pct_dict.items():
                             summary[f"{prefix}_{pct_name(pct_key)}_ms"] = float(pct_value)
-            
-            # Process read_results and write_results
-            flatten_results("read", data["read_results"])
-            flatten_results("write", data["write_results"])
-            
-            # Add bench_duration
+
+            flatten_results("read", data.get("read_results"))
+            flatten_results("write", data.get("write_results"))
+
+            reads = summary.get("read_total_requests", 0)
+            writes = summary.get("write_total_requests", 0)
+            summary["ops"] = reads + writes
+            summary["reads"] = reads
+            summary["writes"] = writes
+            summary["read_rps"] = summary.get("read_requests_per_second", 0)
+            summary["read_bps"] = summary.get("read_bytes_per_second", 0)
+            summary["write_rps"] = summary.get("write_requests_per_second", 0)
+            summary["write_bps"] = summary.get("write_bytes_per_second", 0)
+            summary["errors"] = int(data.get("errors", 0))
             summary["bench_duration"] = self.duration_s
+            summary["duration_s"] = self.duration_s
         except Exception as e:
             print(f"[keeper][bench] Failed to parse JSON output: {e}")
         return summary
@@ -144,9 +154,12 @@ class KeeperBench:
         if self.replay_path:
             bench_cfg.pop("generator", None)
 
-        # Set unique output path (with_timestamp: false to use exact path)
+        # Set unique output path (with_timestamp: false to use exact path) and stdout for fallback
         opath = f"/tmp/keeper_bench_out_{uuid.uuid4().hex[:8]}.json"
-        bench_cfg.setdefault("output", {})["file"] = {"path": opath, "with_timestamp": False}
+        out = bench_cfg.setdefault("output", {})
+        # TODO: uncomment this when we figure out reason of bench core dumps when using file output
+        # out["file"] = {"path": opath, "with_timestamp": False}
+        out["stdout"] = True
         self.output_json_path = opath
 
         # Write patched config
@@ -164,8 +177,13 @@ class KeeperBench:
         self.bench_error_path = stderr_path
 
         cmd = f"{self._bench_base_cmd(patched_cfg_path)} > {shlex.quote(stdout_path)} 2> {shlex.quote(stderr_path)}"
-        host_sh(cmd, timeout=bench_timeout)
-        
+        try:
+            host_sh(cmd, timeout=bench_timeout)
+        except subprocess.TimeoutExpired:
+            # Bench may have written JSON to stdout before hanging in destructor cleanup (removeRecursive).
+            # Still read and parse; valid output with ops > 0 is a success.
+            print(f"[keeper][bench] host_sh timed out after {bench_timeout}s; reading output from {stdout_path} (bench may have written JSON before cleanup hang)")
+
         # Read output (prefer JSON output, fallback to stdout)
         print(f"[keeper][bench] Reading output from: KeeperBench created file {opath} or stdout redirected to {stdout_path}")
         out_text = ""

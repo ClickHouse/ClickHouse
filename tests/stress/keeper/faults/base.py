@@ -5,7 +5,7 @@ import shlex
 import time
 
 import yaml
-from keeper.framework.core.registry import fault_registry
+from keeper.faults.registry import fault_registry
 from keeper.framework.core.settings import (
     CLIENT_PORT,
     DEFAULT_FAULT_DURATION_S,

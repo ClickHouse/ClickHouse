@@ -5905,7 +5905,18 @@ class ClickHouseInstance:
             self.env_file = p.abspath(p.join(self.path, ".env"))
             _create_env_file(self.env_file, self.env_variables)
 
-        ports_mappings = ""
+        port_lines = []
+        # KEEPER_PUBLISH_CLIENT: publish keeper client port 9181 to host for keeper-bench on host
+        
+        if os.environ.get("KEEPER_PUBLISH_CLIENT") == "1":
+            base = int(os.environ.get("KEEPER_PUBLISH_CLIENT_BASE") or "19181")
+            m = re.search(r"keeper(\d+)", str(self.name or ""), re.I)
+            if m:
+                idx = int(m.group(1))
+                host_port = base + (idx - 1)
+                port_lines.append(f'"{host_port}:9181"')
+                self.keeper_client_host_port = host_port
+        # KEEPER_PUBLISH_CONTROL: publish keeper control port for a chosen node
         try:
             publish_ctl = (os.environ.get("KEEPER_PUBLISH_CONTROL", "") or "").strip()
             ctrl_port = (os.environ.get("KEEPER_CONTROL_PORT", "") or "").strip()
@@ -5913,9 +5924,10 @@ class ClickHouseInstance:
             host_port = (os.environ.get("KEEPER_PUBLISH_HOST_PORT", ctrl_port) or "").strip()
             if publish_ctl == "1" and ctrl_port.isdigit() and host_port.isdigit():
                 if self.hostname == publish_node or self.name == publish_node:
-                    ports_mappings = f"ports:\n            - \"{host_port}:{ctrl_port}\""
+                    port_lines.append(f'"{host_port}:{ctrl_port}"')
         except Exception:
-            ports_mappings = ""
+            pass
+        ports_mappings = ("ports:\n            - " + "\n            - ".join(port_lines)) if port_lines else ""
 
         is_priv = os.environ.get("KEEPER_PRIVILEGED", "") == "1"
 
