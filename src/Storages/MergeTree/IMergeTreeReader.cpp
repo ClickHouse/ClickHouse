@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Common/escapeForFileName.h>
@@ -22,10 +23,19 @@ namespace
 {
     using OffsetColumns = std::map<std::string, ColumnPtr>;
 }
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool enable_hybrid_storage;
+    extern const MergeTreeSettingsUInt64 hybrid_storage_max_row_size;
+    extern const MergeTreeSettingsFloat hybrid_storage_column_threshold;
+    extern const MergeTreeSettingsUInt64 hybrid_storage_min_columns;
 }
 
 IMergeTreeReader::IMergeTreeReader(
@@ -467,6 +477,119 @@ String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, s
         from_mark,
         max_rows_to_read,
         offset);
+}
+
+bool IMergeTreeReader::shouldUseHybridRowReading() const
+{
+    /// Check if hybrid storage is enabled for this table
+    if (!(*storage_settings)[MergeTreeSetting::enable_hybrid_storage])
+        return false;
+
+    /// Check if __row column exists in this part
+    if (!hasRowColumn())
+        return false;
+
+    /// Get the list of non-key columns that are stored in __row
+    auto non_key_columns = getNonKeyColumnsInRowData();
+    if (non_key_columns.empty())
+        return false;
+
+    /// Count how many of the requested columns are non-key columns
+    /// (key columns are not stored in __row, so they don't benefit from hybrid reading)
+    NameSet non_key_column_names;
+    for (const auto & col : non_key_columns)
+        non_key_column_names.insert(col.name);
+
+    size_t requested_non_key_columns = 0;
+    for (const auto & col : columns_to_read)
+    {
+        if (non_key_column_names.contains(col.name))
+            ++requested_non_key_columns;
+    }
+
+    /// If we're not requesting any non-key columns, don't use hybrid reading
+    if (requested_non_key_columns == 0)
+        return false;
+
+    /// Calculate the ratio of requested non-key columns to total non-key columns
+    Float64 threshold = (*storage_settings)[MergeTreeSetting::hybrid_storage_column_threshold];
+    Float64 selection_ratio = static_cast<Float64>(requested_non_key_columns) / non_key_columns.size();
+
+    /// Check if selection ratio exceeds threshold
+    bool exceeds_threshold = selection_ratio >= threshold;
+
+    /// Check if we meet the minimum columns requirement
+    UInt64 min_columns = (*storage_settings)[MergeTreeSetting::hybrid_storage_min_columns];
+    bool meets_min_columns = (min_columns == 0) || (columns_to_read.size() >= min_columns);
+
+    return exceeds_threshold && meets_min_columns;
+}
+
+bool IMergeTreeReader::hasRowColumn() const
+{
+    /// Check if the __row column data actually exists in this part.
+    /// We check the checksums for the data file, not just the columns description,
+    /// because the __row column is a persistent virtual column that may be defined
+    /// in the schema but not yet written to the part.
+    const auto & checksums = data_part_info_for_read->getChecksums();
+
+    /// For wide parts, check if __row.bin exists
+    /// For compact parts, check if the column position exists
+    if (data_part_info_for_read->isWidePart())
+    {
+        return checksums.has(RowDataColumn::name + ".bin");
+    }
+    else if (data_part_info_for_read->isCompactPart())
+    {
+        /// For compact parts, check if the column exists in the column positions
+        return data_part_info_for_read->getColumnPosition(RowDataColumn::name).has_value();
+    }
+
+    return false;
+}
+
+NamesAndTypesList IMergeTreeReader::getNonKeyColumnsInRowData() const
+{
+    /// Get the primary key columns from storage metadata
+    NameSet key_column_names;
+    if (storage_snapshot && storage_snapshot->metadata)
+    {
+        const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
+        for (const auto & col : primary_key.column_names)
+            key_column_names.insert(col);
+
+        /// Also exclude sorting key columns (ORDER BY)
+        const auto & sorting_key = storage_snapshot->metadata->getSortingKey();
+        for (const auto & col : sorting_key.column_names)
+            key_column_names.insert(col);
+    }
+
+    /// Get all physical columns from the part and filter out key columns
+    NamesAndTypesList result;
+    const auto & all_columns = data_part_info_for_read->getColumnsDescription().getAllPhysical();
+
+    for (const auto & col : all_columns)
+    {
+        /// Skip key columns and the __row column itself
+        if (!key_column_names.contains(col.name) && col.name != RowDataColumn::name)
+            result.push_back(col);
+    }
+
+    return result;
+}
+
+SerializationByName IMergeTreeReader::getNonKeySerializations() const
+{
+    SerializationByName result;
+    auto non_key_columns = getNonKeyColumnsInRowData();
+
+    for (const auto & col : non_key_columns)
+    {
+        auto serialization = data_part_info_for_read->getSerialization(col);
+        result[col.name] = serialization;
+    }
+
+    return result;
 }
 
 MergeTreeReaderPtr createMergeTreeReaderCompact(
