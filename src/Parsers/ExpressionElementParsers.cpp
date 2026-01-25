@@ -2416,7 +2416,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
-    ParserExpression parser_exp;
+    ParserExpressionWithOptionalAlias parser_exp(false);
     ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
 
