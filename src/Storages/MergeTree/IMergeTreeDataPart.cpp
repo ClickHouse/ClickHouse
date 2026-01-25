@@ -1321,10 +1321,6 @@ void IMergeTreeDataPart::writeVersionMetadata(const VersionMetadata & version_, 
     try
     {
         {
-            /// TODO IDisk interface does not allow to open file with O_EXCL flag (for DiskLocal),
-            /// so we create empty file at first (expecting that createFile throws if file already exists)
-            /// and then overwrite it.
-            data_part_storage.createFile(tmp_filename);
             auto write_settings = storage.getContext()->getWriteSettings();
             auto buf = data_part_storage.writeFile(tmp_filename, 256, write_settings);
             version_.write(*buf);
