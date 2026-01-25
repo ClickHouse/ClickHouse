@@ -815,7 +815,7 @@ void SystemLog<LogElement>::prepareTable()
 
                     auto settings_changes = make_intrusive<ASTSetQuery>();
                     settings_changes->is_standalone = false;
-                    settings_changes->changes.push_back({"is_readonly", Field(true)});
+                    settings_changes->changes.push_back({"table_is_readonly", Field(true)});
                     alter_command->settings_changes = settings_changes.get();
                     alter_command->children.push_back(settings_changes);
 
