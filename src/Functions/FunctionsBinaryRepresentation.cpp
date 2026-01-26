@@ -820,9 +820,10 @@ to the following logic for different types:
 | `String` and `FixedString` | All bytes are simply encoded as eight binary numbers. Zero bytes are not omitted.                                                                                                                                                                                     |
 | `Float*` and `Decimal`     | Encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.                                                                                                  |
 | `UUID`                     | Encoded as big-endian order string.                                                                                                                                                                                                                                   |
+| `QBit`                     | Individual bit planes are accessed via subcolumns (e.g., bin(`vec.1`), bin(`vec.2`)). Each subcolumn is a FixedString and is encoded as eight binary numbers per byte. Zero bytes are not omitted.                                                                             |
     )";
     FunctionDocumentation::Syntax bin_syntax = "bin(arg)";
-    FunctionDocumentation::Arguments bin_arguments = {{"arg", "A value to convert to binary.", {"String", "FixedString", "(U)Int*", "Float*", "Decimal", "Date", "DateTime"}}};
+    FunctionDocumentation::Arguments bin_arguments = {{"arg", "A value to convert to binary.", {"String", "FixedString", "(U)Int*", "Float*", "Decimal", "Date", "DateTime", "QBit"}}};
     FunctionDocumentation::ReturnedValue bin_returned_value = {"Returns a string with the binary representation of the argument.", {"String"}};
     FunctionDocumentation::Examples bin_examples =
     {
