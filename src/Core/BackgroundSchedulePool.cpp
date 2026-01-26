@@ -16,11 +16,6 @@
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/BackgroundSchedulePoolLog.h>
-
-#include <unordered_set>
-
 
 namespace DB
 {
@@ -36,9 +31,8 @@ namespace ErrorCodes
 ///
 
 BackgroundSchedulePoolTaskInfo::BackgroundSchedulePoolTaskInfo(
-    BackgroundSchedulePoolWeakPtr pool_, const StorageID & storage_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_)
+    BackgroundSchedulePoolWeakPtr pool_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_)
     : pool_ref(pool_)
-    , storage(storage_)
     , log_name(log_name_)
     , function(function_)
 {
@@ -114,33 +108,31 @@ bool BackgroundSchedulePoolTaskInfo::activateAndSchedule()
     return scheduleImpl(lock);
 }
 
-bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
+std::unique_lock<std::mutex> BackgroundSchedulePoolTaskInfo::getExecLock()
 {
+    return std::unique_lock{exec_mutex};
+}
+
+void BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
+{
+    Stopwatch watch;
     CurrentMetrics::Increment metric_increment(pool.tasks_metric);
 
     std::lock_guard lock_exec(exec_mutex);
-
-    /// Using this tmp query_id storage to prevent bad_alloc thrown under the try/catch.
-    String task_query_id;
-    String task_query_id_for_log;
 
     {
         std::lock_guard lock_schedule(schedule_mutex);
 
         if (deactivated)
-            return false;
+            return;
 
         scheduled = false;
         executing = true;
-
-        query_id = fmt::format("{}::{}", toString(pool.thread_name), UUIDHelpers::generateV4());
-        task_query_id = query_id;
-        task_query_id_for_log = query_id;
     }
 
-    watch.restart();
-    UInt16 error_code = 0;
-    String exception_message;
+    /// Using this tmp query_id storage to prevent bad_alloc thrown under the try/catch.
+    std::string task_query_id = fmt::format("{}::{}", toString(pool.thread_name), UUIDHelpers::generateV4());
+
     try
     {
         chassert(current_thread); /// Thread from global thread pool
@@ -152,8 +144,6 @@ bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
     }
     catch (...)
     {
-        error_code = static_cast<UInt16>(getCurrentExceptionCode());
-        exception_message = getCurrentExceptionMessage(false);
         tryLogCurrentException(__PRETTY_FUNCTION__);
         chassert(false && "Tasks in BackgroundSchedulePool cannot throw");
     }
@@ -165,56 +155,17 @@ bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
     if (milliseconds >= slow_execution_threshold_ms)
         LOG_TRACE(getLogger(log_name), "Execution took {} ms.", milliseconds);
 
-    /// Add entry to BackgroundSchedulePoolLog
-    try
-    {
-        if (auto context = Context::getGlobalContextInstance())
-        {
-            auto background_schedule_pool_log = context->getBackgroundSchedulePoolLog();
-            if (background_schedule_pool_log && milliseconds >= background_schedule_pool_log->getDurationMillisecondsThreshold())
-            {
-                BackgroundSchedulePoolLogElement elem;
-
-                const auto time_now = std::chrono::system_clock::now();
-                elem.event_time = timeInSeconds(time_now);
-                elem.event_time_microseconds = timeInMicroseconds(time_now);
-
-                elem.query_id = task_query_id_for_log;
-                elem.database_name = storage.database_name;
-                elem.table_name = storage.table_name;
-                elem.table_uuid = storage.uuid;
-                elem.log_name = log_name;
-
-                elem.duration_ms = milliseconds;
-
-                elem.error = error_code;
-                elem.exception = exception_message;
-
-                background_schedule_pool_log->add(std::move(elem));
-            }
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
     {
         std::lock_guard lock_schedule(schedule_mutex);
 
-        query_id.clear();
         executing = false;
 
         /// In case was scheduled while executing (including a scheduleAfter which expired) we schedule the task
         /// on the queue. We don't call the function again here because this way all tasks
         /// will have their chance to execute
+
         if (scheduled)
-        {
             pool.scheduleTask(*this);
-            return true;
-        }
-        else
-            return false;
     }
 }
 
@@ -358,9 +309,9 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
 }
 
 
-BackgroundSchedulePool::TaskHolder BackgroundSchedulePool::createTask(const StorageID & storage, const std::string & log_name, const TaskFunc & function)
+BackgroundSchedulePool::TaskHolder BackgroundSchedulePool::createTask(const std::string & name, const TaskFunc & function)
 {
-    return TaskHolder(std::shared_ptr<TaskInfo>(new TaskInfo(weak_from_this(), storage, log_name, function)));
+    return TaskHolder(std::shared_ptr<TaskInfo>(new TaskInfo(weak_from_this(), name, function)));
 }
 
 template<typename T>
@@ -386,14 +337,12 @@ void BackgroundSchedulePool::scheduleTask(TaskInfo & task_info)
         /// Get a pointer to the task function and use it as an identifier of the task type
         UInt64 task_type = getFunctionID(task_info.function);
         auto & group = task_groups[task_type];
-        auto task_ptr = task_info.shared_from_this();
-        group.tasks.emplace_back(task_ptr);
+        group.tasks.emplace_back(task_info.shared_from_this());
         if (!group.runnable_list_pos && group.num_running < max_parallel_tasks_per_type)
         {
             group.runnable_list_pos = runnable_task_types.size();
             runnable_task_types.push_back(task_type);
         }
-        running_tasks.erase(task_ptr);
     }
 
     tasks_cond_var.notify_one();
@@ -462,7 +411,6 @@ void BackgroundSchedulePool::threadFunction()
             chassert(group.num_running < max_parallel_tasks_per_type);
 
             task = group.tasks.front();
-            running_tasks.insert(task);
             group.tasks.pop_front();
             ++group.num_running;
 
@@ -481,12 +429,9 @@ void BackgroundSchedulePool::threadFunction()
 
         if (task)
         {
-            bool scheduled = task->execute(*this);
+            task->execute(*this);
 
             UniqueLock tasks_lock(tasks_mutex);
-            /// In case it was scheduled, the task will be removed in scheduleTask() from running_tasks
-            if (!scheduled)
-                running_tasks.erase(task);
             auto & group = task_groups[task_type_to_run];
             chassert(group.num_running);
             --group.num_running;
@@ -553,54 +498,6 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         if (found)
             task->schedule();
     }
-}
-
-std::vector<BackgroundSchedulePool::TaskInfoSnapshot> BackgroundSchedulePool::getTasks()
-{
-    std::vector<TaskInfoSnapshot> result;
-
-    std::unordered_set<TaskInfoPtr> unique_tasks;
-
-    {
-        std::lock_guard lock(tasks_mutex);
-        for (const auto & [task_type, group] : task_groups)
-        {
-            for (const auto & task : group.tasks)
-            {
-                unique_tasks.insert(task);
-            }
-        }
-
-        for (const auto & task : running_tasks)
-        {
-            unique_tasks.insert(task);
-        }
-    }
-
-    {
-        std::lock_guard lock(delayed_tasks_mutex);
-        for (const auto & [timestamp, task] : delayed_tasks)
-        {
-            unique_tasks.insert(task);
-        }
-    }
-
-    for (const auto & task : unique_tasks)
-    {
-        std::lock_guard lock(task->schedule_mutex);
-        result.emplace_back(TaskInfoSnapshot{
-            .storage = task->storage,
-            .log_name = task->log_name,
-            .query_id = task->query_id,
-            .elapsed_ms = task->executing ? task->watch.elapsedMilliseconds() : 0,
-            .deactivated = task->deactivated,
-            .scheduled = task->scheduled,
-            .delayed = task->delayed,
-            .executing = task->executing,
-        });
-    }
-
-    return result;
 }
 
 }

@@ -14,15 +14,11 @@ def started_cluster():
             "node1",
             main_configs=["configs/conf.xml"],
             with_minio=True,
-            mem_limit='20g',
-            cpu_limit=7,
         )
         cluster.add_instance(
             "node_smol",
             main_configs=["configs/conf.xml", "configs/smol.xml"],
             with_minio=True,
-            mem_limit='20g',
-            cpu_limit=7,
         )
         cluster.start()
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
+#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>

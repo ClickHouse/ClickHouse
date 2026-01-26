@@ -40,7 +40,7 @@
 
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTPHandlerFactory.h>
-#include <Server/KeeperHTTPHandlerFactory.h>
+#include <Server/KeeperReadinessHandler.h>
 #include <Server/PrometheusRequestHandlerFactory.h>
 #include <Server/TCPServer.h>
 
@@ -61,11 +61,9 @@
 
 #include <Disks/registerDisks.h>
 
+#include <incbin.h>
 /// A minimal file used when the keeper is run without installation
-constexpr unsigned char keeper_resource_embedded_xml[] =
-{
-#embed "keeper_embedded.xml"
-};
+INCBIN(keeper_resource_embedded_xml, SOURCE_DIR "/programs/keeper/keeper_embedded.xml");
 
 extern const char * GIT_HASH;
 
@@ -127,7 +125,7 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
     auto port = config().getInt(port_name);
     try
     {
-        func(static_cast<UInt16>(port));
+        func(port);
     }
     catch (const Poco::Exception &)
     {
@@ -179,7 +177,7 @@ int Keeper::run()
 
 void Keeper::initialize(Poco::Util::Application & self)
 {
-    ConfigProcessor::registerEmbeddedConfig("keeper_config.xml", std::string_view(reinterpret_cast<const char *>(keeper_resource_embedded_xml), std::size(keeper_resource_embedded_xml)));
+    ConfigProcessor::registerEmbeddedConfig("keeper_config.xml", std::string_view(reinterpret_cast<const char *>(gkeeper_resource_embedded_xmlData), gkeeper_resource_embedded_xmlSize));
 
     BaseDaemon::initialize(self);
     logger().information("starting up");
@@ -556,7 +554,7 @@ try
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
                         std::move(my_http_context),
-                        createKeeperPrometheusHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"),
+                        createKeeperPrometheusHandlerFactory(*this, config_getter(), async_metrics, "PrometheusHandler-factory"),
                         server_pool,
                         socket,
                         http_params));
@@ -567,6 +565,10 @@ try
         createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
         {
             auto my_http_context = httpContext();
+            Poco::Timespan my_keep_alive_timeout(config.getUInt("keep_alive_timeout", 10), 0);
+            Poco::Net::HTTPServerParams::Ptr my_http_params = new Poco::Net::HTTPServerParams;
+            my_http_params->setTimeout(my_http_context->getReceiveTimeout());
+            my_http_params->setKeepAliveTimeout(my_keep_alive_timeout);
 
             Poco::Net::ServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port);
@@ -577,33 +579,8 @@ try
                 port_name,
                 "HTTP Control: http://" + address.toString(),
                 std::make_unique<HTTPServer>(
-                    std::move(my_http_context),
-                    createKeeperHTTPHandlerFactory(*this, config, global_context->getKeeperDispatcher(), "KeeperHTTPHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
-        });
-
-        /// HTTPS control endpoints
-        port_name = "keeper_server.http_control.secure_port";
-        createServer(listen_host, port_name, listen_try, [&](UInt16 port) mutable
-        {
-            auto my_http_context = httpContext();
-
-            Poco::Net::ServerSocket socket;
-            auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
-            socket.setSendTimeout(my_http_context->getSendTimeout());
-            servers->emplace_back(
-                listen_host,
-                port_name,
-                "HTTPS Control: https://" + address.toString(),
-                std::make_unique<HTTPServer>(
-                    std::move(my_http_context),
-                    createKeeperHTTPHandlerFactory(*this, config, global_context->getKeeperDispatcher(), "KeeperHTTPSHandler-factory"),
-                    server_pool,
-                    socket,
-                    http_params));
+                    std::move(my_http_context), createKeeperHTTPControlMainHandlerFactory(config_getter(), global_context->getKeeperDispatcher(), "KeeperHTTPControlHandler-factory"), server_pool, socket, http_params)
+                    );
         });
     }
 

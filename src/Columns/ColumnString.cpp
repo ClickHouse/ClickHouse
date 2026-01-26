@@ -4,6 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
@@ -173,14 +174,6 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     return res;
 }
 
-void ColumnString::filter(const Filter & filt)
-{
-    if (offsets.empty())
-        return;
-
-    filterArraysImplInPlace<UInt8>(chars, offsets, filt);
-}
-
 void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
 {
     auto & offsets_data = getOffsets();
@@ -270,20 +263,22 @@ std::optional<size_t> ColumnString::getSerializedValueSize(size_t n, const IColu
     return byteSizeAt(n) + serialize_string_with_zero_byte;
 }
 
-std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
+StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
 
     size_t string_size = sizeAt(n) + serialize_string_with_zero_byte;
     size_t offset = offsetAt(n);
 
-    auto result_size = sizeof(string_size) + string_size;
-    char * pos = arena.allocContinue(result_size, begin);
+    StringRef res;
+    res.size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(res.size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
     memcpy(pos + sizeof(string_size), &chars[offset], string_size - serialize_string_with_zero_byte);
     if (serialize_string_with_zero_byte)
         *(pos + sizeof(string_size) + string_size - 1) = 0;
-    return {pos, result_size};
+    res.data = pos;
+    return res;
 }
 
 ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
@@ -516,7 +511,7 @@ size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & perm
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        auto value = getDataAt(permuted_i);
+        StringRef value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();

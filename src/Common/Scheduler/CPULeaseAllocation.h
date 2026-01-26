@@ -181,9 +181,7 @@ private:
     size_t upscale();
 
     /// Unregisters specified thread from leased set
-    /// If shutdown is true, ConcurrencyControlDownscales profile event is not incremented
-    /// (shutdown-induced termination is normal, not resource contention)
-    void downscale(size_t thread_num, bool shutdown = false);
+    void downscale(size_t thread_num);
 
     /// Preempted thread set management
     void setPreempted(size_t thread_num);

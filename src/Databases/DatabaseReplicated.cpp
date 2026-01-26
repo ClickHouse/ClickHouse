@@ -163,28 +163,6 @@ static inline UInt64 getMetadataHash(const String & table_name, const String & m
 
 DatabaseReplicated::~DatabaseReplicated() = default;
 
-namespace
-{
-    String normalizeZooKeeperPath(const String & path) noexcept
-    {
-        if (path.empty())
-            return path;
-
-        if (path == "/")
-            return path;
-
-        String normalized_path = path;
-
-        if (!normalized_path.starts_with("/"))
-            normalized_path = '/'+ normalized_path;
-
-        if (normalized_path.ends_with("/"))
-            normalized_path.pop_back();
-
-        return normalized_path;
-    }
-}
-
 DatabaseReplicated::DatabaseReplicated(
     const String & name_,
     const String & metadata_path_,
@@ -195,10 +173,9 @@ DatabaseReplicated::DatabaseReplicated(
     DatabaseReplicatedSettings db_settings_,
     ContextPtr context_)
     : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_)
-    , zookeeper_path(normalizeZooKeeperPath(zookeeper_path_))
+    , zookeeper_path(zookeeper_path_)
     , shard_name(shard_name_)
     , replica_name(replica_name_)
-    , replica_path(fs::path(zookeeper_path) / "replicas" / getFullReplicaName(shard_name, replica_name))
     , db_settings(std::move(db_settings_))
     , tables_metadata_digest(0)
 {
@@ -210,6 +187,13 @@ DatabaseReplicated::DatabaseReplicated(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '/'");
     if (shard_name.contains('|') || replica_name.contains('|'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
+
+    if (zookeeper_path.back() == '/')
+        zookeeper_path.resize(zookeeper_path.size() - 1);
+
+    /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
+    if (zookeeper_path.front() != '/')
+        zookeeper_path = "/" + zookeeper_path;
 
     if (!db_settings[DatabaseReplicatedSetting::collection_name].value.empty())
         fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value, context_->getConfigRef());
@@ -582,6 +566,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             createDatabaseNodesInZooKeeper(current_zookeeper);
         }
 
+        replica_path = fs::path(zookeeper_path) / "replicas" / getFullReplicaName();
         bool is_create_query = mode == LoadingStrictnessLevel::CREATE;
 
         String replica_host_id;
@@ -1767,7 +1752,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             };
 
             if (allow_concurrent_table_creation)
-                runner.enqueueAndKeepTrack(std::move(task));
+                runner(std::move(task));
             else
                 task();
         }
@@ -2492,17 +2477,17 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         {
             if (!engine->arguments)
             {
-                engine->arguments = make_intrusive<ASTExpressionList>();
+                engine->arguments = std::make_shared<ASTExpressionList>();
                 engine->children.push_back(engine->arguments);
             }
 
             auto settings = args.context->getDatabaseReplicatedSettings();
             if (engine->arguments->children.empty())
-                engine->arguments->children.emplace_back(make_intrusive<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_path].value));
+                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_path].value));
             if (engine->arguments->children.size() == 1)
-                engine->arguments->children.emplace_back(make_intrusive<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_shard_name].value));
+                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_shard_name].value));
             if (engine->arguments->children.size() == 2)
-                engine->arguments->children.emplace_back(make_intrusive<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_name].value));
+                engine->arguments->children.emplace_back(std::make_shared<ASTLiteral>(settings[DatabaseReplicatedSetting::default_replica_name].value));
         }
 
         if (!engine->arguments || engine->arguments->children.size() != 3)

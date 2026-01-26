@@ -26,37 +26,35 @@ namespace ErrorCodes
 }
 
 void SerializationNullable::enumerateStreams(
-    EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
+    EnumerateStreamsSettings & settings,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
 {
     const auto * type_nullable = data.type ? &assert_cast<const DataTypeNullable &>(*data.type) : nullptr;
     const auto * column_nullable = data.column ? &assert_cast<const ColumnNullable &>(*data.column) : nullptr;
-    auto column_null_map = column_nullable ? column_nullable->getNullMapColumnPtr() : nullptr;
 
-    if (!use_default_null_map)
-    {
-        auto null_map_serialization
-            = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", SubstreamType::NamedNullMap);
+    auto null_map_serialization = std::make_shared<SerializationNamed>(
+        std::make_shared<SerializationNumber<UInt8>>(),
+        "null", SubstreamType::NamedNullMap);
 
-        settings.path.push_back(Substream::NullMap);
-        auto null_map_data = SubstreamData(null_map_serialization)
-                                 .withType(type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr)
-                                 .withColumn(column_null_map)
-                                 .withSerializationInfo(data.serialization_info);
+    settings.path.push_back(Substream::NullMap);
+    auto null_map_data = SubstreamData(null_map_serialization)
+        .withType(type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr)
+        .withColumn(column_nullable ? column_nullable->getNullMapColumnPtr() : nullptr)
+        .withSerializationInfo(data.serialization_info);
 
-        settings.path.back().data = null_map_data;
-        callback(settings.path);
-        settings.path.pop_back();
-    }
+    settings.path.back().data = null_map_data;
+    callback(settings.path);
 
-    settings.path.push_back(Substream::NullableElements);
+    settings.path.back() = Substream::NullableElements;
     if (type_nullable && type_nullable->getNestedType()->canBeInsideNullable())
-        settings.path.back().creator = std::make_shared<NullableSubcolumnCreator>(column_null_map);
+        settings.path.back().creator = std::make_shared<NullableSubcolumnCreator>(null_map_data.column);
     settings.path.back().data = data;
 
     auto next_data = SubstreamData(nested)
-                         .withType(type_nullable ? type_nullable->getNestedType() : nullptr)
-                         .withColumn(column_nullable ? column_nullable->getNestedColumnPtr() : nullptr)
-                         .withSerializationInfo(data.serialization_info);
+        .withType(type_nullable ? type_nullable->getNestedType() : nullptr)
+        .withColumn(column_nullable ? column_nullable->getNestedColumnPtr() : nullptr)
+        .withSerializationInfo(data.serialization_info);
 
     nested->enumerateStreams(settings, callback, next_data);
     settings.path.pop_back();
@@ -105,17 +103,13 @@ void SerializationNullable::serializeBinaryBulkWithMultipleStreams(
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
     col.checkConsistency();
 
-    if (!use_default_null_map)
-    {
-        /// First serialize null map.
-        settings.path.push_back(Substream::NullMap);
-        if (auto * stream = settings.getter(settings.path))
-            SerializationNumber<UInt8>().serializeBinaryBulk(col.getNullMapColumn(), *stream, offset, limit);
-        settings.path.pop_back();
-    }
+    /// First serialize null map.
+    settings.path.push_back(Substream::NullMap);
+    if (auto * stream = settings.getter(settings.path))
+        SerializationNumber<UInt8>().serializeBinaryBulk(col.getNullMapColumn(), *stream, offset, limit);
 
-    /// Then serialize contents of elements.
-    settings.path.push_back(Substream::NullableElements);
+    /// Then serialize contents of arrays.
+    settings.path.back() = Substream::NullableElements;
     nested->serializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), offset, limit, settings, state);
     settings.path.pop_back();
 }
@@ -132,29 +126,21 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     auto mutable_column = column->assumeMutable();
     ColumnNullable & col = assert_cast<ColumnNullable &>(*mutable_column);
 
-    if (!use_default_null_map)
+    settings.path.push_back(Substream::NullMap);
+    if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getNullMapColumnPtr()))
     {
-        settings.path.push_back(Substream::NullMap);
-        if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getNullMapColumnPtr()))
-        {
-            /// Data was inserted from cache.
-        }
-        else if (auto * stream = settings.getter(settings.path))
-        {
-            size_t prev_size = col.getNullMapColumnPtr()->size();
-            SerializationNumber<UInt8>().deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
-            addColumnWithNumReadRowsToSubstreamsCache(
-                cache, settings.path, col.getNullMapColumnPtr(), col.getNullMapColumnPtr()->size() - prev_size);
-        }
-        settings.path.pop_back();
+        /// Data was inserted from cache.
+    }
+    else if (auto * stream = settings.getter(settings.path))
+    {
+        size_t prev_size = col.getNullMapColumnPtr()->size();
+        SerializationNumber<UInt8>().deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getNullMapColumnPtr(), col.getNullMapColumnPtr()->size() - prev_size);
     }
 
-    settings.path.push_back(Substream::NullableElements);
+    settings.path.back() = Substream::NullableElements;
     nested->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumnPtr(), rows_offset, limit, settings, state, cache);
     settings.path.pop_back();
-
-    if (use_default_null_map)
-        col.getNullMapData().resize_fill(col.getNestedColumn().size());
 
     auto null_map = col.getNullMapColumnPtr();
     auto nested_column = col.getNestedColumnPtr();

@@ -13,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/castColumn.h>
 #include <Formats/EscapingRuleUtils.h>
 
 namespace DB
@@ -260,7 +261,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
             for (size_t i = 0; i != shared_variant.size(); ++i)
             {
                 auto value = shared_variant.getDataAt(i);
-                ReadBufferFromMemory buf(value);
+                ReadBufferFromMemory buf(value.data, value.size);
                 auto type = decodeDataType(buf);
                 auto type_name = type->getName();
                 if (auto it = shared_variants_statistics.find(type_name); it != shared_variants_statistics.end())
@@ -587,7 +588,7 @@ void SerializationDynamic::serializeBinaryBulkWithMultipleStreamsAndCountTotalSi
                 if (local_discriminators[i] == shared_variant_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value);
+                    ReadBufferFromMemory buf(value.data, value.size);
                     auto type = decodeDataType(buf);
                     auto type_name = type->getName();
                     if (auto it = dynamic_state->statistics.shared_variants_statistics.find(type_name); it != dynamic_state->statistics.shared_variants_statistics.end())
@@ -711,7 +712,7 @@ void SerializationDynamic::serializeBinary(const ColumnDynamic & dynamic_column,
     if (global_discr == dynamic_column.getSharedVariantDiscriminator())
     {
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
-        ostr.write(value.data(), value.size());
+        ostr.write(value.data, value.size);
         return;
     }
 
@@ -739,7 +740,7 @@ void SerializationDynamic::serializeForHashCalculation(const IColumn & column, s
     if (global_discr == dynamic_column.getSharedVariantDiscriminator())
     {
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
-        ReadBufferFromMemory value_buf(value);
+        ReadBufferFromMemory value_buf(value.data, value.size);
         auto type = decodeDataType(value_buf);
         auto type_name = type->getName();
         auto serialization = getDataTypesCache().getSerialization(type_name);
@@ -854,7 +855,7 @@ static void deserializeTextImpl(
     if (!checkIfTypeIsComplete(variant_type))
     {
         size_t shared_variant_discr = dynamic_column.getSharedVariantDiscriminator();
-        for (ColumnVariant::Discriminator i = 0; i != variant_types.size(); ++i)
+        for (size_t i = 0; i != variant_types.size(); ++i)
         {
             auto field_buf = std::make_unique<ReadBufferFromString>(field);
             if (i != shared_variant_discr
@@ -903,7 +904,7 @@ static void serializeTextImpl(
     if (variant_column.globalDiscriminatorAt(row_num) == dynamic_column.getSharedVariantDiscriminator())
     {
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
-        ReadBufferFromMemory buf(value);
+        ReadBufferFromMemory buf(value.data, value.size);
         auto variant_type = decodeDataType(buf);
         auto tmp_variant_column = variant_type->createColumn();
         auto variant_serialization = variant_type->getDefaultSerialization();

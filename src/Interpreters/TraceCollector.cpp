@@ -1,4 +1,3 @@
-#include <memory>
 #include <Interpreters/TraceCollector.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -152,9 +151,6 @@ void TraceCollector::run()
             TraceType trace_type;
             readPODBinary(trace_type, in);
 
-            UInt64 cpu_id;
-            readPODBinary(cpu_id, in);
-
             UInt64 thread_id;
             readPODBinary(thread_id, in);
 
@@ -194,7 +190,6 @@ void TraceCollector::run()
                     .event_time_microseconds = time_in_microseconds,
                     .timestamp_ns = timestamp_ns,
                     .trace_type = trace_type,
-                    .cpu_id = cpu_id,
                     .thread_id = thread_id,
                     .thread_name = static_cast<ThreadName>(thread_name_id),
                     .query_id = query_id,
@@ -205,12 +200,6 @@ void TraceCollector::run()
                     .memory_blocked_context = memory_blocked_context == TraceSender::MEMORY_CONTEXT_UNKNOWN ? std::nullopt : std::make_optional<VariableContext>(static_cast<VariableContext>(memory_blocked_context)),
                     .event = event,
                     .increment = increment,
-                    .instrumented_point_id = 0,
-                    .function_id = -1,
-                    .function_name = "",
-                    .handler = "",
-                    .entry_type = std::nullopt,
-                    .duration_nanoseconds = std::nullopt,
                 };
                 trace_log->add(std::move(element));
             }

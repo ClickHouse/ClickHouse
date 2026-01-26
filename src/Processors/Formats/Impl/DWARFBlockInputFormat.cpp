@@ -261,7 +261,7 @@ void DWARFBlockInputFormat::initializeIfNeeded()
 
     runner.emplace(getFormatParsingThreadPool().get(), ThreadName::DWARF_DECODER);
     for (size_t i = 0; i < num_threads; ++i)
-        runner.value().enqueueAndKeepTrack(
+        runner.value()(
             [this, thread_group = CurrentThread::getGroup()]()
             {
                 try
@@ -563,7 +563,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                             if (need[COL_ATTR_STR])
                             {
                                 auto data = unit.filename_table->getDataAt(idx);
-                                col_attr_str->insertData(data.data(), data.size());
+                                col_attr_str->insertData(data.data, data.size);
                             }
                         }
                         else if (need[COL_ATTR_STR])

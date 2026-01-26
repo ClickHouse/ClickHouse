@@ -345,8 +345,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 }
                 else
                 {
-                    auto aggregation_for_set
-                        = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set, dataflow_cache_updater);
+                    auto aggregation_for_set = std::make_shared<AggregatingTransform>(input_header, transform_params_for_set);
                     connect(*ports[i], aggregation_for_set->getInputs().front());
                     ports[i] = &aggregation_for_set->getOutputs().front();
                     processors.push_back(aggregation_for_set);
@@ -514,8 +513,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     new_merge_threads,
                     new_temporary_data_merge_threads,
                     should_produce_results_in_order_of_bucket_number,
-                    skip_merging,
-                    dataflow_cache_updater);
+                    skip_merging);
             });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false, settings.min_outstreams_per_resize_after_split);
@@ -524,8 +522,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else
     {
-        pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                    { return std::make_shared<AggregatingTransform>(header, transform_params, dataflow_cache_updater); });
+        pipeline.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<AggregatingTransform>(header, transform_params); });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads);
 
@@ -755,7 +752,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// Overall, the rule is not strict.
 
     UInt8 flags = 0;
-    if (final && !ctx.skip_final_flag)
+    if (final)
         flags |= 1;
     if (params.overflow_row)
         flags |= 2;
@@ -791,7 +788,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
-    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.skip_cache_key)
+    if (params.stats_collecting_params.isCollectionAndUseEnabled())
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 

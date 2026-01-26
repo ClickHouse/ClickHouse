@@ -149,10 +149,7 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        /// Use part's own columns to find the minimum size column.
-        /// This ensures we find a column that actually exists in this part,
-        /// even if the table metadata has changed (e.g., all columns were dropped and new ones added).
-        const auto & available_columns = data_part_info_for_reader.getColumns();
+        auto available_columns = storage_snapshot->metadata->getColumns().get(options);
         const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
@@ -480,7 +477,7 @@ MergeTreeReadTaskColumns getReadTaskColumnsForMerge(
         mutation_steps,
         /*index_read_tasks*/ {},
         /*actions_settings=*/ {},
-        /*reader_settings=*/ MergeTreeReaderSettings::createFromSettings(),
+        /*reader_settings=*/ {},
         storage_snapshot->storage.supportsSubcolumns());
 }
 

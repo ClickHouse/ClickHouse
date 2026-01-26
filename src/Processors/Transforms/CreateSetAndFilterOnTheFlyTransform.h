@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Common/Logger.h>
-#include <Processors/ISimpleTransform.h>
-
 #include <vector>
+#include <Processors/ISimpleTransform.h>
 
 namespace DB
 {
