@@ -68,17 +68,12 @@ private:
     uint64_t getMemoryUsage(bool log_error);
 
     void updateResidentMemoryThread();
-    [[maybe_unused]] void purgeDirtyPagesThread();
-
-    void setDirtyDecayForAllArenas(size_t decay_ms);
 
     ThreadFromGlobalPool update_resident_memory_thread;
-    ThreadFromGlobalPool purge_dirty_pages_thread;
 
     std::mutex rss_update_mutex;
     std::condition_variable rss_update_cv;
-    std::mutex purge_dirty_pages_mutex;
-    std::condition_variable purge_dirty_pages_cv;
+
     bool shutdown = false;
 
     LoggerPtr log;
@@ -86,6 +81,26 @@ private:
     uint64_t rss_update_period_ms;
 
     bool correct_tracker = false;
+
+    double purge_total_memory_threshold_ratio;
+    double purge_dirty_pages_threshold_ratio;
+    uint64_t page_size = 0;
+    std::chrono::milliseconds decay_adjustment_period_ms{0};
+
+    MemoryUsageSource source{MemoryUsageSource::None};
+
+    std::shared_ptr<ICgroupsReader> cgroups_reader;
+
+    std::shared_ptr<PageCache> page_cache;
+
+#if USE_JEMALLOC
+    void purgeDirtyPagesThread();
+    void setDirtyDecayForAllArenas(size_t decay_ms);
+
+    ThreadFromGlobalPool purge_dirty_pages_thread;
+
+    std::mutex purge_dirty_pages_mutex;
+    std::condition_variable purge_dirty_pages_cv;
 
     /// State machine for dynamic dirty pages decay control
     enum class DecayState : uint8_t
@@ -101,19 +116,7 @@ private:
 
     /// Current state of the decay control state machine
     std::atomic<DecayState> decay_state{DecayState::Enabled};
-    double purge_total_memory_threshold_ratio;
-    double purge_dirty_pages_threshold_ratio;
-    uint64_t page_size = 0;
 
-    std::chrono::milliseconds decay_adjustment_period_ms{0};
-
-    MemoryUsageSource source{MemoryUsageSource::None};
-
-    std::shared_ptr<ICgroupsReader> cgroups_reader;
-
-    std::shared_ptr<PageCache> page_cache;
-
-#if USE_JEMALLOC
     Jemalloc::MibCache<uint64_t> epoch_mib{"epoch"};
     Jemalloc::MibCache<size_t> resident_mib{"stats.resident"};
     Jemalloc::MibCache<size_t> pagesize_mib{"arenas.page"};
