@@ -105,7 +105,10 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
         if (!ephemeral_default)
         {
             ostr << ' ';
-            default_expression->format(ostr, format_settings, state, frame);
+            auto nested_frame = frame;
+            if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(default_expression.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+                nested_frame.need_parens = true;
+            default_expression->format(ostr, format_settings, state, nested_frame);
         }
     }
 
