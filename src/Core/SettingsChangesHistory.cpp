@@ -1037,7 +1037,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.2",
         {
-
+            {"distributed_index_analysis_min_parts_to_activate", 100, 100, "New setting"},
+            {"distributed_index_analysis_min_indexes_size_to_activate", 1_GiB, 1_GiB, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.1",
         {
