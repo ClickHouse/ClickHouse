@@ -100,9 +100,9 @@ public:
                     writeChar('}', buf);
                     result = buf.str();
                 }
-                catch (...)
+                catch (...) // NOLINT(bugprone-empty-catch)
                 {
-                    /// Keep {} on invalid/corrupted input (consistent with latencyValuesAndWeights()).
+                    /// Best-effort: ignore on invalid/corrupted input.
                 }
             }
 

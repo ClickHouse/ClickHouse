@@ -52,16 +52,8 @@ public:
             return;
 
         /// Deserialize and merge the sketch
-        try
-        {
-            auto sk = datasketches::quantiles_sketch<double>::deserialize(data_ptr, data_size);
-            getQuantilesSketch()->merge(sk);
-        }
-        catch (...) // NOLINT(bugprone-empty-catch)
-        {
-            /// If deserialization fails (corrupted or invalid data), skip this value.
-            /// This allows graceful handling of bad input data rather than failing the entire aggregation.
-        }
+        auto sk = datasketches::quantiles_sketch<double>::deserialize(data_ptr, data_size);
+        getQuantilesSketch()->merge(sk);
     }
 
     String serializedData()

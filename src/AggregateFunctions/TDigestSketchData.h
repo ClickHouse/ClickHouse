@@ -41,16 +41,8 @@ public:
         if (size == 0)
             return;
 
-        try
-        {
-            auto sk = datasketches::tdigest<double>::deserialize(data, size);
-            getTDigest()->merge(sk);
-        }
-        catch (...) // NOLINT(bugprone-empty-catch)
-        {
-            /// If deserialization fails (corrupted or invalid data), skip this value.
-            /// This allows graceful handling of bad input data rather than failing the entire aggregation.
-        }
+        auto sk = datasketches::tdigest<double>::deserialize(data, size);
+        getTDigest()->merge(sk);
     }
 
     std::vector<uint8_t> getSerializedData()
