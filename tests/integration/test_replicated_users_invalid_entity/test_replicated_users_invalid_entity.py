@@ -40,6 +40,8 @@ def test_server_fail_on_invalid_replicated_user(started_cluster):
         node2,
         f"SELECT name FROM system.users WHERE name = '{user_name}'",
         f"{user_name}\n",
+        retry_count=30,
+        sleep_time=1,
     )
 
     zk = cluster.get_kazoo_client("zoo1")
