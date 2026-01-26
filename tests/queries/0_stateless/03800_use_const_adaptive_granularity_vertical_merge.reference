@@ -8,4 +8,4 @@ select name, rows, marks, index_granularity_bytes_in_memory_allocated from syste
 1_1_2_1	400000	4001	25
 select * from tab format Null;
 check table tab;
-1_1_2_1	1	
+1
