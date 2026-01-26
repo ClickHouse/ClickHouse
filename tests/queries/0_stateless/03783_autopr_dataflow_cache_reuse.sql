@@ -9,6 +9,9 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=1, parallel_rep
 -- For runs with the old analyzer
 SET enable_analyzer=1;
 
+-- May disable the usage of parallel replicas
+SET automatic_parallel_replicas_min_bytes_per_replica=0;
+
 SET max_threads=2;
 
 INSERT INTO t SELECT toString(number), number FROM numbers(1e3);
