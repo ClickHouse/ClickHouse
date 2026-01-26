@@ -392,13 +392,15 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
       * directly, we assume they handle nullable types correctly and don't modify their result type.
       */
     bool uses_default_implementation_for_nulls = false;
+    const FunctionToFunctionBaseAdaptor * adaptor = nullptr;
     if (function_base)
     {
-        if (const auto * adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(function_base.get()))
+        adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(function_base.get());
+        if (adaptor)
             uses_default_implementation_for_nulls = adaptor->getFunction()->useDefaultImplementationForNulls();
     }
 
-    if (function_base && uses_default_implementation_for_nulls)
+    if (adaptor && uses_default_implementation_for_nulls)
     {
         auto is_nullable_type = [](const DataTypePtr & type)
         {
@@ -435,18 +437,29 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
             if (has_new_nullable)
                 result_type = makeNullable(result_type);
         }
-        else if (!any_current_arg_nullable && !function_base->getResultType()->isNullable())
+        else if (!any_current_arg_nullable)
         {
-            /// Case 2: Result type is nullable but no arguments are nullable AND the
-            /// function_base's actual result type is non-nullable.
+            /// Case 2: Result type is nullable but no arguments are nullable.
             /// This can happen when wrap_with_nullable was set during analysis but
-            /// actual arguments are non-nullable. Remove the nullable wrapper.
+            /// actual arguments are non-nullable. We may need to remove the nullable wrapper.
             ///
-            /// We must also check function_base->getResultType() because some functions
-            /// (like arrayElement) return nullable based on nested types (e.g., array element type),
-            /// not just top-level argument nullability. For such functions, the result type
-            /// should remain nullable even if no arguments are nullable at the top level.
-            result_type = removeNullable(result_type);
+            /// However, some functions (like arrayElement) return nullable based on nested types
+            /// (e.g., array element type), not just top-level argument nullability. For such functions,
+            /// the result type should remain nullable even if no arguments are nullable at the top level.
+            ///
+            /// To handle this correctly, we check what the underlying function would return
+            /// for non-nullable arguments by calling getReturnTypeImpl with stripped types.
+            /// Note: function_base->getResultType() can't be used here because the function was
+            /// built during analysis with potentially nullable arguments, so its result type
+            /// already reflects that (e.g., Nullable(String) for concat with nullable args).
+            DataTypes non_nullable_arg_types;
+            non_nullable_arg_types.reserve(arguments.size());
+            for (const auto & arg : arguments)
+                non_nullable_arg_types.push_back(removeNullable(arg.type));
+
+            DataTypePtr underlying_result_type = adaptor->getFunction()->getReturnTypeImpl(non_nullable_arg_types);
+            if (!underlying_result_type->isNullable())
+                result_type = removeNullable(result_type);
         }
     }
 
