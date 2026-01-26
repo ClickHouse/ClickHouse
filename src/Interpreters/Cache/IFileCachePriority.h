@@ -88,9 +88,12 @@ public:
         void setInvalidatedFlag()
         {
             [[maybe_unused]] auto prev = state.exchange(State::Invalidated);
+            /// Active in case of FileCache::remove
+            /// Evicting in case of FileCache::tryReserve
+            /// Moving in case of SLRU queue moves
             chassert(
-                prev == State::Evicting || prev == State::Moving,
-                printUnexpectedState(prev, "Moving or Evicting", "Invalidated"));
+                prev == State::Active || prev == State::Evicting || prev == State::Moving,
+                printUnexpectedState(prev, "Active or Moving or Evicting", "Invalidated"));
         }
 
         void resetFlag(State from_state, State to_state = State::Active)

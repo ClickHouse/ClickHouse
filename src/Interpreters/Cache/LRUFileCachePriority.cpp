@@ -169,6 +169,7 @@ LRUFileCachePriority::LRUIterator::LRUIterator(
     , iterator(iterator_)
     , entry(*iterator)
 {
+    assertValid();
 }
 
 LRUFileCachePriority::LRUIterator::LRUIterator(const LRUIterator & other)
@@ -176,13 +177,15 @@ LRUFileCachePriority::LRUIterator::LRUIterator(const LRUIterator & other)
     *this = other;
 }
 
-LRUFileCachePriority::LRUIterator & LRUFileCachePriority::LRUIterator::operator =(const LRUIterator & other)
+LRUFileCachePriority::LRUIterator &
+LRUFileCachePriority::LRUIterator::operator =(const LRUIterator & other)
 {
     if (this == &other)
         return *this;
 
     cache_priority = other.cache_priority;
     iterator = other.iterator;
+    entry = other.entry;
     return *this;
 }
 
@@ -657,8 +660,14 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
 
 bool LRUFileCachePriority::LRUIterator::assertValid() const
 {
-    if (!entry || iterator == LRUQueue::iterator{})
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to use invalid iterator");
+    const bool is_iterator_valid = iterator != LRUQueue::iterator{};
+    if (!entry || !is_iterator_valid)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Attempt to use invalid iterator (entry: {}, iterator: {})",
+            bool(entry), is_iterator_valid);
+    }
     chassert(entry == *iterator);
     return true;
 }
