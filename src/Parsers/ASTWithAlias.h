@@ -22,9 +22,8 @@ public:
     String alias;
     /// If is true, getColumnName returns alias. Uses for aliases in former WITH section of SELECT query.
     /// Example: 'WITH pow(2, 2) as a SELECT pow(a, 2)' returns 'pow(a, 2)' instead of 'pow(pow(2, 2), 2)'
-    bool prefer_alias_to_column_name = false;
-    bool preferAliasToColumnName() const { return prefer_alias_to_column_name; }
-    void setPreferAliasToColumnName(bool value) { prefer_alias_to_column_name = value; }
+    bool preferAliasToColumnName() const { return FLAGS & PREFER_ALIAS_TO_COLUMN_NAME; }
+    void setPreferAliasToColumnName(bool value) { FLAGS = value ? (FLAGS | PREFER_ALIAS_TO_COLUMN_NAME) : (FLAGS & ~PREFER_ALIAS_TO_COLUMN_NAME); }
     // An alias can be defined as a query parameter,
     // in which case we can only resolve it during query execution.
     boost::intrusive_ptr<ASTQueryParameter> parametrised_alias;
