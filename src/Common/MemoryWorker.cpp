@@ -355,7 +355,7 @@ uint64_t MemoryWorker::getMemoryUsage(bool log_error)
 namespace
 {
 
-std::chrono::milliseconds getCurrentTimeMs()
+[[maybe_unused]] std::chrono::milliseconds getCurrentTimeMs()
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch());
 }
@@ -543,13 +543,22 @@ void MemoryWorker::purgeDirtyPagesThread()
         auto current_state = decay_state.load(std::memory_order_relaxed);
         if (current_state == MemoryWorker::DecayState::DisableRequested)
         {
-            LOG_INFO(log, "Setting dirty pages decay period to 0ms (disabling automatic decay)");
+            LOG_INFO(
+                log,
+                "Setting jemalloc's dirty pages decay period to 0ms (disabling automatic decay) because of high memory usage for a longer "
+                "period of time (> {}ms). This should provide server with more memory but it could negatively impact the performance",
+                decay_adjustment_period_ms.count());
             setDirtyDecayForAllArenas(0);
             decay_state.store(MemoryWorker::DecayState::Disabled, std::memory_order_relaxed);
         }
         else if (current_state == MemoryWorker::DecayState::EnableRequested)
         {
-            LOG_INFO(log, "Setting dirty pages decay period to {}ms (re-enabling automatic decay)", default_dirty_decay_ms);
+            LOG_INFO(
+                log,
+                "Setting jemalloc's dirty pages decay period to {}ms (re-enabling automatic decay). Server has been operating with normal "
+                "memory usage for at least {}ms",
+                default_dirty_decay_ms,
+                decay_adjustment_period_ms.count());
             setDirtyDecayForAllArenas(default_dirty_decay_ms);
             decay_state.store(MemoryWorker::DecayState::Enabled, std::memory_order_relaxed);
         }
