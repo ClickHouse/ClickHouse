@@ -264,7 +264,12 @@ private:
     LRUFileCachePriority * cache_priority;
 
     LRUQueue::iterator iterator;
-    EntryPtr entry;
+    /// We store entry separately from iterator,
+    /// because we want to be able to change its atomic state
+    /// without any queue lock - both shared and unique locks - (in invalidate() method).
+    /// A non-zero size entry will always stay in the queue by the same iterator
+    /// until its state becomes Invalidated and it is removed.
+    std::weak_ptr<Entry> entry;
 };
 
 }
