@@ -2,7 +2,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
-#include "Databases/DataLake/Common.h"
+#include <Databases/DataLake/Common.h>
 #include "config.h"
 
 #if USE_AVRO

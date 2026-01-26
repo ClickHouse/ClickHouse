@@ -1,6 +1,5 @@
 #include <memory>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
-#include "Interpreters/StorageID.h"
 
 #if USE_AWS_S3
 
@@ -26,6 +25,7 @@
 #include <IO/S3Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskLocal.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {

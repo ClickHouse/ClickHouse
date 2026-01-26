@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Interpreters/StorageID.h"
 #include "config.h"
 
 #if USE_AWS_S3
@@ -11,6 +10,7 @@
 
 #include <IO/S3/Client.h>
 #include <Databases/DataLake/StorageCredentials.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {
