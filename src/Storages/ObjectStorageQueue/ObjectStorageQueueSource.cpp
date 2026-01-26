@@ -1253,7 +1253,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
         }
 
         if (commit_settings.max_processing_time_sec_before_commit
-            && progress->elapsed_time.elapsedSeconds() >= commit_settings.max_processing_time_sec_before_commit)
+            && progress->elapsed_time.elapsedSeconds() >= static_cast<double>(commit_settings.max_processing_time_sec_before_commit))
         {
             LOG_DEBUG(log, "Max processing time before commit reached "
                       "(rows: {}, bytes: {}, files: {}, time: {})",

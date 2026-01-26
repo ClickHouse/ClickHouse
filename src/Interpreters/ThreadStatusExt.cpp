@@ -124,10 +124,10 @@ size_t ThreadGroup::getPeakThreadsUsage() const
     return peak_threads_usage;
 }
 
-UInt64 ThreadGroup::getThreadsTotalElapsedMs() const
+UInt64 ThreadGroup::getGroupElapsedMs() const
 {
     std::lock_guard lock(mutex);
-    return elapsed_total_threads_counter_ms;
+    return elapsed_group_ms;
 }
 
 void ThreadGroup::linkThread(UInt64 thread_id)
@@ -135,16 +135,21 @@ void ThreadGroup::linkThread(UInt64 thread_id)
     std::lock_guard lock(mutex);
     thread_ids.insert(thread_id);
 
+    if (active_thread_count == 0)
+        effective_group_stopwatch.restart();
+
     ++active_thread_count;
     peak_threads_usage = std::max(peak_threads_usage, active_thread_count);
 }
 
-void ThreadGroup::unlinkThread(UInt64 elapsed_thread_counter_ms)
+void ThreadGroup::unlinkThread()
 {
     std::lock_guard lock(mutex);
     chassert(active_thread_count > 0);
     --active_thread_count;
-    elapsed_total_threads_counter_ms += elapsed_thread_counter_ms;
+
+    if (active_thread_count == 0)
+        elapsed_group_ms += effective_group_stopwatch.elapsedMilliseconds();
 }
 
 ThreadGroupPtr ThreadGroup::createForQuery(ContextPtr query_context_, std::function<void()> fatal_error_callback_)
@@ -403,7 +408,7 @@ void ThreadStatus::detachFromGroup()
     /// Extract MemoryTracker out from query and user context
     memory_tracker.setParent(&total_memory_tracker);
 
-    thread_group->unlinkThread(thread_attach_time.elapsedMilliseconds());
+    thread_group->unlinkThread();
 
     if (thread_group->os_threads_nice_value != 0)
     {
