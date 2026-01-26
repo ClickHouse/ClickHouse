@@ -33,6 +33,9 @@ private:
     {
         const String & prompt = prompting_strings[ind];
 
+        if (prompt == name)
+            return;
+
         /// Clang SimpleTypoCorrector logic
         const size_t min_possible_edit_distance = std::abs(static_cast<int64_t>(name.size()) - static_cast<int64_t>(prompt.size()));
         const size_t mistake_factor = (name.size() + 2) / 3;
