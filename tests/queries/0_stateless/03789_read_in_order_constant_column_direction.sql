@@ -1,6 +1,7 @@
+-- Tags: no-random-settings
 -- Test: read-in-order optimization should use InReverseOrder when constant ORDER BY columns are skipped
+-- no-random-settings: This test requires optimize_read_in_order=1 which must not be randomized
 
--- This test specifically tests read-in-order optimization, so we need to ensure it's enabled
 SET optimize_read_in_order = 1;
 
 DROP TABLE IF EXISTS test_03789;
