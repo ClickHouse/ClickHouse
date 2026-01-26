@@ -385,8 +385,9 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
     const auto & part = loaded_part_info->getDataPart();
     auto alter_conversions = std::make_shared<AlterConversions>();
 
+    auto part_storage = part->getStorage();
     MutationsInterpreter interpreter(
-        const_cast<MergeTreeData &>(part->storage),
+        const_cast<MergeTreeData &>(*part_storage),
         part,
         alter_conversions,
         metadata_snapshot,

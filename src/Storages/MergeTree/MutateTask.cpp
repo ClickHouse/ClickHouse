@@ -199,6 +199,7 @@ static void splitAndModifyMutationCommands(
     bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
+    auto part_storage = part->getStorage();
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
 
@@ -368,7 +369,7 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
-                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name) && !ignored_columns.contains(column.name))
+                if (!metadata_snapshot->getColumns().has(column.name) && !part_storage->getVirtualsPtr()->has(column.name) && !ignored_columns.contains(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns
@@ -382,16 +383,16 @@ static void splitAndModifyMutationCommands(
                     {
                         LOG_WARNING(log, "Ignoring column {} from part {} with metadata version {} because there is no such column "
                                          "in table {} with metadata version {}. Assuming the column was dropped", column.name, part->name,
-                                    part_metadata_version, part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+                                    part_metadata_version, part_storage->getStorageID().getNameForLogs(), table_metadata_version);
                         continue;
                     }
 
                     /// StorageMergeTree does not have metadata version
-                    if (part->storage.supportsReplication())
+                    if (part_storage->supportsReplication())
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} with metadata version {} contains column {} that is absent "
                                         "in table {} with metadata version {}",
                                         part->name, part_metadata_version, column.name,
-                                        part->storage.getStorageID().getNameForLogs(), table_metadata_version);
+                                        part_storage->getStorageID().getNameForLogs(), table_metadata_version);
                 }
 
                 for_interpreter.emplace_back(
@@ -545,6 +546,7 @@ getColumnsForNewDataPart(
     const MutationCommands & commands_for_interpreter,
     const MutationCommands & commands_for_removes)
 {
+    auto source_part_storage = source_part->getStorage();
     MutationCommands all_commands;
     all_commands.insert(all_commands.end(), commands_for_interpreter.begin(), commands_for_interpreter.end());
     all_commands.insert(all_commands.end(), commands_for_removes.begin(), commands_for_removes.end());
@@ -584,7 +586,7 @@ getColumnsForNewDataPart(
         }
     }
 
-    auto persistent_virtuals = source_part->storage.getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
+    auto persistent_virtuals = source_part_storage->getVirtualsPtr()->getNamesAndTypesList(VirtualsKind::Persistent);
 
     for (const auto & [name, type] : persistent_virtuals)
     {
@@ -612,7 +614,7 @@ getColumnsForNewDataPart(
     {
         settings = SerializationInfo::Settings
         {
-            (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            (*source_part_storage->getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
             false,
             serialization_infos.getSettings().version,
             serialization_infos.getSettings().string_serialization_version,
@@ -624,11 +626,11 @@ getColumnsForNewDataPart(
     {
         settings = SerializationInfo::Settings
         {
-            (*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+            (*source_part_storage->getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
             false,
-            (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
+            (*source_part_storage->getSettings())[MergeTreeSetting::serialization_info_version],
+            (*source_part_storage->getSettings())[MergeTreeSetting::string_serialization_version],
+            (*source_part_storage->getSettings())[MergeTreeSetting::nullable_serialization_version],
         };
     }
 
@@ -846,6 +848,7 @@ static std::unordered_map<String, size_t> getStreamCounts(
     const MergeTreeDataPartChecksums & source_part_checksums,
     const Names & column_names)
 {
+    auto data_part_storage = data_part->getStorage();
     std::unordered_map<String, size_t> stream_counts;
 
     for (const auto & column_name : column_names)
@@ -854,7 +857,7 @@ static std::unordered_map<String, size_t> getStreamCounts(
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part_storage->getSettings());
                 if (stream_name)
                     ++stream_counts[*stream_name];
             };
@@ -962,6 +965,7 @@ static NameToNameVector collectFilesForRenames(
     const NameSet & updated_columns_in_patches,
     const String & mrk_extension)
 {
+    auto source_part_storage = source_part->getStorage();
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     auto stream_counts = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
     NameToNameVector rename_vector;
@@ -1018,7 +1022,7 @@ static NameToNameVector collectFilesForRenames(
             {
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part_storage->getSettings());
 
                     /// Delete files if they are no longer shared with another column.
                     if (stream_name && --stream_counts[*stream_name] == 0)
@@ -1046,7 +1050,7 @@ static NameToNameVector collectFilesForRenames(
 
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    auto storage_settings = source_part->storage.getSettings();
+                    auto storage_settings = source_part_storage->getSettings();
 
                     String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
                     String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
@@ -1070,7 +1074,7 @@ static NameToNameVector collectFilesForRenames(
                 /// If we rename a column with statistics, we should also rename the stat file.
                 if (auto filename = getStatisticFilename(STATS_FILE_PREFIX + command.column_name, *source_part))
                 {
-                    auto new_filename = getNewStatisticFilename(STATS_FILE_PREFIX + command.rename_to, *source_part->storage.getSettings(), source_part->getDataPartStorage());
+                    auto new_filename = getNewStatisticFilename(STATS_FILE_PREFIX + command.rename_to, *source_part_storage->getSettings(), source_part->getDataPartStorage());
                     add_rename(*filename, new_filename);
                 }
             }
@@ -1111,6 +1115,7 @@ void finalizeMutatedPart(
     StorageMetadataPtr metadata_snapshot,
     bool sync)
 {
+    auto new_data_part_storage = new_data_part->getStorage();
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
 
     if (new_data_part->uuid != UUIDHelpers::Nil)
@@ -1196,14 +1201,14 @@ void finalizeMutatedPart(
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
 
-    if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
+    if ((*new_data_part_storage->getSettings())[MergeTreeSetting::enable_index_granularity_compression])
     {
         if (auto new_index_granularity = new_data_part->index_granularity->optimize())
             new_data_part->index_granularity = std::move(new_index_granularity);
     }
 
     /// It's important to set index after index granularity.
-    if (!new_data_part->storage.getPrimaryIndexCache())
+    if (!new_data_part_storage->getPrimaryIndexCache())
         new_data_part->setIndex(*source_part->getIndex());
 
     /// Load rest projections which are hardlinked
@@ -1215,7 +1220,7 @@ void finalizeMutatedPart(
     new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
     new_data_part->setBytesUncompressedOnDisk(new_data_part->checksums.getTotalSizeUncompressedOnDisk());
     /// Also use information from checksums
-    if (!(*new_data_part->storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
+    if (!(*new_data_part_storage->getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
         new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     new_data_part->default_codec = codec;
@@ -1675,6 +1680,7 @@ private:
 
     void prepare()
     {
+        auto source_part_storage = ctx->source_part->getStorage();
         ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
@@ -1713,7 +1719,7 @@ private:
             {
                 if (auto filename = MutationHelpers::getStatisticFilename(STATS_FILE_PREFIX + command.column_name, *ctx->source_part))
                 {
-                    String new_filename = MutationHelpers::getNewStatisticFilename(STATS_FILE_PREFIX + command.rename_to, *ctx->source_part->storage.getSettings(), ctx->source_part->getDataPartStorage());
+                    String new_filename = MutationHelpers::getNewStatisticFilename(STATS_FILE_PREFIX + command.rename_to, *source_part_storage->getSettings(), ctx->source_part->getDataPartStorage());
                     renamed_stats[*filename] = std::move(new_filename);
                 }
             }
@@ -1858,7 +1864,7 @@ private:
         /// Tracking of hardlinked files required for zero-copy replication.
         /// We don't remove them when we delete last copy of source part because
         /// new part can use them.
-        ctx->hardlinked_files.source_table_shared_id = ctx->source_part->storage.getTableSharedID();
+        ctx->hardlinked_files.source_table_shared_id = source_part_storage->getTableSharedID();
         ctx->hardlinked_files.source_part_name = ctx->source_part->name;
         ctx->hardlinked_files.hardlinks_from_source_part = std::move(hardlinked_files);
 
@@ -2045,6 +2051,7 @@ private:
 
     void prepare()
     {
+        auto source_part_storage = ctx->source_part->getStorage();
         if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
             ctx->files_to_skip.insert("ttl.txt");
 
@@ -2057,7 +2064,7 @@ private:
         ctx->new_data_part->version.setCreationTID(tid, nullptr);
         ctx->new_data_part->storeVersionMetadata();
 
-        auto settings = ctx->source_part->storage.getSettings();
+        auto settings = source_part_storage->getSettings();
 
         NameSet hardlinked_files;
 
@@ -2142,7 +2149,7 @@ private:
         /// Tracking of hardlinked files required for zero-copy replication.
         /// We don't remove them when we delete last copy of source part because
         /// new part can use them.
-        ctx->hardlinked_files.source_table_shared_id = ctx->source_part->storage.getTableSharedID();
+        ctx->hardlinked_files.source_table_shared_id = source_part_storage->getTableSharedID();
         ctx->hardlinked_files.source_part_name = ctx->source_part->name;
         ctx->hardlinked_files.hardlinks_from_source_part = std::move(hardlinked_files);
 
@@ -2489,7 +2496,8 @@ static bool canSkipMutationCommandForPart(const MergeTreeDataPartPtr & part, con
 {
     if (command.partition)
     {
-        auto command_partition_id = part->storage.getPartitionIDFromQuery(command.partition, context);
+        auto part_storage = part->getStorage();
+        auto command_partition_id = part_storage->getPartitionIDFromQuery(command.partition, context);
         if (part->info.getPartitionId() != command_partition_id)
             return true;
     }

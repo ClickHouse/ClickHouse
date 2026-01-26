@@ -93,7 +93,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
 
     const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part->info;
     const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";
-    const auto & data_settings = per_part_infos[task_idx]->data_part->storage.getSettings();
+    auto part_storage = per_part_infos[task_idx]->data_part->getStorage();
+    const auto & data_settings = part_storage->getSettings();
     auto & marks_in_range = per_part_marks_in_range[task_idx];
     auto get_from_buffer = [&,
                             rows_granularity = (*data_settings)[MergeTreeSetting::index_granularity],

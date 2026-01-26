@@ -12,7 +12,7 @@ class LoadedMergeTreeDataPartInfoForReader final : public IMergeTreeDataPartInfo
 public:
     LoadedMergeTreeDataPartInfoForReader(
         MergeTreeData::DataPartPtr data_part_, AlterConversionsPtr alter_conversions_)
-        : IMergeTreeDataPartInfoForReader(data_part_->storage.getContext())
+        : IMergeTreeDataPartInfoForReader(data_part_->getStorage()->getContext())
         , data_part(std::move(data_part_))
         , alter_conversions(std::move(alter_conversions_))
     {
@@ -67,7 +67,7 @@ public:
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
 
-    void reportBroken() override { data_part->storage.reportBrokenPart(data_part); }
+    void reportBroken() override { data_part->getStorage()->reportBrokenPart(data_part); }
 
     size_t getMarksCount() const override { return data_part->getMarksCount(); }
 
@@ -81,7 +81,7 @@ public:
 
     SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
 
-    String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
+    String getTableName() const override { return data_part->getStorage()->getStorageID().getNameForLogs(); }
 
     MergeTreeData::DataPartPtr getDataPart() const { return data_part; }
 

@@ -19,7 +19,8 @@ bool StorageFromMergeTreeDataPart::materializeTTLRecalculateOnly() const
 {
     if (parts.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "parts must not be empty for materializeTTLRecalculateOnly");
-    return (*parts.front().data_part->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
+    auto part_storage = parts.front().data_part->getStorage();
+    return (*part_storage->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
 }
 
 void StorageFromMergeTreeDataPart::read(

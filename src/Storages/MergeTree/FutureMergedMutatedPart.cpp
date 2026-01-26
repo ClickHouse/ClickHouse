@@ -30,7 +30,7 @@ void FutureMergedMutatedPart::assign(
         max_level = std::max(max_level, part->info.level);
     }
 
-    auto chosen_format = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows, max_level + 1, projection);
+    auto chosen_format = parts_.front()->getStorage()->choosePartFormat(sum_bytes_uncompressed, sum_rows, max_level + 1, projection);
     future_part_type = std::min(future_part_type, chosen_format.part_type);
     future_part_storage_type = std::min(future_part_storage_type, chosen_format.storage_type);
     assign(std::move(parts_), std::move(patch_parts_), {future_part_type, future_part_storage_type});
@@ -75,7 +75,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
     part_info.level = max_level + 1;
     part_info.mutation = max_mutation;
 
-    if (parts.front()->storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    if (parts.front()->getStorage()->format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         DayNum min_date = DayNum(std::numeric_limits<UInt16>::max());
         DayNum max_date = DayNum(std::numeric_limits<UInt16>::min());

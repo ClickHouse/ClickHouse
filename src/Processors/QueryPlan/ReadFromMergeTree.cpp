@@ -2415,10 +2415,11 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & remaining_ranges : remaining)
             {
                 const auto & data_part = remaining_ranges.data_part;
+                auto data_part_storage = data_part->getStorage();
                 String part_name = data_part->isProjectionPart() ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
                                                                  : data_part->name;
                 query_condition_cache->write(
-                    data_part->storage.getStorageID().uuid,
+                    data_part_storage->getStorageID().uuid,
                     part_name,
                     *condition_hash,
                     reader_settings.query_condition_cache_store_conditions_as_plaintext ? output->result_name : "",

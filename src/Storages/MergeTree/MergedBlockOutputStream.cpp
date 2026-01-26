@@ -39,13 +39,15 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     , default_codec(default_codec_)
     , write_settings(write_settings_)
 {
+    auto part_storage = data_part->getStorage();
+
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
-    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
+    bool save_marks_in_cache = part_storage->getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
     /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading primary index file.
-    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
+    bool save_primary_index_in_memory = !part_storage->getPrimaryIndexCache() || part_storage->getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
 
     MergeTreeWriterSettings writer_settings(
-        data_part->storage.getContext()->getSettingsRef(),
+        part_storage->getContext()->getSettingsRef(),
         write_settings,
         storage_settings,
         data_part,
@@ -64,7 +66,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     writer = createMergeTreeDataPartWriter(data_part->getType(),
         data_part->name,
-        data_part->storage.getLogName(),
+        part_storage->getLogName(),
         data_part->getSerializations(),
         data_part_storage,
         data_part->index_granularity_info,
@@ -72,7 +74,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         columns_list,
         data_part->getColumnPositions(),
         metadata_snapshot,
-        data_part->storage.getVirtualsPtr(),
+        part_storage->getVirtualsPtr(),
         skip_indices,
         statistics,
         data_part->getMarksFileExtension(),
@@ -238,7 +240,8 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    if ((*new_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
+    auto new_part_storage = new_part->getStorage();
+    if ((*new_part_storage->getSettings())[MergeTreeSetting::enable_index_granularity_compression])
     {
         if (auto new_index_granularity = new_part->index_granularity->optimize())
             new_part->index_granularity = std::move(new_index_granularity);
@@ -289,6 +292,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         written_files.emplace_back(std::move(out));
     };
 
+    auto new_part_storage = new_part->getStorage();
+
     if (!new_part->isProjectionPart())
     {
         if (new_part->uuid != UUIDHelpers::Nil)
@@ -299,9 +304,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             });
         }
 
-        if (new_part->storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+        if (new_part_storage->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
-            if (auto file = new_part->partition.store(metadata_snapshot, new_part->storage.getContext(), new_part->getDataPartStorage(), checksums))
+            if (auto file = new_part->partition.store(metadata_snapshot, new_part_storage->getContext(), new_part->getDataPartStorage(), checksums))
             {
                 written_files.emplace_back(std::move(file));
             }

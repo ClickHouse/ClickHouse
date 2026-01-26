@@ -296,19 +296,19 @@ bool MergeTreeTransaction::rollback() noexcept
         /// NOTE It's possible that part is already removed from working set in the same transaction
         /// (or, even worse, in a separate non-transactional query with PrehistoricTID),
         /// but it's not a problem: removePartsFromWorkingSet(...) will do nothing in this case.
-        const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part}, true);
+        const_cast<MergeTreeData &>(*part->getStorage()).removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part}, true);
     }
 
     for (const auto & part : parts_to_activate)
         if (part->version.getCreationTID() != tid)
-            const_cast<MergeTreeData &>(part->storage).restoreAndActivatePart(part);
+            const_cast<MergeTreeData &>(*part->getStorage()).restoreAndActivatePart(part);
 
     for (const auto & part : parts_to_activate)
     {
         /// Clear removal_tid from version metadata file, so we will not need to distinguish TIDs that were not committed
         /// and TIDs that were committed long time ago and were removed from the log on log cleanup.
         part->appendRemovalTIDToVersionMetadata(/* clear */ true);
-        part->version.unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
+        part->version.unlockRemovalTID(tid, TransactionInfoContext{part->getStorage()->getStorageID(), part->name});
     }
 
     assert([&]()
@@ -367,12 +367,16 @@ String MergeTreeTransaction::dumpDescription() const
     std::unordered_map<const IStorage *, ChangesInTable> storage_to_changes;
 
     for (const auto & part : creating_parts)
-        std::get<0>(storage_to_changes[&(part->storage)]).push_back(part->name);
+    {
+        auto part_storage = part->getStorage();
+        std::get<0>(storage_to_changes[static_cast<const IStorage *>(part_storage.get())]).push_back(part->name);
+    }
 
     for (const auto & part : removing_parts)
     {
+        auto part_storage = part->getStorage();
         String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn.load());
-        std::get<1>(storage_to_changes[&(part->storage)]).push_back(std::move(info));
+        std::get<1>(storage_to_changes[static_cast<const IStorage *>(part_storage.get())]).push_back(std::move(info));
         chassert(!part->version.creation_csn || part->version.creation_csn <= getSnapshot());
     }
 

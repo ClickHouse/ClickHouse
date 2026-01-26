@@ -132,6 +132,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MarkRanges & ranges,
     const std::vector<MarkRanges> & patches_ranges)
 {
+    auto data_part_storage = read_info->data_part->getStorage();
     Readers new_readers;
 
     auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
@@ -142,7 +143,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             part_info,
             columns_to_read,
             extras.storage_snapshot,
-            read_info->data_part->storage.getSettings(),
+            data_part_storage->getSettings(),
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
@@ -188,7 +189,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             read_info->patch_parts[part_idx].part,
             read_info->task_columns.patch_columns[part_idx],
             extras.storage_snapshot,
-            read_info->data_part->storage.getSettings(),
+            data_part_storage->getSettings(),
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,

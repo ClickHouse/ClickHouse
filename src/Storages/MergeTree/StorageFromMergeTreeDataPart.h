@@ -24,7 +24,8 @@ public:
         : IStorage(getIDFromPart(part_))
         , parts(RangesInDataParts({part_}))
         , mutations_snapshot(mutations_snapshot_)
-        , storage(part_->storage)
+        , storage_holder(part_->getStorage())
+        , storage(*storage_holder)
         , partition_id(part_->info.getPartitionId())
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
@@ -35,7 +36,7 @@ public:
     StorageFromMergeTreeDataPart(
         const MergeTreeData & storage_,
         ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
-        : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
+        : IStorage(storage_.getStorageID()), storage_holder(nullptr), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
         setVirtuals(*storage.getVirtualsPtr());
@@ -86,13 +87,17 @@ public:
 private:
     const RangesInDataParts parts;
     const MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
+    /// Hold a reference to the storage to prevent it from being destroyed
+    /// while this wrapper (and the parts it contains) still exists.
+    /// For the projection constructor this will be nullptr as the caller keeps the storage alive.
+    std::shared_ptr<const MergeTreeData> storage_holder;
     const MergeTreeData & storage;
     const String partition_id;
     const ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr;
 
     static StorageID getIDFromPart(const MergeTreeData::DataPartPtr & part_)
     {
-        auto table_id = part_->storage.getStorageID();
+        auto table_id = part_->getStorage()->getStorageID();
         return StorageID(table_id.database_name, table_id.table_name + " (part " + part_->name + ")");
     }
 };

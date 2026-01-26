@@ -402,7 +402,8 @@ void MergeTreePartition::load(const IMergeTreeDataPart & part)
     if (!metadata_snapshot->hasPartitionKey())
         return;
 
-    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, part.storage.getContext()).sample_block;
+    auto part_storage = part.getStorage();
+    const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, part_storage->getContext()).sample_block;
 
     auto file = part.readFile("partition.dat");
     FormatSettings settings;

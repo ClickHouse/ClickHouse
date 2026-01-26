@@ -235,7 +235,7 @@ bool PartLog::addNewPartsImpl(
 
     try
     {
-        auto table_id = parts.front().part->storage.getStorageID();
+        auto table_id = parts.front().part->getStorage()->getStorageID();
         part_log = current_context->getPartLog(); // assume parts belong to the same table
         if (!part_log)
             return false;

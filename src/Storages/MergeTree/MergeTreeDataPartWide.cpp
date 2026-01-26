@@ -106,6 +106,8 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     if (checksums.empty())
         return size;
 
+    auto storage_ptr = getStorage();
+
     auto add_stream_size = [&](const String & stream_name)
     {
         auto bin_checksum = checksums.files.find(stream_name + ".bin");
@@ -137,7 +139,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     {
         getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage_ptr->getSettings());
 
             if (!stream_name)
                 return;
@@ -222,13 +224,15 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     if (columns.empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
+    auto storage_ptr = getStorage();
+
     auto any_column_filename = getFileNameForColumn(columns.front());
     if (!any_column_filename)
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
             "There are no files for column {} in part {}",
             columns.front().name, getDataPartStorage().getFullPath());
 
-    loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename, *storage.getSettings());
+    loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename, *storage_ptr->getSettings());
 }
 
 void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
@@ -236,9 +240,11 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
     if (column_names.empty() || !mark_cache)
         return;
 
+    auto storage_ptr = getStorage();
+
     std::vector<std::unique_ptr<MergeTreeMarksLoader>> loaders;
 
-    auto context = storage.getContext();
+    auto context = storage_ptr->getContext();
     auto read_settings = context->getReadSettings();
     auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
 
@@ -252,7 +258,7 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
 
         serialization->enumerateStreams([&](const auto & subpath)
         {
-            auto stream_name = getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+            auto stream_name = getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage_ptr->getSettings());
             if (!stream_name)
                 return;
 
@@ -280,12 +286,14 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
     if (!mark_cache)
         return;
 
+    auto storage_ptr = getStorage();
+
     const auto & serializations = getSerializations();
     for (const auto & [column_name, serialization] : serializations)
     {
         serialization->enumerateStreams([&](const auto & subpath)
         {
-            auto stream_name = getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+            auto stream_name = getStreamNameForColumn(column_name, subpath, DATA_FILE_EXTENSION, checksums, storage_ptr->getSettings());
             if (!stream_name)
                 return;
 
@@ -325,6 +333,7 @@ MergeTreeDataPartWide::~MergeTreeDataPartWide()
 
 void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
 {
+    auto storage_ptr = getStorage();
     std::string marks_file_extension = index_granularity_info.mark_type.getFileExtension();
 
     if (!checksums.empty())
@@ -339,12 +348,12 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                     if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                         return;
 
-                    auto stream_name = getStreamNameForColumn(name_type, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+                    auto stream_name = getStreamNameForColumn(name_type, substream_path, DATA_FILE_EXTENSION, checksums, storage_ptr->getSettings());
                     if (!stream_name)
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
                             "No stream ({}{}) file checksum for column {} in part {}",
-                            ISerialization::getFileNameForStream(name_type, substream_path, ISerialization::StreamFileNameSettings(*storage.getSettings())),
+                            ISerialization::getFileNameForStream(name_type, substream_path, ISerialization::StreamFileNameSettings(*storage_ptr->getSettings())),
                             DATA_FILE_EXTENSION,
                             name_type.name,
                             getDataPartStorage().getFullPath());
@@ -367,7 +376,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
         {
             getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = getStreamNameForColumn(name_type, substream_path, marks_file_extension, getDataPartStorage(), storage.getSettings());
+                auto stream_name = getStreamNameForColumn(name_type, substream_path, marks_file_extension, getDataPartStorage(), storage_ptr->getSettings());
 
                 /// Missing file is Ok for case when new column was added.
                 if (!stream_name)
@@ -399,6 +408,8 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     auto serialization = tryGetSerialization(column.name);
     if (!serialization)
         return false;
+
+    auto storage_ptr = getStorage();
     auto marks_file_extension = index_granularity_info.mark_type.getFileExtension();
 
     bool res = true;
@@ -408,7 +419,7 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
-        auto stream_name = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+        auto stream_name = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage_ptr->getSettings());
         if (!stream_name || !checksums.files.contains(*stream_name + marks_file_extension))
             res = false;
     });
@@ -434,11 +445,12 @@ std::optional<time_t> MergeTreeDataPartWide::getColumnModificationTime(const Str
 
 std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
 {
+    auto storage_ptr = getStorage();
     std::optional<String> filename;
 
     /// Fallback for the case when serializations was not loaded yet (called from loadColumns())
     if (getSerializations().empty())
-        return getStreamNameForColumn(column, {}, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
+        return getStreamNameForColumn(column, {}, DATA_FILE_EXTENSION, getDataPartStorage(), storage_ptr->getSettings());
 
     getSerialization(column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
@@ -446,9 +458,9 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
         {
             /// This method may be called when checksums are not initialized yet.
             if (!checksums.empty())
-                filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage.getSettings());
+                filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, checksums, storage_ptr->getSettings());
             else
-                filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage(), storage.getSettings());
+                filename = getStreamNameForColumn(column, substream_path, DATA_FILE_EXTENSION, getDataPartStorage(), storage_ptr->getSettings());
         }
     });
 

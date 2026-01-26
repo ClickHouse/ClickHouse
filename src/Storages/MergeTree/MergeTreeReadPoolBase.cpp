@@ -351,9 +351,10 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
 
         if (data_part->isProjectionPart())
         {
+            auto data_part_storage = data_part->getStorage();
             auto parent_part_name = data_part->getParentPartName();
 
-            auto parent_part = data_part->storage.getPartIfExists(
+            auto parent_part = data_part_storage->getPartIfExists(
                 parent_part_name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
 
             if (!parent_part)

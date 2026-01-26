@@ -229,7 +229,17 @@ public:
 
     void setName(const String & new_name);
 
-    const MergeTreeData & storage;
+    /// Returns a shared pointer to the storage. Throws if storage has been destroyed.
+    /// The caller must hold the returned pointer for the duration of storage access.
+    std::shared_ptr<const MergeTreeData> getStorage() const;
+
+    /// Returns a shared pointer to the storage, or nullptr if storage has been destroyed.
+    std::shared_ptr<const MergeTreeData> tryGetStorage() const;
+
+    /// Weak pointer to the storage. In rare cases (e.g., query pipeline holding
+    /// references to parts after storage is dropped) the part destructor may be
+    /// called after the storage is already destroyed.
+    std::weak_ptr<const IStorage> storage;
 
     const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
@@ -791,7 +801,7 @@ private:
     CompressionCodecPtr detectDefaultCompressionCodec() const;
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
-    void decrementStateMetric(MergeTreeDataPartState state) const;
+    void decrementStateMetric(MergeTreeDataPartState state, const std::shared_ptr<const MergeTreeData> & storage_ptr = nullptr) const;
 
     void checkConsistencyBase() const;
 

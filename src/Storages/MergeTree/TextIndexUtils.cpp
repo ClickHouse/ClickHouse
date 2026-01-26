@@ -212,7 +212,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     , index_ptr(std::move(index_ptr_))
     , merged_part_offsets(std::move(merged_part_offsets_))
     , writer_settings(writer_settings_)
-    , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
+    , step_time_ms((*new_data_part->getStorage()->getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
 {
     cursors.resize(segments.size());
     inputs.resize(segments.size());

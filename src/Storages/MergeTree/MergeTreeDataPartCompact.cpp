@@ -148,12 +148,13 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
     if (columns.empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
+    auto storage_ptr = getStorage();
     loadIndexGranularityImpl(
         index_granularity,
         index_granularity_info,
         index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size(),
         getDataPartStorage(),
-        *storage.getSettings());
+        *storage_ptr->getSettings());
 }
 
 void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
@@ -161,7 +162,8 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
     if (column_names.empty() || !mark_cache)
         return;
 
-    auto context = storage.getContext();
+    auto storage_ptr = getStorage();
+    auto context = storage_ptr->getContext();
     auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
 
     LOG_TEST(getLogger("MergeTreeDataPartCompact"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);

@@ -385,9 +385,10 @@ void MergeTreeTemporaryPart::finalize()
 /// because a correct path is required for the keys of caches.
 void MergeTreeTemporaryPart::prewarmCaches()
 {
+    auto part_storage = part->getStorage();
     size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
 
-    if (auto mark_cache = part->storage.getMarkCacheToPrewarm(bytes_uncompressed))
+    if (auto mark_cache = part_storage->getMarkCacheToPrewarm(bytes_uncompressed))
     {
         for (const auto & stream : streams)
         {
@@ -396,7 +397,7 @@ void MergeTreeTemporaryPart::prewarmCaches()
         }
     }
 
-    if (auto index_cache = part->storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
+    if (auto index_cache = part_storage->getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
     {
         /// Index was already set during writing. Now move it to cache.
         part->moveIndexToCache(*index_cache);

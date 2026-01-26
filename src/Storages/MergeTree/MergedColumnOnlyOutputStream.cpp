@@ -31,15 +31,17 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
           columns_list_,
           /*reset_columns=*/true)
 {
+    auto part_storage = data_part->getStorage();
+
     /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
-    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
+    bool save_marks_in_cache = part_storage->getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
     /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading priamry index file.
-    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
+    bool save_primary_index_in_memory = !part_storage->getPrimaryIndexCache() || part_storage->getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
 
     /// Granularity is never recomputed while writing only columns.
     MergeTreeWriterSettings writer_settings(
-        data_part->storage.getContext()->getSettingsRef(),
-        data_part->storage.getContext()->getWriteSettings(),
+        part_storage->getContext()->getSettingsRef(),
+        part_storage->getContext()->getWriteSettings(),
         storage_settings,
         data_part,
         data_part->index_granularity_info.mark_type.adaptive,
@@ -50,13 +52,13 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
-        data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
+        data_part->name, part_storage->getLogName(), data_part->getSerializations(),
         data_part_storage, data_part->index_granularity_info,
         storage_settings,
         columns_list_,
         data_part->getColumnPositions(),
         metadata_snapshot_,
-        data_part->storage.getVirtualsPtr(),
+        part_storage->getVirtualsPtr(),
         indices_to_recalc,
         stats_to_recalc,
         data_part->getMarksFileExtension(),

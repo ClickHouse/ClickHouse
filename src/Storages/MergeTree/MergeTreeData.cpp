@@ -577,8 +577,9 @@ NameSet MergeTreeData::MutationsSnapshotBase::getColumnsUpdatedInPatches() const
     {
         for (const auto & patch : patches)
         {
+            auto patch_storage = patch->getStorage();
             const auto & columns = patch->getColumns();
-            auto metadata_snapshot = patch->storage.getInMemoryMetadataPtr();
+            auto metadata_snapshot = patch_storage->getInMemoryMetadataPtr();
 
             for (const auto & column : columns)
             {
@@ -1801,7 +1802,8 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
     /// to avoid keeping part forever (see VersionMetadata::canBeRemoved())
     if (!part->version.isRemovalTIDLocked())
     {
-        TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
+        auto part_storage = part->getStorage();
+        TransactionInfoContext transaction_context{part_storage->getStorageID(), part->name};
         part->version.lockRemovalTID(Tx::PrehistoricTID, transaction_context);
     }
 }
@@ -7735,7 +7737,8 @@ bool MergeTreeData::assertNoPatchesForParts(const DataPartsVector & parts, const
             return false;
         }
 
-        auto table_name = parts.front()->storage.getStorageID().getFullTableName();
+        auto parts_front_storage = parts.front()->getStorage();
+        auto table_name = parts_front_storage->getStorageID().getFullTableName();
 
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "{}.\n"
@@ -8817,8 +8820,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
 
     if (!params.copy_instead_of_hardlink && params.hardlinked_files)
     {
+        auto src_part_merge_tree_data = src_part->getStorage();
         params.hardlinked_files->source_part_name = src_part->name;
-        params.hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
+        params.hardlinked_files->source_table_shared_id = src_part_merge_tree_data->getTableSharedID();
 
         for (auto it = src_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {

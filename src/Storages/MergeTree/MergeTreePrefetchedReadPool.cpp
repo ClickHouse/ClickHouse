@@ -136,7 +136,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     , prefetch_threadpool(getContext()->getPrefetchThreadpool())
     , log(getLogger(
           "MergeTreePrefetchedReadPool("
-          + (parts_ranges.empty() ? "" : parts_ranges.front().data_part->storage.getStorageID().getNameForLogs()) + ")"))
+          + (parts_ranges.empty() ? "" : parts_ranges.front().data_part->getStorage()->getStorageID().getNameForLogs()) + ")"))
 {
     /// Tasks creation might also create a lost of readers - check they do not
     /// do any time consuming operations in ctor.
