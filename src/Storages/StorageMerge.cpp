@@ -520,6 +520,9 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
         /// Propagate new filter to all child plans if they are already present
         for (auto & child : *child_plans)
         {
+            if (!child.plan.isInitialized())
+                continue;
+
             auto filter_step = std::make_unique<FilterStep>(
                 child.plan.getCurrentHeader(),
                 filter.actions.clone(),
