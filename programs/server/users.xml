@@ -79,6 +79,14 @@
                 <ip>::/0</ip>
             </networks>
 
+            <local_directory>
+            <!-- Path to folder where users created by SQL commands are stored. -->
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+        <access_control_path>
+            <path>/var/lib/clickhouse/access/</path>
+        </access_control_path>
+
             <!-- Settings profile for user. -->
             <profile>default</profile>
 

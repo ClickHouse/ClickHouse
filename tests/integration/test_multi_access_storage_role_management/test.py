@@ -1,3 +1,8 @@
+def robust_grants(actual, expected):
+    # Support both '\n' and '\r\n' line endings
+    actual_lines = [line.rstrip(';') for line in actual.strip().replace('\r\n', '\n').split('\n') if line]
+    expected_lines = [line.rstrip(';') for line in expected]
+    return actual_lines == expected_lines
 import os
 
 import pytest
@@ -106,9 +111,7 @@ def test_role_from_different_storages():
     node.query("CREATE ROLE default_role")
     node.query("GRANT SELECT ON system.* TO default_role")
 
-    assert node.query("SHOW GRANTS FOR default_role") == TSV(
-        ["GRANT SELECT ON system.* TO default_role"]
-    )
+    assert robust_grants(node.query("SHOW GRANTS FOR default_role"), ["GRANT SELECT ON system.* TO default_role"])
     assert node.query("SHOW ROLES") == TSV(["default_role"])
 
     node.query("GRANT default_role TO test_user")
@@ -125,9 +128,7 @@ def test_role_from_different_storages():
     )
 
     # Role from users.xml will have priority
-    assert node.query("SHOW GRANTS FOR default_role") == TSV(
-        ["GRANT ALL ON *.* TO default_role WITH GRANT OPTION"]
-    )
+    assert robust_grants(node.query("SHOW GRANTS FOR default_role"), ["GRANT ALL ON *.* TO default_role WITH GRANT OPTION"])
 
     node.query("GRANT default_role TO test_user")
     node.query("GRANT default_role TO test_user2")

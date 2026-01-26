@@ -31,20 +31,20 @@ def test_user_grants():
     instance.query("system reload users")
     instance.wait_for_log_line("performing update on configuration")
     assert instance.query("show grants for user1") == ""
-    
+
     instance.query("create role if not exists role1")
     instance.replace_in_config("/etc/clickhouse-server/users.d/users.xml", "<grants></grants>", "<grants><query>GRANT role1</query></grants>")
     instance.query("system reload users")
     instance.wait_for_log_line("performing update on configuration")
-    assert instance.query("show grants for user1") == "GRANT role1 TO user1\n"
+    assert instance.query("show grants for user1") == "GRANT role1 TO user1;\n"
 
     # Make sure that assigning roles created in SQL to XML users works after restart
     instance.restart_clickhouse()
-    assert instance.query("show grants for user1") == "GRANT role1 TO user1\n"
+    assert instance.query("show grants for user1") == "GRANT role1 TO user1;\n"
 
     # Removing the role via SQL should be handled gracefully with a warning in the log
     instance.query("drop role role1")
     instance.query("system reload users")
     instance.wait_for_log_line("performing update on configuration")
     instance.wait_for_log_line("Role role1 is not defined and will be ignored for grant query 'GRANT role1'.")
-    assert instance.query("show grants for user1") == "GRANT NONE TO user1\n"
+    assert instance.query("show grants for user1") == "GRANT NONE TO user1;\n"

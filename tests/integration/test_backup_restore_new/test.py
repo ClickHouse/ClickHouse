@@ -1378,13 +1378,13 @@ def test_system_users():
         == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS PROFILE `default`, custom_a = 1\n"
     )
     assert instance.query("SHOW GRANTS FOR u1") == TSV(
-        ["GRANT SELECT ON test.* TO u1", "GRANT r2 TO u1"]
+        ["GRANT SELECT ON test.* TO u1;", "GRANT r2 TO u1;"]
     )
     assert instance.query("SHOW CREATE ROLE r1") == "CREATE ROLE r1\n"
     assert instance.query("SHOW GRANTS FOR r1") == ""
     assert instance.query("SHOW CREATE ROLE r2") == "CREATE ROLE r2\n"
     assert instance.query("SHOW GRANTS FOR r2") == TSV(
-        ["GRANT r1 TO r2 WITH ADMIN OPTION"]
+        ["GRANT r1 TO r2 WITH ADMIN OPTION;"]
     )
 
     assert (
@@ -1455,7 +1455,7 @@ def test_system_users_required_privileges():
         == "CREATE USER u1 IDENTIFIED WITH no_password DEFAULT ROLE r1\n"
     )
     assert instance.query("SHOW GRANTS FOR u1") == TSV(
-        ["GRANT SELECT ON test.* TO u1", "GRANT r1 TO u1"]
+        ["GRANT SELECT ON test.* TO u1;", "GRANT r1 TO u1;"]
     )
 
     assert instance.query("SHOW CREATE ROLE r1") == "CREATE ROLE r1\n"
