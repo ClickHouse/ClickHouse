@@ -132,6 +132,7 @@ Extracts values and weights from a serialized Quantiles sketch.
 Returns a JSON-formatted String containing value-weight pairs from the sketch.
 )",
         .examples{{"latencyValuesAndWeights", "SELECT latencyValuesAndWeights(serializedQuantiles(latency_ms)) FROM table", ""}},
+        .introduced_in = {26, 1},
         .category = FunctionDocumentation::Category::Other
     });
 }

@@ -215,7 +215,21 @@ void registerAggregateFunctionMergeSerializedHLL(AggregateFunctionFactory & fact
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
 
-    factory.registerFunction("mergeSerializedHLL", {createAggregateFunctionMergeSerializedHLL, properties});
+    FunctionDocumentation::Description description = R"(
+Merges multiple serialized HLL sketches into a single sketch.
+)";
+    FunctionDocumentation::Syntax syntax = "mergeSerializedHLL([base64_encoded, lg_k, type])(sketch_column)";
+    FunctionDocumentation::Arguments arguments = {
+        {"sketch_column", "Serialized HLL sketch as a String.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Merged serialized HLL sketch.", {"String"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, {}, introduced_in, category};
+
+    factory.registerFunction("mergeSerializedHLL", {createAggregateFunctionMergeSerializedHLL, properties, documentation});
 }
 
 }

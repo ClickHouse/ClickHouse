@@ -122,6 +122,7 @@ Extracts centroids from a serialized TDigest sketch.
 Returns a Map<Float64, Int64> where keys are centroid means and values are weights.
 )",
         .examples{{"centroidsFromTDigest", "SELECT centroidsFromTDigest(serializedTDigest(value)) FROM table", ""}},
+        .introduced_in = {26, 1},
         .category = FunctionDocumentation::Category::Other
     });
 }

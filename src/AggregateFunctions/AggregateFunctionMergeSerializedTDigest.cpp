@@ -137,7 +137,23 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedTDigest(
 
 void registerAggregateFunctionMergeSerializedTDigest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("mergeSerializedTDigest", createAggregateFunctionMergeSerializedTDigest);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
+
+    FunctionDocumentation::Description description = R"(
+Merges multiple serialized TDigest sketches into a single sketch.
+)";
+    FunctionDocumentation::Syntax syntax = "mergeSerializedTDigest([base64_encoded])(sketch_column)";
+    FunctionDocumentation::Arguments arguments = {
+        {"sketch_column", "Serialized TDigest sketch as a String.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Merged serialized TDigest sketch.", {"String"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, {}, introduced_in, category};
+
+    factory.registerFunction("mergeSerializedTDigest", {createAggregateFunctionMergeSerializedTDigest, properties, documentation});
 }
 
 }

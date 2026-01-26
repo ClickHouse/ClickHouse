@@ -212,7 +212,21 @@ void registerAggregateFunctionSerializedHLL(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
 
-    factory.registerFunction("serializedHLL", {createAggregateFunctionSerializedHLL, properties});
+    FunctionDocumentation::Description description = R"(
+Creates a serialized HyperLogLog (HLL) sketch for approximate cardinality estimation.
+)";
+    FunctionDocumentation::Syntax syntax = "serializedHLL([lg_k, type])(expression)";
+    FunctionDocumentation::Arguments arguments = {
+        {"expression", "Column expression.", {"Int*", "UInt*", "Float*", "String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Serialized binary HLL sketch.", {"String"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, {}, introduced_in, category};
+
+    factory.registerFunction("serializedHLL", {createAggregateFunctionSerializedHLL, properties, documentation});
 }
 
 }

@@ -17,17 +17,17 @@ serializedHLL([lg_k, type])(expression)
 
 ## Arguments
 
-- `expression` — Column expression. Supported types: [Int](/docs/en/sql-reference/data-types/int-uint.md), [UInt](/docs/en/sql-reference/data-types/int-uint.md), [Float](/docs/en/sql-reference/data-types/float.md), [String](/docs/en/sql-reference/data-types/string.md), [FixedString](/docs/en/sql-reference/data-types/fixedstring.md).
+- `expression` — Column expression. Supported types: [Int](../../data-types/int-uint.md), [UInt](../../data-types/int-uint.md), [Float](../../data-types/float.md), [String](../../data-types/string.md), [FixedString](../../data-types/fixedstring.md).
 
 ## Parameters (optional)
 
-- `lg_k` — Log-base-2 of the number of buckets (precision parameter). Type: [UInt8](/docs/en/sql-reference/data-types/int-uint.md). Valid range: 4-21. Default: 10.
+- `lg_k` — Log-base-2 of the number of buckets (precision parameter). Type: [UInt8](../../data-types/int-uint.md). Valid range: 4-21. Default: 10.
   - Higher values provide better accuracy but use more memory
   - `lg_k=10` (1,024 buckets): ~3.2% error, ~512 bytes (HLL_4)
   - `lg_k=12` (4,096 buckets): ~1.6% error, ~2 KB (HLL_4)
   - `lg_k=14` (16,384 buckets): ~0.8% error, ~8 KB (HLL_4)
 
-- `type` — Storage format for the HLL sketch. Type: [String](/docs/en/sql-reference/data-types/string.md). Valid values: 'HLL_4', 'HLL_6', 'HLL_8'. Default: 'HLL_4'.
+- `type` — Storage format for the HLL sketch. Type: [String](../../data-types/string.md). Valid values: 'HLL_4', 'HLL_6', 'HLL_8'. Default: 'HLL_4'.
   - `'HLL_4'`: 4 bits per bucket, most compact (~K/2 bytes), slowest updates
   - `'HLL_6'`: 6 bits per bucket, balanced (~3K/4 bytes), medium speed
   - `'HLL_8'`: 8 bits per bucket, largest (~K bytes), fastest updates
@@ -35,7 +35,7 @@ serializedHLL([lg_k, type])(expression)
 
 ## Returned Value
 
-- Serialized binary HLL sketch. Type: [String](/docs/en/sql-reference/data-types/string.md).
+- Serialized binary HLL sketch. Type: [String](../../data-types/string.md).
 
 ## Implementation Details
 
@@ -140,7 +140,7 @@ FROM numbers(10000);
 
 ## See Also
 
-- [mergeSerializedHLL](/docs/en/sql-reference/aggregate-functions/reference/mergeserializedhll) — Merge multiple HLL sketches
-- [cardinalityFromHLL](/docs/en/sql-reference/functions/cardinalityfromhll) — Extract cardinality estimate from sketch
-- [uniq](/docs/en/sql-reference/aggregate-functions/reference/uniq) — Native ClickHouse approximate distinct count
-- [uniqHLL12](/docs/en/sql-reference/aggregate-functions/reference/uniqhll12) — Alternative HLL implementation
+- [mergeSerializedHLL](./mergeSerializedHLL.md) — Merge multiple HLL sketches
+- [cardinalityFromHLL](../../functions/cardinalityFromHLL.md) — Extract cardinality estimate from sketch
+- [uniq](./uniq.md) — Native ClickHouse approximate distinct count
+- [uniqHLL12](./uniqHLL12.md) — Alternative HLL implementation

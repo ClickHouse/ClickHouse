@@ -22,7 +22,7 @@ mergeSerializedHLL([base64_encoded, lg_k, type])(sketch_column)
 ## Parameters (optional)
 
 - `base64_encoded` — Boolean flag to control base64 decoding. Type: [Bool](../../../sql-reference/data-types/bool). Default: 0 (false).
-  - `0` (false, default): Input is raw binary data, no decoding needed (recommended for ClickHouse-generated sketches, ~95% faster)
+  - `0` (false, default): Input is raw binary data, no decoding needed (recommended for ClickHouse-generated sketches)
   - `1` (true): Input is base64-encoded and will be decoded before merging (for external data sources)
 
 - `lg_k` — Log-base-2 of buckets (should match the value used in [serializedHLL](../../../sql-reference/aggregate-functions/reference/serializedhll)). Type: [UInt8](../../../sql-reference/data-types/int-uint). Valid range: 4-21. Default: 10.
@@ -160,7 +160,7 @@ SELECT cardinalityFromHLL(m) AS total_cardinality FROM merged;
 
 ## Performance Notes
 
-- Using `base64_encoded=0` (default) provides ~95% speedup for ClickHouse-generated sketches (no base64 decoding overhead)
+- Using `base64_encoded=0` (default) avoids base64 decoding overhead for ClickHouse-generated sketches
 - For best performance, match `lg_k` and `type` parameters to those used in `serializedHLL`
 - Merging is very fast: typically microseconds per sketch regardless of cardinality
 

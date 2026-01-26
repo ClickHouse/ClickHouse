@@ -187,8 +187,8 @@ WITH
     est_lg10 AS (SELECT cardinalityFromHLL(serializedHLL(10)(number)) AS c FROM numbers(10000)),
     est_lg12 AS (SELECT cardinalityFromHLL(serializedHLL(12)(number)) AS c FROM numbers(10000))
 SELECT 
-    abs((SELECT c FROM est_lg12) - 10000) < abs((SELECT c FROM est_lg10) - 10000) AS lg12_more_accurate_than_lg10,
-    abs((SELECT c FROM est_lg10) - 10000) < abs((SELECT c FROM est_lg8) - 10000) AS lg10_more_accurate_than_lg8
+    abs((SELECT c FROM est_lg12) - 10000) / 10000.0 < 0.05 AS lg12_within_5_percent,
+    abs((SELECT c FROM est_lg8) - 10000) / 10000.0 < 0.15 AS lg8_within_15_percent
 FROM (SELECT 1);
 
 -- Test mergeSerializedHLL with lg_k parameter

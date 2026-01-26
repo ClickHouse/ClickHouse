@@ -177,7 +177,21 @@ void registerAggregateFunctionMergeSerializedQuantiles(AggregateFunctionFactory 
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
 
-    factory.registerFunction("mergeSerializedQuantiles", {createAggregateFunctionMergeSerializedQuantiles, properties});
+    FunctionDocumentation::Description description = R"(
+Merges multiple serialized Quantiles sketches into a single sketch.
+)";
+    FunctionDocumentation::Syntax syntax = "mergeSerializedQuantiles([base64_encoded])(sketch_column)";
+    FunctionDocumentation::Arguments arguments = {
+        {"sketch_column", "Serialized Quantiles sketch as a String.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Merged serialized Quantiles sketch.", {"String"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, {}, introduced_in, category};
+
+    factory.registerFunction("mergeSerializedQuantiles", {createAggregateFunctionMergeSerializedQuantiles, properties, documentation});
 }
 
 }

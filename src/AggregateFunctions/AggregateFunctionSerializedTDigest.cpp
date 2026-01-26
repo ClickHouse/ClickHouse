@@ -103,7 +103,23 @@ AggregateFunctionPtr createAggregateFunctionSerializedTDigest(
 }
 void registerAggregateFunctionSerializedTDigest(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("serializedTDigest", createAggregateFunctionSerializedTDigest);
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
+
+    FunctionDocumentation::Description description = R"(
+Creates a serialized TDigest sketch for approximate percentile estimation.
+)";
+    FunctionDocumentation::Syntax syntax = "serializedTDigest(expression)";
+    FunctionDocumentation::Arguments arguments = {
+        {"expression", "Numeric expression.", {"Int*", "UInt*", "Float*", "Decimal*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Serialized binary TDigest sketch.", {"String"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, {}, introduced_in, category};
+
+    factory.registerFunction("serializedTDigest", {createAggregateFunctionSerializedTDigest, properties, documentation});
 }
 
 }

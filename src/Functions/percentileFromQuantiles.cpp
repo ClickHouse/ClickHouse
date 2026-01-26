@@ -231,7 +231,7 @@ FROM numbers(1000)
             ""
         }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = FunctionDocumentation::VERSION_UNKNOWN;
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

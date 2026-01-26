@@ -122,6 +122,7 @@ The percentile parameter should be between 0.0 and 1.0 (e.g., 0.5 for median, 0.
 Returns NaN for empty sketches.
 )",
         .examples{{"percentileFromTDigest", "SELECT percentileFromTDigest(serializedTDigest(value), 0.95) FROM table", ""}},
+        .introduced_in = {26, 1},
         .category = FunctionDocumentation::Category::Other
     });
 }

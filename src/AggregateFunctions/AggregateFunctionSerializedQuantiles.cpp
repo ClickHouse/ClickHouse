@@ -149,7 +149,21 @@ void registerAggregateFunctionSerializedQuantiles(AggregateFunctionFactory & fac
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
 
-    factory.registerFunction("serializedQuantiles", {createAggregateFunctionSerializedQuantiles, properties});
+    FunctionDocumentation::Description description = R"(
+Creates a serialized Quantiles sketch for approximate percentile/quantile estimation.
+)";
+    FunctionDocumentation::Syntax syntax = "serializedQuantiles(expression)";
+    FunctionDocumentation::Arguments arguments = {
+        {"expression", "Numeric expression.", {"Int*", "UInt*", "Float*", "Decimal*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Serialized binary Quantiles sketch.", {"String"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, {}, introduced_in, category};
+
+    factory.registerFunction("serializedQuantiles", {createAggregateFunctionSerializedQuantiles, properties, documentation});
 }
 
 }
