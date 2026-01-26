@@ -30,6 +30,7 @@ namespace ErrorCodes
 /// Assumes that input row ids are strictly increasing.
 class PostingListCodecBitpackingImpl
 {
+    friend class PostingListCursor;
     /// Header written at the beginning of each segment before the payload.
     struct Header
     {
@@ -44,7 +45,6 @@ class PostingListCodecBitpackingImpl
 
         void write(WriteBuffer & out) const
         {
-            /// At the moment, bitpacking is the only supported codec, could add more codecs in future
             writeVarUInt(static_cast<uint8_t>(IPostingListCodec::Type::Bitpacking), out);
             writeVarUInt(payload_bytes, out);
             writeVarUInt(cardinality, out);
@@ -88,6 +88,10 @@ class PostingListCodecBitpackingImpl
         /// Row range covered by this segment.
         uint32_t row_id_begin = 0;
         uint32_t row_id_end = 0;
+
+        size_t block_count = 0;
+        std::vector<uint32_t> block_row_ends;
+        std::vector<size_t> block_offsets;
     };
 
 public:
@@ -132,20 +136,19 @@ public:
     void decode(ReadBuffer & in, PostingList & postings);
 
 private:
-    void reset()
+    void clear()
     {
+        resetCurrentSegment();
+
         total_row_ids = 0;
         compressed_data.clear();
         segment_descriptors.clear();
-
-        resetCurrentSegment();
     }
 
     void resetCurrentSegment()
     {
         current_segment.clear();
         row_ids_in_current_segment = 0;
-        prev_row_id = 0;
     }
 
     /// Flush current segment:
@@ -183,12 +186,10 @@ private:
     /// - Codec::decode fills `current_segment` with delta values
     /// - inclusive_scan converts deltas -> row ids using `prev_row_id` as initial prefix
     /// - Updates prev_row_id to the last decoded row id
-    static void decodeBlock(std::span<const std::byte> & in, size_t count, uint32_t & prev_row_id, std::vector<uint32_t> & current_segment);
+    static void decodeBlock(std::span<const std::byte> & in, size_t count, std::vector<uint32_t> & current_segment);
 
     /// All segments
     std::string compressed_data;
-    /// Last encoded/decoded row id
-    uint32_t prev_row_id = 0;
     /// Row ids in the current segment
     std::vector<uint32_t> current_segment;
     /// Each segment has an in-memory descriptor
@@ -218,7 +219,7 @@ public:
 
     PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
 
-    void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
+    void encode(const PostingListBuilder & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
     void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
@@ -230,8 +231,63 @@ public:
 
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
-    void encode(const PostingList &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
+    void encode(const PostingListBuilder &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
     void decode(ReadBuffer &, PostingList &) const override {}
+};
+
+struct CodecUtil
+{
+static void encodeU8(uint8_t x, std::span<char> & out)
+{
+    out[0] = static_cast<char>(x);
+    out = out.subspan(1);
+}
+
+static uint8_t decodeU8(std::span<const std::byte> & in)
+{
+    auto v = static_cast<uint8_t>(in[0]);
+    in = in.subspan(1);
+    return v;
+}
+
+static void encodeU32(uint32_t x, std::span<char> & out)
+{
+    out[0] = static_cast<char>( x        & 0xFF);
+    out[1] = static_cast<char>((x >>  8) & 0xFF);
+    out[2] = static_cast<char>((x >> 16) & 0xFF);
+    out[3] = static_cast<char>((x >> 24) & 0xFF);
+    out = out.subspan(4);
+}
+
+static uint32_t decodeU32(std::span<const std::byte> & in)
+{
+    uint32_t v =
+    (static_cast<uint32_t>(static_cast<uint8_t>(in[0]))) |
+    (static_cast<uint32_t>(static_cast<uint8_t>(in[1])) <<  8) |
+    (static_cast<uint32_t>(static_cast<uint8_t>(in[2])) << 16) |
+    (static_cast<uint32_t>(static_cast<uint8_t>(in[3])) << 24);
+
+    in = in.subspan(4);
+    return v;
+}
+
+template<typename T>
+static void writeArrayU32(const std::vector<T> & arr, WriteBuffer & wb)
+{
+    writeVarUInt(arr.size(), wb);
+    for (size_t i = 0; i < arr.size(); ++i)
+        writeVarUInt(arr[i], wb);
+}
+
+template<typename T>
+static void readArrayU32(ReadBuffer & rb, std::vector<T> & arr)
+{
+    UInt64 x = 0;
+    readVarUInt(x, rb);
+    arr.resize(x);
+    for (size_t i = 0; i < x; ++i)
+        readVarUInt(arr[i], rb);
+}
 };
 
 }

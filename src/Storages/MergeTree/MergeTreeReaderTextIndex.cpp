@@ -9,6 +9,8 @@
 #include <Common/logger_useful.h>
 #include <Columns/ColumnsNumber.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Storages/MergeTree/IPostingListCodec.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
 #include <Core/Settings.h>
 
 namespace ProfileEvents
@@ -24,6 +26,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsFloat text_index_hint_max_selectivity;
+    extern const SettingsUInt64 text_index_intersect_algorithm;
 }
 
 namespace ErrorCodes
@@ -88,6 +91,8 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
+    const auto & text_index = assert_cast<const MergeTreeIndexText &>(*index.index);
+    direct_build_filter_column = text_index.posting_list_codec && text_index.posting_list_codec->getType() != IPostingListCodec::Type::None;
 }
 
 void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
@@ -294,6 +299,24 @@ size_t MergeTreeReaderTextIndex::readRows(
             {
                 auto & column_data = assert_cast<ColumnUInt8 &>(column->assumeMutableRef()).getData();
                 column_data.resize_fill(column->size() + rows_to_read, 0);
+            }
+        }
+        else if (direct_build_filter_column)
+        {
+            readStreamPostingsIfNeeded(from_mark);
+            for (size_t i = 0; i < res_columns.size(); ++i)
+            {
+                auto & column_mutable = res_columns[i]->assumeMutableRef();
+
+                if (is_always_true[i])
+                {
+                    auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
+                    column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
+                }
+                else
+                {
+                    fillColumn(column_mutable, columns_to_read[i].name, posting_cursors, from_row, rows_to_read);
+                }
             }
         }
         else
@@ -601,6 +624,68 @@ void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & colum
         applyPostingsAny(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
     else if (search_query->search_mode == TextSearchMode::All)
         applyPostingsAll(column, postings, indices_buffer, search_query->tokens, old_size, row_offset, num_rows);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
+}
+
+
+void MergeTreeReaderTextIndex::readStreamPostingsIfNeeded(size_t mark)
+{
+    auto rows_range = getRowsRangeForMark(mark);
+    if (!rows_range.has_value())
+        return;
+
+    auto &granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
+    const auto &remaining_tokens = granule_text.getRemainingTokens();
+
+    auto read_token_postings = [&](std::string_view token, const TokenPostingsInfo &token_info, const RowsRange &range)
+    {
+        auto blocks_to_read = token_info.getBlocksToRead(range);
+        for (const auto & block_idx: blocks_to_read)
+        {
+            auto *postings_stream = large_postings_streams.at(token).get();
+            auto it = stream_posting_cursors.find(token);
+            if (it != stream_posting_cursors.end())
+                it->second->addSegment(block_idx);
+            else
+            {
+                auto cursor = std::make_shared<PostingListCursor>(postings_stream, token_info, block_idx);
+                stream_posting_cursors[token] = cursor;
+                posting_cursors.emplace_back(cursor);
+            }
+        }
+    };
+    for (const auto &[token, token_info]: remaining_tokens)
+    {
+        if (!useful_tokens.contains(token))
+        {
+            continue;
+        }
+
+        read_token_postings(token, token_info, *rows_range);
+    }
+}
+
+void MergeTreeReaderTextIndex::fillColumn(IColumn & column, const String & column_name, std::vector<PostingListCursorPtr> & postings, size_t row_offset, size_t num_rows)
+{
+    auto & column_data = assert_cast<ColumnUInt8 &>(column).getData();
+    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
+
+    size_t old_size = column_data.size();
+    column_data.resize_fill(old_size + num_rows, 0);
+
+    if (postings.empty() || search_query->tokens.empty())
+        return;
+
+    const auto context = data_part_info_for_read->getContext();
+
+    const auto & settings = condition_text.getContext()->getSettingsRef();
+    UInt64 intersect_algorithm = settings[Setting::text_index_intersect_algorithm];
+    if (search_query->search_mode == TextSearchMode::Any || postings.size() == 1)
+        streamApplyPostingsAny(column, postings, old_size, row_offset, num_rows, intersect_algorithm);
+    else if (search_query->search_mode == TextSearchMode::All)
+        streamApplyPostingsAll(column, postings, old_size, row_offset, num_rows, intersect_algorithm);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->search_mode);
 }

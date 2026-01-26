@@ -19,6 +19,7 @@ namespace ErrorCodes
 }
 
 static constexpr size_t BLOCK_SIZE = 128;
+static constexpr size_t POSTING_LIST_CHUNK_SIZE = BLOCK_SIZE * 2;
 
 namespace impl
 {

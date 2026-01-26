@@ -130,19 +130,13 @@ void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & pos
     }
 }
 
-void PostingsSerialization::serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr)
-{
-    chassert(info.header & IsCompressed);
-    chassert(posting_list_codec);
-    chassert(posting_list_codec->getType() != IPostingListCodec::Type::None);
-    posting_list_codec->encode(postings, posting_list_block_size, info, ostr);
-}
-
 void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, PostingListCodecPtr posting_list_codec, WriteBuffer & ostr)
 {
     if (info.header & IsCompressed)
     {
-        serialize(postings.getLarge(), info, posting_list_block_size, posting_list_codec, ostr);
+        chassert(posting_list_codec);
+        chassert(posting_list_codec->getType() != IPostingListCodec::Type::None);
+        posting_list_codec->encode(postings, posting_list_block_size, info, ostr);
     }
     else if (postings.isLarge())
     {
