@@ -215,7 +215,7 @@ public:
 
     static VectorType prepare(size_t scale)
     {
-        return load1(scale);
+        return load1(static_cast<ScalarType>(scale));
     }
 };
 
@@ -236,7 +236,7 @@ public:
 
     static VectorType prepare(size_t scale)
     {
-        return load1(scale);
+        return load1(static_cast<ScalarType>(scale));
     }
 };
 

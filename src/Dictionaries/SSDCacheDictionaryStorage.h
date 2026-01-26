@@ -956,7 +956,7 @@ public:
 
         size_t max_blocks_size = (configuration.file_blocks_size + configuration.write_buffer_blocks_size) * configuration.max_partitions_count;
 
-        double load_factor = static_cast<double>(blocks_in_memory + blocks_on_disk) / max_blocks_size;
+        double load_factor = static_cast<double>(blocks_in_memory + blocks_on_disk) / static_cast<double>(max_blocks_size);
         return load_factor;
     }
 

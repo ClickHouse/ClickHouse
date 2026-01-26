@@ -219,7 +219,7 @@ public:
 
         Float64 ratio = 0;
         if (compressed_size > 0)
-            ratio = static_cast<Float64>(uncompressed_size) / compressed_size;
+            ratio = static_cast<Float64>(uncompressed_size) / static_cast<double>(compressed_size);
 
         assert_cast<ColumnFloat64 &>(to).getData().push_back(ratio);
     }

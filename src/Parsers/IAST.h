@@ -12,6 +12,7 @@
 
 class SipHash;
 
+#include <boost/container/vector.hpp>
 
 namespace DB
 {

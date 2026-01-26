@@ -130,7 +130,7 @@ private:
         Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getMapped();
+            sum_weight += static_cast<Float64>(pair.getMapped());
             auto value = pair.getKey();
             auto weight = pair.getMapped();
             value_weight_pairs.push_back({value, weight});
@@ -225,7 +225,7 @@ private:
         Float64 sum_weight = 0;
         for (const auto & pair : map)
         {
-            sum_weight += pair.getMapped();
+            sum_weight += static_cast<Float64>(pair.getMapped());
             auto value = pair.getKey();
             auto weight = pair.getMapped();
             value_weight_pairs.push_back({value, weight});
@@ -315,7 +315,7 @@ private:
         percentile_diff = percentile_diff == 0 ? 1 : percentile_diff; /// to handle NaN behavior that might arise during integer division below.
 
         /// yl + (dy / dx) * (level - xl)
-        return static_cast<UnderlyingType>(lower_value + (value_diff / percentile_diff) * (level - lower_percentile));
+        return static_cast<UnderlyingType>(static_cast<Float64>(lower_value) + (static_cast<Float64>(value_diff) / percentile_diff) * (level - lower_percentile));
     }
 };
 

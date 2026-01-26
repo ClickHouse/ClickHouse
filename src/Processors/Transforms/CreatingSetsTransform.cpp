@@ -172,7 +172,7 @@ void CreatingSetsTransform::startSubquery()
 
 void CreatingSetsTransform::finishSubquery()
 {
-    auto seconds = watch.elapsedNanoseconds() / 1e9;
+    auto seconds = static_cast<double>(watch.elapsedNanoseconds()) / 1e9;
 
     if (set_from_cache)
     {

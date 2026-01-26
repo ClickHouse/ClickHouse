@@ -396,10 +396,12 @@ void MemoryWorker::updateResidentMemoryThread()
 
 #if USE_JEMALLOC
         const auto memory_tracker_limit = total_memory_tracker.getHardLimit();
+        const auto purge_total_memory_threshold = static_cast<double>(memory_tracker_limit) * purge_total_memory_threshold_ratio;
+        const auto purge_dirty_pages_threshold = static_cast<double>(memory_tracker_limit) * purge_dirty_pages_threshold_ratio;
 
-        bool needs_purge = (purge_total_memory_threshold_ratio > 0 && resident > memory_tracker_limit * purge_total_memory_threshold_ratio)
+        const bool needs_purge = (purge_total_memory_threshold_ratio > 0 && static_cast<double>(resident) > purge_total_memory_threshold)
             || (purge_dirty_pages_threshold_ratio > 0
-                && pdirty_mib.getValue() * page_size > memory_tracker_limit * purge_dirty_pages_threshold_ratio);
+                && static_cast<double>(pdirty_mib.getValue() * page_size) > purge_dirty_pages_threshold);
 
         auto current_decay_state = decay_state.load(std::memory_order_relaxed);
         if (needs_purge)
