@@ -912,12 +912,6 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
             arguments[i] = converted_argument;
     }
 
-    if (join_kind == JoinKind::Right)
-        return arguments.back();
-
-    if (join_kind != JoinKind::Full)
-        arguments.pop_back();
-
     if (arguments.size() == 1)
         return arguments.front();
 
