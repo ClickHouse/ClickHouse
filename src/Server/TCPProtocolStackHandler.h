@@ -75,17 +75,24 @@ public:
                 {
                     std::string message = "Code: " + std::to_string(ErrorCodes::IP_ADDRESS_NOT_ALLOWED) + ". DB::Exception: IP address not allowed.\n";
 
-                    /// Drain the receive buffer to prevent RST when we close.
-                    char buffer[1024];
-                    while (socket().poll(Poco::Timespan(0, 1000), Poco::Net::Socket::SELECT_READ))
-                    {
-                         int n = socket().receiveBytes(buffer, sizeof(buffer));
-                         if (n <= 0) break;
-                    }
-
                     int sent = socket().sendBytes(message.data(), static_cast<int>(message.size()));
                     socket().shutdownSend();
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+                    /// Wait for the client to close the connection or timeout, while draining the socket to prevent RST.
+                    auto start = std::chrono::steady_clock::now();
+                    while (std::chrono::steady_clock::now() - start < std::chrono::seconds(1))
+                    {
+                        if (socket().poll(Poco::Timespan(10000), Poco::Net::Socket::SELECT_READ))
+                        {
+                            char buffer[1024];
+                            int n = socket().receiveBytes(buffer, sizeof(buffer));
+                            if (n <= 0) break; /// Client closed or error.
+                        }
+                        else
+                        {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                        }
+                    }
                     if (sent != static_cast<int>(message.size()))
                     {
                         LOG_ERROR(log, "Failed to send complete IP block error message to client {} (sent {} of {} bytes).", socket().peerAddress().toString(), sent, message.size());
