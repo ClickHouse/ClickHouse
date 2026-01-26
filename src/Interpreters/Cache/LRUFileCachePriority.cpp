@@ -600,7 +600,9 @@ void LRUFileCachePriority::LRUIterator::invalidate()
 {
     assertValid();
 
-    const auto & entry = *iterator;
+    /// Copy the EntryPtr to prevent use-after-free if another thread
+    /// removes this entry from the queue while we're accessing it.
+    EntryPtr entry = *iterator;
     if (entry->size)
     {
         cache_priority->state->sub(entry->size, 1);

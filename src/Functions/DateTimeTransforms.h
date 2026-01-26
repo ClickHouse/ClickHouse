@@ -796,7 +796,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     }
     static Int32 execute(Int32 d, Int64 years, const DateLUTImpl & time_zone, Int64)
     {
-        return time_zone.toStartOfYearInterval(ExtendedDayNum(d), years);
+        return static_cast<Int32>(time_zone.toStartOfYearInterval(ExtendedDayNum(d), years));
     }
     static UInt16 execute(UInt32 t, Int64 years, const DateLUTImpl & time_zone, Int64)
     {

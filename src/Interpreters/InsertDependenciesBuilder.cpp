@@ -1499,7 +1499,7 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
     const auto & view_type = view_types.at(view_id);
     const auto & inner_table_id = inner_tables.at(view_id);
 
-    UInt64 elapsed_ms = thread_group->getThreadsTotalElapsedMs();
+    UInt64 elapsed_ms = thread_group->getGroupElapsedMs();
 
     UInt64 min_query_duration = settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds();
     if (min_query_duration && elapsed_ms <= min_query_duration)
