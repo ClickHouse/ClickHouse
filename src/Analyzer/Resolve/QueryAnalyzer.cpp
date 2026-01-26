@@ -1393,7 +1393,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
     /// Try to resolve identifier as a niladic function (SQL standard functions that allow omitting parentheses)
     if (!resolve_result.resolved_identifier 
-        && identifier_lookup.isExpressionLookup() 
+        && identifier_lookup.isExpressionLookup()
         && identifier_resolve_settings.scope_to_resolve_alias_expression == nullptr)
     {
         const auto & function_factory = FunctionFactory::instance();
