@@ -52,7 +52,7 @@ bool hasMaterializedTextIndex(
         {
             if (index_desc.type == "text" && index_desc.name == text_index_name)
                 if (const auto * loaded_part = dynamic_cast<const LoadedMergeTreeDataPartInfoForReader *>(&data_part_info_for_reader))
-                    return loaded_part->getDataPart()->hasSecondaryIndex(index_desc.name);
+                    return loaded_part->getDataPart()->hasSecondaryIndex(index_desc.name, storage_snapshot->metadata);
         }
     }
 

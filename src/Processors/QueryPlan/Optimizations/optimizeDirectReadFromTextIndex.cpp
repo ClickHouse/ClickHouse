@@ -156,12 +156,12 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node)
     switch (node.type)
     {
         case ActionsDAG::ActionType::INPUT:
-            return std::make_shared<ASTIdentifier>(node.result_name);
+            return make_intrusive<ASTIdentifier>(node.result_name);
 
         case ActionsDAG::ActionType::COLUMN:
             if (node.column)
-                return std::make_shared<ASTLiteral>((*node.column)[0]);
-            return std::make_shared<ASTLiteral>(Field{});
+                return make_intrusive<ASTLiteral>((*node.column)[0]);
+            return make_intrusive<ASTLiteral>(Field{});
 
         case ActionsDAG::ActionType::ALIAS:
             if (!node.children.empty())
@@ -172,9 +172,9 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node)
             if (!node.function_base)
                 return nullptr;
 
-            auto function = std::make_shared<ASTFunction>();
+            auto function = make_intrusive<ASTFunction>();
             function->name = node.function_base->getName();
-            function->arguments = std::make_shared<ASTExpressionList>();
+            function->arguments = make_intrusive<ASTExpressionList>();
             function->children.push_back(function->arguments);
 
             for (const auto * child : node.children)
