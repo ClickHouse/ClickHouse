@@ -118,7 +118,7 @@ void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & va
 
     auto literal = make_intrusive<ASTLiteral>(value);
     literal->alias = column_name;
-    literal->prefer_alias_to_column_name = true;
+    literal->setPreferAliasToColumnName(true);
     select.with()->children.push_back(literal);
 }
 
