@@ -26,7 +26,6 @@
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
-#include <Interpreters/Context_fwd.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 
@@ -238,9 +237,6 @@ public:
     /// the part destructor may be called after the storage is already destroyed.
     std::weak_ptr<const MergeTreeData> storage_weak;
 
-    /// Weak pointer to the context, used in clearCaches() to access caches
-    /// even if the storage has been destroyed (e.g., table dropped while query is running).
-    ContextWeakPtr storage_context;
 
     const String & name;    // const ref to private mutable_name
     MergeTreePartInfo info;
