@@ -74,6 +74,9 @@ private:
     std::mutex rss_update_mutex;
     std::condition_variable rss_update_cv;
 
+    std::mutex purge_dirty_pages_mutex;
+    std::condition_variable purge_dirty_pages_cv;
+
     bool shutdown = false;
 
     LoggerPtr log;
@@ -98,9 +101,6 @@ private:
     void setDirtyDecayForAllArenas(size_t decay_ms);
 
     ThreadFromGlobalPool purge_dirty_pages_thread;
-
-    std::mutex purge_dirty_pages_mutex;
-    std::condition_variable purge_dirty_pages_cv;
 
     /// State machine for dynamic dirty pages decay control
     enum class DecayState : uint8_t
