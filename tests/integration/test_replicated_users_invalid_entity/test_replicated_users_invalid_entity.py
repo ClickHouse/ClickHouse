@@ -62,3 +62,7 @@ def test_server_fail_on_invalid_replicated_user(started_cluster):
     assert node2.contains_in_log("SYNTAX_ERROR") or node2.contains_in_log(
         "Syntax error"
     ), "Expected SYNTAX_ERROR in logs"
+
+    zk.set(entity_path, original_data.encode("utf-8"))
+    node2.start_clickhouse()
+    node1.query(f"DROP USER {user_name}")
