@@ -14,13 +14,13 @@ String ASTTupleDataType::getID(char delim) const
 
 ASTPtr ASTTupleDataType::clone() const
 {
-    auto res = std::make_shared<ASTTupleDataType>(*this);
+    auto res = make_intrusive<ASTTupleDataType>(*this);
     res->children.clear();
 
+    const auto & arguments = getArguments();
     if (arguments)
     {
-        res->arguments = arguments->clone();
-        res->children.push_back(res->arguments);
+        res->children.emplace_back(arguments->clone());
     }
 
     /// element_names vector is copied by the copy constructor
@@ -41,12 +41,13 @@ void ASTTupleDataType::updateTreeHashImpl(SipHash & hash_state, bool ignore_alia
     }
 
     /// Hash child types via arguments
-    if (arguments)
+    if (const auto arguments = getArguments())
         arguments->updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTTupleDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
+    const auto arguments = getArguments();
     ostr << name;
 
     if (arguments && !arguments->children.empty())
