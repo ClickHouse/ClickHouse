@@ -1952,7 +1952,7 @@ Possible values:
 ```
 )", 0) \
 \
-    DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_PROSSIBLE, R"(
+    DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
 Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
 The setting overrids `insert_deduplicate` for `INSERT SELECT` queries.
 That setting has three possible values:
