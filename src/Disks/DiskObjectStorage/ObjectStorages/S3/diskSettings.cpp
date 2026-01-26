@@ -1,5 +1,6 @@
 #include <memory>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
+#include "Interpreters/StorageID.h"
 
 #if USE_AWS_S3
 

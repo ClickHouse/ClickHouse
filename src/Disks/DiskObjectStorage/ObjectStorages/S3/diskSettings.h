@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Interpreters/StorageID.h"
 #include "config.h"
 
 #if USE_AWS_S3

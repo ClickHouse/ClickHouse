@@ -167,7 +167,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
     auto client_refresher = [refresh_credentials_callback, this, context] ()
     {
-        auto new_client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
+        auto new_client = getClient(url, *s3_settings, context, /* for_disk_s3 */false, /*opt_disk_name*/ {}, refresh_credentials_callback);
         return new_client;
     };
     return std::make_shared<S3ObjectStorage>(
