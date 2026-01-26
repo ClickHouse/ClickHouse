@@ -72,8 +72,8 @@ public:
                 {
                     std::string message = Exception::getMessageForErrorLog(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "IP address not allowed") + "\n";
                     
-                    socket().setLinger(true, 10);
                     int sent = socket().sendBytes(message.data(), static_cast<int>(message.size()));
+                    socket().shutdownSend();
                     if (sent != static_cast<int>(message.size()))
                     {
                         LOG_ERROR(log, "Failed to send full IP block error message to client {} (sent {} of {} bytes).", socket().peerAddress().toString(), sent, message.size());
