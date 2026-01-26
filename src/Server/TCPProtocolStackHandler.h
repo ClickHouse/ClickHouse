@@ -70,7 +70,7 @@ public:
                 /// We should send an error message and close the connection.
                 try
                 {
-                    std::string message = Exception::getMessageForErrorLog(ErrorCodes::IP_ADDRESS_NOT_ALLOWED, "IP address not allowed") + "\n";
+                    std::string message = "Code: " + std::to_string(ErrorCodes::IP_ADDRESS_NOT_ALLOWED) + ". DB::Exception: IP address not allowed.\n";
                     
                     int sent = socket().sendBytes(message.data(), static_cast<int>(message.size()));
                     socket().shutdownSend();
