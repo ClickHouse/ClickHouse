@@ -1007,8 +1007,6 @@ ICatalog::CredentialsRefreshCallback RestCatalog::getCredentialsConfigurationCal
     };
 }
 
-
-
 }
 
 #endif
