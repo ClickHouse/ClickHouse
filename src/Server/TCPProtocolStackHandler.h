@@ -48,6 +48,10 @@ public:
         TCPProtocolStackData stack_data;
         stack_data.socket = socket();
         stack_data.default_database = conf.getString(conf_name + ".default_database", "");
+        
+        /// Keep the secure connection alive if we need to send an error message afterwards.
+        std::unique_ptr<TCPServerConnection> secure_connection_holder;
+
         for (auto & factory : stack)
         {
             /// If the IP is denied, we only allow TLS handshake to pass through to send a proper error message.
@@ -61,6 +65,9 @@ public:
                         connection->run();
                         if (stack_data.socket != socket())
                             socket() = stack_data.socket;
+                        
+                        // Move ownership to keep it alive
+                        secure_connection_holder = std::move(connection);
                     }
                     catch (...)
                     {
