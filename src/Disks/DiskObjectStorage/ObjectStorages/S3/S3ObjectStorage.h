@@ -1,5 +1,6 @@
 #pragma once
 
+#include "IO/S3/Client.h"
 #include "config.h"
 
 #if USE_AWS_S3
@@ -39,7 +40,7 @@ private:
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = {})
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::shared_ptr<const S3::Client>{ return nullptr; })
         : uri(uri_)
         , disk_name(disk_name_)
         , client(std::move(client_))
