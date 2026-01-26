@@ -59,6 +59,7 @@ public:
             {
                 if (factory->isSecure())
                 {
+                    bool handshake_ok = false;
                     try
                     {
                         std::unique_ptr<TCPServerConnection> connection(factory->createConnection(socket(), tcp_server, stack_data));
@@ -67,11 +68,16 @@ public:
                             socket() = stack_data.socket;
                         // Move ownership to keep it alive
                         secure_connection_holder = std::move(connection);
+                        handshake_ok = true;
                     }
                     catch (...)
                     {
                         LOG_WARNING(log, "TLS handshake failed for blocked client {}: {}", socket().peerAddress().toString(), getCurrentExceptionMessage(false));
                     }
+
+                    if (!handshake_ok)
+                        return;
+
                     continue;
                 }
 
@@ -83,6 +89,7 @@ public:
                     LOG_DEBUG(log, "IP address {} is blocked. Sending error message.", socket().peerAddress().toString());
 
                     int sent = socket().sendBytes(message.data(), static_cast<int>(message.size()));
+                    socket().shutdownSend();
                     LOG_DEBUG(log, "Sent {} bytes of error message.", sent);
 
                     /// Wait for the client to close the connection or timeout, while draining the socket to prevent RST.
