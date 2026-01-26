@@ -10,28 +10,23 @@ from helpers.retry_decorator import retry
 # from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
 
 cluster = ClickHouseCluster(__file__)
-
-# Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/keeper_config1.xml"],
     stay_alive=True,
     with_minio=True,
-    with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/keeper_config2.xml"],
     stay_alive=True,
     with_minio=True,
-    with_remote_database_disk=False,
 )
 node3 = cluster.add_instance(
     "node3",
     main_configs=["configs/keeper_config3.xml"],
     stay_alive=True,
     with_minio=True,
-    with_remote_database_disk=False,
 )
 
 
@@ -110,11 +105,14 @@ def test_s3_upload(started_cluster):
 
     # Keeper sends snapshots asynchornously, hence we need to retry.
     def _check_snapshots():
-        names = [n for n in get_saved_snapshots() if n.startswith("snapshot_")]
-        idx = sorted(int(n.split("_")[1].split(".")[0]) for n in names)
-        assert len(idx) == 4
-        for need, got in zip((50, 100, 150, 200), idx):
-            assert got >= need
+        assert set(get_saved_snapshots()) == set(
+            [
+                "snapshot_50.bin.zstd",
+                "snapshot_100.bin.zstd",
+                "snapshot_150.bin.zstd",
+                "snapshot_200.bin.zstd",
+            ]
+        )
 
     retry(AssertionError, retries=10, delay=2, jitter=0, backoff=1)(_check_snapshots)
 

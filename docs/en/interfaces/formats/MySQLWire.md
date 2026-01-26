@@ -3,11 +3,10 @@ description: 'Documentation for the MySQLWire format'
 keywords: ['MySQLWire']
 slug: /interfaces/formats/MySQLWire
 title: 'MySQLWire'
-doc_type: 'reference'
 ---
 
 ## Description {#description}
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}

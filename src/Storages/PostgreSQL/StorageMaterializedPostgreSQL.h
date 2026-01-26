@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_LIBPQXX
-#include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
+#include "PostgreSQLReplicationHandler.h"
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -110,7 +110,7 @@ public:
 
     ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
 
-    boost::intrusive_ptr<ASTExpressionList> getColumnsExpressionList(
+    std::shared_ptr<ASTExpressionList> getColumnsExpressionList(
         const NamesAndTypesList & columns, std::unordered_map<std::string, ASTPtr> defaults = {}) const;
 
     StoragePtr getNested() const;
@@ -122,7 +122,7 @@ public:
     /// temporary nested, which will be created shortly after.
     StoragePtr createTemporary() const;
 
-    ContextMutablePtr getNestedTableContext() const { return nested_context; }
+    ContextPtr getNestedTableContext() const { return nested_context; }
 
     StorageID getNestedStorageID() const;
 
@@ -133,7 +133,7 @@ public:
     bool supportsFinal() const override { return true; }
 
 private:
-    static boost::intrusive_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
+    static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
             String name, String type, UInt64 default_value);
 
     static VirtualColumnsDescription createVirtuals();

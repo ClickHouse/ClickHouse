@@ -1,3 +1,4 @@
+#include "config.h"
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -131,6 +132,8 @@ void IAggregateFunction::predictValues(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method predictValues is not supported for {}", getName());
 }
 
+#if USE_EMBEDDED_COMPILER
+
 void IAggregateFunction::compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
@@ -153,4 +156,5 @@ llvm::Value * IAggregateFunction::compileGetResult(llvm::IRBuilderBase & /*build
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
 }
 
+#endif
 }

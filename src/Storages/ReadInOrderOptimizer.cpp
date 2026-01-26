@@ -7,9 +7,8 @@
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/TreeCNFConverter.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -72,7 +71,7 @@ NameSet getFixedSortingColumns(
 {
     ASTPtr condition;
     if (query.where() && query.prewhere())
-        condition = makeASTOperator("and", query.where(), query.prewhere());
+        condition = makeASTFunction("and", query.where(), query.prewhere());
     else if (query.where())
         condition = query.where();
     else if (query.prewhere())
@@ -82,7 +81,7 @@ NameSet getFixedSortingColumns(
         return {};
 
     /// Convert condition to CNF for more convenient analysis.
-    auto cnf = TreeCNFConverter::tryConvertToCNF(condition.get());
+    auto cnf = TreeCNFConverter::tryConvertToCNF(condition);
     if (!cnf)
         return {};
 
@@ -208,8 +207,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     UInt64 limit) const
 {
     const Names & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
-    /// read_direction will be set from the first non-constant ORDER BY column
-    int read_direction = 0;
+    int read_direction = description.at(0).direction;
 
     auto fixed_sorting_columns = getFixedSortingColumns(query, sorting_key_columns, context);
 
@@ -225,21 +223,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             break;
 
         auto match = matchSortDescriptionAndKey(actions[desc_pos]->getActions(), description[desc_pos], sorting_key_columns[key_pos]);
-
-        /// If the ORDER BY column matches a fixed (constant) key column,
-        /// add it to the sort description but don't let it set read_direction.
-        /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
-        /// The 'tenant' column is constant, so read direction should come from event_time DESC.
-        if (match.direction && fixed_sorting_columns.contains(sorting_key_columns[key_pos]))
-        {
-            /// Still add to sort description - the column matches, it's just constant
-            sort_description_for_merging.push_back(description[desc_pos]);
-            ++desc_pos;
-            ++key_pos;
-            continue;
-        }
-
-        bool is_matched = match.direction && (read_direction == 0 || match.direction == read_direction);
+        bool is_matched = match.direction && (desc_pos == 0 || match.direction == read_direction);
 
         if (!is_matched)
         {
@@ -254,7 +238,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             break;
         }
 
-        if (read_direction == 0)
+        if (desc_pos == 0)
             read_direction = match.direction;
 
         sort_description_for_merging.push_back(description[desc_pos]);
@@ -268,18 +252,6 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
 
     if (sort_description_for_merging.empty())
         return {};
-
-    /// If all ORDER BY columns were fixed (constant), read_direction is still 0.
-    /// Default to ascending (1) since the data is trivially sorted when all columns are constant.
-    /// But only if we actually matched some key columns (key_pos > 0).
-    /// If key_pos == 0, the ORDER BY doesn't match the key prefix at all.
-    if (read_direction == 0)
-    {
-        if (key_pos > 0)
-            read_direction = 1;
-        else
-            return {};
-    }
 
     return std::make_shared<InputOrderInfo>(std::move(sort_description_for_merging), key_pos, read_direction, limit);
 }

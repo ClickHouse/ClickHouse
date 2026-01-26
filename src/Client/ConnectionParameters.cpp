@@ -1,13 +1,14 @@
-#include <Client/ConnectionParameters.h>
+#include "ConnectionParameters.h"
 
 #include <Core/Defines.h>
 #include <Core/Protocol.h>
+#include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
-#include <Client/ClientBaseHelpers.h>
+#include <base/scope_guard.h>
 
 #include <readpassphrase/readpassphrase.h>
 
@@ -32,7 +33,7 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
     if (config.getBool("no-secure", false))
         return false;
 
-    if (isCloudEndpoint(connection_host))
+    if (connection_host.ends_with(".clickhouse.cloud") || connection_host.ends_with(".clickhouse-staging.com"))
         return true;
 
     if (connection_port && connection_port.value() == DBMS_DEFAULT_SECURE_PORT)
@@ -68,20 +69,13 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     , default_database(database)
 {
     security = enableSecureConnection(config, host_) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-    tls_sni_override = config.getString("tls-sni-override", "");
-
-    bind_host = config.getString("bind_host", "");
 
     /// changed the default value to "default" to fix the issue when the user in the prompt is blank
     user = config.getString("user", "default");
 
     if (config.has("jwt"))
     {
-#if USE_JWT_CPP && USE_SSL
         jwt = config.getString("jwt");
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JWT is disabled, because ClickHouse is built without JWT or SSL support");
-#endif
     }
     else if (config.has("ssh-key-file"))
     {
@@ -176,9 +170,8 @@ UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfigu
                                                const std::string & connection_host)
 {
     bool is_secure = enableSecureConnection(config, connection_host);
-    return static_cast<UInt16>(config.getInt(
-        "port",
-        static_cast<UInt16>(
-            config.getInt(is_secure ? "tcp_port_secure" : "tcp_port", is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT))));
+    return config.getInt("port",
+        config.getInt(is_secure ? "tcp_port_secure" : "tcp_port",
+            is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 }
 }

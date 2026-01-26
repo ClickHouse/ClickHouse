@@ -14,6 +14,132 @@ DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]
 NO_AUTH = ["NOSIGN"]
 
 
+def add_instances(cluster):
+    cluster.add_instance(
+        "instance",
+        user_configs=["configs/users.xml"],
+        with_minio=True,
+        with_azurite=True,
+        with_zookeeper=True,
+        main_configs=[
+            "configs/zookeeper.xml",
+            "configs/s3queue_log.xml",
+        ],
+        stay_alive=True,
+    )
+    cluster.add_instance(
+        "instance2",
+        user_configs=["configs/users.xml"],
+        with_minio=True,
+        with_zookeeper=True,
+        main_configs=[
+            "configs/s3queue_log.xml",
+        ],
+        stay_alive=True,
+    )
+    cluster.add_instance(
+        "old_instance",
+        with_zookeeper=True,
+        image="clickhouse/clickhouse-server",
+        tag="23.12",
+        stay_alive=True,
+        with_installed_binary=True,
+        use_old_analyzer=True,
+    )
+    cluster.add_instance(
+        "node1",
+        with_zookeeper=True,
+        stay_alive=True,
+        main_configs=[
+            "configs/zookeeper.xml",
+            "configs/s3queue_log.xml",
+            "configs/remote_servers.xml",
+        ],
+    )
+    cluster.add_instance(
+        "node2",
+        with_zookeeper=True,
+        stay_alive=True,
+        main_configs=[
+            "configs/zookeeper.xml",
+            "configs/s3queue_log.xml",
+            "configs/remote_servers.xml",
+        ],
+    )
+    cluster.add_instance(
+        "instance_too_many_parts",
+        user_configs=["configs/users.xml"],
+        with_minio=True,
+        with_zookeeper=True,
+        main_configs=[
+            "configs/s3queue_log.xml",
+            "configs/merge_tree.xml",
+        ],
+        stay_alive=True,
+    )
+    cluster.add_instance(
+        "instance_24.5",
+        with_zookeeper=True,
+        image="clickhouse/clickhouse-server",
+        tag="24.5",
+        stay_alive=True,
+        user_configs=[
+            "configs/users.xml",
+        ],
+        with_installed_binary=True,
+    )
+    cluster.add_instance(
+        "instance2_24.5",
+        with_zookeeper=True,
+        keeper_required_feature_flags=["create_if_not_exists"],
+        image="clickhouse/clickhouse-server",
+        tag="24.5",
+        stay_alive=True,
+        user_configs=[
+            "configs/users.xml",
+        ],
+        with_installed_binary=True,
+    )
+    cluster.add_instance(
+        "instance3_24.5",
+        with_zookeeper=True,
+        image="clickhouse/clickhouse-server",
+        tag="24.5",
+        stay_alive=True,
+        main_configs=[
+            "configs/remote_servers_245.xml",
+        ],
+        user_configs=[
+            "configs/users.xml",
+        ],
+        with_installed_binary=True,
+    )
+    cluster.add_instance(
+        "instance4_24.5",
+        with_zookeeper=True,
+        keeper_required_feature_flags=["create_if_not_exists"],
+        image="clickhouse/clickhouse-server",
+        tag="24.5",
+        stay_alive=True,
+        main_configs=[
+            "configs/remote_servers_245.xml",
+        ],
+        user_configs=[
+            "configs/users.xml",
+        ],
+        with_installed_binary=True,
+    )
+    cluster.add_instance(
+        "node_cloud_mode",
+        with_zookeeper=True,
+        stay_alive=True,
+        main_configs=[
+            "configs/zookeeper.xml",
+            "configs/s3queue_log.xml",
+        ],
+        user_configs=["configs/cloud_mode.xml"],
+    )
+
 def run_query(instance, query, stdin=None, settings=None):
     # type: (ClickHouseInstance, str, object, dict) -> str
 
@@ -93,42 +219,6 @@ def put_azure_file_content(started_cluster, filename, data, bucket=None):
     client.upload_blob(buf, "BlockBlob", len(data))
 
 
-def count_minio_objects(started_cluster, bucket_name, prefix):
-    minio = started_cluster.minio_client
-    objects = list(minio.list_objects(
-        bucket_name,
-        prefix=prefix,
-        recursive=True))
-    return len(objects)
-
-
-def count_azurite_blobs(started_cluster, container_name, prefix):
-    container_client = started_cluster.blob_service_client.get_container_client(
-        container_name
-    )
-    blob_names = list(container_client.list_blob_names(
-        name_starts_with=prefix))
-    return len(blob_names)
-
-
-def recreate_minio_bucket(started_cluster, bucket_name):
-    minio_client = started_cluster.minio_client
-    if minio_client.bucket_exists(bucket_name):
-        logging.debug(f"minio bucket '{bucket_name}' exists, removing to recreate")
-        minio_client.remove_bucket(bucket_name)
-    minio_client.make_bucket(bucket_name)
-
-
-def recreate_azurite_container(started_cluster, container_name):
-    container_client = started_cluster.blob_service_client.get_container_client(
-        container_name
-    )
-    if container_client.exists():
-        logging.debug(f"azurite container '{container_name}' exists, deleting to recreate")
-        container_client.delete_container()
-    container_client.create_container()
-
-
 def create_table(
     started_cluster,
     node,
@@ -144,82 +234,38 @@ def create_table(
     bucket=None,
     expect_error=False,
     database_name="default",
-    replace=False,
     no_settings=False,
-    hive_partitioning_path="",
-    hive_partitioning_columns="",
-    partitioning_mode="",
-    partition_regex="",
-    partition_component="",
-    after_processing="keep",
-    move_to_prefix=None,
-    move_to_bucket=None,
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
 
     settings = {
         "s3queue_loading_retries": 0,
-        "after_processing": after_processing,
+        "after_processing": "keep",
         "keeper_path": f"/clickhouse/test_{table_name}",
         "mode": f"{mode}",
     }
     if version is None:
         settings["enable_hash_ring_filtering"] = 1
-        settings["use_persistent_processing_nodes"] = random.choice([True, False])
-
-    if after_processing == "move":
-        assert move_to_prefix or move_to_bucket
-
-        if move_to_prefix:
-            settings["after_processing_move_prefix"] = move_to_prefix
-        if move_to_bucket:
-            if engine_name == "S3Queue":
-                move_uri = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{move_to_bucket}"
-                settings["after_processing_move_uri"] = move_uri
-                minio_access_key_id, minio_secret_access_key = [s.strip("'") for s in DEFAULT_AUTH]
-                settings["after_processing_move_access_key_id"] = minio_access_key_id
-                settings["after_processing_move_secret_access_key"] = minio_secret_access_key
-            else:
-                azurite_connection_string = started_cluster.env_variables['AZURITE_CONNECTION_STRING']
-                settings["after_processing_move_connection_string"] = azurite_connection_string
-                settings["after_processing_move_container"] = move_to_bucket
 
     settings.update(additional_settings)
 
-    if hive_partitioning_columns:
-        hive_partitioning_columns = f", {hive_partitioning_columns}"
-        if not partitioning_mode:  # Backward compatibility
-            settings["use_hive_partitioning"] = True
-        settings["allow_experimental_object_storage_queue_hive_partitioning"] = True
-
-    # Add regex partitioning settings
-    if partitioning_mode:
-        settings["partitioning_mode"] = partitioning_mode
-    if partition_regex:
-        settings["partition_regex"] = partition_regex
-    if partition_component:
-        settings["partition_component"] = partition_component
-
     engine_def = None
     if engine_name == "S3Queue":
-        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/{hive_partitioning_path}"
+        url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
         engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
     else:
-        azurite_connection_string = started_cluster.env_variables['AZURITE_CONNECTION_STRING']
-        engine_def = f"{engine_name}('{azurite_connection_string}', '{started_cluster.azurite_container}', '{files_path}/{hive_partitioning_path}', 'CSV')"
+        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
 
-    create = "REPLACE" if replace else "CREATE"
-    if not replace:
-        node.query(f"DROP TABLE IF EXISTS {database_name}.{table_name}")
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
     if no_settings:
         create_query = f"""
-            {create} TABLE {database_name}.{table_name} ({format}{hive_partitioning_columns})
+            CREATE TABLE {database_name}.{table_name} ({format})
             ENGINE = {engine_def}
             """
     else:
         create_query = f"""
-            {create} TABLE {database_name}.{table_name} ({format}{hive_partitioning_columns})
+            CREATE TABLE {database_name}.{table_name} ({format})
             ENGINE = {engine_def}
             SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
             """
@@ -237,63 +283,34 @@ def create_mv(
     mv_name=None,
     create_dst_table_first=True,
     format="column1 UInt32, column2 UInt32, column3 UInt32",
-    virtual_columns="_path String",
-    extra_dst_format=None,
-    dst_table_engine="MergeTree()",
-    dst_table_exists=False
 ):
     if mv_name is None:
         mv_name = f"{src_table_name}_mv"
-    if extra_dst_format is not None:
-        extra_dst_format = f", {extra_dst_format}"
-    else:
-        extra_dst_format = ""
 
-    if not dst_table_exists:
-        node.query(f"DROP TABLE IF EXISTS {dst_table_name};")
-
-    node.query(f"DROP TABLE IF EXISTS {mv_name};")
-
-    names = ""
-    for column in format.split(","):
-        name, _ = column.strip().rsplit(" ", 1)
-        if names == "":
-            names = name
-        else:
-            names += f", {name}"
-
-    virtual_format = ""
-    virtual_names = ""
-    virtual_columns_list = virtual_columns.split(",")
-    for column in virtual_columns_list:
-        virtual_format += f", {column}"
-        name, _ = column.strip().rsplit(" ", 1)
-        virtual_names += f", {name}"
+    node.query(f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {mv_name};
+    """)
 
     if create_dst_table_first:
-        if not dst_table_exists:
-            node.query(f"""
-                CREATE TABLE {dst_table_name} ({format}{extra_dst_format}{virtual_format})
-                ENGINE = {dst_table_engine}
-                ORDER BY column1;
-            """)
         node.query(
             f"""
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT {names} {virtual_names} FROM {src_table_name};
+            CREATE TABLE {dst_table_name} ({format}, _path String)
+            ENGINE = MergeTree()
+            ORDER BY column1;
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
             """
         )
     else:
         node.query(
             f"""
             SET allow_materialized_view_with_bad_select=1;
-            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT {names} {virtual_names} FROM {src_table_name};
-            """)
-        if not dst_table_exists:
-            node.query(f"""
-                CREATE TABLE {dst_table_name} ({format}{extra_dst_format}{virtual_format})
-                ENGINE = {dst_table_engine}
-                ORDER BY column1;
-            """)
+            CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT *, _path FROM {src_table_name};
+            CREATE TABLE {dst_table_name} ({format}, _path String)
+            ENGINE = MergeTree()
+            ORDER BY column1;
+            """
+    )
 
 
 def generate_random_string(length=6):

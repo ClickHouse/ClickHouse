@@ -11,14 +11,11 @@ CREATE TABLE tbl1
     key Int,
     x Int,
     y Int,
-    INDEX x_idx x TYPE minmax GRANULARITY 1
+    INDEX x_idx x TYPE minmax
 )
 ENGINE=MergeTree()
 ORDER BY key
-SETTINGS add_minmax_index_for_numeric_columns = true,
-         add_minmax_index_for_string_columns = true,
-         index_granularity = 8192,
-         index_granularity_bytes = 10485760;
+SETTINGS add_minmax_index_for_numeric_columns = true, add_minmax_index_for_string_columns = true;
 
 INSERT INTO tbl1 VALUES (1,1,1), (2,2,2), (3,3,3);
 
@@ -82,8 +79,7 @@ CREATE TABLE tbl2
     INDEX auto_minmax_index_x x TYPE minmax -- fine, add_minmax_index_for_numeric_columns isn't set
 )
 ENGINE=MergeTree()
-ORDER BY key
-SETTINGS add_minmax_index_for_numeric_columns=0;
+ORDER BY key;
 
 CREATE TABLE tbl3
 (
@@ -92,8 +88,7 @@ CREATE TABLE tbl3
     y Int
 )
 ENGINE=MergeTree()
-ORDER BY key
-SETTINGS add_minmax_index_for_numeric_columns=0;
+ORDER BY key;
 
 ALTER TABLE tbl3 ADD INDEX auto_minmax_index_y y TYPE minmax;
 
@@ -107,7 +102,7 @@ ENGINE=MergeTree()
 ORDER BY key
 SETTINGS add_minmax_index_for_string_columns = true;
 
-ALTER TABLE tbl4 ADD INDEX auto_minmax_index_y y TYPE minmax; -- { serverError BAD_ARGUMENTS, ILLEGAL_COLUMN }
+ALTER TABLE tbl4 ADD INDEX auto_minmax_index_y y TYPE minmax; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE tbl5
 (
@@ -118,8 +113,7 @@ CREATE TABLE tbl5
     INDEX x_idx x TYPE minmax
 )
 ENGINE=MergeTree()
-ORDER BY key
-SETTINGS add_minmax_index_for_numeric_columns=0, add_minmax_index_for_string_columns = FALSE;
+ORDER BY key;
 
 SELECT 'tbl5 with add_minmax_index_for_numeric_columns and add_minmax_index_for_string_columns disabled';
 SELECT name,type,expr,data_compressed_bytes FROM system.data_skipping_indices WHERE table = 'tbl5' AND database = currentDatabase();

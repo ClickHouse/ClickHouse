@@ -10,9 +10,6 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/String.h>
 
-#include <Columns/IColumn.h>
-#include <algorithm>
-
 #include <boost/algorithm/string/join.hpp>
 
 #include "config.h"
@@ -38,11 +35,11 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
 {
     if (level)
     {
-        auto level_literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
+        auto level_literal = std::make_shared<ASTLiteral>(static_cast<UInt64>(*level));
         return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
     }
 
-    auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
+    auto identifier = std::make_shared<ASTIdentifier>(Poco::toUpper(family_name));
     return get(makeASTFunction("CODEC", identifier), {});
 }
 
@@ -115,27 +112,6 @@ CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
     return family_code_and_creator->second({}, nullptr);
 }
 
-void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns) const
-{
-    std::for_each(
-        family_name_with_codec.begin(),
-        family_name_with_codec.end(),
-        [&](const auto &it)
-        {
-            const std::string &name = it.first;
-            CompressionCodecPtr tmp = it.second({}, nullptr);
-
-            res_columns[0]->insert(name);
-            res_columns[1]->insert(tmp->getMethodByte());
-            res_columns[2]->insert(tmp->isCompression());
-            res_columns[3]->insert(tmp->isGenericCompression());
-            res_columns[4]->insert(tmp->isEncryption());
-            res_columns[5]->insert(tmp->isFloatingPointTimeSeriesCodec());
-            res_columns[6]->insert(tmp->isExperimental());
-            res_columns[7]->insert(tmp->getDescription());
-        }
-    );
-}
 
 CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const
 {
@@ -195,7 +171,13 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
+#if USE_QATLIB
+void registerCodecZSTDQAT(CompressionCodecFactory & factory);
+#endif
 void registerCodecMultiple(CompressionCodecFactory & factory);
+#if USE_QPL
+void registerCodecDeflateQpl(CompressionCodecFactory & factory);
+#endif
 
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
@@ -212,6 +194,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecNone(*this);
     registerCodecLZ4(*this);
     registerCodecZSTD(*this);
+#if USE_QATLIB
+    registerCodecZSTDQAT(*this);
+#endif
     registerCodecLZ4HC(*this);
     registerCodecMultiple(*this);
     registerCodecDelta(*this);
@@ -220,6 +205,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
+#if USE_QPL
+    registerCodecDeflateQpl(*this);
+#endif
     registerCodecGCD(*this);
 
     default_codec = get("LZ4", {});

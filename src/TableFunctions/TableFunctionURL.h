@@ -45,14 +45,14 @@ public:
             /// at the end of arguments to override existed format and structure with "auto" values.
             if (collection->getOrDefault<String>("format", "auto") == "auto")
             {
-                ASTs format_equal_func_args = {make_intrusive<ASTIdentifier>("format"), make_intrusive<ASTLiteral>(format_)};
-                auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
+                ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+                auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
                 args.push_back(format_equal_func);
             }
             if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
             {
-                ASTs structure_equal_func_args = {make_intrusive<ASTIdentifier>("structure"), make_intrusive<ASTLiteral>(structure_)};
-                auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
+                ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+                auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
                 args.push_back(structure_equal_func);
             }
         }
@@ -89,8 +89,7 @@ private:
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method_, bool is_insert_query) const override;
 
-    const char * getStorageEngineName() const override { return "URL"; }
-    const String & getFunctionURI() const override { return filename; }
+    const char * getStorageTypeName() const override { return "URL"; }
 
     std::optional<String> tryGetFormatFromFirstArgument() override;
 };

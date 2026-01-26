@@ -2,6 +2,5 @@ CreatedReadBufferMMap
 CreatedReadBufferMMapFailed
 MMappedFileCacheHits
 MMappedFileCacheMisses
-MMapCacheCells
 MMappedFileBytes
 MMappedFiles

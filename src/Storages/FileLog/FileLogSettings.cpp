@@ -38,11 +38,11 @@ struct FileLogSettingsImpl : public BaseSettings<FileLogSettingsTraits>
 {
 };
 
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) FileLogSettings##TYPE NAME = &FileLogSettingsImpl ::NAME;
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) FileLogSettings##TYPE NAME = &FileLogSettingsImpl ::NAME;
 
 namespace FileLogSetting
 {
-LIST_OF_FILELOG_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+LIST_OF_FILELOG_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
@@ -81,7 +81,7 @@ void FileLogSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = make_intrusive<ASTSetQuery>();
+        auto settings_ast = std::make_shared<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

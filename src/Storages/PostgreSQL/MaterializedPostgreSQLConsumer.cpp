@@ -1,6 +1,6 @@
-#include <Storages/PostgreSQL/MaterializedPostgreSQLConsumer.h>
+#include "MaterializedPostgreSQLConsumer.h"
 
-#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#include "StorageMaterializedPostgreSQL.h"
 #include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
 #include <base/hex.h>
@@ -136,7 +136,7 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
     columns = sample_block.cloneEmptyColumns();
 
     for (const auto & name : sample_block.getNames())
-        columns_ast.children.emplace_back(make_intrusive<ASTIdentifier>(name));
+        columns_ast.children.emplace_back(std::make_shared<ASTIdentifier>(name));
 }
 
 MaterializedPostgreSQLConsumer::StorageData::Buffer & MaterializedPostgreSQLConsumer::StorageData::getLastBuffer()
@@ -204,7 +204,7 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
                     column_nullable.getNestedColumn(), value, type_description.first,
                     data_type.getNestedType(), storage_data.array_info, column_idx_in_table);
 
-            column_nullable.getNullMapData().emplace_back(false);
+            column_nullable.getNullMapData().emplace_back(0);
         }
         else
         {
@@ -345,7 +345,7 @@ void MaterializedPostgreSQLConsumer::readTupleData(
     };
 
     std::exception_ptr error;
-    for (Int16 column_idx = 0; column_idx < num_columns; ++column_idx)
+    for (int column_idx = 0; column_idx < num_columns; ++column_idx)
     {
         try
         {
@@ -693,12 +693,11 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     auto storage = storage_data.storage;
 
                     auto insert_context = Context::createCopy(context);
-                    insert_context->makeQueryContext();
                     insert_context->setInternalQuery(true);
 
-                    auto insert = make_intrusive<ASTInsertQuery>();
+                    auto insert = std::make_shared<ASTInsertQuery>();
                     insert->table_id = storage->getStorageID();
-                    insert->columns = make_intrusive<ASTExpressionList>(buffer->columns_ast);
+                    insert->columns = std::make_shared<ASTExpressionList>(buffer->columns_ast);
 
                     InterpreterInsertQuery interpreter(
                         insert,
@@ -709,7 +708,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
                         /* async_isnert */ false);
                     auto io = interpreter.execute();
                     auto input = std::make_shared<SourceFromSingleChunk>(
-                        std::make_shared<const Block>(result_rows.cloneEmpty()), Chunk(result_rows.getColumns(), result_rows.rows()));
+                        result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
 
                     assertBlocksHaveEqualStructure(input->getPort().getHeader(), io.pipeline.getHeader(), "postgresql replica table sync");
                     io.pipeline.complete(Pipe(std::move(input)));

@@ -5,7 +5,6 @@ keywords: ['RowBinaryWithNames']
 output_format: true
 slug: /interfaces/formats/RowBinaryWithNames
 title: 'RowBinaryWithNames'
-doc_type: 'reference'
 ---
 
 import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
@@ -21,9 +20,9 @@ Similar to the [`RowBinary`](./RowBinary.md) format, but with added header:
 - [`LEB128`](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N).
 - N `String`s specifying column names.
 
-## Example usage {#example-usage}
+## Example Usage {#example-usage}
 
-## Format settings {#format-settings}
+## Format Settings {#format-settings}
 
 <RowBinaryFormatSettings/>
 
