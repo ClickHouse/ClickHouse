@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/setThreadName.h>
 
 namespace CurrentMetrics
@@ -13,6 +14,15 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace
+{
+std::string makeMetadataKey(const std::string & zookeeper_name, const std::string & zookeeper_path)
+{
+    if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
+        return zookeeper_path;
+    return zookeeper_name + ":" + zookeeper_path;
+}
+}
 
 namespace ErrorCodes
 {
@@ -136,16 +146,18 @@ ObjectStorageQueueMetadataFactory & ObjectStorageQueueMetadataFactory::instance(
 }
 
 ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFactory::getOrCreate(
+    const std::string & zookeeper_name,
     const std::string & zookeeper_path,
     ObjectStorageQueueMetadataPtr metadata,
     const StorageID & storage_id,
     bool & created_new_metadata)
 {
     std::lock_guard lock(mutex);
-    auto it = metadata_by_path.find(zookeeper_path);
+    const auto metadata_key = makeMetadataKey(zookeeper_name, zookeeper_path);
+    auto it = metadata_by_path.find(metadata_key);
     if (it == metadata_by_path.end())
     {
-        it = metadata_by_path.emplace(zookeeper_path, std::move(metadata)).first;
+        it = metadata_by_path.emplace(metadata_key, std::move(metadata)).first;
         it->second.metadata->setMetadataRefCount(*it->second.ref_count);
     }
     else
@@ -162,16 +174,18 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
 }
 
 void ObjectStorageQueueMetadataFactory::remove(
+    const std::string & zookeeper_name,
     const std::string & zookeeper_path,
     const StorageID & storage_id,
     bool is_drop,
     bool keep_data_in_keeper)
 {
     std::lock_guard lock(mutex);
-    auto it = metadata_by_path.find(zookeeper_path);
+    const auto metadata_key = makeMetadataKey(zookeeper_name, zookeeper_path);
+    auto it = metadata_by_path.find(metadata_key);
 
     if (it == metadata_by_path.end())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata with zookeeper path {} does not exist", zookeeper_path);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata with zookeeper path {} does not exist", metadata_key);
 
     *it->second.ref_count -= 1;
 
@@ -200,8 +214,10 @@ void ObjectStorageQueueMetadataFactory::remove(
 std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> ObjectStorageQueueMetadataFactory::getAll()
 {
     std::unordered_map<std::string, ObjectStorageQueueMetadataFactory::FilesMetadataPtr> result;
-    for (const auto & [zk_path, metadata] : metadata_by_path)
-        result.emplace(zk_path, metadata.metadata);
+    for (const auto & [key, metadata] : metadata_by_path)
+    {
+        result.emplace(key, metadata.metadata);
+    }
     return result;
 }
 

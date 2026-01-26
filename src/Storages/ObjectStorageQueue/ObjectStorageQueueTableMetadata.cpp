@@ -94,7 +94,6 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
                 "partition_component must be specified when using partitioning_mode='regex'");
     }
 
-    // Validate bucketing mode configuration
     if (bucketing_mode == "partition" && partitioning_mode == "none")
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
