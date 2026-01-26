@@ -563,9 +563,12 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         size_t max_parts_in_partition = getMaxPartsCountAndSizeForPartition().first;
         if ((*settings)[MergeTreeSetting::parts_to_delay_insert] && max_parts_in_partition < (*settings)[MergeTreeSetting::parts_to_delay_insert])
         {
-            Float64 ratio = 1.0 - static_cast<Float64>(max_parts_in_partition) / (*settings)[MergeTreeSetting::parts_to_delay_insert];
-            merge_selecting_sleep_ms = static_cast<UInt64>(interpolateLinear((*settings)[MergeTreeSetting::merge_selecting_sleep_ms],
-                                                                             (*settings)[MergeTreeSetting::max_merge_selecting_sleep_ms], ratio));
+            Float64 ratio = 1.0
+                - static_cast<Float64>(max_parts_in_partition) / static_cast<Float64>((*settings)[MergeTreeSetting::parts_to_delay_insert]);
+            merge_selecting_sleep_ms = static_cast<UInt64>(interpolateLinear(
+                static_cast<double>((*settings)[MergeTreeSetting::merge_selecting_sleep_ms]),
+                static_cast<double>((*settings)[MergeTreeSetting::max_merge_selecting_sleep_ms]),
+                ratio));
         }
     }
 
@@ -1952,7 +1955,7 @@ bool StorageReplicatedMergeTree::checkPartsImpl(bool skip_sanity_checks)
         total_rows_on_filesystem += part.part->rows_count;
 
     const auto storage_settings_ptr = getSettings();
-    bool insane = uncovered_unexpected_parts_rows > total_rows_on_filesystem * (*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts];
+    bool insane = static_cast<double>(uncovered_unexpected_parts_rows) > static_cast<double>(total_rows_on_filesystem) * (*storage_settings_ptr)[MergeTreeSetting::replicated_max_ratio_of_wrong_parts];
 
     constexpr auto sanity_report_fmt = "The local set of parts of table {} doesn't look like the set of parts in ZooKeeper: "
         "{} rows of {} total rows in filesystem are suspicious. "
@@ -4296,7 +4299,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
     }
 
 
-    Float32 new_sleep_ms = merge_selecting_sleep_ms;
+    Float32 new_sleep_ms = static_cast<Float32>(merge_selecting_sleep_ms);
     if (result == AttemptStatus::EntryCreated || result == AttemptStatus::NeedRetry)
         new_sleep_ms /= (*storage_settings_ptr)[MergeTreeSetting::merge_selecting_sleep_slowdown_factor];
     else if (result == AttemptStatus::CannotSelect)
@@ -7286,7 +7289,7 @@ bool StorageReplicatedMergeTree::tryWaitForReplicaToProcessLogEntry(
     const auto & stop_waiting = [&]()
     {
         bool stop_waiting_itself = waiting_itself && (partial_shutdown_called || shutdown_prepared_called || shutdown_called);
-        bool timeout_exceeded = check_timeout && wait_for_inactive_timeout < time_waiting.elapsedSeconds();
+        bool timeout_exceeded = check_timeout && static_cast<double>(wait_for_inactive_timeout) < time_waiting.elapsedSeconds();
         bool stop_waiting_inactive = (!wait_for_inactive || timeout_exceeded)
             && !getZooKeeper()->exists(fs::path(table_zookeeper_path) / "replicas" / replica / "is_active");
         return is_dropped || stop_waiting_itself || stop_waiting_inactive;

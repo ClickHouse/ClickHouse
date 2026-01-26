@@ -233,8 +233,8 @@ int main(int argc, char ** argv)
         double elapsed = watch.elapsedSeconds();
         std::cerr
             << "Sorted in " << elapsed
-            << " (" << n / elapsed << " elem/sec., "
-            << n * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
+            << " (" << static_cast<double>(n) / elapsed << " elem/sec., "
+            << static_cast<double>(n) * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
             << std::endl;
     }
 
@@ -259,8 +259,8 @@ int main(int argc, char ** argv)
         if (!ok)
             std::cerr
                 << "Checked in " << elapsed
-                << " (" << limit / elapsed << " elem/sec., "
-                << limit * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
+                << " (" << static_cast<double>(limit) / elapsed << " elem/sec., "
+                << static_cast<double>(limit) * sizeof(Key) / elapsed / 1048576 << " MB/sec.)"
                 << std::endl
                 << "Result: " << (ok ? "Ok." : "Fail!") << std::endl;
     }

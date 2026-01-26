@@ -186,7 +186,7 @@ namespace detail
             if (!elems.empty())
             {
                 size_t n = level < 1
-                    ? static_cast<size_t>(level * elems.size())
+                    ? static_cast<size_t>(level * static_cast<double>(elems.size()))
                     : (elems.size() - 1);
 
                 /// Sorting an array will not be considered a violation of constancy.
@@ -209,7 +209,7 @@ namespace detail
                 auto level = levels[level_index];
 
                 size_t n = level < 1
-                    ? static_cast<size_t>(level * elems.size())
+                    ? static_cast<size_t>(level * static_cast<double>(elems.size()))
                     : (elems.size() - 1);
 
                 ::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
@@ -408,14 +408,14 @@ namespace detail
         /// Get the value of the `level` quantile. The level must be between 0 and 1.
         UInt16 get(double level) const
         {
-            double pos = std::ceil(count * level);
+            double pos = std::ceil(static_cast<double>(count) * level);
 
             double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())
             {
-                accumulated += it.count();
+                accumulated += static_cast<double>(it.count());
 
                 if (accumulated >= pos)
                     break;
@@ -434,14 +434,14 @@ namespace detail
             const auto * indices_end = indices + size;
             const auto * index = indices;
 
-            double pos = std::ceil(count * levels[*index]);
+            double pos = std::ceil(static_cast<double>(count) * levels[*index]);
 
             double accumulated = 0;
             Iterator it(*this);
 
             while (it.isValid())
             {
-                accumulated += it.count();
+                accumulated += static_cast<double>(it.count());
 
                 while (accumulated >= pos)
                 {
@@ -451,7 +451,7 @@ namespace detail
                     if (index == indices_end)
                         return;
 
-                    pos = std::ceil(count * levels[*index]);
+                    pos = std::ceil(static_cast<double>(count) * levels[*index]);
                 }
 
                 it.next();
