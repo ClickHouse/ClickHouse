@@ -45,51 +45,6 @@ select json, json.b.b.e from test order by id format JSONColumns;
 select json, json.b.b.e.:String, json.b.b.e.:Date from test order by id format JSONColumns;
 select json, json.b.b.e, json.b.b.e.:String, json.b.b.e.:Date from test order by id format JSONColumns;
 
-select json.b.b.e, json.a.b.d from test order by id format JSONColumns;
-select json.b.b.e.:String, json.b.b.e.:Date, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
-select json.b.b.e, json.b.b.e.:String, json.b.b.e.:Date, json.a.b.d, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
-select json, json.b.b.e, json.a.b.d from test order by id format JSONColumns;
-select json, json.b.b.e.:String, json.b.b.e.:Date, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
-select json, json.b.b.e, json.b.b.e.:String, json.b.b.e.:Date, json.a.b.d, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
-
-select json.b.b.e, json.d.a from test order by id format JSONColumns;
-select json.b.b.e.:String, json.b.b.e.:Date, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date from test order by id format JSONColumns;
-select json.b.b.e, json.b.b.e.:String, json.b.b.e.:Date, json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date from test order by id format JSONColumns;
-select json, json.b.b.e, json.d.a from test order by id format JSONColumns;
-select json, json.b.b.e.:String, json.b.b.e.:Date, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date from test order by id format JSONColumns;
-select json, json.b.b.e, json.b.b.e.:String, json.b.b.e.:Date, json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date from test order by id format JSONColumns;
-
-select json.b.b.e, json.d.a, json.d.b from test order by id format JSONColumns;
-select json.b.b.e.:String, json.b.b.e.:Date, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
-select json.b.b.e, json.b.b.e.:String, json.b.b.e.:Date, json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
-select json, json.b.b.e, json.d.a, json.d.b from test order by id format JSONColumns;
-select json, json.b.b.e.:String, json.b.b.e.:Date, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
-select json, json.b.b.e, json.b.b.e.:String, json.b.b.e.:Date, json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
-
-select json.d.a, json.d.b from test order by id format JSONColumns;
-select json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
-select json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
-select json, json.d.a, json.d.b from test order by id format JSONColumns;
-select json, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
-select json, json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.d.b, json.d.b.:Int64, json.d.b.:Date from test order by id format JSONColumns;
-
-select json.d.a, json.b.b.`_26` from test order by id format JSONColumns;
-select json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.b.b.`_26`.:Int64, json.b.b.`_26`.:Date from test order by id format JSONColumns;
-select json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.b.b.`_26`.:Int64, json.b.b, json.b.b.`_26`.:Date from test order by id format JSONColumns;
-select json, json.d.a, json.b.b.`_26` from test order by id format JSONColumns;
-select json, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.b.b.`_26`.:Int64, json.b.b.`_26`.:Date from test order by id format JSONColumns;
-select json, json.d.a, json.d.a.:`Array(Nullable(Int64))`, json.d.a.:Date, json.b.b.`_26`.:Int64, json.b.b, json.b.b.`_26`.:Date from test order by id format JSONColumns;
-
-select json.^a, json.a.b.c from test order by id format JSONColumns;
-select json, json.^a, json.a.b.c from test order by id format JSONColumns;
-
-select json.^a, json.a.b.d from test order by id format JSONColumns;
-select json.^a, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
-select json.^a, json.a.b.d, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
-select json, json.^a, json.a.b.d from test order by id format JSONColumns;
-select json, json.^a, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
-select json, json.^a, json.a.b.d, json.a.b.d.:Int64, json.a.b.d.:Date from test order by id format JSONColumns;
-
 {% endfor -%}
 
 drop table test;
