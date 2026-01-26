@@ -47,21 +47,21 @@ namespace
 
 ASTPtr BackupInfo::toAST() const
 {
-    auto func = std::make_shared<ASTFunction>();
+    auto func = make_intrusive<ASTFunction>();
     func->name = backup_engine_name;
     func->no_empty_args = true;
     func->kind = ASTFunction::Kind::BACKUP_NAME;
 
-    auto list = std::make_shared<ASTExpressionList>();
+    auto list = make_intrusive<ASTExpressionList>();
     func->arguments = list;
     func->children.push_back(list);
     list->children.reserve(args.size() + kv_args.size() + !id_arg.empty());
 
     if (!id_arg.empty())
-        list->children.push_back(std::make_shared<ASTIdentifier>(id_arg));
+        list->children.push_back(make_intrusive<ASTIdentifier>(id_arg));
 
     for (const auto & arg : args)
-        list->children.push_back(std::make_shared<ASTLiteral>(arg));
+        list->children.push_back(make_intrusive<ASTLiteral>(arg));
 
     for (const auto & kv_arg : kv_args)
         list->children.push_back(kv_arg);

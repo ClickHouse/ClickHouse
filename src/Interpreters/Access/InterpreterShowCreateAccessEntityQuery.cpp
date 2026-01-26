@@ -50,8 +50,8 @@ namespace
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode)
     {
-        auto query = std::make_shared<ASTCreateUserQuery>();
-        query->names = std::make_shared<ASTUserNamesWithHost>(user.getName());
+        auto query = make_intrusive<ASTCreateUserQuery>();
+        query->names = make_intrusive<ASTUserNamesWithHost>(user.getName());
         query->attach = attach_mode;
 
         if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
@@ -72,7 +72,7 @@ namespace
 
         if (!user.settings.empty())
         {
-            std::shared_ptr<ASTSettingsProfileElements> query_settings;
+            boost::intrusive_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
                 query_settings = user.settings.toAST();
             else
@@ -92,7 +92,7 @@ namespace
 
         if (!user.default_database.empty())
         {
-            auto ast = std::make_shared<ASTDatabaseOrNone>();
+            auto ast = make_intrusive<ASTDatabaseOrNone>();
             ast->database_name = user.default_database;
             query->default_database = ast;
         }
@@ -103,13 +103,13 @@ namespace
 
     ASTPtr getCreateQueryImpl(const Role & role, const AccessControl * access_control, bool attach_mode)
     {
-        auto query = std::make_shared<ASTCreateRoleQuery>();
+        auto query = make_intrusive<ASTCreateRoleQuery>();
         query->names.emplace_back(role.getName());
         query->attach = attach_mode;
 
         if (!role.settings.empty())
         {
-            std::shared_ptr<ASTSettingsProfileElements> query_settings;
+            boost::intrusive_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
                 query_settings = role.settings.toAST();
             else
@@ -124,13 +124,13 @@ namespace
 
     ASTPtr getCreateQueryImpl(const SettingsProfile & profile, const AccessControl * access_control, bool attach_mode)
     {
-        auto query = std::make_shared<ASTCreateSettingsProfileQuery>();
+        auto query = make_intrusive<ASTCreateSettingsProfileQuery>();
         query->names.emplace_back(profile.getName());
         query->attach = attach_mode;
 
         if (!profile.elements.empty())
         {
-            std::shared_ptr<ASTSettingsProfileElements> query_settings;
+            boost::intrusive_ptr<ASTSettingsProfileElements> query_settings;
             if (attach_mode)
                 query_settings = profile.elements.toAST();
             else
@@ -159,7 +159,7 @@ namespace
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode)
     {
-        auto query = std::make_shared<ASTCreateQuotaQuery>();
+        auto query = make_intrusive<ASTCreateQuotaQuery>();
         query->names.emplace_back(quota.getName());
         query->attach = attach_mode;
 
@@ -198,8 +198,8 @@ namespace
         const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode)
     {
-        auto query = std::make_shared<ASTCreateRowPolicyQuery>();
-        query->names = std::make_shared<ASTRowPolicyNames>();
+        auto query = make_intrusive<ASTCreateRowPolicyQuery>();
+        query->names = make_intrusive<ASTRowPolicyNames>();
         query->names->full_names.emplace_back(policy.getFullName());
         query->attach = attach_mode;
 

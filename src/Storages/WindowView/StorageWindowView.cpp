@@ -200,7 +200,7 @@ namespace
                         }
                     }
                     is_time_column_func_now = true;
-                    node_ptr->children[0]->children[0] = std::make_shared<ASTIdentifier>("____timestamp");
+                    node_ptr->children[0]->children[0] = make_intrusive<ASTIdentifier>("____timestamp");
                     window_id_name = node.getColumnName();
                 }
             }
@@ -246,14 +246,14 @@ namespace
 
             /// windowID(timestamp, toIntervalSecond('5')) -> identifier.
             /// and other...
-            node_ptr = std::make_shared<ASTIdentifier>(node.getColumnName());
+            node_ptr = make_intrusive<ASTIdentifier>(node.getColumnName());
         }
 
         static void visit(const ASTIdentifier & node, ASTPtr & node_ptr, Data & data)
         {
             if (node.getColumnName() == data.window_id_alias)
             {
-                if (auto identifier = std::dynamic_pointer_cast<ASTIdentifier>(node_ptr))
+                if (auto identifier = boost::dynamic_pointer_cast<ASTIdentifier>(node_ptr))
                     identifier->setShortName(data.window_id_name);
             }
         }
@@ -353,17 +353,17 @@ namespace
 
     ASTPtr generateInnerFetchQuery(StorageID inner_table_id)
     {
-        auto fetch_query = std::make_shared<ASTSelectQuery>();
-        auto select = std::make_shared<ASTExpressionList>();
-        select->children.push_back(std::make_shared<ASTAsterisk>());
+        auto fetch_query = make_intrusive<ASTSelectQuery>();
+        auto select = make_intrusive<ASTExpressionList>();
+        select->children.push_back(make_intrusive<ASTAsterisk>());
         fetch_query->setExpression(ASTSelectQuery::Expression::SELECT, select);
-        fetch_query->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
-        auto tables_elem = std::make_shared<ASTTablesInSelectQueryElement>();
-        auto table_expr = std::make_shared<ASTTableExpression>();
+        fetch_query->setExpression(ASTSelectQuery::Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
+        auto tables_elem = make_intrusive<ASTTablesInSelectQueryElement>();
+        auto table_expr = make_intrusive<ASTTableExpression>();
         fetch_query->tables()->children.push_back(tables_elem);
         tables_elem->table_expression = table_expr;
         tables_elem->children.push_back(table_expr);
-        table_expr->database_and_table_name = std::make_shared<ASTTableIdentifier>(inner_table_id);
+        table_expr->database_and_table_name = make_intrusive<ASTTableIdentifier>(inner_table_id);
         table_expr->children.push_back(table_expr->database_and_table_name);
         return fetch_query;
     }
@@ -432,17 +432,17 @@ ASTPtr StorageWindowView::getCleanupQuery()
     ASTPtr function_less;
     function_less= makeASTOperator(
         "less",
-        std::make_shared<ASTIdentifier>(window_id_name),
-        std::make_shared<ASTLiteral>(getCleanupBound()));
+        make_intrusive<ASTIdentifier>(window_id_name),
+        make_intrusive<ASTLiteral>(getCleanupBound()));
 
-    auto alter_query = std::make_shared<ASTAlterQuery>();
+    auto alter_query = make_intrusive<ASTAlterQuery>();
     alter_query->setDatabase(inner_table_id.database_name);
     alter_query->setTable(inner_table_id.table_name);
     alter_query->uuid = inner_table_id.uuid;
-    alter_query->set(alter_query->command_list, std::make_shared<ASTExpressionList>());
+    alter_query->set(alter_query->command_list, make_intrusive<ASTExpressionList>());
     alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
 
-    auto alter_command = std::make_shared<ASTAlterCommand>();
+    auto alter_command = make_intrusive<ASTAlterCommand>();
     alter_command->type = ASTAlterCommand::DELETE;
     alter_command->predicate = alter_command->children.emplace_back(function_less).get();
     alter_query->command_list->children.push_back(alter_command);
@@ -563,7 +563,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     {
         /// SELECT * FROM inner_table WHERE window_id_name == w_end
         /// (because we fire at the end of windows)
-        filter_function = makeASTOperator("equals", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(watermark));
+        filter_function = makeASTOperator("equals", make_intrusive<ASTIdentifier>(window_id_name), make_intrusive<ASTLiteral>(watermark));
     }
     else
     {
@@ -579,10 +579,10 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
             /// In this case, the slice_num_units will be `gcd(1,3)=1' and the non-overlapped
             /// windows will split into [1], [2], [3]... We compute each split window into
             /// mergeable state and merge them when the window is triggering.
-            func_array ->arguments->children.push_back(std::make_shared<ASTLiteral>(w_end));
+            func_array ->arguments->children.push_back(make_intrusive<ASTLiteral>(w_end));
             w_end = addTime(w_end, window_kind, -slice_num_units, *time_zone);
         }
-        filter_function = makeASTFunction("has", func_array, std::make_shared<ASTIdentifier>(window_id_name));
+        filter_function = makeASTFunction("has", func_array, make_intrusive<ASTIdentifier>(window_id_name));
     }
 
     auto syntax_result = TreeRewriter(getContext()).analyze(filter_function, builder.getHeader().getNamesAndTypesList());
@@ -710,7 +710,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
     if (!target_table_id.empty())
     {
         StoragePtr target_table = getTargetTable();
-        auto insert = std::make_shared<ASTInsertQuery>();
+        auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = target_table->getStorageID();
         auto context = Context::createCopy(getContext());
         InterpreterInsertQuery interpreter(
@@ -772,9 +772,9 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
         modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
     }
 
-    auto select_list = std::make_shared<ASTExpressionList>();
+    auto select_list = make_intrusive<ASTExpressionList>();
     for (const auto & column_name : getInputHeader().getNames())
-        select_list->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+        select_list->children.emplace_back(make_intrusive<ASTIdentifier>(column_name));
     modified_select.setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
     if (!is_time_column_func_now)
@@ -786,9 +786,9 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
         WindowFunctionMatcher::Data query_info_data;
         WindowFunctionMatcher::Visitor(query_info_data).visit(query_);
 
-        auto order_by = std::make_shared<ASTExpressionList>();
-        auto order_by_elem = std::make_shared<ASTOrderByElement>();
-        order_by_elem->children.push_back(std::make_shared<ASTIdentifier>(timestamp_column_name));
+        auto order_by = make_intrusive<ASTExpressionList>();
+        auto order_by_elem = make_intrusive<ASTOrderByElement>();
+        order_by_elem->children.push_back(make_intrusive<ASTIdentifier>(timestamp_column_name));
         order_by_elem->direction = 1;
         order_by->children.push_back(order_by_elem);
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
@@ -796,8 +796,8 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     else
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
 
-    const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
-    select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+    const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
     select_with_union_query->list_of_selects->children.push_back(query);
 
     return select_with_union_query;
@@ -806,7 +806,7 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
 ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, const StorageID & inner_table_id_)
 {
     /// We will create a query to create an internal table.
-    auto inner_create_query = std::make_shared<ASTCreateQuery>();
+    auto inner_create_query = make_intrusive<ASTCreateQuery>();
     inner_create_query->setDatabase(inner_table_id_.getDatabaseName());
     inner_create_query->setTable(inner_table_id_.getTableName());
 
@@ -816,7 +816,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
     QueryNormalizer::Data normalizer_data(aliases, {}, false, QueryNormalizer::ExtractedSettings(getContext()->getSettingsRef()), false);
     QueryNormalizer(normalizer_data).visit(inner_query_normalized);
 
-    auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);
+    auto inner_select_query = boost::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);
 
     auto t_sample_block
         = InterpreterSelectQuery(inner_select_query, getContext(), SelectQueryOptions(QueryProcessingStage::WithMergeableState))
@@ -826,7 +826,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
 
     if (is_time_column_func_now)
     {
-        auto column_window = std::make_shared<ASTColumnDeclaration>();
+        auto column_window = make_intrusive<ASTColumnDeclaration>();
         column_window->name = window_id_name;
         column_window->type = makeASTDataType("UInt32");
         columns_list->children.push_back(column_window);
@@ -863,7 +863,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
         return node;
     };
 
-    auto new_storage = std::make_shared<ASTStorage>();
+    auto new_storage = make_intrusive<ASTStorage>();
     /// inner_storage_engine != nullptr in case create window view with ENGINE syntax
     if (inner_table_engine)
     {
@@ -898,7 +898,7 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
         if (inner_select_query->groupBy()->children.size() == 1) //GROUP BY windowID
         {
             auto node = visit(inner_select_query->groupBy()->children[0].get());
-            new_storage->set(new_storage->order_by, std::make_shared<ASTIdentifier>(node->getColumnName()));
+            new_storage->set(new_storage->order_by, make_intrusive<ASTIdentifier>(node->getColumnName()));
         }
         else
         {
@@ -906,13 +906,13 @@ ASTPtr StorageWindowView::getInnerTableCreateQuery(const ASTPtr & inner_query, c
             for (auto & child : inner_select_query->groupBy()->children)
             {
                 auto node = visit(child.get());
-                group_by_function->arguments->children.push_back(std::make_shared<ASTIdentifier>(node->getColumnName()));
+                group_by_function->arguments->children.push_back(make_intrusive<ASTIdentifier>(node->getColumnName()));
             }
             new_storage->set(new_storage->order_by, group_by_function);
         }
     }
 
-    auto new_columns = std::make_shared<ASTColumns>();
+    auto new_columns = make_intrusive<ASTColumns>();
     new_columns->set(new_columns->columns, columns_list);
     inner_create_query->set(inner_create_query->columns_list, new_columns);
     inner_create_query->set(inner_create_query->storage, new_storage);
@@ -1275,7 +1275,7 @@ StorageWindowView::StorageWindowView(
     /// If the target table is not set, use inner target table
     auto to_table_id = query.getTargetTableID(ViewTarget::To);
     has_inner_target_table = to_table_id.empty();
-    auto to_table_engine = query.getTargetInnerEngine(ViewTarget::To);
+    auto * to_table_engine = query.getTargetInnerEngine(ViewTarget::To);
 
     if (has_inner_target_table && !to_table_engine)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -1292,7 +1292,7 @@ StorageWindowView::StorageWindowView(
 
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_);
 
-    if (auto inner_storage = query.getTargetInnerEngine(ViewTarget::Inner))
+    if (auto * inner_storage = query.getTargetInnerEngine(ViewTarget::Inner))
         inner_table_engine = inner_storage->clone();
     inner_table_id = StorageID(getStorageID().database_name, generateInnerTableName(getStorageID()));
     inner_fetch_query = generateInnerFetchQuery(inner_table_id);
@@ -1314,12 +1314,12 @@ StorageWindowView::StorageWindowView(
         {
             /// create inner target table
             auto create_context_ = Context::createCopy(context_);
-            auto target_create_query = std::make_shared<ASTCreateQuery>();
+            auto target_create_query = make_intrusive<ASTCreateQuery>();
             target_create_query->setDatabase(table_id_.database_name);
             target_create_query->setTable(generateTargetTableName(table_id_));
 
-            auto new_columns_list = std::make_shared<ASTColumns>();
-            new_columns_list->set(new_columns_list->columns, query.columns_list->getChild(*query.columns_list->columns));
+            auto new_columns_list = make_intrusive<ASTColumns>();
+            new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
 
             target_create_query->set(target_create_query->columns_list, new_columns_list);
             target_create_query->set(target_create_query->storage, to_table_engine);
@@ -1545,8 +1545,8 @@ void StorageWindowView::writeIntoWindowView(
     {
         auto filter_function = makeASTOperator(
             "greaterOrEquals",
-            std::make_shared<ASTIdentifier>(window_view.timestamp_column_name),
-            std::make_shared<ASTLiteral>(lateness_bound));
+            make_intrusive<ASTIdentifier>(window_view.timestamp_column_name),
+            make_intrusive<ASTLiteral>(lateness_bound));
 
         ASTPtr query = filter_function;
         NamesAndTypesList columns;
