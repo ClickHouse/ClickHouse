@@ -76,7 +76,6 @@ Failed: 0, Passed: 7394, Skipped: 1795
 
 If you leave the run unattended, you may use `nohup` or `disown` to keep it running after the `ssh` connection is lost.
 
-
 ### Adding a new test {#adding-a-new-test}
 
 To add new test, first create a `.sql` or `.sh` file in `queries/0_stateless` directory.
