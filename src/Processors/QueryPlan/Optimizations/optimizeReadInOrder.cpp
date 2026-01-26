@@ -41,7 +41,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool optimize_read_in_order;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
@@ -444,14 +443,13 @@ bool isFixedColumnForReadInOrder(
     const KeyDescription & sorting_key,
     const ReadFromMergeTree * reading)
 {
-    /// When parallel replicas with local plan is active, use AST-based fixed column detection
-    /// for deterministic results. This works reliably regardless of DAG transformations.
+    /// In parallel replicas, use AST-based fixed column detection for deterministic results.
+    /// DAG-based detection can fail due to query plan transformations in parallel replicas context.
     /// Check both: on replicas (isParallelReadingFromReplicas) and on coordinator (canUseParallelReplicasOnInitiator).
     if (reading)
     {
         const auto & context = reading->getContext();
-        if (context->getSettingsRef()[Setting::parallel_replicas_local_plan]
-            && (reading->isParallelReadingFromReplicas() || context->canUseParallelReplicasOnInitiator()))
+        if (reading->isParallelReadingFromReplicas() || context->canUseParallelReplicasOnInitiator())
         {
             const auto * select_query = reading->getQueryInfo().query->as<ASTSelectQuery>();
             if (select_query)
