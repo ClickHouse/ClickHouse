@@ -11,6 +11,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Storages/StorageSnapshot.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
@@ -580,6 +581,17 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
             if (!table_metadata.last_processed_path.empty())
             {
                 std::atomic<size_t> noop = 0;
+
+                /// Create parser for regex partitioning mode.
+                /// Parser is needed to correctly compute partition keys and bucket assignments.
+                std::unique_ptr<ObjectStorageQueueFilenameParser> parser;
+                if (table_metadata.getPartitioningMode() == ObjectStorageQueuePartitioningMode::REGEX)
+                {
+                    parser = std::make_unique<ObjectStorageQueueFilenameParser>(
+                        table_metadata.partition_regex,
+                        table_metadata.partition_component);
+                }
+
                 ObjectStorageQueueOrderedFileMetadata(
                     zookeeper_path,
                     table_metadata.last_processed_path,
@@ -592,7 +604,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     zookeeper_name,
                     table_metadata.getBucketingMode(),
                     table_metadata.getPartitioningMode(),
-                    /* parser */nullptr,  /// Parser not needed for ZK metadata initialization
+                    parser.get(),
                     log).prepareProcessedAtStartRequests(requests);
             }
 

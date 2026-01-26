@@ -1177,6 +1177,7 @@ ContextData::ContextData(const ContextData &o) :
     classifier(o.classifier),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
+    runtime_filter_lookup(o.runtime_filter_lookup),
     kitchen_sink(o.kitchen_sink),
     part_uuids(o.part_uuids),
     ignored_part_uuids(o.ignored_part_uuids),
@@ -2807,10 +2808,10 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     ASTCreateQuery create;
     create.set(create.select, query);
 
-    auto sql_security = std::make_shared<ASTSQLSecurity>();
+    auto sql_security = make_intrusive<ASTSQLSecurity>();
     sql_security->type = original_view_metadata->sql_security_type;
     if (original_view_metadata->definer)
-        sql_security->definer = std::make_shared<ASTUserNameWithHost>(*original_view_metadata->definer);
+        sql_security->definer = make_intrusive<ASTUserNameWithHost>(*original_view_metadata->definer);
     create.set(create.sql_security, sql_security);
 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
