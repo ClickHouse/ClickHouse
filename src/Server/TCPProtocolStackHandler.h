@@ -74,7 +74,7 @@ public:
                 try
                 {
                     std::string message = "Code: " + std::to_string(ErrorCodes::IP_ADDRESS_NOT_ALLOWED) + ". DB::Exception: IP address not allowed.\n";
-                    
+
                     /// Drain the receive buffer to prevent RST when we close.
                     char buffer[1024];
                     while (socket().poll(Poco::Timespan(0, 1000), Poco::Net::Socket::SELECT_READ))
