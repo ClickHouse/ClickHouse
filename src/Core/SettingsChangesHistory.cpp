@@ -77,6 +77,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert", true, false, "It becomes obsolete."},
             {"database_datalake_require_metadata_access", true, true, "New setting."},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 1_MiB, "Better default value derived from testing results"},
+            {"automatic_fill_on_cluster_mode", false, false, "New setting"},
+            {"cluster_for_automatic_fill_mode", "", "", "New setting"}
         });
         addSettingsChanges(settings_changes_history, "25.12",
         {

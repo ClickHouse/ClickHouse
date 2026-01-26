@@ -1,0 +1,12 @@
+Test 1: CREATE TABLE without automatic mode
+Test 1 verification: Should NOT contain ON CLUSTER
+1
+Test 2: CREATE TABLE with automatic mode
+Test 2 verification: Should contain ON CLUSTER
+1
+Test 3: ALTER TABLE with automatic mode executed successfully
+Test 3 verification: ALTER TABLE contains ON CLUSTER
+1
+Test 4: DROP TABLE with automatic mode executed successfully
+Test 4 verification: DROP TABLE contains ON CLUSTER
+1
