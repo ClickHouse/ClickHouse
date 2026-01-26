@@ -65,6 +65,7 @@ SELECT generate_infinite_sequence() as counter;"""
     conn.close()
 
 
+# Stop clickhouse-client by SIGINT signal that is the same as pressing Ctrl+C
 def stop_clickhouse_client():
     client_pid = node1.get_process_pid("clickhouse client")
     node1.exec_in_container(
