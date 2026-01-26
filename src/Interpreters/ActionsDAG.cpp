@@ -382,10 +382,25 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
       *    when using aliased expressions in USING clause. In this case, we need to remove
       *    the Nullable wrapper because the function will return non-nullable result.
       *
-      * Most functions use default implementation for nulls (useDefaultImplementationForNulls() = true),
-      * which wraps results in Nullable when any argument is nullable.
+      * These adjustments only apply to functions that use the default implementation for nulls.
+      * Functions with useDefaultImplementationForNulls() = false handle nullable types themselves
+      * and their result type should not be automatically modified.
+      *
+      * We check useDefaultImplementationForNulls() by trying to access the underlying IFunction
+      * via FunctionToFunctionBaseAdaptor. Functions using this adaptor pattern are simple functions
+      * that implement IFunction. For complex functions (like CAST) that implement IFunctionBase
+      * directly, we assume they handle nullable types correctly and don't modify their result type.
       */
+    bool uses_default_implementation_for_nulls = false;
+    const FunctionToFunctionBaseAdaptor * adaptor = nullptr;
     if (function_base)
+    {
+        adaptor = dynamic_cast<const FunctionToFunctionBaseAdaptor *>(function_base.get());
+        if (adaptor)
+            uses_default_implementation_for_nulls = adaptor->getFunction()->useDefaultImplementationForNulls();
+    }
+
+    if (adaptor && uses_default_implementation_for_nulls)
     {
         auto is_nullable_type = [](const DataTypePtr & type)
         {
@@ -426,8 +441,25 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         {
             /// Case 2: Result type is nullable but no arguments are nullable.
             /// This can happen when wrap_with_nullable was set during analysis but
-            /// actual arguments are non-nullable. Remove the nullable wrapper.
-            result_type = removeNullable(result_type);
+            /// actual arguments are non-nullable. We may need to remove the nullable wrapper.
+            ///
+            /// However, some functions (like arrayElement) return nullable based on nested types
+            /// (e.g., array element type), not just top-level argument nullability. For such functions,
+            /// the result type should remain nullable even if no arguments are nullable at the top level.
+            ///
+            /// To handle this correctly, we check what the underlying function would return
+            /// for non-nullable arguments by calling getReturnTypeImpl with stripped types.
+            /// Note: function_base->getResultType() can't be used here because the function was
+            /// built during analysis with potentially nullable arguments, so its result type
+            /// already reflects that (e.g., Nullable(String) for concat with nullable args).
+            DataTypes non_nullable_arg_types;
+            non_nullable_arg_types.reserve(arguments.size());
+            for (const auto & arg : arguments)
+                non_nullable_arg_types.push_back(removeNullable(arg.type));
+
+            DataTypePtr underlying_result_type = adaptor->getFunction()->getReturnTypeImpl(non_nullable_arg_types);
+            if (!underlying_result_type->isNullable())
+                result_type = removeNullable(result_type);
         }
     }
 
