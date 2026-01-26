@@ -5,6 +5,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadSettings.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -16,7 +17,7 @@ namespace DB
 /* Read buffer, which reads via http, but is used as ReadBufferFromFileBase.
  * Used to read files, hosted on a web server with static files.
  */
-class ReadBufferFromWebServer : public ReadBufferFromFileBase
+class ReadBufferFromWebServer : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
 {
 public:
     explicit ReadBufferFromWebServer(
@@ -43,6 +44,7 @@ public:
     bool supportsRightBoundedReads() const override { return true; }
 
     Map getResponseHeaders() const;
+    std::optional<Field> getMetadata(const String & name) const override;
 
 private:
     std::unique_ptr<SeekableReadBuffer> initialize();

@@ -7,6 +7,7 @@
 #include <IO/ParallelReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadSettings.h>
 #include <IO/WithFileName.h>
@@ -30,7 +31,7 @@
 namespace DB
 {
 
-class ReadWriteBufferFromHTTP : public SeekableReadBuffer, public WithFileName, public WithFileSize
+class ReadWriteBufferFromHTTP : public SeekableReadBuffer, public WithFileName, public WithFileSize, public IReadBufferMetadataProvider
 {
     friend class BuilderRWBufferFromHTTP;
 public:
@@ -196,6 +197,7 @@ public:
     static HTTPFileInfo parseFileInfo(const Poco::Net::HTTPResponse & response, size_t requested_range_begin);
 
     Map getResponseHeaders() const;
+    std::optional<Field> getMetadata(const String & name) const override;
 };
 
 using ReadWriteBufferFromHTTPPtr = std::unique_ptr<ReadWriteBufferFromHTTP>;

@@ -47,9 +47,11 @@
 #include <fmt/ranges.h>
 #include <Common/ProfileEvents.h>
 #include <Core/SettingsEnums.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
+#include <IO/IReadBufferMetadataProvider.h>
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -394,10 +396,11 @@ Chunk StorageObjectStorageSource::generate()
             {
                 if (!http_response_headers_initialized)
                 {
-                    if (auto * web_buf = dynamic_cast<ReadBufferFromWebServer *>(reader.readBuffer()))
-                        http_response_headers = web_buf->getResponseHeaders();
-                    else if (auto * http_buf = dynamic_cast<ReadWriteBufferFromHTTP *>(reader.readBuffer()))
-                        http_response_headers = http_buf->getResponseHeaders();
+                    if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(reader.readBuffer()))
+                    {
+                        if (auto metadata = provider->getMetadata("headers"); metadata && metadata->getType() == Field::Types::Map)
+                            http_response_headers = metadata->safeGet<Map>();
+                    }
                     http_response_headers_initialized = true;
                 }
 
