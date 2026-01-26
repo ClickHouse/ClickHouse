@@ -28,7 +28,7 @@ struct CramersVData : CrossTabAggregateData
         if (q <= 1)
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        return sqrt(getPhiSquared() / (q - 1));
+        return sqrt(getPhiSquared() / static_cast<Float64>(q - 1));
     }
 };
 
@@ -49,7 +49,7 @@ struct CramersVWindowData : CrossTabPhiSquaredWindowData
         if (q <= 1)
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        return sqrt(getPhiSquared() / (q - 1));
+        return sqrt(getPhiSquared() / static_cast<Float64>(q - 1));
     }
 };
 

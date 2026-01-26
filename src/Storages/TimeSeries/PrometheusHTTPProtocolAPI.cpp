@@ -311,7 +311,7 @@ void DB::PrometheusHTTPProtocolAPI::writeVectorResult(WriteBuffer & response, co
             }
             else
             {
-                writeFloatText(std::round(time(nullptr) * 100.0) / 100.0, response);
+                writeFloatText(std::round(static_cast<double>(time(nullptr)) * 100.0) / 100.0, response);
             }
 
             writeString(",", response);

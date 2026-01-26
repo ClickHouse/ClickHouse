@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-MergeType checkAndGetMergeType(UInt32 merge_type)
+MergeType checkAndGetMergeType(std::underlying_type_t<MergeType> merge_type)
 {
     if (auto maybe_merge_type = magic_enum::enum_cast<MergeType>(merge_type))
         return *maybe_merge_type;

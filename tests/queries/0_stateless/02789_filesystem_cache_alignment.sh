@@ -26,7 +26,7 @@ QUERY_ID=$RANDOM
 $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -m -q "
 SET enable_filesystem_cache_log = 1;
 SET read_through_distributed_cache=0;
-SYSTEM DROP FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE;
 SELECT * FROM test WHERE NOT ignore() LIMIT 1 FORMAT Null;
 SYSTEM FLUSH LOGS filesystem_cache_log;
 "

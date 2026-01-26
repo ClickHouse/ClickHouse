@@ -557,7 +557,9 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx->initialized && !info.isPatch())
     {
         const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
-        return {DayNum(hyperrectangle.left.safeGet<UInt64>()), DayNum(hyperrectangle.right.safeGet<UInt64>())};
+        return {
+            DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.left.safeGet<UInt64>())),
+            DayNum(static_cast<DayNum::UnderlyingType>(hyperrectangle.right.safeGet<UInt64>()))};
     }
     return {};
 }
@@ -1136,7 +1138,7 @@ void IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, Columns & inde
                     ++num_changes;
             }
 
-            if (static_cast<Float64>(num_changes) / marks_count >= ratio_to_drop_suffix_columns)
+            if (static_cast<Float64>(num_changes) / static_cast<Float64>(marks_count) >= ratio_to_drop_suffix_columns)
             {
                 key_size = j + 1;
                 index_columns.resize(key_size);
@@ -2460,15 +2462,14 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     {
         auto index_ptr = MergeTreeIndexFactory::instance().get(index_description);
         auto index_name = index_ptr->getFileName();
-        auto index_name_escaped = escapeForFileName(index_name);
         auto index_substreams = index_ptr->getSubstreams();
 
         for (const auto & index_substream : index_substreams)
         {
             ColumnSize substream_size;
 
-            auto index_file_name = index_name_escaped + index_substream.suffix + index_substream.extension;
-            auto index_marks_file_name = index_name_escaped + index_substream.suffix + getMarksFileExtension();
+            auto index_file_name = index_name + index_substream.suffix + index_substream.extension;
+            auto index_marks_file_name = index_name + index_substream.suffix + getMarksFileExtension();
 
             auto bin_checksum = checksums.files.find(index_file_name);
             if (bin_checksum != checksums.files.end())
@@ -2545,9 +2546,9 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
     return total_secondary_indices_size;
 }
 
-bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name) const
+bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
 {
-    auto file_name = INDEX_FILE_PREFIX + index_name;
+    auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
     return checksums.has(file_name + ".idx") || checksums.has(file_name + ".idx2");
 }
 

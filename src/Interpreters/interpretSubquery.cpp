@@ -83,15 +83,15 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     if (table || function)
     {
         /// create ASTSelectQuery for "SELECT * FROM table" as if written by hand
-        const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+        const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
         query = select_with_union_query;
 
-        select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+        select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
 
-        const auto select_query = std::make_shared<ASTSelectQuery>();
+        const auto select_query = make_intrusive<ASTSelectQuery>();
         select_with_union_query->list_of_selects->children.push_back(select_query);
 
-        select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
         const auto select_expression_list = select_query->select();
 
         NamesAndTypesList columns;
@@ -114,7 +114,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         select_expression_list->children.reserve(columns.size());
         /// manually substitute column names in place of asterisk
         for (const auto & column : columns)
-            select_expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+            select_expression_list->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
     }
     else
     {

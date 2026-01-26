@@ -56,7 +56,7 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
             bytes_size += part->getBytesOnDisk();
     }
 
-    return static_cast<UInt64>(bytes_size * DISK_USAGE_COEFFICIENT_TO_RESERVE);
+    return static_cast<UInt64>(static_cast<double>(bytes_size) * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
 
 UInt64 estimateAtLeastAvailableSpace(const PartsRange & range)
@@ -66,7 +66,7 @@ UInt64 estimateAtLeastAvailableSpace(const PartsRange & range)
     for (const auto & part : range)
         bytes_size += part.size;
 
-    return static_cast<UInt64>(bytes_size * DISK_USAGE_COEFFICIENT_TO_SELECT);
+    return static_cast<UInt64>(static_cast<double>(bytes_size) * DISK_USAGE_COEFFICIENT_TO_SELECT);
 }
 
 UInt64 getMaxSourcePartsBytesForMerge(const MergeTreeData & data)
@@ -124,12 +124,12 @@ UInt64 getMaxSourcePartsBytesForMerge(
         size_limit_at_min_pool_space = std::max<size_t>(1, size_limit_at_min_pool_space);
 
         max_size = static_cast<UInt64>(interpolateExponential(
-            size_limit_at_min_pool_space,
-            size_limit_at_max_pool_space,
-            static_cast<double>(free_entries) / size_lowering_threshold));
+            static_cast<double>(size_limit_at_min_pool_space),
+            static_cast<double>(size_limit_at_max_pool_space),
+            static_cast<double>(free_entries) / static_cast<double>(size_lowering_threshold)));
     }
 
-    return std::min(max_size, static_cast<UInt64>(max_unreserved_free_space / DISK_USAGE_COEFFICIENT_TO_SELECT));
+    return std::min(max_size, static_cast<UInt64>(static_cast<double>(max_unreserved_free_space) / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
 UInt64 getMaxSourcePartBytesForMutation(const MergeTreeData & data, String * out_log_comment)
@@ -153,7 +153,7 @@ UInt64 getMaxSourcePartBytesForMutation(const MergeTreeData & data, String * out
     size_t number_of_free_entries_in_pool_to_execute_mutation = (*data_settings)[MergeTreeSetting::number_of_free_entries_in_pool_to_execute_mutation];
     if (occupied <= 1
         || max_tasks_count - occupied >= number_of_free_entries_in_pool_to_execute_mutation)
-        return static_cast<UInt64>(disk_space / DISK_USAGE_COEFFICIENT_TO_RESERVE);
+        return static_cast<UInt64>(static_cast<double>(disk_space) / DISK_USAGE_COEFFICIENT_TO_RESERVE);
 
     if (out_log_comment)
         *out_log_comment = fmt::format("max_tasks_count ({}) - occupied ({}) >= number_of_free_entries_in_pool_to_execute_mutation ({})", max_tasks_count, occupied, number_of_free_entries_in_pool_to_execute_mutation);

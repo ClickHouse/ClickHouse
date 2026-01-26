@@ -95,7 +95,7 @@ Chunk SQLiteSource::generate()
             {
                 ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[column_index]);
                 insertValue(column_nullable.getNestedColumn(), type, column_index);
-                column_nullable.getNullMapData().emplace_back(0);
+                column_nullable.getNullMapData().emplace_back(false);
             }
             else
             {
@@ -121,10 +121,10 @@ void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::Valu
     switch (type)
     {
         case ValueType::vtUInt8:
-            assert_cast<ColumnUInt8 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
+            assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(sqlite3_column_int(compiled_statement.get(), idx)));
             break;
         case ValueType::vtUInt16:
-            assert_cast<ColumnUInt16 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
+            assert_cast<ColumnUInt16 &>(column).insertValue(static_cast<UInt16>(sqlite3_column_int(compiled_statement.get(), idx)));
             break;
         case ValueType::vtUInt32:
             assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(sqlite3_column_int64(compiled_statement.get(), idx)));
@@ -134,10 +134,10 @@ void SQLiteSource::insertValue(IColumn & column, ExternalResultDescription::Valu
             assert_cast<ColumnUInt64 &>(column).insertValue(sqlite3_column_int64(compiled_statement.get(), idx));
             break;
         case ValueType::vtInt8:
-            assert_cast<ColumnInt8 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(sqlite3_column_int(compiled_statement.get(), idx)));
             break;
         case ValueType::vtInt16:
-            assert_cast<ColumnInt16 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));
+            assert_cast<ColumnInt16 &>(column).insertValue(static_cast<Int16>(sqlite3_column_int(compiled_statement.get(), idx)));
             break;
         case ValueType::vtInt32:
             assert_cast<ColumnInt32 &>(column).insertValue(sqlite3_column_int(compiled_statement.get(), idx));

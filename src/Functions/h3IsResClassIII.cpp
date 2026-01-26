@@ -72,7 +72,7 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             validateH3Cell(data[row]);
-            UInt8 res = isResClassIII(data[row]);
+            auto res = static_cast<UInt8>(isResClassIII(data[row]));
             dst_data[row] = res;
         }
         return dst;

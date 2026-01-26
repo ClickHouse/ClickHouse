@@ -526,11 +526,11 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     if (listen_hosts.empty())
     {
-        auto asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
+        auto asio_listener = asio_service->create_rpc_listener(static_cast<ushort>(state_manager->getPort()), logger, enable_ipv6);
         if (!asio_listener)
         {
             LOG_WARNING(log, "Failed to create listener with IPv6 enabled, falling back to IPv4 only.");
-            asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, /*_enable_ipv6=*/false);
+            asio_listener = asio_service->create_rpc_listener(static_cast<ushort>(state_manager->getPort()), logger, /*_enable_ipv6=*/false);
             if (!asio_listener)
                 throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {} after trying both IPv6 and IPv4.", state_manager->getPort());
         }
@@ -540,7 +540,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     {
         for (const auto & listen_host : listen_hosts)
         {
-            auto asio_listener = asio_service->create_rpc_listener(listen_host, state_manager->getPort(), logger);
+            auto asio_listener = asio_service->create_rpc_listener(listen_host, static_cast<ushort>(state_manager->getPort()), logger);
             if (asio_listener)
                 asio_listeners.emplace_back(std::move(asio_listener));
         }

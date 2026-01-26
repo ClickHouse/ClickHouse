@@ -160,13 +160,13 @@ struct CrossTabAggregateData : CrossTabCountsState
         Float64 sum = 0.0;
         for (const auto & [key, value_ab_uint] : count_ab)
         {
-            const Float64 value_a = count_a.at(key.items[UInt128::_impl::little(0)]);
-            const Float64 value_b = count_b.at(key.items[UInt128::_impl::little(1)]);
+            const Float64 value_a = static_cast<Float64>(count_a.at(key.items[UInt128::_impl::little(0)]));
+            const Float64 value_b = static_cast<Float64>(count_b.at(key.items[UInt128::_impl::little(1)]));
 
             chassert(value_a > 0 && "frequency of value `a` must be positive");
             chassert(value_b > 0 && "frequency of value `b` must be positive");
 
-            const Float64 value_ab = value_ab_uint;
+            const Float64 value_ab = static_cast<Float64>(value_ab_uint);
 
             /// (ab/a) * (ab/b) == ab^2 / (a * b), but with one division
             sum += (value_ab * value_ab) / (value_a * value_b);
