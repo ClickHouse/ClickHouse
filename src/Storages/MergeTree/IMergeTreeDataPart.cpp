@@ -315,7 +315,7 @@ void IMergeTreeDataPart::incrementStateMetric(MergeTreeDataPartState state_) con
     }
 }
 
-void IMergeTreeDataPart::decrementStateMetric(MergeTreeDataPartState state_) const
+void IMergeTreeDataPart::decrementStateMetric(MergeTreeDataPartState state_, bool storage_alive) const
 {
     switch (state_)
     {
@@ -331,7 +331,8 @@ void IMergeTreeDataPart::decrementStateMetric(MergeTreeDataPartState state_) con
             CurrentMetrics::sub(CurrentMetrics::PartsCommitted);
             return;
         case MergeTreeDataPartState::Outdated:
-            storage.total_outdated_parts_count.fetch_sub(1, std::memory_order_relaxed);
+            if (storage_alive)
+                storage.total_outdated_parts_count.fetch_sub(1, std::memory_order_relaxed);
             CurrentMetrics::sub(CurrentMetrics::PartsOutdated);
             return;
         case MergeTreeDataPartState::Deleting:
@@ -383,6 +384,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const IMergeTreeDataPart * parent_part_)
     : DataPartStorageHolder(data_part_storage_)
     , storage(storage_)
+    , storage_weak(std::static_pointer_cast<const MergeTreeData>(storage_.shared_from_this()))
     , storage_context(storage_.getContext())
     , name(mutable_name)
     , info(info_)
@@ -412,14 +414,22 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
 {
-    decrementStateMetric(state);
+    /// Check if the storage is still alive. In rare cases (e.g., query pipeline
+    /// holding references to parts after storage is dropped) the part destructor
+    /// may be called after the storage is already destroyed.
+    auto storage_lock = storage_weak.lock();
+
+    decrementStateMetric(state, storage_lock != nullptr);
     decrementTypeMetric(part_type);
 
     if (columns_description)
     {
         columns_description.reset();
         columns_description_with_collected_nested.reset();
-        storage.decrefColumnsDescriptionForColumns(columns);
+
+        /// Only decref if storage is still alive.
+        if (storage_lock)
+            storage_lock->decrefColumnsDescriptionForColumns(columns);
     }
 
     DimensionalMetrics::sub(

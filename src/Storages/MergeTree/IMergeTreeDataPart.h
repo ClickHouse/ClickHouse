@@ -232,6 +232,12 @@ public:
 
     const MergeTreeData & storage;
 
+    /// Weak pointer to the storage, used in the destructor to check if the storage
+    /// is still alive before accessing it. This is needed because in rare cases
+    /// (e.g., query pipeline holding references to parts after storage is dropped)
+    /// the part destructor may be called after the storage is already destroyed.
+    std::weak_ptr<const MergeTreeData> storage_weak;
+
     /// Weak pointer to the context, used in clearCaches() to access caches
     /// even if the storage has been destroyed (e.g., table dropped while query is running).
     ContextWeakPtr storage_context;
@@ -796,7 +802,7 @@ private:
     CompressionCodecPtr detectDefaultCompressionCodec() const;
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
-    void decrementStateMetric(MergeTreeDataPartState state) const;
+    void decrementStateMetric(MergeTreeDataPartState state, bool storage_alive = true) const;
 
     void checkConsistencyBase() const;
 
