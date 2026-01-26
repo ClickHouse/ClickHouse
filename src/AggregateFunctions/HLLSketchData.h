@@ -12,8 +12,8 @@
 namespace DB
 {
 
-const int lg_k = 10;
-const auto type = datasketches::HLL_4; // this is the default, but explicit here for illustration
+const int DEFAULT_LG_K = 10;
+const auto DEFAULT_HLL_TYPE = datasketches::HLL_4; // this is the default, but explicit here for illustration
 
 template <typename Key>
 class HLLSketchData : private boost::noncopyable
@@ -21,6 +21,9 @@ class HLLSketchData : private boost::noncopyable
 private:
     std::unique_ptr<datasketches::hll_sketch> sk_update;
     std::unique_ptr<datasketches::hll_union> sk_union;
+    
+    uint8_t lg_k;
+    datasketches::target_hll_type type;
 
     datasketches::hll_sketch * getHLLUpdate()
     {
@@ -38,8 +41,12 @@ private:
 
 public:
     using value_type = Key;
-
-    HLLSketchData() = default;
+    
+    HLLSketchData() : lg_k(DEFAULT_LG_K), type(DEFAULT_HLL_TYPE) {}
+    
+    HLLSketchData(uint8_t lg_k_, datasketches::target_hll_type type_) 
+        : lg_k(lg_k_), type(type_) {}
+    
     ~HLLSketchData() = default;
 
     void insertOriginal(std::string_view value)
@@ -50,6 +57,15 @@ public:
     void insert(Key value)
     {
         getHLLUpdate()->update(value);
+    }
+
+    UInt64 size() const
+    {
+        if (sk_union)
+            return static_cast<UInt64>(sk_union->get_result().get_estimate());
+        if (sk_update)
+            return static_cast<UInt64>(sk_update->get_estimate());
+        return 0;
     }
 
     void insertSerialized(std::string_view serialized_data, bool force_raw = true)
@@ -77,15 +93,6 @@ public:
             /// If deserialization fails (corrupted or invalid data), skip this value.
             /// This allows graceful handling of bad input data rather than failing the entire aggregation.
         }
-    }
-
-    UInt64 size() const
-    {
-        if (sk_union)
-            return static_cast<UInt64>(sk_union->get_result().get_estimate());
-        if (sk_update)
-            return static_cast<UInt64>(sk_update->get_estimate());
-        return 0;
     }
 
     String serializedData()

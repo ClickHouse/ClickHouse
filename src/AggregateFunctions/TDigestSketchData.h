@@ -27,17 +27,10 @@ private:
     }
 
 public:
-    using value_type = T;
-
     TDigestSketchData() = default;
     ~TDigestSketchData() = default;
 
     void insertOriginal(double value)
-    {
-        getTDigest()->update(value);
-    }
-
-    void insert(T value)
     {
         getTDigest()->update(value);
     }

@@ -26,17 +26,10 @@ private:
     }
 
 public:
-    using value_type = T;
-
     DoubleSketchData() = default;
     ~DoubleSketchData() = default;
 
     void insertOriginal(double value)
-    {
-        getDoubleSketch()->update(value);
-    }
-
-    void insert(T value)
     {
         getDoubleSketch()->update(value);
     }
