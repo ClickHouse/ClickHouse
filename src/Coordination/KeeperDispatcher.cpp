@@ -169,11 +169,14 @@ void KeeperDispatcher::requestThread()
         {
             ZooKeeperOpentelemetrySpans::maybeFinalize(
                 request->spans.dispatcher_requests_queue,
+                [&]
                 {
-                    {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                    {"keeper.session_id", std::to_string(session_id)},
-                    {"keeper.xid", std::to_string(request->xid)},
-                    {"keeper.dispatcher.requests_queue.size", std::to_string(requests_queue->size())},
+                    return std::vector<OpenTelemetry::SpanAttribute>{
+                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                        {"keeper.session_id", session_id},
+                        {"keeper.xid", request->xid},
+                        {"keeper.dispatcher.requests_queue.size", requests_queue->size()},
+                    };
                 });
         };
 
@@ -408,11 +411,14 @@ void KeeperDispatcher::responseThread()
             {
                 ZooKeeperOpentelemetrySpans::maybeFinalize(
                     response_for_session.request->spans.dispatcher_responses_queue,
+                    [&]
                     {
-                        {"keeper.operation", Coordination::opNumToString(response_for_session.request->getOpNum())},
-                        {"keeper.session_id", std::to_string(response_for_session.session_id)},
-                        {"keeper.xid", std::to_string(response_for_session.request->xid)},
-                        {"keeper.dispatcher.responses_queue.size", std::to_string(responses_queue.size())},
+                        return std::vector<OpenTelemetry::SpanAttribute>{
+                            {"keeper.operation", Coordination::opNumToString(response_for_session.request->getOpNum())},
+                            {"keeper.session_id", response_for_session.session_id},
+                            {"keeper.xid", response_for_session.request->xid},
+                            {"keeper.dispatcher.responses_queue.size", responses_queue.size()},
+                        };
                     },
                     OpenTelemetry::SpanStatus::OK,
                     "",
@@ -590,10 +596,13 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
                             ZooKeeperOpentelemetrySpans::maybeFinalize(
                                 read_request.request->spans.read_wait_for_write,
+                                [&]
                                 {
-                                    {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
-                                    {"keeper.session_id", std::to_string(read_request.session_id)},
-                                    {"keeper.xid", std::to_string(read_request.request->xid)},
+                                    return std::vector<OpenTelemetry::SpanAttribute>{
+                                        {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
+                                        {"keeper.session_id", read_request.session_id},
+                                        {"keeper.xid", read_request.request->xid},
+                                    };
                                 });
 
                             server->putLocalReadRequest(read_request);

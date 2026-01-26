@@ -819,8 +819,11 @@ void ZooKeeper::sendThread()
 
                     ZooKeeperOpentelemetrySpans::maybeFinalize(
                         info.request->spans.client_requests_queue,
+                        [&]
                         {
-                            {"zookeeper_client.requests_queue.size", std::to_string(requests_queue.size())},
+                            return std::vector<OpenTelemetry::SpanAttribute>{
+                                {"zookeeper_client.requests_queue.size", requests_queue.size()},
+                            };
                         });
 
                     if (info.request->xid != close_xid)

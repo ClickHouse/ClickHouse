@@ -269,11 +269,14 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log
 
         ZooKeeperOpentelemetrySpans::maybeFinalize(
             request_for_session->request->spans.pre_commit,
+            [&]
             {
-                {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
-                {"keeper.session_id", std::to_string(request_for_session->session_id)},
-                {"keeper.xid", std::to_string(request_for_session->request->xid)},
-                {"raft.log_idx", std::to_string(log_idx)},
+                return std::vector<OpenTelemetry::SpanAttribute>{
+                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
+                    {"keeper.session_id", request_for_session->session_id},
+                    {"keeper.xid", request_for_session->request->xid},
+                    {"raft.log_idx", log_idx},
+                };
             },
             status,
             error_message);
@@ -630,11 +633,14 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
         ZooKeeperOpentelemetrySpans::maybeFinalize(
             request_for_session->request->spans.commit,
+            [&]
             {
-                {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
-                {"keeper.session_id", std::to_string(request_for_session->session_id)},
-                {"keeper.xid", std::to_string(request_for_session->request->xid)},
-                {"raft.log_idx", std::to_string(log_idx)},
+                return std::vector<OpenTelemetry::SpanAttribute>{
+                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
+                    {"keeper.session_id", request_for_session->session_id},
+                    {"keeper.xid", request_for_session->request->xid},
+                    {"raft.log_idx", log_idx},
+                };
             },
             status,
             error_message);

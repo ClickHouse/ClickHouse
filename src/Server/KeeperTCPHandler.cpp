@@ -572,10 +572,13 @@ void KeeperTCPHandler::runImpl()
 
                     ZooKeeperOpentelemetrySpans::maybeFinalize(
                         request->spans.send_response,
+                        [&]
                         {
-                            {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                            {"keeper.session_id", session_id},
-                            {"keeper.xid", request->xid},
+                            return std::vector<OpenTelemetry::SpanAttribute>{
+                                {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                                {"keeper.session_id", session_id},
+                                {"keeper.xid", request->xid},
+                            };
                         },
                         status,
                         error_message);
@@ -772,12 +775,14 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
             ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.receive_request, request->tracing_context, receive_start_time);
             ZooKeeperOpentelemetrySpans::maybeFinalize(
                 request->spans.receive_request,
+                [&]
                 {
-                    {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                    {"keeper.session_id", session_id},
-                    {"keeper.xid", request->xid},
-                }
-            );
+                    return std::vector<OpenTelemetry::SpanAttribute>{
+                        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                        {"keeper.session_id", session_id},
+                        {"keeper.xid", request->xid},
+                    };
+                });
         }
     }
 

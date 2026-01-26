@@ -69,9 +69,27 @@ struct ZooKeeperOpentelemetrySpans
         const std::optional<OpenTelemetry::TracingContext> & parent_context,
         UInt64 start_time_us = now());
 
+    template <typename MakeAttributes>
     static void maybeFinalize(
         MaybeSpan & maybe_span,
-        std::vector<OpenTelemetry::SpanAttribute> extra_attributes = {},
+        MakeAttributes && make_attributes,
+        OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
+        const String & error_message = {},
+        UInt64 finish_time_us = now())
+    {
+        if (!maybe_span.span)
+        {
+            chassert(maybe_span.start_time_us != 0);
+            maybe_span.histogram.observe((finish_time_us - maybe_span.start_time_us) / 1000);
+            return;
+        }
+
+        maybeFinalizeImpl(maybe_span, make_attributes(), status, error_message, finish_time_us);
+    }
+
+    static void maybeFinalizeImpl(
+        MaybeSpan & maybe_span,
+        std::vector<OpenTelemetry::SpanAttribute> attributes = {},
         OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
         const String & error_message = {},
         UInt64 finish_time_us = now());

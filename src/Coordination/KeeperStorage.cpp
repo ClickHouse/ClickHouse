@@ -3762,9 +3762,12 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
                         ZooKeeperOpentelemetrySpans::maybeFinalize(
                             concrete_zk_request.spans.read_process,
+                            [&]
                             {
-                                {"keeper.operation", Coordination::opNumToString(concrete_zk_request.getOpNum())},
-                                {"keeper.xid", std::to_string(concrete_zk_request.xid)},
+                                return std::vector<OpenTelemetry::SpanAttribute>{
+                                    {"keeper.operation", Coordination::opNumToString(concrete_zk_request.getOpNum())},
+                                    {"keeper.xid", std::to_string(concrete_zk_request.xid)},
+                                };
                             },
                             status,
                             error_message);

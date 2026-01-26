@@ -62,9 +62,9 @@ void ZooKeeperOpentelemetrySpans::maybeInitialize(
     });
 }
 
-void ZooKeeperOpentelemetrySpans::maybeFinalize(
+void ZooKeeperOpentelemetrySpans::maybeFinalizeImpl(
     MaybeSpan & maybe_span,
-    std::vector<OpenTelemetry::SpanAttribute> extra_attributes,
+    std::vector<OpenTelemetry::SpanAttribute> attributes,
     OpenTelemetry::SpanStatus status,
     const String & error_message,
     UInt64 finish_time_us)
@@ -94,13 +94,10 @@ void ZooKeeperOpentelemetrySpans::maybeFinalize(
 #if USE_NURAFT
     static const auto keeper_dispatcher = getKeeperDispatcher();
     if (keeper_dispatcher)
-        extra_attributes.emplace_back("raft.role", keeper_dispatcher->getRoleString());
+        attributes.emplace_back("raft.role", keeper_dispatcher->getRoleString());
 #endif
 
-    maybe_span.span->attributes.insert(
-        maybe_span.span->attributes.end(),
-        std::make_move_iterator(extra_attributes.begin()),
-        std::make_move_iterator(extra_attributes.end()));
+    maybe_span.span->attributes = std::move(attributes);
 
     span_log->add(OpenTelemetrySpanLogElement(std::move(*maybe_span.span)));
     maybe_span.span.reset();

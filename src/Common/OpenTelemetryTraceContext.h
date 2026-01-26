@@ -7,6 +7,8 @@
 
 #include <chrono>
 #include <exception>
+#include <string_view>
+#include <variant>
 
 
 namespace DB
@@ -22,18 +24,41 @@ struct ExecutionStatus;
 namespace OpenTelemetry
 {
 
-struct SpanAttribute
+class SpanAttribute
 {
+private:
     String key;
-    String value;
+    std::variant<String, std::string_view, int64_t, uint64_t, double, bool> value;
 
-    template <typename K, std::convertible_to<String> V>
-    SpanAttribute(K && k, V && v)
-        : key(std::forward<K>(k)), value(std::forward<V>(v)) {}
+public:
+    template <typename K>
+    SpanAttribute(K && k, const char * v)
+        : key(std::forward<K>(k))
+        , value(std::string_view(v))
+    {
+    }
 
     template <typename K, typename V>
     SpanAttribute(K && k, V && v)
-        : key(std::forward<K>(k)), value(toString(std::forward<V>(v))) {}
+        : key(std::forward<K>(k))
+        , value(std::forward<V>(v))
+    {
+    }
+
+    const String & getKey() const
+    {
+        return key;
+    }
+
+    String getValue() const
+    {
+        return std::visit([](auto && v)
+        {
+            if constexpr (std::is_convertible_v<std::decay_t<decltype(v)>, String>)
+                return v;
+            return toString(v);
+        }, value);
+    }
 };
 
 /// See https://opentelemetry.io/docs/reference/specification/trace/api/#spankind

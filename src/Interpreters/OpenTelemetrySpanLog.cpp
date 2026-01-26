@@ -92,9 +92,9 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 
     Map attributes_map;
     attributes_map.reserve(span.attributes.size());
-    for (const auto & [key, value] : span.attributes)
-        attributes_map.push_back(Tuple{key, value});
-    columns[i++]->insert(attributes_map);
+    for (const auto & attribute : span.attributes)
+        attributes_map.push_back(Tuple{attribute.getKey(), attribute.getValue()});
+    columns[i++]->insert(std::move(attributes_map));
 }
 
 }
