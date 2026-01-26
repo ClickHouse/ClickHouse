@@ -452,12 +452,12 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
             /// Note: function_base->getResultType() can't be used here because the function was
             /// built during analysis with potentially nullable arguments, so its result type
             /// already reflects that (e.g., Nullable(String) for concat with nullable args).
-            DataTypes non_nullable_arg_types;
-            non_nullable_arg_types.reserve(arguments.size());
+            ColumnsWithTypeAndName non_nullable_args;
+            non_nullable_args.reserve(arguments.size());
             for (const auto & arg : arguments)
-                non_nullable_arg_types.push_back(removeNullable(arg.type));
+                non_nullable_args.push_back({arg.column, removeNullable(arg.type), arg.name});
 
-            DataTypePtr underlying_result_type = adaptor->getFunction()->getReturnTypeImpl(non_nullable_arg_types);
+            DataTypePtr underlying_result_type = adaptor->getFunction()->getReturnTypeImpl(non_nullable_args);
             if (!underlying_result_type->isNullable())
                 result_type = removeNullable(result_type);
         }
