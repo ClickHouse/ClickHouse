@@ -37,7 +37,7 @@ class LambdaNode final : public IQueryTreeNode
 {
 public:
     /// Initialize lambda with argument names and lambda body expression
-    explicit LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, bool is_operator_, DataTypePtr result_type_ = {});
+    explicit LambdaNode(Names argument_names_, QueryTreeNodePtr expression_, DataTypePtr result_type_ = {});
 
     /// Get argument names
     const Names & getArgumentNames() const
@@ -110,7 +110,6 @@ protected:
 private:
     Names argument_names;
     DataTypePtr result_type;
-    bool is_operator = false;
 
     static constexpr size_t arguments_child_index = 0;
     static constexpr size_t expression_child_index = 1;
