@@ -51,10 +51,10 @@ bool ParserKQLWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         return true;
     }
 
-    auto list_node = make_intrusive<ASTExpressionList>();
+    auto list_node = std::make_shared<ASTExpressionList>();
     list_node->children.push_back(kql_query);
 
-    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
     node = select_with_union_query;
     select_with_union_query->list_of_selects = list_node;
     select_with_union_query->children.push_back(select_with_union_query->list_of_selects);

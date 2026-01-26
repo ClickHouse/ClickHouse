@@ -4,7 +4,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 #include <Common/memory.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Core/Settings.h>
@@ -87,7 +86,7 @@ struct ThreadStack
 
     static size_t getSize()
     {
-        auto size = std::max<size_t>({UNWIND_MINSIGSTKSZ, static_cast<size_t>(MINSIGSTKSZ), static_cast<size_t>(getPageSize())});
+        auto size = std::max<size_t>(UNWIND_MINSIGSTKSZ, MINSIGSTKSZ);
 
         if constexpr (guardPagesEnabled())
             size += getPageSize();
@@ -97,6 +96,7 @@ struct ThreadStack
     void * getData() const { return data; }
 
 private:
+    /// 16 KiB - not too big but enough to handle error.
     void * data = nullptr;
 };
 
@@ -346,7 +346,7 @@ MainThreadStatus::~MainThreadStatus()
     /// the file descriptors are closed, which will throw errors.
     /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
     /// implicit ~ThreadStatus is called here
-    getInstance().taskstats = nullptr;
+    getInstance().taskstats.reset();
     main_thread = nullptr;
 }
 

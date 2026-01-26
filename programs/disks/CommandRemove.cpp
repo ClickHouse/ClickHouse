@@ -28,7 +28,7 @@ public:
     {
         const auto & disk = client.getCurrentDiskWithPath();
         const String & path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
-        bool recursive = options.contains("recursive");
+        bool recursive = options.count("recursive");
         if (disk.getDisk()->existsDirectory(path))
         {
             if (!recursive)

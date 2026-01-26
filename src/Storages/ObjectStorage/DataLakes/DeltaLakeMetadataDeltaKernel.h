@@ -10,14 +10,11 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 namespace DeltaLake
 {
 class TableSnapshot;
-class TableChanges;
-using TableChangesPtr = std::shared_ptr<TableChanges>;
-using TableChangesVersionRange = std::pair<size_t, std::optional<size_t>>;
 }
 
 namespace DB
@@ -73,12 +70,6 @@ public:
 
     DeltaLake::KernelHelperPtr getKernelHelper() const { return kernel_helper; }
 
-    DeltaLake::TableChangesPtr getTableChanges(
-        const DeltaLake::TableChangesVersionRange & version_range,
-        const Block & header,
-        const std::optional<FormatSettings> & format_settings,
-        ContextPtr context) const;
-
     SinkToStoragePtr write(
         SharedHeader sample_block,
         const StorageID & table_id,
@@ -92,7 +83,6 @@ private:
     const LoggerPtr log;
     const DeltaLake::KernelHelperPtr kernel_helper;
     const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot TSA_GUARDED_BY(table_snapshot_mutex);
-    const std::string format_name;
     mutable std::mutex table_snapshot_mutex;
 
     ObjectStoragePtr object_storage_common;

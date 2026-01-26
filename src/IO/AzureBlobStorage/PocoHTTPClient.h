@@ -5,11 +5,11 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/RemoteHostFilter.h>
+#include <Common/IThrottler.h>
 #include <Common/ProxyConfiguration.h>
 #include <Common/HistogramMetrics.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
-#include <IO/HTTPRequestThrottler.h>
 #include <IO/HTTPHeaderEntries.h>
 
 #include <azure/core/http/http.hpp>
@@ -33,7 +33,8 @@ struct PocoAzureHTTPClientConfiguration
     UInt64 max_redirects;
     bool for_disk_azure;
 
-    HTTPRequestThrottler request_throttler;
+    ThrottlerPtr get_request_throttler = nullptr;
+    ThrottlerPtr put_request_throttler = nullptr;
     HTTPHeaderEntries extra_headers;
 
     size_t connect_timeout_ms = 10000; // Default connection timeout in milliseconds
@@ -68,8 +69,8 @@ public:
     /// caller (buffer) to this low-level class
     static const Azure::Core::Context::Key & getSDKContextKeyForBufferRetry();
 
-    ThrottlerPtr getThrottler() const { return request_throttler.get_throttler; }
-    ThrottlerPtr putThrottler() const { return request_throttler.put_throttler; }
+    ThrottlerPtr getThrottler() const { return get_request_throttler; }
+    ThrottlerPtr putThrottler() const { return put_request_throttler; }
 
 private:
     enum class AzureMetricType : uint8_t
@@ -113,14 +114,16 @@ private:
 
     ConnectionTimeouts timeouts;
     const RemoteHostFilter & remote_host_filter;
-    const UInt64 max_redirects = 0;
+    const UInt32 max_redirects = 0;
     bool use_adaptive_timeouts = true;
     const UInt64 http_max_fields;
     const UInt64 http_max_field_name_size;
     const UInt64 http_max_field_value_size;
     bool for_disk_azure = false;
 
-    HTTPRequestThrottler request_throttler;
+    ThrottlerPtr get_request_throttler;
+
+    ThrottlerPtr put_request_throttler;
 
     const HTTPHeaderEntries extra_headers;
 

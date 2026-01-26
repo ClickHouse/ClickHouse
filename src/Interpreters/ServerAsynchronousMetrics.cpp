@@ -367,16 +367,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
     }
 
-    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
-
-    {
-        Float64 max_merge_elapsed = 0;
-        for (const auto & merge : getContext()->getMergeList().get())
-            max_merge_elapsed = std::max(merge.elapsed, max_merge_elapsed);
-        new_values["LongestRunningMerge"]
-            = {max_merge_elapsed, "Elapsed time in seconds of the longest currently running background merge."};
-    }
-
 #if USE_NURAFT
     {
         auto keeper_dispatcher = getContext()->tryGetKeeperDispatcher();

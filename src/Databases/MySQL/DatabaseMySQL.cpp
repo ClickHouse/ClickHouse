@@ -39,10 +39,6 @@
 #    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
 
-#if CLICKHOUSE_CLOUD
-#    include <Interpreters/SharedDatabaseCatalog.h>
-#endif
-
 namespace fs = std::filesystem;
 
 namespace DB
@@ -69,7 +65,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int CANNOT_CREATE_DATABASE;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 constexpr static const auto suffix = ".remove_flag";
@@ -86,7 +81,7 @@ DatabaseMySQL::DatabaseMySQL(
     mysqlxx::PoolWithFailover && pool,
     bool attach,
     UUID uuid)
-    : DatabaseWithAltersOnDiskBase(database_name_)
+    : IDatabase(database_name_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -103,20 +98,11 @@ DatabaseMySQL::DatabaseMySQL(
     catch (...)
     {
         if (attach)
-        {
             tryLogCurrentException("DatabaseMySQL");
-        }
-#if CLICKHOUSE_CLOUD
-        else if (SharedDatabaseCatalog::initialized() && !SharedDatabaseCatalog::isInitialQuery(context_))
-        {
-            tryLogCurrentException("DatabaseMySQL");
-        }
-#endif
         else
             throw;
     }
 
-    persistent = !context_->getClientInfo().is_shared_catalog_internal;
     if (persistent)
     {
         auto db_disk = getDisk();
@@ -167,7 +153,7 @@ StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPt
 
     fetchTablesIntoLocalCache(local_context);
 
-    if (!remove_or_detach_tables.contains(mysql_table_name) && local_tables_cache.contains(mysql_table_name))
+    if (!remove_or_detach_tables.contains(mysql_table_name) && local_tables_cache.find(mysql_table_name) != local_tables_cache.end())
         return local_tables_cache[mysql_table_name].second;
 
     return StoragePtr{};
@@ -177,25 +163,9 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
 {
     std::lock_guard lock(mutex);
 
-    try
-    {
-        /// This function can throw mysql exception, we don't have enough context to handle it.
-        /// So we just catch and re-throw as known exception if needed.
-        fetchTablesIntoLocalCache(local_context);
-    }
-    catch (...)
-    {
-        if (throw_on_error)
-        {
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY,
-                            "Received error while fetching table structure for table {} from MySQL: {}",
-                            backQuote(table_name), getCurrentExceptionMessage(true));
-        }
+    fetchTablesIntoLocalCache(local_context);
 
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-
-    if (!local_tables_cache.contains(table_name))
+    if (local_tables_cache.find(table_name) == local_tables_cache.end())
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
@@ -214,11 +184,11 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
         {
             storage_engine_arguments->children.push_back(
-                makeASTOperator("equals", make_intrusive<ASTIdentifier>("table"), make_intrusive<ASTLiteral>(table_name)));
+                makeASTOperator("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_name)));
         }
         else
         {
-            auto mysql_table_name = make_intrusive<ASTLiteral>(table_name);
+            auto mysql_table_name = std::make_shared<ASTLiteral>(table_name);
             storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
         }
 
@@ -244,21 +214,20 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 
     fetchTablesIntoLocalCache(getContext());
 
-    if (!local_tables_cache.contains(table_name))
+    if (local_tables_cache.find(table_name) == local_tables_cache.end())
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
 
     return time_t(local_tables_cache[table_name].first);
 }
 
-ASTPtr DatabaseMySQL::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
 {
-    const auto & create_query = make_intrusive<ASTCreateQuery>();
-    create_query->setDatabase(database_name);
+    const auto & create_query = std::make_shared<ASTCreateQuery>();
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_define);
-    create_query->uuid = db_uuid;
 
-    if (!comment.empty())
-        create_query->set(create_query->comment, make_intrusive<ASTLiteral>(comment));
+    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
 
     return create_query;
 }
@@ -275,7 +244,7 @@ void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> 
 {
     for (auto iterator = local_tables_cache.begin(); iterator != local_tables_cache.end();)
     {
-        if (tables_with_modification_time.contains(iterator->first))
+        if (tables_with_modification_time.find(iterator->first) != tables_with_modification_time.end())
             ++iterator;
         else
         {
@@ -404,7 +373,7 @@ void DatabaseMySQL::drop(ContextPtr)
 
 void DatabaseMySQL::cleanOutdatedTables()
 {
-    DB::setThreadName(ThreadName::MYSQL_DATABASE_CLEANUP);
+    setThreadName("MySQLDBCleaner");
 
     std::unique_lock lock{mutex};
 
@@ -468,6 +437,11 @@ StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & t
 
     remove_or_detach_tables.emplace(table_name);
     return local_tables_cache[table_name].second;
+}
+
+void DatabaseMySQL::alterDatabaseComment(const AlterCommand & command)
+{
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 String DatabaseMySQL::getMetadataPath() const

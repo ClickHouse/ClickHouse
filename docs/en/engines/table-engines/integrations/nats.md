@@ -4,11 +4,11 @@ description: 'This engine allows integrating ClickHouse with NATS to publish or 
 sidebar_label: 'NATS'
 sidebar_position: 140
 slug: /engines/table-engines/integrations/nats
-title: 'NATS table engine'
+title: 'NATS Engine'
 doc_type: 'guide'
 ---
 
-# NATS table engine {#redisstreams-engine}
+# NATS engine {#redisstreams-engine}
 
 This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 
@@ -118,7 +118,7 @@ Example:
 ```
 
 The NATS server configuration can be added using the ClickHouse config file.
-More specifically you can add your password for the NATS engine:
+More specifically you can add Redis password for NATS engine:
 
 ```xml
 <nats>

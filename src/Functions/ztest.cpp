@@ -1,3 +1,4 @@
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -7,8 +8,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Functions/castTypeToEither.h>
 #include <Interpreters/castColumn.h>
 #include <boost/math/distributions/normal.hpp>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -247,7 +250,7 @@ SELECT proportionsZTest(10, 11, 100, 101, 0.95, 'unpooled');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 3};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionTwoSampleProportionsZTest>();
 }
 

@@ -143,7 +143,7 @@
     M(S3CopyObject) \
     M(S3ListObjects) \
     M(S3HeadObject) \
-    M(S3GetObjectTagging) \
+    M(S3GetObjectAttributes) \
     M(S3CreateMultipartUpload) \
     M(S3UploadPartCopy) \
     M(S3UploadPart) \
@@ -169,7 +169,7 @@
     M(DiskS3CopyObject) \
     M(DiskS3ListObjects) \
     M(DiskS3HeadObject) \
-    M(DiskS3GetObjectTagging) \
+    M(DiskS3GetObjectAttributes) \
     M(DiskS3CreateMultipartUpload) \
     M(DiskS3UploadPartCopy) \
     M(DiskS3UploadPart) \
@@ -269,14 +269,6 @@
     M(KeeperGetRequest) \
     M(KeeperListRequest) \
     M(KeeperExistsRequest) \
-    M(KeeperSetWatchesRequest) \
-    M(KeeperCheckWatchRequest) \
-    M(KeeperAddWatchRequest) \
-    M(KeeperRemoveWatchRequest) \
-    M(KeeperChangelogWrittenBytes) \
-    M(KeeperChangelogFileSyncMicroseconds) \
-    M(KeeperSnapshotWrittenBytes) \
-    M(KeeperSnapshotFileSyncMicroseconds) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \
@@ -405,31 +397,10 @@ extern const std::vector<Metric> keeper_metrics
 #undef M
 }
 
-#define APPLY_FOR_KEEPER_HISTOGRAMS(M) \
-    M(KeeperServerPreprocessRequestDurationMetricFamily) \
-    M(KeeperServerProcessRequestDuration) \
-    M(KeeperServerQueueDurationMetricFamily) \
-    M(KeeperServerSendDurationMetricFamily) \
-    M(KeeperBatchSizeBytesMetricFamily) \
-
-
 namespace HistogramMetrics
 {
-#define M(NAME) extern MetricFamily &(NAME);
-    APPLY_FOR_KEEPER_HISTOGRAMS(M)
-#undef M
-
-
-std::vector<MetricFamily *> keeper_histograms
-{
-#define M(NAME) &(NAME),
-    APPLY_FOR_KEEPER_HISTOGRAMS(M)
-#undef M
-};
-
+    std::vector<MetricFamily *> keeper_histograms;
 }
-
-#undef APPLY_FOR_KEEPER_HISTOGRAMS
 
 namespace DimensionalMetrics
 {
